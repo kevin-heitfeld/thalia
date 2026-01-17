@@ -11,16 +11,17 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, List, TYPE_CHECKING
 from enum import Enum
+from typing import TYPE_CHECKING, List, Optional
+
+from thalia.diagnostics.criticality import CriticalityConfig
+from thalia.regions.cerebellum import CerebellumConfig
 
 # Import region configs from canonical locations
 from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
 from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.regions.striatum.config import StriatumConfig
 from thalia.regions.prefrontal import PrefrontalConfig
-from thalia.regions.cerebellum import CerebellumConfig
-from thalia.diagnostics.criticality import CriticalityConfig
+from thalia.regions.striatum.config import StriatumConfig
 
 if TYPE_CHECKING:
     from thalia.coordination.oscillator import OscillatorCoupling
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
 class RegionType(Enum):
     """Types of brain regions."""
+
     CORTEX = "cortex"
     HIPPOCAMPUS = "hippocampus"
     PFC = "pfc"
@@ -41,6 +43,7 @@ class CortexType(Enum):
     LAYERED: Standard feedforward layered cortex (L4 → L2/3 → L5)
     PREDICTIVE: Layered cortex with predictive coding (local error signals)
     """
+
     LAYERED = "layered"
     PREDICTIVE = "predictive"
 
@@ -105,20 +108,26 @@ class NeuromodulationConfig:
             f"  Enabled: {self.use_norepinephrine}",
         ]
         if self.use_norepinephrine:
-            lines.extend([
-                f"  Baseline: {self.norepinephrine_baseline}",
-                f"  Gain scale: {self.norepinephrine_gain_scale}",
-            ])
-        lines.extend([
-            "",
-            "--- Acetylcholine (NB) ---",
-            f"  Enabled: {self.use_acetylcholine}",
-        ])
+            lines.extend(
+                [
+                    f"  Baseline: {self.norepinephrine_baseline}",
+                    f"  Gain scale: {self.norepinephrine_gain_scale}",
+                ]
+            )
+        lines.extend(
+            [
+                "",
+                "--- Acetylcholine (NB) ---",
+                f"  Enabled: {self.use_acetylcholine}",
+            ]
+        )
         if self.use_acetylcholine:
-            lines.extend([
-                f"  Encoding level: {self.acetylcholine_encoding_level}",
-                f"  Retrieval level: {self.acetylcholine_retrieval_level}",
-            ])
+            lines.extend(
+                [
+                    f"  Encoding level: {self.acetylcholine_encoding_level}",
+                    f"  Retrieval level: {self.acetylcholine_retrieval_level}",
+                ]
+            )
         return "\n".join(lines)
 
 
@@ -174,7 +183,11 @@ class RegionSizes:
     @property
     def cortex_l23_size(self) -> int:
         """L2/3 (processing layer) size - explicit or computed as 1.5x cortex."""
-        return self._cortex_l23_size if self._cortex_l23_size is not None else int(self.cortex_size * 1.5)
+        return (
+            self._cortex_l23_size
+            if self._cortex_l23_size is not None
+            else int(self.cortex_size * 1.5)
+        )
 
     @property
     def cortex_l5_size(self) -> int:

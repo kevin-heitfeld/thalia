@@ -64,14 +64,15 @@ class DendriticBranchConfig:
         branch_coupling: How strongly branch output couples to soma
             1.0 = full coupling, <1.0 = attenuated coupling (distal branches)
     """
-    nmda_threshold: float = 0.3           # Local spike threshold
-    nmda_gain: float = 3.0                # Supralinear amplification
-    plateau_tau_ms: float = 80.0          # NMDA plateau duration
-    tau_syn_ms: float = 15.0              # Synaptic conductance decay
-    saturation_level: float = 2.0         # Maximum branch output
-    subthreshold_attenuation: float = 0.8 # Cable filtering for weak inputs
-    branch_coupling: float = 1.0          # Soma coupling strength
-    dt_ms: float = 0.1                    # Simulation timestep (ms)
+
+    nmda_threshold: float = 0.3  # Local spike threshold
+    nmda_gain: float = 3.0  # Supralinear amplification
+    plateau_tau_ms: float = 80.0  # NMDA plateau duration
+    tau_syn_ms: float = 15.0  # Synaptic conductance decay
+    saturation_level: float = 2.0  # Maximum branch output
+    subthreshold_attenuation: float = 0.8  # Cable filtering for weak inputs
+    branch_coupling: float = 1.0  # Soma coupling strength
+    dt_ms: float = 0.1  # Simulation timestep (ms)
 
     @property
     def plateau_decay(self) -> float:
@@ -106,6 +107,7 @@ class DendriticNeuronConfig:
             "random": Random assignment at initialization
             "learned": Weights determine routing (soft assignment)
     """
+
     n_branches: int = 4
     inputs_per_branch: int = 50
     branch_config: Optional[DendriticBranchConfig] = None
@@ -160,14 +162,12 @@ class DendriticBranch(nn.Module):
         # Synaptic weights for this branch
         # Initialize with small positive values (excitatory)
         self.weights = nn.Parameter(
-            torch.rand(n_inputs, requires_grad=False) * 0.1 + 0.05,
-            requires_grad=False
+            torch.rand(n_inputs, requires_grad=False) * 0.1 + 0.05, requires_grad=False
         )
 
         # Register constants
         self.register_buffer(
-            "plateau_decay",
-            torch.tensor(self.config.plateau_decay, dtype=torch.float32)
+            "plateau_decay", torch.tensor(self.config.plateau_decay, dtype=torch.float32)
         )
 
         # State: NMDA plateau potential (persists across timesteps)
@@ -202,8 +202,9 @@ class DendriticBranch(nn.Module):
             self.reset_state()
 
         # ADR-005: Expect 1D input
-        assert inputs.dim() == 1 and inputs.shape[0] == self.n_inputs, \
-            f"DendriticBranch.forward: Expected 1D input [n_inputs={self.n_inputs}], got shape {inputs.shape}"
+        assert (
+            inputs.dim() == 1 and inputs.shape[0] == self.n_inputs
+        ), f"DendriticBranch.forward: Expected 1D input [n_inputs={self.n_inputs}], got shape {inputs.shape}"
 
         # Compute weighted sum: [n_inputs] @ [n_inputs] → scalar
         linear_sum = torch.dot(inputs, self.weights.clamp(min=0))
@@ -234,8 +235,7 @@ class DendriticBranch(nn.Module):
 
         # Blend based on how far above threshold
         instantaneous_output = (
-            subthreshold_output * (1 - above_threshold) +
-            suprathreshold_output * above_threshold
+            subthreshold_output * (1 - above_threshold) + suprathreshold_output * above_threshold
         )
 
         # Apply saturation (soft clamp)
@@ -318,41 +318,33 @@ class DendriticNeuron(nn.Module):
         # Register branch config constants
         branch_cfg = self.config.branch_config
         self.register_buffer(
-            "plateau_decay",
-            torch.tensor(branch_cfg.plateau_decay, dtype=torch.float32)
+            "plateau_decay", torch.tensor(branch_cfg.plateau_decay, dtype=torch.float32)
         )
         self.register_buffer(
-            "nmda_threshold",
-            torch.tensor(branch_cfg.nmda_threshold, dtype=torch.float32)
+            "nmda_threshold", torch.tensor(branch_cfg.nmda_threshold, dtype=torch.float32)
         )
+        self.register_buffer("nmda_gain", torch.tensor(branch_cfg.nmda_gain, dtype=torch.float32))
         self.register_buffer(
-            "nmda_gain",
-            torch.tensor(branch_cfg.nmda_gain, dtype=torch.float32)
-        )
-        self.register_buffer(
-            "saturation_level",
-            torch.tensor(branch_cfg.saturation_level, dtype=torch.float32)
+            "saturation_level", torch.tensor(branch_cfg.saturation_level, dtype=torch.float32)
         )
         self.register_buffer(
             "subthreshold_attenuation",
-            torch.tensor(branch_cfg.subthreshold_attenuation, dtype=torch.float32)
+            torch.tensor(branch_cfg.subthreshold_attenuation, dtype=torch.float32),
         )
         self.register_buffer(
-            "branch_coupling",
-            torch.tensor(branch_cfg.branch_coupling, dtype=torch.float32)
+            "branch_coupling", torch.tensor(branch_cfg.branch_coupling, dtype=torch.float32)
         )
 
         # Pre-compute gain difference for NMDA blend (optimization)
         self.register_buffer(
             "_gain_minus_atten",
-            torch.tensor(branch_cfg.nmda_gain - branch_cfg.subthreshold_attenuation, dtype=torch.float32)
+            torch.tensor(
+                branch_cfg.nmda_gain - branch_cfg.subthreshold_attenuation, dtype=torch.float32
+            ),
         )
 
         # Synaptic conductance decay (for temporal integration)
-        self.register_buffer(
-            "syn_decay",
-            torch.tensor(branch_cfg.syn_decay, dtype=torch.float32)
-        )
+        self.register_buffer("syn_decay", torch.tensor(branch_cfg.syn_decay, dtype=torch.float32))
 
         # Somatic compartment (conductance-based LIF)
         self.soma = ConductanceLIF(n_neurons, self.config.soma_config)
@@ -367,10 +359,9 @@ class DendriticNeuron(nn.Module):
         # Input routing for "random" mode
         if self.config.input_routing == "random":
             # Create random permutation for each neuron
-            routing = torch.stack([
-                torch.randperm(self.config.total_inputs)
-                for _ in range(n_neurons)
-            ])
+            routing = torch.stack(
+                [torch.randperm(self.config.total_inputs) for _ in range(n_neurons)]
+            )
             self.register_buffer("input_routing_indices", routing)
         else:
             self.input_routing_indices = None
@@ -397,15 +388,11 @@ class DendriticNeuron(nn.Module):
 
         # Reset branch plateaus: [1, n_neurons, n_branches]
         self.branch_plateaus = torch.zeros(
-            batch_size, self.n_neurons, self.n_branches,
-            device=device
+            batch_size, self.n_neurons, self.n_branches, device=device
         )
 
         # Reset synaptic conductance (for temporal integration): [1, n_neurons, n_branches]
-        self.branch_g_syn = torch.zeros(
-            batch_size, self.n_neurons, self.n_branches,
-            device=device
-        )
+        self.branch_g_syn = torch.zeros(batch_size, self.n_neurons, self.n_branches, device=device)
 
         # Reset soma (ConductanceLIF already ADR-005 compliant)
         self.soma.reset_state()
@@ -456,16 +443,19 @@ class DendriticNeuron(nn.Module):
         else:  # "learned" - weights determine soft routing
             # For learned routing, inputs go to all branches weighted by attention
             # This is handled differently - all inputs available to all branches
-            routed = inputs.unsqueeze(1).unsqueeze(2).expand(
-                batch_size, self.n_neurons, self.n_branches, -1
+            routed = (
+                inputs.unsqueeze(1)
+                .unsqueeze(2)
+                .expand(batch_size, self.n_neurons, self.n_branches, -1)
             )
             # Truncate or pad to inputs_per_branch
             if routed.shape[-1] > self.inputs_per_branch:
-                routed = routed[..., :self.inputs_per_branch]
+                routed = routed[..., : self.inputs_per_branch]
             elif routed.shape[-1] < self.inputs_per_branch:
                 padding = torch.zeros(
-                    *routed.shape[:-1], self.inputs_per_branch - routed.shape[-1],
-                    device=inputs.device
+                    *routed.shape[:-1],
+                    self.inputs_per_branch - routed.shape[-1],
+                    device=inputs.device,
                 )
                 routed = torch.cat([routed, padding], dim=-1)
 
@@ -531,7 +521,9 @@ class DendriticNeuron(nn.Module):
             voltage_gate = torch.sigmoid(membrane_potential.unsqueeze(0).unsqueeze(-1) * 2)
             # effective_gain = 1 + (nmda_gain - 1) * voltage_gate
             # gain_diff = effective_gain - attenuation = (1 - atten) + (nmda_gain - 1) * voltage_gate
-            effective_gain_diff = (1.0 - self.subthreshold_attenuation) + (self.nmda_gain - 1.0) * voltage_gate
+            effective_gain_diff = (1.0 - self.subthreshold_attenuation) + (
+                self.nmda_gain - 1.0
+            ) * voltage_gate
             blend_factor = self.subthreshold_attenuation + effective_gain_diff * above_threshold
         else:
             # Static gain: use pre-computed (gain - attenuation)
@@ -577,11 +569,13 @@ class DendriticNeuron(nn.Module):
             membrane: Membrane potentials, shape [n_neurons]
         """
         # ADR-005: Validate 1D inputs
-        assert inputs.dim() == 1 and inputs.shape[0] == self.config.total_inputs, \
-            f"DendriticNeuron.forward: Expected 1D input [total_inputs={self.config.total_inputs}], got shape {inputs.shape}"
+        assert (
+            inputs.dim() == 1 and inputs.shape[0] == self.config.total_inputs
+        ), f"DendriticNeuron.forward: Expected 1D input [total_inputs={self.config.total_inputs}], got shape {inputs.shape}"
         if g_inh is not None:
-            assert g_inh.dim() == 1 and g_inh.shape[0] == self.n_neurons, \
-                f"DendriticNeuron.forward: Expected 1D g_inh [n_neurons={self.n_neurons}], got shape {g_inh.shape}"
+            assert (
+                g_inh.dim() == 1 and g_inh.shape[0] == self.n_neurons
+            ), f"DendriticNeuron.forward: Expected 1D g_inh [n_neurons={self.n_neurons}], got shape {g_inh.shape}"
 
         # Add internal batch dimension for vectorization: [total_inputs] → [1, total_inputs]
         inputs_batched = inputs.unsqueeze(0)
@@ -647,7 +641,9 @@ class DendriticNeuron(nn.Module):
         """Get current neuron state."""
         soma_state = self.soma.get_state()
         return {
-            "branch_plateaus": self.branch_plateaus.clone() if self.branch_plateaus is not None else None,
+            "branch_plateaus": (
+                self.branch_plateaus.clone() if self.branch_plateaus is not None else None
+            ),
             **soma_state,
         }
 
@@ -747,6 +743,6 @@ def create_scattered_input(
         start_idx = branch * inputs_per_branch
         # Activate n_active / n_branches inputs per branch
         n_per_branch = max(1, n_active // n_branches)
-        pattern[start_idx:start_idx + n_per_branch] = 1.0
+        pattern[start_idx : start_idx + n_per_branch] = 1.0
 
     return pattern

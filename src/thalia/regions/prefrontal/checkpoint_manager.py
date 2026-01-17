@@ -56,7 +56,7 @@ Date: December 13, 2025 (prefrontal neuromorphic checkpoint support)
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
@@ -96,7 +96,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         feedforward_weights: torch.Tensor,
         recurrent_weights: torch.Tensor,
         inhibition_weights: torch.Tensor,
-        input_prefix: str = "input"
+        input_prefix: str = "input",
     ) -> list[Dict[str, Any]]:
         """Extract incoming synapses for a single PFC neuron.
 
@@ -212,7 +212,9 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
                     elif synapse_type == "recurrent":
                         # Parse PFC neuron index
                         if source_id.startswith("pfc_neuron_"):
-                            source_idx = int(source_id.split("_")[2])  # Extract index from "pfc_neuron_X_step0"
+                            source_idx = int(
+                                source_id.split("_")[2]
+                            )  # Extract index from "pfc_neuron_X_step0"
                             if source_idx < rec_weights_restored.shape[1]:
                                 rec_weights_restored[i, source_idx] = weight
 
@@ -239,8 +241,8 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
 
         # Restore learning state
         learning_state = state["learning_state"]
-        if "stdp_strategy" in learning_state and hasattr(pfc, 'learning_strategy'):
-            if hasattr(pfc.learning_strategy, 'load_state'):
+        if "stdp_strategy" in learning_state and hasattr(pfc, "learning_strategy"):
+            if hasattr(pfc.learning_strategy, "load_state"):
                 pfc.learning_strategy.load_state(learning_state["stdp_strategy"])
 
         if "stp_recurrent" in learning_state and pfc.stp_recurrent is not None:
@@ -253,8 +255,14 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
 
         # Restore region state
         region_state = state["region_state"]
-        pfc.state.spikes = region_state["spikes"].to(pfc.device) if region_state["spikes"] is not None else None
-        pfc.state.active_rule = region_state["active_rule"].to(pfc.device) if region_state["active_rule"] is not None else None
+        pfc.state.spikes = (
+            region_state["spikes"].to(pfc.device) if region_state["spikes"] is not None else None
+        )
+        pfc.state.active_rule = (
+            region_state["active_rule"].to(pfc.device)
+            if region_state["active_rule"] is not None
+            else None
+        )
 
     # =========================================================================
     # HYBRID FORMAT - Auto-Selection Between Elastic and Neuromorphic
@@ -269,7 +277,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         pfc = self.prefrontal
         return {
             "n_neurons": pfc.n_output,
-            "has_growth": hasattr(pfc, 'grow_output'),
+            "has_growth": hasattr(pfc, "grow_output"),
         }
 
     def _should_use_neuromorphic(self) -> bool:
@@ -296,7 +304,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
             return True
 
         # If growth enabled, use neuromorphic
-        if hasattr(pfc, 'grow_output'):  # Has growth capability
+        if hasattr(pfc, "grow_output"):  # Has growth capability
             return True
 
         # For large stable regions, elastic tensor is more efficient
@@ -314,13 +322,27 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         neurons = []
 
         n_neurons = pfc.n_neurons  # Use instance variable, not config
-        membrane = pfc.state.membrane if pfc.state.membrane is not None else torch.zeros(n_neurons, device=pfc.device)
-        wm = pfc.state.working_memory if pfc.state.working_memory is not None else torch.zeros(n_neurons, device=pfc.device)
-        update_gate = pfc.state.update_gate if pfc.state.update_gate is not None else torch.zeros(n_neurons, device=pfc.device)
+        membrane = (
+            pfc.state.membrane
+            if pfc.state.membrane is not None
+            else torch.zeros(n_neurons, device=pfc.device)
+        )
+        wm = (
+            pfc.state.working_memory
+            if pfc.state.working_memory is not None
+            else torch.zeros(n_neurons, device=pfc.device)
+        )
+        update_gate = (
+            pfc.state.update_gate
+            if pfc.state.update_gate is not None
+            else torch.zeros(n_neurons, device=pfc.device)
+        )
 
         for i in range(n_neurons):
             # Generate stable neuron ID with actual creation timestep
-            birth_step = pfc._neuron_birth_steps[i].item() if hasattr(pfc, '_neuron_birth_steps') else 0
+            birth_step = (
+                pfc._neuron_birth_steps[i].item() if hasattr(pfc, "_neuron_birth_steps") else 0
+            )
             neuron_id = f"pfc_neuron_{i}_step{birth_step}"
 
             # Determine neuron type (rule vs working memory)
@@ -349,8 +371,8 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         learning_state = {}
 
         # STDP eligibility traces
-        if hasattr(pfc, 'learning_strategy') and pfc.learning_strategy is not None:
-            if hasattr(pfc.learning_strategy, 'get_state'):
+        if hasattr(pfc, "learning_strategy") and pfc.learning_strategy is not None:
+            if hasattr(pfc.learning_strategy, "get_state"):
                 learning_state["stdp_strategy"] = pfc.learning_strategy.get_state()
 
         # STP state for recurrent connections
@@ -373,7 +395,11 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
 
         return {
             "spikes": pfc.state.spikes.detach().clone() if pfc.state.spikes is not None else None,
-            "active_rule": pfc.state.active_rule.detach().clone() if pfc.state.active_rule is not None else None,
+            "active_rule": (
+                pfc.state.active_rule.detach().clone()
+                if pfc.state.active_rule is not None
+                else None
+            ),
         }
 
     def collect_state(self) -> Dict[str, Any]:
@@ -392,12 +418,11 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         state = state_obj.to_dict()
 
         # Add all weights
-        state['synaptic_weights'] = {
-            name: weights.detach().clone()
-            for name, weights in pfc.synaptic_weights.items()
+        state["synaptic_weights"] = {
+            name: weights.detach().clone() for name, weights in pfc.synaptic_weights.items()
         }
-        if hasattr(pfc, 'rec_weights'):
-            state['rec_weights'] = pfc.rec_weights.detach().clone()
+        if hasattr(pfc, "rec_weights"):
+            state["rec_weights"] = pfc.rec_weights.detach().clone()
 
         return state
 
@@ -414,15 +439,16 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
 
         # Use the region's native state restoration
         from thalia.regions.prefrontal.prefrontal import PrefrontalState
+
         state_obj = PrefrontalState.from_dict(state, device=str(pfc.device))
         pfc.load_state(state_obj)
 
         # Restore synaptic weights
-        if 'synaptic_weights' in state:
-            for name, weights in state['synaptic_weights'].items():
+        if "synaptic_weights" in state:
+            for name, weights in state["synaptic_weights"].items():
                 if name in pfc.synaptic_weights:
                     pfc.synaptic_weights[name].data = weights.to(pfc.device)
 
         # Restore recurrent weights
-        if 'rec_weights' in state and hasattr(pfc, 'rec_weights'):
-            pfc.rec_weights.data = state['rec_weights'].to(pfc.device)
+        if "rec_weights" in state and hasattr(pfc, "rec_weights"):
+            pfc.rec_weights.data = state["rec_weights"].to(pfc.device)

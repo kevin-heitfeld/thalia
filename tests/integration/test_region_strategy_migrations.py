@@ -33,9 +33,9 @@ class TestLayeredCortexStrategyMigration:
         cortex = LayeredCortex(config=config, sizes=sizes, device="cpu")
 
         # Verify strategies exist
-        assert hasattr(cortex, 'bcm_l4')
-        assert hasattr(cortex, 'bcm_l23')
-        assert hasattr(cortex, 'bcm_l5')
+        assert hasattr(cortex, "bcm_l4")
+        assert hasattr(cortex, "bcm_l23")
+        assert hasattr(cortex, "bcm_l5")
 
         # Verify all are CompositeStrategy instances
         assert isinstance(cortex.bcm_l4, CompositeStrategy)

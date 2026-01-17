@@ -56,15 +56,15 @@ Date: December 2025
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
 import math
 import random
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import torch.nn as nn
 
-from thalia.constants.time import TAU, MS_PER_SECOND
+from thalia.constants.time import MS_PER_SECOND, TAU
 from thalia.core.errors import ConfigurationError
 
 
@@ -81,6 +81,7 @@ class OscillatorConfig:
             Biological oscillators have drift ~0.05 rad (~3 degrees)
             This makes phase coding more robust and realistic
     """
+
     frequency_hz: float = 10.0
     dt_ms: float = 1.0
     initial_phase: float = 0.0
@@ -349,12 +350,12 @@ class SinusoidalOscillator(BrainOscillator):
 
 # Default frequencies for brain oscillation bands (Hz)
 OSCILLATOR_DEFAULTS = {
-    'delta': 2.0,   # 0.5-4 Hz: Deep sleep, memory consolidation
-    'theta': 8.0,   # 4-10 Hz: Memory encoding, spatial navigation
-    'alpha': 10.0,  # 8-13 Hz: Attention gating, inhibitory control
-    'beta': 20.0,   # 13-30 Hz: Motor control, active thinking
-    'gamma': 40.0,  # 30-100 Hz: Feature binding, local processing
-    'ripple': 150.0,  # 100-200 Hz: Sharp-wave ripples, memory replay
+    "delta": 2.0,  # 0.5-4 Hz: Deep sleep, memory consolidation
+    "theta": 8.0,  # 4-10 Hz: Memory encoding, spatial navigation
+    "alpha": 10.0,  # 8-13 Hz: Attention gating, inhibitory control
+    "beta": 20.0,  # 13-30 Hz: Motor control, active thinking
+    "gamma": 40.0,  # 30-100 Hz: Feature binding, local processing
+    "ripple": 150.0,  # 100-200 Hz: Sharp-wave ripples, memory replay
 }
 
 
@@ -403,24 +404,31 @@ class OscillatorCoupling:
         per_oscillator_strength: Optional dict to override strength per slow oscillator
             e.g., {'theta': 0.8, 'beta': 0.6} for gamma coupling. Negative values suppress.
     """
+
     oscillator: str
     coupling_strength: float = 0.8
     min_amplitude: float = 0.2
-    modulation_type: str = 'cosine'  # 'cosine' or 'sine'
+    modulation_type: str = "cosine"  # 'cosine' or 'sine'
     per_oscillator_strength: Optional[Dict[str, float]] = None
 
     def __post_init__(self):
         """Validate coupling parameters."""
         if not -1.0 <= self.coupling_strength <= 1.0:
-            raise ConfigurationError(f"coupling_strength must be in [-1, 1], got {self.coupling_strength}")
+            raise ConfigurationError(
+                f"coupling_strength must be in [-1, 1], got {self.coupling_strength}"
+            )
         if not 0.0 <= self.min_amplitude <= 1.0:
             raise ConfigurationError(f"min_amplitude must be in [0, 1], got {self.min_amplitude}")
-        if self.modulation_type not in ('cosine', 'sine'):
-            raise ConfigurationError(f"modulation_type must be 'cosine' or 'sine', got {self.modulation_type}")
+        if self.modulation_type not in ("cosine", "sine"):
+            raise ConfigurationError(
+                f"modulation_type must be 'cosine' or 'sine', got {self.modulation_type}"
+            )
         if self.per_oscillator_strength is not None:
             for strength in self.per_oscillator_strength.values():
                 if not -1.0 <= strength <= 1.0:
-                    raise ConfigurationError(f"per_oscillator_strength values must be in [-1, 1], got {strength}")
+                    raise ConfigurationError(
+                        f"per_oscillator_strength values must be in [-1, 1], got {strength}"
+                    )
 
     def get_strength_for(self, slow_oscillator: str) -> float:
         """Get coupling strength for a specific slow oscillator.
@@ -431,7 +439,10 @@ class OscillatorCoupling:
         Returns:
             Coupling strength [0, 1]
         """
-        if self.per_oscillator_strength is not None and slow_oscillator in self.per_oscillator_strength:
+        if (
+            self.per_oscillator_strength is not None
+            and slow_oscillator in self.per_oscillator_strength
+        ):
             return self.per_oscillator_strength[slow_oscillator]
         return self.coupling_strength
 
@@ -487,18 +498,18 @@ class OscillatorManager:
     """
 
     # Oscillator hierarchy (low to high frequency)
-    OSCILLATOR_HIERARCHY = ['delta', 'theta', 'alpha', 'beta', 'gamma', 'ripple']
+    OSCILLATOR_HIERARCHY = ["delta", "theta", "alpha", "beta", "gamma", "ripple"]
 
     def __init__(
         self,
         dt_ms: float = 1.0,
         device: str = "cpu",
-        delta_freq: float = OSCILLATOR_DEFAULTS['delta'],
-        theta_freq: float = OSCILLATOR_DEFAULTS['theta'],
-        alpha_freq: float = OSCILLATOR_DEFAULTS['alpha'],
-        beta_freq: float = OSCILLATOR_DEFAULTS['beta'],
-        gamma_freq: float = OSCILLATOR_DEFAULTS['gamma'],
-        ripple_freq: float = OSCILLATOR_DEFAULTS['ripple'],
+        delta_freq: float = OSCILLATOR_DEFAULTS["delta"],
+        theta_freq: float = OSCILLATOR_DEFAULTS["theta"],
+        alpha_freq: float = OSCILLATOR_DEFAULTS["alpha"],
+        beta_freq: float = OSCILLATOR_DEFAULTS["beta"],
+        gamma_freq: float = OSCILLATOR_DEFAULTS["gamma"],
+        ripple_freq: float = OSCILLATOR_DEFAULTS["ripple"],
         couplings: Optional[List[OscillatorCoupling]] = None,
     ):
         """Initialize oscillator manager with all brain rhythms.
@@ -544,68 +555,68 @@ class OscillatorManager:
                 # Theta: Modulated by delta
                 # Sleep consolidation (delta-theta during NREM, memory replay)
                 OscillatorCoupling(
-                    oscillator='theta',
+                    oscillator="theta",
                     coupling_strength=0.7,
                     min_amplitude=0.1,
-                    modulation_type='cosine',  # Max theta at delta up-state
+                    modulation_type="cosine",  # Max theta at delta up-state
                     per_oscillator_strength={
-                        'delta': 0.7,  # Strong: replay nested in slow waves
-                    }
+                        "delta": 0.7,  # Strong: replay nested in slow waves
+                    },
                 ),
                 # Alpha: Modulated by delta, theta
                 # Attention gating and inhibitory control
                 OscillatorCoupling(
-                    oscillator='alpha',
+                    oscillator="alpha",
                     coupling_strength=0.4,  # Base strength
                     min_amplitude=0.3,
-                    modulation_type='sine',  # Max alpha at phase offset
+                    modulation_type="sine",  # Max alpha at phase offset
                     per_oscillator_strength={
-                        'delta': 0.3,  # Weak: sleep-wake transitions
-                        'theta': 0.5,  # Medium: theta-alpha interplay in attention
-                    }
+                        "delta": 0.3,  # Weak: sleep-wake transitions
+                        "theta": 0.5,  # Medium: theta-alpha interplay in attention
+                    },
                 ),
                 # Beta: Modulated by delta, theta, alpha
                 # Working memory-action coordination, motor planning
                 OscillatorCoupling(
-                    oscillator='beta',
+                    oscillator="beta",
                     coupling_strength=0.5,  # Base strength
                     min_amplitude=0.3,
-                    modulation_type='cosine',
+                    modulation_type="cosine",
                     per_oscillator_strength={
-                        'delta': 0.2,  # Very weak: sleep effect
-                        'theta': 0.6,  # Medium: working memory coordination
-                        'alpha': 0.4,  # Weak: attention modulation
-                    }
+                        "delta": 0.2,  # Very weak: sleep effect
+                        "theta": 0.6,  # Medium: working memory coordination
+                        "alpha": 0.4,  # Weak: attention modulation
+                    },
                 ),
                 # Gamma: Modulated by ALL slower oscillators (delta, theta, alpha, beta)
                 # Working memory (theta-gamma), motor timing (beta-gamma), attention (alpha-gamma)
                 OscillatorCoupling(
-                    oscillator='gamma',
+                    oscillator="gamma",
                     coupling_strength=0.7,  # Base strength
                     min_amplitude=0.2,
-                    modulation_type='cosine',  # Max at trough
+                    modulation_type="cosine",  # Max at trough
                     per_oscillator_strength={
-                        'delta': 0.3,  # Weakest: sleep consolidation
-                        'theta': 0.8,  # Strongest: working memory (7±2 slots)
-                        'alpha': 0.5,  # Medium: attention gating
-                        'beta': 0.6,   # Medium: motor timing
-                    }
+                        "delta": 0.3,  # Weakest: sleep consolidation
+                        "theta": 0.8,  # Strongest: working memory (7±2 slots)
+                        "alpha": 0.5,  # Medium: attention gating
+                        "beta": 0.6,  # Medium: motor timing
+                    },
                 ),
                 # Ripple: Sharp-wave ripples modulated by ALL slower oscillators
                 # Memory consolidation during slow-wave sleep (delta) and offline periods (theta)
                 # Suppressed during active processing (alpha/beta/gamma high)
                 OscillatorCoupling(
-                    oscillator='ripple',
+                    oscillator="ripple",
                     coupling_strength=0.8,  # Base strength
                     min_amplitude=0.1,  # Can be strongly suppressed during waking
-                    modulation_type='cosine',  # Max at specific phase
+                    modulation_type="cosine",  # Max at specific phase
                     per_oscillator_strength={
-                        'delta': 0.9,   # Very strong: ripples during slow-wave sleep
-                        'theta': 0.6,   # Medium: ripples at theta trough (offline)
-                        'alpha': -0.4,  # Negative: suppress during attention
-                        'beta': -0.5,   # Negative: suppress during active cognition
-                        'gamma': -0.3,  # Negative: suppress during sensory processing
-                    }
+                        "delta": 0.9,  # Very strong: ripples during slow-wave sleep
+                        "theta": 0.6,  # Medium: ripples at theta trough (offline)
+                        "alpha": -0.4,  # Negative: suppress during attention
+                        "beta": -0.5,  # Negative: suppress during active cognition
+                        "gamma": -0.3,  # Negative: suppress during sensory processing
+                    },
                 ),
             ]
         else:
@@ -619,12 +630,12 @@ class OscillatorManager:
         # State tracking
         self._time_ms: float = 0.0
         self._enabled: Dict[str, bool] = {
-            'delta': True,
-            'theta': True,
-            'alpha': True,
-            'beta': True,
-            'gamma': False,  # Disabled: Should emerge from L6→TRN loop (~25ms)
-            'ripple': True,
+            "delta": True,
+            "theta": True,
+            "alpha": True,
+            "beta": True,
+            "gamma": False,  # Disabled: Should emerge from L6→TRN loop (~25ms)
+            "ripple": True,
         }
 
     def advance(self, dt_ms: Optional[float] = None) -> None:
@@ -635,15 +646,15 @@ class OscillatorManager:
         """
         dt = dt_ms or self.dt_ms
 
-        if self._enabled['delta']:
+        if self._enabled["delta"]:
             self.delta.advance(dt)
-        if self._enabled['theta']:
+        if self._enabled["theta"]:
             self.theta.advance(dt)
-        if self._enabled['alpha']:
+        if self._enabled["alpha"]:
             self.alpha.advance(dt)
-        if self._enabled['beta']:
+        if self._enabled["beta"]:
             self.beta.advance(dt)
-        if self._enabled['gamma']:
+        if self._enabled["gamma"]:
             self.gamma.advance(dt)
 
         self._time_ms += dt
@@ -655,11 +666,11 @@ class OscillatorManager:
             Dictionary mapping oscillator name to phase [0, 2π)
         """
         return {
-            'delta': self.delta.phase,
-            'theta': self.theta.phase,
-            'alpha': self.alpha.phase,
-            'beta': self.beta.phase,
-            'gamma': self.gamma.phase,
+            "delta": self.delta.phase,
+            "theta": self.theta.phase,
+            "alpha": self.alpha.phase,
+            "beta": self.beta.phase,
+            "gamma": self.gamma.phase,
         }
 
     def get_frequencies(self) -> Dict[str, float]:
@@ -669,11 +680,11 @@ class OscillatorManager:
             Dictionary mapping oscillator name to frequency (Hz)
         """
         return {
-            'delta': self.delta.frequency_hz,
-            'theta': self.theta.frequency_hz,
-            'alpha': self.alpha.frequency_hz,
-            'beta': self.beta.frequency_hz,
-            'gamma': self.gamma.frequency_hz,
+            "delta": self.delta.frequency_hz,
+            "theta": self.theta.frequency_hz,
+            "alpha": self.alpha.frequency_hz,
+            "beta": self.beta.frequency_hz,
+            "gamma": self.gamma.frequency_hz,
         }
 
     def get_signals(self) -> Dict[str, float]:
@@ -687,11 +698,11 @@ class OscillatorManager:
         """
         # Get base signals
         signals = {
-            'delta': self.delta.signal,
-            'theta': self.theta.signal,
-            'alpha': self.alpha.signal,
-            'beta': self.beta.signal,
-            'gamma': self.gamma.signal,
+            "delta": self.delta.signal,
+            "theta": self.theta.signal,
+            "alpha": self.alpha.signal,
+            "beta": self.beta.signal,
+            "gamma": self.gamma.signal,
         }
 
         # Get effective amplitudes (accounts for ALL slow oscillator modulation)
@@ -717,17 +728,16 @@ class OscillatorManager:
             ValueError: If oscillator name is invalid
         """
         oscillators = {
-            'delta': self.delta,
-            'theta': self.theta,
-            'alpha': self.alpha,
-            'beta': self.beta,
-            'gamma': self.gamma,
+            "delta": self.delta,
+            "theta": self.theta,
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "gamma": self.gamma,
         }
 
         if name not in oscillators:
             raise ValueError(
-                f"Unknown oscillator: {name}. "
-                f"Choose from: {list(oscillators.keys())}"
+                f"Unknown oscillator: {name}. " f"Choose from: {list(oscillators.keys())}"
             )
 
         return oscillators[name]
@@ -805,7 +815,7 @@ class OscillatorManager:
         slow_phase = slow_osc.phase
 
         # Calculate modulation based on type
-        if coupling.modulation_type == 'cosine':
+        if coupling.modulation_type == "cosine":
             # Cosine: max at trough (phase=0), min at peak (phase=π)
             # (1 + cos(θ))/2 maps [0, 2π] → [0, 1] with max at θ=0
             modulation = 0.5 * (1.0 + math.cos(slow_phase))
@@ -815,10 +825,7 @@ class OscillatorManager:
 
         # Apply coupling strength and minimum amplitude
         # amplitude = min + (max - min) × modulation × strength
-        amplitude = (
-            coupling.min_amplitude +
-            (1.0 - coupling.min_amplitude) * modulation * strength
-        )
+        amplitude = coupling.min_amplitude + (1.0 - coupling.min_amplitude) * modulation * strength
 
         return amplitude
 
@@ -966,7 +973,7 @@ class OscillatorManager:
         - Jensen & Lisman (2005): Hippocampal sequence encoding driven by theta-gamma coupling
         """
         try:
-            theta = self.get_oscillator('theta')
+            theta = self.get_oscillator("theta")
         except ValueError:
             return 0  # No theta oscillator
 
@@ -986,27 +993,27 @@ class OscillatorManager:
         """
         if stage == "NREM":
             # Slow-wave sleep: strong delta, weak gamma
-            self.set_frequency('delta', 2.0)
-            self.set_frequency('theta', 6.0)  # Slower theta
-            self.set_frequency('gamma', 30.0)  # Slow gamma
-            self.enable_oscillator('alpha', False)  # No alpha during sleep
-            self.enable_oscillator('beta', False)   # No beta during sleep
+            self.set_frequency("delta", 2.0)
+            self.set_frequency("theta", 6.0)  # Slower theta
+            self.set_frequency("gamma", 30.0)  # Slow gamma
+            self.enable_oscillator("alpha", False)  # No alpha during sleep
+            self.enable_oscillator("beta", False)  # No beta during sleep
 
         elif stage == "REM":
             # Paradoxical sleep: weak delta, strong theta, fast gamma
-            self.set_frequency('delta', 1.0)   # Minimal delta
-            self.set_frequency('theta', 7.0)   # Theta dominant
-            self.set_frequency('gamma', 60.0)  # Fast gamma
-            self.enable_oscillator('alpha', False)
-            self.enable_oscillator('beta', False)
+            self.set_frequency("delta", 1.0)  # Minimal delta
+            self.set_frequency("theta", 7.0)  # Theta dominant
+            self.set_frequency("gamma", 60.0)  # Fast gamma
+            self.enable_oscillator("alpha", False)
+            self.enable_oscillator("beta", False)
 
         else:  # AWAKE or default
             # Restore normal frequencies
-            self.set_frequency('delta', 2.0)
-            self.set_frequency('theta', 8.0)
-            self.set_frequency('alpha', 10.0)
-            self.set_frequency('beta', 20.0)
-            self.set_frequency('gamma', 40.0)
+            self.set_frequency("delta", 2.0)
+            self.set_frequency("theta", 8.0)
+            self.set_frequency("alpha", 10.0)
+            self.set_frequency("beta", 20.0)
+            self.set_frequency("gamma", 40.0)
             # Enable all
             for name in self._enabled:
                 self.enable_oscillator(name, True)
@@ -1027,13 +1034,13 @@ class OscillatorManager:
             Dictionary with all oscillator states
         """
         return {
-            'delta': self.delta.get_state(),
-            'theta': self.theta.get_state(),
-            'alpha': self.alpha.get_state(),
-            'beta': self.beta.get_state(),
-            'gamma': self.gamma.get_state(),
-            'time_ms': self._time_ms,
-            'enabled': self._enabled.copy(),
+            "delta": self.delta.get_state(),
+            "theta": self.theta.get_state(),
+            "alpha": self.alpha.get_state(),
+            "beta": self.beta.get_state(),
+            "gamma": self.gamma.get_state(),
+            "time_ms": self._time_ms,
+            "enabled": self._enabled.copy(),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -1042,10 +1049,12 @@ class OscillatorManager:
         Args:
             state: State dictionary from get_state()
         """
-        self.delta.set_state(state['delta'])
-        self.theta.set_state(state['theta'])
-        self.alpha.set_state(state['alpha'])
-        self.beta.set_state(state['beta'])
-        self.gamma.set_state(state['gamma'])
-        self._time_ms = state.get('time_ms', 0.0)
-        self._enabled = state.get('enabled', {name: True for name in ['delta', 'theta', 'alpha', 'beta', 'gamma']})
+        self.delta.set_state(state["delta"])
+        self.theta.set_state(state["theta"])
+        self.alpha.set_state(state["alpha"])
+        self.beta.set_state(state["beta"])
+        self.gamma.set_state(state["gamma"])
+        self._time_ms = state.get("time_ms", 0.0)
+        self._enabled = state.get(
+            "enabled", {name: True for name in ["delta", "theta", "alpha", "beta", "gamma"]}
+        )

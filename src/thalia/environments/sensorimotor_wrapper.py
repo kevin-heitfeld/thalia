@@ -118,35 +118,37 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any, List
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
-import torch
-import numpy as np
 import gymnasium as gym
-
+import numpy as np
+import torch
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
+
 class SpikeEncoding(Enum):
     """Spike encoding strategies for proprioception."""
-    RATE = "rate"           # Rate coding (firing rate ∝ value)
+
+    RATE = "rate"  # Rate coding (firing rate ∝ value)
     POPULATION = "population"  # Population coding (Gaussian tuning curves)
-    TEMPORAL = "temporal"   # Temporal coding (spike timing)
+    TEMPORAL = "temporal"  # Temporal coding (spike timing)
 
 
 @dataclass
 class SensorimotorConfig:
     """Configuration for sensorimotor wrapper."""
+
     # Environment
     env_name: str = "Reacher-v4"
     render_mode: Optional[str] = None  # 'human' for visualization
 
     # Spike encoding
     spike_encoding: str = "rate"  # 'rate', 'population', 'temporal'
-    n_neurons_per_dof: int = 50   # Neurons per degree of freedom
+    n_neurons_per_dof: int = 50  # Neurons per degree of freedom
     max_firing_rate: float = 100.0  # Hz (for rate coding)
     dt: float = 0.001  # Simulation timestep (1ms)
 
@@ -156,7 +158,7 @@ class SensorimotorConfig:
 
     # Noise (biological realism)
     sensory_noise_std: float = 0.02  # Proprioceptive noise
-    motor_noise_std: float = 0.01    # Motor command noise
+    motor_noise_std: float = 0.01  # Motor command noise
 
     # Device
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -165,6 +167,7 @@ class SensorimotorConfig:
 # ============================================================================
 # Sensorimotor Wrapper
 # ============================================================================
+
 
 class SensorimotorWrapper:
     """Wrap Gymnasium MuJoCo environments for Thalia's spiking networks.
@@ -339,7 +342,7 @@ class SensorimotorWrapper:
         spikes = []
         for value in obs:
             # Compute tuning curve responses (Gaussian)
-            responses = np.exp(-((value - centers) ** 2) / (2 * tuning_width ** 2))
+            responses = np.exp(-((value - centers) ** 2) / (2 * tuning_width**2))
 
             # Convert to spike probabilities
             spike_probs = responses * self.config.max_firing_rate * self.config.dt
@@ -388,7 +391,9 @@ class SensorimotorWrapper:
         self._last_action = action_smoothed
 
         # Add motor noise
-        action_noisy = action_smoothed + np.random.randn(self.action_dim) * self.config.motor_noise_std
+        action_noisy = (
+            action_smoothed + np.random.randn(self.action_dim) * self.config.motor_noise_std
+        )
 
         # Clip to action bounds
         action_clipped = np.clip(

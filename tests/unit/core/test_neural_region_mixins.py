@@ -11,17 +11,19 @@ from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 
 def create_test_prefrontal(input_size: int, n_neurons: int, device: str) -> Prefrontal:
     """Create Prefrontal instance for testing with Phase 2 pattern."""
-    sizes = {'input_size': input_size, 'n_neurons': n_neurons}
+    sizes = {"input_size": input_size, "n_neurons": n_neurons}
     config = PrefrontalConfig()
     return Prefrontal(config=config, sizes=sizes, device=device)
 
 
-def create_test_cerebellum(input_size: int, purkinje_size: int, device: str, **kwargs) -> Cerebellum:
+def create_test_cerebellum(
+    input_size: int, purkinje_size: int, device: str, **kwargs
+) -> Cerebellum:
     """Create Cerebellum instance for testing with Phase 2 pattern."""
-    expansion = kwargs.pop('granule_expansion_factor', 4.0)
+    expansion = kwargs.pop("granule_expansion_factor", 4.0)
     calc = LayerSizeCalculator()
     sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
-    sizes['input_size'] = input_size  # Add input_size to sizes dict
+    sizes["input_size"] = input_size  # Add input_size to sizes dict
     config = CerebellumConfig(**kwargs)
     return Cerebellum(config=config, sizes=sizes, device=device)
 
@@ -32,15 +34,15 @@ def test_neural_region_has_both_mixins():
     pfc = create_test_prefrontal(input_size=64, n_neurons=128, device="cpu")
 
     # Verify it has StateLoadingMixin methods
-    assert hasattr(pfc, 'load_state')
-    assert hasattr(pfc, '_restore_neuron_state')
-    assert hasattr(pfc, '_restore_conductances')
-    assert hasattr(pfc, '_restore_neuromodulators')
-    assert hasattr(pfc, '_load_custom_state')
+    assert hasattr(pfc, "load_state")
+    assert hasattr(pfc, "_restore_neuron_state")
+    assert hasattr(pfc, "_restore_conductances")
+    assert hasattr(pfc, "_restore_neuromodulators")
+    assert hasattr(pfc, "_load_custom_state")
 
     # Verify it has LearningStrategyMixin methods
-    assert hasattr(pfc, 'apply_strategy_learning')
-    assert hasattr(pfc, 'learning_strategy')
+    assert hasattr(pfc, "apply_strategy_learning")
+    assert hasattr(pfc, "learning_strategy")
 
     # Verify it's an instance of both mixins (via NeuralRegion)
     assert isinstance(pfc, StateLoadingMixin)
@@ -57,9 +59,9 @@ def test_cerebellum_inherits_mixins_from_base():
     )
 
     # Verify StateLoadingMixin methods available
-    assert hasattr(cerebellum, 'load_state')
-    assert hasattr(cerebellum, '_restore_neuron_state')
-    assert hasattr(cerebellum, '_load_custom_state')
+    assert hasattr(cerebellum, "load_state")
+    assert hasattr(cerebellum, "_restore_neuron_state")
+    assert hasattr(cerebellum, "_load_custom_state")
 
     # Verify inheritance chain
     assert isinstance(cerebellum, StateLoadingMixin)

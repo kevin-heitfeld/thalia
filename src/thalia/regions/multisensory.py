@@ -91,9 +91,9 @@ Date: December 12, 2025 (Tier 3 Implementation)
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
 import math
-from typing import Optional, Dict, Any
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -102,8 +102,8 @@ from thalia.components.synapses import WeightInitializer
 from thalia.config.learning_config import HebbianLearningConfig
 from thalia.constants.learning import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
 from thalia.coordination import SinusoidalOscillator
-from thalia.core.neural_region import NeuralRegion
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.neural_region import NeuralRegion
 from thalia.learning import create_strategy
 from thalia.managers.component_registry import register_region
 
@@ -131,6 +131,7 @@ class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
         integration_strength: Strength from pools → integration neurons
         salience_competition_strength: Winner-take-all competition strength
     """
+
     # Input sizes
     visual_input_size: int = 0
     auditory_input_size: int = 0
@@ -181,10 +182,10 @@ class MultimodalIntegration(NeuralRegion):
         """
         # Compute total neurons from pool sizes
         n_neurons = (
-            config.visual_pool_size +
-            config.auditory_pool_size +
-            config.language_pool_size +
-            config.integration_pool_size
+            config.visual_pool_size
+            + config.auditory_pool_size
+            + config.language_pool_size
+            + config.integration_pool_size
         )
 
         # Call NeuralRegion init
@@ -246,66 +247,83 @@ class MultimodalIntegration(NeuralRegion):
         # =====================================================================
 
         # Visual ↔ Auditory
-        self.visual_to_auditory = WeightInitializer.sparse_random(
-            n_output=self.auditory_pool_size,
-            n_input=self.visual_pool_size,
-            sparsity=0.3,
-            device=config.device,
-        ) * config.cross_modal_strength
+        self.visual_to_auditory = (
+            WeightInitializer.sparse_random(
+                n_output=self.auditory_pool_size,
+                n_input=self.visual_pool_size,
+                sparsity=0.3,
+                device=config.device,
+            )
+            * config.cross_modal_strength
+        )
 
-        self.auditory_to_visual = WeightInitializer.sparse_random(
-            n_output=self.visual_pool_size,
-            n_input=self.auditory_pool_size,
-            sparsity=0.3,
-            device=config.device,
-        ) * config.cross_modal_strength
+        self.auditory_to_visual = (
+            WeightInitializer.sparse_random(
+                n_output=self.visual_pool_size,
+                n_input=self.auditory_pool_size,
+                sparsity=0.3,
+                device=config.device,
+            )
+            * config.cross_modal_strength
+        )
 
         # Visual ↔ Language
-        self.visual_to_language = WeightInitializer.sparse_random(
-            n_output=self.language_pool_size,
-            n_input=self.visual_pool_size,
-            sparsity=0.3,
-            device=config.device,
-        ) * config.cross_modal_strength
+        self.visual_to_language = (
+            WeightInitializer.sparse_random(
+                n_output=self.language_pool_size,
+                n_input=self.visual_pool_size,
+                sparsity=0.3,
+                device=config.device,
+            )
+            * config.cross_modal_strength
+        )
 
-        self.language_to_visual = WeightInitializer.sparse_random(
-            n_output=self.visual_pool_size,
-            n_input=self.language_pool_size,
-            sparsity=0.3,
-            device=config.device,
-        ) * config.cross_modal_strength
+        self.language_to_visual = (
+            WeightInitializer.sparse_random(
+                n_output=self.visual_pool_size,
+                n_input=self.language_pool_size,
+                sparsity=0.3,
+                device=config.device,
+            )
+            * config.cross_modal_strength
+        )
 
         # Auditory ↔ Language
-        self.auditory_to_language = WeightInitializer.sparse_random(
-            n_output=self.language_pool_size,
-            n_input=self.auditory_pool_size,
-            sparsity=0.3,
-            device=config.device,
-        ) * config.cross_modal_strength
+        self.auditory_to_language = (
+            WeightInitializer.sparse_random(
+                n_output=self.language_pool_size,
+                n_input=self.auditory_pool_size,
+                sparsity=0.3,
+                device=config.device,
+            )
+            * config.cross_modal_strength
+        )
 
-        self.language_to_auditory = WeightInitializer.sparse_random(
-            n_output=self.auditory_pool_size,
-            n_input=self.language_pool_size,
-            sparsity=0.3,
-            device=config.device,
-        ) * config.cross_modal_strength
+        self.language_to_auditory = (
+            WeightInitializer.sparse_random(
+                n_output=self.auditory_pool_size,
+                n_input=self.language_pool_size,
+                sparsity=0.3,
+                device=config.device,
+            )
+            * config.cross_modal_strength
+        )
 
         # =====================================================================
         # INTEGRATION WEIGHTS (pools → integration neurons)
         # =====================================================================
 
-        total_pool_size = (
-            self.visual_pool_size +
-            self.auditory_pool_size +
-            self.language_pool_size
-        )
+        total_pool_size = self.visual_pool_size + self.auditory_pool_size + self.language_pool_size
 
-        self.integration_weights = WeightInitializer.sparse_random(
-            n_output=self.integration_pool_size,
-            n_input=total_pool_size,
-            sparsity=0.4,
-            device=config.device,
-        ) * config.integration_strength
+        self.integration_weights = (
+            WeightInitializer.sparse_random(
+                n_output=self.integration_pool_size,
+                n_input=total_pool_size,
+                sparsity=0.4,
+                device=config.device,
+            )
+            * config.integration_strength
+        )
 
         # =====================================================================
         # GAMMA SYNCHRONIZATION (for cross-modal binding)
@@ -392,7 +410,11 @@ class MultimodalIntegration(NeuralRegion):
         # =====================================================================
         coherence_gate = 1.0  # Default: no gating
 
-        if self.config.use_gamma_binding and visual_input is not None and auditory_input is not None:
+        if (
+            self.config.use_gamma_binding
+            and visual_input is not None
+            and auditory_input is not None
+        ):
             # Advance oscillators
             self.visual_gamma.advance(self.config.dt_ms)
             self.auditory_gamma.advance(self.config.dt_ms)
@@ -487,29 +509,32 @@ class MultimodalIntegration(NeuralRegion):
         integration_current = torch.zeros(self.integration_pool_size, device=self.config.device)
 
         # Concatenate currents for all pools (including integration placeholder)
-        pool_currents = torch.cat([
-            visual_current,
-            auditory_current,
-            language_current,
-            integration_current,  # Will be updated after we get pool spikes
-        ])
+        pool_currents = torch.cat(
+            [
+                visual_current,
+                auditory_current,
+                language_current,
+                integration_current,  # Will be updated after we get pool spikes
+            ]
+        )
 
         # Get spikes from pool neurons (visual, auditory, language)
         pool_spikes, _ = self.neurons(pool_currents)  # Returns (spikes, membrane)
         pool_spikes = pool_spikes.float()  # Convert bool spikes to float for downstream ops
 
         # Split into pools
-        self.visual_pool_spikes = pool_spikes[:self.visual_pool_size]
+        self.visual_pool_spikes = pool_spikes[: self.visual_pool_size]
         self.auditory_pool_spikes = pool_spikes[
-            self.visual_pool_size:
-            self.visual_pool_size + self.auditory_pool_size
+            self.visual_pool_size : self.visual_pool_size + self.auditory_pool_size
         ]
         self.language_pool_spikes = pool_spikes[
-            self.visual_pool_size + self.auditory_pool_size:
-            self.visual_pool_size + self.auditory_pool_size + self.language_pool_size
+            self.visual_pool_size
+            + self.auditory_pool_size : self.visual_pool_size
+            + self.auditory_pool_size
+            + self.language_pool_size
         ]
         self.integration_spikes = pool_spikes[
-            self.visual_pool_size + self.auditory_pool_size + self.language_pool_size:
+            self.visual_pool_size + self.auditory_pool_size + self.language_pool_size :
         ]
 
         # =====================================================================
@@ -618,7 +643,7 @@ class MultimodalIntegration(NeuralRegion):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.2,
     ) -> None:
         """Grow multimodal integration input dimension.
@@ -634,7 +659,11 @@ class MultimodalIntegration(NeuralRegion):
             Growth is distributed across modalities based on their current ratios.
         """
         # Calculate growth per modality based on current ratios
-        total_input = self.config.visual_input_size + self.config.auditory_input_size + self.config.language_input_size
+        total_input = (
+            self.config.visual_input_size
+            + self.config.auditory_input_size
+            + self.config.language_input_size
+        )
 
         if total_input == 0:
             # Edge case: no input configured yet, distribute evenly
@@ -656,7 +685,7 @@ class MultimodalIntegration(NeuralRegion):
                 self.visual_input_weights,
                 visual_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
 
         # Expand auditory input weights
@@ -665,7 +694,7 @@ class MultimodalIntegration(NeuralRegion):
                 self.auditory_input_weights,
                 auditory_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
 
         # Expand language input weights
@@ -674,7 +703,7 @@ class MultimodalIntegration(NeuralRegion):
                 self.language_input_weights,
                 language_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
 
         # Update config
@@ -698,7 +727,7 @@ class MultimodalIntegration(NeuralRegion):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.2,
     ) -> None:
         """Grow multimodal integration output dimension.
@@ -715,10 +744,10 @@ class MultimodalIntegration(NeuralRegion):
         """
         # Compute old total from pool sizes
         old_n_output = (
-            self.visual_pool_size +
-            self.auditory_pool_size +
-            self.language_pool_size +
-            self.integration_pool_size
+            self.visual_pool_size
+            + self.auditory_pool_size
+            + self.language_pool_size
+            + self.integration_pool_size
         )
         new_n_output = old_n_output + n_new
 
@@ -748,7 +777,7 @@ class MultimodalIntegration(NeuralRegion):
                 self.visual_input_weights,
                 visual_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
 
         # Expand auditory input weights [auditory_pool, auditory_input]
@@ -757,7 +786,7 @@ class MultimodalIntegration(NeuralRegion):
                 self.auditory_input_weights,
                 auditory_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
 
         # Expand language input weights [language_pool, language_input]
@@ -766,7 +795,7 @@ class MultimodalIntegration(NeuralRegion):
                 self.language_input_weights,
                 language_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
 
         # Expand cross-modal weights (complex - need to handle both dimensions)
@@ -777,28 +806,28 @@ class MultimodalIntegration(NeuralRegion):
                 self.visual_to_auditory,
                 auditory_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
-            self.visual_to_auditory = self._grow_weight_matrix_cols(
-                expanded,
-                visual_growth,
-                initializer=initialization,
-                sparsity=sparsity
-            ) * self.multisensory_config.cross_modal_strength
+            self.visual_to_auditory = (
+                self._grow_weight_matrix_cols(
+                    expanded, visual_growth, initializer=initialization, sparsity=sparsity
+                )
+                * self.multisensory_config.cross_modal_strength
+            )
 
             # auditory_to_visual [visual, auditory]
             expanded = self._grow_weight_matrix_rows(
                 self.auditory_to_visual,
                 visual_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
-            self.auditory_to_visual = self._grow_weight_matrix_cols(
-                expanded,
-                auditory_growth,
-                initializer=initialization,
-                sparsity=sparsity
-            ) * self.multisensory_config.cross_modal_strength
+            self.auditory_to_visual = (
+                self._grow_weight_matrix_cols(
+                    expanded, auditory_growth, initializer=initialization, sparsity=sparsity
+                )
+                * self.multisensory_config.cross_modal_strength
+            )
 
         # Similar expansions for other cross-modal connections would go here...
         # (abbreviated for brevity, but follows same pattern)
@@ -809,12 +838,15 @@ class MultimodalIntegration(NeuralRegion):
         # Expand integration weights
         # This is complex as it connects all pools - simplified version:
         new_total_pool = self.visual_pool_size + self.auditory_pool_size + self.language_pool_size
-        self.integration_weights = WeightInitializer.sparse_random(
-            n_output=self.integration_pool_size,
-            n_input=new_total_pool,
-            sparsity=0.3,
-            device=self.device,
-        ) * self.multisensory_config.integration_strength
+        self.integration_weights = (
+            WeightInitializer.sparse_random(
+                n_output=self.integration_pool_size,
+                n_input=new_total_pool,
+                sparsity=0.3,
+                device=self.device,
+            )
+            * self.multisensory_config.integration_strength
+        )
 
         # Update configs (including explicit pool sizes)
         self.config = replace(
@@ -840,8 +872,8 @@ class MultimodalIntegration(NeuralRegion):
         """
         from thalia.core.diagnostics_schema import (
             compute_activity_metrics,
-            compute_plasticity_metrics,
             compute_health_metrics,
+            compute_plasticity_metrics,
         )
 
         # Compute activity for each pool
@@ -863,12 +895,17 @@ class MultimodalIntegration(NeuralRegion):
         )
 
         # Overall activity (weighted average across pools)
-        total_neurons = self.visual_pool_size + self.auditory_pool_size + self.language_pool_size + self.integration_pool_size
+        total_neurons = (
+            self.visual_pool_size
+            + self.auditory_pool_size
+            + self.language_pool_size
+            + self.integration_pool_size
+        )
         total_firing_rate = (
-            visual_activity.get("firing_rate", 0.0) * self.visual_pool_size +
-            auditory_activity.get("firing_rate", 0.0) * self.auditory_pool_size +
-            language_activity.get("firing_rate", 0.0) * self.language_pool_size +
-            integration_activity.get("firing_rate", 0.0) * self.integration_pool_size
+            visual_activity.get("firing_rate", 0.0) * self.visual_pool_size
+            + auditory_activity.get("firing_rate", 0.0) * self.auditory_pool_size
+            + language_activity.get("firing_rate", 0.0) * self.language_pool_size
+            + integration_activity.get("firing_rate", 0.0) * self.integration_pool_size
         ) / total_neurons
 
         # Compute plasticity metrics for cross-modal weights
@@ -880,9 +917,9 @@ class MultimodalIntegration(NeuralRegion):
             )
             # Add average cross-modal strength
             cross_modal_mean = (
-                self.visual_to_auditory.mean().item() +
-                self.visual_to_language.mean().item() +
-                self.auditory_to_language.mean().item()
+                self.visual_to_auditory.mean().item()
+                + self.visual_to_language.mean().item()
+                + self.auditory_to_language.mean().item()
             ) / 3.0
             plasticity["weight_mean"] = float(cross_modal_mean)
 
@@ -934,71 +971,83 @@ class MultimodalIntegration(NeuralRegion):
         Returns:
             HealthReport with health status and issues
         """
-        from thalia.diagnostics.health_monitor import HealthReport, IssueReport, HealthIssue
+        from thalia.diagnostics.health_monitor import HealthIssue, HealthReport, IssueReport
 
         issues = []
         max_severity = 0.0
 
         # Check for silence
         if self.visual_pool_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
-            issues.append(IssueReport(
-                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
-                severity=50.0,
-                description="Visual pool silent - check visual input pathway",
-                recommendation="Verify visual input connectivity and strengths",
-                metrics={"visual_firing_rate": float(self.visual_pool_spikes.mean())},
-            ))
+            issues.append(
+                IssueReport(
+                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                    severity=50.0,
+                    description="Visual pool silent - check visual input pathway",
+                    recommendation="Verify visual input connectivity and strengths",
+                    metrics={"visual_firing_rate": float(self.visual_pool_spikes.mean())},
+                )
+            )
             max_severity = max(max_severity, 50.0)
 
         if self.auditory_pool_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
-            issues.append(IssueReport(
-                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
-                severity=50.0,
-                description="Auditory pool silent - check auditory input pathway",
-                recommendation="Verify auditory input connectivity and strengths",
-                metrics={"auditory_firing_rate": float(self.auditory_pool_spikes.mean())},
-            ))
+            issues.append(
+                IssueReport(
+                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                    severity=50.0,
+                    description="Auditory pool silent - check auditory input pathway",
+                    recommendation="Verify auditory input connectivity and strengths",
+                    metrics={"auditory_firing_rate": float(self.auditory_pool_spikes.mean())},
+                )
+            )
             max_severity = max(max_severity, 50.0)
 
         if self.language_pool_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
-            issues.append(IssueReport(
-                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
-                severity=50.0,
-                description="Language pool silent - check language input pathway",
-                recommendation="Verify language input connectivity and strengths",
-                metrics={"language_firing_rate": float(self.language_pool_spikes.mean())},
-            ))
+            issues.append(
+                IssueReport(
+                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                    severity=50.0,
+                    description="Language pool silent - check language input pathway",
+                    recommendation="Verify language input connectivity and strengths",
+                    metrics={"language_firing_rate": float(self.language_pool_spikes.mean())},
+                )
+            )
             max_severity = max(max_severity, 50.0)
 
         if self.integration_spikes.mean() < SILENCE_DETECTION_THRESHOLD:
-            issues.append(IssueReport(
-                issue_type=HealthIssue.ACTIVITY_COLLAPSE,
-                severity=80.0,
-                description="Integration neurons silent - check cross-modal connections",
-                recommendation="Verify integration weights and cross-modal connectivity",
-                metrics={"integration_firing_rate": float(self.integration_spikes.mean())},
-            ))
+            issues.append(
+                IssueReport(
+                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                    severity=80.0,
+                    description="Integration neurons silent - check cross-modal connections",
+                    recommendation="Verify integration weights and cross-modal connectivity",
+                    metrics={"integration_firing_rate": float(self.integration_spikes.mean())},
+                )
+            )
             max_severity = max(max_severity, 80.0)
 
         # Check for saturation
         if self.visual_pool_spikes.mean() > 0.9:
-            issues.append(IssueReport(
-                issue_type=HealthIssue.SEIZURE_RISK,
-                severity=80.0,
-                description="Visual pool saturated - excessive activity detected",
-                recommendation="Reduce visual input strength or add inhibition",
-                metrics={"visual_firing_rate": float(self.visual_pool_spikes.mean())},
-            ))
+            issues.append(
+                IssueReport(
+                    issue_type=HealthIssue.SEIZURE_RISK,
+                    severity=80.0,
+                    description="Visual pool saturated - excessive activity detected",
+                    recommendation="Reduce visual input strength or add inhibition",
+                    metrics={"visual_firing_rate": float(self.visual_pool_spikes.mean())},
+                )
+            )
             max_severity = max(max_severity, 80.0)
 
         if self.auditory_pool_spikes.mean() > 0.9:
-            issues.append(IssueReport(
-                issue_type=HealthIssue.SEIZURE_RISK,
-                severity=80.0,
-                description="Auditory pool saturated - excessive activity detected",
-                recommendation="Verify auditory input strength and inhibition",
-                metrics={"auditory_firing_rate": float(self.auditory_pool_spikes.mean())},
-            ))
+            issues.append(
+                IssueReport(
+                    issue_type=HealthIssue.SEIZURE_RISK,
+                    severity=80.0,
+                    description="Auditory pool saturated - excessive activity detected",
+                    recommendation="Verify auditory input strength and inhibition",
+                    metrics={"auditory_firing_rate": float(self.auditory_pool_spikes.mean())},
+                )
+            )
             max_severity = max(max_severity, 80.0)
 
         is_healthy = len(issues) == 0

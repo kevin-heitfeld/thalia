@@ -53,26 +53,26 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from thalia.language.decoder import (
+    SpikeDecoder,
+    SpikeDecoderConfig,
+)
 
 # Import encoding/decoding components
 from thalia.language.encoder import (
     SpikeEncoder,
     SpikeEncoderConfig,
 )
-from thalia.language.decoder import (
-    SpikeDecoder,
-    SpikeDecoderConfig,
-)
 from thalia.language.position import (
     OscillatoryPositionEncoder,
     PositionEncoderConfig,
 )
-
 from thalia.mixins import ConfigurableMixin
 
 if TYPE_CHECKING:
@@ -99,6 +99,7 @@ class LanguageInterfaceConfig:
         brain_input_size: Size expected by brain's cortex input
         device: Computation device
     """
+
     vocab_size: int = 50257
     n_timesteps: int = 20
     sparsity: float = 0.05
@@ -287,8 +288,11 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
             # Process through brain
             # Gamma slot auto-advances in hippocampus - no explicit position needed
             result = self._brain.process_sample(token_input, n_timesteps=n_timesteps)
-            all_results.append(result)            # Collect PFC output for decoding
-            if hasattr(self._brain, '_last_pfc_output') and self._brain._last_pfc_output is not None:
+            all_results.append(result)  # Collect PFC output for decoding
+            if (
+                hasattr(self._brain, "_last_pfc_output")
+                and self._brain._last_pfc_output is not None
+            ):
                 self.output_buffer.append(self._brain._last_pfc_output.clone())
 
         return {
@@ -385,7 +389,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
             # Apply filtering
             if top_k is not None:
                 indices_to_remove = last_logits < torch.topk(last_logits, top_k).values[-1]
-                last_logits[indices_to_remove] = float('-inf')
+                last_logits[indices_to_remove] = float("-inf")
 
             if top_p is not None:
                 sorted_logits, sorted_indices = torch.sort(last_logits, descending=True)
@@ -396,7 +400,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
                 indices_to_remove = sorted_indices_to_remove.scatter(
                     0, sorted_indices, sorted_indices_to_remove
                 )
-                last_logits[indices_to_remove] = float('-inf')
+                last_logits[indices_to_remove] = float("-inf")
 
             # Sample
             probs = F.softmax(last_logits, dim=-1)

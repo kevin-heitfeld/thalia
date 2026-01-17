@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Dict, Any, Optional, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -41,9 +41,10 @@ if TYPE_CHECKING:
 
 class ReplayMode(Enum):
     """Replay execution mode."""
+
     SEQUENCE = "sequence"  # Gamma-driven sequence replay
-    SINGLE = "single"      # Single-state replay (fallback)
-    RIPPLE = "ripple"      # Sharp-wave ripple replay
+    SINGLE = "single"  # Single-state replay (fallback)
+    RIPPLE = "ripple"  # Sharp-wave ripple replay
 
 
 @dataclass
@@ -52,7 +53,7 @@ class ReplayConfig:
 
     # Time compression
     compression_factor: float = 5.0  # How much faster than encoding (5-20x typical)
-    dt_ms: float = 1.0               # Base time step in ms
+    dt_ms: float = 1.0  # Base time step in ms
 
     # Gamma phase-based replay (replaces discrete slots)
     phase_window_width: float = 0.5  # Gaussian width for phase-based pattern selection (radians)
@@ -61,8 +62,8 @@ class ReplayConfig:
     # Ripple parameters (for sleep replay)
     ripple_enabled: bool = False
     ripple_frequency: float = 150.0  # Hz (150-250 typical)
-    ripple_duration: float = 80.0    # ms
-    ripple_gain: float = 3.0         # Amplification during ripple
+    ripple_duration: float = 80.0  # ms
+    ripple_gain: float = 3.0  # Amplification during ripple
 
     # Replay control
     max_patterns_per_replay: int = 30  # Safety limit for pattern replay
@@ -70,7 +71,7 @@ class ReplayConfig:
 
     # Pattern processing
     apply_phase_modulation: bool = True  # Apply gamma phase modulation to patterns
-    pattern_completion: bool = True      # Run through CA3 for completion
+    pattern_completion: bool = True  # Run through CA3 for completion
 
 
 @dataclass
@@ -218,7 +219,7 @@ class ReplayEngine(nn.Module):
 
             # Gaussian modulation based on phase proximity
             width = self.config.phase_window_width
-            phase_modulation = math.exp(-(phase_diff ** 2) / (2 * width ** 2))
+            phase_modulation = math.exp(-(phase_diff**2) / (2 * width**2))
 
             # Only activate patterns within phase window (>10% modulation)
             if phase_modulation > 0.1:
@@ -310,6 +311,7 @@ class ReplayEngine(nn.Module):
 
         # Compute ripple phase (oscillation)
         import math
+
         freq_hz = self.config.ripple_frequency
         self._ripple_phase = TAU * freq_hz * self._ripple_time * SECONDS_PER_MS
 

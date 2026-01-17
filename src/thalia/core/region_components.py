@@ -44,7 +44,7 @@ See Also:
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
@@ -170,9 +170,7 @@ class LearningComponent(BaseManager["NeuralComponentConfig"]):
         """
         existing = getattr(self, attr_name, None)
         if existing is None:
-            new_tensor = torch.full(
-                shape, fill_value, device=self.context.device
-            )
+            new_tensor = torch.full(shape, fill_value, device=self.context.device)
             setattr(self, attr_name, new_tensor)
             return new_tensor
         return existing

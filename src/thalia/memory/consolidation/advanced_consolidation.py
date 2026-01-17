@@ -95,60 +95,65 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Callable, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 
 from thalia.regions.hippocampus.config import Episode
 
-
 # ============================================================================
 # Configuration
 # ============================================================================
 
+
 @dataclass
 class SchemaExtractionConfig:
     """Configuration for schema extraction during REM."""
-    similarity_threshold: float = 0.7   # Cosine similarity threshold for clustering
-    cluster_size: int = 5               # Minimum episodes per schema
-    noise_std: float = 0.2              # Noise for generalization
-    learning_signal: float = 0.5        # Moderate learning (between awake and NREM)
-    max_schemas: int = 100              # Maximum stored schemas
-    min_exemplars: int = 2              # Minimum exemplars to form schema
+
+    similarity_threshold: float = 0.7  # Cosine similarity threshold for clustering
+    cluster_size: int = 5  # Minimum episodes per schema
+    noise_std: float = 0.2  # Noise for generalization
+    learning_signal: float = 0.5  # Moderate learning (between awake and NREM)
+    max_schemas: int = 100  # Maximum stored schemas
+    min_exemplars: int = 2  # Minimum exemplars to form schema
 
 
 @dataclass
 class SemanticReorganizationConfig:
     """Configuration for semantic memory reorganization."""
-    n_clusters: int = 10                # Number of semantic clusters
-    max_iterations: int = 100           # K-means max iterations
-    tolerance: float = 1e-4             # K-means convergence tolerance
-    same_cluster_prob: float = 0.8      # Probability of sampling from same cluster
-    device: str = "cpu"                 # Device for computation
+
+    n_clusters: int = 10  # Number of semantic clusters
+    max_iterations: int = 100  # K-means max iterations
+    tolerance: float = 1e-4  # K-means convergence tolerance
+    same_cluster_prob: float = 0.8  # Probability of sampling from same cluster
+    device: str = "cpu"  # Device for computation
 
 
 @dataclass
 class InterferenceResolutionConfig:
     """Configuration for interference resolution."""
-    similarity_threshold: float = 0.8   # Input similarity threshold for interference
+
+    similarity_threshold: float = 0.8  # Input similarity threshold for interference
     dissimilarity_threshold: float = 0.3  # Output dissimilarity threshold
-    learning_signal: float = 0.3        # Learning rate for contrastive STDP
-    max_pairs_to_resolve: int = 50      # Maximum interfering pairs to process
-    contrastive_strength: float = 0.5   # Strength of contrastive push
+    learning_signal: float = 0.3  # Learning rate for contrastive STDP
+    max_pairs_to_resolve: int = 50  # Maximum interfering pairs to process
+    contrastive_strength: float = 0.5  # Strength of contrastive push
 
 
 # ============================================================================
 # Schema Extraction (REM Phase)
 # ============================================================================
 
+
 @dataclass
 class Schema:
     """A learned schema representing a category of experiences."""
-    prototype_input: torch.Tensor       # Prototypical input pattern
-    prototype_target: torch.Tensor      # Prototypical target pattern
-    n_exemplars: int                    # Number of episodes in this schema
-    last_updated: int                   # Last consolidation step
+
+    prototype_input: torch.Tensor  # Prototypical input pattern
+    prototype_target: torch.Tensor  # Prototypical target pattern
+    n_exemplars: int  # Number of episodes in this schema
+    last_updated: int  # Last consolidation step
     cluster_members: List[int] = field(default_factory=list)  # Episode indices
 
 
@@ -244,7 +249,9 @@ class SchemaExtractionConsolidation:
                 prototypical_target = prototypical_input.clone()
 
             # Add noise for generalization
-            noisy_input = prototypical_input + torch.randn_like(prototypical_input) * self.config.noise_std
+            noisy_input = (
+                prototypical_input + torch.randn_like(prototypical_input) * self.config.noise_std
+            )
             noisy_input = noisy_input.clamp(0, 1)
 
             # Replay prototype with moderate learning signal
@@ -326,7 +333,7 @@ class SchemaExtractionConsolidation:
 
         # Take top k most similar
         similarities.sort(key=lambda x: x[1], reverse=True)
-        cluster = [anchor] + [ep for ep, _ in similarities[:k-1]]
+        cluster = [anchor] + [ep for ep, _ in similarities[: k - 1]]
 
         return cluster
 
@@ -381,6 +388,7 @@ class SchemaExtractionConsolidation:
 # ============================================================================
 # Semantic Reorganization
 # ============================================================================
+
 
 class SemanticReorganization:
     """Reorganize memories by semantic similarity.
@@ -469,7 +477,7 @@ class SemanticReorganization:
             for ep in cluster_episodes:
                 if ep.metadata is None:
                     ep.metadata = {}
-                ep.metadata['cluster_id'] = cluster_id
+                ep.metadata["cluster_id"] = cluster_id
 
         # Replace original list contents
         episodes[:] = reorganized_episodes
@@ -507,14 +515,16 @@ class SemanticReorganization:
 
         # Sample next episodes by semantic proximity
         for _ in range(n_samples - 1):
-            current_cluster = current_episode.metadata.get('cluster_id', 0)
+            current_cluster = current_episode.metadata.get("cluster_id", 0)
 
             # Same cluster (80% prob) or adjacent cluster (20% prob)
             if torch.rand(1).item() < self.config.same_cluster_prob:
                 next_cluster = current_cluster
             else:
                 # Random walk to adjacent cluster
-                next_cluster = (current_cluster + torch.randint(-1, 2, (1,)).item()) % self.config.n_clusters
+                next_cluster = (
+                    current_cluster + torch.randint(-1, 2, (1,)).item()
+                ) % self.config.n_clusters
 
             # Sample from target cluster
             next_episode = self._sample_from_cluster(episodes, next_cluster)
@@ -539,8 +549,9 @@ class SemanticReorganization:
             episode: Random episode from cluster or None
         """
         cluster_episodes = [
-            ep for ep in episodes
-            if ep.metadata is not None and ep.metadata.get('cluster_id') == cluster_id
+            ep
+            for ep in episodes
+            if ep.metadata is not None and ep.metadata.get("cluster_id") == cluster_id
         ]
 
         if not cluster_episodes:
@@ -603,6 +614,7 @@ class SemanticReorganization:
 # ============================================================================
 # Interference Resolution
 # ============================================================================
+
 
 class InterferenceResolution:
     """Resolve interference between overlapping memories.
@@ -687,7 +699,7 @@ class InterferenceResolution:
         # Sort by input similarity (most interfering first)
         interfering_pairs.sort(key=lambda x: x[2], reverse=True)
 
-        return interfering_pairs[:self.config.max_pairs_to_resolve]
+        return interfering_pairs[: self.config.max_pairs_to_resolve]
 
     def resolve_interference(
         self,
@@ -782,7 +794,7 @@ class InterferenceResolution:
         # 3. Use contrastive loss: max(0, similarity - margin)
 
         # For now, set a flag for the learning system
-        if hasattr(brain, 'contrastive_mode'):
+        if hasattr(brain, "contrastive_mode"):
             brain.contrastive_mode = True
             brain.contrastive_mask = shared_mask
 
@@ -793,6 +805,7 @@ class InterferenceResolution:
 # ============================================================================
 # Integrated Advanced Consolidation
 # ============================================================================
+
 
 def run_advanced_consolidation(
     brain: Any,
@@ -837,9 +850,9 @@ def run_advanced_consolidation(
             interfering_pairs=interfering,
             n_steps=n_steps // 6,  # ~1000 steps
         )
-        metrics['interference'] = interference_metrics
+        metrics["interference"] = interference_metrics
     else:
-        metrics['interference'] = {"pairs_resolved": 0}
+        metrics["interference"] = {"pairs_resolved": 0}
 
     # Phase 2: REM Schema Extraction
     schema_system = SchemaExtractionConsolidation(config_schema)
@@ -849,7 +862,7 @@ def run_advanced_consolidation(
         n_steps=n_steps // 2,  # ~3000 steps
         extract_features_fn=extract_features_fn,
     )
-    metrics['schema_extraction'] = schema_metrics
+    metrics["schema_extraction"] = schema_metrics
 
     # Phase 3: Semantic Reorganization
     semantic_system = SemanticReorganization(config_semantic)
@@ -857,7 +870,7 @@ def run_advanced_consolidation(
         episodes=episodes,
         extract_features_fn=extract_features_fn,
     )
-    metrics['semantic_reorganization'] = semantic_metrics
+    metrics["semantic_reorganization"] = semantic_metrics
 
     # Phase 4: Random Replay (for generalization)
     if len(episodes) > 0:
@@ -865,6 +878,6 @@ def run_advanced_consolidation(
             episode = episodes[torch.randint(len(episodes), (1,)).item()]
             brain.forward(episode.state, learning_signal=0.0)
 
-    metrics['total_steps'] = n_steps
+    metrics["total_steps"] = n_steps
 
     return metrics

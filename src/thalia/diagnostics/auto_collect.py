@@ -66,7 +66,7 @@ def auto_diagnostics(
             diag = {}
 
             # Check if object has auto_collect_diagnostics method (from mixin)
-            if hasattr(self, 'auto_collect_diagnostics'):
+            if hasattr(self, "auto_collect_diagnostics"):
                 # Build input dicts for auto_collect_diagnostics
                 weight_dict = {}
                 spike_dict = {}
@@ -87,7 +87,7 @@ def auto_diagnostics(
                         if tensor is not None:
                             spike_dict[attr_name] = tensor
                     # Also check in state
-                    elif hasattr(self, 'state') and hasattr(self.state, attr_name):
+                    elif hasattr(self, "state") and hasattr(self.state, attr_name):
                         tensor = getattr(self.state, attr_name)
                         if tensor is not None:
                             spike_dict[attr_name] = tensor
@@ -106,30 +106,34 @@ def auto_diagnostics(
                         scalar_dict[attr_name] = value
 
                 # Collect state attributes
-                if hasattr(self, 'state'):
+                if hasattr(self, "state"):
                     for attr_name in state_attrs_list:
                         if hasattr(self.state, attr_name):
                             value = getattr(self.state, attr_name)
                             scalar_dict[f"state_{attr_name}"] = value
 
                 # Auto-collect using mixin
-                diag.update(self.auto_collect_diagnostics(
-                    weights=weight_dict if weight_dict else None,
-                    spikes=spike_dict if spike_dict else None,
-                    traces=trace_dict if trace_dict else None,
-                    scalars=scalar_dict if scalar_dict else None,
-                ))
+                diag.update(
+                    self.auto_collect_diagnostics(
+                        weights=weight_dict if weight_dict else None,
+                        spikes=spike_dict if spike_dict else None,
+                        traces=trace_dict if trace_dict else None,
+                        scalars=scalar_dict if scalar_dict else None,
+                    )
+                )
 
             else:
                 # Fallback: manual collection using basic methods
-                diag.update(_manual_collect(
-                    self,
-                    weights_list,
-                    spikes_list,
-                    traces_list,
-                    scalars_list,
-                    state_attrs_list,
-                ))
+                diag.update(
+                    _manual_collect(
+                        self,
+                        weights_list,
+                        spikes_list,
+                        traces_list,
+                        scalars_list,
+                        state_attrs_list,
+                    )
+                )
 
             # Call original function and merge results
             custom_diag = func(self, *args, **kwargs)
@@ -139,6 +143,7 @@ def auto_diagnostics(
             return diag
 
         return wrapper
+
     return decorator
 
 
@@ -167,19 +172,21 @@ def _manual_collect(
         if hasattr(obj, attr_name):
             tensor = getattr(obj, attr_name)
             if tensor is not None and isinstance(tensor, torch.Tensor):
-                diag.update({
-                    f"{attr_name}_mean": tensor.mean().item(),
-                    f"{attr_name}_std": tensor.std().item(),
-                    f"{attr_name}_min": tensor.min().item(),
-                    f"{attr_name}_max": tensor.max().item(),
-                })
+                diag.update(
+                    {
+                        f"{attr_name}_mean": tensor.mean().item(),
+                        f"{attr_name}_std": tensor.std().item(),
+                        f"{attr_name}_min": tensor.min().item(),
+                        f"{attr_name}_max": tensor.max().item(),
+                    }
+                )
 
     # Collect spikes
     for attr_name in spikes:
         tensor = None
         if hasattr(obj, attr_name):
             tensor = getattr(obj, attr_name)
-        elif hasattr(obj, 'state') and hasattr(obj.state, attr_name):
+        elif hasattr(obj, "state") and hasattr(obj.state, attr_name):
             tensor = getattr(obj.state, attr_name)
 
         if tensor is not None and isinstance(tensor, torch.Tensor):
@@ -191,10 +198,12 @@ def _manual_collect(
         if hasattr(obj, attr_name):
             tensor = getattr(obj, attr_name)
             if tensor is not None and isinstance(tensor, torch.Tensor):
-                diag.update({
-                    f"{attr_name}_mean": tensor.mean().item(),
-                    f"{attr_name}_max": tensor.max().item(),
-                })
+                diag.update(
+                    {
+                        f"{attr_name}_mean": tensor.mean().item(),
+                        f"{attr_name}_max": tensor.max().item(),
+                    }
+                )
 
     # Collect scalars
     for attr_name in scalars:
@@ -204,16 +213,18 @@ def _manual_collect(
                 diag[attr_name] = float(value) if not isinstance(value, (list, dict)) else value
 
     # Collect state attributes
-    if hasattr(obj, 'state'):
+    if hasattr(obj, "state"):
         for attr_name in state_attrs:
             if hasattr(obj.state, attr_name):
                 value = getattr(obj.state, attr_name)
                 if value is not None:
-                    diag[f"state_{attr_name}"] = float(value) if not isinstance(value, (list, dict, torch.Tensor)) else value
+                    diag[f"state_{attr_name}"] = (
+                        float(value) if not isinstance(value, (list, dict, torch.Tensor)) else value
+                    )
 
     return diag
 
 
 __all__ = [
-    'auto_diagnostics',
+    "auto_diagnostics",
 ]

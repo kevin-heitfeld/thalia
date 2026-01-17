@@ -18,11 +18,11 @@ Date: December 2025
 from __future__ import annotations
 
 import math
-from typing import List, Optional, TYPE_CHECKING, Any, Tuple, Callable, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
-    from .thalia_config import ThaliaConfig
     from .brain_config import BrainConfig
+    from .thalia_config import ThaliaConfig
 
 
 class ConfigValidationError(Exception):
@@ -54,7 +54,7 @@ class ValidatorRegistry:
     def get_validator(cls, rule: str) -> Callable[[Any, str], None]:
         """Get validator by name or parse compound rule."""
         # Handle range rules: range(min, max)
-        if rule.startswith('range('):
+        if rule.startswith("range("):
             return cls._parse_range_rule(rule)
 
         # Handle simple named rules
@@ -68,7 +68,7 @@ class ValidatorRegistry:
         """Parse range(min, max) rules."""
         # Extract min and max from "range(0.0, 1.0)"
         inner = rule[6:-1]  # Remove "range(" and ")"
-        parts = [p.strip() for p in inner.split(',')]
+        parts = [p.strip() for p in inner.split(",")]
 
         if len(parts) != 2:
             raise ValueError(f"Invalid range rule format: {rule}")
@@ -133,12 +133,12 @@ def _register_builtin_validators() -> None:
         if not value.strip():
             raise ConfigValidationError(f"{name} must be non-empty string")
 
-    ValidatorRegistry.register('positive', positive)
-    ValidatorRegistry.register('non_negative', non_negative)
-    ValidatorRegistry.register('finite', finite)
-    ValidatorRegistry.register('positive_integer', positive_integer)
-    ValidatorRegistry.register('probability', probability)
-    ValidatorRegistry.register('non_empty_string', non_empty_string)
+    ValidatorRegistry.register("positive", positive)
+    ValidatorRegistry.register("non_negative", non_negative)
+    ValidatorRegistry.register("finite", finite)
+    ValidatorRegistry.register("positive_integer", positive_integer)
+    ValidatorRegistry.register("probability", probability)
+    ValidatorRegistry.register("non_empty_string", non_empty_string)
 
 
 _register_builtin_validators()
@@ -173,7 +173,7 @@ class ValidatedConfig:
         Raises:
             ConfigValidationError: If any validation fails
         """
-        if not hasattr(self, '_validation_rules'):
+        if not hasattr(self, "_validation_rules"):
             return  # No rules defined
 
         errors: List[str] = []
@@ -197,9 +197,8 @@ class ValidatedConfig:
                     errors.append(f"Validation error for {field_name}: {e}")
 
         if errors:
-            error_msg = (
-                f"{self.__class__.__name__} validation failed:\n" +
-                "\n".join(f"  • {e}" for e in errors)
+            error_msg = f"{self.__class__.__name__} validation failed:\n" + "\n".join(
+                f"  • {e}" for e in errors
             )
             raise ConfigValidationError(error_msg)
 
@@ -371,9 +370,7 @@ def validate_global_consistency(config: "ThaliaConfig") -> List[str]:
         )
 
     if config.brain.test_timesteps < 1:
-        errors.append(
-            f"brain.test_timesteps must be >= 1, got {config.brain.test_timesteps}"
-        )
+        errors.append(f"brain.test_timesteps must be >= 1, got {config.brain.test_timesteps}")
 
     return errors
 
@@ -435,7 +432,7 @@ def check_config_and_warn(config: "ThaliaConfig", raise_on_error: bool = True) -
     try:
         validate_thalia_config(config)
     except ConfigValidationError as e:
-        errors = str(e).split('\n')[1:]  # Skip "Configuration validation failed:" line
+        errors = str(e).split("\n")[1:]  # Skip "Configuration validation failed:" line
 
         if raise_on_error:
             raise

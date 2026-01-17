@@ -31,43 +31,43 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
 import torch
 import torch.nn as nn
 
 from thalia.constants.task import (
-    DATASET_WEIGHT_MNIST,
-    DATASET_WEIGHT_TEMPORAL,
-    DATASET_WEIGHT_PHONOLOGY,
     DATASET_WEIGHT_GAZE,
+    DATASET_WEIGHT_MNIST,
+    DATASET_WEIGHT_PHONOLOGY,
+    DATASET_WEIGHT_TEMPORAL,
     REWARD_SCALE_PREDICTION,
-    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
-    SENSORIMOTOR_WEIGHT_REACHING,
     SENSORIMOTOR_WEIGHT_MANIPULATION,
+    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
     SENSORIMOTOR_WEIGHT_PREDICTION,
+    SENSORIMOTOR_WEIGHT_REACHING,
     SPIKE_PROBABILITY_HIGH,
-    SPIKE_PROBABILITY_MEDIUM,
     SPIKE_PROBABILITY_LOW,
+    SPIKE_PROBABILITY_MEDIUM,
 )
 from thalia.constants.training import (
+    REWARD_HIGH_SUCCESS,
     REWARD_MANIPULATION_BASE,
     REWARD_MOVEMENT_THRESHOLD,
     REWARD_REACHING_THRESHOLD,
-    REWARD_HIGH_SUCCESS,
     REWARD_SMALL_SUCCESS,
 )
 from thalia.pathways.sensory_pathways import (
-    VisualConfig,
     RetinalEncoder,
+    VisualConfig,
 )
 from thalia.tasks.stimulus_utils import create_motor_spikes
-
 
 # ============================================================================
 # Task Loader Protocol
 # ============================================================================
+
 
 class BaseTaskLoader(Protocol):
     """Protocol for task loaders used by CurriculumTrainer.
@@ -105,8 +105,10 @@ class BaseTaskLoader(Protocol):
 # Stage -0.5: Sensorimotor Task Loader
 # ============================================================================
 
+
 class TaskType(Enum):
     """Task types for sensorimotor stage."""
+
     MOTOR_CONTROL = "motor_control"
     REACHING = "reaching"
     MANIPULATION = "manipulation"
@@ -116,6 +118,7 @@ class TaskType(Enum):
 @dataclass
 class SensorimotorConfig:
     """Configuration for sensorimotor task loader."""
+
     # Output size (must match brain.input_size)
     output_size: int = 256
 
@@ -125,16 +128,16 @@ class SensorimotorConfig:
     # Episode settings
     max_episode_steps: int = 1000
 
-    device: str = 'cpu'
+    device: str = "cpu"
 
     def __post_init__(self):
         if self.task_probabilities is None:
             # Equal probability for all tasks
             self.task_probabilities = {
-                'motor_control': SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
-                'reaching': SENSORIMOTOR_WEIGHT_REACHING,
-                'manipulation': SENSORIMOTOR_WEIGHT_MANIPULATION,
-                'prediction': SENSORIMOTOR_WEIGHT_PREDICTION,
+                "motor_control": SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
+                "reaching": SENSORIMOTOR_WEIGHT_REACHING,
+                "manipulation": SENSORIMOTOR_WEIGHT_MANIPULATION,
+                "prediction": SENSORIMOTOR_WEIGHT_PREDICTION,
             }
 
 
@@ -216,7 +219,9 @@ class SensorimotorTaskLoader:
         nn.init.sparse_(self.sensory_projection.weight, sparsity=0.7)
         self.sensory_projection.to(self.config.device)
 
-        print(f"[OK] SensorimotorTaskLoader: {wrapper_output_size} -> {self.config.output_size} neurons")
+        print(
+            f"[OK] SensorimotorTaskLoader: {wrapper_output_size} -> {self.config.output_size} neurons"
+        )
 
     def _encode_sensory(self, raw_spikes: torch.Tensor) -> torch.Tensor:
         """Project raw sensorimotor spikes to fixed output size.
@@ -281,10 +286,14 @@ class SensorimotorTaskLoader:
         # Random motor babbling or directed movement
         if np.random.rand() < 0.5:
             # Random exploration
-            motor_spikes = create_motor_spikes(self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device)
+            motor_spikes = create_motor_spikes(
+                self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device
+            )
         else:
             # Directed command (simple policy)
-            motor_spikes = torch.zeros(self.wrapper.n_motor_neurons, dtype=torch.bool, device=self.config.device)
+            motor_spikes = torch.zeros(
+                self.wrapper.n_motor_neurons, dtype=torch.bool, device=self.config.device
+            )
             if self.wrapper.n_motor_neurons > 0:
                 motor_spikes[0] = True
 
@@ -302,25 +311,27 @@ class SensorimotorTaskLoader:
         movement_reward = REWARD_SMALL_SUCCESS if reward > REWARD_MOVEMENT_THRESHOLD else 0.0
 
         return {
-            'input': obs_spikes,
-            'n_timesteps': 10,
-            'reward': movement_reward,
-            'target': self._encode_sensory(next_obs),
-            'action': motor_spikes,
-            'task_type': 'motor_control',
+            "input": obs_spikes,
+            "n_timesteps": 10,
+            "reward": movement_reward,
+            "target": self._encode_sensory(next_obs),
+            "action": motor_spikes,
+            "task_type": "motor_control",
         }
 
     def _reaching_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
         """Reaching task: Move effector toward visual target."""
         # Simple heuristic policy
-        motor_spikes = create_motor_spikes(self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_MEDIUM, self.config.device)
+        motor_spikes = create_motor_spikes(
+            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_MEDIUM, self.config.device
+        )
 
         # Execute action
         next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)
 
         # Update current observation for next call
         self.current_obs = next_obs
- # Store state
+        # Store state
         self.last_obs = next_obs
         self.last_action = motor_spikes
 
@@ -329,53 +340,59 @@ class SensorimotorTaskLoader:
 
         # Track success
         if reaching_reward > REWARD_HIGH_SUCCESS:
-            self.task_successes['reaching'] += 1
+            self.task_successes["reaching"] += 1
 
         return {
-            'input': obs_spikes,
-            'n_timesteps': 10,
-            'reward': reaching_reward,
-            'target': self._encode_sensory(next_obs),
-            'action': motor_spikes,
-            'task_type': 'reaching',
-            'success': reaching_reward > REWARD_HIGH_SUCCESS,
+            "input": obs_spikes,
+            "n_timesteps": 10,
+            "reward": reaching_reward,
+            "target": self._encode_sensory(next_obs),
+            "action": motor_spikes,
+            "task_type": "reaching",
+            "success": reaching_reward > REWARD_HIGH_SUCCESS,
         }
 
     def _manipulation_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
         """Manipulation task: Push/pull objects."""
         # Generate motor command
-        motor_spikes = create_motor_spikes(self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_HIGH, self.config.device)
+        motor_spikes = create_motor_spikes(
+            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_HIGH, self.config.device
+        )
 
         # Execute action
         next_obs, reward, _, _ = self.wrapper.step(motor_spikes)
 
         # Update current observation for next call
         self.current_obs = next_obs
- # Store state
+        # Store state
         self.last_obs = next_obs
         self.last_action = motor_spikes
 
         # Reward for any interaction
-        manipulation_reward = REWARD_MANIPULATION_BASE if reward > REWARD_REACHING_THRESHOLD else REWARD_SMALL_SUCCESS
+        manipulation_reward = (
+            REWARD_MANIPULATION_BASE if reward > REWARD_REACHING_THRESHOLD else REWARD_SMALL_SUCCESS
+        )
 
         # Track success
         if manipulation_reward > 0.4:
-            self.task_successes['manipulation'] += 1
+            self.task_successes["manipulation"] += 1
 
         return {
-            'input': obs_spikes,
-            'n_timesteps': 10,
-            'reward': manipulation_reward,
-            'target': self._encode_sensory(next_obs),
-            'action': motor_spikes,
-            'task_type': 'manipulation',
-            'success': manipulation_reward > 0.4,
+            "input": obs_spikes,
+            "n_timesteps": 10,
+            "reward": manipulation_reward,
+            "target": self._encode_sensory(next_obs),
+            "action": motor_spikes,
+            "task_type": "manipulation",
+            "success": manipulation_reward > 0.4,
         }
 
     def _prediction_task(self, obs_spikes: torch.Tensor) -> Dict[str, Any]:
         """Prediction task: Learn forward/inverse models."""
         # Generate motor command
-        motor_spikes = create_motor_spikes(self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device)
+        motor_spikes = create_motor_spikes(
+            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device
+        )
 
         # Execute action
         next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)
@@ -393,12 +410,12 @@ class SensorimotorTaskLoader:
         self.last_action = motor_spikes
 
         return {
-            'input': obs_spikes,
-            'n_timesteps': 10,
-            'reward': prediction_reward,
-            'target': self._encode_sensory(next_obs),
-            'action': motor_spikes,
-            'task_type': 'prediction',
+            "input": obs_spikes,
+            "n_timesteps": 10,
+            "reward": prediction_reward,
+            "target": self._encode_sensory(next_obs),
+            "action": motor_spikes,
+            "task_type": "prediction",
         }
 
     def get_task_types(self) -> List[str]:
@@ -422,8 +439,8 @@ class SensorimotorTaskLoader:
                 success_rates[task_type] = 0.0
 
         return {
-            'task_counts': self.task_counts.copy(),
-            'success_rates': success_rates,
+            "task_counts": self.task_counts.copy(),
+            "success_rates": success_rates,
         }
 
 
@@ -431,8 +448,10 @@ class SensorimotorTaskLoader:
 # Stage 0: Phonology Task Loader
 # ============================================================================
 
+
 class PhonologyTaskType(Enum):
     """Task types for phonology stage."""
+
     MNIST = "mnist"
     TEMPORAL = "temporal"
     PHONOLOGY = "phonology"
@@ -442,6 +461,7 @@ class PhonologyTaskType(Enum):
 @dataclass
 class PhonologyConfig:
     """Configuration for phonology task loader (Stage 0)."""
+
     # Output size (must match brain.input_size)
     output_size: int = 256
 
@@ -453,16 +473,16 @@ class PhonologyConfig:
     mnist_spike_rate: float = 0.3
     temporal_sequence_length: int = 5
 
-    device: str = 'cpu'
+    device: str = "cpu"
 
     def __post_init__(self):
         if self.task_probabilities is None:
             # Default task distribution (per curriculum strategy)
             self.task_probabilities = {
-                'mnist': DATASET_WEIGHT_MNIST,          # Visual foundation
-                'temporal': DATASET_WEIGHT_TEMPORAL,       # Sequence learning
-                'phonology': DATASET_WEIGHT_PHONOLOGY,      # Phoneme discrimination
-                'gaze_following': DATASET_WEIGHT_GAZE, # Social attention
+                "mnist": DATASET_WEIGHT_MNIST,  # Visual foundation
+                "temporal": DATASET_WEIGHT_TEMPORAL,  # Sequence learning
+                "phonology": DATASET_WEIGHT_PHONOLOGY,  # Phoneme discrimination
+                "gaze_following": DATASET_WEIGHT_GAZE,  # Social attention
             }
 
 
@@ -501,7 +521,7 @@ class PhonologyTaskLoader:
     def __init__(
         self,
         config: Optional[PhonologyConfig] = None,
-        device: str = 'cpu',
+        device: str = "cpu",
         output_size: Optional[int] = None,
     ):
         """Initialize phonology task loader.
@@ -566,12 +586,14 @@ class PhonologyTaskLoader:
                 from torchvision import datasets, transforms
 
                 # Load MNIST
-                transform = transforms.Compose([
-                    transforms.ToTensor(),
-                ])
+                transform = transforms.Compose(
+                    [
+                        transforms.ToTensor(),
+                    ]
+                )
 
                 self._mnist_dataset = datasets.MNIST(
-                    root='./data',
+                    root="./data",
                     train=True,
                     download=True,
                     transform=transform,
@@ -591,9 +613,7 @@ class PhonologyTaskLoader:
             try:
                 from thalia.datasets import create_stage0_temporal_dataset
 
-                self._temporal_dataset = create_stage0_temporal_dataset(
-                    device=self.device
-                )
+                self._temporal_dataset = create_stage0_temporal_dataset(device=self.device)
 
                 print("[OK] Loaded Temporal Sequences dataset")
             except Exception as e:
@@ -607,7 +627,7 @@ class PhonologyTaskLoader:
         """Lazy load phonological dataset."""
         if self._phonology_dataset is None:
             try:
-                from thalia.datasets import PhonologicalDataset, PhonologicalConfig, Language
+                from thalia.datasets import Language, PhonologicalConfig, PhonologicalDataset
 
                 phon_config = PhonologicalConfig()
                 phon_config.device = self.config.device
@@ -637,7 +657,9 @@ class PhonologyTaskLoader:
             self._temporal_projection = nn.Linear(input_size, self.config.output_size, bias=False)
             nn.init.sparse_(self._temporal_projection.weight, sparsity=0.8)
             self._temporal_projection.to(self.device)
-            print(f"[OK] Initialized temporal projection: {input_size} -> {self.config.output_size}")
+            print(
+                f"[OK] Initialized temporal projection: {input_size} -> {self.config.output_size}"
+            )
         return self._temporal_projection
 
     @property
@@ -647,15 +669,19 @@ class PhonologyTaskLoader:
             # Get actual spectrogram dimensions from dataset if available
             if self.phonology_dataset is not None:
                 # Spectrogram is (n_freq_channels × n_time_steps)
-                input_size = (self.phonology_dataset.config.n_freq_channels *
-                             self.phonology_dataset.config.n_time_steps)
+                input_size = (
+                    self.phonology_dataset.config.n_freq_channels
+                    * self.phonology_dataset.config.n_time_steps
+                )
             else:
                 input_size = 40  # Fallback for feature-based encoding
 
             self._phonology_projection = nn.Linear(input_size, self.config.output_size, bias=False)
             nn.init.sparse_(self._phonology_projection.weight, sparsity=0.7)
             self._phonology_projection.to(self.device)
-            print(f"[OK] Initialized phonology projection: {input_size} -> {self.config.output_size}")
+            print(
+                f"[OK] Initialized phonology projection: {input_size} -> {self.config.output_size}"
+            )
         return self._phonology_projection
 
     def get_task(self, task_name: str) -> Dict[str, Any]:
@@ -696,21 +722,25 @@ class PhonologyTaskLoader:
         else:
             # Get next sample from dataset
             if self._mnist_iter is None:
-                self._mnist_iter = iter(torch.utils.data.DataLoader(
-                    self.mnist_dataset,
-                    batch_size=1,
-                    shuffle=True,
-                ))
+                self._mnist_iter = iter(
+                    torch.utils.data.DataLoader(
+                        self.mnist_dataset,
+                        batch_size=1,
+                        shuffle=True,
+                    )
+                )
 
             try:
                 image, label = next(self._mnist_iter)
             except StopIteration:
                 # Reset iterator
-                self._mnist_iter = iter(torch.utils.data.DataLoader(
-                    self.mnist_dataset,
-                    batch_size=1,
-                    shuffle=True,
-                ))
+                self._mnist_iter = iter(
+                    torch.utils.data.DataLoader(
+                        self.mnist_dataset,
+                        batch_size=1,
+                        shuffle=True,
+                    )
+                )
                 image, label = next(self._mnist_iter)
 
             # Encode through RetinalEncoder
@@ -726,10 +756,10 @@ class PhonologyTaskLoader:
             label = label.item()
 
         return {
-            'input': spikes,
-            'n_timesteps': self.config.n_timesteps,
-            'label': label,
-            'task_type': 'mnist',
+            "input": spikes,
+            "n_timesteps": self.config.n_timesteps,
+            "label": label,
+            "task_type": "mnist",
         }
 
     def _temporal_task(self) -> Dict[str, Any]:
@@ -758,10 +788,10 @@ class PhonologyTaskLoader:
         spikes = torch.sigmoid(spikes) > 0.5  # Threshold to binary spikes
 
         return {
-            'input': spikes,
-            'n_timesteps': self.config.n_timesteps,
-            'target': target,
-            'task_type': 'temporal',
+            "input": spikes,
+            "n_timesteps": self.config.n_timesteps,
+            "target": target,
+            "task_type": "temporal",
         }
 
     def _phonology_task(self) -> Dict[str, Any]:
@@ -781,7 +811,9 @@ class PhonologyTaskLoader:
             # Use simple voiced/voiceless contrast
             contrast = (PhonemeCategory.P, PhonemeCategory.B)
             same = torch.randint(0, 2, (1,), device=self.device).item() == 1
-            phoneme1, phoneme2, is_same = self.phonology_dataset.generate_discrimination_pair(contrast, same)
+            phoneme1, phoneme2, is_same = self.phonology_dataset.generate_discrimination_pair(
+                contrast, same
+            )
 
             # Use first phoneme features (flatten spectrogram)
             spikes_raw = phoneme1.flatten()
@@ -791,10 +823,10 @@ class PhonologyTaskLoader:
         spikes = torch.sigmoid(spikes) > 0.5  # Threshold to binary spikes
 
         return {
-            'input': spikes,
-            'n_timesteps': self.config.n_timesteps,
-            'target': is_same,
-            'task_type': 'phonology',
+            "input": spikes,
+            "n_timesteps": self.config.n_timesteps,
+            "target": is_same,
+            "task_type": "phonology",
         }
 
     def _gaze_following_task(self) -> Dict[str, Any]:
@@ -817,10 +849,10 @@ class PhonologyTaskLoader:
         target_y = torch.randint(0, 28, (1,), device=self.device).item()
 
         return {
-            'input': spikes,
-            'n_timesteps': self.config.n_timesteps,
-            'target': (target_x, target_y),
-            'task_type': 'gaze_following',
+            "input": spikes,
+            "n_timesteps": self.config.n_timesteps,
+            "target": (target_x, target_y),
+            "task_type": "gaze_following",
         }
 
     def get_task_types(self) -> List[str]:
@@ -843,8 +875,8 @@ class PhonologyTaskLoader:
                 avg_accuracies[task_type] = 0.0
 
         return {
-            'task_counts': self.task_counts.copy(),
-            'avg_accuracies': avg_accuracies,
+            "task_counts": self.task_counts.copy(),
+            "avg_accuracies": avg_accuracies,
         }
 
 
@@ -852,25 +884,26 @@ class PhonologyTaskLoader:
 # Task Loader Registry
 # ============================================================================
 
+
 class TaskLoaderRegistry:
     """Registry for task loaders by curriculum stage."""
 
     _loaders = {
-        'sensorimotor': SensorimotorTaskLoader,
-        'phonology': PhonologyTaskLoader,
+        "sensorimotor": SensorimotorTaskLoader,
+        "phonology": PhonologyTaskLoader,
     }
 
     @classmethod
     def get_loader_class(cls, stage_name: str):
         """Get task loader class for stage."""
-        stage_key = stage_name.lower().replace('-', '').replace('_', '')
+        stage_key = stage_name.lower().replace("-", "").replace("_", "")
 
         # Map stage names to loader keys
         mapping = {
-            'stage05': 'sensorimotor',
-            'sensorimotor': 'sensorimotor',
-            'stage0': 'phonology',
-            'phonology': 'phonology',
+            "stage05": "sensorimotor",
+            "sensorimotor": "sensorimotor",
+            "stage0": "phonology",
+            "phonology": "phonology",
         }
 
         loader_key = mapping.get(stage_key)
@@ -895,6 +928,7 @@ class TaskLoaderRegistry:
 # Convenience Functions
 # ============================================================================
 
+
 def create_sensorimotor_loader(
     wrapper: Any,
     config: Optional[SensorimotorConfig] = None,
@@ -915,7 +949,7 @@ def create_sensorimotor_loader(
 
 def create_phonology_loader(
     config: Optional[PhonologyConfig] = None,
-    device: str = 'cpu',
+    device: str = "cpu",
     output_size: Optional[int] = None,
 ) -> PhonologyTaskLoader:
     """Create phonology task loader for Stage 0.

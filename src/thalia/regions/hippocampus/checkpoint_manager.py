@@ -54,7 +54,7 @@ Date: December 13, 2025 (hippocampus neuromorphic checkpoint support)
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
@@ -129,7 +129,9 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
                 "metadata": ep.metadata,
                 "priority": ep.priority,
                 "timestamp": ep.timestamp,
-                "sequence": [s.detach().clone() for s in ep.sequence] if ep.sequence is not None else None,
+                "sequence": (
+                    [s.detach().clone() for s in ep.sequence] if ep.sequence is not None else None
+                ),
             }
             episode_buffer_state.append(ep_state)
 
@@ -181,28 +183,76 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         h = self.hippocampus
 
         return {
-            "ca3_activity_trace": h._ca3_activity_trace.detach().clone() if h._ca3_activity_trace is not None else None,
+            "ca3_activity_trace": (
+                h._ca3_activity_trace.detach().clone()
+                if h._ca3_activity_trace is not None
+                else None
+            ),
             "pending_theta_reset": h._pending_theta_reset,
             "sequence_position": h._sequence_position,
-            "ca3_threshold_offset": h._ca3_threshold_offset.detach().clone() if h._ca3_threshold_offset is not None else None,
-            "ca3_activity_history": h._ca3_activity_history.detach().clone() if h._ca3_activity_history is not None else None,
-            "dg_ca3_delay_buffer": h._dg_ca3_delay_buffer.detach().clone() if h._dg_ca3_delay_buffer is not None else None,
+            "ca3_threshold_offset": (
+                h._ca3_threshold_offset.detach().clone()
+                if h._ca3_threshold_offset is not None
+                else None
+            ),
+            "ca3_activity_history": (
+                h._ca3_activity_history.detach().clone()
+                if h._ca3_activity_history is not None
+                else None
+            ),
+            "dg_ca3_delay_buffer": (
+                h._dg_ca3_delay_buffer.detach().clone()
+                if h._dg_ca3_delay_buffer is not None
+                else None
+            ),
             "dg_ca3_delay_pointer": h._dg_ca3_delay_ptr,
-            "ca3_ca1_delay_buffer": h._ca3_ca1_delay_buffer.detach().clone() if h._ca3_ca1_delay_buffer is not None else None,
+            "ca3_ca1_delay_buffer": (
+                h._ca3_ca1_delay_buffer.detach().clone()
+                if h._ca3_ca1_delay_buffer is not None
+                else None
+            ),
             "ca3_ca1_delay_pointer": h._ca3_ca1_delay_ptr,
             "trisynaptic_state": {
-                "dg_spikes": h.state.dg_spikes.detach().clone() if h.state.dg_spikes is not None else None,
-                "ca3_spikes": h.state.ca3_spikes.detach().clone() if h.state.ca3_spikes is not None else None,
-                "ca1_spikes": h.state.ca1_spikes.detach().clone() if h.state.ca1_spikes is not None else None,
-                "ca3_membrane": h.state.ca3_membrane.detach().clone() if h.state.ca3_membrane is not None else None,
-                "ca3_persistent": h.state.ca3_persistent.detach().clone() if h.state.ca3_persistent is not None else None,
-                "sample_trace": h.state.sample_trace.detach().clone() if h.state.sample_trace is not None else None,
-                "dg_trace": h.state.dg_trace.detach().clone() if h.state.dg_trace is not None else None,
-                "ca3_trace": h.state.ca3_trace.detach().clone() if h.state.ca3_trace is not None else None,
-                "nmda_trace": h.state.nmda_trace.detach().clone() if h.state.nmda_trace is not None else None,
-                "stored_dg_pattern": h.state.stored_dg_pattern.detach().clone() if h.state.stored_dg_pattern is not None else None,
+                "dg_spikes": (
+                    h.state.dg_spikes.detach().clone() if h.state.dg_spikes is not None else None
+                ),
+                "ca3_spikes": (
+                    h.state.ca3_spikes.detach().clone() if h.state.ca3_spikes is not None else None
+                ),
+                "ca1_spikes": (
+                    h.state.ca1_spikes.detach().clone() if h.state.ca1_spikes is not None else None
+                ),
+                "ca3_membrane": (
+                    h.state.ca3_membrane.detach().clone()
+                    if h.state.ca3_membrane is not None
+                    else None
+                ),
+                "ca3_persistent": (
+                    h.state.ca3_persistent.detach().clone()
+                    if h.state.ca3_persistent is not None
+                    else None
+                ),
+                "sample_trace": (
+                    h.state.sample_trace.detach().clone()
+                    if h.state.sample_trace is not None
+                    else None
+                ),
+                "dg_trace": (
+                    h.state.dg_trace.detach().clone() if h.state.dg_trace is not None else None
+                ),
+                "ca3_trace": (
+                    h.state.ca3_trace.detach().clone() if h.state.ca3_trace is not None else None
+                ),
+                "nmda_trace": (
+                    h.state.nmda_trace.detach().clone() if h.state.nmda_trace is not None else None
+                ),
+                "stored_dg_pattern": (
+                    h.state.stored_dg_pattern.detach().clone()
+                    if h.state.stored_dg_pattern is not None
+                    else None
+                ),
                 "ffi_strength": h.state.ffi_strength,
-            }
+            },
         }
 
     def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
@@ -283,7 +333,9 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         ca1_ca3_weights_restored = torch.zeros_like(h.synaptic_weights["ca3_ca1"])
         ca1_ec_weights_restored = torch.zeros_like(h.synaptic_weights["ec_ca1"])
         w_ec_l3_ca1 = h.synaptic_weights.get("ec_l3_ca1", None)
-        ca1_ec_l3_weights_restored = torch.zeros_like(w_ec_l3_ca1) if w_ec_l3_ca1 is not None else None
+        ca1_ec_l3_weights_restored = (
+            torch.zeros_like(w_ec_l3_ca1) if w_ec_l3_ca1 is not None else None
+        )
 
         for i in range(n_ca1):
             neuron_id = f"hippo_ca1_neuron_{i}_step0"
@@ -309,7 +361,10 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
                         if source_idx < h.synaptic_weights["ec_ca1"].shape[1]:
                             ca1_ec_weights_restored[i, source_idx] = synapse["weight"]
 
-                    elif source_id.startswith("ec_l3_neuron_") and ca1_ec_l3_weights_restored is not None:
+                    elif (
+                        source_id.startswith("ec_l3_neuron_")
+                        and ca1_ec_l3_weights_restored is not None
+                    ):
                         source_idx = int(source_id.split("_")[-1])
                         if w_ec_l3_ca1 is not None and source_idx < w_ec_l3_ca1.shape[1]:
                             ca1_ec_l3_weights_restored[i, source_idx] = synapse["weight"]
@@ -324,18 +379,25 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Restore episode buffer
         from thalia.regions.hippocampus.config import Episode
+
         h.episode_buffer = []
         for ep_state in state["episode_buffer"]:
             episode = Episode(
                 state=ep_state["state"].to(h.device),
-                context=ep_state["context"].to(h.device) if ep_state["context"] is not None else None,
+                context=(
+                    ep_state["context"].to(h.device) if ep_state["context"] is not None else None
+                ),
                 action=ep_state["action"],
                 reward=ep_state["reward"],
                 correct=ep_state["correct"],
                 metadata=ep_state["metadata"],
                 priority=ep_state["priority"],
                 timestamp=ep_state["timestamp"],
-                sequence=[s.to(h.device) for s in ep_state["sequence"]] if ep_state["sequence"] is not None else None,
+                sequence=(
+                    [s.to(h.device) for s in ep_state["sequence"]]
+                    if ep_state["sequence"] is not None
+                    else None
+                ),
             )
             h.episode_buffer.append(episode)
 
@@ -380,16 +442,44 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Restore trisynaptic state
         tri_state = region_state["trisynaptic_state"]
-        h.state.dg_spikes = tri_state["dg_spikes"].to(h.device) if tri_state["dg_spikes"] is not None else None
-        h.state.ca3_spikes = tri_state["ca3_spikes"].to(h.device) if tri_state["ca3_spikes"] is not None else None
-        h.state.ca1_spikes = tri_state["ca1_spikes"].to(h.device) if tri_state["ca1_spikes"] is not None else None
-        h.state.ca3_membrane = tri_state["ca3_membrane"].to(h.device) if tri_state["ca3_membrane"] is not None else None
-        h.state.ca3_persistent = tri_state["ca3_persistent"].to(h.device) if tri_state["ca3_persistent"] is not None else None
-        h.state.sample_trace = tri_state["sample_trace"].to(h.device) if tri_state["sample_trace"] is not None else None
-        h.state.dg_trace = tri_state["dg_trace"].to(h.device) if tri_state["dg_trace"] is not None else None
-        h.state.ca3_trace = tri_state["ca3_trace"].to(h.device) if tri_state["ca3_trace"] is not None else None
-        h.state.nmda_trace = tri_state["nmda_trace"].to(h.device) if tri_state["nmda_trace"] is not None else None
-        h.state.stored_dg_pattern = tri_state["stored_dg_pattern"].to(h.device) if tri_state["stored_dg_pattern"] is not None else None
+        h.state.dg_spikes = (
+            tri_state["dg_spikes"].to(h.device) if tri_state["dg_spikes"] is not None else None
+        )
+        h.state.ca3_spikes = (
+            tri_state["ca3_spikes"].to(h.device) if tri_state["ca3_spikes"] is not None else None
+        )
+        h.state.ca1_spikes = (
+            tri_state["ca1_spikes"].to(h.device) if tri_state["ca1_spikes"] is not None else None
+        )
+        h.state.ca3_membrane = (
+            tri_state["ca3_membrane"].to(h.device)
+            if tri_state["ca3_membrane"] is not None
+            else None
+        )
+        h.state.ca3_persistent = (
+            tri_state["ca3_persistent"].to(h.device)
+            if tri_state["ca3_persistent"] is not None
+            else None
+        )
+        h.state.sample_trace = (
+            tri_state["sample_trace"].to(h.device)
+            if tri_state["sample_trace"] is not None
+            else None
+        )
+        h.state.dg_trace = (
+            tri_state["dg_trace"].to(h.device) if tri_state["dg_trace"] is not None else None
+        )
+        h.state.ca3_trace = (
+            tri_state["ca3_trace"].to(h.device) if tri_state["ca3_trace"] is not None else None
+        )
+        h.state.nmda_trace = (
+            tri_state["nmda_trace"].to(h.device) if tri_state["nmda_trace"] is not None else None
+        )
+        h.state.stored_dg_pattern = (
+            tri_state["stored_dg_pattern"].to(h.device)
+            if tri_state["stored_dg_pattern"] is not None
+            else None
+        )
         h.state.ffi_strength = tri_state["ffi_strength"]
 
     # =========================================================================
@@ -451,10 +541,16 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Extract DG neurons (Dentate Gyrus)
         n_dg = h.dg_size
-        dg_membrane = h.dg_neurons.membrane if h.dg_neurons.membrane is not None else torch.zeros(n_dg, device=h.device)
+        dg_membrane = (
+            h.dg_neurons.membrane
+            if h.dg_neurons.membrane is not None
+            else torch.zeros(n_dg, device=h.device)
+        )
 
         for i in range(n_dg):
-            birth_step = h._neuron_birth_steps_dg[i].item() if hasattr(h, '_neuron_birth_steps_dg') else 0
+            birth_step = (
+                h._neuron_birth_steps_dg[i].item() if hasattr(h, "_neuron_birth_steps_dg") else 0
+            )
             neuron_id = f"hippo_dg_neuron_{i}_step{birth_step}"
 
             neuron_data = {
@@ -471,10 +567,16 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Extract CA3 neurons
         n_ca3 = h.ca3_size
-        ca3_membrane = h.ca3_neurons.membrane if h.ca3_neurons.membrane is not None else torch.zeros(n_ca3, device=h.device)
+        ca3_membrane = (
+            h.ca3_neurons.membrane
+            if h.ca3_neurons.membrane is not None
+            else torch.zeros(n_ca3, device=h.device)
+        )
 
         for i in range(n_ca3):
-            birth_step = h._neuron_birth_steps_ca3[i].item() if hasattr(h, '_neuron_birth_steps_ca3') else 0
+            birth_step = (
+                h._neuron_birth_steps_ca3[i].item() if hasattr(h, "_neuron_birth_steps_ca3") else 0
+            )
             neuron_id = f"hippo_ca3_neuron_{i}_step{birth_step}"
 
             # CA3 has two sets of incoming synapses: from DG and from CA3 (recurrent)
@@ -498,10 +600,16 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Extract CA1 neurons
         n_ca1 = h.ca1_size
-        ca1_membrane = h.ca1_neurons.membrane if h.ca1_neurons.membrane is not None else torch.zeros(n_ca1, device=h.device)
+        ca1_membrane = (
+            h.ca1_neurons.membrane
+            if h.ca1_neurons.membrane is not None
+            else torch.zeros(n_ca1, device=h.device)
+        )
 
         for i in range(n_ca1):
-            birth_step = h._neuron_birth_steps_ca1[i].item() if hasattr(h, '_neuron_birth_steps_ca1') else 0
+            birth_step = (
+                h._neuron_birth_steps_ca1[i].item() if hasattr(h, "_neuron_birth_steps_ca1") else 0
+            )
             neuron_id = f"hippo_ca1_neuron_{i}_step{birth_step}"
 
             # CA1 has multiple input sources
@@ -549,9 +657,8 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         state = state_obj.to_dict()
 
         # Add synaptic weights
-        state['synaptic_weights'] = {
-            name: weights.detach().clone()
-            for name, weights in h.synaptic_weights.items()
+        state["synaptic_weights"] = {
+            name: weights.detach().clone() for name, weights in h.synaptic_weights.items()
         }
 
         return state
@@ -569,11 +676,12 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Use the region's native state restoration
         from thalia.regions.hippocampus.config import HippocampusState
+
         state_obj = HippocampusState.from_dict(state, device=str(h.device))
         h.load_state(state_obj)
 
         # Restore synaptic weights
-        if 'synaptic_weights' in state:
-            for name, weights in state['synaptic_weights'].items():
+        if "synaptic_weights" in state:
+            for name, weights in state["synaptic_weights"].items():
                 if name in h.synaptic_weights:
                     h.synaptic_weights[name].data = weights.to(h.device)

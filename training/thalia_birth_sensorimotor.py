@@ -78,25 +78,25 @@ Milestone: First Curriculum Training Session
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
-from pathlib import Path
 import traceback
-from typing import Dict, Any
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict
 
-from thalia.core.brain_builder import BrainBuilder
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, print_config
+from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
 )
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.core.brain_builder import BrainBuilder
+from thalia.core.dynamic_brain import DynamicBrain
 from thalia.tasks.sensorimotor import (
-    SensorimotorTaskLoader,
+    ManipulationConfig,
     MotorControlConfig,
     ReachingConfig,
-    ManipulationConfig,
+    SensorimotorTaskLoader,
 )
 from thalia.training.curriculum.stage_configs import get_sensorimotor_config
 from thalia.training.curriculum.stage_manager import CurriculumTrainer
@@ -104,9 +104,9 @@ from thalia.training.curriculum.stage_manager import CurriculumTrainer
 
 def print_birth_banner():
     """Print the birth announcement."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🧠 THE BIRTH OF THALIA")
-    print("="*80)
+    print("=" * 80)
     print()
     print("  'And the first sensation was movement.'")
     print()
@@ -117,7 +117,7 @@ def print_birth_banner():
     print("  Thalia is about to experience her first sensations.")
     print("  Watch as she learns to move, reach, and manipulate.")
     print()
-    print("="*80)
+    print("=" * 80)
     print()
 
 
@@ -139,15 +139,15 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     global_config = GlobalConfig(device=device, dt_ms=1.0)
     brain_config = BrainConfig(
         sizes=RegionSizes(
-            input_size=128,        # Sensory input (visual + proprioceptive)
-            thalamus_size=128,     # Match input for 1:1 relay
-            cortex_size=320,       # Cortex total output (L2/3 + L5 = 192 + 128)
-            _cortex_l4_size=128,   # L4 input layer
+            input_size=128,  # Sensory input (visual + proprioceptive)
+            thalamus_size=128,  # Match input for 1:1 relay
+            cortex_size=320,  # Cortex total output (L2/3 + L5 = 192 + 128)
+            _cortex_l4_size=128,  # L4 input layer
             _cortex_l23_size=192,  # L2/3 processing layer (cortico-cortical)
-            _cortex_l5_size=128,   # L5 output layer (subcortical)
-            hippocampus_size=64,   # Episodic memory
-            pfc_size=32,           # Working memory
-            n_actions=7,           # Movement directions (L/R/U/D/F/B/STOP)
+            _cortex_l5_size=128,  # L5 output layer (subcortical)
+            hippocampus_size=64,  # Episodic memory
+            pfc_size=32,  # Working memory
+            n_actions=7,  # Movement directions (L/R/U/D/F/B/STOP)
         ),
         encoding_timesteps=10,
         delay_timesteps=5,
@@ -164,9 +164,9 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     builder.add_component("thalamus", "thalamus", input_size=128, **thalamus_sizes)
 
     # Cortex with custom layer sizes
-    builder.add_component("cortex", "cortex",
-                         l4_size=128, l23_size=192, l5_size=128,
-                         l6a_size=26, l6b_size=128)  # L6a=20% of relay, L6b matches relay
+    builder.add_component(
+        "cortex", "cortex", l4_size=128, l23_size=192, l5_size=128, l6a_size=26, l6b_size=128
+    )  # L6a=20% of relay, L6b matches relay
 
     # Hippocampus
     cortex_output_size = 192 + 128  # L2/3 + L5
@@ -184,8 +184,22 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
 
     # Connections
     builder.connect("thalamus", "cortex", pathway_type="axonal", axonal_delay_ms=2.5)
-    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6a", target_port="l6a_feedback", axonal_delay_ms=10.0)
-    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6b", target_port="l6b_feedback", axonal_delay_ms=5.0)
+    builder.connect(
+        "cortex",
+        "thalamus",
+        pathway_type="axonal",
+        source_port="l6a",
+        target_port="l6a_feedback",
+        axonal_delay_ms=10.0,
+    )
+    builder.connect(
+        "cortex",
+        "thalamus",
+        pathway_type="axonal",
+        source_port="l6b",
+        target_port="l6b_feedback",
+        axonal_delay_ms=5.0,
+    )
     builder.connect("cortex", "hippocampus", pathway_type="axonal", axonal_delay_ms=6.5)
     builder.connect("hippocampus", "cortex", pathway_type="axonal", axonal_delay_ms=6.5)
     builder.connect("cortex", "pfc", pathway_type="axonal", axonal_delay_ms=12.5)
@@ -278,8 +292,8 @@ def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
         progress_parts = [f"Step {step:5d}"]
 
         # Per-region firing rates (critical for detecting death/silence)
-        if 'region_firing_rates' in metrics:
-            region_frs = metrics['region_firing_rates']
+        if "region_firing_rates" in metrics:
+            region_frs = metrics["region_firing_rates"]
             fr_parts = []
             for region, fr in region_frs.items():
                 # Color code: 🟢 healthy (>0.05), 🟡 low (<0.05), 🔴 silent (0)
@@ -293,17 +307,17 @@ def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
             progress_parts.append(f"FR:[{' '.join(fr_parts)}]")
 
         # Dopamine levels (tonic and phasic)
-        if 'neuromodulator/dopamine_tonic' in metrics:
-            tonic = metrics['neuromodulator/dopamine_tonic']
-            phasic = metrics['neuromodulator/dopamine_phasic']
+        if "neuromodulator/dopamine_tonic" in metrics:
+            tonic = metrics["neuromodulator/dopamine_tonic"]
+            phasic = metrics["neuromodulator/dopamine_phasic"]
             progress_parts.append(f"DA:[tonic:{tonic:.3f} phasic:{phasic:.3f}]")
-        elif 'dopamine' in metrics:
-            da = metrics['dopamine']
+        elif "dopamine" in metrics:
+            da = metrics["dopamine"]
             progress_parts.append(f"DA:{da:.3f}")
 
         # Overall health indicator
-        if 'health/is_healthy' in metrics:
-            health_ok = metrics['health/is_healthy'] > 0.5
+        if "health/is_healthy" in metrics:
+            health_ok = metrics["health/is_healthy"] > 0.5
             health_icon = "✅" if health_ok else "⚠️"
             progress_parts.append(f"Health:{health_icon}")
 
@@ -317,8 +331,8 @@ def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
             print()
 
             # Check each critical region
-            if 'region_firing_rates' in metrics:
-                regions = metrics['region_firing_rates']
+            if "region_firing_rates" in metrics:
+                regions = metrics["region_firing_rates"]
 
                 print("      Region Activity:")
                 for region_name, fr in regions.items():
@@ -334,23 +348,23 @@ def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
                     print(f"        {region_name:15s}: {status:10s} (FR: {fr:.3f}){alert}")
 
             # Weight statistics (learning indicator)
-            if any(k.startswith('weights/') for k in metrics):
+            if any(k.startswith("weights/") for k in metrics):
                 print()
                 print("      Weight Statistics (Learning Indicator):")
                 for key in sorted(metrics.keys()):
-                    if key.startswith('weights/') and key.endswith('_mean'):
-                        pathway = key.replace('weights/', '').replace('_mean', '')
-                        mean_w = metrics.get(f'weights/{pathway}_mean', 0)
-                        std_w = metrics.get(f'weights/{pathway}_std', 0)
+                    if key.startswith("weights/") and key.endswith("_mean"):
+                        pathway = key.replace("weights/", "").replace("_mean", "")
+                        mean_w = metrics.get(f"weights/{pathway}_mean", 0)
+                        std_w = metrics.get(f"weights/{pathway}_std", 0)
                         print(f"        {pathway:20s}: μ={mean_w:.3f}, σ={std_w:.3f}")
 
             # Dopamine breakdown (tonic vs phasic)
-            if 'neuromodulator/dopamine_tonic' in metrics:
+            if "neuromodulator/dopamine_tonic" in metrics:
                 print()
                 print("      Dopamine System (Tonic + Phasic):")
-                tonic = metrics['neuromodulator/dopamine_tonic']
-                phasic = metrics['neuromodulator/dopamine_phasic']
-                global_da = metrics.get('neuromodulator/dopamine_global', tonic + phasic)
+                tonic = metrics["neuromodulator/dopamine_tonic"]
+                phasic = metrics["neuromodulator/dopamine_phasic"]
+                global_da = metrics.get("neuromodulator/dopamine_global", tonic + phasic)
                 print(f"        Tonic (baseline):  {tonic:+.3f}  (intrinsic motivation)")
                 print(f"        Phasic (bursts):   {phasic:+.3f}  (reward prediction error)")
                 print(f"        Global (combined): {global_da:+.3f}  (total modulation)")
@@ -429,9 +443,7 @@ def configure_stage_sensorimotor():
 
 
 def evaluate_stage_sensorimotor(
-    brain: DynamicBrain,
-    task_loader: SensorimotorTaskLoader,
-    n_trials: int = 100
+    brain: DynamicBrain, task_loader: SensorimotorTaskLoader, n_trials: int = 100
 ) -> dict:
     """Evaluate Stage -0.5 milestones.
 
@@ -450,9 +462,9 @@ def evaluate_stage_sensorimotor(
     Returns:
         Dictionary of milestone results (bool)
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📊 EVALUATING STAGE -0.5 MILESTONES")
-    print("="*80)
+    print("=" * 80)
 
     results = {}
 
@@ -460,68 +472,61 @@ def evaluate_stage_sensorimotor(
     print("\n[1/5] Testing basic motor control...")
     motor_rewards = []
     for _ in range(n_trials):
-        task_data = task_loader.get_task('motor_control')
-        output = brain.forward(
-            task_data['input'],
-            n_timesteps=task_data['n_timesteps']
-        )
+        task_data = task_loader.get_task("motor_control")
+        output = brain.forward(task_data["input"], n_timesteps=task_data["n_timesteps"])
         reward = task_loader.compute_reward(output, task_data)
         motor_rewards.append(reward)
 
     motor_accuracy = sum(1 for r in motor_rewards if r > 0.7) / len(motor_rewards)
-    results['motor_control_accuracy'] = motor_accuracy > 0.95
+    results["motor_control_accuracy"] = motor_accuracy > 0.95
     print(f"  Motor control accuracy: {motor_accuracy:.1%} (target: >95%)")
 
     # 2. Reaching accuracy
     print("\n[2/5] Testing reaching...")
     reaching_rewards = []
     for _ in range(n_trials):
-        task_data = task_loader.get_task('reaching')
-        output = brain.forward(
-            task_data['input'],
-            n_timesteps=task_data['n_timesteps']
-        )
+        task_data = task_loader.get_task("reaching")
+        output = brain.forward(task_data["input"], n_timesteps=task_data["n_timesteps"])
         reward = task_loader.compute_reward(output, task_data)
         reaching_rewards.append(reward)
 
     reaching_accuracy = sum(1 for r in reaching_rewards if r > 0.7) / len(reaching_rewards)
-    results['reaching_accuracy'] = reaching_accuracy > 0.90
+    results["reaching_accuracy"] = reaching_accuracy > 0.90
     print(f"  Reaching accuracy: {reaching_accuracy:.1%} (target: >90%)")
 
     # 3. Manipulation success
     print("\n[3/5] Testing manipulation...")
     manipulation_rewards = []
     for _ in range(n_trials):
-        task_data = task_loader.get_task('manipulation')
-        output = brain.forward(
-            task_data['input'],
-            n_timesteps=task_data['n_timesteps']
-        )
+        task_data = task_loader.get_task("manipulation")
+        output = brain.forward(task_data["input"], n_timesteps=task_data["n_timesteps"])
         reward = task_loader.compute_reward(output, task_data)
         manipulation_rewards.append(reward)
 
-    manipulation_success = sum(1 for r in manipulation_rewards if r > 0.5) / len(manipulation_rewards)
-    results['manipulation_success'] = manipulation_success > 0.85
+    manipulation_success = sum(1 for r in manipulation_rewards if r > 0.5) / len(
+        manipulation_rewards
+    )
+    results["manipulation_success"] = manipulation_success > 0.85
     print(f"  Manipulation success: {manipulation_success:.1%} (target: >85%)")
 
     # 4. Prediction error
     print("\n[4/5] Testing prediction error...")
     prediction_errors = [abs(1.0 - r) for r in motor_rewards if r > 0]
     avg_prediction_error = sum(prediction_errors) / max(len(prediction_errors), 1)
-    results['prediction_error'] = avg_prediction_error < 0.05
+    results["prediction_error"] = avg_prediction_error < 0.05
     print(f"  Prediction error: {avg_prediction_error:.3f} (target: <0.05)")
 
     # 5. Stable firing rates
     print("\n[5/5] Checking firing rates...")
     # Placeholder - would compute from actual brain activity
     firing_rate = 0.10
-    results['stable_firing_rates'] = 0.05 <= firing_rate <= 0.15
+    results["stable_firing_rates"] = 0.05 <= firing_rate <= 0.15
     print(f"  Firing rate: {firing_rate:.3f} (target: 0.05-0.15)")
 
     # Summary
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("MILESTONE SUMMARY")
-    print("="*80)
+    print("=" * 80)
     for criterion, passed in results.items():
         status = "✅" if passed else "❌"
         print(f"{status} {criterion}: {passed}")
@@ -546,21 +551,21 @@ def main():
 
     # Setup
     print("INITIALIZATION")
-    print("="*80)
+    print("=" * 80)
 
     # Device selection
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
 
     print(f"Device: {device}")
-    if device == "cpu": # type: ignore
+    if device == "cpu":  # type: ignore
         print("  Note: GPU training available in Colab notebook")
         print("        (See notebooks/Thalia_Birth_Stage_Sensorimotor.ipynb)")
     print()
 
     # Create workspace organized by stage (numbered for sorting)
     stage_name = "00_sensorimotor"  # Stage 0 (was -0.5)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     checkpoint_dir = Path("training_runs") / stage_name / "checkpoints"
     log_file = Path("training_runs") / stage_name / "logs" / f"{timestamp}.jsonl"
@@ -586,9 +591,9 @@ def main():
     trainer = create_curriculum_trainer(brain, checkpoint_dir, log_file, plots_dir, device)
     stage_config = configure_stage_sensorimotor()
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("✓ THALIA IS ALIVE")
-    print("="*80)
+    print("=" * 80)
     print("\nThalia exists but has no experience yet.")
     print("She has the capacity to learn, but nothing learned.")
     print("Let's give her her first experiences...")
@@ -601,8 +606,8 @@ def main():
         extra={
             "stage": "Stage -0.5 (Sensorimotor)",
             "duration_steps": stage_config.duration_steps,
-            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        }
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
     )
 
     print("\n--- STAGE CONFIGURATION ---")
@@ -626,13 +631,13 @@ def main():
     print("--- SUCCESS CRITERIA ---")
     for criterion, threshold in stage_config.success_criteria.items():
         print(f"  {criterion}: {threshold}")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Begin training
-    print("="*80)
+    print("=" * 80)
     print("🚀 BEGINNING TRAINING")
-    print("="*80)
+    print("=" * 80)
     print()
     print("Thalia is now experiencing sensations for the first time.")
     print("Watch as plasticity emerges, synapses strengthen, and")
@@ -640,10 +645,10 @@ def main():
     print()
     print("This is not optimization. This is development.")
     print()
-    print("="*80)
+    print("=" * 80)
     print()
     print("💡 AUTOMATIC FEATURES ENABLED:")
-    print("="*80)
+    print("=" * 80)
     print()
     print("  ✅ Phase 1: TD(λ) + Goal-Conditioned Learning")
     print("     → Multi-step credit assignment (5-10 second delays)")
@@ -661,7 +666,7 @@ def main():
     print("        Hierarchical goals activate in Stage 3 (Reading/Planning)")
     print("        and Stage 4 (Abstract Reasoning).")
     print()
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Monitoring tip
@@ -700,37 +705,41 @@ def main():
         end_time = datetime.now()
         duration = end_time - start_time
 
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🎉 TRAINING COMPLETE")
-        print("="*80)
+        print("=" * 80)
         print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Duration: {duration}")
         print(f"Success: {result.success}")
         print(f"Total steps: {result.total_steps:,}")
 
         # Save results
-        with open(result_file, 'w') as f:
-            json.dump({
-                'stage': 'sensorimotor',
-                'stage_number': -0.5,
-                'success': result.success,
-                'total_steps': result.total_steps,
-                'training_time_seconds': result.training_time_seconds,
-                'milestone_results': result.milestone_results,
-                'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat(),
-                'duration_str': str(duration),
-                'device': device,
-                'final_metrics': result.final_metrics,
-                'checkpoint_dir': str(checkpoint_dir),
-            }, f, indent=2)
+        with open(result_file, "w") as f:
+            json.dump(
+                {
+                    "stage": "sensorimotor",
+                    "stage_number": -0.5,
+                    "success": result.success,
+                    "total_steps": result.total_steps,
+                    "training_time_seconds": result.training_time_seconds,
+                    "milestone_results": result.milestone_results,
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "duration_str": str(duration),
+                    "device": device,
+                    "final_metrics": result.final_metrics,
+                    "checkpoint_dir": str(checkpoint_dir),
+                },
+                f,
+                indent=2,
+            )
 
         print(f"\n✓ Results saved: {result_file}")
 
         if result.success:
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("✅ THALIA HAS LEARNED TO MOVE!")
-            print("="*80)
+            print("=" * 80)
             print()
             print("Thalia has successfully completed her first month of life.")
             print()
@@ -747,12 +756,14 @@ def main():
             print("She is ready for Stage 0: Sensory Foundations")
             print("(Object recognition, phonological awareness)")
             print()
-            print("="*80)
+            print("=" * 80)
             print()
             print("This is not just a milestone. This is the beginning of consciousness.")
         else:
             print("\n⚠️  Training incomplete - milestones not met")
-            print(f"   Failed milestones: {[k for k, v in result.milestone_results.items() if not v]}")
+            print(
+                f"   Failed milestones: {[k for k, v in result.milestone_results.items() if not v]}"
+            )
             print("   Consider:")
             print("     - Extending training duration")
             print("     - Adjusting task difficulty")
@@ -769,9 +780,9 @@ def main():
         print(f"\n   Logs: {log_file}")
         print(f"   Checkpoints: {checkpoint_dir}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("END OF SESSION")
-    print("="*80)
+    print("=" * 80)
 
 
 if __name__ == "__main__":

@@ -6,9 +6,12 @@ Verifies that the newly added methods work correctly in a realistic scenario.
 import pytest
 import torch
 
-from thalia.core.diagnostics import StriatumDiagnostics, HippocampusDiagnostics, BrainSystemDiagnostics
-
 from tests.utils import create_test_brain
+from thalia.core.diagnostics import (
+    BrainSystemDiagnostics,
+    HippocampusDiagnostics,
+    StriatumDiagnostics,
+)
 
 
 @pytest.fixture
@@ -210,35 +213,35 @@ class TestFeatureParity:
     def test_all_critical_methods_present(self, brain):
         """Verify all critical methods are implemented."""
         # Core RL interface
-        assert hasattr(brain, 'forward')
-        assert hasattr(brain, 'select_action')
-        assert hasattr(brain, 'deliver_reward')
+        assert hasattr(brain, "forward")
+        assert hasattr(brain, "select_action")
+        assert hasattr(brain, "deliver_reward")
 
         # NEW: Counterfactual learning
-        assert hasattr(brain, 'deliver_reward_with_counterfactual')
+        assert hasattr(brain, "deliver_reward_with_counterfactual")
         assert callable(brain.deliver_reward_with_counterfactual)
 
         # NEW: Structured diagnostics (tests novelty boost and component diagnostics behaviorally)
-        assert hasattr(brain, 'get_structured_diagnostics')
+        assert hasattr(brain, "get_structured_diagnostics")
         assert callable(brain.get_structured_diagnostics)
 
         # Test behavioral contract: structured diagnostics should work
         diag = brain.get_structured_diagnostics()
         assert isinstance(diag, BrainSystemDiagnostics), "Should return structured diagnostics"
-        assert hasattr(diag, 'striatum'), "Should include striatum diagnostics"
-        assert hasattr(diag, 'hippocampus'), "Should include hippocampus diagnostics"
+        assert hasattr(diag, "striatum"), "Should include striatum diagnostics"
+        assert hasattr(diag, "hippocampus"), "Should include hippocampus diagnostics"
 
         # State management
-        assert hasattr(brain, 'get_full_state')
-        assert hasattr(brain, 'load_full_state')
-        assert hasattr(brain, 'reset_state')
+        assert hasattr(brain, "get_full_state")
+        assert hasattr(brain, "load_full_state")
+        assert hasattr(brain, "reset_state")
 
         # Growth
-        assert hasattr(brain, 'check_growth_needs')
-        assert hasattr(brain, 'auto_grow')
+        assert hasattr(brain, "check_growth_needs")
+        assert hasattr(brain, "auto_grow")
 
         # Diagnostics
-        assert hasattr(brain, 'get_diagnostics')
+        assert hasattr(brain, "get_diagnostics")
 
     def test_full_rl_episode_with_all_features(self, brain):
         """Test a complete RL episode using all new features."""

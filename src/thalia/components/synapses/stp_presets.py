@@ -45,6 +45,7 @@ class STPPreset:
         description: Biological context and use case
         references: Key papers validating these parameters
     """
+
     name: str
     U: float
     tau_u: float  # Facilitation decay (tau_f in STPConfig)
@@ -65,7 +66,7 @@ class STPPreset:
             U=self.U,
             tau_d=self.tau_x,  # tau_x → tau_d (depression recovery)
             tau_f=self.tau_u,  # tau_u → tau_f (facilitation decay)
-            dt=dt
+            dt=dt,
         )
 
 
@@ -84,7 +85,7 @@ MOSSY_FIBER_PRESET = STPPreset(
         "Critical for pattern separation and rapid encoding. "
         "Weak baseline, strong burst response."
     ),
-    references="Salin et al. (1996); Nicoll & Schmitz (2005)"
+    references="Salin et al. (1996); Nicoll & Schmitz (2005)",
 )
 
 SCHAFFER_COLLATERAL_PRESET = STPPreset(
@@ -98,7 +99,7 @@ SCHAFFER_COLLATERAL_PRESET = STPPreset(
         "Main output pathway from CA3 attractor to CA1 comparator. "
         "Balances reliability with dynamic range."
     ),
-    references="Salin et al. (1996); Dobrunz & Stevens (1997)"
+    references="Salin et al. (1996); Dobrunz & Stevens (1997)",
 )
 
 EC_CA1_PRESET = STPPreset(
@@ -112,7 +113,7 @@ EC_CA1_PRESET = STPPreset(
         "Provides baseline input for match/mismatch comparison. "
         "Less plastic than CA3→CA1 pathway."
     ),
-    references="Bartesaghi & Gessi (2004)"
+    references="Bartesaghi & Gessi (2004)",
 )
 
 CA3_RECURRENT_PRESET = STPPreset(
@@ -126,7 +127,7 @@ CA3_RECURRENT_PRESET = STPPreset(
         "Supports pattern completion while preventing runaway excitation. "
         "Short time constants for rapid attractor dynamics."
     ),
-    references="Miles & Wong (1986); Debanne et al. (1996)"
+    references="Miles & Wong (1986); Debanne et al. (1996)",
 )
 
 # =============================================================================
@@ -144,7 +145,7 @@ CORTICAL_FF_PRESET = STPPreset(
         "Transmits sensory information with temporal filtering. "
         "Responds preferentially to stimulus changes."
     ),
-    references="Tsodyks & Markram (1997); Reyes et al. (1998)"
+    references="Tsodyks & Markram (1997); Reyes et al. (1998)",
 )
 
 CORTICAL_RECURRENT_PRESET = STPPreset(
@@ -158,7 +159,7 @@ CORTICAL_RECURRENT_PRESET = STPPreset(
         "Provides gain control and prevents runaway activity. "
         "Implements divisive normalization."
     ),
-    references="Markram et al. (1998); Tsodyks et al. (2000)"
+    references="Markram et al. (1998); Tsodyks et al. (2000)",
 )
 
 CORTICAL_FB_PRESET = STPPreset(
@@ -172,7 +173,7 @@ CORTICAL_FB_PRESET = STPPreset(
         "Carries top-down predictions and attentional modulation. "
         "Balanced for sustained modulation."
     ),
-    references="Thomson & Bannister (2003)"
+    references="Thomson & Bannister (2003)",
 )
 
 CORTICAL_PYRAMIDAL_INTERNEURON_PRESET = STPPreset(
@@ -186,7 +187,7 @@ CORTICAL_PYRAMIDAL_INTERNEURON_PRESET = STPPreset(
         "Provides feedforward inhibition for gain control. "
         "Quick response, rapid fatigue."
     ),
-    references="Gupta et al. (2000); Galarreta & Hestrin (1998)"
+    references="Gupta et al. (2000); Galarreta & Hestrin (1998)",
 )
 
 # =============================================================================
@@ -204,7 +205,7 @@ CORTICOSTRIATAL_PRESET = STPPreset(
         "Main input pathway for action selection. "
         "Provides context for reinforcement learning."
     ),
-    references="Charpier et al. (1999); Partridge et al. (2000)"
+    references="Charpier et al. (1999); Partridge et al. (2000)",
 )
 
 THALAMO_STRIATAL_PRESET = STPPreset(
@@ -218,7 +219,7 @@ THALAMO_STRIATAL_PRESET = STPPreset(
         "Provides direct sensory and motivational input. "
         "Complements cortical input."
     ),
-    references="Ding et al. (2008)"
+    references="Ding et al. (2008)",
 )
 
 # =============================================================================
@@ -236,7 +237,7 @@ PFC_RECURRENT_PRESET = STPPreset(
         "Long time constants support persistent activity. "
         "Critical for delay period maintenance."
     ),
-    references="Wang et al. (2013); Compte et al. (2000)"
+    references="Wang et al. (2013); Compte et al. (2000)",
 )
 
 PFC_TO_STRIATUM_PRESET = STPPreset(
@@ -250,7 +251,7 @@ PFC_TO_STRIATUM_PRESET = STPPreset(
         "Gates action selection based on goals. "
         "Provides contextual biasing signal."
     ),
-    references="Haber et al. (2000)"
+    references="Haber et al. (2000)",
 )
 
 # =============================================================================
@@ -263,17 +264,14 @@ STP_PRESETS: Dict[str, STPPreset] = {
     "schaffer_collateral": SCHAFFER_COLLATERAL_PRESET,
     "ec_ca1": EC_CA1_PRESET,
     "ca3_recurrent": CA3_RECURRENT_PRESET,
-
     # Cortical pathways
     "cortical_ff": CORTICAL_FF_PRESET,
     "cortical_recurrent": CORTICAL_RECURRENT_PRESET,
     "cortical_fb": CORTICAL_FB_PRESET,
     "cortical_pyr_int": CORTICAL_PYRAMIDAL_INTERNEURON_PRESET,
-
     # Striatal pathways
     "corticostriatal": CORTICOSTRIATAL_PRESET,
     "thalamostriatal": THALAMO_STRIATAL_PRESET,
-
     # Prefrontal pathways
     "pfc_recurrent": PFC_RECURRENT_PRESET,
     "pfc_striatum": PFC_TO_STRIATUM_PRESET,
@@ -300,10 +298,7 @@ def get_stp_config(pathway_type: str, dt: float = 1.0) -> STPConfig:
     """
     if pathway_type not in STP_PRESETS:
         available = ", ".join(STP_PRESETS.keys())
-        raise KeyError(
-            f"Unknown pathway type: {pathway_type}. "
-            f"Available presets: {available}"
-        )
+        raise KeyError(f"Unknown pathway type: {pathway_type}. " f"Available presets: {available}")
 
     return STP_PRESETS[pathway_type].configure(dt=dt)
 
@@ -314,10 +309,7 @@ def list_presets() -> Dict[str, str]:
     Returns:
         Dictionary mapping preset names to descriptions
     """
-    return {
-        name: preset.description
-        for name, preset in STP_PRESETS.items()
-    }
+    return {name: preset.description for name, preset in STP_PRESETS.items()}
 
 
 def sample_heterogeneous_stp_params(

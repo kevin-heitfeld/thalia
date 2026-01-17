@@ -10,12 +10,12 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import torch
 
-from thalia.constants.learning import STDP_A_PLUS_CORTEX, STDP_A_MINUS_CORTEX
-from thalia.constants.neuromodulation import DA_BASELINE_STANDARD, ACH_BASELINE, NE_BASELINE
+from thalia.constants.learning import STDP_A_MINUS_CORTEX, STDP_A_PLUS_CORTEX
+from thalia.constants.neuromodulation import ACH_BASELINE, DA_BASELINE_STANDARD, NE_BASELINE
 from thalia.constants.neuron import ADAPT_INCREMENT_CORTEX_L23
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.region_state import BaseRegionState
@@ -74,17 +74,17 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # With ~10-15% sparsity and random weights, we need ~2.0x strength for input layer
     # and ~1.5x for subsequent layers to reliably activate postsynaptic neurons.
     input_to_l4_strength: float = 2.0  # External input → L4 (was 1.0, too weak for sparse input)
-    l4_to_l23_strength: float = 1.5    # L4 → L2/3 (was 0.4, too weak)
-    l23_to_l5_strength: float = 1.5    # L2/3 → L5 (was 0.4, too weak)
-    l23_to_l6a_strength: float = 0.8   # L2/3 → L6a (reduced for low gamma 25-35Hz)
-    l23_to_l6b_strength: float = 2.0   # L2/3 → L6b (higher for high gamma 60-80Hz)
+    l4_to_l23_strength: float = 1.5  # L4 → L2/3 (was 0.4, too weak)
+    l23_to_l5_strength: float = 1.5  # L2/3 → L5 (was 0.4, too weak)
+    l23_to_l6a_strength: float = 0.8  # L2/3 → L6a (reduced for low gamma 25-35Hz)
+    l23_to_l6b_strength: float = 2.0  # L2/3 → L6b (higher for high gamma 60-80Hz)
 
     # Top-down modulation (for attention pathway)
     l23_top_down_strength: float = 0.2  # Feedback to L2/3
 
     # L6 corticothalamic feedback strengths (different pathways)
-    l6a_to_trn_strength: float = 0.8   # L6a → TRN (inhibitory modulation, low gamma)
-    l6b_to_relay_strength: float = 0.6 # L6b → relay (excitatory modulation, high gamma)
+    l6a_to_trn_strength: float = 0.8  # L6a → TRN (inhibitory modulation, low gamma)
+    l6b_to_relay_strength: float = 0.6  # L6b → relay (excitatory modulation, high gamma)
 
     # Spillover transmission (volume transmission)
     # Enable in cortex L2/3 and L5 where experimentally documented
@@ -113,15 +113,15 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # are inherited from NeuralComponentConfig
     # Override with cortical values from constants:
-    a_plus: float = STDP_A_PLUS_CORTEX      # LTP amplitude
-    a_minus: float = STDP_A_MINUS_CORTEX    # LTD amplitude
+    a_plus: float = STDP_A_PLUS_CORTEX  # LTP amplitude
+    a_minus: float = STDP_A_MINUS_CORTEX  # LTD amplitude
 
     # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
     # Unlike feedforward connections, recurrent lateral connections use signed weights
     # to approximate the mixed excitatory/inhibitory microcircuit within a cortical layer.
     # Positive weights = local excitation, negative weights = lateral inhibition.
     l23_recurrent_w_min: float = -1.5  # Allows inhibitory-like connections
-    l23_recurrent_w_max: float = 1.0   # Symmetric by default
+    l23_recurrent_w_max: float = 1.0  # Symmetric by default
 
     # =========================================================================
     # SPIKE-FREQUENCY ADAPTATION (SFA)
@@ -164,18 +164,18 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # - L6b with 3ms internal + 5ms feedback = 8ms loop → ~125 Hz (very high gamma)
     # - With neural refractory periods and integration, actual frequencies settle to
     #   low gamma (25-35 Hz) for L6a and high gamma (60-80 Hz) for L6b
-    l4_to_l23_delay_ms: float = 2.0   # L4→L2/3 axonal delay (short vertical)
-    l23_to_l5_delay_ms: float = 2.0   # L2/3→L5 axonal delay (longer vertical)
+    l4_to_l23_delay_ms: float = 2.0  # L4→L2/3 axonal delay (short vertical)
+    l23_to_l5_delay_ms: float = 2.0  # L2/3→L5 axonal delay (longer vertical)
     l23_to_l6a_delay_ms: float = 2.0  # L2/3→L6a axonal delay (type I pathway, slow)
     l23_to_l6b_delay_ms: float = 3.0  # L2/3→L6b axonal delay (type II pathway, fast)
 
     # L6 feedback delays (key for gamma frequency tuning)
-    l6a_to_trn_delay_ms: float = 10.0   # L6a→TRN feedback delay (~10ms biological, slow pathway)
+    l6a_to_trn_delay_ms: float = 10.0  # L6a→TRN feedback delay (~10ms biological, slow pathway)
     l6b_to_relay_delay_ms: float = 5.0  # L6b→relay feedback delay (~5ms biological, fast pathway)
 
     # Gamma-based attention (spike-native phase gating for L2/3)
     # Always enabled for spike-native attention
-    gamma_attention_width: float = 0.3     # Phase window width
+    gamma_attention_width: float = 0.3  # Phase window width
 
     # =========================================================================
     # BCM SLIDING THRESHOLD (Metaplasticity)
@@ -237,13 +237,15 @@ class LayeredCortexConfig(NeuralComponentConfig):
 
     # Layer-specific membrane time constants (ms)
     # These control integration timescales for each layer
-    layer_tau_mem: Dict[str, float] = field(default_factory=lambda: {
-        "l4": 10.0,   # Fast integration for sensory input
-        "l23": 20.0,  # Moderate integration for association
-        "l5": 30.0,   # Slow integration for output generation
-        "l6a": 15.0,  # Fast for TRN feedback (low gamma)
-        "l6b": 25.0,  # Moderate for relay feedback (high gamma)
-    })
+    layer_tau_mem: Dict[str, float] = field(
+        default_factory=lambda: {
+            "l4": 10.0,  # Fast integration for sensory input
+            "l23": 20.0,  # Moderate integration for association
+            "l5": 30.0,  # Slow integration for output generation
+            "l6a": 15.0,  # Fast for TRN feedback (low gamma)
+            "l6b": 25.0,  # Moderate for relay feedback (high gamma)
+        }
+    )
     """Membrane time constants per layer (Phase 2A).
 
     Biological ranges:
@@ -255,13 +257,15 @@ class LayeredCortexConfig(NeuralComponentConfig):
 
     # Layer-specific voltage thresholds (mV)
     # Higher threshold = more selective, requires more input
-    layer_v_threshold: Dict[str, float] = field(default_factory=lambda: {
-        "l4": -52.0,  # Low threshold for sensitive input detection
-        "l23": -55.0, # Moderate threshold for balanced processing
-        "l5": -50.0,  # Lower threshold for reliable output (compensated by high tau)
-        "l6a": -55.0, # Moderate for attention gating
-        "l6b": -52.0, # Low for fast gain modulation
-    })
+    layer_v_threshold: Dict[str, float] = field(
+        default_factory=lambda: {
+            "l4": -52.0,  # Low threshold for sensitive input detection
+            "l23": -55.0,  # Moderate threshold for balanced processing
+            "l5": -50.0,  # Lower threshold for reliable output (compensated by high tau)
+            "l6a": -55.0,  # Moderate for attention gating
+            "l6b": -52.0,  # Low for fast gain modulation
+        }
+    )
     """Voltage thresholds per layer (Phase 2A).
 
     Biological values:
@@ -273,13 +277,15 @@ class LayeredCortexConfig(NeuralComponentConfig):
 
     # Layer-specific adaptation strengths
     # Controls spike-frequency adaptation per layer
-    layer_adaptation: Dict[str, float] = field(default_factory=lambda: {
-        "l4": 0.05,  # Minimal adaptation for faithful sensory relay
-        "l23": 0.15, # Strong adaptation for decorrelation (inherited default)
-        "l5": 0.10,  # Moderate adaptation for sustained output
-        "l6a": 0.08, # Light adaptation for feedback
-        "l6b": 0.12, # Moderate adaptation for gain control
-    })
+    layer_adaptation: Dict[str, float] = field(
+        default_factory=lambda: {
+            "l4": 0.05,  # Minimal adaptation for faithful sensory relay
+            "l23": 0.15,  # Strong adaptation for decorrelation (inherited default)
+            "l5": 0.10,  # Moderate adaptation for sustained output
+            "l6a": 0.08,  # Light adaptation for feedback
+            "l6b": 0.12,  # Moderate adaptation for gain control
+        }
+    )
     """Adaptation increments per layer (Phase 2A).
 
     Biological justification:
@@ -413,12 +419,15 @@ class LayeredCortexState(BaseRegionState):
         Returns:
             LayeredCortexState instance with restored state
         """
+
         def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
             if t is None:
                 return t
             return t.to(device)
 
-        def transfer_nested_dict(d: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+        def transfer_nested_dict(
+            d: Optional[Dict[str, torch.Tensor]],
+        ) -> Optional[Dict[str, torch.Tensor]]:
             """Transfer nested dict of tensors to device."""
             if d is None:
                 return None
@@ -555,6 +564,7 @@ def calculate_layer_sizes(
         Dictionary with keys: l4_size, l23_size, l5_size, l6a_size, l6b_size
     """
     import warnings
+
     warnings.warn(
         "calculate_layer_sizes() is deprecated. "
         "Use LayerSizeCalculator().cortex_from_output() or cortex_from_scale() instead. "

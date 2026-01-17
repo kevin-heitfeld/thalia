@@ -11,7 +11,8 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any, Dict
+
 import torch
 
 from .base import BaseConfig
@@ -138,17 +139,11 @@ class GlobalConfig(BaseConfig):
                 f"delta_frequency_hz should be 0.5-4 Hz, got {self.delta_frequency_hz}"
             )
         if not (4.0 <= self.theta_frequency_hz <= 10.0):
-            raise ValueError(
-                f"theta_frequency_hz should be 4-10 Hz, got {self.theta_frequency_hz}"
-            )
+            raise ValueError(f"theta_frequency_hz should be 4-10 Hz, got {self.theta_frequency_hz}")
         if not (8.0 <= self.alpha_frequency_hz <= 13.0):
-            raise ValueError(
-                f"alpha_frequency_hz should be 8-13 Hz, got {self.alpha_frequency_hz}"
-            )
+            raise ValueError(f"alpha_frequency_hz should be 8-13 Hz, got {self.alpha_frequency_hz}")
         if not (13.0 <= self.beta_frequency_hz <= 30.0):
-            raise ValueError(
-                f"beta_frequency_hz should be 13-30 Hz, got {self.beta_frequency_hz}"
-            )
+            raise ValueError(f"beta_frequency_hz should be 13-30 Hz, got {self.beta_frequency_hz}")
         if not (30.0 <= self.gamma_frequency_hz <= 100.0):
             raise ValueError(
                 f"gamma_frequency_hz should be 30-100 Hz, got {self.gamma_frequency_hz}"
@@ -162,9 +157,7 @@ class GlobalConfig(BaseConfig):
             raise ValueError(f"vocab_size must be positive, got {self.vocab_size}")
 
         if self.default_sparsity <= 0 or self.default_sparsity >= 1:
-            raise ValueError(
-                f"default_sparsity must be in (0, 1), got {self.default_sparsity}"
-            )
+            raise ValueError(f"default_sparsity must be in (0, 1), got {self.default_sparsity}")
 
         if self.w_min > self.w_max:
             raise ValueError(f"w_min ({self.w_min}) > w_max ({self.w_max})")

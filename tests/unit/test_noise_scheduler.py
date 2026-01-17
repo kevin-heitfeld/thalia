@@ -138,10 +138,10 @@ def test_region_specific_noise():
     scheduler.set_stage(CurriculumStage.GRAMMAR)
 
     # Get noise for different regions
-    cortex_noise = scheduler.get_membrane_noise_for_region('cortex_l4')
-    hippocampus_noise = scheduler.get_membrane_noise_for_region('hippocampus')
-    cerebellum_noise = scheduler.get_membrane_noise_for_region('cerebellum')
-    pfc_noise = scheduler.get_membrane_noise_for_region('prefrontal')
+    cortex_noise = scheduler.get_membrane_noise_for_region("cortex_l4")
+    hippocampus_noise = scheduler.get_membrane_noise_for_region("hippocampus")
+    cerebellum_noise = scheduler.get_membrane_noise_for_region("cerebellum")
+    pfc_noise = scheduler.get_membrane_noise_for_region("prefrontal")
 
     # Hippocampus should be more variable
     assert hippocampus_noise > cortex_noise
@@ -197,8 +197,12 @@ def test_weight_noise_enabled_stages():
     assert profile_s.enable_weight_noise is False
 
     # Phonology and beyond: ON (exploration)
-    for stage in [CurriculumStage.PHONOLOGY, CurriculumStage.TODDLER,
-                  CurriculumStage.GRAMMAR, CurriculumStage.ABSTRACT]:
+    for stage in [
+        CurriculumStage.PHONOLOGY,
+        CurriculumStage.TODDLER,
+        CurriculumStage.GRAMMAR,
+        CurriculumStage.ABSTRACT,
+    ]:
         profile = scheduler.get_noise_profile(stage)
         assert profile.enable_weight_noise is True
 
@@ -225,8 +229,7 @@ def test_wm_noise_consistent():
     scheduler = NoiseScheduler(NoiseSchedulerConfig(verbose=False))
 
     # WM noise should be consistent (not stage-dependent)
-    for stage in [CurriculumStage.TODDLER, CurriculumStage.GRAMMAR,
-                  CurriculumStage.ABSTRACT]:
+    for stage in [CurriculumStage.TODDLER, CurriculumStage.GRAMMAR, CurriculumStage.ABSTRACT]:
         profile = scheduler.get_noise_profile(stage)
         # Should be in reasonable range for WM maintenance
         assert 0.015 <= profile.wm_noise_std <= 0.035
@@ -257,7 +260,7 @@ def test_adaptation_clamping():
     scheduler.update(
         CurriculumStage.GRAMMAR,
         performance=0.01,  # Terrible
-        criticality=0.5,   # Very subcritical
+        criticality=0.5,  # Very subcritical
     )
 
     # Profile should still be reasonable (multiplier is clamped)
@@ -275,7 +278,9 @@ def test_oscillator_phase_noise_progression():
     # Sensorimotor (stage -0.5) should have zero oscillator phase noise
     scheduler.set_stage(CurriculumStage.SENSORIMOTOR)
     noise_sensorimotor = scheduler.get_oscillator_phase_noise_std()
-    assert abs(noise_sensorimotor) < 1e-6, "Sensorimotor stage should have zero oscillator phase noise"
+    assert (
+        abs(noise_sensorimotor) < 1e-6
+    ), "Sensorimotor stage should have zero oscillator phase noise"
 
     # Oscillator phase noise should increase across later stages
     scheduler.set_stage(CurriculumStage.PHONOLOGY)
@@ -287,17 +292,25 @@ def test_oscillator_phase_noise_progression():
     scheduler.set_stage(CurriculumStage.ABSTRACT)
     noise_abstract = scheduler.get_oscillator_phase_noise_std()
 
-    assert noise_phonology > noise_sensorimotor, "Phonology should have more oscillator noise than Sensorimotor"
-    assert noise_grammar > noise_phonology, "Grammar should have more oscillator noise than Phonology"
+    assert (
+        noise_phonology > noise_sensorimotor
+    ), "Phonology should have more oscillator noise than Sensorimotor"
+    assert (
+        noise_grammar > noise_phonology
+    ), "Grammar should have more oscillator noise than Phonology"
     assert noise_abstract > noise_grammar, "Abstract should have more oscillator noise than Grammar"
 
     # Verify expected values (from stage profiles)
-    assert abs(noise_phonology - 0.03) < 1e-6, f"Expected 0.03 rad for Phonology, got {noise_phonology}"
+    assert (
+        abs(noise_phonology - 0.03) < 1e-6
+    ), f"Expected 0.03 rad for Phonology, got {noise_phonology}"
     assert abs(noise_grammar - 0.05) < 1e-6, f"Expected 0.05 rad for Grammar, got {noise_grammar}"
-    assert abs(noise_abstract - 0.07) < 1e-6, f"Expected 0.07 rad for Abstract, got {noise_abstract}"
+    assert (
+        abs(noise_abstract - 0.07) < 1e-6
+    ), f"Expected 0.07 rad for Abstract, got {noise_abstract}"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run tests
     test_noise_scheduler_init()
     print("✓ Initialization test passed")

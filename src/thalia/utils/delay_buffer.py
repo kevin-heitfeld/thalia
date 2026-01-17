@@ -94,8 +94,7 @@ class CircularDelayBuffer:
         """
         if spikes.shape[0] != self.size:
             raise ValueError(
-                f"Spike vector size mismatch: expected {self.size}, "
-                f"got {spikes.shape[0]}"
+                f"Spike vector size mismatch: expected {self.size}, " f"got {spikes.shape[0]}"
             )
 
         # Write to current position
@@ -117,9 +116,7 @@ class CircularDelayBuffer:
             ValueError: If delay > max_delay or delay < 0
         """
         if delay < 0 or delay > self.max_delay:
-            raise ValueError(
-                f"Delay {delay} out of range [0, {self.max_delay}]"
-            )
+            raise ValueError(f"Delay {delay} out of range [0, {self.max_delay}]")
 
         # Calculate read index (wrap around using modulo)
         read_idx = (self.ptr - delay) % (self.max_delay + 1)
@@ -152,8 +149,7 @@ class CircularDelayBuffer:
         """
         if new_size < self.size:
             raise ValueError(
-                f"Cannot shrink buffer: new_size {new_size} < "
-                f"current size {self.size}"
+                f"Cannot shrink buffer: new_size {new_size} < " f"current size {self.size}"
             )
 
         if new_size == self.size:
@@ -167,7 +163,7 @@ class CircularDelayBuffer:
         )
 
         # Copy existing data
-        new_buffer[:, :self.size] = self.buffer
+        new_buffer[:, : self.size] = self.buffer
 
         # Replace buffer
         self.buffer = new_buffer
@@ -211,14 +207,10 @@ class CircularDelayBuffer:
         """
         if state["max_delay"] != self.max_delay:
             raise ValueError(
-                f"max_delay mismatch: expected {self.max_delay}, "
-                f"got {state['max_delay']}"
+                f"max_delay mismatch: expected {self.max_delay}, " f"got {state['max_delay']}"
             )
         if state["size"] != self.size:
-            raise ValueError(
-                f"size mismatch: expected {self.size}, "
-                f"got {state['size']}"
-            )
+            raise ValueError(f"size mismatch: expected {self.size}, " f"got {state['size']}")
 
         self.buffer = state["buffer"].to(dtype=self.dtype, device=self.device)
         self.ptr = state["ptr"]

@@ -10,7 +10,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 
@@ -62,9 +62,13 @@ class ConsolidationManager:
         self._deliver_reward = deliver_reward_fn
 
         # Cache sizes for state reconstruction - fallback to component sizes if config doesn't have them
-        self._cortex_output_size = None  # Full cortex output (L23+L5), set via set_cortex_output_size()
-        self._hippo_size = getattr(config, 'hippocampus_size', None) or getattr(hippocampus, 'n_output', 128)
-        self._pfc_size = getattr(config, 'pfc_size', None) or getattr(pfc, 'n_output', 64)
+        self._cortex_output_size = (
+            None  # Full cortex output (L23+L5), set via set_cortex_output_size()
+        )
+        self._hippo_size = getattr(config, "hippocampus_size", None) or getattr(
+            hippocampus, "n_output", 128
+        )
+        self._pfc_size = getattr(config, "pfc_size", None) or getattr(pfc, "n_output", 64)
 
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""
@@ -92,7 +96,7 @@ class ConsolidationManager:
         # Construct state from current brain activity
         # Cortex outputs through both L23 and L5 (full output)
         cortex_out = None
-        if hasattr(self.cortex, 'state') and self.cortex.state:
+        if hasattr(self.cortex, "state") and self.cortex.state:
             l23 = self.cortex.state.l23_spikes
             l5 = self.cortex.state.l5_spikes
             if l23 is not None and l5 is not None:
@@ -100,19 +104,25 @@ class ConsolidationManager:
         if cortex_out is None:
             cortex_out = torch.zeros(1, self._cortex_output_size, device=self.config.device)
 
-        hippo_out = self.hippocampus.state.ca1_spikes if hasattr(self.hippocampus, 'state') and self.hippocampus.state else None
+        hippo_out = (
+            self.hippocampus.state.ca1_spikes
+            if hasattr(self.hippocampus, "state") and self.hippocampus.state
+            else None
+        )
         if hippo_out is None:
             hippo_out = torch.zeros(1, self._hippo_size, device=self.config.device)
 
-        pfc_out = self.pfc.state.spikes if hasattr(self.pfc, 'state') and self.pfc.state else None
+        pfc_out = self.pfc.state.spikes if hasattr(self.pfc, "state") and self.pfc.state else None
         if pfc_out is None:
             pfc_out = torch.zeros(1, self._pfc_size, device=self.config.device)
 
-        combined_state = torch.cat([
-            cortex_out.view(-1),
-            hippo_out.view(-1),
-            pfc_out.view(-1),
-        ])
+        combined_state = torch.cat(
+            [
+                cortex_out.view(-1),
+                hippo_out.view(-1),
+                pfc_out.view(-1),
+            ]
+        )
 
         # Priority boost for rare/important experiences
         priority_boost = 0.0
@@ -166,52 +176,69 @@ class ConsolidationManager:
             Dict with consolidation statistics
         """
         stats = {
-            'cycles_completed': 0,
-            'total_replayed': 0,
-            'experiences_learned': 0,
-            'her_enabled': (
-                self.hippocampus.her_integration is not None if hasattr(self.hippocampus, 'her_integration') else False
+            "cycles_completed": 0,
+            "total_replayed": 0,
+            "experiences_learned": 0,
+            "her_enabled": (
+                self.hippocampus.her_integration is not None
+                if hasattr(self.hippocampus, "her_integration")
+                else False
             ),
         }
 
         # Enter consolidation mode if HER enabled
-        if hasattr(self.hippocampus, 'her_integration') and self.hippocampus.her_integration is not None:
+        if (
+            hasattr(self.hippocampus, "her_integration")
+            and self.hippocampus.her_integration is not None
+        ):
             self.hippocampus.enter_consolidation_mode()
             if verbose:
                 her_diag = self.hippocampus.get_her_diagnostics()
-                print(f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions")
+                print(
+                    f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions"
+                )
 
         # Run replay cycles
         for cycle in range(n_cycles):
-            if hasattr(self.hippocampus, 'her_integration') and self.hippocampus.her_integration is not None:
+            if (
+                hasattr(self.hippocampus, "her_integration")
+                and self.hippocampus.her_integration is not None
+            ):
                 # Sample mix of real + hindsight experiences
                 batch = self.hippocampus.sample_her_replay_batch(batch_size=batch_size)
                 if batch:
-                    stats['total_replayed'] += len(batch)
+                    stats["total_replayed"] += len(batch)
 
                     # Replay each experience and trigger learning
                     for experience in batch:
                         self._replay_experience(experience, last_action_holder, stats)
 
                     if verbose:
-                        print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned")
+                        print(
+                            f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned"
+                        )
             else:
                 # Sample normal episodic replay
                 episodes = self.hippocampus.sample_episodes_prioritized(n=batch_size)
                 if episodes:
-                    stats['total_replayed'] += len(episodes)
+                    stats["total_replayed"] += len(episodes)
 
                     # Replay each episode and trigger learning
                     for episode in episodes:
                         self._replay_experience(episode, last_action_holder, stats)
 
                     if verbose:
-                        print(f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(episodes)} episodes, {stats['experiences_learned']} learned")
+                        print(
+                            f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(episodes)} episodes, {stats['experiences_learned']} learned"
+                        )
 
-            stats['cycles_completed'] += 1
+            stats["cycles_completed"] += 1
 
         # Exit consolidation mode
-        if hasattr(self.hippocampus, 'her_integration') and self.hippocampus.her_integration is not None:
+        if (
+            hasattr(self.hippocampus, "her_integration")
+            and self.hippocampus.her_integration is not None
+        ):
             self.hippocampus.exit_consolidation_mode()
 
         return stats
@@ -230,16 +257,16 @@ class ConsolidationManager:
             stats: Statistics dict to update
         """
         # Handle both dict and dataclass (Episode) formats
-        if hasattr(experience, 'action'):
+        if hasattr(experience, "action"):
             # Dataclass format (Episode)
             action = experience.action
             reward = experience.reward
             state = experience.state
         else:
             # Dict format
-            action = experience.get('action', None)
-            reward = experience.get('reward', 0.0)
-            state = experience.get('state', None)
+            action = experience.get("action", None)
+            reward = experience.get("reward", 0.0)
+            state = experience.get("state", None)
 
         if action is None or state is None:
             return
@@ -250,19 +277,22 @@ class ConsolidationManager:
         pfc_size = self._pfc_size
 
         cortex_state = state[:cortex_size]
-        hippo_state = state[cortex_size:cortex_size + hippo_size]
-        pfc_state = state[cortex_size + hippo_size:]
+        hippo_state = state[cortex_size : cortex_size + hippo_size]
+        pfc_state = state[cortex_size + hippo_size :]
 
         # Reactivate pattern in striatum
         # Note: Striatum expects 1D input (ADR-005), no batch dimension
-        striatum_input = torch.cat([
-            cortex_state,
-            hippo_state,
-            pfc_state,
-        ], dim=-1)
+        striatum_input = torch.cat(
+            [
+                cortex_state,
+                hippo_state,
+                pfc_state,
+            ],
+            dim=-1,
+        )
         _ = self.striatum.forward(striatum_input)
 
         # Set action and deliver reward (triggers learning!)
         last_action_holder[0] = action
         self._deliver_reward(external_reward=reward)
-        stats['experiences_learned'] += 1
+        stats["experiences_learned"] += 1

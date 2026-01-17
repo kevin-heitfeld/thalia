@@ -33,14 +33,16 @@ class TestPathwayManagerIntegration:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component("cortex", "layered_cortex", input_size=64, **calculate_layer_sizes(32))
-            .connect("input", "cortex", pathway_type="axonal_projection")  # Routing pathway (no weights)
+            .connect(
+                "input", "cortex", pathway_type="axonal_projection"
+            )  # Routing pathway (no weights)
             .build()
         )
         return brain
 
     def test_pathway_manager_exists(self, simple_brain):
         """Test that PathwayManager is initialized."""
-        assert hasattr(simple_brain, 'pathway_manager')
+        assert hasattr(simple_brain, "pathway_manager")
         assert simple_brain.pathway_manager is not None
 
     def test_pathway_diagnostics(self, simple_brain):
@@ -49,17 +51,17 @@ class TestPathwayManagerIntegration:
         diag = simple_brain.get_diagnostics()
 
         # Should include pathways diagnostics (from PathwayManager)
-        assert 'pathways' in diag
-        pathway_diag = diag['pathways']
+        assert "pathways" in diag
+        pathway_diag = diag["pathways"]
 
         # Should have pathway entries
         assert len(pathway_diag) > 0
 
         # Check for input_to_cortex pathway
-        assert 'input_to_cortex' in pathway_diag
+        assert "input_to_cortex" in pathway_diag
 
         # Should have weight statistics
-        cortex_pathway_diag = pathway_diag['input_to_cortex']
+        cortex_pathway_diag = pathway_diag["input_to_cortex"]
         assert isinstance(cortex_pathway_diag, dict)
 
     def test_pathway_manager_get_all_pathways(self, simple_brain):
@@ -67,11 +69,11 @@ class TestPathwayManagerIntegration:
         pathways = simple_brain.pathway_manager.get_all_pathways()
 
         assert isinstance(pathways, dict)
-        assert 'input_to_cortex' in pathways
+        assert "input_to_cortex" in pathways
 
         # Should be pathway instance
-        pathway = pathways['input_to_cortex']
-        assert hasattr(pathway, 'forward')
+        pathway = pathways["input_to_cortex"]
+        assert hasattr(pathway, "forward")
 
     def test_full_state_includes_pathways(self, simple_brain):
         """Test that get_full_state includes pathway states."""
@@ -83,9 +85,9 @@ class TestPathwayManagerIntegration:
         state = simple_brain.get_full_state()
 
         # Should have pathways key
-        assert 'pathways' in state
-        assert isinstance(state['pathways'], dict)
-        assert len(state['pathways']) > 0
+        assert "pathways" in state
+        assert isinstance(state["pathways"], dict)
+        assert len(state["pathways"]) > 0
 
 
 if __name__ == "__main__":

@@ -64,15 +64,15 @@ class TestPathwayDimensionIntegrity:
 
         for pathway_name, pathway in pathway_manager.get_all_pathways().items():
             # Verify weight matrix shape matches declared sizes
-            if hasattr(pathway, 'weights'):
-                if hasattr(pathway, 'input_size') and hasattr(pathway, 'output_size'):
+            if hasattr(pathway, "weights"):
+                if hasattr(pathway, "input_size") and hasattr(pathway, "output_size"):
                     expected_shape = (pathway.output_size, pathway.input_size)
                     if pathway.weights.shape != expected_shape:
                         errors.append(
                             f"Pathway '{pathway_name}' weights shape {pathway.weights.shape} != "
                             f"expected {expected_shape}"
                         )
-                elif hasattr(pathway.config, 'n_input') and hasattr(pathway.config, 'n_output'):
+                elif hasattr(pathway.config, "n_input") and hasattr(pathway.config, "n_output"):
                     # Fall back to config
                     expected_shape = (pathway.config.n_output, pathway.config.n_input)
                     if pathway.weights.shape != expected_shape:
@@ -105,8 +105,8 @@ class TestNetworkConnectivity:
         # Infer connectivity from pathway names (e.g., "thalamus_to_cortex")
         for pathway_name in pathway_manager.get_all_pathways().keys():
             # Most pathways follow pattern: "{source}_to_{target}"
-            if '_to_' in pathway_name:
-                parts = pathway_name.split('_to_')
+            if "_to_" in pathway_name:
+                parts = pathway_name.split("_to_")
                 if len(parts) == 2:
                     source_name = parts[0]
                     target_name = parts[1]
@@ -116,33 +116,34 @@ class TestNetworkConnectivity:
                     if target_name in has_input:
                         has_input[target_name] = True
             # Special pathways (attention, replay) have different naming
-            elif pathway_name == 'attention':  # pfc -> cortex
-                has_output['pfc'] = True
-                has_input['cortex'] = True
-            elif pathway_name == 'replay':  # hippocampus -> cortex
-                has_output['hippocampus'] = True
-                has_input['cortex'] = True
+            elif pathway_name == "attention":  # pfc -> cortex
+                has_output["pfc"] = True
+                has_input["cortex"] = True
+            elif pathway_name == "replay":  # hippocampus -> cortex
+                has_output["hippocampus"] = True
+                has_input["cortex"] = True
 
         # Check for disconnected regions
         disconnected = []
         for region_name in test_brain.components:
             # Allow explicit input/output regions to be one-way
-            if region_name in ['input', 'output', 'sensory', 'motor']:
+            if region_name in ["input", "output", "sensory", "motor"]:
                 continue
 
             # Thalamus can be input-only (receives sensory input directly)
-            if region_name == 'thalamus' and has_output[region_name]:
+            if region_name == "thalamus" and has_output[region_name]:
                 continue
 
             # Cerebellum can be output-only (motor output)
-            if region_name == 'cerebellum' and has_input[region_name]:
+            if region_name == "cerebellum" and has_input[region_name]:
                 continue
 
             if not (has_input[region_name] or has_output[region_name]):
                 disconnected.append(region_name)
 
-        assert len(disconnected) == 0, \
-            f"Disconnected regions (no pathway inputs or outputs): {disconnected}"
+        assert (
+            len(disconnected) == 0
+        ), f"Disconnected regions (no pathway inputs or outputs): {disconnected}"
 
     def test_pathway_count_is_reasonable(self, test_brain):
         """Test that brain has a reasonable number of pathways.
@@ -155,13 +156,15 @@ class TestNetworkConnectivity:
         n_regions = len(test_brain.components)
 
         # Minimum: Each region should have at least one connection
-        assert n_pathways >= n_regions - 1, \
-            f"Too few pathways ({n_pathways}) for {n_regions} regions"
+        assert (
+            n_pathways >= n_regions - 1
+        ), f"Too few pathways ({n_pathways}) for {n_regions} regions"
 
         # Maximum: Not fully connected (would be n_regions * (n_regions - 1))
         max_reasonable = n_regions * (n_regions - 1) // 2  # Half of fully connected
-        assert n_pathways <= max_reasonable, \
-            f"Too many pathways ({n_pathways}), suggests redundant connections"
+        assert (
+            n_pathways <= max_reasonable
+        ), f"Too many pathways ({n_pathways}), suggests redundant connections"
 
 
 class TestWeightValidity:
@@ -177,7 +180,7 @@ class TestWeightValidity:
         pathway_manager = test_brain.pathway_manager
 
         for pathway_name, pathway in pathway_manager.get_all_pathways().items():
-            if not hasattr(pathway, 'weights'):
+            if not hasattr(pathway, "weights"):
                 continue  # Skip pathways without weights
 
             weights = pathway.weights
@@ -193,7 +196,7 @@ class TestWeightValidity:
                 errors.append(f"Pathway '{pathway_name}' has {inf_count} Inf weights")
 
             # Check for reasonable range (if config specifies bounds)
-            if hasattr(pathway, 'w_min') and hasattr(pathway, 'w_max'):
+            if hasattr(pathway, "w_min") and hasattr(pathway, "w_max"):
                 w_min = pathway.w_min
                 w_max = pathway.w_max
 
@@ -218,14 +221,15 @@ class TestWeightValidity:
         pathway_manager = test_brain.pathway_manager
 
         for pathway_name, pathway in pathway_manager.get_all_pathways().items():
-            if not hasattr(pathway, 'weights'):
+            if not hasattr(pathway, "weights"):
                 continue
 
             weights = pathway.weights
 
             # Check that not all weights are zero
-            assert weights.abs().sum() > 0, \
-                f"Pathway '{pathway_name}' has all-zero weights (initialization failed)"
+            assert (
+                weights.abs().sum() > 0
+            ), f"Pathway '{pathway_name}' has all-zero weights (initialization failed)"
 
 
 class TestBrainForwardPass:
@@ -238,7 +242,9 @@ class TestBrainForwardPass:
         """
         # Create valid input
         # Get input size from thalamus (input interface)
-        thalamus = test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        thalamus = (
+            test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        )
         if thalamus and hasattr(thalamus, "input_size"):
             input_size = thalamus.input_size
         else:
@@ -249,17 +255,19 @@ class TestBrainForwardPass:
         result = test_brain.forward(sensory_input, n_timesteps=5)
 
         # Validate result structure
-        assert 'spike_counts' in result, "Missing spike_counts in result"
-        assert isinstance(result['spike_counts'], dict), "spike_counts should be dict"
+        assert "spike_counts" in result, "Missing spike_counts in result"
+        assert isinstance(result["spike_counts"], dict), "spike_counts should be dict"
 
         # Validate all regions produced valid output
         # NOTE: spike_counts is a dict of integers (spike counts), not tensors
         errors = []
-        for region_name, spike_count in result['spike_counts'].items():
-            assert isinstance(spike_count, int), \
-                f"Region '{region_name}' spike_count should be int, got {type(spike_count)}"
-            assert spike_count >= 0, \
-                f"Region '{region_name}' spike_count should be non-negative, got {spike_count}"
+        for region_name, spike_count in result["spike_counts"].items():
+            assert isinstance(
+                spike_count, int
+            ), f"Region '{region_name}' spike_count should be int, got {type(spike_count)}"
+            assert (
+                spike_count >= 0
+            ), f"Region '{region_name}' spike_count should be non-negative, got {spike_count}"
 
         assert len(errors) == 0, "\n".join(["Invalid spike outputs:"] + errors)
 
@@ -297,7 +305,9 @@ class TestEdgeCases:
 
         Edge case: No sensory input.
         """
-        thalamus = test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        thalamus = (
+            test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        )
         input_size = thalamus.input_size if thalamus and hasattr(thalamus, "input_size") else 100
         silent_input = torch.zeros(input_size, device=device, dtype=torch.bool)
 
@@ -306,19 +316,21 @@ class TestEdgeCases:
 
         # Should produce valid output (may or may not spike)
         # NOTE: spike_counts is a dict of integers, not tensors
-        assert 'spike_counts' in result
-        for region_name, spike_count in result['spike_counts'].items():
-            assert isinstance(spike_count, int), \
-                f"Region '{region_name}' spike_count should be int"
-            assert spike_count >= 0, \
-                f"Region '{region_name}' spike_count should be non-negative with silent input"
+        assert "spike_counts" in result
+        for region_name, spike_count in result["spike_counts"].items():
+            assert isinstance(spike_count, int), f"Region '{region_name}' spike_count should be int"
+            assert (
+                spike_count >= 0
+            ), f"Region '{region_name}' spike_count should be non-negative with silent input"
 
     def test_brain_handles_saturated_input(self, test_brain, device):
         """Test brain handles all spikes (saturated input).
 
         Edge case: Maximum sensory input.
         """
-        thalamus = test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        thalamus = (
+            test_brain.components["thalamus"] if "thalamus" in test_brain.components else None
+        )
         input_size = thalamus.input_size if thalamus and hasattr(thalamus, "input_size") else 100
         saturated_input = torch.ones(input_size, device=device, dtype=torch.bool)
 
@@ -326,12 +338,12 @@ class TestEdgeCases:
         result = test_brain.forward(saturated_input, n_timesteps=5)
 
         # NOTE: spike_counts is a dict of integers, not tensors
-        assert 'spike_counts' in result
-        for region_name, spike_count in result['spike_counts'].items():
-            assert isinstance(spike_count, int), \
-                f"Region '{region_name}' spike_count should be int"
-            assert spike_count >= 0, \
-                f"Region '{region_name}' spike_count should be non-negative with saturated input"
+        assert "spike_counts" in result
+        for region_name, spike_count in result["spike_counts"].items():
+            assert isinstance(spike_count, int), f"Region '{region_name}' spike_count should be int"
+            assert (
+                spike_count >= 0
+            ), f"Region '{region_name}' spike_count should be non-negative with saturated input"
 
     def test_brain_reset_maintains_structure(self, test_brain):
         """Test that reset maintains network structure integrity.
@@ -348,27 +360,32 @@ class TestEdgeCases:
         test_brain.reset_state()
 
         # Validate structure unchanged
-        assert len(pathway_manager.get_all_pathways()) == initial_pathway_count, \
-            "Pathway count changed after reset"
-        assert len(test_brain.components) == initial_region_count, \
-            "Region count changed after reset"
-        assert set(pathway_manager.get_all_pathways().keys()) == initial_pathway_names, \
-            "Pathway names changed after reset"
+        assert (
+            len(pathway_manager.get_all_pathways()) == initial_pathway_count
+        ), "Pathway count changed after reset"
+        assert (
+            len(test_brain.components) == initial_region_count
+        ), "Region count changed after reset"
+        assert (
+            set(pathway_manager.get_all_pathways().keys()) == initial_pathway_names
+        ), "Pathway names changed after reset"
 
         # Validate dimensions still match
         # NOTE: AxonalProjection doesn't have source_name/target_name
         # We check internal consistency instead
         for pathway_name, pathway in pathway_manager.get_all_pathways().items():
             # Verify weight matrices still have correct shape
-            if hasattr(pathway, 'weights'):
-                if hasattr(pathway, 'input_size') and hasattr(pathway, 'output_size'):
+            if hasattr(pathway, "weights"):
+                if hasattr(pathway, "input_size") and hasattr(pathway, "output_size"):
                     expected_shape = (pathway.output_size, pathway.input_size)
-                    assert pathway.weights.shape == expected_shape, \
-                        f"Pathway '{pathway_name}' weights shape changed after reset"
-                elif hasattr(pathway.config, 'n_input') and hasattr(pathway.config, 'n_output'):
+                    assert (
+                        pathway.weights.shape == expected_shape
+                    ), f"Pathway '{pathway_name}' weights shape changed after reset"
+                elif hasattr(pathway.config, "n_input") and hasattr(pathway.config, "n_output"):
                     expected_shape = (pathway.config.n_output, pathway.config.n_input)
-                    assert pathway.weights.shape == expected_shape, \
-                        f"Pathway '{pathway_name}' weights shape changed after reset"
+                    assert (
+                        pathway.weights.shape == expected_shape
+                    ), f"Pathway '{pathway_name}' weights shape changed after reset"
 
 
 # Summary for documentation

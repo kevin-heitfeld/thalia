@@ -119,14 +119,15 @@ class StimulusGating:
 
         # Sigmoid activation based on change magnitude
         # High change → high inhibition
-        inhibition = torch.sigmoid(
-            (change_magnitude - self.threshold) * self.steepness
-        ) * self.max_inhibition
+        inhibition = (
+            torch.sigmoid((change_magnitude - self.threshold) * self.steepness)
+            * self.max_inhibition
+        )
 
         # Update previous input (with decay for smooth tracking)
         self._prev_input = (
-            self.decay_rate * self._prev_input +
-            (1 - self.decay_rate) * current_float.detach().clone()
+            self.decay_rate * self._prev_input
+            + (1 - self.decay_rate) * current_float.detach().clone()
         )
 
         self._current_inhibition = inhibition.item()

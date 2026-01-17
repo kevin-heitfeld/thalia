@@ -97,30 +97,33 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 from enum import Enum
-
+from typing import Dict, List, Optional, Tuple
 
 # ============================================================================
 # Sleep Stage Types
 # ============================================================================
 
+
 class SleepStage(Enum):
     """Sleep stages during consolidation."""
+
     NREM = "NREM"  # Non-REM: Hippocampus → Cortex transfer
-    REM = "REM"    # REM: Cortical reorganization
+    REM = "REM"  # REM: Cortical reorganization
 
 
 # ============================================================================
 # 1. Memory Pressure Detector
 # ============================================================================
 
+
 @dataclass
 class MemoryPressureConfig:
     """Configuration for memory pressure detection."""
+
     # Thresholds for triggering consolidation
     high_activity_threshold: float = 0.80  # Hippocampus saturation
-    high_overlap_threshold: float = 0.70   # Pattern interference
+    high_overlap_threshold: float = 0.70  # Pattern interference
     low_retrieval_threshold: float = 0.85  # Forgetting signal
 
     # Weights for combined pressure (sum to 1.0)
@@ -192,28 +195,24 @@ class MemoryPressureDetector:
         # Individual pressure components
         activity_pressure = max(
             0.0,
-            (hippocampus_activity - cfg.high_activity_threshold) /
-            (1.0 - cfg.high_activity_threshold)
+            (hippocampus_activity - cfg.high_activity_threshold)
+            / (1.0 - cfg.high_activity_threshold),
         )
 
         overlap_pressure = max(
-            0.0,
-            (pattern_overlap - cfg.high_overlap_threshold) /
-            (1.0 - cfg.high_overlap_threshold)
+            0.0, (pattern_overlap - cfg.high_overlap_threshold) / (1.0 - cfg.high_overlap_threshold)
         )
 
         # Retrieval: LOW success = HIGH pressure
         retrieval_pressure = max(
-            0.0,
-            (cfg.low_retrieval_threshold - retrieval_success) /
-            cfg.low_retrieval_threshold
+            0.0, (cfg.low_retrieval_threshold - retrieval_success) / cfg.low_retrieval_threshold
         )
 
         # Weighted combination
         pressure = (
-            cfg.activity_weight * activity_pressure +
-            cfg.overlap_weight * overlap_pressure +
-            cfg.retrieval_weight * retrieval_pressure
+            cfg.activity_weight * activity_pressure
+            + cfg.overlap_weight * overlap_pressure
+            + cfg.retrieval_weight * retrieval_pressure
         )
 
         return min(1.0, pressure)  # Clamp to [0, 1]
@@ -254,16 +253,18 @@ class MemoryPressureDetector:
 # 2. Sleep Stage Controller
 # ============================================================================
 
+
 @dataclass
 class SleepStageConfig:
     """Configuration for sleep stage alternation."""
+
     # Cycle duration (steps)
     nrem_duration: int = 5000  # ~90 min in real life
-    rem_duration: int = 2000   # ~30 min in real life
+    rem_duration: int = 2000  # ~30 min in real life
 
     # Replay characteristics per stage
     nrem_replay_speed: float = 10.0  # 10× compression
-    rem_replay_speed: float = 20.0   # 20× compression (faster)
+    rem_replay_speed: float = 20.0  # 20× compression (faster)
 
     # Delta oscillation parameters (for NREM)
     delta_frequency_hz: float = 2.0  # Slow-wave sleep frequency
@@ -315,9 +316,7 @@ class SleepStageController:
             config: Configuration for cycle durations
         """
         self.config = config or SleepStageConfig()
-        self._cycle_length = (
-            self.config.nrem_duration + self.config.rem_duration
-        )
+        self._cycle_length = self.config.nrem_duration + self.config.rem_duration
         self._current_stage: Optional[SleepStage] = None
 
     def get_current_stage(self, consolidation_step: int) -> SleepStage:
@@ -387,8 +386,7 @@ class SleepStageController:
         Returns:
             True if cycle just completed
         """
-        return (consolidation_step > 0 and
-                consolidation_step % self._cycle_length == 0)
+        return consolidation_step > 0 and consolidation_step % self._cycle_length == 0
 
     def get_progress_in_stage(self, consolidation_step: int) -> float:
         """Get progress through current stage (0-1).
@@ -413,9 +411,11 @@ class SleepStageController:
 # 3. Consolidation Metrics
 # ============================================================================
 
+
 @dataclass
 class ConsolidationSnapshot:
     """Single snapshot of consolidation progress."""
+
     step: int
     patterns_replayed: int
     cortical_learning_rate: float
@@ -493,14 +493,12 @@ class ConsolidationMetrics:
             return 0.0
 
         # Average cortical learning (higher = better)
-        avg_cortical_learning = sum(
-            s.cortical_learning_rate for s in self._history
-        ) / len(self._history)
+        avg_cortical_learning = sum(s.cortical_learning_rate for s in self._history) / len(
+            self._history
+        )
 
         # Average retrieval degradation (lower = better)
-        avg_degradation = sum(
-            s.retrieval_degradation for s in self._history
-        ) / len(self._history)
+        avg_degradation = sum(s.retrieval_degradation for s in self._history) / len(self._history)
 
         # Transfer efficiency (patterns / steps)
         transfer_efficiency = self._total_patterns_replayed / len(self._history)
@@ -509,9 +507,9 @@ class ConsolidationMetrics:
 
         # Combine (weighted)
         quality = (
-            0.4 * transfer_score +
-            0.4 * min(1.0, avg_cortical_learning / 0.05) +  # 5% is good
-            0.2 * (1.0 - avg_degradation / 0.05)  # <5% degradation is good
+            0.4 * transfer_score
+            + 0.4 * min(1.0, avg_cortical_learning / 0.05)  # 5% is good
+            + 0.2 * (1.0 - avg_degradation / 0.05)  # <5% degradation is good
         )
 
         return min(1.0, quality)
@@ -538,12 +536,10 @@ class ConsolidationMetrics:
                 stats[stage] = {
                     "count": len(stage_snapshots),
                     "patterns_replayed": sum(s.patterns_replayed for s in stage_snapshots),
-                    "avg_cortical_learning": sum(
-                        s.cortical_learning_rate for s in stage_snapshots
-                    ) / len(stage_snapshots),
-                    "avg_degradation": sum(
-                        s.retrieval_degradation for s in stage_snapshots
-                    ) / len(stage_snapshots),
+                    "avg_cortical_learning": sum(s.cortical_learning_rate for s in stage_snapshots)
+                    / len(stage_snapshots),
+                    "avg_degradation": sum(s.retrieval_degradation for s in stage_snapshots)
+                    / len(stage_snapshots),
                 }
             else:
                 stats[stage] = {
@@ -560,21 +556,19 @@ class ConsolidationMetrics:
 # 4. Consolidation Trigger (High-Level)
 # ============================================================================
 
+
 @dataclass
 class ConsolidationTriggerConfig:
     """Configuration for consolidation triggering."""
+
     # Minimum steps between consolidations
     min_consolidation_interval: int = 50000
 
     # Memory pressure threshold
-    pressure_config: MemoryPressureConfig = field(
-        default_factory=MemoryPressureConfig
-    )
+    pressure_config: MemoryPressureConfig = field(default_factory=MemoryPressureConfig)
 
     # Sleep stage config
-    sleep_config: SleepStageConfig = field(
-        default_factory=SleepStageConfig
-    )
+    sleep_config: SleepStageConfig = field(default_factory=SleepStageConfig)
 
 
 class ConsolidationTrigger:
@@ -610,12 +604,8 @@ class ConsolidationTrigger:
         """
         self.config = config or ConsolidationTriggerConfig()
 
-        self._pressure_detector = MemoryPressureDetector(
-            self.config.pressure_config
-        )
-        self._sleep_controller = SleepStageController(
-            self.config.sleep_config
-        )
+        self._pressure_detector = MemoryPressureDetector(self.config.pressure_config)
+        self._sleep_controller = SleepStageController(self.config.sleep_config)
 
         self._last_consolidation_step: Optional[int] = None
 

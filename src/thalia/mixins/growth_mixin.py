@@ -115,7 +115,7 @@ class GrowthMixin:
         self,
         current_weights: nn.Parameter,
         n_new: int,
-        initialization: str = 'xavier',
+        initialization: str = "xavier",
         sparsity: float = 0.1,
         scale: Optional[float] = None,
     ) -> nn.Parameter:
@@ -146,17 +146,21 @@ class GrowthMixin:
         # Default scale: Use constant from regulation module (Architecture Review 2025-12-21, Tier 1.3)
         if scale is None:
             from thalia.constants.architecture import GROWTH_NEW_WEIGHT_SCALE
+
             scale = self.config.w_max * GROWTH_NEW_WEIGHT_SCALE
 
         # Initialize new weights using specified strategy
-        if initialization == 'xavier':
-            new_weights = WeightInitializer.xavier(
-                n_output=n_new,
-                n_input=n_input,
-                gain=0.2,
-                device=device,
-            ) * self.config.w_max
-        elif initialization == 'sparse_random':
+        if initialization == "xavier":
+            new_weights = (
+                WeightInitializer.xavier(
+                    n_output=n_new,
+                    n_input=n_input,
+                    gain=0.2,
+                    device=device,
+                )
+                * self.config.w_max
+            )
+        elif initialization == "sparse_random":
             new_weights = WeightInitializer.sparse_random(
                 n_output=n_new,
                 n_input=n_input,
@@ -174,7 +178,9 @@ class GrowthMixin:
             )
 
         # Clamp to config bounds
-        new_weights = clamp_weights(new_weights, self.config.w_min, self.config.w_max, inplace=False)
+        new_weights = clamp_weights(
+            new_weights, self.config.w_min, self.config.w_max, inplace=False
+        )
 
         # Concatenate with existing weights
         expanded = torch.cat([current_weights.data, new_weights], dim=0)
@@ -184,7 +190,7 @@ class GrowthMixin:
         self,
         n_output: int,
         n_input: int,
-        initialization: str = 'xavier',
+        initialization: str = "xavier",
         sparsity: float = 0.1,
     ) -> torch.Tensor:
         """Create new weight tensor using specified initialization strategy.
@@ -213,12 +219,10 @@ class GrowthMixin:
             ... )
             >>> self.weights.data = torch.cat([self.weights.data, new_cols], dim=1)
         """
-        if initialization == 'xavier':
+        if initialization == "xavier":
             return WeightInitializer.xavier(n_output, n_input, device=self.device)
-        elif initialization == 'sparse_random':
-            return WeightInitializer.sparse_random(
-                n_output, n_input, sparsity, device=self.device
-            )
+        elif initialization == "sparse_random":
+            return WeightInitializer.sparse_random(n_output, n_input, sparsity, device=self.device)
         else:  # uniform
             return WeightInitializer.uniform(n_output, n_input, device=self.device)
 
@@ -269,8 +273,8 @@ class GrowthMixin:
     def _expand_weights_output(
         self,
         n_new: int,
-        weight_param_name: str = 'weights',
-        init_method: str = 'xavier',
+        weight_param_name: str = "weights",
+        init_method: str = "xavier",
         sparsity: float = 0.1,
     ) -> None:
         """Expand weight matrix with new output rows (add neurons).
@@ -301,14 +305,17 @@ class GrowthMixin:
         device = current_weights.device
 
         # Create new rows
-        if init_method == 'xavier':
-            new_rows = WeightInitializer.xavier(
-                n_output=n_new,
-                n_input=n_input,
-                gain=0.2,
-                device=device,
-            ) * self.config.w_max
-        elif init_method == 'sparse_random':
+        if init_method == "xavier":
+            new_rows = (
+                WeightInitializer.xavier(
+                    n_output=n_new,
+                    n_input=n_input,
+                    gain=0.2,
+                    device=device,
+                )
+                * self.config.w_max
+            )
+        elif init_method == "sparse_random":
             new_rows = WeightInitializer.sparse_random(
                 n_output=n_new,
                 n_input=n_input,
@@ -335,8 +342,8 @@ class GrowthMixin:
     def _expand_weights_input(
         self,
         n_new: int,
-        weight_param_name: str = 'weights',
-        init_method: str = 'xavier',
+        weight_param_name: str = "weights",
+        init_method: str = "xavier",
         sparsity: float = 0.1,
     ) -> None:
         """Expand weight matrix with new input columns (accept more inputs).
@@ -366,14 +373,17 @@ class GrowthMixin:
         device = current_weights.device
 
         # Create new columns
-        if init_method == 'xavier':
-            new_cols = WeightInitializer.xavier(
-                n_output=n_output,
-                n_input=n_new,
-                gain=0.2,
-                device=device,
-            ) * self.config.w_max
-        elif init_method == 'sparse_random':
+        if init_method == "xavier":
+            new_cols = (
+                WeightInitializer.xavier(
+                    n_output=n_output,
+                    n_input=n_new,
+                    gain=0.2,
+                    device=device,
+                )
+                * self.config.w_max
+            )
+        elif init_method == "sparse_random":
             new_cols = WeightInitializer.sparse_random(
                 n_output=n_output,
                 n_input=n_new,
@@ -432,9 +442,10 @@ class GrowthMixin:
 
         # Create new matrix with appropriate initializer
         if initializer == "xavier":
-            new_weights = WeightInitializer.xavier(
-                n_new_total, n_input, gain=0.2, device=device
-            ) * self.config.w_max
+            new_weights = (
+                WeightInitializer.xavier(n_new_total, n_input, gain=0.2, device=device)
+                * self.config.w_max
+            )
         elif initializer == "gaussian":
             new_weights = WeightInitializer.gaussian(
                 n_new_total, n_input, mean=0.3, std=0.1, device=device
@@ -487,9 +498,10 @@ class GrowthMixin:
 
         # Create new matrix with appropriate initializer
         if initializer == "xavier":
-            new_weights = WeightInitializer.xavier(
-                n_output, n_new_total, gain=0.2, device=device
-            ) * self.config.w_max
+            new_weights = (
+                WeightInitializer.xavier(n_output, n_new_total, gain=0.2, device=device)
+                * self.config.w_max
+            )
         elif initializer == "gaussian":
             new_weights = WeightInitializer.gaussian(
                 n_output, n_new_total, mean=0.3, std=0.1, device=device
@@ -514,7 +526,7 @@ class GrowthMixin:
     def _register_stp(
         self,
         stp_attr: str,
-        direction: str = 'post',
+        direction: str = "post",
         recurrent: bool = False,
     ) -> None:
         """Register an STP module for automatic growth (opt-in, Phase 2).
@@ -548,11 +560,11 @@ class GrowthMixin:
             This is opt-in. Regions with complex STP routing (like Cerebellum,
             Hippocampus) can skip registration and grow STP modules manually.
         """
-        if direction not in ('pre', 'post', 'both'):
+        if direction not in ("pre", "post", "both"):
             raise ValueError(f"Invalid direction '{direction}', must be 'pre', 'post', or 'both'")
 
         # Lazy initialization (mixin __init__ may not be called due to MRO)
-        if not hasattr(self, '_registered_stp'):
+        if not hasattr(self, "_registered_stp"):
             self._registered_stp = {}
         self._registered_stp[stp_attr] = (direction, recurrent)
 
@@ -585,7 +597,7 @@ class GrowthMixin:
             FSI with conditional weights) should use manual growth.
         """
         # Lazy initialization (mixin __init__ may not be called due to MRO)
-        if not hasattr(self, '_registered_subcomponents'):
+        if not hasattr(self, "_registered_subcomponents"):
             self._registered_subcomponents = {}
         self._registered_subcomponents[component_attr] = (ratio, size_attr)
 
@@ -618,12 +630,12 @@ class GrowthMixin:
         """
         from thalia.components.synapses.stp import ShortTermPlasticity
 
-        counts = {'stp_grown': 0, 'subcomponents_grown': 0}
+        counts = {"stp_grown": 0, "subcomponents_grown": 0}
 
         # Lazy initialization (mixin __init__ may not be called due to MRO)
-        if not hasattr(self, '_registered_stp'):
+        if not hasattr(self, "_registered_stp"):
             self._registered_stp = {}
-        if not hasattr(self, '_registered_subcomponents'):
+        if not hasattr(self, "_registered_subcomponents"):
             self._registered_subcomponents = {}
 
         # Grow registered STP modules
@@ -640,25 +652,25 @@ class GrowthMixin:
                 direction, recurrent = registration
             else:
                 direction = registration
-                recurrent = (direction == 'both')  # Legacy: 'both' implied recurrent
+                recurrent = direction == "both"  # Legacy: 'both' implied recurrent
 
             # Determine growth based on context and direction
-            if growth_type == 'output':
+            if growth_type == "output":
                 # Always grow 'post' if direction is 'post' or 'both'
-                if direction in ('post', 'both'):
-                    stp.grow(n_new, target='post')
-                    counts['stp_grown'] += 1
+                if direction in ("post", "both"):
+                    stp.grow(n_new, target="post")
+                    counts["stp_grown"] += 1
                 # Also grow 'pre' if recurrent
                 if recurrent:
-                    stp.grow(n_new, target='pre')
-            elif growth_type == 'input':
+                    stp.grow(n_new, target="pre")
+            elif growth_type == "input":
                 # Grow 'pre' if direction is 'pre' or 'both'
-                if direction in ('pre', 'both'):
-                    stp.grow(n_new, target='pre')
-                    counts['stp_grown'] += 1
+                if direction in ("pre", "both"):
+                    stp.grow(n_new, target="pre")
+                    counts["stp_grown"] += 1
 
         # Grow registered subcomponents (only for output growth)
-        if growth_type == 'output':
+        if growth_type == "output":
             for component_attr, (ratio, size_attr) in self._registered_subcomponents.items():
                 if not hasattr(self, component_attr):
                     continue
@@ -673,9 +685,9 @@ class GrowthMixin:
                     continue
 
                 # Grow the component if it has grow_neurons method
-                if hasattr(component, 'grow_neurons'):
+                if hasattr(component, "grow_neurons"):
                     component.grow_neurons(n_new_component)
-                    counts['subcomponents_grown'] += 1
+                    counts["subcomponents_grown"] += 1
 
                     # Update size attribute if provided
                     if size_attr and hasattr(self, size_attr):
@@ -809,7 +821,7 @@ class GrowthMixin:
             )
 
         # Check neurons grown (if applicable)
-        if check_neurons and hasattr(self, 'neurons'):
+        if check_neurons and hasattr(self, "neurons"):
             actual_neurons = self.neurons.n_neurons
             assert actual_neurons == expected_n_output, (
                 f"Growth validation failed: neurons not grown correctly. "
@@ -860,10 +872,10 @@ class GrowthMixin:
 
         # Check instance variable updated (size is structural, not in config)
         if check_config:
-            actual_n_input = getattr(self, 'input_size', None)
+            actual_n_input = getattr(self, "input_size", None)
             if actual_n_input is None:
                 # Fallback: try config.n_input for regions that haven't migrated
-                actual_n_input = getattr(self.config, 'n_input', None)
+                actual_n_input = getattr(self.config, "n_input", None)
 
             if actual_n_input is not None:
                 assert actual_n_input == expected_n_input, (
@@ -890,17 +902,17 @@ class GrowthMixin:
             >>> region.grow_output(10)
             >>> region._validate_state_buffer_sizes(region.config.n_output)
         """
-        if not hasattr(self, 'state') or self.state is None:
+        if not hasattr(self, "state") or self.state is None:
             return  # No state to validate
 
         # Check common state attributes
         state_attrs = [
-            'working_memory',
-            'update_gate',
-            'active_rule',
-            'recent_spikes',
-            'eligibility_trace',
-            'activity',
+            "working_memory",
+            "update_gate",
+            "active_rule",
+            "recent_spikes",
+            "eligibility_trace",
+            "activity",
         ]
 
         for attr in state_attrs:
@@ -934,14 +946,10 @@ class GrowthMixin:
             if isinstance(module, ShortTermPlasticity):
                 # For regions, we can check if STP sizes match expected dimensions
                 # This is a soft check - regions with complex STP may override
-                if hasattr(self, 'config'):
-                    if hasattr(module, 'n_post') and hasattr(self.config, 'n_output'):
+                if hasattr(self, "config"):
+                    if hasattr(module, "n_post") and hasattr(self.config, "n_output"):
                         # Note: Some regions (like Striatum) have multiple STP modules
                         # with different sizes, so we just check n_post > 0
-                        assert module.n_post > 0, (
-                            f"STP module '{name}' has n_post=0 after growth"
-                        )
-                    if hasattr(module, 'n_pre') and hasattr(self.config, 'n_input'):
-                        assert module.n_pre > 0, (
-                            f"STP module '{name}' has n_pre=0 after growth"
-                        )
+                        assert module.n_post > 0, f"STP module '{name}' has n_post=0 after growth"
+                    if hasattr(module, "n_pre") and hasattr(self.config, "n_input"):
+                        assert module.n_pre > 0, f"STP module '{name}' has n_pre=0 after growth"

@@ -74,7 +74,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -83,7 +83,7 @@ from thalia.constants.learning import LEARNING_RATE_PRECISION
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
-from thalia.regions.cortex.layered_cortex import LayeredCortexConfig, LayeredCortex
+from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingConfig,
     PredictiveCodingLayer,
@@ -96,10 +96,11 @@ class PredictiveCortexConfig(LayeredCortexConfig):
 
     Extends LayeredCortexConfig with predictive coding parameters.
     """
+
     # Predictive coding parameters
     prediction_enabled: bool = True
-    prediction_tau_ms: float = 50.0    # Slow predictions (NMDA-like)
-    error_tau_ms: float = 5.0          # Fast errors (AMPA-like)
+    prediction_tau_ms: float = 50.0  # Slow predictions (NMDA-like)
+    error_tau_ms: float = 5.0  # Fast errors (AMPA-like)
     prediction_learning_rate: float = 0.01
 
     # Precision (attention) parameters
@@ -124,6 +125,7 @@ class PredictiveCortexState(BaseRegionState):
     Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
     inherited from BaseRegionState.
     """
+
     # Layer-specific spikes (cortex has L4→L2/3→L5+L6 microcircuit)
     l4_spikes: Optional[torch.Tensor] = None
     l23_spikes: Optional[torch.Tensor] = None
@@ -158,26 +160,28 @@ class PredictiveCortexState(BaseRegionState):
         data = super().to_dict()
 
         # Add predictive cortex-specific fields
-        data.update({
-            # Layer spikes
-            "l4_spikes": self.l4_spikes,
-            "l23_spikes": self.l23_spikes,
-            "l5_spikes": self.l5_spikes,
-            "l6a_spikes": self.l6a_spikes,
-            "l6b_spikes": self.l6b_spikes,
-            # Input
-            "input_spikes": self.input_spikes,
-            # Predictive coding
-            "prediction": self.prediction,
-            "error": self.error,
-            "precision": self.precision,
-            "free_energy": self.free_energy,
-            # Attention
-            "attention_weights": self.attention_weights,
-            # Oscillators (can be None)
-            "_oscillator_phases": self._oscillator_phases,
-            "_oscillator_signals": self._oscillator_signals,
-        })
+        data.update(
+            {
+                # Layer spikes
+                "l4_spikes": self.l4_spikes,
+                "l23_spikes": self.l23_spikes,
+                "l5_spikes": self.l5_spikes,
+                "l6a_spikes": self.l6a_spikes,
+                "l6b_spikes": self.l6b_spikes,
+                # Input
+                "input_spikes": self.input_spikes,
+                # Predictive coding
+                "prediction": self.prediction,
+                "error": self.error,
+                "precision": self.precision,
+                "free_energy": self.free_energy,
+                # Attention
+                "attention_weights": self.attention_weights,
+                # Oscillators (can be None)
+                "_oscillator_phases": self._oscillator_phases,
+                "_oscillator_signals": self._oscillator_signals,
+            }
+        )
 
         return data
 
@@ -196,6 +200,7 @@ class PredictiveCortexState(BaseRegionState):
         Returns:
             PredictiveCortexState instance with restored state
         """
+
         def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
             if t is None:
                 return None
@@ -338,7 +343,9 @@ class PredictiveCortex(NeuralRegion):
 
         # Extract sizes from dict (required)
         if sizes is None:
-            raise ValueError("PredictiveCortex requires sizes dict (l4_size, l23_size, l5_size, l6a_size, l6b_size, input_size)")
+            raise ValueError(
+                "PredictiveCortex requires sizes dict (l4_size, l23_size, l5_size, l6a_size, l6b_size, input_size)"
+            )
 
         l4_size = sizes["l4_size"]
         l23_size = sizes["l23_size"]
@@ -400,8 +407,8 @@ class PredictiveCortex(NeuralRegion):
             prediction_repr_size = self.l5_size + self.l6_size
             self.prediction_layer = PredictiveCodingLayer(
                 PredictiveCodingConfig(
-                    n_input=self.l4_size,                    # Predicts L4 input
-                    n_representation=prediction_repr_size,    # From L5+L6 combined
+                    n_input=self.l4_size,  # Predicts L4 input
+                    n_representation=prediction_repr_size,  # From L5+L6 combined
                     n_output=self.l4_size,
                     prediction_tau_ms=config.prediction_tau_ms,
                     error_tau_ms=config.error_tau_ms,
@@ -499,7 +506,7 @@ class PredictiveCortex(NeuralRegion):
             l6a_spikes=self.cortex.state.l6a_spikes,
             l6b_spikes=self.cortex.state.l6b_spikes,
             # Input and predictive coding state
-            input_spikes=self.state.input_spikes if hasattr(self.state, 'input_spikes') else None,
+            input_spikes=self.state.input_spikes if hasattr(self.state, "input_spikes") else None,
         )
 
     def set_neuromodulators(
@@ -560,7 +567,7 @@ class PredictiveCortex(NeuralRegion):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow input dimension by delegating to base LayeredCortex.
@@ -582,7 +589,7 @@ class PredictiveCortex(NeuralRegion):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow output dimension by delegating to base LayeredCortex.
@@ -668,17 +675,17 @@ class PredictiveCortex(NeuralRegion):
             return self.cortex.forward(input_spikes, top_down=top_down)
 
         # ADR-005: Expect 1D tensors
-        assert input_spikes.dim() == 1, (
-            f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
-        )
+        assert (
+            input_spikes.dim() == 1
+        ), f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
         assert input_spikes.shape[0] == self.cortex.input_size, (
             f"PredictiveCortex.forward: input_spikes has shape {input_spikes.shape} "
             f"but input_size={self.cortex.input_size}."
         )
         if top_down is not None:
-            assert top_down.dim() == 1, (
-                f"PredictiveCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
-            )
+            assert (
+                top_down.dim() == 1
+            ), f"PredictiveCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
             assert top_down.shape[0] == self.l23_size, (
                 f"PredictiveCortex.forward: top_down has shape {top_down.shape} "
                 f"but must match l23_size={self.l23_size}. "
@@ -760,9 +767,11 @@ class PredictiveCortex(NeuralRegion):
         # =====================================================================
         # STEP 4: Precision modulation (gamma-gate → prediction weights)
         # =====================================================================
-        if (self.precision_modulator is not None and
-            hasattr(self.cortex.state, 'gamma_attention_gate') and
-            self.cortex.state.gamma_attention_gate is not None):
+        if (
+            self.precision_modulator is not None
+            and hasattr(self.cortex.state, "gamma_attention_gate")
+            and self.cortex.state.gamma_attention_gate is not None
+        ):
             # Use gamma-phase gating from base cortex to modulate prediction trust
             avg_gate = float(self.cortex.state.gamma_attention_gate.mean().item())
 
@@ -770,8 +779,14 @@ class PredictiveCortex(NeuralRegion):
             if self.prediction_layer is not None:
                 precision_scale = avg_gate
                 self.prediction_layer.log_precision.data = (
-                    self.prediction_layer.log_precision.data +
-                    0.01 * torch.log(torch.tensor(precision_scale + 1e-6, device=self.prediction_layer.log_precision.device))
+                    self.prediction_layer.log_precision.data
+                    + 0.01
+                    * torch.log(
+                        torch.tensor(
+                            precision_scale + 1e-6,
+                            device=self.prediction_layer.log_precision.device,
+                        )
+                    )
                 )
 
         # =====================================================================
@@ -798,9 +813,7 @@ class PredictiveCortex(NeuralRegion):
         # Here we also update the prediction weights based on accumulated error
         if self.prediction_layer is not None:
             # Get dopamine-modulated learning rate from base class
-            effective_lr = self.get_effective_learning_rate(
-                self.config.prediction_learning_rate
-            )
+            effective_lr = self.get_effective_learning_rate(self.config.prediction_learning_rate)
             if effective_lr > 1e-8:  # Only learn if not fully suppressed
                 # Learn prediction weights based on current error
                 # Pass None for reward_signal since we're doing continuous learning
@@ -848,18 +861,24 @@ class PredictiveCortex(NeuralRegion):
             pred_diag = self.prediction_layer.get_diagnostics()
             diag.update({f"pred_{k}": v for k, v in pred_diag.items()})
             # Add weight diagnostics for consistency with LayeredCortex
-            if hasattr(self.prediction_layer, 'W_pred'):
+            if hasattr(self.prediction_layer, "W_pred"):
                 diag.update(self.weight_diagnostics(self.prediction_layer.W_pred.data, "pred"))
-            if hasattr(self.prediction_layer, 'W_encode'):
+            if hasattr(self.prediction_layer, "W_encode"):
                 diag.update(self.weight_diagnostics(self.prediction_layer.W_encode.data, "encode"))
 
         # Gamma attention diagnostics (from base cortex)
-        if hasattr(self.cortex, 'gamma_attention') and self.cortex.gamma_attention is not None:
+        if hasattr(self.cortex, "gamma_attention") and self.cortex.gamma_attention is not None:
             diag["gamma_attn_phase"] = self.cortex.state.gamma_attention_phase
-            diag["gamma_attn_frequency_hz"] = self.cortex.gamma_attention.frequency_hz  # Direct property
+            diag["gamma_attn_frequency_hz"] = (
+                self.cortex.gamma_attention.frequency_hz
+            )  # Direct property
             if self.cortex.state.gamma_attention_gate is not None:
-                diag["gamma_attn_mean_gate"] = float(self.cortex.state.gamma_attention_gate.mean().item())
-                diag["gamma_attn_max_gate"] = float(self.cortex.state.gamma_attention_gate.max().item())
+                diag["gamma_attn_mean_gate"] = float(
+                    self.cortex.state.gamma_attention_gate.mean().item()
+                )
+                diag["gamma_attn_max_gate"] = float(
+                    self.cortex.state.gamma_attention_gate.max().item()
+                )
 
         return diag
 
@@ -884,11 +903,31 @@ class PredictiveCortex(NeuralRegion):
         if self.prediction_layer is not None:
             pred_state = self.prediction_layer.get_state()
             state_dict["prediction_state"] = {
-                "W_pred": pred_state["W_pred"].clone() if "W_pred" in pred_state and pred_state["W_pred"] is not None else None,
-                "W_encode": pred_state["W_encode"].clone() if "W_encode" in pred_state and pred_state["W_encode"] is not None else None,
-                "log_precision": pred_state["log_precision"].clone() if "log_precision" in pred_state and pred_state["log_precision"] is not None else None,
-                "prediction": pred_state["prediction"].clone() if "prediction" in pred_state and pred_state["prediction"] is not None else None,
-                "error": pred_state["error"].clone() if "error" in pred_state and pred_state["error"] is not None else None,
+                "W_pred": (
+                    pred_state["W_pred"].clone()
+                    if "W_pred" in pred_state and pred_state["W_pred"] is not None
+                    else None
+                ),
+                "W_encode": (
+                    pred_state["W_encode"].clone()
+                    if "W_encode" in pred_state and pred_state["W_encode"] is not None
+                    else None
+                ),
+                "log_precision": (
+                    pred_state["log_precision"].clone()
+                    if "log_precision" in pred_state and pred_state["log_precision"] is not None
+                    else None
+                ),
+                "prediction": (
+                    pred_state["prediction"].clone()
+                    if "prediction" in pred_state and pred_state["prediction"] is not None
+                    else None
+                ),
+                "error": (
+                    pred_state["error"].clone()
+                    if "error" in pred_state and pred_state["error"] is not None
+                    else None
+                ),
             }
         else:
             state_dict["prediction_state"] = None
@@ -921,13 +960,35 @@ class PredictiveCortex(NeuralRegion):
         if "prediction_state" in state and state["prediction_state"] is not None:
             if self.prediction_layer is not None:
                 pred_state = state["prediction_state"]
-                self.prediction_layer.load_state({
-                    "W_pred": pred_state["W_pred"].to(self.device) if pred_state["W_pred"] is not None else None,
-                    "W_encode": pred_state["W_encode"].to(self.device) if pred_state["W_encode"] is not None else None,
-                    "log_precision": pred_state["log_precision"].to(self.device) if pred_state["log_precision"] is not None else None,
-                    "prediction": pred_state["prediction"].to(self.device) if pred_state["prediction"] is not None else None,
-                    "error": pred_state["error"].to(self.device) if pred_state["error"] is not None else None,
-                })
+                self.prediction_layer.load_state(
+                    {
+                        "W_pred": (
+                            pred_state["W_pred"].to(self.device)
+                            if pred_state["W_pred"] is not None
+                            else None
+                        ),
+                        "W_encode": (
+                            pred_state["W_encode"].to(self.device)
+                            if pred_state["W_encode"] is not None
+                            else None
+                        ),
+                        "log_precision": (
+                            pred_state["log_precision"].to(self.device)
+                            if pred_state["log_precision"] is not None
+                            else None
+                        ),
+                        "prediction": (
+                            pred_state["prediction"].to(self.device)
+                            if pred_state["prediction"] is not None
+                            else None
+                        ),
+                        "error": (
+                            pred_state["error"].to(self.device)
+                            if pred_state["error"] is not None
+                            else None
+                        ),
+                    }
+                )
 
         # Note: Gamma attention state loaded by base LayeredCortex
 
@@ -1060,6 +1121,6 @@ class PredictiveHierarchy(nn.Module):
         """Sum of free energy across all areas."""
         total = 0.0
         for area in self.areas:
-            if hasattr(area, 'prediction_layer') and area.prediction_layer is not None:
+            if hasattr(area, "prediction_layer") and area.prediction_layer is not None:
                 total += area.prediction_layer.get_free_energy().item()
         return total

@@ -111,10 +111,12 @@ class TrainingConfig(BaseConfig):
             f"  Use curriculum: {self.use_curriculum}",
         ]
         if self.use_curriculum:
-            lines.extend([
-                f"  Start difficulty: {self.curriculum_start_difficulty}",
-                f"  End difficulty: {self.curriculum_end_difficulty}",
-            ])
+            lines.extend(
+                [
+                    f"  Start difficulty: {self.curriculum_start_difficulty}",
+                    f"  End difficulty: {self.curriculum_end_difficulty}",
+                ]
+            )
         return "\n".join(lines)
 
     def to_dict(self) -> dict:

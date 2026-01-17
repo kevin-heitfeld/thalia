@@ -16,8 +16,8 @@ Updated: December 22, 2025 (migrated basic tests to RegionTestBase)
 import pytest
 import torch
 
-from thalia.core.region_state import save_region_state, load_region_state
 from thalia.config import LayerSizeCalculator
+from thalia.core.region_state import load_region_state, save_region_state
 from thalia.regions.hippocampus import Hippocampus, HippocampusState
 from thalia.regions.hippocampus.config import HippocampusConfig
 
@@ -76,17 +76,17 @@ class TestHippocampusStateEdgeCases:
         """Test load_state() with missing STP modules (hippocampus-specific)."""
         calc = LayerSizeCalculator()
         sizes = calc.hippocampus_from_input(10)
-        config = HippocampusConfig(
-            stp_enabled=False,  # STP disabled
-            dt_ms=1.0
-        )
+        config = HippocampusConfig(stp_enabled=False, dt_ms=1.0)  # STP disabled
         hippocampus = Hippocampus(config=config, sizes=sizes, device="cpu")
 
         # State with STP, but region has no STP modules
         state = HippocampusState(
             ca3_spikes=torch.zeros(sizes["ca3_size"]),
             ca1_spikes=torch.zeros(sizes["ca1_size"]),
-            stp_mossy_state={"u": torch.rand(sizes["ca3_size"], 10), "x": torch.rand(sizes["ca3_size"], 10)},
+            stp_mossy_state={
+                "u": torch.rand(sizes["ca3_size"], 10),
+                "x": torch.rand(sizes["ca3_size"], 10),
+            },
         )
 
         # Should load without error, ignoring STP state

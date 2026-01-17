@@ -8,14 +8,14 @@ emergent oscillations in neural circuits.
 import numpy as np
 import torch
 
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.core.brain_builder import BrainBuilder
 from thalia.diagnostics.oscillation_detection import (
+    detect_gamma_oscillation,
+    detect_theta_oscillation,
     measure_oscillation,
     measure_periodicity,
     power_spectrum,
-    detect_gamma_oscillation,
-    detect_theta_oscillation,
 )
 
 
@@ -35,8 +35,7 @@ class TestOscillationDetection:
         detected_freq, power = measure_oscillation(signal.tolist(), dt_ms=dt_ms)
 
         # Should detect close to 40 Hz
-        assert 38 <= detected_freq <= 42, \
-            f"Expected ~40 Hz, got {detected_freq:.1f} Hz"
+        assert 38 <= detected_freq <= 42, f"Expected ~40 Hz, got {detected_freq:.1f} Hz"
         assert power > 2.0, "Should have strong power"
 
     def test_measure_oscillation_with_freq_range(self):
@@ -57,8 +56,7 @@ class TestOscillationDetection:
             freq_range=(30.0, 80.0),
         )
 
-        assert 35 <= detected_freq <= 50, \
-            f"Should detect gamma peak, got {detected_freq:.1f} Hz"
+        assert 35 <= detected_freq <= 50, f"Should detect gamma peak, got {detected_freq:.1f} Hz"
 
     def test_measure_periodicity_detects_25ms(self):
         """Test autocorrelation detects 25ms period (40 Hz gamma)."""
@@ -78,8 +76,7 @@ class TestOscillationDetection:
         detected_period, strength = measure_periodicity(signal, dt_ms=dt_ms)
 
         # Should detect ~25ms period
-        assert 20 <= detected_period <= 30, \
-            f"Expected ~25ms period, got {detected_period:.1f}ms"
+        assert 20 <= detected_period <= 30, f"Expected ~25ms period, got {detected_period:.1f}ms"
         assert strength > 0.3, "Should have strong autocorrelation"
 
     def test_power_spectrum_returns_correct_shape(self):
@@ -181,17 +178,16 @@ class TestOscillationDetectionIntegration:
 
         # L6a→TRN pathway should show oscillatory activity in beta-low gamma range
         # May take time to stabilize, so accept wider range (20-50Hz)
-        assert 20 <= freq_l6a <= 50, \
-            f"Expected L6a oscillation (20-50Hz), got {freq_l6a:.1f} Hz"
+        assert 20 <= freq_l6a <= 50, f"Expected L6a oscillation (20-50Hz), got {freq_l6a:.1f} Hz"
 
         # L6b→relay pathway should show oscillatory activity in gamma range
         # May show mid-to-high gamma (40-90Hz), allow some variability
-        assert 40 <= freq_l6b <= 90, \
-            f"Expected L6b oscillation (40-90Hz), got {freq_l6b:.1f} Hz"
+        assert 40 <= freq_l6b <= 90, f"Expected L6b oscillation (40-90Hz), got {freq_l6b:.1f} Hz"
 
         # At least one pathway should show clear oscillation (power > 0.05)
-        assert power_l6a > 0.05 or power_l6b > 0.05, \
-            "At least one L6 pathway should show clear oscillatory power"
+        assert (
+            power_l6a > 0.05 or power_l6b > 0.05
+        ), "At least one L6 pathway should show clear oscillatory power"
 
     def test_ca3_shows_rhythmic_activity(self, global_config, device):
         """Test CA3 recurrence shows rhythmic dynamics (may not be 8 Hz)."""
@@ -205,7 +201,7 @@ class TestOscillationDetectionIntegration:
         brain = builder.build()
 
         # Disable explicit theta to measure CA3 intrinsic frequency (without septum)
-        brain.oscillators.enable_oscillator('theta', enabled=False)
+        brain.oscillators.enable_oscillator("theta", enabled=False)
 
         hippocampus = brain.components["hippocampus"]
 

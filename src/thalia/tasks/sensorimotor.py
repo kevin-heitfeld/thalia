@@ -19,29 +19,30 @@ Date: December 9, 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
-from enum import Enum
 import random
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
-import torch
 import numpy as np
+import torch
 
 from thalia.constants.task import PROPRIOCEPTION_NOISE_SCALE
 from thalia.tasks.stimulus_utils import (
-    create_zero_stimulus,
-    create_random_position,
     add_proprioceptive_noise,
+    create_random_position,
+    create_zero_stimulus,
 )
 from thalia.typing import SourceOutputs
-
 
 # ============================================================================
 # Task Types
 # ============================================================================
 
+
 class SensorimotorTaskType(Enum):
     """Types of sensorimotor tasks."""
+
     MOTOR_CONTROL = "motor_control"
     REACHING = "reaching"
     MANIPULATION = "manipulation"
@@ -50,6 +51,7 @@ class SensorimotorTaskType(Enum):
 
 class MovementDirection(Enum):
     """Basic movement directions."""
+
     LEFT = 0
     RIGHT = 1
     UP = 2
@@ -63,6 +65,7 @@ class MovementDirection(Enum):
 # Task Configurations
 # ============================================================================
 
+
 @dataclass
 class MotorControlConfig:
     """Configuration for basic motor control tasks."""
@@ -73,9 +76,7 @@ class MotorControlConfig:
     noise_level: float = PROPRIOCEPTION_NOISE_SCALE  # Noise in proprioceptive feedback
 
     # Movement parameters
-    movement_types: List[MovementDirection] = field(
-        default_factory=lambda: list(MovementDirection)
-    )
+    movement_types: List[MovementDirection] = field(default_factory=lambda: list(MovementDirection))
 
     # Reward parameters
     accuracy_threshold: float = 0.7  # Minimum cosine similarity for success
@@ -125,6 +126,7 @@ class ManipulationConfig:
 # ============================================================================
 # Motor Control Task
 # ============================================================================
+
 
 class MotorControlTask:
     """Basic motor control task for Stage -0.5.
@@ -194,14 +196,11 @@ class MotorControlTask:
         # First half: current state (noisy)
         proprioception = add_proprioceptive_noise(
             torch.zeros(self.config.input_size // 2, device=self.device),
-            noise_scale=self.config.noise_level
+            noise_scale=self.config.noise_level,
         )
 
         # Second half: movement command embedding
-        command_encoding = create_zero_stimulus(
-            self.config.input_size // 2,
-            self.device
-        )
+        command_encoding = create_zero_stimulus(self.config.input_size // 2, self.device)
         # Encode target direction in input
         command_start = direction.value * (len(command_encoding) // self.n_directions)
         command_end = command_start + (len(command_encoding) // self.n_directions)
@@ -214,22 +213,18 @@ class MotorControlTask:
         self.current_input = input_tensor
 
         return {
-            'input': input_tensor,
-            'target': target,
-            'n_timesteps': self.config.n_timesteps,
-            'task_type': 'motor_control',  # Triggers reward delivery
-            'reward': 0.0,  # Placeholder, computed after output
-            'metadata': {
-                'direction': direction.name,
-                'difficulty': self.config.difficulty,
-            }
+            "input": input_tensor,
+            "target": target,
+            "n_timesteps": self.config.n_timesteps,
+            "task_type": "motor_control",  # Triggers reward delivery
+            "reward": 0.0,  # Placeholder, computed after output
+            "metadata": {
+                "direction": direction.name,
+                "difficulty": self.config.difficulty,
+            },
         }
 
-    def compute_reward(
-        self,
-        output: SourceOutputs,
-        target: Optional[torch.Tensor] = None
-    ) -> float:
+    def compute_reward(self, output: SourceOutputs, target: Optional[torch.Tensor] = None) -> float:
         """Compute reward based on movement accuracy.
 
         Uses cosine similarity between brain output and target direction.
@@ -249,11 +244,11 @@ class MotorControlTask:
             return 0.0
 
         # Extract brain output (use final timestep of spikes or dedicated output)
-        if 'output' in output:
-            brain_output = output['output']
-        elif 'spikes' in output:
+        if "output" in output:
+            brain_output = output["output"]
+        elif "spikes" in output:
             # Use spike counts as output (sum over time)
-            spikes = output['spikes']
+            spikes = output["spikes"]
             if spikes.dim() == 2:  # [time, neurons]
                 brain_output = spikes.sum(dim=0)
             else:
@@ -265,9 +260,11 @@ class MotorControlTask:
         if brain_output.shape[0] != target.shape[0]:
             # Resize via average pooling
             pool_size = brain_output.shape[0] // target.shape[0]
-            brain_output = brain_output[:pool_size * target.shape[0]].reshape(
-                target.shape[0], pool_size
-            ).mean(dim=1)
+            brain_output = (
+                brain_output[: pool_size * target.shape[0]]
+                .reshape(target.shape[0], pool_size)
+                .mean(dim=1)
+            )
 
         # Compute cosine similarity (behavioral accuracy measure)
         brain_output_norm = brain_output / (brain_output.norm() + 1e-8)
@@ -289,6 +286,7 @@ class MotorControlTask:
 # ============================================================================
 # Reaching Task
 # ============================================================================
+
 
 class ReachingTask:
     """Visual-motor reaching task for Stage -0.5.
@@ -341,29 +339,28 @@ class ReachingTask:
         # Pad to input_size if needed
         if input_tensor.shape[0] < self.config.input_size:
             padding = torch.zeros(
-                self.config.input_size - input_tensor.shape[0],
-                device=self.device
+                self.config.input_size - input_tensor.shape[0], device=self.device
             )
             input_tensor = torch.cat([input_tensor, padding])
         else:
-            input_tensor = input_tensor[:self.config.input_size]
+            input_tensor = input_tensor[: self.config.input_size]
 
         # Store for reward computation
         self.current_target_pos = target_pos
         self.current_start_pos = start_pos
 
         return {
-            'input': input_tensor,
-            'target': target_pos,
-            'start_pos': start_pos,
-            'n_timesteps': self.config.n_timesteps,
-            'task_type': 'reaching',
-            'reward': 0.0,
-            'metadata': {
-                'target_pos': target_pos.tolist(),
-                'start_pos': start_pos.tolist(),
-                'difficulty': self.config.difficulty,
-            }
+            "input": input_tensor,
+            "target": target_pos,
+            "start_pos": start_pos,
+            "n_timesteps": self.config.n_timesteps,
+            "task_type": "reaching",
+            "reward": 0.0,
+            "metadata": {
+                "target_pos": target_pos.tolist(),
+                "start_pos": start_pos.tolist(),
+                "difficulty": self.config.difficulty,
+            },
         }
 
     def _encode_visual_target(self, position: torch.Tensor) -> torch.Tensor:
@@ -379,24 +376,29 @@ class ReachingTask:
         sigma = len(visual_input) * PROPRIOCEPTION_NOISE_SCALE
         for i in range(len(visual_input)):
             dist = abs(i - pos_idx)
-            visual_input[i] = torch.exp(torch.tensor(-dist**2 / (2 * sigma**2), device=self.device))
+            visual_input[i] = torch.exp(
+                torch.tensor(-(dist**2) / (2 * sigma**2), device=self.device)
+            )
 
         return visual_input
 
     def _encode_proprioception(self, position: torch.Tensor) -> torch.Tensor:
         """Encode current effector position as proprioceptive input."""
         # Direct encoding of position + some noise
-        proprio = torch.cat([
-            position,
-            torch.randn(self.config.proprioceptive_size - 2, device=self.device) * PROPRIOCEPTION_NOISE_SCALE
-        ])
+        proprio = torch.cat(
+            [
+                position,
+                torch.randn(self.config.proprioceptive_size - 2, device=self.device)
+                * PROPRIOCEPTION_NOISE_SCALE,
+            ]
+        )
         return proprio
 
     def compute_reward(
         self,
         output: SourceOutputs,
         target_pos: Optional[torch.Tensor] = None,
-        start_pos: Optional[torch.Tensor] = None
+        start_pos: Optional[torch.Tensor] = None,
     ) -> float:
         """Compute reward based on reaching accuracy.
 
@@ -422,10 +424,10 @@ class ReachingTask:
 
         # Extract final position from output
         # For now, decode from spike patterns (simplified)
-        if 'output' in output:
-            brain_output = output['output']
-        elif 'spikes' in output:
-            spikes = output['spikes']
+        if "output" in output:
+            brain_output = output["output"]
+        elif "spikes" in output:
+            spikes = output["spikes"]
             if spikes.dim() == 2:
                 brain_output = spikes.sum(dim=0)
             else:
@@ -460,6 +462,7 @@ class ReachingTask:
 # Manipulation Task
 # ============================================================================
 
+
 class ManipulationTask:
     """Object manipulation task for Stage -0.5.
 
@@ -486,20 +489,14 @@ class ManipulationTask:
         affordance = random.choice(self.config.object_properties)
 
         # Create visual input: object representation
-        visual_input = create_zero_stimulus(
-            self.config.input_size // 2,
-            self.device
-        )
+        visual_input = create_zero_stimulus(self.config.input_size // 2, self.device)
         # Encode object identity
         obj_start = object_idx * (len(visual_input) // self.config.n_objects)
         obj_end = obj_start + (len(visual_input) // self.config.n_objects)
         visual_input[obj_start:obj_end] = 1.0
 
         # Create action command: what to do with object
-        action_input = create_zero_stimulus(
-            self.config.input_size // 2,
-            self.device
-        )
+        action_input = create_zero_stimulus(self.config.input_size // 2, self.device)
         affordance_idx = self.config.object_properties.index(affordance)
         action_start = affordance_idx * (len(action_input) // len(self.config.object_properties))
         action_end = action_start + (len(action_input) // len(self.config.object_properties))
@@ -512,24 +509,20 @@ class ManipulationTask:
         self.current_object = object_idx
 
         return {
-            'input': input_tensor,
-            'target_action': affordance,
-            'object_id': object_idx,
-            'n_timesteps': self.config.n_timesteps,
-            'task_type': 'manipulation',
-            'reward': 0.0,
-            'metadata': {
-                'action': affordance,
-                'object': object_idx,
-                'difficulty': self.config.difficulty,
-            }
+            "input": input_tensor,
+            "target_action": affordance,
+            "object_id": object_idx,
+            "n_timesteps": self.config.n_timesteps,
+            "task_type": "manipulation",
+            "reward": 0.0,
+            "metadata": {
+                "action": affordance,
+                "object": object_idx,
+                "difficulty": self.config.difficulty,
+            },
         }
 
-    def compute_reward(
-        self,
-        output: SourceOutputs,
-        target_action: Optional[str] = None
-    ) -> float:
+    def compute_reward(self, output: SourceOutputs, target_action: Optional[str] = None) -> float:
         """Compute reward for manipulation success.
 
         Simplified: check if output indicates successful manipulation.
@@ -549,10 +542,10 @@ class ManipulationTask:
             return 0.0
 
         # Extract output
-        if 'output' in output:
-            brain_output = output['output']
-        elif 'spikes' in output:
-            spikes = output['spikes']
+        if "output" in output:
+            brain_output = output["output"]
+        elif "spikes" in output:
+            spikes = output["spikes"]
             if spikes.dim() == 2:
                 brain_output = spikes.sum(dim=0)
             else:
@@ -576,6 +569,7 @@ class ManipulationTask:
 # ============================================================================
 # Sensorimotor Task Loader (Manager)
 # ============================================================================
+
 
 class SensorimotorTaskLoader:
     """Unified task loader for Stage -0.5 sensorimotor training.
@@ -622,24 +616,19 @@ class SensorimotorTaskLoader:
 
         # Initialize task generators
         self.motor_control = MotorControlTask(
-            motor_control_config or MotorControlConfig(),
-            device=device
+            motor_control_config or MotorControlConfig(), device=device
         )
-        self.reaching = ReachingTask(
-            reaching_config or ReachingConfig(),
-            device=device
-        )
+        self.reaching = ReachingTask(reaching_config or ReachingConfig(), device=device)
         self.manipulation = ManipulationTask(
-            manipulation_config or ManipulationConfig(),
-            device=device
+            manipulation_config or ManipulationConfig(), device=device
         )
 
         # Task mixing ratios (from curriculum strategy)
         self.task_weights = {
-            'motor_control': 0.40,
-            'reaching': 0.35,
-            'manipulation': 0.20,
-            'prediction': 0.05,  # Not implemented yet
+            "motor_control": 0.40,
+            "reaching": 0.35,
+            "manipulation": 0.20,
+            "prediction": 0.05,  # Not implemented yet
         }
 
         # Current task tracker
@@ -658,22 +647,20 @@ class SensorimotorTaskLoader:
         # Sample task if not specified
         if task_name is None:
             task_name = random.choices(
-                list(self.task_weights.keys()),
-                weights=list(self.task_weights.values()),
-                k=1
+                list(self.task_weights.keys()), weights=list(self.task_weights.values()), k=1
             )[0]
 
         # Generate task
-        if task_name == 'motor_control':
+        if task_name == "motor_control":
             task_data = self.motor_control.get_task()
-        elif task_name == 'reaching':
+        elif task_name == "reaching":
             task_data = self.reaching.get_task()
-        elif task_name == 'manipulation':
+        elif task_name == "manipulation":
             task_data = self.manipulation.get_task()
-        elif task_name == 'prediction':
+        elif task_name == "prediction":
             # Placeholder: use motor control for now
             task_data = self.motor_control.get_task()
-            task_data['task_type'] = 'prediction'
+            task_data["task_type"] = "prediction"
         else:
             raise ValueError(f"Unknown task: {task_name}")
 
@@ -684,9 +671,7 @@ class SensorimotorTaskLoader:
         return task_data
 
     def compute_reward(
-        self,
-        output: SourceOutputs,
-        task_data: Optional[Dict[str, Any]] = None
+        self, output: SourceOutputs, task_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """Compute reward for current task.
 
@@ -701,29 +686,21 @@ class SensorimotorTaskLoader:
             task_data = self.current_task_data
             task_type = self.current_task_type
         else:
-            task_type = task_data.get('task_type', 'motor_control')
+            task_type = task_data.get("task_type", "motor_control")
 
         if task_data is None:
             return 0.0
 
         # Compute reward based on task type
-        if task_type == 'motor_control':
-            reward = self.motor_control.compute_reward(
-                output,
-                task_data.get('target')
-            )
-        elif task_type == 'reaching':
+        if task_type == "motor_control":
+            reward = self.motor_control.compute_reward(output, task_data.get("target"))
+        elif task_type == "reaching":
             reward = self.reaching.compute_reward(
-                output,
-                task_data.get('target'),
-                task_data.get('start_pos')
+                output, task_data.get("target"), task_data.get("start_pos")
             )
-        elif task_type == 'manipulation':
-            reward = self.manipulation.compute_reward(
-                output,
-                task_data.get('target_action')
-            )
-        elif task_type == 'prediction':
+        elif task_type == "manipulation":
+            reward = self.manipulation.compute_reward(output, task_data.get("target_action"))
+        elif task_type == "prediction":
             # Placeholder
             reward = self.motor_control.compute_reward(output)
         else:

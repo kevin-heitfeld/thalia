@@ -8,12 +8,12 @@ Validates that:
 4. Per-synapse STP dynamics differ appropriately
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from thalia.components.synapses import (
-    sample_heterogeneous_stp_params,
     create_heterogeneous_stp_configs,
+    sample_heterogeneous_stp_params,
 )
 
 
@@ -86,8 +86,12 @@ class TestHeterogeneousSTPSampling:
 
         # Allow 20% tolerance for stochastic sampling
         assert abs(cv_U - variability) < 0.1, f"U CV {cv_U:.3f} not close to {variability}"
-        assert abs(cv_tau_d - variability) < 0.1, f"tau_d CV {cv_tau_d:.3f} not close to {variability}"
-        assert abs(cv_tau_f - variability) < 0.1, f"tau_f CV {cv_tau_f:.3f} not close to {variability}"
+        assert (
+            abs(cv_tau_d - variability) < 0.1
+        ), f"tau_d CV {cv_tau_d:.3f} not close to {variability}"
+        assert (
+            abs(cv_tau_f - variability) < 0.1
+        ), f"tau_f CV {cv_tau_f:.3f} not close to {variability}"
 
     def test_sample_reproducibility(self, n_synapses, variability):
         """Test that same seed produces same samples."""
@@ -162,9 +166,9 @@ class TestHeterogeneousSTPConfigs:
 
         # Each config should have U, tau_d, tau_f fields
         for config in configs:
-            assert hasattr(config, 'U')
-            assert hasattr(config, 'tau_d')
-            assert hasattr(config, 'tau_f')
+            assert hasattr(config, "U")
+            assert hasattr(config, "tau_d")
+            assert hasattr(config, "tau_f")
 
     def test_create_configs_diversity(self, variability):
         """Test that configs are diverse (not all identical)."""
@@ -201,8 +205,9 @@ class TestHeterogeneousSTPConfigs:
         cortico_mean_U = np.mean([cfg.U for cfg in cortico_configs])
         thalamo_mean_U = np.mean([cfg.U for cfg in thalamo_configs])
 
-        assert abs(cortico_mean_U - thalamo_mean_U) > 0.05, \
-            "Different presets should have different mean parameters"
+        assert (
+            abs(cortico_mean_U - thalamo_mean_U) > 0.05
+        ), "Different presets should have different mean parameters"
 
 
 class TestHeterogeneousSTPDynamics:
@@ -232,13 +237,15 @@ class TestHeterogeneousSTPDynamics:
         # Check diversity (range should be > 2x mean for CV=0.3)
         U_range = np.max(U_values) - np.min(U_values)
         U_mean = np.mean(U_values)
-        assert U_range > U_mean * 0.5, \
-            f"U range {U_range:.3f} should be substantial relative to mean {U_mean:.3f}"
+        assert (
+            U_range > U_mean * 0.5
+        ), f"U range {U_range:.3f} should be substantial relative to mean {U_mean:.3f}"
 
         tau_d_range = np.max(tau_d_values) - np.min(tau_d_values)
         tau_d_mean = np.mean(tau_d_values)
-        assert tau_d_range > tau_d_mean * 0.5, \
-            f"tau_d range {tau_d_range:.1f} should be substantial relative to mean {tau_d_mean:.1f}"
+        assert (
+            tau_d_range > tau_d_mean * 0.5
+        ), f"tau_d range {tau_d_range:.1f} should be substantial relative to mean {tau_d_mean:.1f}"
 
     def test_config_parameter_access(self):
         """Test that configs have correct parameter attributes."""
@@ -251,16 +258,17 @@ class TestHeterogeneousSTPDynamics:
 
         # Each config should be an STPConfig with U, tau_d, tau_f
         for cfg in configs:
-            assert hasattr(cfg, 'U')
-            assert hasattr(cfg, 'tau_d')
-            assert hasattr(cfg, 'tau_f')
-            assert hasattr(cfg, 'decay_d')
-            assert hasattr(cfg, 'decay_f')
+            assert hasattr(cfg, "U")
+            assert hasattr(cfg, "tau_d")
+            assert hasattr(cfg, "tau_f")
+            assert hasattr(cfg, "decay_d")
+            assert hasattr(cfg, "decay_f")
 
             # Values should be valid
             assert 0.0 <= cfg.U <= 1.0
             assert cfg.tau_d > 0
             assert cfg.tau_f > 0
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -15,7 +15,7 @@ Date: December 15, 2025
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, Any, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import torch
 
@@ -80,10 +80,7 @@ class DynamicPathwayManager:
             for name, pathway in pathways.items():
                 print(f"{name}: {pathway}")
         """
-        return {
-            f"{src}_to_{tgt}": pathway
-            for (src, tgt), pathway in self.connections.items()
-        }
+        return {f"{src}_to_{tgt}": pathway for (src, tgt), pathway in self.connections.items()}
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Collect diagnostics from all pathways.
@@ -103,21 +100,21 @@ class DynamicPathwayManager:
             pathway_name = f"{src}_to_{tgt}"
 
             # Collect pathway diagnostics if available
-            if hasattr(pathway, 'get_diagnostics'):
+            if hasattr(pathway, "get_diagnostics"):
                 try:
                     pathway_diag = pathway.get_diagnostics()
                     diagnostics[pathway_name] = pathway_diag
                 except Exception as e:
-                    diagnostics[pathway_name] = {'error': str(e)}
+                    diagnostics[pathway_name] = {"error": str(e)}
             else:
                 # Fallback: collect basic weight statistics
                 diag = {}
-                if hasattr(pathway, 'weights'):
+                if hasattr(pathway, "weights"):
                     weights = pathway.weights.detach()
-                    diag['weight_mean'] = float(weights.mean())
-                    diag['weight_std'] = float(weights.std())
-                    diag['weight_min'] = float(weights.min())
-                    diag['weight_max'] = float(weights.max())
+                    diag["weight_mean"] = float(weights.mean())
+                    diag["weight_std"] = float(weights.std())
+                    diag["weight_min"] = float(weights.min())
+                    diag["weight_max"] = float(weights.max())
 
                 diagnostics[pathway_name] = diag
 
@@ -160,15 +157,17 @@ class DynamicPathwayManager:
             # Grow pathway input dimension if this component is the source
             if grow_outputs and src == component_name:
                 # Try to grow source (works for both AxonalProjection and legacy pathways)
-                if hasattr(pathway, 'grow_source'):
+                if hasattr(pathway, "grow_source"):
                     try:
                         # For multi-source pathways, specify which source is growing
-                        old_size = getattr(pathway, 'input_sizes', {}).get(src, pathway.config.n_input)
+                        old_size = getattr(pathway, "input_sizes", {}).get(
+                            src, pathway.config.n_input
+                        )
                         new_size = old_size + growth_amount
                         pathway.grow_source(src, new_size)
                     except Exception:
                         pass  # Pathway may not support growth
-                elif hasattr(pathway, 'grow_input'):
+                elif hasattr(pathway, "grow_input"):
                     # Fallback for single-source pathways without grow_source
                     try:
                         pathway.grow_input(growth_amount)
@@ -177,7 +176,7 @@ class DynamicPathwayManager:
 
             # Grow pathway output dimension if this component is the target
             if grow_inputs and tgt == component_name:
-                if hasattr(pathway, 'grow_output'):
+                if hasattr(pathway, "grow_output"):
                     try:
                         pathway.grow_output(growth_amount)
                     except Exception:
@@ -199,16 +198,14 @@ class DynamicPathwayManager:
             pathway_name = f"{src}_to_{tgt}"
 
             # Get pathway state if available
-            if hasattr(pathway, 'state_dict'):
+            if hasattr(pathway, "state_dict"):
                 state[pathway_name] = pathway.state_dict()
-            elif hasattr(pathway, 'get_state'):
+            elif hasattr(pathway, "get_state"):
                 state[pathway_name] = pathway.get_state()
             else:
                 # Fallback: save weights if available
-                if hasattr(pathway, 'weights'):
-                    state[pathway_name] = {
-                        'weights': pathway.weights.detach().cpu()
-                    }
+                if hasattr(pathway, "weights"):
+                    state[pathway_name] = {"weights": pathway.weights.detach().cpu()}
 
         return state
 
@@ -231,14 +228,14 @@ class DynamicPathwayManager:
             pathway_state = state[pathway_name]
 
             # Load pathway state
-            if hasattr(pathway, 'load_state_dict'):
+            if hasattr(pathway, "load_state_dict"):
                 pathway.load_state_dict(pathway_state)
-            elif hasattr(pathway, 'load_state'):
+            elif hasattr(pathway, "load_state"):
                 pathway.load_state(pathway_state)
             else:
                 # Fallback: load weights if available
-                if 'weights' in pathway_state and hasattr(pathway, 'weights'):
-                    pathway.weights.data = pathway_state['weights'].to(self.device)
+                if "weights" in pathway_state and hasattr(pathway, "weights"):
+                    pathway.weights.data = pathway_state["weights"].to(self.device)
 
     @property
     def region_connections(self) -> TopologyGraph:

@@ -13,23 +13,22 @@ Components:
 
 from __future__ import annotations
 
-
-from thalia.language.encoder import (
-    SpikeEncoder,
-    SpikeEncoderConfig,
-    SparseDistributedRepresentation,
-)
 from thalia.language.decoder import (
     SpikeDecoder,
     SpikeDecoderConfig,
 )
-from thalia.language.position import (
-    OscillatoryPositionEncoder,
-    PositionEncoderConfig,
+from thalia.language.encoder import (
+    SparseDistributedRepresentation,
+    SpikeEncoder,
+    SpikeEncoderConfig,
 )
 from thalia.language.model import (
     LanguageBrainInterface,
     LanguageInterfaceConfig,
+)
+from thalia.language.position import (
+    OscillatoryPositionEncoder,
+    PositionEncoderConfig,
 )
 
 __all__ = [

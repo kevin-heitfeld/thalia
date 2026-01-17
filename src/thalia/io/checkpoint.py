@@ -10,37 +10,37 @@ Provides simple API for checkpoint persistence:
 
 from __future__ import annotations
 
-from dataclasses import is_dataclass, asdict
+import json
+import time
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
-import json
 from pathlib import Path
-import time
-from typing import Dict, Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import torch
 
 from thalia import __version__ as THALIA_VERSION
 
 from .binary_format import (
-    BinaryWriter,
-    BinaryReader,
-    CheckpointHeader,
-    RegionIndexEntry,
+    HEADER_SIZE,
     MAGIC_NUMBER,
     MAJOR_VERSION,
     MINOR_VERSION,
     PATCH_VERSION,
-    HEADER_SIZE,
+    BinaryReader,
+    BinaryWriter,
+    CheckpointHeader,
+    RegionIndexEntry,
 )
 from .precision import (
-    get_precision_policy,
-    apply_precision_policy_to_state,
-    restore_precision_to_fp32,
-    get_precision_statistics,
     PrecisionPolicy,
+    apply_precision_policy_to_state,
+    get_precision_policy,
+    get_precision_statistics,
+    restore_precision_to_fp32,
 )
-from .tensor_encoding import encode_tensor, decode_tensor
+from .tensor_encoding import decode_tensor, encode_tensor
 
 
 def _convert_to_json_serializable(obj: Any) -> Any:
@@ -51,7 +51,7 @@ def _convert_to_json_serializable(obj: Any) -> Any:
         # Preserve dataclass type information for reconstruction
         return {
             "_dataclass": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
-            "_fields": {k: _convert_to_json_serializable(v) for k, v in asdict(obj).items()}
+            "_fields": {k: _convert_to_json_serializable(v) for k, v in asdict(obj).items()},
         }
     elif isinstance(obj, dict):
         return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
@@ -120,7 +120,7 @@ class BrainCheckpoint:
             >>> policy = PrecisionPolicy(weights='fp16', biases='fp32', membrane='fp32')
             >>> BrainCheckpoint.save(brain, "checkpoint.thalia", precision_policy=policy)
         """
-        from .compression import detect_compression, compress_data
+        from .compression import compress_data, detect_compression
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,24 +144,26 @@ class BrainCheckpoint:
         if metadata is None:
             metadata = {}
 
-        metadata.update({
-            "timestamp": datetime.utcnow().isoformat(),
-            "thalia_version": THALIA_VERSION,
-            "checkpoint_format_version": f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}",
-            "pytorch_version": torch.__version__,
-            "device": str(getattr(brain, 'device', getattr(brain.config, 'device', 'unknown'))),
-            "training_steps": state.get("training_steps", 0),
-            # Include non-region state
-            "config": state.get("config", {}),
-            "theta": state.get("theta", {}),
-            "scheduler": state.get("scheduler", {}),
-            "trial_state": state.get("trial_state", {}),
-            # Growth history tracking
-            "growth_history": getattr(brain, '_growth_history', []),
-            # Precision information
-            "precision_policy": str(precision_policy) if precision_policy else 'fp32',
-            "precision_stats": precision_stats,
-        })
+        metadata.update(
+            {
+                "timestamp": datetime.utcnow().isoformat(),
+                "thalia_version": THALIA_VERSION,
+                "checkpoint_format_version": f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}",
+                "pytorch_version": torch.__version__,
+                "device": str(getattr(brain, "device", getattr(brain.config, "device", "unknown"))),
+                "training_steps": state.get("training_steps", 0),
+                # Include non-region state
+                "config": state.get("config", {}),
+                "theta": state.get("theta", {}),
+                "scheduler": state.get("scheduler", {}),
+                "trial_state": state.get("trial_state", {}),
+                # Growth history tracking
+                "growth_history": getattr(brain, "_growth_history", []),
+                # Precision information
+                "precision_policy": str(precision_policy) if precision_policy else "fp32",
+                "precision_stats": precision_stats,
+            }
+        )
 
         # Count neurons and synapses
         total_neurons = 0
@@ -179,12 +181,12 @@ class BrainCheckpoint:
                         total_synapses += weight_tensor.numel()
 
         # Write to file
-        with open(path, 'w+b') as f:  # Use w+b for read-write
+        with open(path, "w+b") as f:  # Use w+b for read-write
             writer = BinaryWriter(f)
 
             # Reserve space for header (write placeholder, will update with real header before checksum)
             header_pos = f.tell()
-            f.write(b'\x00' * HEADER_SIZE)
+            f.write(b"\x00" * HEADER_SIZE)
 
             # Write metadata
             metadata_offset = writer.tell()
@@ -206,11 +208,13 @@ class BrainCheckpoint:
 
                 region_length = writer.tell() - region_offset
 
-                region_index.append(RegionIndexEntry(
-                    region_name=region_name,
-                    data_offset=json_offset,  # Point to JSON, not the whole region
-                    data_length=region_bytes,  # Only JSON length
-                ))
+                region_index.append(
+                    RegionIndexEntry(
+                        region_name=region_name,
+                        data_offset=json_offset,  # Point to JSON, not the whole region
+                        data_length=region_bytes,  # Only JSON length
+                    )
+                )
 
             # Write pathway data (similar to regions)
             if "pathways" in state:
@@ -224,11 +228,13 @@ class BrainCheckpoint:
 
                     pathway_length = writer.tell() - pathway_offset
 
-                    region_index.append(RegionIndexEntry(
-                        region_name=f"pathway:{pathway_name}",
-                        data_offset=json_offset,
-                        data_length=pathway_bytes,
-                    ))
+                    region_index.append(
+                        RegionIndexEntry(
+                            region_name=f"pathway:{pathway_name}",
+                            data_offset=json_offset,
+                            data_length=pathway_bytes,
+                        )
+                    )
 
             # Write region index
             region_index_offset = writer.tell()
@@ -262,16 +268,17 @@ class BrainCheckpoint:
 
         # Apply compression if requested (BEFORE checksum)
         import hashlib
+
         if compression is not None:
             # Read uncompressed file
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 uncompressed_data = f.read()
 
             # Compress
             compressed_data = compress_data(uncompressed_data, compression, compression_level)
 
             # Overwrite with compressed version
-            with open(path, 'wb') as f:
+            with open(path, "wb") as f:
                 f.write(compressed_data)
 
             # Compute checksum on compressed data
@@ -280,7 +287,7 @@ class BrainCheckpoint:
             checksum = hasher.digest()
         else:
             # Compute checksum on uncompressed data
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 hasher = hashlib.sha256()
                 while True:
                     chunk = f.read(65536)  # Read in 64KB chunks
@@ -290,7 +297,7 @@ class BrainCheckpoint:
                 checksum = hasher.digest()
 
         # Append checksum at end of file (works for both compressed and uncompressed)
-        with open(path, 'ab') as f:
+        with open(path, "ab") as f:
             f.write(checksum)
 
         file_size = path.stat().st_size
@@ -306,14 +313,14 @@ class BrainCheckpoint:
             "checksum": checksum.hex(),
             "compression": compression,
             "compression_level": compression_level if compression else None,
-            "precision_policy": str(precision_policy) if precision_policy else 'fp32',
+            "precision_policy": str(precision_policy) if precision_policy else "fp32",
             "precision_stats": precision_stats,
         }
 
     @staticmethod
     def load(
         path: Union[str, Path],
-        device: str = 'cpu',
+        device: str = "cpu",
         regions_to_load: Optional[list] = None,
     ) -> Dict[str, Any]:
         """Load brain state from binary checkpoint file.
@@ -338,9 +345,10 @@ class BrainCheckpoint:
             >>> # Load delta checkpoint (auto-reconstructs)
             >>> brain = BrainCheckpoint.load("stage3.delta.thalia")
         """
-        from .compression import detect_compression, decompress_data
-        from .delta import load_delta_checkpoint, DELTA_MAGIC
         import io
+
+        from .compression import decompress_data, detect_compression
+        from .delta import DELTA_MAGIC, load_delta_checkpoint
 
         path = Path(path)
 
@@ -351,12 +359,13 @@ class BrainCheckpoint:
         compression = detect_compression(path)
 
         # Read file
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             raw_file_data = f.read()
 
         # Validate checksum FIRST (on compressed or uncompressed data)
         # Checksum is always the last 32 bytes
         import hashlib
+
         if len(raw_file_data) < 32:
             raise ValueError("File too small to contain checksum")
 
@@ -404,27 +413,29 @@ class BrainCheckpoint:
         # Warn if minor/patch versions differ (non-breaking changes)
         if checkpoint_version[1:] != current_version[1:]:
             import warnings
+
             warnings.warn(
                 f"Checkpoint format version mismatch: "
                 f"checkpoint is v{checkpoint_version[0]}.{checkpoint_version[1]}.{checkpoint_version[2]}, "
                 f"current Thalia uses v{current_version[0]}.{current_version[1]}.{current_version[2]}. "
                 f"Minor/patch differences are usually compatible.",
-                UserWarning
+                UserWarning,
             )
 
         # Read metadata
         f.seek(header.metadata_offset)
         metadata_bytes = f.read(header.metadata_length)
-        metadata = json.loads(metadata_bytes.decode('utf-8'))
+        metadata = json.loads(metadata_bytes.decode("utf-8"))
 
         # Log version info from metadata for debugging
-        saved_thalia_version = metadata.get('thalia_version', 'unknown')
+        saved_thalia_version = metadata.get("thalia_version", "unknown")
         if saved_thalia_version != THALIA_VERSION:
             import warnings
+
             warnings.warn(
                 f"Checkpoint was saved with Thalia v{saved_thalia_version}, "
                 f"loading with v{THALIA_VERSION}. API changes may cause issues.",
-                UserWarning
+                UserWarning,
             )
 
         # Read region index
@@ -433,7 +444,7 @@ class BrainCheckpoint:
         n_entries = len(index_data) // 48
         region_index = []
         for i in range(n_entries):
-            entry_data = index_data[i*48:(i+1)*48]
+            entry_data = index_data[i * 48 : (i + 1) * 48]
             region_index.append(RegionIndexEntry.from_bytes(entry_data))
 
         # Load regions
@@ -449,7 +460,7 @@ class BrainCheckpoint:
             # Read region JSON
             f.seek(entry.data_offset)
             region_json_bytes = f.read(entry.data_length)
-            region_json = json.loads(region_json_bytes.decode('utf-8'))
+            region_json = json.loads(region_json_bytes.decode("utf-8"))
 
             # Deserialize region state (decode tensors)
             region_state = _deserialize_region_state(region_json, f, device)
@@ -480,7 +491,7 @@ class BrainCheckpoint:
 
         # Restore FP16 tensors to FP32 for computation
         # (Checkpoint may have FP16 for storage, but we compute in FP32)
-        if metadata.get("precision_policy") and metadata["precision_policy"] != 'fp32':
+        if metadata.get("precision_policy") and metadata["precision_policy"] != "fp32":
             state = restore_precision_to_fp32(state, in_place=True)
 
         return state
@@ -528,8 +539,8 @@ class BrainCheckpoint:
             ...     precision_policy='fp16'
             ... )
         """
-        from .delta import save_delta_checkpoint
         from .compression import compress_file
+        from .delta import save_delta_checkpoint
 
         path = Path(path)
         base_checkpoint = Path(base_checkpoint)
@@ -555,10 +566,10 @@ class BrainCheckpoint:
         if compression is not None:
             uncompressed_path = path
 
-            if compression == 'zstd':
-                compressed_path = path.with_suffix(path.suffix + '.zst')
-            elif compression == 'lz4':
-                compressed_path = path.with_suffix(path.suffix + '.lz4')
+            if compression == "zstd":
+                compressed_path = path.with_suffix(path.suffix + ".zst")
+            elif compression == "lz4":
+                compressed_path = path.with_suffix(path.suffix + ".lz4")
             else:
                 raise ValueError(f"Unknown compression: {compression}")
 
@@ -574,10 +585,12 @@ class BrainCheckpoint:
 
             # Update summary
             compressed_size = compressed_path.stat().st_size
-            summary['compressed_path'] = str(compressed_path)
-            summary['compressed_size_mb'] = compressed_size / (1024 * 1024)
-            summary['final_compression_ratio'] = compressed_size / summary['base_size_mb'] / (1024 * 1024)
-            summary['final_savings_percent'] = (1 - summary['final_compression_ratio']) * 100
+            summary["compressed_path"] = str(compressed_path)
+            summary["compressed_size_mb"] = compressed_size / (1024 * 1024)
+            summary["final_compression_ratio"] = (
+                compressed_size / summary["base_size_mb"] / (1024 * 1024)
+            )
+            summary["final_savings_percent"] = (1 - summary["final_compression_ratio"]) * 100
 
         return summary
 
@@ -596,7 +609,7 @@ class BrainCheckpoint:
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {path}")
 
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             reader = BinaryReader(f)
 
             # Read header
@@ -607,8 +620,7 @@ class BrainCheckpoint:
 
             # Read region index
             region_index = reader.read_region_index(
-                header.region_index_offset,
-                header.region_index_length
+                header.region_index_offset, header.region_index_length
             )
 
         return {
@@ -644,9 +656,10 @@ class BrainCheckpoint:
             }
 
         try:
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 # Validate checksum FIRST (same as load)
                 import hashlib
+
                 f.seek(0, 2)  # Seek to end
                 file_size = f.tell()
                 f.seek(0)  # Back to start
@@ -715,6 +728,8 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
             json_dict[key] = value
 
     return json_dict
+
+
 def _serialize_list(lst: list, writer: BinaryWriter) -> list:
     """Serialize list, handling tensors."""
     result = []
@@ -723,11 +738,13 @@ def _serialize_list(lst: list, writer: BinaryWriter) -> list:
         if isinstance(item, torch.Tensor):
             tensor_offset = writer.tell()
             tensor_bytes = encode_tensor(item, writer.file)
-            result.append({
-                "_type": "tensor",
-                "_offset": tensor_offset,
-                "_bytes": tensor_bytes,
-            })
+            result.append(
+                {
+                    "_type": "tensor",
+                    "_offset": tensor_offset,
+                    "_bytes": tensor_bytes,
+                }
+            )
         elif isinstance(item, dict):
             serialized_dict = _serialize_region_state(item, writer)
             result.append(serialized_dict)

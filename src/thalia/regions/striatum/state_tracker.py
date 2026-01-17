@@ -47,7 +47,8 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 """
 
 from __future__ import annotations
-from typing import Optional, Dict, Any
+
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -146,7 +147,9 @@ class StriatumStateTracker:
         """
         return self._d1_votes_accumulated.clone(), self._d2_votes_accumulated.clone()
 
-    def update_recent_spikes(self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, decay: float = 0.9) -> None:
+    def update_recent_spikes(
+        self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, decay: float = 0.9
+    ) -> None:
         """Update recent spike history with decay for both D1 and D2 pathways.
 
         Args:
@@ -281,20 +284,17 @@ class StriatumStateTracker:
             n_new_neurons: Number of new neurons being added to n_output
         """
         # Expand vote accumulators [n_actions]
-        self._d1_votes_accumulated = torch.cat([
-            self._d1_votes_accumulated,
-            torch.zeros(n_new_actions, device=self.device)
-        ], dim=0)
-        self._d2_votes_accumulated = torch.cat([
-            self._d2_votes_accumulated,
-            torch.zeros(n_new_actions, device=self.device)
-        ], dim=0)
+        self._d1_votes_accumulated = torch.cat(
+            [self._d1_votes_accumulated, torch.zeros(n_new_actions, device=self.device)], dim=0
+        )
+        self._d2_votes_accumulated = torch.cat(
+            [self._d2_votes_accumulated, torch.zeros(n_new_actions, device=self.device)], dim=0
+        )
 
         # Expand recent_spikes [n_output]
-        self.recent_spikes = torch.cat([
-            self.recent_spikes,
-            torch.zeros(n_new_neurons, device=self.device)
-        ], dim=0)
+        self.recent_spikes = torch.cat(
+            [self.recent_spikes, torch.zeros(n_new_neurons, device=self.device)], dim=0
+        )
 
         # Update counts
         self.n_actions += n_new_actions

@@ -17,7 +17,7 @@ Date: December 21, 2025
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, TypedDict, Optional, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, TypedDict
 
 import torch
 
@@ -173,6 +173,7 @@ Example:
 # Structured diagnostic types (Architecture Review 2025-12-22, Tier 1.5)
 # =========================================================================
 
+
 class BaseDiagnostics(TypedDict, total=False):
     """Base diagnostic fields shared by all regions.
 
@@ -193,6 +194,7 @@ class BaseDiagnostics(TypedDict, total=False):
         silent_fraction: Fraction of neurons with zero activity
         saturated_fraction: Fraction of neurons at max firing rate
     """
+
     firing_rate: float
     spike_count: int
     membrane_mean: float
@@ -224,6 +226,7 @@ class LayeredCortexDiagnostics(BaseDiagnostics):
         gamma_power: Gamma oscillation power (20-80 Hz)
         theta_gamma_coupling: Theta-gamma cross-frequency coupling
     """
+
     l4_firing_rate: float
     l23_firing_rate: float
     l5_firing_rate: float
@@ -255,6 +258,7 @@ class StriatumDiagnostics(BaseDiagnostics):
         q_value_std: Standard deviation of Q-values
         winning_vote_margin: Margin between winner and runner-up
     """
+
     d1_firing_rate: float
     d2_firing_rate: float
     d1_d2_balance: float
@@ -288,6 +292,7 @@ class HippocampusDiagnostics(BaseDiagnostics):
         last_retrieval_similarity: Similarity of last retrieval (0.0-1.0)
         acetylcholine_level: Current ACh concentration (0.0-1.0)
     """
+
     dg_firing_rate: float
     ca3_firing_rate: float
     ca1_firing_rate: float
@@ -317,6 +322,7 @@ class PrefrontalDiagnostics(BaseDiagnostics):
         n_active_goals: Number of simultaneously active goals
         goal_conflict: Degree of conflict between active goals
     """
+
     working_memory_load: int
     working_memory_capacity: int
     gate_open: bool
@@ -341,6 +347,7 @@ class ThalamicRelayDiagnostics(BaseDiagnostics):
         relay_gain: Current relay gain factor
         feedback_inhibition: Strength of L6 feedback to TRN
     """
+
     relay_firing_rate: float
     trn_firing_rate: float
     gating_strength: float
@@ -363,12 +370,14 @@ class CerebellumDiagnostics(BaseDiagnostics):
         learning_rate_modulated: Current effective learning rate
         error_corrective_magnitude: Magnitude of error-driven updates
     """
+
     purkinje_firing_rate: float
     granule_firing_rate: float
     climbing_fiber_error: float
     parallel_fiber_strength: float
     learning_rate_modulated: float
     error_corrective_magnitude: float
+
 
 # ============================================================================
 # Neuromodulation

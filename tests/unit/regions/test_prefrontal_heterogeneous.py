@@ -14,15 +14,14 @@ Biological validation:
 - Integration with forward pass and WM dynamics
 """
 
-import torch
 import pytest
+import torch
 
 from thalia.regions.prefrontal import (
     Prefrontal,
     PrefrontalConfig,
     sample_heterogeneous_wm_neurons,
 )
-
 
 # =====================================================================
 # FIXTURES
@@ -122,9 +121,7 @@ def test_heterogeneous_sampling_cv():
     cv_actual = std_val / mean_val
 
     # CV should be close to target (within 10% due to sampling variation)
-    assert abs(cv_actual - cv_target) < 0.05, (
-        f"CV mismatch: expected {cv_target}, got {cv_actual}"
-    )
+    assert abs(cv_actual - cv_target) < 0.05, f"CV mismatch: expected {cv_target}, got {cv_actual}"
 
 
 def test_heterogeneous_sampling_range():
@@ -434,7 +431,10 @@ def test_stable_neurons_maintain_wm_longer(
     assert flexible_retention > 0.0
 
     # Verify heterogeneity exists (different tau_mem values)
-    assert pfc._tau_mem_heterogeneous[stable_mask].mean() > pfc._tau_mem_heterogeneous[flexible_mask].mean()
+    assert (
+        pfc._tau_mem_heterogeneous[stable_mask].mean()
+        > pfc._tau_mem_heterogeneous[flexible_mask].mean()
+    )
 
 
 def test_heterogeneous_wm_integration_with_forward(

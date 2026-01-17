@@ -1,9 +1,11 @@
 """Profile component-level execution to find bottlenecks."""
 
 import time
+
 import torch
-from thalia.core.brain_builder import BrainBuilder
+
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 def profile_component_timing():
@@ -52,7 +54,9 @@ def profile_component_timing():
     actual_time = (time.perf_counter() - start) * 1000
 
     print(f"Actual forward(1 timestep): {actual_time:.3f} ms")
-    print(f"Overhead: {actual_time - total_time:.3f} ms ({((actual_time - total_time) / actual_time * 100):.1f}%)\n")
+    print(
+        f"Overhead: {actual_time - total_time:.3f} ms ({((actual_time - total_time) / actual_time * 100):.1f}%)\n"
+    )
 
 
 if __name__ == "__main__":

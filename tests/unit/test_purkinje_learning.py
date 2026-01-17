@@ -20,7 +20,7 @@ class TestPurkinjePerDendriteLearning:
         # Use new (config, sizes, device) pattern
         calc = LayerSizeCalculator()
         sizes = calc.cerebellum_from_output(purkinje_size=32)
-        sizes['input_size'] = 64  # Add input_size to sizes dict
+        sizes["input_size"] = 64  # Add input_size to sizes dict
 
         config = CerebellumConfig(
             use_enhanced_microcircuit=True,
@@ -45,8 +45,9 @@ class TestPurkinjePerDendriteLearning:
 
         # Verify Purkinje cell weights changed
         new_weights = cerebellum.purkinje_cells[0].pf_synaptic_weights
-        assert not torch.allclose(initial_weights, new_weights, atol=1e-6), \
-            f"Purkinje cell weights should have changed after learning. Error: {metrics.get('error', 0)}"
+        assert not torch.allclose(
+            initial_weights, new_weights, atol=1e-6
+        ), f"Purkinje cell weights should have changed after learning. Error: {metrics.get('error', 0)}"
         assert "error" in metrics
         assert "ltp" in metrics
         assert "ltd" in metrics
@@ -58,7 +59,7 @@ class TestPurkinjePerDendriteLearning:
         """
         calc = LayerSizeCalculator()
         sizes = calc.cerebellum_from_output(purkinje_size=32)
-        sizes['input_size'] = 64
+        sizes["input_size"] = 64
 
         config = CerebellumConfig(
             use_enhanced_microcircuit=True,
@@ -92,7 +93,7 @@ class TestPurkinjePerDendriteLearning:
         """LTP should occur when target > output (positive error)."""
         calc = LayerSizeCalculator()
         sizes = calc.cerebellum_from_output(purkinje_size=32)
-        sizes['input_size'] = 64
+        sizes["input_size"] = 64
 
         config = CerebellumConfig(
             use_enhanced_microcircuit=True,
@@ -123,7 +124,7 @@ class TestPurkinjePerDendriteLearning:
         """Purkinje cell weights should stay within configured bounds."""
         calc = LayerSizeCalculator()
         sizes = calc.cerebellum_from_output(purkinje_size=32)
-        sizes['input_size'] = 64
+        sizes["input_size"] = 64
 
         config = CerebellumConfig(
             use_enhanced_microcircuit=True,
@@ -144,16 +145,14 @@ class TestPurkinjePerDendriteLearning:
         # Check all Purkinje cells respect bounds
         for i, cell in enumerate(cerebellum.purkinje_cells):
             weights = cell.pf_synaptic_weights
-            assert torch.all(weights >= config.w_min), \
-                f"Purkinje cell {i} has weights below w_min"
-            assert torch.all(weights <= config.w_max), \
-                f"Purkinje cell {i} has weights above w_max"
+            assert torch.all(weights >= config.w_min), f"Purkinje cell {i} has weights below w_min"
+            assert torch.all(weights <= config.w_max), f"Purkinje cell {i} has weights above w_max"
 
     def test_each_purkinje_cell_learns_independently(self):
         """Each Purkinje cell should have independent weight updates."""
         calc = LayerSizeCalculator()
         sizes = calc.cerebellum_from_output(purkinje_size=10)
-        sizes['input_size'] = 64
+        sizes["input_size"] = 64
 
         config = CerebellumConfig(
             use_enhanced_microcircuit=True,
@@ -168,8 +167,7 @@ class TestPurkinjePerDendriteLearning:
 
         # Store initial weights for multiple cells
         initial_weights = [
-            cell.pf_synaptic_weights.clone()
-            for cell in cerebellum.purkinje_cells[:5]
+            cell.pf_synaptic_weights.clone() for cell in cerebellum.purkinje_cells[:5]
         ]
 
         # Different error signals
@@ -190,13 +188,13 @@ class TestCerebellumNeurogenesisTracking:
         """Cerebellum should have set_training_step method."""
         calc = LayerSizeCalculator()
         sizes = calc.cerebellum_from_output(purkinje_size=32)
-        sizes['input_size'] = 64
+        sizes["input_size"] = 64
 
         config = CerebellumConfig()
         cerebellum = Cerebellum(config=config, sizes=sizes, device="cpu")
 
         # Should not raise AttributeError
-        assert hasattr(cerebellum, 'set_training_step')
+        assert hasattr(cerebellum, "set_training_step")
 
         # Should be callable
         cerebellum.set_training_step(100)

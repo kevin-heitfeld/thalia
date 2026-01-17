@@ -8,7 +8,7 @@ Standardized component following the region_components pattern.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List
 
 import torch
 
@@ -30,6 +30,7 @@ class ExplorationState:
         recent_accuracy: Recent accuracy metric
         tonic_dopamine: Current tonic dopamine level (motivation/exploration)
     """
+
     action_counts: torch.Tensor  # [n_actions] int tensor
     total_trials: int
     recent_rewards: List[float]
@@ -122,11 +123,7 @@ class StriatumExplorationComponent(ExplorationComponent):
         self._recent_accuracy = 0.0
         self.tonic_dopamine = initial_tonic_dopamine
 
-    def compute_exploration_bonus(
-        self,
-        q_values: torch.Tensor,
-        **kwargs
-    ) -> torch.Tensor:
+    def compute_exploration_bonus(self, q_values: torch.Tensor, **kwargs) -> torch.Tensor:
         """Compute UCB exploration bonus for actions.
 
         Args:
@@ -141,11 +138,11 @@ class StriatumExplorationComponent(ExplorationComponent):
 
         # UCB formula: sqrt(ln(total_trials) / action_count)
         if self._total_trials == 0:
-            return torch.ones_like(q_values) * float('inf')  # Try all actions initially
+            return torch.ones_like(q_values) * float("inf")  # Try all actions initially
 
         ucb_bonus = self.config.ucb_coefficient * torch.sqrt(
-            torch.log(torch.tensor(self._total_trials, device=q_values.device)) /
-            (self._action_counts + 1e-8)
+            torch.log(torch.tensor(self._total_trials, device=q_values.device))
+            / (self._action_counts + 1e-8)
         )
 
         return ucb_bonus
@@ -187,9 +184,10 @@ class StriatumExplorationComponent(ExplorationComponent):
             else:
                 # Linear interpolation
                 self.tonic_dopamine = (
-                    self.config.min_tonic_dopamine +
-                    (self.config.max_tonic_dopamine - self.config.min_tonic_dopamine) *
-                    (0.8 - self._recent_accuracy) / 0.3
+                    self.config.min_tonic_dopamine
+                    + (self.config.max_tonic_dopamine - self.config.min_tonic_dopamine)
+                    * (0.8 - self._recent_accuracy)
+                    / 0.3
                 )
 
     def reset_state(self) -> None:
@@ -210,7 +208,7 @@ class StriatumExplorationComponent(ExplorationComponent):
 
         # Expand action counts with zeros for new actions
         new_counts = torch.zeros(n_actions, device=self.context.device)
-        new_counts[:self.n_actions] = self._action_counts
+        new_counts[: self.n_actions] = self._action_counts
         self._action_counts = new_counts
 
         # Update n_actions
@@ -227,10 +225,10 @@ class StriatumExplorationComponent(ExplorationComponent):
         if not self.config.ucb_exploration or self._total_trials == 0:
             return torch.zeros(self.n_actions, device=self.context.device)
 
-        log_t = torch.log(torch.tensor(self._total_trials + 1, dtype=torch.float32, device=self.context.device))
-        ucb_bonus = self.config.ucb_coefficient * torch.sqrt(
-            log_t / (self._action_counts + 1.0)
+        log_t = torch.log(
+            torch.tensor(self._total_trials + 1, dtype=torch.float32, device=self.context.device)
         )
+        ucb_bonus = self.config.ucb_coefficient * torch.sqrt(log_t / (self._action_counts + 1.0))
         return ucb_bonus
 
     def get_state(self) -> ExplorationState:
@@ -262,12 +260,14 @@ class StriatumExplorationComponent(ExplorationComponent):
     def get_exploration_diagnostics(self) -> Dict[str, Any]:
         """Get exploration-specific diagnostics."""
         diag = super().get_exploration_diagnostics()
-        diag.update({
-            "action_counts": self._action_counts.tolist(),
-            "total_trials": self._total_trials,
-            "recent_accuracy": self._recent_accuracy,
-            "tonic_dopamine": self.tonic_dopamine,
-            "ucb_enabled": self.config.ucb_exploration,
-            "adaptive_enabled": self.config.adaptive_exploration,
-        })
+        diag.update(
+            {
+                "action_counts": self._action_counts.tolist(),
+                "total_trials": self._total_trials,
+                "recent_accuracy": self._recent_accuracy,
+                "tonic_dopamine": self.tonic_dopamine,
+                "ucb_enabled": self.config.ucb_exploration,
+                "adaptive_enabled": self.config.adaptive_exploration,
+            }
+        )
         return diag

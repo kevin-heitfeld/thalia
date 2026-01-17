@@ -237,6 +237,7 @@ def test_consolidation_transfer(hippocampus):
     # The exact value depends on the interplay of consolidation and decay.
     assert hippocampus._ca3_ca3_slow.mean() > 1.0  # Substantial consolidation occurred
 
+
 def test_combined_learning(hippocampus):
     """Test that weight updates combine fast + slow traces correctly."""
     config = hippocampus.config
@@ -246,7 +247,9 @@ def test_combined_learning(hippocampus):
     hippocampus._ca3_ca3_slow = torch.ones_like(hippocampus._ca3_ca3_slow) * 0.5
 
     # Compute combined update
-    combined = hippocampus._ca3_ca3_fast + config.slow_trace_contribution * hippocampus._ca3_ca3_slow
+    combined = (
+        hippocampus._ca3_ca3_fast + config.slow_trace_contribution * hippocampus._ca3_ca3_slow
+    )
 
     # Should be: 1.0 + 0.1 * 0.5 = 1.05
     expected = torch.ones_like(hippocampus._ca3_ca3_fast) * 1.05

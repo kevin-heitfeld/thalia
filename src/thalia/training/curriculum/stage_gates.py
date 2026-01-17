@@ -30,6 +30,7 @@ from thalia.constants.training import (
 
 class GateDecision(Enum):
     """Gate decision outcomes."""
+
     PROCEED = "proceed"
     EXTEND = "extend_stage"
     ROLLBACK = "rollback_checkpoint"
@@ -39,6 +40,7 @@ class GateDecision(Enum):
 @dataclass
 class GateResult:
     """Result of stage gate evaluation."""
+
     decision: GateDecision
     passed: bool
     failures: List[str]
@@ -89,11 +91,11 @@ class Stage1SurvivalGate:
     def reset(self):
         """Reset monitoring state."""
         self.history = {
-            'theta_freq': [],
-            'gamma_theta_locking': [],
-            'n_back_accuracy': [],
-            'firing_rates': [],
-            'replay_improvements': [],
+            "theta_freq": [],
+            "gamma_theta_locking": [],
+            "n_back_accuracy": [],
+            "firing_rates": [],
+            "replay_improvements": [],
         }
 
     def update(self, brain, metrics: Dict[str, float]):
@@ -105,31 +107,27 @@ class Stage1SurvivalGate:
             metrics: Latest training metrics
         """
         # Track oscillator metrics
-        if 'theta_frequency' in metrics:
-            self.history['theta_freq'].append(metrics['theta_frequency'])
+        if "theta_frequency" in metrics:
+            self.history["theta_freq"].append(metrics["theta_frequency"])
 
-        if 'gamma_theta_phase_locking' in metrics:
-            self.history['gamma_theta_locking'].append(
-                metrics['gamma_theta_phase_locking']
-            )
+        if "gamma_theta_phase_locking" in metrics:
+            self.history["gamma_theta_locking"].append(metrics["gamma_theta_phase_locking"])
 
         # Track WM metrics
-        if 'n_back_accuracy' in metrics:
-            self.history['n_back_accuracy'].append(metrics['n_back_accuracy'])
+        if "n_back_accuracy" in metrics:
+            self.history["n_back_accuracy"].append(metrics["n_back_accuracy"])
 
         # Track global health
-        if 'mean_firing_rate' in metrics:
-            self.history['firing_rates'].append(metrics['mean_firing_rate'])
+        if "mean_firing_rate" in metrics:
+            self.history["firing_rates"].append(metrics["mean_firing_rate"])
 
-        if 'replay_improvement' in metrics:
-            self.history['replay_improvements'].append(
-                metrics['replay_improvement']
-            )
+        if "replay_improvement" in metrics:
+            self.history["replay_improvements"].append(metrics["replay_improvement"])
 
         # Trim to observation window
         for key in self.history:
             if len(self.history[key]) > self.observation_window:
-                self.history[key] = self.history[key][-self.observation_window:]
+                self.history[key] = self.history[key][-self.observation_window :]
 
     def evaluate(self, brain) -> GateResult:
         """
@@ -195,7 +193,7 @@ class Stage1SurvivalGate:
             passed=passed,
             failures=failures,
             recommendations=recommendations,
-            metrics=metrics
+            metrics=metrics,
         )
 
     def _check_oscillators(self) -> Tuple[bool, List[str], Dict[str, float]]:
@@ -203,28 +201,26 @@ class Stage1SurvivalGate:
         failures = []
         metrics = {}
 
-        if len(self.history['theta_freq']) < 100:
+        if len(self.history["theta_freq"]) < 100:
             failures.append("Insufficient oscillator data")
             return False, failures, metrics
 
         # Theta frequency in range
-        theta_freqs = np.array(self.history['theta_freq'][-1000:])
+        theta_freqs = np.array(self.history["theta_freq"][-1000:])
         mean_theta = theta_freqs.mean()
         theta_var = theta_freqs.std() / mean_theta
 
-        metrics['mean_theta_frequency'] = float(mean_theta)
-        metrics['theta_variance'] = float(theta_var)
+        metrics["mean_theta_frequency"] = float(mean_theta)
+        metrics["theta_variance"] = float(theta_var)
 
         if not (self.THETA_FREQ_RANGE[0] <= mean_theta <= self.THETA_FREQ_RANGE[1]):
             failures.append(
-                f"Theta frequency {mean_theta:.2f}Hz out of range "
-                f"{self.THETA_FREQ_RANGE}"
+                f"Theta frequency {mean_theta:.2f}Hz out of range " f"{self.THETA_FREQ_RANGE}"
             )
 
         if theta_var > self.THETA_MAX_VARIANCE:
             failures.append(
-                f"Theta variance {theta_var:.3f} exceeds max "
-                f"{self.THETA_MAX_VARIANCE}"
+                f"Theta variance {theta_var:.3f} exceeds max " f"{self.THETA_MAX_VARIANCE}"
             )
 
         # Frequency drift check
@@ -232,18 +228,16 @@ class Stage1SurvivalGate:
             early_mean = theta_freqs[:500].mean()
             late_mean = theta_freqs[-500:].mean()
             drift = abs(late_mean - early_mean) / early_mean
-            metrics['theta_drift'] = float(drift)
+            metrics["theta_drift"] = float(drift)
 
             if drift > self.MAX_FREQ_DRIFT:
-                failures.append(
-                    f"Theta drift {drift:.3f} exceeds max {self.MAX_FREQ_DRIFT}"
-                )
+                failures.append(f"Theta drift {drift:.3f} exceeds max {self.MAX_FREQ_DRIFT}")
 
         # Gamma-theta phase locking
-        if len(self.history['gamma_theta_locking']) >= 100:
-            locking = np.array(self.history['gamma_theta_locking'][-1000:])
+        if len(self.history["gamma_theta_locking"]) >= 100:
+            locking = np.array(self.history["gamma_theta_locking"][-1000:])
             mean_locking = locking.mean()
-            metrics['gamma_theta_locking'] = float(mean_locking)
+            metrics["gamma_theta_locking"] = float(mean_locking)
 
             if mean_locking < self.GAMMA_THETA_MIN_LOCKING:
                 failures.append(
@@ -260,19 +254,18 @@ class Stage1SurvivalGate:
         failures = []
         metrics = {}
 
-        if len(self.history['n_back_accuracy']) < 100:
+        if len(self.history["n_back_accuracy"]) < 100:
             failures.append("Insufficient WM performance data")
             return False, failures, metrics
 
         # N-back accuracy (rolling window)
-        accuracies = np.array(self.history['n_back_accuracy'][-1000:])
+        accuracies = np.array(self.history["n_back_accuracy"][-1000:])
         mean_accuracy = accuracies.mean()
-        metrics['n_back_2_accuracy'] = float(mean_accuracy)
+        metrics["n_back_2_accuracy"] = float(mean_accuracy)
 
         if mean_accuracy < self.N_BACK_MIN_ACCURACY:
             failures.append(
-                f"2-back accuracy {mean_accuracy:.3f} below min "
-                f"{self.N_BACK_MIN_ACCURACY}"
+                f"2-back accuracy {mean_accuracy:.3f} below min " f"{self.N_BACK_MIN_ACCURACY}"
             )
 
         # Check for performance decay
@@ -280,30 +273,25 @@ class Stage1SurvivalGate:
             # Split into segments
             segment_size = len(accuracies) // 5
             segments = [
-                accuracies[i*segment_size:(i+1)*segment_size].mean()
-                for i in range(5)
+                accuracies[i * segment_size : (i + 1) * segment_size].mean() for i in range(5)
             ]
 
             # Check if declining
             if segments[-1] < segments[0] - 0.05:  # 5% decay
-                failures.append(
-                    f"WM performance decaying: {segments[0]:.3f} → {segments[-1]:.3f}"
-                )
+                failures.append(f"WM performance decaying: {segments[0]:.3f} → {segments[-1]:.3f}")
 
-            metrics['wm_stability'] = float(segments[-1] - segments[0])
+            metrics["wm_stability"] = float(segments[-1] - segments[0])
 
         return len(failures) == 0, failures, metrics
 
-    def _check_interference(
-        self, brain
-    ) -> Tuple[bool, List[str], Dict[str, float]]:
+    def _check_interference(self, brain) -> Tuple[bool, List[str], Dict[str, float]]:
         """Check cross-modal interference."""
         failures = []
         metrics = {}
 
         # Check if both phonology and vision regions exist
-        has_phonology = hasattr(brain, 'phonology_region')
-        has_vision = hasattr(brain, 'visual_cortex')
+        has_phonology = hasattr(brain, "phonology_region")
+        has_vision = hasattr(brain, "visual_cortex")
 
         if not (has_phonology and has_vision):
             # Can't check interference if regions don't exist
@@ -311,12 +299,12 @@ class Stage1SurvivalGate:
 
         # Check for simultaneous performance collapse
         # (both modalities failing at same time indicates interference)
-        if hasattr(brain, 'get_modality_performance'):
-            phon_perf = brain.get_modality_performance('phonology')
-            vis_perf = brain.get_modality_performance('vision')
+        if hasattr(brain, "get_modality_performance"):
+            phon_perf = brain.get_modality_performance("phonology")
+            vis_perf = brain.get_modality_performance("vision")
 
-            metrics['phonology_performance'] = phon_perf
-            metrics['vision_performance'] = vis_perf
+            metrics["phonology_performance"] = phon_perf
+            metrics["vision_performance"] = vis_perf
 
             if phon_perf < 0.7 and vis_perf < 0.7:
                 failures.append(
@@ -326,30 +314,27 @@ class Stage1SurvivalGate:
 
         return len(failures) == 0, failures, metrics
 
-    def _check_global_health(
-        self, brain
-    ) -> Tuple[bool, List[str], Dict[str, float]]:
+    def _check_global_health(self, brain) -> Tuple[bool, List[str], Dict[str, float]]:
         """Check global health metrics."""
         failures = []
         metrics = {}
 
         # Check firing rates across regions
-        if len(self.history['firing_rates']) >= 100:
-            firing_rates = np.array(self.history['firing_rates'][-1000:])
+        if len(self.history["firing_rates"]) >= 100:
+            firing_rates = np.array(self.history["firing_rates"][-1000:])
             mean_fr = firing_rates.mean()
-            metrics['mean_firing_rate'] = float(mean_fr)
+            metrics["mean_firing_rate"] = float(mean_fr)
 
             if not (self.FIRING_RATE_RANGE[0] <= mean_fr <= self.FIRING_RATE_RANGE[1]):
                 failures.append(
-                    f"Mean firing rate {mean_fr:.4f} out of range "
-                    f"{self.FIRING_RATE_RANGE}"
+                    f"Mean firing rate {mean_fr:.4f} out of range " f"{self.FIRING_RATE_RANGE}"
                 )
 
         # Check replay effectiveness
-        if len(self.history['replay_improvements']) >= 3:
-            improvements = self.history['replay_improvements'][-3:]
+        if len(self.history["replay_improvements"]) >= 3:
+            improvements = self.history["replay_improvements"][-3:]
             mean_improvement = np.mean(improvements)
-            metrics['replay_improvement'] = float(mean_improvement)
+            metrics["replay_improvement"] = float(mean_improvement)
 
             if mean_improvement < self.MIN_REPLAY_IMPROVEMENT:
                 failures.append(
@@ -358,15 +343,13 @@ class Stage1SurvivalGate:
                 )
 
         # Check dopamine system health
-        if hasattr(brain, 'neuromodulation'):
+        if hasattr(brain, "neuromodulation"):
             dopamine_level = brain.neuromodulation.get_dopamine()
-            metrics['dopamine_level'] = float(dopamine_level)
+            metrics["dopamine_level"] = float(dopamine_level)
 
             # Check for saturation (chronic high/low)
             if dopamine_level > 0.95 or dopamine_level < 0.05:
-                failures.append(
-                    f"Dopamine saturation detected: {dopamine_level:.3f}"
-                )
+                failures.append(f"Dopamine saturation detected: {dopamine_level:.3f}")
 
         return len(failures) == 0, failures, metrics
 
@@ -391,10 +374,7 @@ class GracefulDegradationManager:
         self.failure_history = {}
 
     def handle_module_failure(
-        self,
-        module_name: str,
-        baseline_performance: float,
-        current_performance: float
+        self, module_name: str, baseline_performance: float, current_performance: float
     ) -> Dict[str, any]:
         """
         Route module failures to appropriate responses.
@@ -431,112 +411,109 @@ class GracefulDegradationManager:
         else:
             # Unknown module - treat as degradable with warning
             return {
-                'action': 'GRACEFUL_DEGRADATION',
-                'severity': 'MEDIUM',
-                'module': module_name,
-                'alert': f'UNKNOWN_MODULE_{module_name}_DEGRADED',
-                'recommendations': ['Verify module classification']
+                "action": "GRACEFUL_DEGRADATION",
+                "severity": "MEDIUM",
+                "module": module_name,
+                "alert": f"UNKNOWN_MODULE_{module_name}_DEGRADED",
+                "recommendations": ["Verify module classification"],
             }
 
-    def _handle_critical_failure(
-        self, module_name: str, drop: float
-    ) -> Dict[str, any]:
+    def _handle_critical_failure(self, module_name: str, drop: float) -> Dict[str, any]:
         """Handle failure of critical system."""
         if drop > SAFETY_CRITICAL_THRESHOLD:
             return {
-                'action': 'EMERGENCY_STOP',
-                'severity': 'CRITICAL',
-                'module': module_name,
-                'freeze_learning': True,
-                'rollback_to_checkpoint': True,
-                'alert': f'CRITICAL_FAILURE_{module_name}',
-                'recommendations': [
-                    'Rollback to last stable checkpoint',
-                    'Reduce cognitive load',
-                    'Emergency consolidation',
-                    'Check oscillator stability' if module_name == 'oscillators' else 'Check WM capacity'
-                ]
+                "action": "EMERGENCY_STOP",
+                "severity": "CRITICAL",
+                "module": module_name,
+                "freeze_learning": True,
+                "rollback_to_checkpoint": True,
+                "alert": f"CRITICAL_FAILURE_{module_name}",
+                "recommendations": [
+                    "Rollback to last stable checkpoint",
+                    "Reduce cognitive load",
+                    "Emergency consolidation",
+                    (
+                        "Check oscillator stability"
+                        if module_name == "oscillators"
+                        else "Check WM capacity"
+                    ),
+                ],
             }
         else:
             return {
-                'action': 'HIGH_PRIORITY_INTERVENTION',
-                'severity': 'HIGH',
-                'module': module_name,
-                'reduce_load': True,
-                'increase_monitoring': True,
-                'alert': f'WARNING_{module_name}_DEGRADING',
-                'recommendations': [
-                    'Reduce task complexity',
-                    'Increase consolidation frequency',
-                    'Monitor closely for further degradation'
-                ]
+                "action": "HIGH_PRIORITY_INTERVENTION",
+                "severity": "HIGH",
+                "module": module_name,
+                "reduce_load": True,
+                "increase_monitoring": True,
+                "alert": f"WARNING_{module_name}_DEGRADING",
+                "recommendations": [
+                    "Reduce task complexity",
+                    "Increase consolidation frequency",
+                    "Monitor closely for further degradation",
+                ],
             }
 
-    def _handle_degradable_failure(
-        self, module_name: str, drop: float
-    ) -> Dict[str, any]:
+    def _handle_degradable_failure(self, module_name: str, drop: float) -> Dict[str, any]:
         """Handle failure of degradable system."""
         if drop > SAFETY_DEGRADABLE_THRESHOLD:
             self.degraded_modules.add(module_name)
             return {
-                'action': 'GRACEFUL_DEGRADATION',
-                'severity': 'MEDIUM',
-                'module': module_name,
-                'disable_module': True,
-                'continue_learning': True,
-                'alert': f'{module_name}_DEGRADED',
-                'recommendations': [
-                    f'Continue without {module_name}',
-                    'System can still think and plan',
-                    f'Re-enable {module_name} after consolidation'
-                ]
+                "action": "GRACEFUL_DEGRADATION",
+                "severity": "MEDIUM",
+                "module": module_name,
+                "disable_module": True,
+                "continue_learning": True,
+                "alert": f"{module_name}_DEGRADED",
+                "recommendations": [
+                    f"Continue without {module_name}",
+                    "System can still think and plan",
+                    f"Re-enable {module_name} after consolidation",
+                ],
             }
         else:
             return {
-                'action': 'MONITOR',
-                'severity': 'LOW',
-                'module': module_name,
-                'continue_normally': True,
-                'alert': f'{module_name}_MINOR_DEGRADATION'
+                "action": "MONITOR",
+                "severity": "LOW",
+                "module": module_name,
+                "continue_normally": True,
+                "alert": f"{module_name}_MINOR_DEGRADATION",
             }
 
-    def _handle_limited_failure(
-        self, module_name: str, drop: float
-    ) -> Dict[str, any]:
+    def _handle_limited_failure(self, module_name: str, drop: float) -> Dict[str, any]:
         """Handle failure of limited degradation system."""
         if drop > SAFETY_LIMITED_THRESHOLD:
             self.degraded_modules.add(module_name)
             return {
-                'action': 'PARTIAL_SHUTDOWN',
-                'severity': 'MEDIUM',
-                'module': module_name,
-                'reduce_module_load': True,
-                'enable_fallback': True,
-                'continue_learning': True,
-                'alert': f'{module_name}_LIMITED_MODE',
-                'recommendations': [
-                    f'Reduce {module_name} task complexity',
-                    'Enable cross-modal compensation',
-                    'Continue with reduced capability'
-                ]
+                "action": "PARTIAL_SHUTDOWN",
+                "severity": "MEDIUM",
+                "module": module_name,
+                "reduce_module_load": True,
+                "enable_fallback": True,
+                "continue_learning": True,
+                "alert": f"{module_name}_LIMITED_MODE",
+                "recommendations": [
+                    f"Reduce {module_name} task complexity",
+                    "Enable cross-modal compensation",
+                    "Continue with reduced capability",
+                ],
             }
         else:
             return {
-                'action': 'MONITOR',
-                'severity': 'LOW',
-                'module': module_name,
-                'continue_normally': True,
-                'alert': f'{module_name}_MINOR_DEGRADATION'
+                "action": "MONITOR",
+                "severity": "LOW",
+                "module": module_name,
+                "continue_normally": True,
+                "alert": f"{module_name}_MINOR_DEGRADATION",
             }
 
     def get_system_status(self) -> Dict[str, any]:
         """Get overall system degradation status."""
         return {
-            'degraded_modules': list(self.degraded_modules),
-            'critical_systems_healthy': all(
-                module not in self.degraded_modules
-                for module in CRITICAL_SYSTEMS
+            "degraded_modules": list(self.degraded_modules),
+            "critical_systems_healthy": all(
+                module not in self.degraded_modules for module in CRITICAL_SYSTEMS
             ),
-            'num_failures': len(self.failure_history),
-            'operational': len(self.degraded_modules & CRITICAL_SYSTEMS) == 0
+            "num_failures": len(self.failure_history),
+            "operational": len(self.degraded_modules & CRITICAL_SYSTEMS) == 0,
         }

@@ -5,29 +5,28 @@ Core learning algorithms including BCM and pluggable learning strategies.
 
 from __future__ import annotations
 
-
 from thalia.learning.rules.bcm import (
-    BCMRule,
     BCMConfig,
+    BCMRule,
 )
 from thalia.learning.rules.strategies import (
-    # Base classes
-    LearningConfig,
     BaseStrategy,
-    # Strategy configs
-    HebbianConfig,
-    STDPConfig,
-    BCMConfig as BCMStrategyConfig,  # Renamed to avoid collision with bcm.BCMConfig
-    ThreeFactorConfig,
-    ErrorCorrectiveConfig,
-    # Strategy implementations
-    HebbianStrategy,
-    STDPStrategy,
+)
+from thalia.learning.rules.strategies import (
+    BCMConfig as BCMStrategyConfig,  # Base classes; Strategy configs; Strategy implementations; Factory; Renamed to avoid collision with bcm.BCMConfig
+)
+from thalia.learning.rules.strategies import (
     BCMStrategy,
-    ThreeFactorStrategy,
-    ErrorCorrectiveStrategy,
     CompositeStrategy,
-    # Factory
+    ErrorCorrectiveConfig,
+    ErrorCorrectiveStrategy,
+    HebbianConfig,
+    HebbianStrategy,
+    LearningConfig,
+    STDPConfig,
+    STDPStrategy,
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
     create_strategy,
 )
 

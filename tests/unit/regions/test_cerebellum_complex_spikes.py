@@ -18,7 +18,6 @@ import torch
 
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
-
 # =====================================================================
 # FIXTURES
 # =====================================================================
@@ -193,7 +192,9 @@ def test_complex_spike_burst_proportional_to_error(
     # Check that smoothed calcium generally increases
     differences = calcium_smoothed[1:] - calcium_smoothed[:-1]
     increasing_count = (differences >= -0.05).sum()  # Allow small decreases due to stochastic
-    assert increasing_count >= len(differences) * 0.7, "Calcium should generally increase with error"
+    assert (
+        increasing_count >= len(differences) * 0.7
+    ), "Calcium should generally increase with error"
 
 
 def test_complex_spike_stochastic_rounding(
@@ -485,7 +486,7 @@ def test_custom_complex_spike_parameters():
         use_complex_spike_bursts=True,
         min_complex_spike_count=3,  # Custom: higher minimum
         max_complex_spike_count=8,  # Custom: higher maximum
-        ca2_per_spikelet=0.15,      # Custom: lower calcium per spike
+        ca2_per_spikelet=0.15,  # Custom: lower calcium per spike
         device="cpu",
     )
 

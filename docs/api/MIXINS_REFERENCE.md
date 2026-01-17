@@ -77,4 +77,3 @@ class NeuralRegion(nn.Module,
 - [`reset_standard_state(state_attrs)`](../../src/thalia/mixins/resettable_mixin.py#L48)
 
 ---
-

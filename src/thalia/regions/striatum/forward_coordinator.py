@@ -51,7 +51,7 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import torch
 import torch.nn as nn
@@ -59,11 +59,11 @@ import torch.nn as nn
 from thalia.components.synapses import ShortTermPlasticity
 from thalia.constants.neuromodulation import compute_ne_gain
 from thalia.constants.neuron import (
+    BASELINE_EXCITATION_SCALE,
     THETA_BASELINE_MIN,
     THETA_BASELINE_RANGE,
     THETA_CONTRAST_MIN,
     THETA_CONTRAST_RANGE,
-    BASELINE_EXCITATION_SCALE,
     TONIC_D1_GAIN_SCALE,
 )
 from thalia.neuromodulation.mixin import validate_finite
@@ -71,6 +71,7 @@ from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
 if TYPE_CHECKING:
     from thalia.components.neurons.neuron import ConductanceLIF
+
     from .config import StriatumConfig
     from .d1_pathway import D1Pathway
     from .d2_pathway import D2Pathway
@@ -216,7 +217,7 @@ class ForwardPassCoordinator:
         return (
             theta_baseline_mod,
             theta_contrast_mod,
-            BASELINE_EXCITATION_SCALE * theta_baseline_mod
+            BASELINE_EXCITATION_SCALE * theta_baseline_mod,
         )
 
     def compute_gain_modulation(self) -> tuple[float, float]:
@@ -276,12 +277,8 @@ class ForwardPassCoordinator:
         # pfc_modulation_d1: [d1_size, pfc_size]
         # pfc_goal_context: [pfc_size]
         # goal_mod_d1_neurons: [d1_size] (per-neuron)
-        goal_mod_d1_neurons = torch.sigmoid(
-            torch.matmul(self.pfc_modulation_d1, pfc_goal_context)
-        )
-        goal_mod_d2_neurons = torch.sigmoid(
-            torch.matmul(self.pfc_modulation_d2, pfc_goal_context)
-        )
+        goal_mod_d1_neurons = torch.sigmoid(torch.matmul(self.pfc_modulation_d1, pfc_goal_context))
+        goal_mod_d2_neurons = torch.sigmoid(torch.matmul(self.pfc_modulation_d2, pfc_goal_context))
 
         # Pool per-neuron modulation to per-action level
         # Each action has neurons_per_pathway MSNs in each pathway
@@ -380,7 +377,7 @@ class ForwardPassCoordinator:
             n_d1 = self.d1_size  # Total D1 MSN neurons
             n_d2 = self.d2_size  # Total D2 MSN neurons
             stp_efficacy_d1 = stp_efficacy[:, :n_d1]  # [n_input, d1_size]
-            stp_efficacy_d2 = stp_efficacy[:, n_d1:n_d1+n_d2]  # [n_input, d2_size]
+            stp_efficacy_d2 = stp_efficacy[:, n_d1 : n_d1 + n_d2]  # [n_input, d2_size]
 
             # Apply MSN-level STP to MSN-level weights: [d1_size, n_input] * [d1_size, n_input]
             # Transpose STP to match weight dimensions: [n_input, d1_size] -> [d1_size, n_input]
@@ -441,7 +438,7 @@ class ForwardPassCoordinator:
 
         # Add lateral inhibition if enabled (use D1 portion of recent_spikes)
         if self.config.lateral_inhibition:
-            d1_recent_spikes = recent_spikes[:self.d1_size]
+            d1_recent_spikes = recent_spikes[: self.d1_size]
             d1_g_inh = d1_g_inh + d1_recent_spikes * self.config.inhibition_strength * 0.5
 
         # Add FSI feedforward inhibition (sharpens action selection timing)
@@ -469,7 +466,7 @@ class ForwardPassCoordinator:
 
         # Add lateral inhibition if enabled (use D2 portion of recent_spikes)
         if self.config.lateral_inhibition:
-            d2_recent_spikes = recent_spikes[self.d1_size:]
+            d2_recent_spikes = recent_spikes[self.d1_size :]
             d2_g_inh = d2_g_inh + d2_recent_spikes * self.config.inhibition_strength * 0.5
 
         # Add FSI feedforward inhibition to D2 (same as D1)

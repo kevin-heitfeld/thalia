@@ -22,12 +22,11 @@ Example:
 
 from __future__ import annotations
 
-
 from .base import StimulusPattern
+from .programmatic import Programmatic
+from .sequential import Sequential
 from .sustained import Sustained
 from .transient import Transient
-from .sequential import Sequential
-from .programmatic import Programmatic
 
 __all__ = [
     "StimulusPattern",

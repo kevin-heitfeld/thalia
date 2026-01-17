@@ -13,13 +13,12 @@ Date: January 16, 2026
 
 from __future__ import annotations
 
-
-from thalia.regions.prefrontal.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
+from thalia.regions.prefrontal.checkpoint_manager import PrefrontalCheckpointManager
 from thalia.regions.prefrontal.hierarchy import (
     Goal,
     GoalStatus,
 )
-from thalia.regions.prefrontal.checkpoint_manager import PrefrontalCheckpointManager
+from thalia.regions.prefrontal.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
 
 __all__ = [
     "Prefrontal",

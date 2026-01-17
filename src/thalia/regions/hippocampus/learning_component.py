@@ -7,7 +7,7 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,10 @@ from thalia.constants.architecture import (
 )
 from thalia.core.diagnostics_keys import DiagnosticKeys as DK
 from thalia.core.region_components import LearningComponent
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import (
+    UnifiedHomeostasis,
+    UnifiedHomeostasisConfig,
+)
 from thalia.managers.base_manager import ManagerContext
 
 if TYPE_CHECKING:
@@ -50,7 +53,11 @@ class HippocampusLearningComponent(LearningComponent):
         super().__init__(config, context)
 
         # Extract CA3 size from context
-        self.ca3_size = context.metadata.get("ca3_size", context.n_output) if context.metadata else context.n_output
+        self.ca3_size = (
+            context.metadata.get("ca3_size", context.n_output)
+            if context.metadata
+            else context.n_output
+        )
 
         # Intrinsic plasticity state
         self._ca3_activity_history: Optional[torch.Tensor] = None
@@ -73,7 +80,7 @@ class HippocampusLearningComponent(LearningComponent):
         w_ca3_ca3: nn.Parameter,
         effective_learning_rate: float,
         *args,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Apply homeostatic normalization to CA3 recurrent weights.
 
@@ -123,7 +130,9 @@ class HippocampusLearningComponent(LearningComponent):
             return self._ca3_threshold_offset
 
         cfg = self.config
-        ca3_spikes_1d = ca3_spikes.float().mean(dim=0) if ca3_spikes.dim() > 1 else ca3_spikes.float()
+        ca3_spikes_1d = (
+            ca3_spikes.float().mean(dim=0) if ca3_spikes.dim() > 1 else ca3_spikes.float()
+        )
 
         # Initialize activity history if needed
         self._ca3_activity_history = self._init_tensor_if_needed(
@@ -154,8 +163,10 @@ class HippocampusLearningComponent(LearningComponent):
     def get_learning_diagnostics(self) -> Dict[str, Any]:
         """Get learning-specific diagnostics."""
         diag = super().get_learning_diagnostics()
-        diag.update({
-            "ca3_size": self.ca3_size,
-            "intrinsic_plasticity_enabled": self.config.intrinsic_plasticity_enabled,
-        })
+        diag.update(
+            {
+                "ca3_size": self.ca3_size,
+                "intrinsic_plasticity_enabled": self.config.intrinsic_plasticity_enabled,
+            }
+        )
         return diag

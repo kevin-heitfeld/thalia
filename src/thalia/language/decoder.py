@@ -45,7 +45,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -54,8 +54,8 @@ import torch.nn.functional as F
 from thalia.components.coding.spike_coding import (
     CodingStrategy,
     SpikeCodingConfig,
-    SpikeDecoder as BaseSpikeDecoder,
 )
+from thalia.components.coding.spike_coding import SpikeDecoder as BaseSpikeDecoder
 
 
 @dataclass
@@ -71,6 +71,7 @@ class SpikeDecoderConfig(SpikeCodingConfig):
         learning_rate: Learning rate for delta rule
         weight_decay: L2 regularization on weights
     """
+
     vocab_size: int = 50257
 
     # Population
@@ -133,7 +134,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         # Linear readout weights: [vocab_size, n_neurons]
         # Initialized with small random values
         readout_weights = torch.randn(config.vocab_size, config.n_neurons)
-        readout_weights = readout_weights * (0.01 / (config.n_neurons ** 0.5))
+        readout_weights = readout_weights * (0.01 / (config.n_neurons**0.5))
         self.readout_weights = nn.Parameter(readout_weights)
 
         # Bias for each token
@@ -207,7 +208,9 @@ class SpikeDecoder(BaseSpikeDecoder):
         elif self.config.decoding_type == CodingStrategy.TEMPORAL:
             # Temporal decoding: First spikes matter most
             features = torch.zeros(
-                batch, seq_len, n_neurons,
+                batch,
+                seq_len,
+                n_neurons,
                 device=self.device,
             )
 
@@ -219,7 +222,9 @@ class SpikeDecoder(BaseSpikeDecoder):
         elif self.config.decoding_type == CodingStrategy.POPULATION:
             # Population decoding: Leaky integration
             features = torch.zeros(
-                batch, seq_len, n_neurons,
+                batch,
+                seq_len,
+                n_neurons,
                 device=self.device,
             )
 
@@ -234,7 +239,9 @@ class SpikeDecoder(BaseSpikeDecoder):
         elif self.config.decoding_type == CodingStrategy.WTA:
             # WTA: Competition during integration
             features = torch.zeros(
-                batch, seq_len, n_neurons,
+                batch,
+                seq_len,
+                n_neurons,
                 device=self.device,
             )
 
@@ -379,7 +386,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         """
         # Iterative inhibition
         n_iterations = 3
-        inhibition = getattr(self, 'inhibition', None)
+        inhibition = getattr(self, "inhibition", None)
         if inhibition is None:
             return logits
 
@@ -424,7 +431,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         if top_k is not None:
             top_k = min(top_k, logits.size(-1))
             indices_to_remove = logits < torch.topk(logits, top_k, dim=-1).values[..., -1:]
-            logits[indices_to_remove] = float('-inf')
+            logits[indices_to_remove] = float("-inf")
 
         # Apply nucleus (top-p) filtering
         if top_p is not None:
@@ -440,7 +447,7 @@ class SpikeDecoder(BaseSpikeDecoder):
             indices_to_remove = sorted_indices_to_remove.scatter(
                 -1, sorted_indices, sorted_indices_to_remove
             )
-            logits[indices_to_remove] = float('-inf')
+            logits[indices_to_remove] = float("-inf")
 
         # Sample from distribution
         probs = F.softmax(logits, dim=-1)
@@ -599,7 +606,10 @@ class StreamingDecoder(nn.Module):
     def reset_state(self) -> None:
         """Reset streaming state."""
         self.accumulated_spikes = torch.zeros(
-            1, 1, 0, self.config.n_neurons,
+            1,
+            1,
+            0,
+            self.config.n_neurons,
             device=self.device,
         )
         self.evidence.zero_()
@@ -624,10 +634,13 @@ class StreamingDecoder(nn.Module):
         spikes = spikes.view(1, 1, 1, -1)
 
         # Accumulate spikes
-        self.accumulated_spikes = torch.cat([
-            self.accumulated_spikes,
-            spikes,
-        ], dim=2)
+        self.accumulated_spikes = torch.cat(
+            [
+                self.accumulated_spikes,
+                spikes,
+            ],
+            dim=2,
+        )
 
         # Decode accumulated spikes
         logits, features = self.decoder(self.accumulated_spikes, return_features=True)

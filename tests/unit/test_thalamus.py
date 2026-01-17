@@ -20,9 +20,9 @@ if str(project_root) not in sys.path:
 import pytest
 import torch
 
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
-from thalia.config.size_calculator import LayerSizeCalculator
 from tests.utils.test_helpers import generate_sparse_spikes
+from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 @pytest.fixture
@@ -56,20 +56,19 @@ def test_thalamus_initialization(thalamus_config):
     thal = ThalamicRelay(config=config, sizes=sizes, device=device)
 
     # Contract: relay neurons match configuration
-    assert thal.n_relay == thal.n_output, \
-        "Relay neurons should match configured output size"
+    assert thal.n_relay == thal.n_output, "Relay neurons should match configured output size"
     assert thal.n_relay > 0, "Should have positive relay neurons"
 
     # Contract: TRN size matches configuration
-    assert thal.n_trn == thal.trn_size, \
-        "TRN size should match configured trn_size"
+    assert thal.n_trn == thal.trn_size, "TRN size should match configured trn_size"
     assert thal.n_trn < thal.n_relay, "TRN should be subset of relay"
 
     # Contract: parameters have correct shapes
-    assert thal.relay_gain.shape == (thal.n_relay,), \
-        "Relay gain should be per-neuron 1D parameter"
-    assert thal.center_surround_filter.shape == (thal.n_relay, thal.input_size), \
-        "Filter should connect input to relay"
+    assert thal.relay_gain.shape == (thal.n_relay,), "Relay gain should be per-neuron 1D parameter"
+    assert thal.center_surround_filter.shape == (
+        thal.n_relay,
+        thal.input_size,
+    ), "Filter should connect input to relay"
 
     # Contract: parameters are valid (no NaN, positive gains)
     assert not torch.isnan(thal.relay_gain).any(), "No NaN in parameters"
@@ -79,48 +78,45 @@ def test_thalamus_initialization(thalamus_config):
 def test_thalamus_forward(thalamus, device):
     """Test forward pass produces biologically plausible output."""
     # Create input spikes (ADR-004: bool, ADR-005: 1D)
-    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.2, device=str(device))  # 20% firing rate, [n_input], bool
+    input_spikes = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.2, device=str(device)
+    )  # 20% firing rate, [n_input], bool
 
     # Forward pass
     output = thalamus(input_spikes)
 
     # Contract: output shape and type
-    assert output.shape == (thalamus.n_relay,), \
-        "Output should be 1D with n_relay neurons"
+    assert output.shape == (thalamus.n_relay,), "Output should be 1D with n_relay neurons"
     assert output.dtype == torch.bool, "Output should be bool (ADR-004)"
 
     # Contract: biologically plausible firing rate
     # Thalamus can amplify input (relay_strength > 1.0), so allow up to 99%
     firing_rate = output.float().mean().item()
-    assert 0.0 <= firing_rate <= 0.99, \
-        f"Firing rate should be biologically plausible (0-99%), got {firing_rate:.2%}"
+    assert (
+        0.0 <= firing_rate <= 0.99
+    ), f"Firing rate should be biologically plausible (0-99%), got {firing_rate:.2%}"
 
     # Contract: membrane potential is within bounds
     assert not torch.isnan(thalamus.state.relay_membrane).any(), "No NaN in membrane"
     # v_rest is 0.0 (normalized), allow hyperpolarization down to -10
-    assert (thalamus.state.relay_membrane >= -10.0).all(), \
-        "Membrane should not drop far below rest"
+    assert (thalamus.state.relay_membrane >= -10.0).all(), "Membrane should not drop far below rest"
 
 
 def test_thalamus_alpha_gating(thalamus, device):
     """Test alpha oscillation attentional gating."""
     # ADR-004/005: 1D bool input
-    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5, device=str(device))  # 50% firing rate
+    input_spikes = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.5, device=str(device)
+    )  # 50% firing rate
 
     # Test at alpha trough (phase=0) - weak suppression
-    thalamus.set_oscillator_phases(
-        phases={'alpha': 0.0},
-        signals={'alpha': 1.0}
-    )
+    thalamus.set_oscillator_phases(phases={"alpha": 0.0}, signals={"alpha": 1.0})
     output_trough = thalamus(input_spikes)
     firing_rate_trough = output_trough.float().mean().item()  # ADR-004: convert bool
 
     # Reset and test at alpha peak (phase=π) - strong suppression
     thalamus.reset_state()
-    thalamus.set_oscillator_phases(
-        phases={'alpha': 3.14159},
-        signals={'alpha': 1.0}
-    )
+    thalamus.set_oscillator_phases(phases={"alpha": 3.14159}, signals={"alpha": 1.0})
     output_peak = thalamus(input_spikes)
     firing_rate_peak = output_peak.float().mean().item()  # ADR-004: convert bool
 
@@ -134,7 +130,9 @@ def test_thalamus_alpha_gating(thalamus, device):
 def test_thalamus_burst_vs_tonic(thalamus):
     """Test burst vs tonic mode switching."""
     # Weak input should lead to hyperpolarization → burst mode (ADR-004/005)
-    weak_input = generate_sparse_spikes(thalamus.input_size, firing_rate=0.05)  # Very sparse, [n_input], bool
+    weak_input = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.05
+    )  # Very sparse, [n_input], bool
 
     # Run for several timesteps to build up mode state
     for _ in range(10):
@@ -142,7 +140,9 @@ def test_thalamus_burst_vs_tonic(thalamus):
 
     # Strong input should lead to depolarization → tonic mode (ADR-004/005)
     # Create dense input
-    strong_input = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5)  # Dense, [n_input], bool
+    strong_input = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.5
+    )  # Dense, [n_input], bool
 
     thalamus.reset_state()
     for _ in range(10):
@@ -171,7 +171,9 @@ def test_thalamus_trn_inhibition(thalamus):
 def test_thalamus_norepinephrine_modulation(thalamus):
     """Test norepinephrine gain modulation."""
     # Create input
-    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.3)  # [n_input], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.3
+    )  # [n_input], bool (ADR-004/005)
 
     # Low arousal (low NE)
     thalamus.set_neuromodulators(norepinephrine=0.0)
@@ -188,7 +190,9 @@ def test_thalamus_norepinephrine_modulation(thalamus):
 
 def test_thalamus_reset(thalamus):
     """Test reset clears state properly."""
-    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.2)  # [n_input], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.2
+    )  # [n_input], bool (ADR-004/005)
 
     # Run forward
     thalamus(input_spikes)
@@ -205,18 +209,20 @@ def test_thalamus_reset(thalamus):
 
 def test_thalamus_diagnostics(thalamus):
     """Test diagnostics report correct information."""
-    input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.2)  # [n_input], bool (ADR-004/005)
+    input_spikes = generate_sparse_spikes(
+        thalamus.input_size, firing_rate=0.2
+    )  # [n_input], bool (ADR-004/005)
 
     thalamus(input_spikes)
 
     diag = thalamus.get_diagnostics()
 
     # Should have standard diagnostic structure
-    assert 'activity' in diag
-    assert 'health' in diag
+    assert "activity" in diag
+    assert "health" in diag
 
     # Check for thalamus-specific health metrics
-    if 'alpha_phase' in diag.get('health', {}):
+    if "alpha_phase" in diag.get("health", {}):
         # Alpha phase should be in valid range
         assert True  # Presence check sufficient
 
@@ -233,7 +239,7 @@ def test_thalamus_silent_input(thalamus, device):
 
     # Contract: sparse output with silent input
     firing_rate = output.float().mean().item()
-    assert firing_rate < 0.1, f'Silent input should produce sparse output, got {firing_rate:.2%}'
+    assert firing_rate < 0.1, f"Silent input should produce sparse output, got {firing_rate:.2%}"
 
     # Contract: neuron states remain valid
     assert not torch.isnan(thalamus.state.relay_membrane).any()
@@ -248,11 +254,11 @@ def test_thalamus_saturated_input(thalamus, device):
 
     # Contract: TRN is recruited with high input
     # Note: In single timestep, TRN may not fully inhibit yet
-    assert thalamus.state.trn_spikes.any(), 'TRN should activate with saturated input'
+    assert thalamus.state.trn_spikes.any(), "TRN should activate with saturated input"
 
     # Contract: output is generated (may still be high in first timestep)
     firing_rate = output.float().mean().item()
-    assert firing_rate > 0.0, 'Saturated input should produce output'
+    assert firing_rate > 0.0, "Saturated input should produce output"
 
 
 def test_thalamus_repeated_forward_maintains_valid_state(thalamus, device):
@@ -263,17 +269,16 @@ def test_thalamus_repeated_forward_maintains_valid_state(thalamus, device):
         output = thalamus(input_spikes)
 
     # Invariants after many operations
-    assert not torch.isnan(thalamus.state.relay_membrane).any(), 'No NaN'
-    assert not torch.isinf(thalamus.state.relay_membrane).any(), 'No Inf'
+    assert not torch.isnan(thalamus.state.relay_membrane).any(), "No NaN"
+    assert not torch.isinf(thalamus.state.relay_membrane).any(), "No Inf"
     # v_rest is 0.0, allow hyperpolarization to -10
-    assert (thalamus.state.relay_membrane >= -10.0).all(), \
-        'Membrane should not drop far below rest'
+    assert (thalamus.state.relay_membrane >= -10.0).all(), "Membrane should not drop far below rest"
 
 
 def test_thalamus_center_surround_filter(thalamus):
     """Test center-surround spatial filter exists and is valid."""
     # Filter should exist
-    assert hasattr(thalamus, 'center_surround_filter')
+    assert hasattr(thalamus, "center_surround_filter")
 
     # Shape should be [n_relay, n_input]
     assert thalamus.center_surround_filter.shape == (thalamus.relay_size, thalamus.input_size)
@@ -304,16 +309,20 @@ def test_thalamus_extreme_norepinephrine(thalamus, norepinephrine):
     assert output.shape == (thalamus.n_relay,)
 
     # Contract: no numerical instability
-    assert not torch.isnan(thalamus.state.relay_membrane).any(), \
-        f"NaN in membrane with NE={norepinephrine}"
-    assert not torch.isinf(thalamus.state.relay_membrane).any(), \
-        f"Inf in membrane with NE={norepinephrine}"
+    assert not torch.isnan(
+        thalamus.state.relay_membrane
+    ).any(), f"NaN in membrane with NE={norepinephrine}"
+    assert not torch.isinf(
+        thalamus.state.relay_membrane
+    ).any(), f"Inf in membrane with NE={norepinephrine}"
 
     # Contract: membrane stays in reasonable range
-    assert (thalamus.state.relay_membrane >= -20.0).all(), \
-        f"Membrane too low with NE={norepinephrine}"
-    assert (thalamus.state.relay_membrane <= 10.0).all(), \
-        f"Membrane too high with NE={norepinephrine}"
+    assert (
+        thalamus.state.relay_membrane >= -20.0
+    ).all(), f"Membrane too low with NE={norepinephrine}"
+    assert (
+        thalamus.state.relay_membrane <= 10.0
+    ).all(), f"Membrane too high with NE={norepinephrine}"
 
 
 if __name__ == "__main__":

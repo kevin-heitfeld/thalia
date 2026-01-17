@@ -16,6 +16,7 @@ from thalia.typing import SynapticWeights
 @dataclass
 class AblationState:
     """Saved state for pathway restoration."""
+
     pathway_name: str
     original_weights: SynapticWeights
     original_plasticity: bool
@@ -102,10 +103,7 @@ def restore_pathway(
         ValueError: If no ablation state was saved
     """
     if pathway_name not in _ablation_cache:
-        raise ValueError(
-            f"No saved state for pathway '{pathway_name}'. "
-            f"Cannot restore."
-        )
+        raise ValueError(f"No saved state for pathway '{pathway_name}'. " f"Cannot restore.")
 
     state = _ablation_cache[pathway_name]
     pathway = _get_pathway(brain, pathway_name)
@@ -126,6 +124,7 @@ def restore_pathway(
 
 
 # Helper functions
+
 
 def _get_pathway(brain: DynamicBrain, pathway_name: str):
     """Get pathway by name.
@@ -171,10 +170,7 @@ def _get_pathway(brain: DynamicBrain, pathway_name: str):
 
     # Pathway not found
     available = list(connections.keys())
-    raise ValueError(
-        f"Unknown pathway: {pathway_name}. "
-        f"Available pathways: {available}"
-    )
+    raise ValueError(f"Unknown pathway: {pathway_name}. " f"Available pathways: {available}")
 
 
 def _save_ablation_state(

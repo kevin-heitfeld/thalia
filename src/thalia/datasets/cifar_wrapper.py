@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple, List, Dict
+from typing import Dict, List, Tuple
 
 import torch
 import torchvision
@@ -27,6 +27,7 @@ import torchvision.transforms as transforms
 @dataclass
 class CIFARConfig:
     """Configuration for CIFAR-10 spike encoding."""
+
     encoding: str = "rate"  # "rate", "temporal", or "phase"
     n_timesteps: int = 100  # Number of timesteps for encoding
     max_firing_rate: float = 1.0  # Maximum firing probability per timestep
@@ -69,14 +70,18 @@ class CIFARForThalia:
         transform_list = []
 
         if config.augment and train:
-            transform_list.extend([
-                transforms.RandomCrop(32, padding=4),
-                transforms.RandomHorizontalFlip(),
-            ])
+            transform_list.extend(
+                [
+                    transforms.RandomCrop(32, padding=4),
+                    transforms.RandomHorizontalFlip(),
+                ]
+            )
 
-        transform_list.extend([
-            transforms.ToTensor(),
-        ])
+        transform_list.extend(
+            [
+                transforms.ToTensor(),
+            ]
+        )
 
         if config.normalize:
             # CIFAR-10 mean/std
@@ -365,9 +370,9 @@ class CIFARForThalia:
         sparsity = 1.0 - mean_firing_rate
 
         return {
-            'mean_firing_rate': mean_firing_rate,
-            'sparsity': sparsity,
-            'n_samples_analyzed': n_samples,
+            "mean_firing_rate": mean_firing_rate,
+            "sparsity": sparsity,
+            "n_samples_analyzed": n_samples,
         }
 
 

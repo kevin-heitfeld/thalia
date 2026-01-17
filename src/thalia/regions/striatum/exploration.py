@@ -38,8 +38,8 @@ Now a standalone manager component for cleaner separation of concerns.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import List
 
 import torch
@@ -61,6 +61,7 @@ class ExplorationConfig:
         tonic_modulates_exploration: Whether tonic DA boosts exploration probability
         tonic_exploration_scale: How much tonic DA boosts exploration (multiplier)
     """
+
     ucb_exploration: bool = True
     ucb_coefficient: float = 1.0
     adaptive_exploration: bool = True
@@ -305,7 +306,7 @@ class ExplorationManager(BaseManager[ExplorationConfig]):
 
         # Extend action counts with zeros for new actions
         new_counts = torch.zeros(new_n_actions, device=self.context.device)
-        new_counts[:self.n_actions] = self._action_counts
+        new_counts[: self.n_actions] = self._action_counts
         self._action_counts = new_counts
 
         self.n_actions = new_n_actions

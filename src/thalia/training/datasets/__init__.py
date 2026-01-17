@@ -14,35 +14,34 @@ Date: December 12, 2025
 
 from __future__ import annotations
 
-
-from thalia.training.datasets.loaders import (
-    BaseTaskLoader,
-    SensorimotorTaskLoader,
-    SensorimotorConfig,
-    PhonologyTaskLoader,
-    PhonologyConfig,
-    TaskLoaderRegistry,
-    create_sensorimotor_loader,
-    create_phonology_loader,
-)
 from thalia.constants.task import (
+    DATASET_WEIGHT_GAZE,
+    DATASET_WEIGHT_MNIST,
+    DATASET_WEIGHT_PHONOLOGY,
+    DATASET_WEIGHT_TEMPORAL,
+    MATCH_PROBABILITY_DEFAULT,
+    REWARD_SCALE_PREDICTION,
+    SENSORIMOTOR_WEIGHT_MANIPULATION,
+    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
+    SENSORIMOTOR_WEIGHT_PREDICTION,
+    SENSORIMOTOR_WEIGHT_REACHING,
+    SPIKE_PROBABILITY_HIGH,
     SPIKE_PROBABILITY_LOW,
     SPIKE_PROBABILITY_MEDIUM,
-    SPIKE_PROBABILITY_HIGH,
-    SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
-    SENSORIMOTOR_WEIGHT_REACHING,
-    SENSORIMOTOR_WEIGHT_MANIPULATION,
-    SENSORIMOTOR_WEIGHT_PREDICTION,
-    DATASET_WEIGHT_MNIST,
-    DATASET_WEIGHT_TEMPORAL,
-    DATASET_WEIGHT_PHONOLOGY,
-    DATASET_WEIGHT_GAZE,
-    REWARD_SCALE_PREDICTION,
-    MATCH_PROBABILITY_DEFAULT,
+)
+from thalia.training.datasets.loaders import (
+    BaseTaskLoader,
+    PhonologyConfig,
+    PhonologyTaskLoader,
+    SensorimotorConfig,
+    SensorimotorTaskLoader,
+    TaskLoaderRegistry,
+    create_phonology_loader,
+    create_sensorimotor_loader,
 )
 from thalia.training.datasets.pipeline import (
-    TextDataPipeline,
     DataConfig,
+    TextDataPipeline,
 )
 
 __all__ = [

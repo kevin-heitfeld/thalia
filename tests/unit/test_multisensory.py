@@ -86,25 +86,28 @@ def test_multimodal_pool_sizes(multimodal_region, multimodal_config):
 
     # Contract: pools should sum to total output
     total_pool = (
-        multimodal_region.visual_pool_size +
-        multimodal_region.auditory_pool_size +
-        multimodal_region.language_pool_size +
-        multimodal_region.integration_pool_size
+        multimodal_region.visual_pool_size
+        + multimodal_region.auditory_pool_size
+        + multimodal_region.language_pool_size
+        + multimodal_region.integration_pool_size
     )
     expected_total = (
-        multimodal_config.visual_pool_size +
-        multimodal_config.auditory_pool_size +
-        multimodal_config.language_pool_size +
-        multimodal_config.integration_pool_size
+        multimodal_config.visual_pool_size
+        + multimodal_config.auditory_pool_size
+        + multimodal_config.language_pool_size
+        + multimodal_config.integration_pool_size
     )
     assert total_pool == expected_total
 
 
-@pytest.mark.parametrize("modality,input_size,pool_attr", [
-    ("visual", 30, "visual_pool_spikes"),
-    ("auditory", 30, "auditory_pool_spikes"),
-    ("language", 40, "language_pool_spikes"),
-])
+@pytest.mark.parametrize(
+    "modality,input_size,pool_attr",
+    [
+        ("visual", 30, "visual_pool_spikes"),
+        ("auditory", 30, "auditory_pool_spikes"),
+        ("language", 40, "language_pool_spikes"),
+    ],
+)
 def test_multimodal_forward_single_modality(multimodal_region, modality, input_size, pool_attr):
     """Test forward pass with a single modality input.
 
@@ -124,14 +127,10 @@ def test_multimodal_forward_single_modality(multimodal_region, modality, input_s
     output = multimodal_region.forward(**kwargs)
 
     # Shape and type validation
-    assert output.shape == (100,), \
-        f"Output shape should be (100,), got {output.shape}"
-    assert output.dtype == torch.float32, \
-        f"Output should be float32, got {output.dtype}"
-    assert not torch.isnan(output).any(), \
-        "Output contains NaN values"
-    assert not torch.isinf(output).any(), \
-        "Output contains Inf values"
+    assert output.shape == (100,), f"Output shape should be (100,), got {output.shape}"
+    assert output.dtype == torch.float32, f"Output should be float32, got {output.dtype}"
+    assert not torch.isnan(output).any(), "Output contains NaN values"
+    assert not torch.isinf(output).any(), "Output contains Inf values"
 
     # Value validation: output should be bounded (firing rates)
     assert output.min() >= 0.0, "Firing rates should be non-negative"
@@ -155,14 +154,10 @@ def test_multimodal_forward_all_modalities(multimodal_region):
     )
 
     # Shape and type validation
-    assert output.shape == (100,), \
-        f"Output shape should be (100,), got {output.shape}"
-    assert output.dtype == torch.float32, \
-        f"Output should be float32, got {output.dtype}"
-    assert not torch.isnan(output).any(), \
-        "Output contains NaN values"
-    assert not torch.isinf(output).any(), \
-        "Output contains Inf values"
+    assert output.shape == (100,), f"Output shape should be (100,), got {output.shape}"
+    assert output.dtype == torch.float32, f"Output should be float32, got {output.dtype}"
+    assert not torch.isnan(output).any(), "Output contains NaN values"
+    assert not torch.isinf(output).any(), "Output contains Inf values"
 
     # All pools should have activity
     assert multimodal_region.visual_pool_spikes.sum() >= 0
@@ -189,10 +184,13 @@ def test_multimodal_cross_modal_interactions(multimodal_region):
         )
 
     # Cross-modal weights should have changed (if Hebbian enabled)
-    if hasattr(multimodal_region, 'hebbian_strategy') and multimodal_region.hebbian_strategy is not None:
+    if (
+        hasattr(multimodal_region, "hebbian_strategy")
+        and multimodal_region.hebbian_strategy is not None
+    ):
         weight_change = (
-            multimodal_region.visual_to_auditory - initial_visual_to_auditory
-        ).abs().sum()
+            (multimodal_region.visual_to_auditory - initial_visual_to_auditory).abs().sum()
+        )
         # Some change should occur (though may be small)
         assert weight_change >= 0
 
@@ -262,10 +260,10 @@ def test_multimodal_integration_output_size(multimodal_region):
 
     # Output should include all pools + integration
     expected_size = (
-        multimodal_region.visual_pool_size +
-        multimodal_region.auditory_pool_size +
-        multimodal_region.language_pool_size +
-        multimodal_region.integration_pool_size
+        multimodal_region.visual_pool_size
+        + multimodal_region.auditory_pool_size
+        + multimodal_region.language_pool_size
+        + multimodal_region.integration_pool_size
     )
     assert output.shape[0] == expected_size
     assert multimodal_region.integration_spikes.shape[0] == multimodal_region.integration_pool_size
@@ -285,12 +283,9 @@ def test_multimodal_no_hebbian(multimodal_config):
         visual_input=torch.randn(30),
         auditory_input=torch.randn(30),
     )
-    assert output.shape == (100,), \
-        f"Output shape should be (100,), got {output.shape}"
-    assert output.dtype == torch.float32, \
-        f"Output should be float32, got {output.dtype}"
-    assert not torch.isnan(output).any(), \
-        "Output contains NaN values"
+    assert output.shape == (100,), f"Output shape should be (100,), got {output.shape}"
+    assert output.dtype == torch.float32, f"Output should be float32, got {output.dtype}"
+    assert not torch.isnan(output).any(), "Output contains NaN values"
 
 
 def test_multimodal_device_consistency(multimodal_region):

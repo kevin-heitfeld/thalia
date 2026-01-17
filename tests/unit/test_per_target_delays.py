@@ -19,12 +19,7 @@ class TestPerTargetDelays:
 
     def test_source_spec_default_delay(self):
         """Test SourceSpec with single default delay."""
-        spec = SourceSpec(
-            region_name="cortex",
-            port="l5",
-            size=128,
-            delay_ms=5.0
-        )
+        spec = SourceSpec(region_name="cortex", port="l5", size=128, delay_ms=5.0)
 
         # Should use default delay for any target
         assert spec.get_delay_for_target("striatum") == 5.0
@@ -39,9 +34,9 @@ class TestPerTargetDelays:
             size=128,
             delay_ms=5.0,  # Default
             target_delays={
-                "striatum": 3.0,    # Fast
-                "thalamus": 10.0,   # Slow
-            }
+                "striatum": 3.0,  # Fast
+                "thalamus": 10.0,  # Slow
+            },
         )
 
         # Should use target-specific delays when available
@@ -53,10 +48,7 @@ class TestPerTargetDelays:
     def test_axonal_projection_single_delay(self):
         """Test AxonalProjection with traditional single delay."""
         projection = AxonalProjection(
-            sources=[("cortex", "l5", 128, 5.0)],
-            device="cpu",
-            dt_ms=1.0,
-            target_name="striatum"
+            sources=[("cortex", "l5", 128, 5.0)], device="cpu", dt_ms=1.0, target_name="striatum"
         )
 
         # Send spikes and check delay
@@ -73,12 +65,10 @@ class TestPerTargetDelays:
         """Test AxonalProjection selects correct delay for striatum target."""
         # Create projection targeting striatum (should use 3ms delay)
         projection_striatum = AxonalProjection(
-            sources=[
-                ("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})
-            ],
+            sources=[("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})],
             device="cpu",
             dt_ms=1.0,
-            target_name="striatum"  # Key: target name determines delay
+            target_name="striatum",  # Key: target name determines delay
         )
 
         spikes = torch.ones(128, dtype=torch.bool)
@@ -97,12 +87,10 @@ class TestPerTargetDelays:
         """Test AxonalProjection selects correct delay for thalamus target."""
         # Create projection targeting thalamus (should use 10ms delay)
         projection_thalamus = AxonalProjection(
-            sources=[
-                ("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})
-            ],
+            sources=[("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})],
             device="cpu",
             dt_ms=1.0,
-            target_name="thalamus"  # Key: different target = different delay
+            target_name="thalamus",  # Key: different target = different delay
         )
 
         spikes = torch.ones(128, dtype=torch.bool)
@@ -126,7 +114,7 @@ class TestPerTargetDelays:
             ],
             device="cpu",
             dt_ms=1.0,
-            target_name="striatum"
+            target_name="striatum",
         )
 
         cortex_spikes = torch.ones(128, dtype=torch.bool)
@@ -137,10 +125,7 @@ class TestPerTargetDelays:
         outputs_hipp = []
 
         for _ in range(7):
-            output = projection.forward({
-                "cortex:l5": cortex_spikes,
-                "hippocampus": hipp_spikes
-            })
+            output = projection.forward({"cortex:l5": cortex_spikes, "hippocampus": hipp_spikes})
             outputs_cortex.append(output["cortex:l5"].sum().item())
             outputs_hipp.append(output["hippocampus"].sum().item())
 
@@ -152,12 +137,10 @@ class TestPerTargetDelays:
     def test_repr_with_per_target_delays(self):
         """Test __repr__ shows target-specific delay information."""
         projection = AxonalProjection(
-            sources=[
-                ("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})
-            ],
+            sources=[("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})],
             device="cpu",
             dt_ms=1.0,
-            target_name="striatum"
+            target_name="striatum",
         )
 
         repr_str = repr(projection)
@@ -167,9 +150,7 @@ class TestPerTargetDelays:
     def test_no_target_name_uses_default(self):
         """Test that without target_name, default delay is used."""
         projection = AxonalProjection(
-            sources=[
-                ("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})
-            ],
+            sources=[("cortex", "l5", 128, 5.0, {"striatum": 3.0, "thalamus": 10.0})],
             device="cpu",
             dt_ms=1.0,
             # target_name=None (implicit)

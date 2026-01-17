@@ -69,9 +69,9 @@ Date: December 2025
 
 from __future__ import annotations
 
+import math
 from enum import Enum, auto
 from typing import Callable, Dict
-import math
 
 import torch
 import torch.nn as nn
@@ -81,17 +81,18 @@ from thalia.core.errors import ConfigurationError
 
 class InitStrategy(Enum):
     """Weight initialization strategies."""
-    GAUSSIAN = auto()           # Gaussian (normal) distribution
-    UNIFORM = auto()            # Uniform distribution
-    XAVIER = auto()             # Xavier/Glorot initialization
-    KAIMING = auto()            # Kaiming/He initialization
-    SPARSE_RANDOM = auto()      # Sparse random connectivity
-    TOPOGRAPHIC = auto()        # Topographic (spatial) connectivity
-    ORTHOGONAL = auto()         # Orthogonal initialization
-    ZEROS = auto()              # All zeros
-    ONES = auto()               # All ones
-    IDENTITY = auto()           # Identity matrix
-    CONSTANT = auto()           # Constant value
+
+    GAUSSIAN = auto()  # Gaussian (normal) distribution
+    UNIFORM = auto()  # Uniform distribution
+    XAVIER = auto()  # Xavier/Glorot initialization
+    KAIMING = auto()  # Kaiming/He initialization
+    SPARSE_RANDOM = auto()  # Sparse random connectivity
+    TOPOGRAPHIC = auto()  # Topographic (spatial) connectivity
+    ORTHOGONAL = auto()  # Orthogonal initialization
+    ZEROS = auto()  # All zeros
+    ONES = auto()  # All ones
+    IDENTITY = auto()  # Identity matrix
+    CONSTANT = auto()  # Constant value
 
 
 class WeightInitializer:
@@ -108,9 +109,11 @@ class WeightInitializer:
     @classmethod
     def register(cls, strategy: InitStrategy):
         """Decorator to register an initialization function."""
+
         def decorator(func: Callable) -> Callable:
             cls._registry[strategy] = func
             return func
+
         return decorator
 
     @classmethod
@@ -132,7 +135,7 @@ class WeightInitializer:
         mean: float = 0.0,
         std: float = 0.1,
         device: str = "cpu",
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         """
         Gaussian (normal) distribution initialization.
@@ -158,7 +161,7 @@ class WeightInitializer:
         low: float = 0.0,
         high: float = 1.0,
         device: str = "cpu",
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         """
         Uniform distribution initialization.
@@ -175,15 +178,13 @@ class WeightInitializer:
         Returns:
             Weight matrix [n_output, n_input]
         """
-        return torch.rand(n_output, n_input, device=device, requires_grad=False) * (high - low) + low
+        return (
+            torch.rand(n_output, n_input, device=device, requires_grad=False) * (high - low) + low
+        )
 
     @staticmethod
     def xavier(
-        n_output: int,
-        n_input: int,
-        gain: float = 1.0,
-        device: str = "cpu",
-        **kwargs
+        n_output: int, n_input: int, gain: float = 1.0, device: str = "cpu", **kwargs
     ) -> torch.Tensor:
         """
         Xavier/Glorot initialization.
@@ -212,7 +213,7 @@ class WeightInitializer:
         mode: str = "fan_in",
         nonlinearity: str = "relu",
         device: str = "cpu",
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         """
         Kaiming/He initialization.
@@ -245,7 +246,7 @@ class WeightInitializer:
         weight_scale: float = 0.1,
         normalize_rows: bool = False,
         device: str = "cpu",
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         """
         Sparse random connectivity initialization.
@@ -287,7 +288,7 @@ class WeightInitializer:
         sigma_factor: float = 4.0,
         boost_strength: float = 0.3,
         device: str = "cpu",
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
         """
         Topographic (spatial) connectivity initialization.
@@ -323,18 +324,14 @@ class WeightInitializer:
                 dist = min(dist, n_output - dist)
 
                 # Gaussian boost
-                boost = boost_strength * torch.exp(torch.tensor(-dist**2 / (2 * sigma**2)))
+                boost = boost_strength * torch.exp(torch.tensor(-(dist**2) / (2 * sigma**2)))
                 weights[tgt_idx, src_idx] += boost
 
         return weights
 
     @staticmethod
     def orthogonal(
-        n_output: int,
-        n_input: int,
-        gain: float = 1.0,
-        device: str = "cpu",
-        **kwargs
+        n_output: int, n_input: int, gain: float = 1.0, device: str = "cpu", **kwargs
     ) -> torch.Tensor:
         """
         Orthogonal initialization.
@@ -358,32 +355,17 @@ class WeightInitializer:
         return weights
 
     @staticmethod
-    def zeros(
-        n_output: int,
-        n_input: int,
-        device: str = "cpu",
-        **kwargs
-    ) -> torch.Tensor:
+    def zeros(n_output: int, n_input: int, device: str = "cpu", **kwargs) -> torch.Tensor:
         """All zeros initialization."""
         return torch.zeros(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
-    def ones(
-        n_output: int,
-        n_input: int,
-        device: str = "cpu",
-        **kwargs
-    ) -> torch.Tensor:
+    def ones(n_output: int, n_input: int, device: str = "cpu", **kwargs) -> torch.Tensor:
         """All ones initialization."""
         return torch.ones(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
-    def identity(
-        n_output: int,
-        n_input: int,
-        device: str = "cpu",
-        **kwargs
-    ) -> torch.Tensor:
+    def identity(n_output: int, n_input: int, device: str = "cpu", **kwargs) -> torch.Tensor:
         """
         Identity matrix initialization.
 
@@ -396,11 +378,7 @@ class WeightInitializer:
 
     @staticmethod
     def constant(
-        n_output: int,
-        n_input: int,
-        value: float = 0.1,
-        device: str = "cpu",
-        **kwargs
+        n_output: int, n_input: int, value: float = 0.1, device: str = "cpu", **kwargs
     ) -> torch.Tensor:
         """Constant value initialization."""
         return torch.full((n_output, n_input), value, device=device, requires_grad=False)

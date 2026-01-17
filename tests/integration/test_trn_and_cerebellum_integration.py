@@ -11,8 +11,8 @@ Tests complete circuits:
 import pytest
 import torch
 
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 @pytest.fixture
@@ -37,13 +37,26 @@ def enhanced_cerebellum_brain(global_config, device):
 
     # Add components with proper sizes
     builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
-    builder.add_component("cortex", "cortex", n_output=256,
-                         l4_size=64, l23_size=128, l5_size=128, l6a_size=0, l6b_size=0)
-    builder.add_component("cerebellum", "cerebellum",
-                         input_size=256, granule_size=256, purkinje_size=64,
-                         use_enhanced_microcircuit=True,
-                         granule_sparsity=0.03,
-                         purkinje_n_dendrites=100)
+    builder.add_component(
+        "cortex",
+        "cortex",
+        n_output=256,
+        l4_size=64,
+        l23_size=128,
+        l5_size=128,
+        l6a_size=0,
+        l6b_size=0,
+    )
+    builder.add_component(
+        "cerebellum",
+        "cerebellum",
+        input_size=256,
+        granule_size=256,
+        purkinje_size=64,
+        use_enhanced_microcircuit=True,
+        granule_sparsity=0.03,
+        purkinje_n_dendrites=100,
+    )
 
     # Connect
     builder.connect("thalamus", "cortex", pathway_type="axonal")
@@ -66,8 +79,8 @@ class TestL6TRNFeedbackIntegration:
 
         # Contract: cortex should have L6a and L6b layers
         cortex = brain.components["cortex"]
-        assert hasattr(cortex, 'l6a_size'), "Cortex should have L6a layer"
-        assert hasattr(cortex, 'l6b_size'), "Cortex should have L6b layer"
+        assert hasattr(cortex, "l6a_size"), "Cortex should have L6a layer"
+        assert hasattr(cortex, "l6b_size"), "Cortex should have L6b layer"
         assert cortex.l6a_size > 0, "L6a should have neurons"
         assert cortex.l6b_size > 0, "L6b should have neurons"
 
@@ -97,8 +110,9 @@ class TestL6TRNFeedbackIntegration:
 
         if l6_spikes is not None:
             total_l6_size = cortex.l6a_size + cortex.l6b_size
-            assert l6_spikes.shape[0] == total_l6_size, \
-                "L6 spikes should match total L6 size (L6a + L6b)"
+            assert (
+                l6_spikes.shape[0] == total_l6_size
+            ), "L6 spikes should match total L6 size (L6a + L6b)"
 
     def test_l6_affects_thalamic_relay(self, global_config, device):
         """Test that L6 feedback measurably affects thalamic relay."""
@@ -115,7 +129,7 @@ class TestL6TRNFeedbackIntegration:
             brain(sensory_input, n_timesteps=1)
 
             # Get thalamus relay state (if accessible)
-            if hasattr(thalamus, 'relay_neurons'):
+            if hasattr(thalamus, "relay_neurons"):
                 if thalamus.relay_neurons.membrane is not None:
                     avg_membrane = thalamus.relay_neurons.membrane.mean().item()
                     relay_activities.append(avg_membrane)
@@ -157,8 +171,7 @@ class TestL6TRNFeedbackIntegration:
 
         # Contract 1: L6 should show activity over time
         total_l6_activity = sum(l6_activities)
-        assert total_l6_activity > 0, \
-            "L6 should generate feedback activity over 100ms"
+        assert total_l6_activity > 0, "L6 should generate feedback activity over 100ms"
 
         # Contract 2: FFT should detect gamma-band oscillation
         freq, power = measure_oscillation(
@@ -167,8 +180,7 @@ class TestL6TRNFeedbackIntegration:
             freq_range=(25.0, 60.0),  # Gamma range
         )
 
-        assert 25 <= freq <= 60, \
-            f"Expected gamma-range frequency (25-60 Hz), got {freq:.1f} Hz"
+        assert 25 <= freq <= 60, f"Expected gamma-range frequency (25-60 Hz), got {freq:.1f} Hz"
 
         # Log for diagnostics
         print(f"\n✅ L6→TRN loop oscillates at {freq:.1f} Hz (power={power:.3f})")
@@ -180,7 +192,6 @@ class TestL6TRNFeedbackIntegration:
             print("   Slightly slow (may need stronger L6 feedback)")
         elif 50 < freq <= 60:
             print("   Slightly fast (may need longer TRN delays)")
-
 
     def test_spatial_attention_modulation(self, global_config, device):
         """Test that L6 enables spatial attention (channel-specific modulation)."""
@@ -199,19 +210,24 @@ class TestL6TRNFeedbackIntegration:
 
         # Get cortex response to attended
         cortex = brain.components["cortex"]
-        attended_response = cortex.state.spikes.sum().item() if cortex.state.spikes is not None else 0
+        attended_response = (
+            cortex.state.spikes.sum().item() if cortex.state.spikes is not None else 0
+        )
 
         # Reset and present unattended pattern
         brain.reset_state()
         for _ in range(20):
             brain(unattended_input, n_timesteps=1)
 
-        unattended_response = cortex.state.spikes.sum().item() if cortex.state.spikes is not None else 0
+        unattended_response = (
+            cortex.state.spikes.sum().item() if cortex.state.spikes is not None else 0
+        )
 
         # Contract: both patterns should elicit responses
         # (Differential effects would require more sophisticated analysis)
-        assert attended_response >= 0 and unattended_response >= 0, \
-            "Both patterns should be processed"
+        assert (
+            attended_response >= 0 and unattended_response >= 0
+        ), "Both patterns should be processed"
 
 
 class TestEnhancedCerebellumIntegration:
@@ -258,17 +274,23 @@ class TestEnhancedCerebellumIntegration:
         # Contract: cerebellum should have processed through enhanced pathway
         # Note: Membrane initialization occurs when cerebellum receives spikes
         # With axonal delays, this requires enough timesteps for propagation
-        assert cerebellum.granule_layer.neurons.membrane is not None, \
-            "Granule layer should be active after processing"
+        assert (
+            cerebellum.granule_layer.neurons.membrane is not None
+        ), "Granule layer should be active after processing"
 
     def test_granule_layer_in_brain_context(self, global_config, device):
         """Test granule layer expansion works in full brain."""
         builder = BrainBuilder(global_config)
         builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
-        builder.add_component("cerebellum", "cerebellum",
-                             input_size=128, granule_size=512, purkinje_size=64,
-                             use_enhanced_microcircuit=True,
-                             granule_sparsity=0.03)
+        builder.add_component(
+            "cerebellum",
+            "cerebellum",
+            input_size=128,
+            granule_size=512,
+            purkinje_size=64,
+            use_enhanced_microcircuit=True,
+            granule_sparsity=0.03,
+        )
         builder.connect("thalamus", "cerebellum", pathway_type="axonal")
 
         brain = builder.build()
@@ -328,16 +350,31 @@ class TestMultiRegionCoordination:
         # Add components with proper sizes (pass parameters directly)
         # Note: L6 size must match thalamus n_input for feedback pathway
         builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
-        builder.add_component("cortex", "cortex",
-                             n_input=128, n_output=256,
-                             l4_size=64, l23_size=128, l5_size=128, l6a_size=64, l6b_size=64)
-        builder.add_component("cerebellum", "cerebellum",
-                             input_size=256, granule_size=256, purkinje_size=64,
-                             use_enhanced_microcircuit=True)
+        builder.add_component(
+            "cortex",
+            "cortex",
+            n_input=128,
+            n_output=256,
+            l4_size=64,
+            l23_size=128,
+            l5_size=128,
+            l6a_size=64,
+            l6b_size=64,
+        )
+        builder.add_component(
+            "cerebellum",
+            "cerebellum",
+            input_size=256,
+            granule_size=256,
+            purkinje_size=64,
+            use_enhanced_microcircuit=True,
+        )
 
         # Connections
         builder.connect("thalamus", "cortex", pathway_type="axonal")
-        builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6a")  # L6a feedback to TRN
+        builder.connect(
+            "cortex", "thalamus", pathway_type="axonal", source_port="l6a"
+        )  # L6a feedback to TRN
         builder.connect("cortex", "cerebellum", pathway_type="axonal")
 
         brain = builder.build()
@@ -375,15 +412,17 @@ class TestSystemRobustness:
 
         # Contract: L6 state should be reset
         cortex = brain.components["cortex"]
-        if hasattr(cortex, 'l6a_neurons'):
+        if hasattr(cortex, "l6a_neurons"):
             if cortex.l6a_neurons.membrane is not None:
                 # After reset, membrane should be at resting potential
-                assert (cortex.l6a_neurons.membrane == cortex.l6a_neurons.config.v_reset).all(), \
-                    "L6a neurons should be reset"
-        if hasattr(cortex, 'l6b_neurons'):
+                assert (
+                    cortex.l6a_neurons.membrane == cortex.l6a_neurons.config.v_reset
+                ).all(), "L6a neurons should be reset"
+        if hasattr(cortex, "l6b_neurons"):
             if cortex.l6b_neurons.membrane is not None:
-                assert (cortex.l6b_neurons.membrane == cortex.l6b_neurons.config.v_reset).all(), \
-                    "L6b neurons should be reset"
+                assert (
+                    cortex.l6b_neurons.membrane == cortex.l6b_neurons.config.v_reset
+                ).all(), "L6b neurons should be reset"
 
     def test_checkpoint_with_enhanced_features(self, global_config, device):
         """Test checkpointing works with L6 and enhanced cerebellum."""
@@ -391,12 +430,25 @@ class TestSystemRobustness:
 
         # Add components with proper sizes (pass parameters directly)
         builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
-        builder.add_component("cortex", "cortex",
-                             n_input=128, n_output=256,
-                             l4_size=64, l23_size=128, l5_size=128, l6a_size=64, l6b_size=64)
-        builder.add_component("cerebellum", "cerebellum",
-                             input_size=256, granule_size=256, purkinje_size=64,
-                             use_enhanced_microcircuit=True)
+        builder.add_component(
+            "cortex",
+            "cortex",
+            n_input=128,
+            n_output=256,
+            l4_size=64,
+            l23_size=128,
+            l5_size=128,
+            l6a_size=64,
+            l6b_size=64,
+        )
+        builder.add_component(
+            "cerebellum",
+            "cerebellum",
+            input_size=256,
+            granule_size=256,
+            purkinje_size=64,
+            use_enhanced_microcircuit=True,
+        )
 
         builder.connect("thalamus", "cortex", pathway_type="axonal")
         builder.connect("cortex", "cerebellum", pathway_type="axonal")
@@ -411,7 +463,7 @@ class TestSystemRobustness:
         # Get checkpoint
         checkpoint = {}
         for name, component in brain.components.items():
-            if hasattr(component, 'get_full_state'):
+            if hasattr(component, "get_full_state"):
                 checkpoint[name] = component.get_full_state()
 
         # Contract: checkpoint should include enhanced components
@@ -420,8 +472,9 @@ class TestSystemRobustness:
 
         # Cerebellum checkpoint should indicate enhanced mode
         if "config" in checkpoint["cerebellum"]:
-            assert checkpoint["cerebellum"]["config"].get("use_enhanced_microcircuit", False), \
-                "Cerebellum checkpoint should indicate enhanced mode"
+            assert checkpoint["cerebellum"]["config"].get(
+                "use_enhanced_microcircuit", False
+            ), "Cerebellum checkpoint should indicate enhanced mode"
 
 
 if __name__ == "__main__":

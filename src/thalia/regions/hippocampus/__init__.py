@@ -16,13 +16,12 @@ Usage:
 
 from __future__ import annotations
 
-
 from .config import (
     Episode,
     HippocampusConfig,
     HippocampusState,
 )
-from .replay_engine import ReplayEngine, ReplayConfig, ReplayMode
+from .replay_engine import ReplayConfig, ReplayEngine, ReplayMode
 
 # Import main class from package
 from .trisynaptic import TrisynapticHippocampus

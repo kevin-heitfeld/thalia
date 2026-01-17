@@ -17,20 +17,21 @@ Date: December 2025
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum, auto
-import math
-from typing import Optional, Dict, Any, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 
 
 class SelectionMode(Enum):
     """Action selection strategies."""
-    SOFTMAX = auto()        # Temperature-based probabilistic selection
-    GREEDY = auto()         # Always choose highest-value action
-    EPSILON_GREEDY = auto() # ε chance of random, 1-ε chance of greedy
-    UCB = auto()            # Upper Confidence Bound (pure exploration)
+
+    SOFTMAX = auto()  # Temperature-based probabilistic selection
+    GREEDY = auto()  # Always choose highest-value action
+    EPSILON_GREEDY = auto()  # ε chance of random, 1-ε chance of greedy
+    UCB = auto()  # Upper Confidence Bound (pure exploration)
 
 
 @dataclass
@@ -102,7 +103,7 @@ class ActionSelector:
         self,
         n_actions: int,
         config: ActionSelectionConfig,
-        device: str = 'cpu',
+        device: str = "cpu",
     ):
         """Initialize action selector.
 
@@ -155,7 +156,7 @@ class ActionSelector:
 
         # Apply mask (set invalid actions to -inf)
         if mask is not None:
-            net_votes = torch.where(mask, net_votes, torch.full_like(net_votes, float('-inf')))
+            net_votes = torch.where(mask, net_votes, torch.full_like(net_votes, float("-inf")))
 
         # Accumulate votes if enabled
         if self.config.accumulate_votes and self.accumulated_votes is not None:
@@ -212,11 +213,11 @@ class ActionSelector:
 
         # Prepare info dict
         info = {
-            'net_votes': net_votes.detach(),
-            'probabilities': probabilities.detach() if probabilities is not None else None,
-            'ucb_bonus': ucb_bonus.detach() if ucb_bonus is not None else None,
-            'is_exploring': is_exploring,
-            'action_counts': self.action_counts.clone(),
+            "net_votes": net_votes.detach(),
+            "probabilities": probabilities.detach() if probabilities is not None else None,
+            "ucb_bonus": ucb_bonus.detach() if ucb_bonus is not None else None,
+            "is_exploring": is_exploring,
+            "action_counts": self.action_counts.clone(),
         }
 
         return action, info
@@ -235,9 +236,7 @@ class ActionSelector:
             torch.ones_like(self.action_counts),
         )
 
-        bonus = self.config.ucb_c * torch.sqrt(
-            math.log(self.total_selections + 1) / safe_counts
-        )
+        bonus = self.config.ucb_c * torch.sqrt(math.log(self.total_selections + 1) / safe_counts)
 
         return bonus
 
@@ -274,23 +273,23 @@ class ActionSelector:
     def get_state(self) -> Dict[str, Any]:
         """Get selector state for checkpointing."""
         state = {
-            'action_counts': self.action_counts.clone(),
-            'total_selections': self.total_selections,
+            "action_counts": self.action_counts.clone(),
+            "total_selections": self.total_selections,
         }
         if self.accumulated_votes is not None:
-            state['accumulated_votes'] = self.accumulated_votes.clone()
+            state["accumulated_votes"] = self.accumulated_votes.clone()
         return state
 
     def load_state(self, state: Dict[str, Any]) -> None:
         """Load selector state from checkpoint."""
-        self.action_counts = state['action_counts'].to(self.device)
-        self.total_selections = state['total_selections']
-        if 'accumulated_votes' in state and self.accumulated_votes is not None:
-            self.accumulated_votes = state['accumulated_votes'].to(self.device)
+        self.action_counts = state["action_counts"].to(self.device)
+        self.total_selections = state["total_selections"]
+        if "accumulated_votes" in state and self.accumulated_votes is not None:
+            self.accumulated_votes = state["accumulated_votes"].to(self.device)
 
 
 __all__ = [
-    'ActionSelector',
-    'ActionSelectionConfig',
-    'SelectionMode',
+    "ActionSelector",
+    "ActionSelectionConfig",
+    "SelectionMode",
 ]

@@ -21,12 +21,12 @@ from __future__ import annotations
 import math
 
 from thalia.constants.oscillator import (
-    THETA_ENCODING_PHASE_SCALE,
-    THETA_RETRIEVAL_PHASE_SCALE,
     ACH_RECURRENT_SUPPRESSION,
     ACH_THRESHOLD_FOR_SUPPRESSION,
-    THETA_GAMMA_PHASE_DIFF_SIGMA,
     GAMMA_LEARNING_MODULATION_SCALE,
+    THETA_ENCODING_PHASE_SCALE,
+    THETA_GAMMA_PHASE_DIFF_SIGMA,
+    THETA_RETRIEVAL_PHASE_SCALE,
 )
 
 
@@ -118,9 +118,8 @@ def compute_ach_recurrent_suppression(ach_level: float) -> float:
         return 1.0
 
     # Linear suppression above threshold
-    suppression_factor = (
-        (ach_level - ACH_THRESHOLD_FOR_SUPPRESSION) /
-        (1.0 - ACH_THRESHOLD_FOR_SUPPRESSION)
+    suppression_factor = (ach_level - ACH_THRESHOLD_FOR_SUPPRESSION) / (
+        1.0 - ACH_THRESHOLD_FOR_SUPPRESSION
     )
     return 1.0 - ACH_RECURRENT_SUPPRESSION * suppression_factor
 
@@ -169,7 +168,7 @@ def compute_theta_gamma_coupling_gate(
     phase_diff = ((gamma_phase - theta_phase + math.pi) % (2 * math.pi)) - math.pi
 
     # Gaussian gating centered at zero phase difference
-    gating = math.exp(-(phase_diff ** 2) / (2 * sigma ** 2))
+    gating = math.exp(-(phase_diff**2) / (2 * sigma**2))
 
     return gating
 

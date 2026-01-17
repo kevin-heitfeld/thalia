@@ -17,7 +17,7 @@ Date: January 16, 2026
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 
@@ -41,6 +41,7 @@ class NeuralComponentState:
         bcm_threshold: BCM sliding threshold for homeostatic plasticity
         t: Current timestep counter
     """
+
     # Membrane potentials
     membrane: Optional[torch.Tensor] = None
 
@@ -52,9 +53,9 @@ class NeuralComponentState:
     eligibility: Optional[torch.Tensor] = None
 
     # Neuromodulator levels (modulate plasticity)
-    dopamine: float = 0.0           # Reward signal: high = consolidate, low = exploratory
-    acetylcholine: float = 0.0      # Attention/novelty
-    norepinephrine: float = 0.0     # Arousal/flexibility
+    dopamine: float = 0.0  # Reward signal: high = consolidate, low = exploratory
+    acetylcholine: float = 0.0  # Attention/novelty
+    norepinephrine: float = 0.0  # Arousal/flexibility
 
     # Homeostatic variables
     firing_rate_estimate: Optional[torch.Tensor] = None

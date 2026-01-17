@@ -43,10 +43,10 @@ from typing import Dict
 
 import torch
 
-
 # =============================================================================
 # Exception Hierarchy
 # =============================================================================
+
 
 class ThaliaError(Exception):
     """Base exception for all Thalia-specific errors.
@@ -136,6 +136,7 @@ class IntegrationError(ThaliaError):
 # Validation Utilities
 # =============================================================================
 
+
 def validate_spike_tensor(
     spikes: torch.Tensor,
     name: str = "spikes",
@@ -200,8 +201,8 @@ def validate_device_consistency(
 
     if mismatches:
         raise ConfigurationError(
-            f"Device mismatch. Expected {expected_device}, but found:\n" +
-            "\n".join(f"  - {m}" for m in mismatches)
+            f"Device mismatch. Expected {expected_device}, but found:\n"
+            + "\n".join(f"  - {m}" for m in mismatches)
         )
 
 
@@ -232,9 +233,7 @@ def validate_weight_matrix(
     """
     # Check dimensionality
     if weights.dim() != 2:
-        raise ConfigurationError(
-            f"{name} must be 2D, got shape {weights.shape}"
-        )
+        raise ConfigurationError(f"{name} must be 2D, got shape {weights.shape}")
 
     # Check shape
     expected_shape = (n_output, n_input)
@@ -298,9 +297,7 @@ def validate_probability(
         >>> validate_probability(spike_probability, "spike_probability")
     """
     if not 0 <= value <= 1:
-        raise ConfigurationError(
-            f"{name} must be in [0, 1] range, got {value}"
-        )
+        raise ConfigurationError(f"{name} must be in [0, 1] range, got {value}")
 
 
 def validate_temporal_causality(
@@ -384,9 +381,9 @@ def validate_pathway_dimensions(
 
     if errors:
         raise IntegrationError(
-            f"Pathway '{pathway_name}' dimension mismatch:\n" +
-            "\n".join(f"  • {e}" for e in errors) +
-            "\n\nSuggested fix: Call pathway.grow_input() or pathway.grow_output() "
+            f"Pathway '{pathway_name}' dimension mismatch:\n"
+            + "\n".join(f"  • {e}" for e in errors)
+            + "\n\nSuggested fix: Call pathway.grow_input() or pathway.grow_output() "
             "to match region dimensions before forwarding data."
         )
 
@@ -425,9 +422,7 @@ def validate_growth_coordination(
         ... )
     """
     if new_size <= old_size:
-        raise ValueError(
-            f"Region '{region_name}' size did not grow: {old_size} → {new_size}"
-        )
+        raise ValueError(f"Region '{region_name}' size did not grow: {old_size} → {new_size}")
 
     growth_amount = new_size - old_size
     errors = []
@@ -453,9 +448,9 @@ def validate_growth_coordination(
 
     if errors:
         raise IntegrationError(
-            f"Growth of '{region_name}' broke {len(errors)} pathway(s):\n" +
-            "\n".join(f"  • {e}" for e in errors) +
-            f"\n\nRegion grew by {growth_amount} neurons ({old_size} → {new_size}), "
+            f"Growth of '{region_name}' broke {len(errors)} pathway(s):\n"
+            + "\n".join(f"  • {e}" for e in errors)
+            + f"\n\nRegion grew by {growth_amount} neurons ({old_size} → {new_size}), "
             "but connected pathways were not updated. Use GrowthCoordinator "
             "or DynamicPathwayManager.grow_connected_pathways() to coordinate growth."
         )

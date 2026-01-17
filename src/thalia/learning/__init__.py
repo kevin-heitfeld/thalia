@@ -17,36 +17,23 @@ This module provides:
 
 from __future__ import annotations
 
-
-from thalia.learning.rules.bcm import (
-    BCMRule,
-    BCMConfig,
-)
 from thalia.learning.critical_periods import (
-    CriticalPeriodGating,
     CriticalPeriodConfig,
+    CriticalPeriodGating,
     CriticalPeriodWindow,
-)
-from thalia.learning.social_learning import (
-    SocialLearningModule,
-    SocialLearningConfig,
-    SocialContext,
-    SocialCueType,
-    compute_shared_attention,
-)
-from thalia.learning.homeostasis.synaptic_homeostasis import (
-    UnifiedHomeostasis,
-    UnifiedHomeostasisConfig,
-    StriatumHomeostasis,
 )
 from thalia.learning.ei_balance import (
     EIBalanceConfig,
     EIBalanceRegulator,
     LayerEIBalance,
 )
+from thalia.learning.eligibility import (
+    EligibilityTraceManager,
+)
+from thalia.learning.eligibility import STDPConfig as EligibilitySTDPConfig
 from thalia.learning.homeostasis.intrinsic_plasticity import (
-    IntrinsicPlasticityConfig,
     IntrinsicPlasticity,
+    IntrinsicPlasticityConfig,
     PopulationIntrinsicPlasticity,
 )
 from thalia.learning.homeostasis.metabolic import (
@@ -54,39 +41,51 @@ from thalia.learning.homeostasis.metabolic import (
     MetabolicConstraint,
     RegionalMetabolicBudget,
 )
+from thalia.learning.homeostasis.synaptic_homeostasis import (
+    StriatumHomeostasis,
+    UnifiedHomeostasis,
+    UnifiedHomeostasisConfig,
+)
+from thalia.learning.rules.bcm import (
+    BCMConfig,
+    BCMRule,
+)
 from thalia.learning.rules.strategies import (
-    # Base classes
-    LearningConfig,
     BaseStrategy,
-    # Strategy configs
-    HebbianConfig,
-    STDPConfig,
-    BCMConfig as BCMStrategyConfig,  # Renamed to avoid collision with bcm.BCMConfig
-    ThreeFactorConfig,
-    ErrorCorrectiveConfig,
-    # Strategy implementations
-    HebbianStrategy,
-    STDPStrategy,
+)
+from thalia.learning.rules.strategies import (
+    BCMConfig as BCMStrategyConfig,  # Base classes; Strategy configs; Strategy implementations; Factory; Renamed to avoid collision with bcm.BCMConfig
+)
+from thalia.learning.rules.strategies import (
     BCMStrategy,
-    ThreeFactorStrategy,
-    ErrorCorrectiveStrategy,
     CompositeStrategy,
-    # Factory
+    ErrorCorrectiveConfig,
+    ErrorCorrectiveStrategy,
+    HebbianConfig,
+    HebbianStrategy,
+    LearningConfig,
+    STDPConfig,
+    STDPStrategy,
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
     create_strategy,
 )
-from thalia.learning.strategy_registry import (
-    LearningStrategyRegistry,
-    create_cortex_strategy,
-    create_hippocampus_strategy,
-    create_striatum_strategy,
-    create_cerebellum_strategy,
+from thalia.learning.social_learning import (
+    SocialContext,
+    SocialCueType,
+    SocialLearningConfig,
+    SocialLearningModule,
+    compute_shared_attention,
 )
 from thalia.learning.strategy_mixin import (
     LearningStrategyMixin,
 )
-from thalia.learning.eligibility import (
-    EligibilityTraceManager,
-    STDPConfig as EligibilitySTDPConfig,
+from thalia.learning.strategy_registry import (
+    LearningStrategyRegistry,
+    create_cerebellum_strategy,
+    create_cortex_strategy,
+    create_hippocampus_strategy,
+    create_striatum_strategy,
 )
 
 __all__ = [

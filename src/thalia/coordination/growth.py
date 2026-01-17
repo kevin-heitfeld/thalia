@@ -195,12 +195,14 @@ class GrowthManager:
             CapacityMetrics with current utilization
         """
         # Get region properties
-        n_neurons = component.n_output if hasattr(component, 'n_output') else 0        # Estimate synapse count from weight matrices
+        n_neurons = (
+            component.n_output if hasattr(component, "n_output") else 0
+        )  # Estimate synapse count from weight matrices
         n_synapses = 0
         weight_saturation = 0.0
         synapse_usage = 0.0
 
-        if hasattr(component, 'weights'):
+        if hasattr(component, "weights"):
             # Single weight matrix
             w = component.weights
             n_synapses = w.numel()
@@ -208,12 +210,14 @@ class GrowthManager:
             # Saturation: fraction near max weight value
             weight_max = w.abs().max()
             if weight_max > 0:
-                weight_saturation = (w.abs() > saturation_threshold * weight_max).float().mean().item()
+                weight_saturation = (
+                    (w.abs() > saturation_threshold * weight_max).float().mean().item()
+                )
 
             # Usage: fraction with significant magnitude
             synapse_usage = (w.abs() > usage_threshold).float().mean().item()
 
-        elif hasattr(component, '_get_weight_tensors'):
+        elif hasattr(component, "_get_weight_tensors"):
             # Multiple weight matrices
             weight_tensors = component._get_weight_tensors()
             total_elements = 0
@@ -233,23 +237,19 @@ class GrowthManager:
 
         # Estimate firing rate from recent activity
         firing_rate = 0.0
-        if hasattr(component, 'state') and hasattr(component.state, 'spikes'):
+        if hasattr(component, "state") and hasattr(component.state, "spikes"):
             if component.state.spikes is not None:
                 firing_rate = compute_firing_rate(component.state.spikes)
 
         # Count active neurons (those with spikes in current state)
         active_neurons = 0
-        if hasattr(component, 'state') and hasattr(component.state, 'spikes'):
+        if hasattr(component, "state") and hasattr(component.state, "spikes"):
             if component.state.spikes is not None:
                 active_neurons = (component.state.spikes > 0).sum().item()
 
         # Compute overall utilization (weighted combination)
         # Weight: 40% firing rate, 40% weight saturation, 20% synapse usage
-        utilization = (
-            0.4 * firing_rate +
-            0.4 * weight_saturation +
-            0.2 * synapse_usage
-        )
+        utilization = 0.4 * firing_rate + 0.4 * weight_saturation + 0.2 * synapse_usage
 
         # Determine if growth is recommended
         growth_recommended = False
@@ -289,7 +289,7 @@ class GrowthManager:
         self,
         component: Any,  # Region or pathway (any component with grow_output method)
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
         reason: str = "",
         component_type: str = "region",
@@ -317,7 +317,7 @@ class GrowthManager:
         metrics_before = self.get_capacity_metrics(component)
 
         # Perform growth (component-specific implementation)
-        if not hasattr(component, 'grow_output'):
+        if not hasattr(component, "grow_output"):
             raise NotImplementedError(
                 f"Component {self.region_name} does not implement grow_output()"
             )
@@ -325,7 +325,7 @@ class GrowthManager:
         # Striatum grows by actions, not individual neurons
         # Convert neuron count to action count if needed
         actual_n_new = n_new
-        if hasattr(component, 'neurons_per_action') and component.neurons_per_action > 1:
+        if hasattr(component, "neurons_per_action") and component.neurons_per_action > 1:
             # Striatum: n_new should be number of actions, not neurons
             # Round to nearest action population
             actual_n_new = max(1, round(n_new / component.neurons_per_action))
@@ -346,7 +346,7 @@ class GrowthManager:
             timestamp=datetime.now(timezone.utc).isoformat(),
             component_name=self.region_name,
             component_type=component_type,
-            event_type='grow_output',
+            event_type="grow_output",
             n_neurons_added=n_new,
             n_synapses_added=synapse_count_after - synapse_count_before,
             reason=reason or metrics_before.growth_reason,
@@ -400,6 +400,7 @@ class GrowthManager:
 # Growth Coordination - Synchronized Region and Pathway Growth
 # =============================================================================
 
+
 class GrowthCoordinator:
     """Coordinates growth across multiple brain regions and their connected pathways.
 
@@ -449,7 +450,7 @@ class GrowthCoordinator:
         self,
         region_name: str,
         n_new_neurons: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
         reason: str = "",
     ) -> List[GrowthEvent]:
@@ -483,7 +484,7 @@ class GrowthCoordinator:
         events = []
 
         # 1. Grow the region itself
-        if hasattr(region, 'grow_output'):
+        if hasattr(region, "grow_output"):
             # Call grow_output() directly on region
             region.grow_output(
                 n_new=n_new_neurons,
@@ -495,8 +496,8 @@ class GrowthCoordinator:
             region_event = GrowthEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 component_name=region_name,
-                component_type='region',
-                event_type='grow_output',
+                component_type="region",
+                event_type="grow_output",
                 n_neurons_added=n_new_neurons,
                 n_synapses_added=0,  # Estimated from pathways
                 reason=reason,
@@ -519,7 +520,7 @@ class GrowthCoordinator:
         # Need to add neurons to target side to match region growth
         events: list[GrowthEvent] = []
         for pathway_name, pathway in input_pathways:
-            if hasattr(pathway, 'grow_output'):
+            if hasattr(pathway, "grow_output"):
                 # Skip routing pathways (AxonalProjection) - they have no learnable weights
                 # v3.0 architecture: routing pathways just transmit spikes, regions handle learning
                 has_learnable_params = any(p.requires_grad for p in pathway.parameters())
@@ -527,7 +528,7 @@ class GrowthCoordinator:
                     continue  # Skip routing pathways
 
                 # Get source size before growth to calculate synapses added
-                n_source = pathway.config.n_input if hasattr(pathway, 'config') else 0
+                n_source = pathway.config.n_input if hasattr(pathway, "config") else 0
 
                 pathway.grow_output(
                     n_new=n_new_neurons,
@@ -543,8 +544,8 @@ class GrowthCoordinator:
                 pathway_event = GrowthEvent(
                     timestamp=datetime.now(timezone.utc).isoformat(),
                     component_name=pathway_name,
-                    component_type='pathway',
-                    event_type='grow_output',
+                    component_type="pathway",
+                    event_type="grow_output",
                     n_neurons_added=n_new_neurons,
                     n_synapses_added=n_synapses_added,
                     reason=f"Input pathway to {region_name}",
@@ -557,7 +558,7 @@ class GrowthCoordinator:
         # These pathways receive spikes FROM the growing region
         # Need to add neurons to source side to match region growth
         for pathway_name, pathway in output_pathways:
-            if hasattr(pathway, 'grow_input'):
+            if hasattr(pathway, "grow_input"):
                 # Skip routing pathways (AxonalProjection) - they have no learnable weights
                 # v3.0 architecture: routing pathways just transmit spikes, regions handle learning
                 has_learnable_params = any(p.requires_grad for p in pathway.parameters())
@@ -565,7 +566,7 @@ class GrowthCoordinator:
                     continue  # Skip routing pathways
 
                 # Get target size before growth to calculate synapses added
-                n_target = pathway.config.n_output if hasattr(pathway, 'config') else 0
+                n_target = pathway.config.n_output if hasattr(pathway, "config") else 0
 
                 pathway.grow_input(
                     n_new=n_new_neurons,
@@ -581,8 +582,8 @@ class GrowthCoordinator:
                 pathway_event = GrowthEvent(
                     timestamp=datetime.now(timezone.utc).isoformat(),
                     component_name=pathway_name,
-                    component_type='pathway',
-                    event_type='grow_input',
+                    component_type="pathway",
+                    event_type="grow_input",
                     n_neurons_added=n_new_neurons,
                     n_synapses_added=n_synapses_added,
                     reason=f"Output pathway from {region_name}",
@@ -600,7 +601,7 @@ class GrowthCoordinator:
                 target_region_name = self._get_pathway_target(pathway_name)
                 if target_region_name and target_region_name in self.brain.regions:
                     target_region = self.brain.regions[target_region_name]
-                    if hasattr(target_region, 'grow_input'):
+                    if hasattr(target_region, "grow_input"):
                         target_region.grow_input(
                             n_new=n_new_neurons,
                             initialization=initialization,
@@ -611,8 +612,8 @@ class GrowthCoordinator:
                         region_input_event = GrowthEvent(
                             timestamp=datetime.now(timezone.utc).isoformat(),
                             component_name=target_region_name,
-                            component_type='region',
-                            event_type='grow_input',
+                            component_type="region",
+                            event_type="grow_input",
                             n_neurons_added=0,  # No new neurons, just input expansion
                             n_synapses_added=n_new_neurons * target_region.config.n_output,
                             reason=f"Input dimension growth due to {region_name} expansion",
@@ -623,11 +624,11 @@ class GrowthCoordinator:
 
         # 5. Record coordinated growth in history
         coordinated_event = {
-            'timestamp': datetime.now().isoformat(),
-            'region': region_name,
-            'n_neurons_added': n_new_neurons,
-            'reason': reason,
-            'events': [e.to_dict() for e in events],
+            "timestamp": datetime.now().isoformat(),
+            "region": region_name,
+            "n_neurons_added": n_new_neurons,
+            "reason": reason,
+            "events": [e.to_dict() for e in events],
         }
         self.history.append(coordinated_event)
 
@@ -645,8 +646,8 @@ class GrowthCoordinator:
         input_pathways: list[tuple[str, Any]] = []
         for name, pathway in self.pathway_manager.get_all_pathways().items():
             # Parse pathway name: "source_to_target" or special names
-            if '_to_' in name:
-                parts = name.split('_to_')
+            if "_to_" in name:
+                parts = name.split("_to_")
                 if len(parts) == 2:
                     target = parts[1]
                     if target == region_name:
@@ -665,8 +666,8 @@ class GrowthCoordinator:
         output_pathways: list[tuple[str, Any]] = []
         for name, pathway in self.pathway_manager.get_all_pathways().items():
             # Parse pathway name: "source_to_target"
-            if '_to_' in name:
-                parts = name.split('_to_')
+            if "_to_" in name:
+                parts = name.split("_to_")
                 if len(parts) == 2:
                     source = parts[0]
                     if source == region_name:
@@ -682,8 +683,8 @@ class GrowthCoordinator:
         Returns:
             Target region name, or None if not parseable
         """
-        if '_to_' in pathway_name:
-            parts = pathway_name.split('_to_')
+        if "_to_" in pathway_name:
+            parts = pathway_name.split("_to_")
             if len(parts) == 2:
                 return parts[1]
         return None
@@ -703,7 +704,7 @@ class GrowthCoordinator:
             State dict with growth history
         """
         return {
-            'history': self.history,
+            "history": self.history,
         }
 
     def load_state(self, state: Dict[str, Any]) -> None:
@@ -712,4 +713,4 @@ class GrowthCoordinator:
         Args:
             state: State dict from get_state()
         """
-        self.history = state.get('history', [])
+        self.history = state.get("history", [])

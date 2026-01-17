@@ -78,7 +78,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -91,9 +91,10 @@ from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 
 class ErrorType(Enum):
     """Types of prediction errors."""
+
     POSITIVE = "positive"  # Actual > Predicted (under-prediction)
     NEGATIVE = "negative"  # Actual < Predicted (over-prediction)
-    SIGNED = "signed"      # Single population with +/- values
+    SIGNED = "signed"  # Single population with +/- values
 
 
 @dataclass
@@ -127,13 +128,14 @@ class PredictiveCodingConfig:
         dt_ms: Simulation timestep
         device: Computation device
     """
+
     n_input: int = 256
     n_representation: int = 128
     n_output: int = 256  # Usually same as n_input for residuals
 
     # Dynamics
-    prediction_tau_ms: float = 50.0   # Slow (NMDA-like) for stable predictions
-    error_tau_ms: float = 5.0          # Fast (AMPA-like) for quick error signaling
+    prediction_tau_ms: float = 50.0  # Slow (NMDA-like) for stable predictions
+    error_tau_ms: float = 5.0  # Fast (AMPA-like) for quick error signaling
 
     # Learning
     learning_rate: float = 0.01
@@ -162,10 +164,11 @@ class PredictiveCodingConfig:
 @dataclass
 class PredictiveCodingState:
     """State of a predictive coding layer."""
+
     # Representations
-    prediction: Optional[torch.Tensor] = None      # Current prediction of input
+    prediction: Optional[torch.Tensor] = None  # Current prediction of input
     representation: Optional[torch.Tensor] = None  # Internal representation
-    error: Optional[torch.Tensor] = None           # Prediction error
+    error: Optional[torch.Tensor] = None  # Prediction error
 
     # For spiking implementation
     prediction_membrane: Optional[torch.Tensor] = None
@@ -244,16 +247,16 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         device = torch.device(config.device)  # Use local variable for initialization
         self.W_pred = nn.Parameter(
             WeightInitializer.gaussian(
-                config.n_input, config.n_representation,
-                mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                device=device
+                config.n_input,
+                config.n_representation,
+                mean=0.0,
+                std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                device=device,
             )
         )
 
         # Prediction bias (learned prior)
-        self.b_pred = nn.Parameter(
-            torch.zeros(config.n_input, device=device)
-        )
+        self.b_pred = nn.Parameter(torch.zeros(config.n_input, device=device))
 
         # =================================================================
         # ERROR COMPUTATION (local, no backprop needed)
@@ -294,9 +297,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Low precision = ignore errors (unreliable input)
 
         self.log_precision = nn.Parameter(
-            torch.full((config.n_input,),
-                      fill_value=torch.log(torch.tensor(config.initial_precision)).item(),
-                      device=device)
+            torch.full(
+                (config.n_input,),
+                fill_value=torch.log(torch.tensor(config.initial_precision)).item(),
+                device=device,
+            )
         )
 
         # =================================================================
@@ -305,9 +310,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Optional: learn a compact representation
         self.W_encode = nn.Parameter(
             WeightInitializer.gaussian(
-                config.n_representation, config.n_input,
-                mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                device=device
+                config.n_representation,
+                config.n_input,
+                mean=0.0,
+                std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                device=device,
             )
         )
 
@@ -317,9 +324,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         if config.n_output != config.n_input:
             self.W_output = nn.Parameter(
                 WeightInitializer.gaussian(
-                    config.n_output, config.n_input,
-                    mean=0.0, std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                    device=device
+                    config.n_output,
+                    config.n_input,
+                    mean=0.0,
+                    std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                    device=device,
                 )
             )
         else:
@@ -341,11 +350,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Decay factors
         self.register_buffer(
             "prediction_decay",
-            torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.prediction_tau_ms)).item())
+            torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.prediction_tau_ms)).item()),
         )
         self.register_buffer(
             "error_decay",
-            torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.error_tau_ms)).item())
+            torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.error_tau_ms)).item()),
         )
 
     @property
@@ -362,8 +371,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             error=torch.zeros(self.config.n_input, device=self.device),
             precision=self.precision,
             eligibility=torch.zeros(
-                self.config.n_input, self.config.n_representation,
-                device=self.device
+                self.config.n_input, self.config.n_representation, device=self.device
             ),
         )
 
@@ -378,34 +386,40 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
     def get_state(self) -> Dict[str, Any]:
         """Get state for checkpointing."""
         state_dict = {
-            "W_pred": self.W_pred.data if hasattr(self, 'W_pred') else None,
-            "W_encode": self.W_encode.data if hasattr(self, 'W_encode') else None,
-            "log_precision": self.log_precision.data if hasattr(self, 'log_precision') else None,
-            "prediction": self.state.prediction.clone() if (hasattr(self.state, 'prediction') and self.state.prediction is not None) else None,
-            "error": self.state.error.clone() if (hasattr(self.state, 'error') and self.state.error is not None) else None,
+            "W_pred": self.W_pred.data if hasattr(self, "W_pred") else None,
+            "W_encode": self.W_encode.data if hasattr(self, "W_encode") else None,
+            "log_precision": self.log_precision.data if hasattr(self, "log_precision") else None,
+            "prediction": (
+                self.state.prediction.clone()
+                if (hasattr(self.state, "prediction") and self.state.prediction is not None)
+                else None
+            ),
+            "error": (
+                self.state.error.clone()
+                if (hasattr(self.state, "error") and self.state.error is not None)
+                else None
+            ),
         }
         return state_dict
 
     def load_state(self, state_dict: Dict[str, Any]) -> None:
         """Load state from checkpoint."""
-        if state_dict.get("W_pred") is not None and hasattr(self, 'W_pred'):
+        if state_dict.get("W_pred") is not None and hasattr(self, "W_pred"):
             self.W_pred.data.copy_(state_dict["W_pred"].to(self.device))
-        if state_dict.get("W_encode") is not None and hasattr(self, 'W_encode'):
+        if state_dict.get("W_encode") is not None and hasattr(self, "W_encode"):
             self.W_encode.data.copy_(state_dict["W_encode"].to(self.device))
-        if state_dict.get("log_precision") is not None and hasattr(self, 'log_precision'):
+        if state_dict.get("log_precision") is not None and hasattr(self, "log_precision"):
             self.log_precision.data.copy_(state_dict["log_precision"].to(self.device))
-        if state_dict.get("prediction") is not None and hasattr(self.state, 'prediction'):
+        if state_dict.get("prediction") is not None and hasattr(self.state, "prediction"):
             self.state.prediction = state_dict["prediction"].to(self.device)
-        if state_dict.get("error") is not None and hasattr(self.state, 'error'):
+        if state_dict.get("error") is not None and hasattr(self.state, "error"):
             self.state.error = state_dict["error"].to(self.device)
 
     @property
     def precision(self) -> torch.Tensor:
         """Get precision (clamped to valid range)."""
         return torch.clamp(
-            torch.exp(self.log_precision),
-            self.config.precision_min,
-            self.config.precision_max
+            torch.exp(self.log_precision), self.config.precision_min, self.config.precision_max
         )
 
     def predict(self, representation: torch.Tensor) -> torch.Tensor:
@@ -458,7 +472,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             # Positive error → excitation, negative error → inhibition
             if self.config.error_type == ErrorType.SIGNED:
                 # Split signed error into excitatory (positive) and inhibitory (negative)
-                error_g_exc = F.relu(raw_error)   # Positive errors
+                error_g_exc = F.relu(raw_error)  # Positive errors
                 error_g_inh = F.relu(-raw_error)  # Negative errors (flipped)
                 error_spikes, error_membrane = self.error_neurons(error_g_exc, error_g_inh)
                 error = error_membrane
@@ -547,8 +561,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
 
         # Smooth prediction over time (temporal integration)
         self.state.prediction = (
-            self.prediction_decay * self.state.prediction +
-            (1 - self.prediction_decay) * prediction
+            self.prediction_decay * self.state.prediction + (1 - self.prediction_decay) * prediction
         )
 
         # Compute prediction error
@@ -588,13 +601,13 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         """
         # Outer product: [n_input] x [n_representation] → [n_input, n_representation]
         # Per ADR-005: single-instance architecture (1D tensors, no batch dimension)
-        eligibility_update = torch.einsum('i,j->ij', error, representation)
+        eligibility_update = torch.einsum("i,j->ij", error, representation)
 
         # Exponential moving average of eligibility
         eligibility_decay = 0.95
         self.state.eligibility = (
-            eligibility_decay * self.state.eligibility +
-            (1 - eligibility_decay) * eligibility_update
+            eligibility_decay * self.state.eligibility
+            + (1 - eligibility_decay) * eligibility_update
         )
 
     def learn(self, reward_signal: Optional[torch.Tensor] = None) -> Dict[str, float]:
@@ -636,8 +649,10 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
 
         # Weight normalization (homeostatic)
         w_norm = torch.norm(self.W_pred, dim=1, keepdim=True)
-        self.W_pred.data = self.W_pred.data / (w_norm + 1e-8) * torch.sqrt(
-            torch.tensor(self.config.n_representation, dtype=torch.float)
+        self.W_pred.data = (
+            self.W_pred.data
+            / (w_norm + 1e-8)
+            * torch.sqrt(torch.tensor(self.config.n_representation, dtype=torch.float))
         )
 
         # Update precision based on error statistics
@@ -683,8 +698,10 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         self._timestep_counter += 1
 
         # Only update precision periodically and when we have enough history
-        if (self._timestep_counter % self.config.precision_update_interval != 0 or
-            len(self._error_history) < 10):  # Need at least 10 samples for meaningful variance
+        if (
+            self._timestep_counter % self.config.precision_update_interval != 0
+            or len(self._error_history) < 10
+        ):  # Need at least 10 samples for meaningful variance
             return
 
         # Stack history into tensor: [history_size, n_input]
@@ -698,9 +715,8 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         target_log_precision = -torch.log(error_var + 1e-6)
 
         self.log_precision.data = (
-            (1 - self.config.precision_learning_rate) * self.log_precision.data +
-            self.config.precision_learning_rate * target_log_precision
-        )
+            1 - self.config.precision_learning_rate
+        ) * self.log_precision.data + self.config.precision_learning_rate * target_log_precision
 
         # Clamp to valid range
         min_log = torch.log(torch.tensor(self.config.precision_min, device=self.device))
@@ -723,7 +739,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         if self.state.error is None:
             return torch.tensor(0.0)
 
-        error_term = (self.precision * self.state.error ** 2).sum()
+        error_term = (self.precision * self.state.error**2).sum()
         complexity_term = self.log_precision.sum()
 
         return error_term + complexity_term
@@ -823,7 +839,7 @@ class HierarchicalPredictiveCoding(nn.Module):
                 n_input=n_input,
                 n_representation=n_repr,
                 n_output=n_next,  # Output matches next layer's input
-                **(config_overrides or {})
+                **(config_overrides or {}),
             )
 
             self.layers.append(PredictiveCodingLayer(config))

@@ -16,9 +16,9 @@ Updated: December 22, 2025 (migrated basic tests to RegionTestBase)
 import pytest
 import torch
 
-from thalia.regions.cortex.layered_cortex import LayeredCortex
+from thalia.core.region_state import load_region_state, save_region_state
 from thalia.regions.cortex.config import LayeredCortexConfig, LayeredCortexState
-from thalia.core.region_state import save_region_state, load_region_state
+from thalia.regions.cortex.layered_cortex import LayeredCortex
 
 
 class TestLayeredCortexStateEdgeCases:

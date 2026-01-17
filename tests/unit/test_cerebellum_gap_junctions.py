@@ -13,10 +13,7 @@ from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 def create_test_cerebellum(
-    input_size: int = 64,
-    purkinje_size: int = 32,
-    device: str = "cpu",
-    **kwargs
+    input_size: int = 64, purkinje_size: int = 32, device: str = "cpu", **kwargs
 ) -> Cerebellum:
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
     # Always compute granule_size (Cerebellum.__init__ requires it)
@@ -39,12 +36,12 @@ class TestCerebellumGapJunctions:
             purkinje_size=32,
             use_enhanced_microcircuit=True,
             gap_junctions_enabled=True,  # Enable gap junctions
-            device="cpu"
+            device="cpu",
         )
 
         # Gap junctions should be created
         assert cerebellum.gap_junctions_io is not None
-        assert hasattr(cerebellum.gap_junctions_io, 'coupling_matrix')
+        assert hasattr(cerebellum.gap_junctions_io, "coupling_matrix")
 
         # Coupling matrix should not be all zeros (some coupling exists)
         coupling_matrix = cerebellum.gap_junctions_io.coupling_matrix
@@ -62,7 +59,7 @@ class TestCerebellumGapJunctions:
             learning_rate=0.1,
             error_threshold=0.001,
             gap_junctions_enabled=True,  # Enable gap junctions
-            device="cpu"
+            device="cpu",
         )
 
         # Forward pass to initialize weights
@@ -86,8 +83,7 @@ class TestCerebellumGapJunctions:
         weight_changed = not torch.allclose(initial_weights, new_weights, atol=1e-6)
 
         # If this fails, gap junctions are zeroing the error signal
-        assert weight_changed, \
-            f"Gap junctions appear to zero error signal. Metrics: {metrics}"
+        assert weight_changed, f"Gap junctions appear to zero error signal. Metrics: {metrics}"
 
     def test_gap_junctions_can_be_disabled(self):
         """Should be able to disable gap junctions via config."""
@@ -95,7 +91,7 @@ class TestCerebellumGapJunctions:
             input_size=64,
             purkinje_size=32,
             gap_junctions_enabled=False,  # Explicitly disable
-            device="cpu"
+            device="cpu",
         )
 
         # Gap junctions should be None when disabled
@@ -115,7 +111,7 @@ class TestCerebellumGapJunctions:
             error_threshold=0.001,
             gap_junctions_enabled=True,
             gap_junction_strength=0.5,  # Strong coupling for visible effect
-            device="cpu"
+            device="cpu",
         )
 
         # Forward pass
@@ -151,7 +147,7 @@ class TestCerebellumGapJunctions:
             purkinje_size=10,  # Smaller for easier inspection
             gap_junctions_enabled=True,
             gap_junction_threshold=0.1,  # Lower threshold for more coupling
-            device="cpu"
+            device="cpu",
         )
 
         # Gap junctions should exist
@@ -166,14 +162,14 @@ class TestCerebellumGapJunctions:
 
         # Get coupling stats
         stats = cerebellum.gap_junctions_io.get_coupling_stats()
-        assert 'n_coupled_neurons' in stats
-        assert 'n_connections' in stats
+        assert "n_coupled_neurons" in stats
+        assert "n_connections" in stats
 
         # At least some neurons should be coupled
         # (if threshold is reasonable and weights are random)
         # Note: This might occasionally fail if random weights don't create any
         # above-threshold connections, but unlikely with threshold=0.1
-        assert stats['n_coupled_neurons'] >= 0  # At least 0 (might be 0 initially)
+        assert stats["n_coupled_neurons"] >= 0  # At least 0 (might be 0 initially)
 
 
 if __name__ == "__main__":

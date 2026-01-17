@@ -14,8 +14,8 @@ import pytest
 import torch
 
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.striatum.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
+from thalia.regions.striatum.striatum import Striatum
 
 
 class TestAxonalProjectionDelayPreservation:
@@ -93,11 +93,13 @@ class TestAxonalProjectionDelayPreservation:
         thal_spikes = torch.zeros(32)
         thal_spikes[:5] = 1.0
 
-        projection.forward({
-            "cortex:l4": l4_spikes,
-            "cortex:l5": l5_spikes,
-            "thalamus": thal_spikes,
-        })
+        projection.forward(
+            {
+                "cortex:l4": l4_spikes,
+                "cortex:l5": l5_spikes,
+                "thalamus": thal_spikes,
+            }
+        )
 
         # Save state
         state = projection.get_state()
@@ -131,11 +133,13 @@ class TestAxonalProjectionDelayPreservation:
         # Continue simulation - each source's spikes should emerge at correct times
         outputs = []
         for _ in range(6):
-            output_dict = projection2.forward({
-                "cortex:l4": torch.zeros(64),
-                "cortex:l5": torch.zeros(128),
-                "thalamus": torch.zeros(32),
-            })
+            output_dict = projection2.forward(
+                {
+                    "cortex:l4": torch.zeros(64),
+                    "cortex:l5": torch.zeros(128),
+                    "thalamus": torch.zeros(32),
+                }
+            )
             # CRITICAL: Make a COPY since forward() reuses the same dict
             outputs.append({k: v.clone() for k, v in output_dict.items()})
 
@@ -300,6 +304,7 @@ class TestStriatumD1D2DelayCompetition:
     def test_d1_arrives_before_d2_after_load(self, striatum_config):
         """Test D1 spikes arrive before D2 spikes after checkpoint load."""
         from thalia.config.size_calculator import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
         sizes["input_size"] = 50
@@ -352,9 +357,9 @@ class TestStriatumD1D2DelayCompetition:
         # Verify D1 arrived before D2
         assert d1_arrival_time is not None, "D1 spikes never arrived"
         assert d2_arrival_time is not None, "D2 spikes never arrived"
-        assert d1_arrival_time < d2_arrival_time, (
-            f"D1 should arrive before D2 (D1={d1_arrival_time}ms, D2={d2_arrival_time}ms)"
-        )
+        assert (
+            d1_arrival_time < d2_arrival_time
+        ), f"D1 should arrive before D2 (D1={d1_arrival_time}ms, D2={d2_arrival_time}ms)"
 
         # Verify timing is approximately correct (±2ms tolerance)
         expected_d1_arrival = 15  # 15ms delay
@@ -365,6 +370,7 @@ class TestStriatumD1D2DelayCompetition:
     def test_action_selection_consistent_after_checkpoint(self, striatum_config):
         """Test action selection dynamics preserved after checkpoint during delay window."""
         from thalia.config.size_calculator import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
         sizes["input_size"] = 50
@@ -395,15 +401,16 @@ class TestStriatumD1D2DelayCompetition:
         action1 = striatum.state_tracker.last_action
         action2 = striatum2.state_tracker.last_action
 
-        assert action1 == action2, (
-            f"Action selection diverged after checkpoint (action1={action1}, action2={action2})"
-        )
+        assert (
+            action1 == action2
+        ), f"Action selection diverged after checkpoint (action1={action1}, action2={action2})"
 
     def test_delay_buffer_pointers_preserved(self, striatum_config):
         """Test circular buffer pointers preserved correctly."""
         # Set seed for deterministic behavior
         torch.manual_seed(42)
         from thalia.config.size_calculator import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
         sizes["input_size"] = 50
@@ -442,15 +449,13 @@ class TestStriatumD1D2DelayCompetition:
         # (neurons have noise_std=0.01 by default for biological realism)
         # Instead, verify that delay buffer STATE is preserved
         assert torch.allclose(
-            state.d1_delay_buffer.float(),
-            state2.d1_delay_buffer.float(),
-            atol=1e-6
+            state.d1_delay_buffer.float(), state2.d1_delay_buffer.float(), atol=1e-6
         )
         assert torch.allclose(
-            state.d2_delay_buffer.float(),
-            state2.d2_delay_buffer.float(),
-            atol=1e-6
+            state.d2_delay_buffer.float(), state2.d2_delay_buffer.float(), atol=1e-6
         )
+
+
 class TestTemporalDynamicsPreservation:
     """Test that temporal dynamics are preserved across checkpoints."""
 

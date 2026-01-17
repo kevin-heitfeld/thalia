@@ -49,7 +49,7 @@ def test_visualize_requires_networkx():
     try:
         # Create mock brain
         brain = Mock()
-        brain.regions = {'cortex': Mock()}
+        brain.regions = {"cortex": Mock()}
         brain.pathway_manager = Mock()
         brain.pathway_manager.pathways = {}
 
@@ -70,8 +70,7 @@ def test_export_graphviz_basic(tmp_path, small_test_brain):
 
     # Verify file contents contain actual brain structure
     content = output_file.read_text()
-    assert 'digraph BrainTopology' in content, \
-        "DOT file should have brain topology graph structure"
+    assert "digraph BrainTopology" in content, "DOT file should have brain topology graph structure"
 
     # Check for actual brain regions (EventDrivenBrain has 6 regions)
     assert '"thalamus"' in content, "Should include thalamus region (sensory relay)"
@@ -82,18 +81,17 @@ def test_export_graphviz_basic(tmp_path, small_test_brain):
     assert '"cerebellum"' in content, "Should include cerebellum region (motor control)"
 
     # Check that neuron counts are present (format: "XN")
-    assert 'N' in content, "Should contain neuron count labels"
+    assert "N" in content, "Should contain neuron count labels"
 
     # Verify pathways exist (format: "source" -> "target")
-    assert '->' in content, "Should contain pathway connections"
-    assert '"thalamus" -> "cortex"' in content, \
-        "Should have thalamus to cortex pathway"
+    assert "->" in content, "Should contain pathway connections"
+    assert '"thalamus" -> "cortex"' in content, "Should have thalamus to cortex pathway"
 
     # Check that weights are formatted correctly (0.000 format)
     import re
-    weight_pattern = r'\d+\.\d{3}'
-    assert re.search(weight_pattern, content), \
-        "Should contain formatted pathway weights"
+
+    weight_pattern = r"\d+\.\d{3}"
+    assert re.search(weight_pattern, content), "Should contain formatted pathway weights"
 
 
 def test_get_neuron_count_various_attributes():
@@ -101,55 +99,60 @@ def test_get_neuron_count_various_attributes():
     from thalia.visualization.network_graph import _get_neuron_count
 
     # Region with n_neurons attribute (direct, not wrapped)
-    region1 = Mock(spec=['n_neurons'])  # spec prevents .impl attribute
+    region1 = Mock(spec=["n_neurons"])  # spec prevents .impl attribute
     expected_n_neurons = 100
     region1.n_neurons = expected_n_neurons
-    assert _get_neuron_count(region1) == expected_n_neurons, \
-        "Should extract neuron count from n_neurons attribute"
+    assert (
+        _get_neuron_count(region1) == expected_n_neurons
+    ), "Should extract neuron count from n_neurons attribute"
 
     # Region with config.n_neurons
-    region2 = Mock(spec=['config'])
-    region2.config = Mock(spec=['n_neurons'])
+    region2 = Mock(spec=["config"])
+    region2.config = Mock(spec=["n_neurons"])
     expected_config_neurons = 50
     region2.config.n_neurons = expected_config_neurons
-    assert _get_neuron_count(region2) == expected_config_neurons, \
-        "Should extract neuron count from config.n_neurons"
+    assert (
+        _get_neuron_count(region2) == expected_config_neurons
+    ), "Should extract neuron count from config.n_neurons"
 
     # Region with membrane shape
-    region3 = Mock(spec=['membrane'])
-    region3.membrane = Mock(spec=['shape'])
+    region3 = Mock(spec=["membrane"])
+    region3.membrane = Mock(spec=["shape"])
     expected_membrane_neurons = 75
     region3.membrane.shape = (expected_membrane_neurons,)
-    assert _get_neuron_count(region3) == expected_membrane_neurons, \
-        "Should extract neuron count from membrane.shape"
+    assert (
+        _get_neuron_count(region3) == expected_membrane_neurons
+    ), "Should extract neuron count from membrane.shape"
 
     # Region with no attributes
     region5 = Mock(spec=[])
-    assert _get_neuron_count(region5) == 0, \
-        "Should return 0 for region with no neuron count attributes"
+    assert (
+        _get_neuron_count(region5) == 0
+    ), "Should return 0 for region with no neuron count attributes"
 
 
 def test_get_region_type_classification():
     """Helper should correctly classify regions by name."""
     from thalia.visualization.network_graph import _get_region_type
 
-    assert _get_region_type('visual_cortex') == 'sensory'
-    assert _get_region_type('auditory_cortex') == 'sensory'
-    assert _get_region_type('primary_cortex') == 'cortex'
-    assert _get_region_type('striatum') == 'striatum'
-    assert _get_region_type('hippocampus') == 'hippocampus'
-    assert _get_region_type('cerebellum') == 'cerebellum'
-    assert _get_region_type('thalamus') == 'thalamus'
-    assert _get_region_type('vta') == 'vta'
-    assert _get_region_type('prefrontal_cortex') == 'prefrontal'
-    assert _get_region_type('motor_cortex') == 'motor'
-    assert _get_region_type('unknown_region') == 'other'
+    assert _get_region_type("visual_cortex") == "sensory"
+    assert _get_region_type("auditory_cortex") == "sensory"
+    assert _get_region_type("primary_cortex") == "cortex"
+    assert _get_region_type("striatum") == "striatum"
+    assert _get_region_type("hippocampus") == "hippocampus"
+    assert _get_region_type("cerebellum") == "cerebellum"
+    assert _get_region_type("thalamus") == "thalamus"
+    assert _get_region_type("vta") == "vta"
+    assert _get_region_type("prefrontal_cortex") == "prefrontal"
+    assert _get_region_type("motor_cortex") == "motor"
+    assert _get_region_type("unknown_region") == "other"
 
 
 def test_get_pathway_strength():
     """Helper should extract average weight from pathway."""
-    from thalia.visualization.network_graph import _get_pathway_strength
     import torch
+
+    from thalia.visualization.network_graph import _get_pathway_strength
 
     # Pathway with weights
     pathway1 = Mock()
@@ -159,27 +162,28 @@ def test_get_pathway_strength():
     # Pathway with None weights
     pathway2 = Mock()
     pathway2.weights = None
-    assert _get_pathway_strength(pathway2) == 0.0, \
-        "Should return 0.0 when weights is None"
+    assert _get_pathway_strength(pathway2) == 0.0, "Should return 0.0 when weights is None"
 
     # Pathway without weights attribute
     pathway3 = Mock()
     del pathway3.weights
-    assert _get_pathway_strength(pathway3) == 0.0, \
-        "Should return 0.0 when weights attribute is missing"
+    assert (
+        _get_pathway_strength(pathway3) == 0.0
+    ), "Should return 0.0 when weights attribute is missing"
 
 
 def test_hierarchical_layout_structure():
     """Hierarchical layout should organize regions by type."""
-    from thalia.visualization.network_graph import _hierarchical_layout
     import networkx as nx
+
+    from thalia.visualization.network_graph import _hierarchical_layout
 
     G = nx.DiGraph()
     region_info = {
-        'visual': {'type': 'sensory', 'neurons': 100},
-        'cortex': {'type': 'cortex', 'neurons': 200},
-        'striatum': {'type': 'striatum', 'neurons': 150},
-        'motor': {'type': 'motor', 'neurons': 80},
+        "visual": {"type": "sensory", "neurons": 100},
+        "cortex": {"type": "cortex", "neurons": 200},
+        "striatum": {"type": "striatum", "neurons": 150},
+        "motor": {"type": "motor", "neurons": 80},
     }
 
     for name in region_info.keys():
@@ -189,10 +193,10 @@ def test_hierarchical_layout_structure():
 
     # Test contract: all nodes should have positions
     expected_node_count = len(region_info)
-    assert len(pos) == expected_node_count, \
-        f"Should have positions for all {expected_node_count} nodes"
-    assert all(name in pos for name in region_info.keys()), \
-        "All region names should have positions"
+    assert (
+        len(pos) == expected_node_count
+    ), f"Should have positions for all {expected_node_count} nodes"
+    assert all(name in pos for name in region_info.keys()), "All region names should have positions"
 
     # Check that positions are tuples of 2 floats
     for name, (x, y) in pos.items():
@@ -200,44 +204,42 @@ def test_hierarchical_layout_structure():
         assert isinstance(y, float), f"y coordinate for {name} should be float"
 
     # Check layer ordering (sensory at top, motor at bottom)
-    assert pos['visual'][1] > pos['cortex'][1]  # Sensory higher than cortex
-    assert pos['cortex'][1] > pos['striatum'][1]  # Cortex higher than striatum
-    assert pos['striatum'][1] > pos['motor'][1]  # Striatum higher than motor
+    assert pos["visual"][1] > pos["cortex"][1]  # Sensory higher than cortex
+    assert pos["cortex"][1] > pos["striatum"][1]  # Cortex higher than striatum
+    assert pos["striatum"][1] > pos["motor"][1]  # Striatum higher than motor
 
 
 @pytest.mark.skip(reason="Requires networkx and matplotlib - run manually")
 def test_full_visualization(small_test_brain):
     """Integration test with real brain (requires dependencies)."""
-    from thalia.visualization import visualize_brain_topology
     import matplotlib.pyplot as plt
 
+    from thalia.visualization import visualize_brain_topology
+
     # Generate visualization from real brain
-    G = visualize_brain_topology(small_test_brain, layout='hierarchical')
+    G = visualize_brain_topology(small_test_brain, layout="hierarchical")
 
     # Test contract: graph should contain all brain regions (EventDrivenBrain has 6)
-    expected_regions = {'thalamus', 'cortex', 'hippocampus', 'pfc', 'striatum', 'cerebellum'}
-    assert len(G.nodes()) == len(expected_regions), \
-        f"Graph should have {len(expected_regions)} nodes (brain regions)"
+    expected_regions = {"thalamus", "cortex", "hippocampus", "pfc", "striatum", "cerebellum"}
+    assert len(G.nodes()) == len(
+        expected_regions
+    ), f"Graph should have {len(expected_regions)} nodes (brain regions)"
 
     # Verify core regions are present
     node_names = set(G.nodes())
     for region_name in expected_regions:
-        assert region_name in node_names, \
-            f"Core region '{region_name}' should be in graph"
+        assert region_name in node_names, f"Core region '{region_name}' should be in graph"
 
     # Check that edges (pathways) exist
-    assert len(G.edges()) > 0, \
-        "Graph should have edges representing pathways"
+    assert len(G.edges()) > 0, "Graph should have edges representing pathways"
 
     # Verify node attributes contain neuron counts
     for node in G.nodes():
         node_data = G.nodes[node]
-        assert 'neurons' in node_data, \
-            f"Node '{node}' should have neuron count attribute"
-        assert node_data['neurons'] > 0, \
-            f"Node '{node}' should have positive neuron count"
+        assert "neurons" in node_data, f"Node '{node}' should have neuron count attribute"
+        assert node_data["neurons"] > 0, f"Node '{node}' should have positive neuron count"
 
-    plt.close('all')
+    plt.close("all")
 
 
 def test_visualization_after_forward_pass(tmp_path, small_test_brain, device):
@@ -258,19 +260,15 @@ def test_visualization_after_forward_pass(tmp_path, small_test_brain, device):
 
     # Verify export succeeded with active brain
     content = output_file.read_text()
-    assert 'digraph BrainTopology' in content, \
-        "Should export valid DOT graph after forward pass"
+    assert "digraph BrainTopology" in content, "Should export valid DOT graph after forward pass"
 
     # Check that all core regions are present (EventDrivenBrain has 6 regions)
-    expected_regions = ['thalamus', 'cortex', 'hippocampus', 'pfc', 'striatum', 'cerebellum']
+    expected_regions = ["thalamus", "cortex", "hippocampus", "pfc", "striatum", "cerebellum"]
     for region in expected_regions:
-        assert f'"{region}"' in content, \
-            f"Region '{region}' should be in exported topology"
+        assert f'"{region}"' in content, f"Region '{region}' should be in exported topology"
 
     # Verify pathway connections exist
-    assert '->' in content, \
-        "Pathways should be exported after forward pass"
+    assert "->" in content, "Pathways should be exported after forward pass"
 
     # Check that neuron counts are preserved after forward pass
-    assert 'N' in content, \
-        "Neuron count labels should be present after processing"
+    assert "N" in content, "Neuron count labels should be present after processing"

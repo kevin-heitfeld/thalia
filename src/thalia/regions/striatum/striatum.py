@@ -101,28 +101,28 @@ See: docs/decisions/adr-011-large-file-justification.md
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.nn as nn
 
 from thalia.components.neurons import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
-    V_THRESHOLD_STANDARD,
-    V_RESET_STANDARD,
-    E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    E_LEAK,
+    V_RESET_STANDARD,
+    V_THRESHOLD_STANDARD,
+    ConductanceLIF,
+    ConductanceLIFConfig,
 )
-from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, get_stp_config
+from thalia.components.synapses import ShortTermPlasticity, WeightInitializer, get_stp_config
 from thalia.constants.neuromodulation import compute_ne_gain
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
 from thalia.regions.striatum.exploration import ExplorationConfig
-from thalia.typing import StriatumDiagnostics, StateDict, SourceOutputs
+from thalia.typing import SourceOutputs, StateDict, StriatumDiagnostics
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
@@ -133,11 +133,11 @@ from .d1_pathway import D1Pathway
 from .d2_pathway import D2Pathway
 from .exploration_component import StriatumExplorationComponent
 from .forward_coordinator import ForwardPassCoordinator
-from .homeostasis_component import StriatumHomeostasisComponent, HomeostasisManagerConfig
+from .homeostasis_component import HomeostasisManagerConfig, StriatumHomeostasisComponent
 from .learning_component import StriatumLearningComponent
 from .pathway_base import StriatumPathwayConfig
 from .state_tracker import StriatumStateTracker
-from .td_lambda import TDLambdaLearner, TDLambdaConfig
+from .td_lambda import TDLambdaConfig, TDLambdaLearner
 
 
 @register_region(
@@ -215,7 +215,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.n_actions <= 0:
             raise ValueError(f"n_actions must be positive, got {self.n_actions}")
         if self.d1_size <= 0 or self.d2_size <= 0:
-            raise ValueError(f"Pathway sizes must be positive. Got d1={self.d1_size}, d2={self.d2_size}")
+            raise ValueError(
+                f"Pathway sizes must be positive. Got d1={self.d1_size}, d2={self.d2_size}"
+            )
 
         # Total neurons = D1 + D2
         total_neurons = self.d1_size + self.d2_size
@@ -387,6 +389,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.fsi_size = int(total_msn_neurons * self.config.fsi_ratio)
             # FSI have fast kinetics (tau_mem ~5ms vs ~20ms for MSNs)
             from thalia.components.neurons import create_fast_spiking_neurons
+
             self.fsi_neurons = create_fast_spiking_neurons(
                 n_neurons=self.fsi_size,
                 device=self.device,
@@ -395,6 +398,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Store gap junction config BEFORE weight initialization
             if self.config.gap_junctions_enabled:
                 from thalia.components.gap_junctions import GapJunctionConfig
+
                 self._gap_config_fsi = GapJunctionConfig(
                     enabled=True,
                     coupling_strength=self.config.gap_junction_strength,
@@ -587,7 +591,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     sparsity=0.3,
                     device=torch.device(self.config.device),
                 ),
-                requires_grad=False
+                requires_grad=False,
             )
             # Initialize PFC → D2 modulation weights [d2_size, pfc_size]
             self.pfc_modulation_d2 = nn.Parameter(
@@ -597,7 +601,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     sparsity=0.3,
                     device=torch.device(self.config.device),
                 ),
-                requires_grad=False
+                requires_grad=False,
             )
         else:
             self.pfc_modulation_d1 = None
@@ -611,9 +615,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # This prevents runaway winners (high expectation → small surprise)
         if self.config.rpe_enabled:
             self.value_estimates = torch.full(
-                (self.n_actions,),
-                self.config.rpe_initial_value,
-                device=self.device
+                (self.n_actions,), self.config.rpe_initial_value, device=self.device
             )
         else:
             self.value_estimates = None
@@ -631,9 +633,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Initialize rpe_trace if RPE is enabled
         self.rpe_trace = (
-            torch.zeros(self.n_actions, device=self.device)
-            if self.config.rpe_enabled
-            else None
+            torch.zeros(self.n_actions, device=self.device) if self.config.rpe_enabled else None
         )
 
         # =====================================================================
@@ -798,9 +798,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             return
 
         cfg = self.config
-        self.value_estimates[action] = (
-            self.value_estimates[action]
-            + cfg.rpe_learning_rate * (reward - self.value_estimates[action])
+        self.value_estimates[action] = self.value_estimates[action] + cfg.rpe_learning_rate * (
+            reward - self.value_estimates[action]
         )
 
     def evaluate_state(
@@ -840,9 +839,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         action_values = self.value_estimates.clone()
 
         # If goal conditioning enabled, extract PFC component from state and modulate values
-        if (self.config.use_goal_conditioning and
-            hasattr(self, 'pfc_modulation_d1') and
-            self.pfc_modulation_d1 is not None):
+        if (
+            self.config.use_goal_conditioning
+            and hasattr(self, "pfc_modulation_d1")
+            and self.pfc_modulation_d1 is not None
+        ):
 
             # Extract PFC component from concatenated state tensor
             # Format: [cortex_l5 | hippocampus | pfc]
@@ -851,16 +852,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
             # Shape assertion: PFC goal context must match modulation matrix columns
             expected_pfc_size = self.pfc_modulation_d1.shape[1]
-            actual_pfc_size = pfc_goal_context.shape[0] if pfc_goal_context.dim() == 1 else pfc_goal_context.shape[-1]
-            assert actual_pfc_size == expected_pfc_size, \
-                f"PFC goal context size mismatch: got {actual_pfc_size}, expected {expected_pfc_size}. " \
-                f"pfc_modulation_d1 shape: {self.pfc_modulation_d1.shape}, pfc_goal_context shape: {pfc_goal_context.shape}. " \
+            actual_pfc_size = (
+                pfc_goal_context.shape[0]
+                if pfc_goal_context.dim() == 1
+                else pfc_goal_context.shape[-1]
+            )
+            assert actual_pfc_size == expected_pfc_size, (
+                f"PFC goal context size mismatch: got {actual_pfc_size}, expected {expected_pfc_size}. "
+                f"pfc_modulation_d1 shape: {self.pfc_modulation_d1.shape}, pfc_goal_context shape: {pfc_goal_context.shape}. "
                 f"Check that config.pfc_size matches actual PFC output size in brain config."
+            )
 
             # Compute goal modulation for D1 (Go pathway)
-            goal_mod_d1 = torch.sigmoid(
-                self.pfc_modulation_d1 @ pfc_goal_context
-            )
+            goal_mod_d1 = torch.sigmoid(self.pfc_modulation_d1 @ pfc_goal_context)
 
             # Scale action values by goal relevance
             # Higher goal modulation → boost that action's value
@@ -871,11 +875,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     end = start + self.neurons_per_action
                     action_mod = goal_mod_d1[start:end].mean()
                     # Modulate value: centered around 1.0, range [0.5, 1.5]
-                    action_values[action_idx] *= (0.5 + action_mod)
+                    action_values[action_idx] *= 0.5 + action_mod
             else:
                 # Direct modulation per action
-                action_mod = goal_mod_d1[:self.n_actions]
-                action_values *= (0.5 + action_mod)
+                action_mod = goal_mod_d1[: self.n_actions]
+                action_values *= 0.5 + action_mod
 
         # Return max value (best action from this state)
         return action_values.max().item()
@@ -913,22 +917,28 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Initialize D1 weights for this source
         # Use sparse random initialization with positive weights for reliable excitation
         # Biology: Most synapses are excitatory (glutamatergic) in corticostriatal pathways
-        d1_weights = WeightInitializer.sparse_random(
-            n_output=self.d1_size,
-            n_input=n_input,
-            sparsity=0.8,  # 80% connectivity - biologically realistic
-            weight_scale=0.25 * weight_scale,  # Scaled to produce sufficient drive
-            device=self.device,
-        ) * self.config.w_max
+        d1_weights = (
+            WeightInitializer.sparse_random(
+                n_output=self.d1_size,
+                n_input=n_input,
+                sparsity=0.8,  # 80% connectivity - biologically realistic
+                weight_scale=0.25 * weight_scale,  # Scaled to produce sufficient drive
+                device=self.device,
+            )
+            * self.config.w_max
+        )
 
         # Initialize D2 weights for this source (same initialization)
-        d2_weights = WeightInitializer.sparse_random(
-            n_output=self.d2_size,
-            n_input=n_input,
-            sparsity=0.8,  # 80% connectivity - biologically realistic
-            weight_scale=0.25 * weight_scale,  # Scaled to produce sufficient drive
-            device=self.device,
-        ) * self.config.w_max
+        d2_weights = (
+            WeightInitializer.sparse_random(
+                n_output=self.d2_size,
+                n_input=n_input,
+                sparsity=0.8,  # 80% connectivity - biologically realistic
+                weight_scale=0.25 * weight_scale,  # Scaled to produce sufficient drive
+                device=self.device,
+            )
+            * self.config.w_max
+        )
 
         # Register D1 pathway weights
         d1_key = f"{source_name}_d1"
@@ -944,15 +954,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Pathways need _parent_striatum_ref and _weight_source to access weights
         if self.d1_pathway._parent_striatum_ref is None:
             import weakref
+
             self.d1_pathway._parent_striatum_ref = weakref.ref(self)
             self.d1_pathway._weight_source = d1_key
         if self.d2_pathway._parent_striatum_ref is None:
             import weakref
+
             self.d2_pathway._parent_striatum_ref = weakref.ref(self)
             self.d2_pathway._weight_source = d2_key
 
         # Initialize eligibility traces for source-pathway combinations
-        if hasattr(self, 'learning') and self.learning is not None:
+        if hasattr(self, "learning") and self.learning is not None:
             self.learning.add_source_eligibility_traces(source_name, n_input)
 
         # =====================================================================
@@ -1053,12 +1065,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             return  # FSI disabled
 
         # Initialize FSI weights (input → FSI)
-        fsi_weights = WeightInitializer.xavier(
-            n_output=self.fsi_size,
-            n_input=n_input,
-            gain=0.3 * weight_scale,  # FSI more excitable than MSNs
-            device=self.device,
-        ) * self.config.w_max
+        fsi_weights = (
+            WeightInitializer.xavier(
+                n_output=self.fsi_size,
+                n_input=n_input,
+                gain=0.3 * weight_scale,  # FSI more excitable than MSNs
+                device=self.device,
+            )
+            * self.config.w_max
+        )
 
         # Register FSI source
         fsi_key = f"fsi_{source_name}"
@@ -1066,8 +1081,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.synaptic_weights[fsi_key].data = fsi_weights
 
         # Create gap junction coupling (if enabled and this is first FSI source)
-        if hasattr(self, '_gap_config_fsi') and self.gap_junctions_fsi is None:
+        if hasattr(self, "_gap_config_fsi") and self.gap_junctions_fsi is None:
             from thalia.components.gap_junctions import GapJunctionCoupling
+
             # Use first FSI source weights for gap junction neighborhood computation
             self.gap_junctions_fsi = GapJunctionCoupling(
                 n_neurons=self.fsi_size,
@@ -1213,7 +1229,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         existing_count = sum(1 for id in self.neuron_ids if f"_{pathway_type}_" in id)
 
         for i in range(n_new):
-            neuron_id = f"striatum_{pathway_type}_neuron_{existing_count + i}_step{self._current_step}"
+            neuron_id = (
+                f"striatum_{pathway_type}_neuron_{existing_count + i}_step{self._current_step}"
+            )
             new_ids.append(neuron_id)
 
         return new_ids
@@ -1223,7 +1241,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'xavier',
+        initialization: str = "xavier",
         sparsity: float = 0.1,
     ) -> None:
         """Grow output dimension by adding new action neurons to striatum.
@@ -1327,62 +1345,62 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Expand D1 pathway tensors
         state_2d_d1 = {
-            'd1_eligibility': self.d1_pathway.eligibility,
+            "d1_eligibility": self.d1_pathway.eligibility,
         }
-        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
-            state_2d_d1['td_lambda_d1_traces'] = self.td_lambda_d1.traces.traces
+        if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
+            state_2d_d1["td_lambda_d1_traces"] = self.td_lambda_d1.traces.traces
 
         expanded_2d_d1 = self._expand_state_tensors(state_2d_d1, n_new_d1)
-        self.d1_pathway.eligibility = expanded_2d_d1['d1_eligibility']
-        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
-            self.td_lambda_d1.traces.traces = expanded_2d_d1['td_lambda_d1_traces']
+        self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
+        if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
+            self.td_lambda_d1.traces.traces = expanded_2d_d1["td_lambda_d1_traces"]
             self.td_lambda_d1.traces.n_output = self.d1_size
             self.td_lambda_d1.n_actions = self.n_actions
 
         # Expand multi-source D1 eligibility traces
-        if hasattr(self, '_eligibility_d1'):
+        if hasattr(self, "_eligibility_d1"):
             for source_key in list(self._eligibility_d1.keys()):
                 old_elig = self._eligibility_d1[source_key]
-                expanded = self._expand_state_tensors({'elig': old_elig}, n_new_d1)
-                self._eligibility_d1[source_key] = expanded['elig']
+                expanded = self._expand_state_tensors({"elig": old_elig}, n_new_d1)
+                self._eligibility_d1[source_key] = expanded["elig"]
 
         # Expand D2 pathway tensors
         state_2d_d2 = {
-            'd2_eligibility': self.d2_pathway.eligibility,
+            "d2_eligibility": self.d2_pathway.eligibility,
         }
-        if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
-            state_2d_d2['td_lambda_d2_traces'] = self.td_lambda_d2.traces.traces
+        if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
+            state_2d_d2["td_lambda_d2_traces"] = self.td_lambda_d2.traces.traces
 
         expanded_2d_d2 = self._expand_state_tensors(state_2d_d2, n_new_d2)
-        self.d2_pathway.eligibility = expanded_2d_d2['d2_eligibility']
-        if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
-            self.td_lambda_d2.traces.traces = expanded_2d_d2['td_lambda_d2_traces']
+        self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
+        if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
+            self.td_lambda_d2.traces.traces = expanded_2d_d2["td_lambda_d2_traces"]
             self.td_lambda_d2.traces.n_output = self.d2_size
             self.td_lambda_d2.n_actions = self.n_actions
 
         # Expand multi-source D2 eligibility traces
-        if hasattr(self, '_eligibility_d2'):
+        if hasattr(self, "_eligibility_d2"):
             for source_key in list(self._eligibility_d2.keys()):
                 old_elig = self._eligibility_d2[source_key]
-                expanded = self._expand_state_tensors({'elig': old_elig}, n_new_d2)
-                self._eligibility_d2[source_key] = expanded['elig']
+                expanded = self._expand_state_tensors({"elig": old_elig}, n_new_d2)
+                self._eligibility_d2[source_key] = expanded["elig"]
 
         # Build state dict for all 1D tensors [n_neurons]
         state_1d = {
-            'recent_spikes': self.recent_spikes,
+            "recent_spikes": self.recent_spikes,
         }
 
         # Expand all 1D state tensors at once
         expanded_1d = self._expand_state_tensors(state_1d, n_new_neurons)
-        self.recent_spikes = expanded_1d['recent_spikes']
+        self.recent_spikes = expanded_1d["recent_spikes"]
 
         # =====================================================================
         # 4. EXPAND NEURON POPULATIONS using efficient in-place growth (ConductanceLIF)
         # =====================================================================
         # Expand D1-MSN and D2-MSN neuron populations separately
-        if hasattr(self, 'd1_pathway') and self.d1_pathway.neurons is not None:
+        if hasattr(self, "d1_pathway") and self.d1_pathway.neurons is not None:
             self.d1_pathway.neurons.grow_neurons(n_new_d1)  # D1 pathway grows by n_new_d1
-        if hasattr(self, 'd2_pathway') and self.d2_pathway.neurons is not None:
+        if hasattr(self, "d2_pathway") and self.d2_pathway.neurons is not None:
             self.d2_pathway.neurons.grow_neurons(n_new_d2)  # D2 pathway grows by n_new_d2
 
         # Expand FSI neurons (fast-spiking interneurons) if enabled
@@ -1400,30 +1418,32 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     n_input = old_fsi_weights.shape[1]
 
                     # Initialize new weights for new FSI neurons
-                    new_fsi_weights = WeightInitializer.xavier(
-                        n_output=n_new_fsi,
-                        n_input=n_input,
-                        gain=0.3,
-                        device=self.device,
-                    ) * self.config.w_max
+                    new_fsi_weights = (
+                        WeightInitializer.xavier(
+                            n_output=n_new_fsi,
+                            n_input=n_input,
+                            gain=0.3,
+                            device=self.device,
+                        )
+                        * self.config.w_max
+                    )
 
                     # Concatenate with existing weights
-                    self.synaptic_weights["fsi"].data = torch.cat([
-                        old_fsi_weights,
-                        new_fsi_weights
-                    ], dim=0)
+                    self.synaptic_weights["fsi"].data = torch.cat(
+                        [old_fsi_weights, new_fsi_weights], dim=0
+                    )
 
         # 4.5. GROW STP MODULES (D1 and D2 separately)
         # =====================================================================
         # STP modules are per-pathway (D1/D2), need to expand separately
         # Each source has "_d1" and "_d2" STP modules that track n_post neurons
         for key in list(self.stp_modules.keys()):
-            if '_d1' in key:
+            if "_d1" in key:
                 # D1 pathway STP: grow by n_new_d1
-                self.stp_modules[key].grow(n_new_d1, target='post')
-            elif '_d2' in key:
+                self.stp_modules[key].grow(n_new_d1, target="post")
+            elif "_d2" in key:
                 # D2 pathway STP: grow by n_new_d2
-                self.stp_modules[key].grow(n_new_d2, target='post')
+                self.stp_modules[key].grow(n_new_d2, target="post")
         # =====================================================================
         # Homeostasis tracks per-neuron activity, needs to expand D1 and D2 separately
         if self.homeostasis is not None:
@@ -1439,18 +1459,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.exploration.grow(self.n_actions)
 
         # Value estimates for new actions (start at 0)
-        if hasattr(self, 'value_estimates'):
-            self.value_estimates = torch.cat([
-                self.value_estimates,
-                torch.zeros(n_new, device=self.device)
-            ], dim=0)
+        if hasattr(self, "value_estimates"):
+            self.value_estimates = torch.cat(
+                [self.value_estimates, torch.zeros(n_new, device=self.device)], dim=0
+            )
 
         # RPE traces for new actions (only if rpe_trace is enabled)
         if self.rpe_trace is not None:
-            self.rpe_trace = torch.cat([
-                self.rpe_trace,
-                torch.zeros(n_new, device=self.device)
-            ], dim=0)
+            self.rpe_trace = torch.cat(
+                [self.rpe_trace, torch.zeros(n_new, device=self.device)], dim=0
+            )
 
         # =====================================================================
         # 6. EXPAND PFC MODULATION WEIGHTS (using base helper)
@@ -1458,20 +1476,20 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # PFC modulation weights need to expand separately for D1 and D2 pathways
         # pfc_modulation_d1: [d1_size, pfc_size] → [d1_size + n_new_d1, pfc_size]
         # pfc_modulation_d2: [d2_size, pfc_size] → [d2_size + n_new_d2, pfc_size]
-        if hasattr(self, 'pfc_modulation_d1') and self.pfc_modulation_d1 is not None:
+        if hasattr(self, "pfc_modulation_d1") and self.pfc_modulation_d1 is not None:
             self.pfc_modulation_d1 = self._expand_weights(
                 current_weights=self.pfc_modulation_d1,
                 n_new=n_new_d1,  # Expand D1 modulation by D1 neurons only
-                initialization='sparse_random',
+                initialization="sparse_random",
                 sparsity=0.3,
                 scale=1.0,  # Default scale for PFC modulation
             )
 
-        if hasattr(self, 'pfc_modulation_d2') and self.pfc_modulation_d2 is not None:
+        if hasattr(self, "pfc_modulation_d2") and self.pfc_modulation_d2 is not None:
             self.pfc_modulation_d2 = self._expand_weights(
                 current_weights=self.pfc_modulation_d2,
                 n_new=n_new_d2,  # Expand D2 modulation by D2 neurons only
-                initialization='sparse_random',
+                initialization="sparse_random",
                 sparsity=0.3,
                 scale=1.0,  # Default scale for PFC modulation
             )
@@ -1487,7 +1505,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     def grow_actions(
         self,
         n_new: int,
-        initialization: str = 'xavier',
+        initialization: str = "xavier",
         sparsity: float = 0.1,
     ) -> None:
         """Grow action space by adding new actions (SEMANTIC API).
@@ -1508,7 +1526,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'xavier',
+        initialization: str = "xavier",
         sparsity: float = 0.1,
     ) -> None:
         """DEPRECATED: Use grow_source() for multi-source architecture.
@@ -1540,7 +1558,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self,
         source_name: str,
         new_size: int,
-        initialization: str = 'xavier',
+        initialization: str = "xavier",
         sparsity: float = 0.1,
     ) -> None:
         """Grow input size for a specific source (expands both D1 and D2 weights).
@@ -1584,14 +1602,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 w_scale = self.config.w_max * 0.2
 
                 # Initialize new input weights
-                if initialization == 'xavier':
-                    new_cols = WeightInitializer.xavier(
-                        n_output=self.d1_size,
-                        n_input=n_new,
-                        gain=0.2,
-                        device=device,
-                    ) * self.config.w_max
-                elif initialization == 'sparse_random':
+                if initialization == "xavier":
+                    new_cols = (
+                        WeightInitializer.xavier(
+                            n_output=self.d1_size,
+                            n_input=n_new,
+                            gain=0.2,
+                            device=device,
+                        )
+                        * self.config.w_max
+                    )
+                elif initialization == "sparse_random":
                     new_cols = WeightInitializer.sparse_random(
                         n_output=self.d1_size,
                         n_input=n_new,
@@ -1616,13 +1637,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 self.input_sources[d1_key] = new_size
 
                 # Expand D1 eligibility trace for this source
-                if hasattr(self, '_eligibility_d1') and d1_key in self._eligibility_d1:
+                if hasattr(self, "_eligibility_d1") and d1_key in self._eligibility_d1:
                     old_elig_d1 = self._eligibility_d1[d1_key]
                     # Expand columns (input dimension)
-                    expanded = torch.cat([
-                        old_elig_d1,
-                        torch.zeros(old_elig_d1.shape[0], n_new, device=self.device)
-                    ], dim=1)
+                    expanded = torch.cat(
+                        [old_elig_d1, torch.zeros(old_elig_d1.shape[0], n_new, device=self.device)],
+                        dim=1,
+                    )
                     self._eligibility_d1[d1_key] = expanded
 
         # Grow D2 pathway weights for this source
@@ -1638,14 +1659,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 w_scale = self.config.w_max * 0.2
 
                 # Initialize new input weights
-                if initialization == 'xavier':
-                    new_cols = WeightInitializer.xavier(
-                        n_output=self.d2_size,
-                        n_input=n_new,
-                        gain=0.2,
-                        device=device,
-                    ) * self.config.w_max
-                elif initialization == 'sparse_random':
+                if initialization == "xavier":
+                    new_cols = (
+                        WeightInitializer.xavier(
+                            n_output=self.d2_size,
+                            n_input=n_new,
+                            gain=0.2,
+                            device=device,
+                        )
+                        * self.config.w_max
+                    )
+                elif initialization == "sparse_random":
                     new_cols = WeightInitializer.sparse_random(
                         n_output=self.d2_size,
                         n_input=n_new,
@@ -1670,13 +1694,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 self.input_sources[d2_key] = new_size
 
                 # Expand D2 eligibility trace for this source
-                if hasattr(self, '_eligibility_d2') and d2_key in self._eligibility_d2:
+                if hasattr(self, "_eligibility_d2") and d2_key in self._eligibility_d2:
                     old_elig_d2 = self._eligibility_d2[d2_key]
                     # Expand columns (input dimension)
-                    expanded = torch.cat([
-                        old_elig_d2,
-                        torch.zeros(old_elig_d2.shape[0], n_new, device=self.device)
-                    ], dim=1)
+                    expanded = torch.cat(
+                        [old_elig_d2, torch.zeros(old_elig_d2.shape[0], n_new, device=self.device)],
+                        dim=1,
+                    )
                     self._eligibility_d2[d2_key] = expanded
 
         # Grow FSI weights for this source (if present)
@@ -1692,14 +1716,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 w_scale = self.config.w_max * 0.3  # FSI slightly stronger
 
                 # Initialize new input weights
-                if initialization == 'xavier':
-                    new_cols = WeightInitializer.xavier(
-                        n_output=self.fsi_size,
-                        n_input=n_new,
-                        gain=0.2,
-                        device=device,
-                    ) * self.config.w_max
-                elif initialization == 'sparse_random':
+                if initialization == "xavier":
+                    new_cols = (
+                        WeightInitializer.xavier(
+                            n_output=self.fsi_size,
+                            n_input=n_new,
+                            gain=0.2,
+                            device=device,
+                        )
+                        * self.config.w_max
+                    )
+                elif initialization == "sparse_random":
                     new_cols = WeightInitializer.sparse_random(
                         n_output=self.fsi_size,
                         n_input=n_new,
@@ -1725,10 +1752,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # We need to count each base source once
         unique_sources = set()
         for key in self.input_sources.keys():
-            if key.endswith('_d1'):
+            if key.endswith("_d1"):
                 base = key[:-3]
                 unique_sources.add(base)
-            elif key.endswith('_d2'):
+            elif key.endswith("_d2"):
                 base = key[:-3]
                 unique_sources.add(base)
             else:
@@ -1746,12 +1773,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             if self.input_size > old_n_input:
                 n_new_inputs = self.input_size - old_n_input
                 # Expand traces [n_output, n_input]
-                new_cols = torch.zeros(
-                    self.d1_size, n_new_inputs, device=self.device
+                new_cols = torch.zeros(self.d1_size, n_new_inputs, device=self.device)
+                self.td_lambda_d1.traces.traces = torch.cat(
+                    [self.td_lambda_d1.traces.traces, new_cols], dim=1
                 )
-                self.td_lambda_d1.traces.traces = torch.cat([
-                    self.td_lambda_d1.traces.traces, new_cols
-                ], dim=1)
                 self.td_lambda_d1.traces.n_input = self.input_size
 
         if self.td_lambda_d2 is not None:
@@ -1759,12 +1784,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             if self.input_size > old_n_input:
                 n_new_inputs = self.input_size - old_n_input
                 # Expand traces [n_output, n_input]
-                new_cols = torch.zeros(
-                    self.d2_size, n_new_inputs, device=self.device
+                new_cols = torch.zeros(self.d2_size, n_new_inputs, device=self.device)
+                self.td_lambda_d2.traces.traces = torch.cat(
+                    [self.td_lambda_d2.traces.traces, new_cols], dim=1
                 )
-                self.td_lambda_d2.traces.traces = torch.cat([
-                    self.td_lambda_d2.traces.traces, new_cols
-                ], dim=1)
                 self.td_lambda_d2.traces.n_input = self.input_size
 
         # Grow STP modules for this source (Phase 5)
@@ -1833,7 +1856,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             n_output=self.n_actions,
             n_input=self.input_size,
             gain=0.2,  # Reduced gain for near-symmetric start
-            device=self.device
+            device=self.device,
         )
 
         # Scale by w_max and clamp to bounds
@@ -1846,7 +1869,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         inputs: SourceOutputs,  # Changed from Dict[str, torch.Tensor] - multi-source spike inputs
         d1_spikes: torch.Tensor,
         d2_spikes: torch.Tensor,
-        chosen_action: int | None = None
+        chosen_action: int | None = None,
     ) -> None:
         """Update separate eligibility traces for D1 and D2 pathways per source.
 
@@ -1915,7 +1938,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             Eligibility tau in milliseconds
         """
         # Check if custom tau is configured
-        if hasattr(self, '_source_eligibility_tau') and source_name in self._source_eligibility_tau:
+        if hasattr(self, "_source_eligibility_tau") and source_name in self._source_eligibility_tau:
             tau_value = self._source_eligibility_tau[source_name]
             # Ensure it's a float (handle tensor or other numeric types)
             if isinstance(tau_value, torch.Tensor):
@@ -1926,9 +1949,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if "cortex" in source_name:
             return 1000.0  # Standard corticostriatal (long traces)
         elif "hippocampus" in source_name or "hippoc" in source_name:
-            return 300.0   # Fast episodic context
+            return 300.0  # Fast episodic context
         elif "thalamus" in source_name or "thal" in source_name:
-            return 500.0   # Intermediate phasic signals
+            return 500.0  # Intermediate phasic signals
         else:
             # Default to config value
             return self.config.eligibility_tau_ms
@@ -1981,8 +2004,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             slow_dict = getattr(self, slow_attr)
 
             # Decay constants
-            fast_decay = torch.exp(torch.tensor(-self.config.dt_ms / self.config.fast_eligibility_tau_ms))
-            slow_decay = torch.exp(torch.tensor(-self.config.dt_ms / self.config.slow_eligibility_tau_ms))
+            fast_decay = torch.exp(
+                torch.tensor(-self.config.dt_ms / self.config.fast_eligibility_tau_ms)
+            )
+            slow_decay = torch.exp(
+                torch.tensor(-self.config.dt_ms / self.config.slow_eligibility_tau_ms)
+            )
             consolidation_rate = self.config.eligibility_consolidation_rate
 
             for source_name, source_spikes in inputs.items():
@@ -2013,9 +2040,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
                 # Update slow trace: decay + consolidation from fast trace
                 # Biology: Fast tags consolidate into persistent slow tags
-                slow_dict[key] = (
-                    slow_dict[key] * slow_decay + fast_dict[key] * consolidation_rate
-                )
+                slow_dict[key] = slow_dict[key] * slow_decay + fast_dict[key] * consolidation_rate
 
             # For backward compatibility: set regular eligibility to fast traces
             # (deliver_reward will use combined eligibility when multi-timescale enabled)
@@ -2196,8 +2221,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             tau_I=5.0,
             dt_ms=self.config.dt_ms,
             tau_ref=2.0,
-            tau_adapt=100.0,        # Adaptation time constant
-            adapt_increment=0.1,    # Enable spike-frequency adaptation
+            tau_adapt=100.0,  # Adaptation time constant
+            adapt_increment=0.1,  # Enable spike-frequency adaptation
         )
         total_msn_neurons = self.d1_size + self.d2_size
         neurons = ConductanceLIF(n_neurons=total_msn_neurons, config=neuron_config)
@@ -2231,8 +2256,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             tau_I=5.0,
             dt_ms=self.config.dt_ms,
             tau_ref=2.0,
-            tau_adapt=100.0,        # Adaptation time constant
-            adapt_increment=0.1,    # Enable spike-frequency adaptation
+            tau_adapt=100.0,  # Adaptation time constant
+            adapt_increment=0.1,  # Enable spike-frequency adaptation
         )
         total_msn_neurons = self.d1_size + self.d2_size
         neurons = ConductanceLIF(n_neurons=total_msn_neurons, config=neuron_config)
@@ -2258,7 +2283,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             Format: [cortex_current | hippocampus_current | pfc_current]
         """
         # Infer device from parameters
-        device = next(self.parameters()).device if len(list(self.parameters())) > 0 else torch.device(self.device)
+        device = (
+            next(self.parameters()).device
+            if len(list(self.parameters())) > 0
+            else torch.device(self.device)
+        )
 
         # Apply synaptic weights and accumulate currents
         # Note: We accumulate rather than concatenate because both D1 and D2
@@ -2350,13 +2379,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         super()._apply(fn, recurse)
 
         # Transfer TD-lambda learners (not nn.Modules, so need manual transfer)
-        if hasattr(self, 'td_lambda_d1') and self.td_lambda_d1 is not None:
+        if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
             # Extract device from function by applying to a dummy tensor
             dummy = torch.zeros(1)
             new_device = fn(dummy).device
             self.td_lambda_d1.to(new_device)
 
-        if hasattr(self, 'td_lambda_d2') and self.td_lambda_d2 is not None:
+        if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
             # Extract device from function by applying to a dummy tensor
             dummy = torch.zeros(1)
             new_device = fn(dummy).device
@@ -2427,7 +2456,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             for source_name, source_spikes in inputs.items():
                 fsi_key = f"fsi_{source_name}"
                 if fsi_key in self.synaptic_weights:
-                    source_spikes_float = source_spikes.float() if source_spikes.dtype == torch.bool else source_spikes
+                    source_spikes_float = (
+                        source_spikes.float()
+                        if source_spikes.dtype == torch.bool
+                        else source_spikes
+                    )
                     fsi_current += self.synaptic_weights[fsi_key] @ source_spikes_float
 
             # Apply gap junction coupling (if enabled and state available)
@@ -2504,8 +2537,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             if self._d1_delay_buffer is None:
                 max_delay_steps = max(1, self._d1_delay_steps * 2 + 1)
                 self._d1_delay_buffer = torch.zeros(
-                    max_delay_steps, self.n_actions,
-                    device=self.device, dtype=d1_votes_current.dtype
+                    max_delay_steps,
+                    self.n_actions,
+                    device=self.device,
+                    dtype=d1_votes_current.dtype,
                 )
                 self._d1_delay_ptr = 0
 
@@ -2527,8 +2562,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             if self._d2_delay_buffer is None:
                 max_delay_steps = max(1, self._d2_delay_steps * 2 + 1)
                 self._d2_delay_buffer = torch.zeros(
-                    max_delay_steps, self.n_actions,
-                    device=self.device, dtype=d2_votes_current.dtype
+                    max_delay_steps,
+                    self.n_actions,
+                    device=self.device,
+                    dtype=d2_votes_current.dtype,
                 )
                 self._d2_delay_ptr = 0
 
@@ -2601,7 +2638,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             offset = 0
             for source_name, source_spikes in inputs.items():
                 source_size = source_spikes.shape[0]
-                combined_input[offset:offset + source_size] = source_spikes.float()
+                combined_input[offset : offset + source_size] = source_spikes.float()
                 offset += source_size
 
             # Update TD(λ) eligibility for D1 pathway
@@ -2663,7 +2700,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         d2_total_ltd = 0.0
 
         # D1 pathway learning (DA+ → LTP, DA- → LTD)
-        if hasattr(self, '_eligibility_d1'):
+        if hasattr(self, "_eligibility_d1"):
             for source_key, eligibility in self._eligibility_d1.items():
                 if source_key in self.synaptic_weights:
                     # Phase 1: Use combined eligibility if multi-timescale enabled
@@ -2671,8 +2708,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         # Combined eligibility = fast + α*slow
                         # Biology: Fast traces for immediate learning, slow traces for delayed reward
                         fast_trace = self._eligibility_d1_fast.get(source_key, eligibility)
-                        slow_trace = self._eligibility_d1_slow.get(source_key, torch.zeros_like(eligibility))
-                        combined_eligibility = fast_trace + self.config.slow_trace_weight * slow_trace
+                        slow_trace = self._eligibility_d1_slow.get(
+                            source_key, torch.zeros_like(eligibility)
+                        )
+                        combined_eligibility = (
+                            fast_trace + self.config.slow_trace_weight * slow_trace
+                        )
                     else:
                         # Single-timescale mode: use standard eligibility
                         combined_eligibility = eligibility
@@ -2695,15 +2736,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         d1_total_ltd += weight_update.sum().item()
 
         # D2 pathway learning (DA+ → LTD, DA- → LTP - INVERTED!)
-        if hasattr(self, '_eligibility_d2'):
+        if hasattr(self, "_eligibility_d2"):
             for source_key, eligibility in self._eligibility_d2.items():
                 if source_key in self.synaptic_weights:
                     # Phase 1: Use combined eligibility if multi-timescale enabled
                     if self.config.use_multiscale_eligibility:
                         # Combined eligibility = fast + α*slow
                         fast_trace = self._eligibility_d2_fast.get(source_key, eligibility)
-                        slow_trace = self._eligibility_d2_slow.get(source_key, torch.zeros_like(eligibility))
-                        combined_eligibility = fast_trace + self.config.slow_trace_weight * slow_trace
+                        slow_trace = self._eligibility_d2_slow.get(
+                            source_key, torch.zeros_like(eligibility)
+                        )
+                        combined_eligibility = (
+                            fast_trace + self.config.slow_trace_weight * slow_trace
+                        )
                     else:
                         # Single-timescale mode: use standard eligibility
                         combined_eligibility = eligibility
@@ -2755,9 +2800,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Update value estimate for counterfactual action
         if self.value_estimates is not None and 0 <= action < self.n_actions:
             cf_lr = self.config.rpe_learning_rate * counterfactual_scale
-            self.value_estimates[action] = (
-                self.value_estimates[action]
-                + cf_lr * (reward - self.value_estimates[action])
+            self.value_estimates[action] = self.value_estimates[action] + cf_lr * (
+                reward - self.value_estimates[action]
             )
 
         # Delegate to learning manager
@@ -2792,7 +2836,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         for name in subsystem_names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)
-                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                if subsystem is not None and hasattr(subsystem, "reset_state"):
                     subsystem.reset_state()
 
     def _reset_scalars(self, **scalar_values: Any) -> None:
@@ -2824,10 +2868,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.d2_pathway.reset_state()
 
         # Reset multi-source eligibility traces (Phase 3)
-        if hasattr(self, '_eligibility_d1'):
+        if hasattr(self, "_eligibility_d1"):
             for key in self._eligibility_d1:
                 self._eligibility_d1[key].zero_()
-        if hasattr(self, '_eligibility_d2'):
+        if hasattr(self, "_eligibility_d2"):
             for key in self._eligibility_d2:
                 self._eligibility_d2[key].zero_()
 
@@ -2876,7 +2920,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             for diagnostics and consistency with other regions.
         """
         # Update forward_coordinator's private state (used in forward pass)
-        if hasattr(self, 'forward_coordinator'):
+        if hasattr(self, "forward_coordinator"):
             self.forward_coordinator.set_neuromodulators(
                 dopamine=dopamine,
                 norepinephrine=norepinephrine,
@@ -2913,8 +2957,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         """
         from thalia.core.diagnostics_schema import (
             compute_activity_metrics,
-            compute_plasticity_metrics,
             compute_health_metrics,
+            compute_plasticity_metrics,
         )
 
         # D1/D2 per-action means and NET
@@ -2939,7 +2983,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         net_votes_list = net_votes.tolist()
 
         # Compute activity metrics
-        recent_spikes = self.state_tracker.recent_spikes if self.state_tracker.recent_spikes is not None else torch.zeros(self.n_neurons, device=self.device)
+        recent_spikes = (
+            self.state_tracker.recent_spikes
+            if self.state_tracker.recent_spikes is not None
+            else torch.zeros(self.n_neurons, device=self.device)
+        )
         activity = compute_activity_metrics(
             output_spikes=recent_spikes,
             total_neurons=self.n_neurons,
@@ -2971,7 +3019,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Neuromodulator metrics
         neuromodulators = {
             "dopamine": self.forward_coordinator._tonic_dopamine,
-            "norepinephrine": self.forward_coordinator._ne_level if hasattr(self.forward_coordinator, '_ne_level') else 0.0,
+            "norepinephrine": (
+                self.forward_coordinator._ne_level
+                if hasattr(self.forward_coordinator, "_ne_level")
+                else 0.0
+            ),
         }
 
         # Value estimates (if RPE enabled)
@@ -3070,18 +3122,29 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         d2_pathway_state = self.d2_pathway.get_state()
 
         # Get exploration manager state
-        exploration_manager_state = self.exploration.get_state() if hasattr(self.exploration, 'get_state') else None
+        exploration_manager_state = (
+            self.exploration.get_state() if hasattr(self.exploration, "get_state") else None
+        )
 
         # Get homeostasis manager state
         homeostasis_manager_state = None
-        if self.homeostasis is not None and hasattr(self.homeostasis.unified_homeostasis, 'get_state'):
+        if self.homeostasis is not None and hasattr(
+            self.homeostasis.unified_homeostasis, "get_state"
+        ):
             homeostasis_manager_state = self.homeostasis.unified_homeostasis.get_state()
 
         # Get neuron membrane state (concatenate D1 and D2 membranes for compatibility with base tests)
         membrane = None
-        if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, 'membrane'):
+        if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, "membrane"):
             d1_membrane = self.d1_pathway.neurons.membrane
-            d2_membrane = self.d2_pathway.neurons.membrane if (self.d2_pathway.neurons is not None and hasattr(self.d2_pathway.neurons, 'membrane')) else None
+            d2_membrane = (
+                self.d2_pathway.neurons.membrane
+                if (
+                    self.d2_pathway.neurons is not None
+                    and hasattr(self.d2_pathway.neurons, "membrane")
+                )
+                else None
+            )
 
             if d1_membrane is not None and d2_membrane is not None:
                 # Concatenate D1 and D2 membranes to match n_output size
@@ -3091,60 +3154,104 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 membrane = d1_membrane.detach().clone()
 
         # Get neuromodulator levels from forward_coordinator
-        dopamine = self.forward_coordinator._tonic_dopamine if hasattr(self.forward_coordinator, '_tonic_dopamine') else 0.0
-        norepinephrine = self.forward_coordinator._ne_level if hasattr(self.forward_coordinator, '_ne_level') else 0.0
-        acetylcholine = self.forward_coordinator._ach_level if hasattr(self.forward_coordinator, '_ach_level') else 0.0
+        dopamine = (
+            self.forward_coordinator._tonic_dopamine
+            if hasattr(self.forward_coordinator, "_tonic_dopamine")
+            else 0.0
+        )
+        norepinephrine = (
+            self.forward_coordinator._ne_level
+            if hasattr(self.forward_coordinator, "_ne_level")
+            else 0.0
+        )
+        acetylcholine = (
+            self.forward_coordinator._ach_level
+            if hasattr(self.forward_coordinator, "_ach_level")
+            else 0.0
+        )
 
         return StriatumState(
             # Base state
-            spikes=self.state_tracker.recent_spikes.detach().clone() if self.state_tracker.recent_spikes is not None else None,
+            spikes=(
+                self.state_tracker.recent_spikes.detach().clone()
+                if self.state_tracker.recent_spikes is not None
+                else None
+            ),
             membrane=membrane,
-
             # D1/D2 pathways
             d1_pathway_state=d1_pathway_state,
             d2_pathway_state=d2_pathway_state,
-
             # Vote accumulation
             d1_votes_accumulated=self.state_tracker._d1_votes_accumulated.detach().clone(),
             d2_votes_accumulated=self.state_tracker._d2_votes_accumulated.detach().clone(),
-
             # Action selection
             last_action=self.state_tracker.last_action,
             recent_spikes=self.state_tracker.recent_spikes.detach().clone(),
-
             # Exploration
             exploring=self.state_tracker.exploring,
             last_uncertainty=self.state_tracker._last_uncertainty,
             last_exploration_prob=self.state_tracker._last_exploration_prob,
             exploration_manager_state=exploration_manager_state,
-
             # Value/RPE (optional)
-            value_estimates=self.value_estimates.detach().clone() if hasattr(self, 'value_estimates') and self.value_estimates is not None else None,
-            last_rpe=self.state_tracker._last_rpe if hasattr(self.state_tracker, '_last_rpe') else None,
-            last_expected=self.state_tracker._last_expected if hasattr(self.state_tracker, '_last_expected') else None,
-
+            value_estimates=(
+                self.value_estimates.detach().clone()
+                if hasattr(self, "value_estimates") and self.value_estimates is not None
+                else None
+            ),
+            last_rpe=(
+                self.state_tracker._last_rpe if hasattr(self.state_tracker, "_last_rpe") else None
+            ),
+            last_expected=(
+                self.state_tracker._last_expected
+                if hasattr(self.state_tracker, "_last_expected")
+                else None
+            ),
             # Goal modulation (optional)
-            pfc_modulation_d1=self.pfc_modulation_d1.detach().clone() if hasattr(self, 'pfc_modulation_d1') and self.pfc_modulation_d1 is not None else None,
-            pfc_modulation_d2=self.pfc_modulation_d2.detach().clone() if hasattr(self, 'pfc_modulation_d2') and self.pfc_modulation_d2 is not None else None,
-
+            pfc_modulation_d1=(
+                self.pfc_modulation_d1.detach().clone()
+                if hasattr(self, "pfc_modulation_d1") and self.pfc_modulation_d1 is not None
+                else None
+            ),
+            pfc_modulation_d2=(
+                self.pfc_modulation_d2.detach().clone()
+                if hasattr(self, "pfc_modulation_d2") and self.pfc_modulation_d2 is not None
+                else None
+            ),
             # Delay buffers (optional)
-            d1_delay_buffer=self._d1_delay_buffer.detach().clone() if hasattr(self, '_d1_delay_buffer') and self._d1_delay_buffer is not None else None,
-            d2_delay_buffer=self._d2_delay_buffer.detach().clone() if hasattr(self, '_d2_delay_buffer') and self._d2_delay_buffer is not None else None,
-            d1_delay_ptr=self._d1_delay_ptr if hasattr(self, '_d1_delay_ptr') else 0,
-            d2_delay_ptr=self._d2_delay_ptr if hasattr(self, '_d2_delay_ptr') else 0,
-
+            d1_delay_buffer=(
+                self._d1_delay_buffer.detach().clone()
+                if hasattr(self, "_d1_delay_buffer") and self._d1_delay_buffer is not None
+                else None
+            ),
+            d2_delay_buffer=(
+                self._d2_delay_buffer.detach().clone()
+                if hasattr(self, "_d2_delay_buffer") and self._d2_delay_buffer is not None
+                else None
+            ),
+            d1_delay_ptr=self._d1_delay_ptr if hasattr(self, "_d1_delay_ptr") else 0,
+            d2_delay_ptr=self._d2_delay_ptr if hasattr(self, "_d2_delay_ptr") else 0,
             # Homeostasis
-            activity_ema=self._activity_ema if hasattr(self, '_activity_ema') else 0.0,
-            trial_spike_count=self._trial_spike_count if hasattr(self, '_trial_spike_count') else 0,
-            trial_timesteps=self._trial_timesteps if hasattr(self, '_trial_timesteps') else 0,
-            homeostatic_scaling_applied=self._homeostatic_scaling_applied if hasattr(self, '_homeostatic_scaling_applied') else False,
+            activity_ema=self._activity_ema if hasattr(self, "_activity_ema") else 0.0,
+            trial_spike_count=self._trial_spike_count if hasattr(self, "_trial_spike_count") else 0,
+            trial_timesteps=self._trial_timesteps if hasattr(self, "_trial_timesteps") else 0,
+            homeostatic_scaling_applied=(
+                self._homeostatic_scaling_applied
+                if hasattr(self, "_homeostatic_scaling_applied")
+                else False
+            ),
             homeostasis_manager_state=homeostasis_manager_state,
-
             # STP state (per-source, Phase 5)
-            stp_modules_state={key: {'u': stp.u.detach().clone() if stp.u is not None else None,
-                                      'x': stp.x.detach().clone() if stp.x is not None else None}
-                               for key, stp in self.stp_modules.items()} if hasattr(self, 'stp_modules') else {},
-
+            stp_modules_state=(
+                {
+                    key: {
+                        "u": stp.u.detach().clone() if stp.u is not None else None,
+                        "x": stp.x.detach().clone() if stp.x is not None else None,
+                    }
+                    for key, stp in self.stp_modules.items()
+                }
+                if hasattr(self, "stp_modules")
+                else {}
+            ),
             # Neuromodulators
             dopamine=dopamine,
             acetylcholine=acetylcholine,
@@ -3181,19 +3288,25 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Restore neuron membrane state
         if state.membrane is not None:
             # Split concatenated membrane into D1 and D2 parts
-            if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, 'membrane'):
-                d1_membrane = state.membrane[:self.d1_size].to(self.device)
+            if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, "membrane"):
+                d1_membrane = state.membrane[: self.d1_size].to(self.device)
                 self.d1_pathway.neurons.membrane.data = d1_membrane
 
-            if self.d2_pathway.neurons is not None and hasattr(self.d2_pathway.neurons, 'membrane'):
-                d2_membrane = state.membrane[self.d1_size:self.d1_size + self.d2_size].to(self.device)
+            if self.d2_pathway.neurons is not None and hasattr(self.d2_pathway.neurons, "membrane"):
+                d2_membrane = state.membrane[self.d1_size : self.d1_size + self.d2_size].to(
+                    self.device
+                )
                 self.d2_pathway.neurons.membrane.data = d2_membrane
 
         # Restore vote accumulation
         if state.d1_votes_accumulated is not None:
-            self.state_tracker._d1_votes_accumulated.data = state.d1_votes_accumulated.to(self.device)
+            self.state_tracker._d1_votes_accumulated.data = state.d1_votes_accumulated.to(
+                self.device
+            )
         if state.d2_votes_accumulated is not None:
-            self.state_tracker._d2_votes_accumulated.data = state.d2_votes_accumulated.to(self.device)
+            self.state_tracker._d2_votes_accumulated.data = state.d2_votes_accumulated.to(
+                self.device
+            )
 
         # Restore action selection
         self.state_tracker.last_action = state.last_action
@@ -3204,11 +3317,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.state_tracker.exploring = state.exploring
         self.state_tracker._last_uncertainty = state.last_uncertainty
         self.state_tracker._last_exploration_prob = state.last_exploration_prob
-        if state.exploration_manager_state is not None and hasattr(self.exploration, 'load_state'):
+        if state.exploration_manager_state is not None and hasattr(self.exploration, "load_state"):
             self.exploration.load_state(state.exploration_manager_state)
 
         # Restore value/RPE (optional)
-        if state.value_estimates is not None and hasattr(self, 'value_estimates'):
+        if state.value_estimates is not None and hasattr(self, "value_estimates"):
             self.value_estimates.data = state.value_estimates.to(self.device)
         if state.last_rpe is not None:
             self.state_tracker._last_rpe = state.last_rpe
@@ -3216,45 +3329,49 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.state_tracker._last_expected = state.last_expected
 
         # Restore STP state (per-source, Phase 5)
-        if hasattr(state, 'stp_modules_state') and state.stp_modules_state and hasattr(self, 'stp_modules'):
+        if (
+            hasattr(state, "stp_modules_state")
+            and state.stp_modules_state
+            and hasattr(self, "stp_modules")
+        ):
             for key, stp_state in state.stp_modules_state.items():
                 if key in self.stp_modules:
-                    if stp_state['u'] is not None and self.stp_modules[key].u is not None:
-                        self.stp_modules[key].u.data = stp_state['u'].to(self.device)
-                    if stp_state['x'] is not None and self.stp_modules[key].x is not None:
-                        self.stp_modules[key].x.data = stp_state['x'].to(self.device)
+                    if stp_state["u"] is not None and self.stp_modules[key].u is not None:
+                        self.stp_modules[key].u.data = stp_state["u"].to(self.device)
+                    if stp_state["x"] is not None and self.stp_modules[key].x is not None:
+                        self.stp_modules[key].x.data = stp_state["x"].to(self.device)
 
         # Restore goal modulation (optional)
-        if state.pfc_modulation_d1 is not None and hasattr(self, 'pfc_modulation_d1'):
+        if state.pfc_modulation_d1 is not None and hasattr(self, "pfc_modulation_d1"):
             self.pfc_modulation_d1.data = state.pfc_modulation_d1.to(self.device)
-        if state.pfc_modulation_d2 is not None and hasattr(self, 'pfc_modulation_d2'):
+        if state.pfc_modulation_d2 is not None and hasattr(self, "pfc_modulation_d2"):
             self.pfc_modulation_d2.data = state.pfc_modulation_d2.to(self.device)
 
         # Restore delay buffers (optional)
-        if state.d1_delay_buffer is not None and hasattr(self, '_d1_delay_buffer'):
+        if state.d1_delay_buffer is not None and hasattr(self, "_d1_delay_buffer"):
             self._d1_delay_buffer = state.d1_delay_buffer.to(self.device)
             self._d1_delay_ptr = state.d1_delay_ptr
-        if state.d2_delay_buffer is not None and hasattr(self, '_d2_delay_buffer'):
+        if state.d2_delay_buffer is not None and hasattr(self, "_d2_delay_buffer"):
             self._d2_delay_buffer = state.d2_delay_buffer.to(self.device)
             self._d2_delay_ptr = state.d2_delay_ptr
 
         # Restore homeostasis
-        if hasattr(self, '_activity_ema'):
+        if hasattr(self, "_activity_ema"):
             self._activity_ema = state.activity_ema
-        if hasattr(self, '_trial_spike_count'):
+        if hasattr(self, "_trial_spike_count"):
             self._trial_spike_count = state.trial_spike_count
-        if hasattr(self, '_trial_timesteps'):
+        if hasattr(self, "_trial_timesteps"):
             self._trial_timesteps = state.trial_timesteps
-        if hasattr(self, '_homeostatic_scaling_applied'):
+        if hasattr(self, "_homeostatic_scaling_applied"):
             self._homeostatic_scaling_applied = state.homeostatic_scaling_applied
         if state.homeostasis_manager_state is not None and self.homeostasis is not None:
-            if hasattr(self.homeostasis.unified_homeostasis, 'load_state'):
+            if hasattr(self.homeostasis.unified_homeostasis, "load_state"):
                 self.homeostasis.unified_homeostasis.load_state(state.homeostasis_manager_state)
 
         # Restore neuromodulators to forward_coordinator
-        if hasattr(self.forward_coordinator, '_tonic_dopamine'):
+        if hasattr(self.forward_coordinator, "_tonic_dopamine"):
             self.forward_coordinator._tonic_dopamine = state.dopamine
-        if hasattr(self.forward_coordinator, '_ne_level'):
+        if hasattr(self.forward_coordinator, "_ne_level"):
             self.forward_coordinator._ne_level = state.norepinephrine
         # acetylcholine not used by striatum
 

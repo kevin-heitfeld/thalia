@@ -7,17 +7,17 @@ Tests lesion, ablation, and growth operations on trained brains.
 import pytest
 import torch
 
+from tests.utils import create_test_brain
 from thalia.surgery import (
+    ablate_pathway,
+    freeze_region,
     lesion_region,
     partial_lesion,
-    temporary_lesion,
-    restore_region,
-    ablate_pathway,
     restore_pathway,
-    freeze_region,
+    restore_region,
+    temporary_lesion,
     unfreeze_region,
 )
-from tests.utils import create_test_brain
 
 
 @pytest.fixture
@@ -149,10 +149,7 @@ def test_restore_pathway(test_brain):
         return
 
     # Weighted pathway - test ablate/restore
-    initial_weights = {
-        name: param.data.clone()
-        for name, param in pathway.named_parameters()
-    }
+    initial_weights = {name: param.data.clone() for name, param in pathway.named_parameters()}
 
     # Ablate and restore
     ablate_pathway(test_brain, pathway_name)

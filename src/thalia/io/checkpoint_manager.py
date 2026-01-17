@@ -58,9 +58,9 @@ Date: December 11, 2025
 from __future__ import annotations
 
 import time
-from pathlib import Path
-from typing import Dict, Any, Optional, Union, Tuple, TYPE_CHECKING
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -143,11 +143,13 @@ class CheckpointManager:
         if metadata is None:
             metadata = {}
 
-        metadata.update({
-            "checkpoint_version": "2.0",  # Checkpoint format version
-            "saved_at": datetime.now().isoformat(),
-            "thalia_version": THALIA_VERSION,
-        })
+        metadata.update(
+            {
+                "checkpoint_version": "2.0",  # Checkpoint format version
+                "saved_at": datetime.now().isoformat(),
+                "thalia_version": THALIA_VERSION,
+            }
+        )
 
         # Save using BrainCheckpoint API
         start_time = time.time()
@@ -372,6 +374,7 @@ class CheckpointManager:
 # =============================================================================
 # Convenience Functions
 # =============================================================================
+
 
 def save_checkpoint(
     brain: DynamicBrain,

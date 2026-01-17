@@ -30,15 +30,16 @@ Run this script whenever components are added/modified to keep docs synchronized
 
 import ast
 import json
-from pathlib import Path
-from typing import List, Tuple, Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
 class RegistryItem:
     """Component registered in ComponentRegistry."""
+
     name: str
     aliases: List[str]
     class_name: str
@@ -53,6 +54,7 @@ class RegistryItem:
 @dataclass
 class StrategyFactory:
     """Factory function for creating learning strategies."""
+
     name: str
     parameters: List[Tuple[str, str, str]]  # (name, type, default)
     return_type: str
@@ -72,6 +74,7 @@ class StrategyFactory:
 @dataclass
 class ConfigClass:
     """Configuration dataclass."""
+
     name: str
     fields: List[Tuple[str, str, str]]  # (name, type, default)
     docstring: str
@@ -90,6 +93,7 @@ class ConfigClass:
 @dataclass
 class DatasetInfo:
     """Dataset class or factory function."""
+
     name: str
     class_or_function: str
     parameters: List[Tuple[str, str, str]]  # (name, type, default)
@@ -108,6 +112,7 @@ class DatasetInfo:
 @dataclass
 class MonitorInfo:
     """Diagnostic monitor class."""
+
     name: str
     class_name: str
     docstring: str
@@ -124,6 +129,7 @@ class MonitorInfo:
 @dataclass
 class ExceptionInfo:
     """Custom exception class."""
+
     name: str
     base_class: str
     docstring: str
@@ -134,6 +140,7 @@ class ExceptionInfo:
 @dataclass
 class ModuleExport:
     """Public export from a module."""
+
     module_name: str
     export_name: str
     export_type: str  # "class", "function", "constant"
@@ -143,6 +150,7 @@ class ModuleExport:
 @dataclass
 class MixinInfo:
     """Mixin class providing functionality."""
+
     name: str
     docstring: str
     methods: List[Tuple[str, str, int]]  # (method_name, signature, line_number)
@@ -158,6 +166,7 @@ class MixinInfo:
 @dataclass
 class ConstantInfo:
     """Module-level constant."""
+
     name: str
     value: str
     docstring: str
@@ -169,9 +178,12 @@ class ConstantInfo:
     def __post_init__(self):
         if self.references is None:
             self.references = []
+
+
 @dataclass
 class ProtocolInfo:
     """Protocol/interface definition."""
+
     name: str
     docstring: str
     methods: List[Tuple[str, str]]  # (method_name, signature)
@@ -183,6 +195,7 @@ class ProtocolInfo:
 @dataclass
 class UsageExample:
     """Code usage example from docstrings or training scripts."""
+
     title: str
     code: str
     description: str
@@ -193,6 +206,7 @@ class UsageExample:
 @dataclass
 class StateField:
     """Field in a state dictionary."""
+
     key: str
     type_hint: str
     description: str
@@ -203,6 +217,7 @@ class StateField:
 @dataclass
 class CheckpointStructure:
     """Checkpoint state structure for a component."""
+
     component_type: str
     file_path: str
     top_level_keys: List[StateField]
@@ -213,6 +228,7 @@ class CheckpointStructure:
 @dataclass
 class TypeAliasInfo:
     """Type alias definition."""
+
     name: str
     definition: str
     description: str
@@ -223,6 +239,7 @@ class TypeAliasInfo:
 @dataclass
 class ComponentRelation:
     """Relationship between components in preset architectures."""
+
     source: str
     target: str
     pathway_type: str
@@ -234,6 +251,7 @@ class ComponentRelation:
 @dataclass
 class NeuronFactory:
     """Neuron factory function."""
+
     name: str
     parameters: List[Tuple[str, str, str]]  # (name, type, default)
     return_type: str
@@ -246,6 +264,7 @@ class NeuronFactory:
 @dataclass
 class EnumInfo:
     """Enumeration type definition."""
+
     name: str
     docstring: str
     values: List[Tuple[str, str]]  # (member_name, member_value_or_comment)
@@ -257,6 +276,7 @@ class EnumInfo:
 @dataclass
 class StateClassInfo:
     """State class for regions/pathways."""
+
     name: str
     base_class: str  # "RegionState", "BaseRegionState", "PathwayState"
     docstring: str
@@ -270,6 +290,7 @@ class StateClassInfo:
 @dataclass
 class ComputeFunction:
     """Utility compute function."""
+
     name: str
     parameters: List[Tuple[str, str, str]]  # (name, type, default)
     return_type: str
@@ -288,6 +309,7 @@ class ComputeFunction:
 @dataclass
 class VisualizationFunction:
     """Visualization/plotting function."""
+
     name: str
     parameters: List[Tuple[str, str, str]]  # (name, type, default)
     return_type: str
@@ -336,16 +358,18 @@ class APIDocGenerator:
         # Load profiling data if available
         profile_file = src_dir.parent.parent / "profile_results.json"
         if profile_file.exists():
-            with open(profile_file, 'r', encoding='utf-8') as f:
+            with open(profile_file, "r", encoding="utf-8") as f:
                 self.profile_data = json.load(f)
 
         # Load coverage data if available
         coverage_file = src_dir.parent.parent / "coverage_results.json"
         if coverage_file.exists():
-            with open(coverage_file, 'r', encoding='utf-8') as f:
+            with open(coverage_file, "r", encoding="utf-8") as f:
                 self.coverage_data = json.load(f)
 
-    def _make_source_link(self, file_path: str, line_number: Optional[int] = None, display_text: Optional[str] = None) -> str:
+    def _make_source_link(
+        self, file_path: str, line_number: Optional[int] = None, display_text: Optional[str] = None
+    ) -> str:
         """Convert file path to clickable relative link.
 
         Args:
@@ -384,24 +408,28 @@ class APIDocGenerator:
         if not docstring:
             return examples
 
-        lines = docstring.split('\n')
+        lines = docstring.split("\n")
         in_example = False
         example_lines = []
 
         for line in lines:
             # Look for example markers
-            if any(marker in line.lower() for marker in ['example:', 'examples:', '>>>', '```python']):
+            if any(
+                marker in line.lower() for marker in ["example:", "examples:", ">>>", "```python"]
+            ):
                 in_example = True
-                if '```python' in line:
+                if "```python" in line:
                     example_lines = []
-                elif '>>>' in line:
+                elif ">>>" in line:
                     example_lines = [line]
                 continue
 
             # End of example
-            if in_example and ('```' in line or line.strip().startswith(('Args:', 'Returns:', 'Raises:', 'Note:'))):
+            if in_example and (
+                "```" in line or line.strip().startswith(("Args:", "Returns:", "Raises:", "Note:"))
+            ):
                 if example_lines:
-                    examples.append('\n'.join(example_lines).strip())
+                    examples.append("\n".join(example_lines).strip())
                     example_lines = []
                 in_example = False
                 continue
@@ -412,11 +440,13 @@ class APIDocGenerator:
 
         # Capture final example if docstring ends
         if example_lines:
-            examples.append('\n'.join(example_lines).strip())
+            examples.append("\n".join(example_lines).strip())
 
         return examples
 
-    def _find_config_class_location(self, config_class_name: str) -> Tuple[Optional[str], Optional[int]]:
+    def _find_config_class_location(
+        self, config_class_name: str
+    ) -> Tuple[Optional[str], Optional[int]]:
         """Find the file and line number where a config class is defined.
 
         Args:
@@ -543,16 +573,21 @@ class APIDocGenerator:
                 if isinstance(node, ast.ClassDef):
                     for decorator in node.decorator_list:
                         if isinstance(decorator, ast.Call):
-                            if hasattr(decorator.func, 'id') and decorator.func.id == 'register_region':
-                                name = ast.literal_eval(decorator.args[0]) if decorator.args else None
+                            if (
+                                hasattr(decorator.func, "id")
+                                and decorator.func.id == "register_region"
+                            ):
+                                name = (
+                                    ast.literal_eval(decorator.args[0]) if decorator.args else None
+                                )
                                 aliases = []
                                 config_class = None
 
                                 for keyword in decorator.keywords:
-                                    if keyword.arg == 'aliases':
+                                    if keyword.arg == "aliases":
                                         aliases = ast.literal_eval(keyword.value)
-                                    elif keyword.arg == 'config_class':
-                                        if hasattr(keyword.value, 'id'):
+                                    elif keyword.arg == "config_class":
+                                        if hasattr(keyword.value, "id"):
                                             config_class = keyword.value.id
 
                                 docstring = ast.get_docstring(node) or "No docstring"
@@ -563,24 +598,30 @@ class APIDocGenerator:
                                 if config_class:
                                     for n in ast.walk(tree):
                                         if isinstance(n, ast.ClassDef) and n.name == config_class:
-                                            config_file = str(file_path.relative_to(self.src_dir.parent))
+                                            config_file = str(
+                                                file_path.relative_to(self.src_dir.parent)
+                                            )
                                             config_line = n.lineno
                                             break
                                     # If not found in same file, search elsewhere
                                     if not config_file:
-                                        config_file, config_line = self._find_config_class_location(config_class)
+                                        config_file, config_line = self._find_config_class_location(
+                                            config_class
+                                        )
 
-                                self.regions.append(RegistryItem(
-                                    name=name or node.name,
-                                    aliases=aliases,
-                                    class_name=node.name,
-                                    file_path=str(file_path.relative_to(self.src_dir.parent)),
-                                    docstring=docstring.split('\n')[0],  # First line only
-                                    config_class=config_class or "None",
-                                    line_number=node.lineno,
-                                    config_file_path=config_file,
-                                    config_line_number=config_line
-                                ))
+                                self.regions.append(
+                                    RegistryItem(
+                                        name=name or node.name,
+                                        aliases=aliases,
+                                        class_name=node.name,
+                                        file_path=str(file_path.relative_to(self.src_dir.parent)),
+                                        docstring=docstring.split("\n")[0],  # First line only
+                                        config_class=config_class or "None",
+                                        line_number=node.lineno,
+                                        config_file_path=config_file,
+                                        config_line_number=config_line,
+                                    )
+                                )
         except Exception as e:
             print(f"Warning: Could not parse {file_path}: {e}")
 
@@ -592,16 +633,21 @@ class APIDocGenerator:
                 if isinstance(node, ast.ClassDef):
                     for decorator in node.decorator_list:
                         if isinstance(decorator, ast.Call):
-                            if hasattr(decorator.func, 'id') and decorator.func.id == 'register_pathway':
-                                name = ast.literal_eval(decorator.args[0]) if decorator.args else None
+                            if (
+                                hasattr(decorator.func, "id")
+                                and decorator.func.id == "register_pathway"
+                            ):
+                                name = (
+                                    ast.literal_eval(decorator.args[0]) if decorator.args else None
+                                )
                                 aliases = []
                                 config_class = None
 
                                 for keyword in decorator.keywords:
-                                    if keyword.arg == 'aliases':
+                                    if keyword.arg == "aliases":
                                         aliases = ast.literal_eval(keyword.value)
-                                    elif keyword.arg == 'config_class':
-                                        if hasattr(keyword.value, 'id'):
+                                    elif keyword.arg == "config_class":
+                                        if hasattr(keyword.value, "id"):
                                             config_class = keyword.value.id
 
                                 docstring = ast.get_docstring(node) or "No docstring"
@@ -612,24 +658,30 @@ class APIDocGenerator:
                                 if config_class:
                                     for n in ast.walk(tree):
                                         if isinstance(n, ast.ClassDef) and n.name == config_class:
-                                            config_file = str(file_path.relative_to(self.src_dir.parent))
+                                            config_file = str(
+                                                file_path.relative_to(self.src_dir.parent)
+                                            )
                                             config_line = n.lineno
                                             break
                                     # If not found in same file, search elsewhere
                                     if not config_file:
-                                        config_file, config_line = self._find_config_class_location(config_class)
+                                        config_file, config_line = self._find_config_class_location(
+                                            config_class
+                                        )
 
-                                self.pathways.append(RegistryItem(
-                                    name=name or node.name,
-                                    aliases=aliases,
-                                    class_name=node.name,
-                                    file_path=str(file_path.relative_to(self.src_dir.parent)),
-                                    docstring=docstring.split('\n')[0],
-                                    config_class=config_class or "None",
-                                    line_number=node.lineno,
-                                    config_file_path=config_file,
-                                    config_line_number=config_line
-                                ))
+                                self.pathways.append(
+                                    RegistryItem(
+                                        name=name or node.name,
+                                        aliases=aliases,
+                                        class_name=node.name,
+                                        file_path=str(file_path.relative_to(self.src_dir.parent)),
+                                        docstring=docstring.split("\n")[0],
+                                        config_class=config_class or "None",
+                                        line_number=node.lineno,
+                                        config_file_path=config_file,
+                                        config_line_number=config_line,
+                                    )
+                                )
         except Exception as e:
             print(f"Warning: Could not parse {file_path}: {e}")
 
@@ -661,7 +713,11 @@ class APIDocGenerator:
                                 # Get type annotation
                                 if arg.annotation:
                                     try:
-                                        arg_type = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else "Any"
+                                        arg_type = (
+                                            ast.unparse(arg.annotation)
+                                            if hasattr(ast, "unparse")
+                                            else "Any"
+                                        )
                                     except (AttributeError, TypeError):
                                         pass
 
@@ -671,7 +727,11 @@ class APIDocGenerator:
                                 if arg_idx >= defaults_offset:
                                     default_idx = arg_idx - defaults_offset
                                     try:
-                                        arg_default = ast.unparse(node.args.defaults[default_idx]) if hasattr(ast, 'unparse') else ""
+                                        arg_default = (
+                                            ast.unparse(node.args.defaults[default_idx])
+                                            if hasattr(ast, "unparse")
+                                            else ""
+                                        )
                                     except (AttributeError, TypeError, IndexError):
                                         pass
 
@@ -681,7 +741,11 @@ class APIDocGenerator:
                             return_type = "LearningStrategy"
                             if node.returns:
                                 try:
-                                    return_type = ast.unparse(node.returns) if hasattr(ast, 'unparse') else "LearningStrategy"
+                                    return_type = (
+                                        ast.unparse(node.returns)
+                                        if hasattr(ast, "unparse")
+                                        else "LearningStrategy"
+                                    )
                                 except (AttributeError, TypeError):
                                     pass
 
@@ -690,15 +754,17 @@ class APIDocGenerator:
                             # Extract examples from docstring
                             examples = self._extract_examples_from_docstring(docstring)
 
-                            self.strategies.append(StrategyFactory(
-                                name=node.name,
-                                parameters=parameters,
-                                return_type=return_type,
-                                docstring=docstring.split('\n')[0],
-                                file_path=str(py_file.relative_to(self.src_dir.parent)),
-                                line_number=node.lineno,
-                                examples=examples
-                            ))
+                            self.strategies.append(
+                                StrategyFactory(
+                                    name=node.name,
+                                    parameters=parameters,
+                                    return_type=return_type,
+                                    docstring=docstring.split("\n")[0],
+                                    file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                    line_number=node.lineno,
+                                    examples=examples,
+                                )
+                            )
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
 
@@ -716,16 +782,22 @@ class APIDocGenerator:
                     if isinstance(node, ast.ClassDef):
                         if node.name.endswith("Config"):
                             is_dataclass = any(
-                                isinstance(d, ast.Name) and d.id == 'dataclass'
+                                isinstance(d, ast.Name) and d.id == "dataclass"
                                 for d in node.decorator_list
                             )
 
                             if is_dataclass:
                                 fields = []
                                 for item in node.body:
-                                    if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                                    if isinstance(item, ast.AnnAssign) and isinstance(
+                                        item.target, ast.Name
+                                    ):
                                         field_name = item.target.id
-                                        field_type = ast.unparse(item.annotation) if hasattr(ast, 'unparse') else "Any"
+                                        field_type = (
+                                            ast.unparse(item.annotation)
+                                            if hasattr(ast, "unparse")
+                                            else "Any"
+                                        )
 
                                         # Parse default value intelligently
                                         if item.value:
@@ -746,8 +818,13 @@ class APIDocGenerator:
                                                 elif "default=" in default_str:
                                                     # Extract actual default value
                                                     import re
-                                                    match = re.search(r'default=([^,)]+)', default_str)
-                                                    default = match.group(1) if match else default_str
+
+                                                    match = re.search(
+                                                        r"default=([^,)]+)", default_str
+                                                    )
+                                                    default = (
+                                                        match.group(1) if match else default_str
+                                                    )
                                                 else:
                                                     default = "field(...)"
                                             else:
@@ -759,13 +836,15 @@ class APIDocGenerator:
 
                                 docstring = ast.get_docstring(node) or "No docstring"
 
-                                self.configs.append(ConfigClass(
-                                    name=node.name,
-                                    fields=fields,
-                                    docstring=docstring.split('\n')[0],
-                                    file_path=str(py_file.relative_to(self.src_dir.parent)),
-                                    line_number=node.lineno
-                                ))
+                                self.configs.append(
+                                    ConfigClass(
+                                        name=node.name,
+                                        fields=fields,
+                                        docstring=docstring.split("\n")[0],
+                                        file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                        line_number=node.lineno,
+                                    )
+                                )
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
 
@@ -783,11 +862,7 @@ class APIDocGenerator:
                 # Find the config in our list
                 for config in self.configs:
                     if config.name == region.config_class:
-                        config.used_by.append((
-                            region.name,
-                            region.file_path,
-                            region.line_number
-                        ))
+                        config.used_by.append((region.name, region.file_path, region.line_number))
 
         # Categorize strategies by their typical use
         strategy_categories = {
@@ -795,7 +870,7 @@ class APIDocGenerator:
             "create_striatum_strategy": ["striatum"],
             "create_hippocampus_strategy": ["hippocampus"],
             "create_cerebellum_strategy": ["cerebellum"],
-            "create_prefrontal_strategy": ["prefrontal", "pfc"]
+            "create_prefrontal_strategy": ["prefrontal", "pfc"],
         }
 
         for strategy in self.strategies:
@@ -827,9 +902,15 @@ class APIDocGenerator:
             f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
 
             # Add badges
-            f.write(f"![Components](https://img.shields.io/badge/Regions-{len(self.regions)}-blue) ")
-            f.write(f"![Pathways](https://img.shields.io/badge/Pathways-{len(self.pathways)}-green) ")
-            f.write("![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)\n\n")
+            f.write(
+                f"![Components](https://img.shields.io/badge/Regions-{len(self.regions)}-blue) "
+            )
+            f.write(
+                f"![Pathways](https://img.shields.io/badge/Pathways-{len(self.pathways)}-green) "
+            )
+            f.write(
+                "![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)\n\n"
+            )
 
             f.write("This document catalogs all registered brain regions and pathways ")
             f.write("in the Thalia component registry.\n\n")
@@ -869,24 +950,40 @@ class APIDocGenerator:
                 f.write("|-----------|------|-------|-----------|---------|------------|\n")
 
                 # Get complexity data for implementation files - separate by type
-                regions_data = [(k, v) for k, v in self.profile_data.items() if k.startswith("region_") and v["code"]["lines"] > 0]
-                pathways_data = [(k, v) for k, v in self.profile_data.items() if k.startswith("pathway_") and v["code"]["lines"] > 0]
+                regions_data = [
+                    (k, v)
+                    for k, v in self.profile_data.items()
+                    if k.startswith("region_") and v["code"]["lines"] > 0
+                ]
+                pathways_data = [
+                    (k, v)
+                    for k, v in self.profile_data.items()
+                    if k.startswith("pathway_") and v["code"]["lines"] > 0
+                ]
 
                 if regions_data:
                     f.write("| **REGIONS** | | | | | |\n")
-                    for key, data in sorted(regions_data, key=lambda x: -x[1]["code"]["complexity"])[:5]:
+                    for key, data in sorted(
+                        regions_data, key=lambda x: -x[1]["code"]["complexity"]
+                    )[:5]:
                         code = data["code"]
                         display_name = key.replace("region_", "")
-                        f.write(f"| `{display_name}` | Region | {code['lines']} | {code['functions']} | {code['classes']} | {code['complexity']} |\n")
+                        f.write(
+                            f"| `{display_name}` | Region | {code['lines']} | {code['functions']} | {code['classes']} | {code['complexity']} |\n"
+                        )
                     if len(regions_data) > 5:
                         f.write(f"| *...+{len(regions_data)-5} more* | | | | | |\n")
 
                 if pathways_data:
                     f.write("| **PATHWAYS** | | | | | |\n")
-                    for key, data in sorted(pathways_data, key=lambda x: -x[1]["code"]["complexity"])[:3]:
+                    for key, data in sorted(
+                        pathways_data, key=lambda x: -x[1]["code"]["complexity"]
+                    )[:3]:
                         code = data["code"]
                         display_name = key.replace("pathway_", "")
-                        f.write(f"| `{display_name}` | Pathway | {code['lines']} | {code['functions']} | {code['classes']} | {code['complexity']} |\n")
+                        f.write(
+                            f"| `{display_name}` | Pathway | {code['lines']} | {code['functions']} | {code['classes']} | {code['complexity']} |\n"
+                        )
                     if len(pathways_data) > 3:
                         f.write(f"| *...+{len(pathways_data)-3} more* | | | | | |\n")
 
@@ -902,14 +999,20 @@ class APIDocGenerator:
                 tested_components = sum(1 for c in self.coverage_data.values() if c["has_tests"])
                 total_tests = sum(c["test_count"] for c in self.coverage_data.values())
                 with_edge_cases = sum(1 for c in self.coverage_data.values() if c["has_edge_cases"])
-                with_integration = sum(1 for c in self.coverage_data.values() if c["has_integration"])
-                avg_coverage = sum(c["coverage_percent"] for c in self.coverage_data.values() if c["has_tests"]) / max(tested_components, 1)
+                with_integration = sum(
+                    1 for c in self.coverage_data.values() if c["has_integration"]
+                )
+                avg_coverage = sum(
+                    c["coverage_percent"] for c in self.coverage_data.values() if c["has_tests"]
+                ) / max(tested_components, 1)
 
                 f.write("**Overall Test Statistics**:\n\n")
                 f.write("| Metric | Value |\n")
                 f.write("|--------|-------|\n")
                 f.write(f"| Total Components | {total_components} |\n")
-                f.write(f"| Components with Tests | {tested_components} ({tested_components/total_components*100:.1f}%) |\n")
+                f.write(
+                    f"| Components with Tests | {tested_components} ({tested_components/total_components*100:.1f}%) |\n"
+                )
                 f.write(f"| Total Test Functions | {total_tests} |\n")
                 f.write(f"| Average Coverage | {avg_coverage:.1f}% |\n")
                 f.write(f"| Components with Edge Case Tests | {with_edge_cases} |\n")
@@ -919,7 +1022,7 @@ class APIDocGenerator:
                 # Helper function to get test file path
                 def get_test_link(comp_name: str) -> str:
                     """Generate relative path to test file."""
-                    comp_type, name = comp_name.split('.', 1)
+                    comp_type, name = comp_name.split(".", 1)
                     if comp_type == "regions":
                         return f"../../tests/unit/regions/test_{name}.py"
                     elif comp_type == "pathways":
@@ -931,16 +1034,23 @@ class APIDocGenerator:
                     return ""
 
                 # Highlight well-tested components
-                well_tested = [(k, v) for k, v in self.coverage_data.items()
-                              if v["test_count"] >= 50 or (v["has_edge_cases"] and v["has_integration"])]
+                well_tested = [
+                    (k, v)
+                    for k, v in self.coverage_data.items()
+                    if v["test_count"] >= 50 or (v["has_edge_cases"] and v["has_integration"])
+                ]
                 if well_tested:
                     f.write("**Well-Tested Components** (50+ tests OR edge+integration tests):\n\n")
-                    for comp_name, data in sorted(well_tested, key=lambda x: -x[1]["test_count"])[:5]:
-                        display_name = comp_name.split('.', 1)[1]
+                    for comp_name, data in sorted(well_tested, key=lambda x: -x[1]["test_count"])[
+                        :5
+                    ]:
+                        display_name = comp_name.split(".", 1)[1]
                         tests = data["test_count"]
                         edge = "✓" if data["has_edge_cases"] else ""
                         integ = "✓" if data["has_integration"] else ""
-                        badges = " ".join(filter(None, [edge and "🎯Edge", integ and "🔗Integration"]))
+                        badges = " ".join(
+                            filter(None, [edge and "🎯Edge", integ and "🔗Integration"])
+                        )
                         test_link = get_test_link(comp_name)
                         f.write(f"- `{display_name}`: [{tests} tests]({test_link}) {badges}\n")
                     f.write("\n")
@@ -951,25 +1061,31 @@ class APIDocGenerator:
                     f.write(f"**Components Needing Tests** ({len(needs_tests)} components):\n\n")
                     f.write("<details>\n<summary>Click to expand list</summary>\n\n")
                     for comp_name in sorted(needs_tests):
-                        display_name = comp_name.split('.', 1)[1]
-                        comp_type = comp_name.split('.', 1)[0]
+                        display_name = comp_name.split(".", 1)[1]
+                        comp_type = comp_name.split(".", 1)[0]
                         f.write(f"- `{display_name}` ({comp_type})\n")
                     f.write("\n</details>\n\n")
 
                 # Coverage by component type (collapsed)
-                f.write("<details>\n<summary>📋 <b>Detailed Coverage by Component Type</b> (click to expand)</summary>\n\n")
+                f.write(
+                    "<details>\n<summary>📋 <b>Detailed Coverage by Component Type</b> (click to expand)</summary>\n\n"
+                )
                 f.write("\n| Component | Tests | Coverage | Edge Cases | Integration |\n")
                 f.write("|-----------|-------|----------|------------|-------------|\n")
 
                 # Group by type
                 for component_type in ["regions", "pathways", "core", "learning"]:
-                    relevant_items = {k: v for k, v in self.coverage_data.items() if k.startswith(f"{component_type}.")}
+                    relevant_items = {
+                        k: v
+                        for k, v in self.coverage_data.items()
+                        if k.startswith(f"{component_type}.")
+                    }
                     if relevant_items:
                         # Add type header
                         f.write(f"| **{component_type.upper()}** | | | | |\n")
                         for comp_name in sorted(relevant_items.keys()):
                             data = relevant_items[comp_name]
-                            display_name = comp_name.split('.', 1)[1]
+                            display_name = comp_name.split(".", 1)[1]
                             tests = data["test_count"]
                             # Add link to test file if tests exist
                             if tests > 0:
@@ -977,18 +1093,28 @@ class APIDocGenerator:
                                 test_display = f"[{tests}]({test_link})"
                             else:
                                 test_display = str(tests)
-                            coverage = f"{data['coverage_percent']:.1f}%" if data["coverage_percent"] > 0 else "-"
+                            coverage = (
+                                f"{data['coverage_percent']:.1f}%"
+                                if data["coverage_percent"] > 0
+                                else "-"
+                            )
                             edge = "✓" if data["has_edge_cases"] else "✗"
                             integ = "✓" if data["has_integration"] else "✗"
-                            f.write(f"| `{display_name}` | {test_display} | {coverage} | {edge} | {integ} |\n")
+                            f.write(
+                                f"| `{display_name}` | {test_display} | {coverage} | {edge} | {integ} |\n"
+                            )
 
                 f.write("\n</details>\n\n")
                 f.write("*Generated by: `scripts/analyze_coverage.py`*\n\n")
 
                 # Note about coverage percentages
                 if avg_coverage == 0:
-                    f.write("> **Note**: Coverage percentages show 0% because pytest timed out during execution. ")
-                    f.write("Test counts and quality indicators (edge cases, integration tests) are accurate.\n\n")            # Add component hierarchy diagram
+                    f.write(
+                        "> **Note**: Coverage percentages show 0% because pytest timed out during execution. "
+                    )
+                    f.write(
+                        "Test counts and quality indicators (edge cases, integration tests) are accurate.\n\n"
+                    )  # Add component hierarchy diagram
             f.write("## 🧩 Component Hierarchy\n\n")
             f.write("```mermaid\n")
             f.write("graph TB\n")
@@ -996,12 +1122,12 @@ class APIDocGenerator:
             f.write("    Brain --> Regions[Neural Regions]\n")
             f.write("    Brain --> Pathways[Axonal Pathways]\n")
             for region in sorted(self.regions[:5], key=lambda r: r.name):  # Show first 5
-                safe_name = region.name.replace('-', '_').replace(' ', '_')
+                safe_name = region.name.replace("-", "_").replace(" ", "_")
                 f.write(f"    Regions --> {safe_name}[{region.name}]\n")
             if len(self.regions) > 5:
                 f.write(f"    Regions --> More[... +{len(self.regions)-5} more]\n")
             for pathway in sorted(self.pathways[:3], key=lambda p: p.name):  # Show first 3
-                safe_name = pathway.name.replace('-', '_').replace(' ', '_')
+                safe_name = pathway.name.replace("-", "_").replace(" ", "_")
                 f.write(f"    Pathways --> {safe_name}[{pathway.name}]\n")
             if len(self.pathways) > 3:
                 f.write(f"    Pathways --> MoreP[... +{len(self.pathways)-3} more]\n")
@@ -1019,15 +1145,23 @@ class APIDocGenerator:
             # Sort regions alphabetically
             for region in sorted(self.regions, key=lambda r: r.name):
                 f.write(f"### `{region.name}`\n\n")
-                class_link = self._make_source_link(region.file_path, region.line_number, region.class_name)
+                class_link = self._make_source_link(
+                    region.file_path, region.line_number, region.class_name
+                )
                 f.write(f"**Class**: {class_link}\n\n")
 
                 if region.aliases:
                     f.write(f"**Aliases**: `{', '.join(region.aliases)}`\n\n")
 
                 # Config class with link if available
-                if region.config_class != "None" and region.config_file_path and region.config_line_number:
-                    config_link = self._make_source_link(region.config_file_path, region.config_line_number, region.config_class)
+                if (
+                    region.config_class != "None"
+                    and region.config_file_path
+                    and region.config_line_number
+                ):
+                    config_link = self._make_source_link(
+                        region.config_file_path, region.config_line_number, region.config_class
+                    )
                     f.write(f"**Config Class**: {config_link}\n\n")
                 else:
                     f.write(f"**Config Class**: `{region.config_class}`\n\n")
@@ -1042,15 +1176,23 @@ class APIDocGenerator:
 
             for pathway in sorted(self.pathways, key=lambda p: p.name):
                 f.write(f"### `{pathway.name}`\n\n")
-                class_link = self._make_source_link(pathway.file_path, pathway.line_number, pathway.class_name)
+                class_link = self._make_source_link(
+                    pathway.file_path, pathway.line_number, pathway.class_name
+                )
                 f.write(f"**Class**: {class_link}\n\n")
 
                 if pathway.aliases:
                     f.write(f"**Aliases**: `{', '.join(pathway.aliases)}`\n\n")
 
                 # Config class with link if available
-                if pathway.config_class != "None" and pathway.config_file_path and pathway.config_line_number:
-                    config_link = self._make_source_link(pathway.config_file_path, pathway.config_line_number, pathway.config_class)
+                if (
+                    pathway.config_class != "None"
+                    and pathway.config_file_path
+                    and pathway.config_line_number
+                ):
+                    config_link = self._make_source_link(
+                        pathway.config_file_path, pathway.config_line_number, pathway.config_class
+                    )
                     f.write(f"**Config Class**: {config_link}\n\n")
                 else:
                     f.write(f"**Config Class**: `{pathway.config_class}`\n\n")
@@ -1061,11 +1203,21 @@ class APIDocGenerator:
 
             # Add See Also section
             f.write("## See Also\n\n")
-            f.write("- [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Configuration classes for components\n")
-            f.write("- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by components\n")
-            f.write("- [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Neuron populations used by regions\n")
-            f.write("- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules used by components\n")
-            f.write("- [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) - State classes for checkpointing\n\n")
+            f.write(
+                "- [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Configuration classes for components\n"
+            )
+            f.write(
+                "- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by components\n"
+            )
+            f.write(
+                "- [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Neuron populations used by regions\n"
+            )
+            f.write(
+                "- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules used by components\n"
+            )
+            f.write(
+                "- [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) - State classes for checkpointing\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -1096,11 +1248,15 @@ class APIDocGenerator:
             f.write(f"| **Total Strategies** | {len(self.strategies)} |\n")
             f.write(f"| **Average Parameters** | {avg_params:.1f} |\n")
             f.write(f"| **With Examples** | {strategies_with_examples}/{len(self.strategies)} |\n")
-            f.write(f"| **With Usage Info** | {sum(1 for s in self.strategies if s.used_by)}/{len(self.strategies)} |\n")
+            f.write(
+                f"| **With Usage Info** | {sum(1 for s in self.strategies if s.used_by)}/{len(self.strategies)} |\n"
+            )
             f.write("\n")
 
             # Add badges
-            f.write(f"![Strategies](https://img.shields.io/badge/Factories-{len(self.strategies)}-blue) ")
+            f.write(
+                f"![Strategies](https://img.shields.io/badge/Factories-{len(self.strategies)}-blue) "
+            )
             f.write("![Learning](https://img.shields.io/badge/Type-Learning-orange) ")
             f.write("![Pluggable](https://img.shields.io/badge/Architecture-Pluggable-green)\n\n")
 
@@ -1112,7 +1268,9 @@ class APIDocGenerator:
             f.write("| `create_striatum_strategy()` | Reward learning | Dopamine | ⭐⭐⭐⭐⭐ |\n")
             f.write("| `create_hippocampus_strategy()` | Memory | Acetylcholine | ⭐⭐⭐⭐ |\n")
             f.write("| `create_cerebellum_strategy()` | Motor learning | None | ⭐⭐⭐⭐ |\n")
-            f.write("| `create_prefrontal_strategy()` | Executive control | Dopamine | ⭐⭐⭐⭐ |\n\n")
+            f.write(
+                "| `create_prefrontal_strategy()` | Executive control | Dopamine | ⭐⭐⭐⭐ |\n\n"
+            )
 
             # Add strategy type diagram
             f.write("## 🔄 Strategy Types\n\n")
@@ -1135,7 +1293,7 @@ class APIDocGenerator:
                 func_link = self._make_source_link(
                     strategy.file_path,
                     line_number=strategy.line_number,
-                    display_text=f"`{strategy.name}()`"
+                    display_text=f"`{strategy.name}()`",
                 )
                 f.write(f"### {func_link}\n\n")
                 f.write(f"**Returns**: `{strategy.return_type}`\n\n")
@@ -1150,8 +1308,12 @@ class APIDocGenerator:
                         param_display = param_type
                         if "Config" in param_type:
                             # Find matching config
-                            config_name = param_type.replace("Optional[", "").replace("]", "").strip()
-                            matching_config = next((c for c in self.configs if c.name == config_name), None)
+                            config_name = (
+                                param_type.replace("Optional[", "").replace("]", "").strip()
+                            )
+                            matching_config = next(
+                                (c for c in self.configs if c.name == config_name), None
+                            )
                             if matching_config:
                                 config_link = f"[`{config_name}`](CONFIGURATION_REFERENCE.md#{config_name.lower()})"
                                 param_display = param_display.replace(config_name, config_link)
@@ -1176,19 +1338,35 @@ class APIDocGenerator:
 
             # Add See Also section
             f.write("## See Also\n\n")
-            f.write("- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these strategies\n")
-            f.write("- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Learning rate constants\n")
-            f.write("- [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) - LearningStrategy protocol\n")
+            f.write(
+                "- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these strategies\n"
+            )
+            f.write(
+                "- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Learning rate constants\n"
+            )
+            f.write(
+                "- [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) - LearningStrategy protocol\n"
+            )
             f.write("- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Examples of strategy usage\n\n")
 
             # Add best practices section
             f.write("## 💡 Best Practices\n\n")
             f.write("### Choosing a Learning Strategy\n\n")
-            f.write("1. **For cortical regions**: Use `create_cortex_strategy()` with STDP+BCM composite\n")
-            f.write("2. **For reward learning**: Use `create_striatum_strategy()` with dopamine modulation\n")
-            f.write("3. **For memory formation**: Use `create_hippocampus_strategy()` with one-shot capability\n")
-            f.write("4. **For motor learning**: Use `create_cerebellum_strategy()` with error correction\n")
-            f.write("5. **For executive function**: Use `create_prefrontal_strategy()` with gated plasticity\n\n")
+            f.write(
+                "1. **For cortical regions**: Use `create_cortex_strategy()` with STDP+BCM composite\n"
+            )
+            f.write(
+                "2. **For reward learning**: Use `create_striatum_strategy()` with dopamine modulation\n"
+            )
+            f.write(
+                "3. **For memory formation**: Use `create_hippocampus_strategy()` with one-shot capability\n"
+            )
+            f.write(
+                "4. **For motor learning**: Use `create_cerebellum_strategy()` with error correction\n"
+            )
+            f.write(
+                "5. **For executive function**: Use `create_prefrontal_strategy()` with gated plasticity\n\n"
+            )
 
             f.write("### Parameter Tuning Tips\n\n")
             f.write("- **Learning rate**: Start with default values, reduce if unstable\n")
@@ -1220,7 +1398,7 @@ class APIDocGenerator:
                 class_link = self._make_source_link(
                     config.file_path,
                     line_number=config.line_number,
-                    display_text=f"`{config.name}`"
+                    display_text=f"`{config.name}`",
                 )
                 f.write(f"### {class_link}\n\n")
                 f.write(f"**Source**: {self._make_source_link(config.file_path)}\n\n")
@@ -1241,9 +1419,7 @@ class APIDocGenerator:
                     f.write("**Used By**:\n\n")
                     for comp_name, comp_file, comp_line in config.used_by:
                         comp_link = self._make_source_link(
-                            comp_file,
-                            line_number=comp_line,
-                            display_text=comp_name
+                            comp_file, line_number=comp_line, display_text=comp_name
                         )
                         f.write(f"- {comp_link}\n")
                     f.write("\n")
@@ -1253,7 +1429,9 @@ class APIDocGenerator:
             # Add configuration tips section
             f.write("## 💡 Configuration Best Practices\n\n")
             f.write("### Common Patterns\n\n")
-            f.write("1. **Start with defaults**: All configs have biologically-motivated defaults\n")
+            f.write(
+                "1. **Start with defaults**: All configs have biologically-motivated defaults\n"
+            )
             f.write("2. **Override selectively**: Only change what's needed for your task\n")
             f.write("3. **Validate early**: Use config validation before training\n")
             f.write("4. **Document changes**: Keep notes on why you changed defaults\n\n")
@@ -1266,16 +1444,24 @@ class APIDocGenerator:
 
             f.write("### Common Pitfalls\n\n")
             f.write("⚠️ **Too small networks**: Use at least 64 neurons per region\n\n")
-            f.write("⚠️ **Mismatched time scales**: Keep tau values in biological range (5-200ms)\n\n")
+            f.write(
+                "⚠️ **Mismatched time scales**: Keep tau values in biological range (5-200ms)\n\n"
+            )
             f.write("⚠️ **Extreme learning rates**: Stay within 0.0001-0.01 range\n\n")
             f.write("⚠️ **Disabled plasticity**: Ensure learning strategies are enabled\n\n")
 
             # Add related documentation section
             f.write("## 📚 Related Documentation\n\n")
-            f.write("- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these configs\n")
-            f.write("- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules and parameters\n")
+            f.write(
+                "- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these configs\n"
+            )
+            f.write(
+                "- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules and parameters\n"
+            )
             f.write("- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Configuration examples\n")
-            f.write("- [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) - Enum types used in configs\n\n")
+            f.write(
+                "- [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) - Enum types used in configs\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -1297,21 +1483,25 @@ class APIDocGenerator:
                     # Find Dataset classes
                     if isinstance(node, ast.ClassDef) and node.name.endswith("Dataset"):
                         docstring = ast.get_docstring(node) or "No docstring"
-                        self.datasets.append(DatasetInfo(
-                            name=node.name,
-                            class_or_function="class",
-                            parameters=[],
-                            docstring=docstring.split('\n')[0],
-                            file_path=str(py_file.relative_to(self.src_dir.parent)),
-                            is_factory=False,
-                            line_number=node.lineno
-                        ))
+                        self.datasets.append(
+                            DatasetInfo(
+                                name=node.name,
+                                class_or_function="class",
+                                parameters=[],
+                                docstring=docstring.split("\n")[0],
+                                file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                is_factory=False,
+                                line_number=node.lineno,
+                            )
+                        )
 
                     # Find create_* factory functions
                     if isinstance(node, ast.FunctionDef) and node.name.startswith("create_stage"):
                         # Extract full parameter info (name, type, default)
                         parameters = []
-                        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + node.args.defaults
+                        defaults = [None] * (
+                            len(node.args.args) - len(node.args.defaults)
+                        ) + node.args.defaults
                         for arg, default in zip(node.args.args, defaults):
                             arg_name = arg.arg
                             arg_type = ast.unparse(arg.annotation) if arg.annotation else "Any"
@@ -1321,16 +1511,18 @@ class APIDocGenerator:
                         docstring = ast.get_docstring(node) or "No docstring"
                         examples = self._extract_examples_from_docstring(docstring)
 
-                        self.datasets.append(DatasetInfo(
-                            name=node.name,
-                            class_or_function="function",
-                            parameters=parameters,
-                            docstring=docstring.split('\n')[0],
-                            file_path=str(py_file.relative_to(self.src_dir.parent)),
-                            is_factory=True,
-                            line_number=node.lineno,
-                            examples=examples
-                        ))
+                        self.datasets.append(
+                            DatasetInfo(
+                                name=node.name,
+                                class_or_function="function",
+                                parameters=parameters,
+                                docstring=docstring.split("\n")[0],
+                                file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                is_factory=True,
+                                line_number=node.lineno,
+                                examples=examples,
+                            )
+                        )
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
 
@@ -1356,20 +1548,22 @@ class APIDocGenerator:
                         # Extract method signatures with line numbers
                         methods = []
                         for item in node.body:
-                            if isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
-                                params = [arg.arg for arg in item.args.args if arg.arg != 'self']
+                            if isinstance(item, ast.FunctionDef) and not item.name.startswith("_"):
+                                params = [arg.arg for arg in item.args.args if arg.arg != "self"]
                                 signature = f"{item.name}({', '.join(params)})"
                                 methods.append((item.name, signature, item.lineno))
 
-                        self.monitors.append(MonitorInfo(
-                            name=node.name,
-                            class_name=node.name,
-                            docstring=docstring.split('\n')[0],
-                            file_path=str(py_file.relative_to(self.src_dir.parent)),
-                            methods=methods[:5],  # First 5 public methods
-                            line_number=node.lineno,
-                            examples=examples
-                        ))
+                        self.monitors.append(
+                            MonitorInfo(
+                                name=node.name,
+                                class_name=node.name,
+                                docstring=docstring.split("\n")[0],
+                                file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                methods=methods[:5],  # First 5 public methods
+                                line_number=node.lineno,
+                                examples=examples,
+                            )
+                        )
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
 
@@ -1393,9 +1587,13 @@ class APIDocGenerator:
                             if isinstance(target, ast.Name) and target.id == "__all__":
                                 if isinstance(node.value, ast.List):
                                     all_list = [
-                                        elt.s if isinstance(elt, ast.Str)
-                                        else elt.value if isinstance(elt, ast.Constant)
-                                        else None
+                                        (
+                                            elt.s
+                                            if isinstance(elt, ast.Str)
+                                            else (
+                                                elt.value if isinstance(elt, ast.Constant) else None
+                                            )
+                                        )
                                         for elt in node.value.elts
                                     ]
                                     all_list = [x for x in all_list if x is not None]
@@ -1406,12 +1604,14 @@ class APIDocGenerator:
                     module_name = module_path.replace("\\", ".").replace("/", ".")
 
                     for export in all_list[:20]:  # Limit to first 20 to avoid huge lists
-                        exports.append(ModuleExport(
-                            module_name=module_name,
-                            export_name=export,
-                            export_type="unknown",  # Would need import resolution
-                            file_path=str(init_file.relative_to(self.src_dir.parent))
-                        ))
+                        exports.append(
+                            ModuleExport(
+                                module_name=module_name,
+                                export_name=export,
+                                export_type="unknown",  # Would need import resolution
+                                file_path=str(init_file.relative_to(self.src_dir.parent)),
+                            )
+                        )
 
                     if exports:
                         self.module_exports[module_name] = exports
@@ -1445,20 +1645,22 @@ class APIDocGenerator:
                         examples = self._extract_examples_from_docstring(docstring)
 
                         for item in node.body:
-                            if isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
+                            if isinstance(item, ast.FunctionDef) and not item.name.startswith("_"):
                                 # Extract method signature with line number
-                                params = [arg.arg for arg in item.args.args if arg.arg != 'self']
+                                params = [arg.arg for arg in item.args.args if arg.arg != "self"]
                                 signature = f"{item.name}({', '.join(params)})"
                                 methods.append((item.name, signature, item.lineno))
 
-                        self.mixins.append(MixinInfo(
-                            name=mixin_name,
-                            docstring=docstring.split('\n')[0],
-                            methods=methods[:10],  # First 10 methods
-                            file_path=str(mixin_file.relative_to(self.src_dir.parent)),
-                            line_number=node.lineno,
-                            examples=examples
-                        ))
+                        self.mixins.append(
+                            MixinInfo(
+                                name=mixin_name,
+                                docstring=docstring.split("\n")[0],
+                                methods=methods[:10],  # First 10 methods
+                                file_path=str(mixin_file.relative_to(self.src_dir.parent)),
+                                line_number=node.lineno,
+                                examples=examples,
+                            )
+                        )
                         break
 
             except Exception as e:
@@ -1483,7 +1685,7 @@ class APIDocGenerator:
             try:
                 content = constants_file.read_text(encoding="utf-8")
                 tree = ast.parse(content)
-                lines = content.split('\n')
+                lines = content.split("\n")
 
                 current_category = "General"
 
@@ -1493,7 +1695,7 @@ class APIDocGenerator:
                         line = lines[i] if i < len(lines) else ""
                         if "==============" in line or "----------" in line:
                             # Look for category in nearby lines
-                            for j in range(max(0, i-2), min(len(lines), i+3)):
+                            for j in range(max(0, i - 2), min(len(lines), i + 3)):
                                 if "#" in lines[j] and not lines[j].strip().startswith("# ="):
                                     current_category = lines[j].strip("# ").strip()
                                     break
@@ -1518,20 +1720,34 @@ class APIDocGenerator:
                                         node_idx = tree.body.index(node)
                                         if node_idx + 1 < len(tree.body):
                                             next_node = tree.body[node_idx + 1]
-                                            if isinstance(next_node, ast.Expr) and isinstance(next_node.value, ast.Constant):
+                                            if isinstance(next_node, ast.Expr) and isinstance(
+                                                next_node.value, ast.Constant
+                                            ):
                                                 if isinstance(next_node.value.value, str):
                                                     full_docstring = next_node.value.value
-                                                    docstring = full_docstring.split('\n')[0]  # First line
+                                                    docstring = full_docstring.split("\n")[
+                                                        0
+                                                    ]  # First line
 
                                                     # Extract biological range (look for patterns like "10-30ms" or "range: X-Y")
                                                     import re
-                                                    range_match = re.search(r'(\d+[\-–]\d+\s*(?:ms|mV|Hz))', full_docstring, re.IGNORECASE)
+
+                                                    range_match = re.search(
+                                                        r"(\d+[\-–]\d+\s*(?:ms|mV|Hz))",
+                                                        full_docstring,
+                                                        re.IGNORECASE,
+                                                    )
                                                     if range_match:
                                                         biological_range = range_match.group(1)
 
                                                     # Extract references (Author et al. (YEAR) or Author (YEAR))
-                                                    ref_matches = re.findall(r'([A-Z][a-z]+(?: (?:et al\.|& [A-Z][a-z]+))? \(\d{4}\))', full_docstring)
-                                                    references = list(set(ref_matches))  # Deduplicate
+                                                    ref_matches = re.findall(
+                                                        r"([A-Z][a-z]+(?: (?:et al\.|& [A-Z][a-z]+))? \(\d{4}\))",
+                                                        full_docstring,
+                                                    )
+                                                    references = list(
+                                                        set(ref_matches)
+                                                    )  # Deduplicate
 
                                         # Fallback to inline comment
                                         if not docstring and i < len(lines):
@@ -1539,15 +1755,19 @@ class APIDocGenerator:
                                             if "#" in line:
                                                 docstring = line.split("#", 1)[1].strip()
 
-                                        self.constants.append(ConstantInfo(
-                                            name=const_name,
-                                            value=value_str,
-                                            docstring=docstring or "No description",
-                                            file_path=str(constants_file.relative_to(self.src_dir.parent)),
-                                            category=current_category,
-                                            biological_range=biological_range,
-                                            references=references
-                                        ))
+                                        self.constants.append(
+                                            ConstantInfo(
+                                                name=const_name,
+                                                value=value_str,
+                                                docstring=docstring or "No description",
+                                                file_path=str(
+                                                    constants_file.relative_to(self.src_dir.parent)
+                                                ),
+                                                category=current_category,
+                                                biological_range=biological_range,
+                                                references=references,
+                                            )
+                                        )
                                     except (ValueError, SyntaxError):
                                         pass  # Skip complex expressions
 
@@ -1567,7 +1787,9 @@ class APIDocGenerator:
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
-                    if node.name.startswith("create_") and ("neurons" in node.name or "neuron" in node.name):
+                    if node.name.startswith("create_") and (
+                        "neurons" in node.name or "neuron" in node.name
+                    ):
                         # Extract function signature
                         parameters = []
                         for arg in node.args.args:
@@ -1578,7 +1800,11 @@ class APIDocGenerator:
                             # Get type annotation
                             if arg.annotation:
                                 try:
-                                    arg_type = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else "Any"
+                                    arg_type = (
+                                        ast.unparse(arg.annotation)
+                                        if hasattr(ast, "unparse")
+                                        else "Any"
+                                    )
                                 except (AttributeError, TypeError):
                                     pass
 
@@ -1588,7 +1814,11 @@ class APIDocGenerator:
                             if arg_idx >= defaults_offset:
                                 default_idx = arg_idx - defaults_offset
                                 try:
-                                    arg_default = ast.unparse(node.args.defaults[default_idx]) if hasattr(ast, 'unparse') else ""
+                                    arg_default = (
+                                        ast.unparse(node.args.defaults[default_idx])
+                                        if hasattr(ast, "unparse")
+                                        else ""
+                                    )
                                 except (AttributeError, TypeError, IndexError):
                                     pass
 
@@ -1598,7 +1828,11 @@ class APIDocGenerator:
                         return_type = "ConductanceLIF"
                         if node.returns:
                             try:
-                                return_type = ast.unparse(node.returns) if hasattr(ast, 'unparse') else "ConductanceLIF"
+                                return_type = (
+                                    ast.unparse(node.returns)
+                                    if hasattr(ast, "unparse")
+                                    else "ConductanceLIF"
+                                )
                             except (AttributeError, TypeError):
                                 pass
 
@@ -1608,36 +1842,43 @@ class APIDocGenerator:
 
                         # Extract example code blocks from docstring
                         if docstring:
-                            lines = docstring.split('\n')
+                            lines = docstring.split("\n")
                             in_example = False
                             example_lines = []
 
                             for line in lines:
-                                if 'Examples:' in line or '>>>' in line:
+                                if "Examples:" in line or ">>>" in line:
                                     in_example = True
-                                    if '>>>' in line:
+                                    if ">>>" in line:
                                         example_lines = [line]
                                     continue
 
                                 if in_example:
-                                    if line.strip() and not line.strip().startswith(('Args:', 'Returns:', 'Raises:')):
+                                    if line.strip() and not line.strip().startswith(
+                                        ("Args:", "Returns:", "Raises:")
+                                    ):
                                         example_lines.append(line)
-                                    elif line.strip().startswith(('Args:', 'Returns:', 'Raises:')) and example_lines:
-                                        examples.append('\n'.join(example_lines))
+                                    elif (
+                                        line.strip().startswith(("Args:", "Returns:", "Raises:"))
+                                        and example_lines
+                                    ):
+                                        examples.append("\n".join(example_lines))
                                         example_lines = []
                                         in_example = False
 
                             if example_lines:
-                                examples.append('\n'.join(example_lines))
+                                examples.append("\n".join(example_lines))
 
-                        self.neuron_factories.append(NeuronFactory(
-                            name=node.name,
-                            parameters=parameters,
-                            return_type=return_type,
-                            docstring=docstring.split('\n')[0],  # First line
-                            file_path=str(factory_file.relative_to(self.src_dir.parent)),
-                            examples=examples
-                        ))
+                        self.neuron_factories.append(
+                            NeuronFactory(
+                                name=node.name,
+                                parameters=parameters,
+                                return_type=return_type,
+                                docstring=docstring.split("\n")[0],  # First line
+                                file_path=str(factory_file.relative_to(self.src_dir.parent)),
+                                examples=examples,
+                            )
+                        )
 
         except Exception as e:
             print(f"Warning: Could not parse {factory_file}: {e}")
@@ -1669,7 +1910,11 @@ class APIDocGenerator:
 
                             if arg.annotation:
                                 try:
-                                    arg_type = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else "Any"
+                                    arg_type = (
+                                        ast.unparse(arg.annotation)
+                                        if hasattr(ast, "unparse")
+                                        else "Any"
+                                    )
                                 except (AttributeError, TypeError):
                                     pass
 
@@ -1678,7 +1923,11 @@ class APIDocGenerator:
                             if arg_idx >= defaults_offset:
                                 default_idx = arg_idx - defaults_offset
                                 try:
-                                    arg_default = ast.unparse(node.args.defaults[default_idx]) if hasattr(ast, 'unparse') else ""
+                                    arg_default = (
+                                        ast.unparse(node.args.defaults[default_idx])
+                                        if hasattr(ast, "unparse")
+                                        else ""
+                                    )
                                 except (AttributeError, TypeError, IndexError):
                                     pass
 
@@ -1688,7 +1937,9 @@ class APIDocGenerator:
                         return_type = "Any"
                         if node.returns:
                             try:
-                                return_type = ast.unparse(node.returns) if hasattr(ast, 'unparse') else "Any"
+                                return_type = (
+                                    ast.unparse(node.returns) if hasattr(ast, "unparse") else "Any"
+                                )
                             except (AttributeError, TypeError):
                                 pass
 
@@ -1697,27 +1948,35 @@ class APIDocGenerator:
 
                         # Extract biological context (references in docstring)
                         biological_context = None
-                        if "References:" in docstring or "Biological" in docstring or "neuroscience" in docstring.lower():
-                            lines = docstring.split('\n')
+                        if (
+                            "References:" in docstring
+                            or "Biological" in docstring
+                            or "neuroscience" in docstring.lower()
+                        ):
+                            lines = docstring.split("\n")
                             for i, line in enumerate(lines):
-                                if 'References:' in line or 'Biological' in line:
-                                    biological_context = '\n'.join(lines[i:min(i+3, len(lines))])
+                                if "References:" in line or "Biological" in line:
+                                    biological_context = "\n".join(
+                                        lines[i : min(i + 3, len(lines))]
+                                    )
                                     break
 
                         # Extract examples
                         examples = self._extract_examples_from_docstring(docstring)
 
-                        self.compute_functions.append(ComputeFunction(
-                            name=node.name,
-                            parameters=parameters,
-                            return_type=return_type,
-                            docstring=docstring.split('\n')[0],  # First line
-                            file_path=str(py_file.relative_to(self.src_dir.parent)),
-                            category=category,
-                            biological_context=biological_context,
-                            line_number=node.lineno,
-                            examples=examples
-                        ))
+                        self.compute_functions.append(
+                            ComputeFunction(
+                                name=node.name,
+                                parameters=parameters,
+                                return_type=return_type,
+                                docstring=docstring.split("\n")[0],  # First line
+                                file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                category=category,
+                                biological_context=biological_context,
+                                line_number=node.lineno,
+                                examples=examples,
+                            )
+                        )
 
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
@@ -1728,7 +1987,10 @@ class APIDocGenerator:
             (self.src_dir / "visualization" / "network_graph.py", "topology"),
             (self.src_dir / "training" / "visualization" / "monitor.py", "training"),
             (self.src_dir / "training" / "visualization" / "live_diagnostics.py", "diagnostics"),
-            (self.src_dir / "training" / "visualization" / "critical_period_plots.py", "critical_period"),
+            (
+                self.src_dir / "training" / "visualization" / "critical_period_plots.py",
+                "critical_period",
+            ),
         ]
 
         for py_file, category in viz_files:
@@ -1742,7 +2004,10 @@ class APIDocGenerator:
                 for node in ast.walk(tree):
                     if isinstance(node, ast.FunctionDef):
                         # Look for visualization functions (plot_, visualize_, quick_)
-                        if any(node.name.startswith(prefix) for prefix in ["plot_", "visualize_", "export_", "quick_"]):
+                        if any(
+                            node.name.startswith(prefix)
+                            for prefix in ["plot_", "visualize_", "export_", "quick_"]
+                        ):
                             # Extract parameters
                             parameters = []
                             for arg in node.args.args:
@@ -1752,7 +2017,11 @@ class APIDocGenerator:
 
                                 if arg.annotation:
                                     try:
-                                        arg_type = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else "Any"
+                                        arg_type = (
+                                            ast.unparse(arg.annotation)
+                                            if hasattr(ast, "unparse")
+                                            else "Any"
+                                        )
                                     except (AttributeError, TypeError):
                                         pass
 
@@ -1761,7 +2030,11 @@ class APIDocGenerator:
                                 if arg_idx >= defaults_offset:
                                     default_idx = arg_idx - defaults_offset
                                     try:
-                                        arg_default = ast.unparse(node.args.defaults[default_idx]) if hasattr(ast, 'unparse') else ""
+                                        arg_default = (
+                                            ast.unparse(node.args.defaults[default_idx])
+                                            if hasattr(ast, "unparse")
+                                            else ""
+                                        )
                                     except (AttributeError, TypeError, IndexError):
                                         pass
 
@@ -1771,7 +2044,11 @@ class APIDocGenerator:
                             return_type = "None"
                             if node.returns:
                                 try:
-                                    return_type = ast.unparse(node.returns) if hasattr(ast, 'unparse') else "None"
+                                    return_type = (
+                                        ast.unparse(node.returns)
+                                        if hasattr(ast, "unparse")
+                                        else "None"
+                                    )
                                 except (AttributeError, TypeError):
                                     pass
 
@@ -1779,16 +2056,18 @@ class APIDocGenerator:
                             docstring = ast.get_docstring(node) or "No docstring"
                             examples = self._extract_examples_from_docstring(docstring)
 
-                            self.visualization_functions.append(VisualizationFunction(
-                                name=node.name,
-                                parameters=parameters,
-                                return_type=return_type,
-                                docstring=docstring.split('\n')[0],  # First line
-                                file_path=str(py_file.relative_to(self.src_dir.parent)),
-                                category=category,
-                                line_number=node.lineno,
-                                examples=examples
-                            ))
+                            self.visualization_functions.append(
+                                VisualizationFunction(
+                                    name=node.name,
+                                    parameters=parameters,
+                                    return_type=return_type,
+                                    docstring=docstring.split("\n")[0],  # First line
+                                    file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                    category=category,
+                                    line_number=node.lineno,
+                                    examples=examples,
+                                )
+                            )
 
             except Exception as e:
                 print(f"Warning: Could not parse {py_file}: {e}")
@@ -1822,8 +2101,8 @@ class APIDocGenerator:
                     if isinstance(node, ast.ClassDef):
                         # Check if it inherits from Protocol
                         is_protocol = any(
-                            (hasattr(base, 'id') and base.id == 'Protocol') or
-                            (hasattr(base, 'attr') and base.attr == 'Protocol')
+                            (hasattr(base, "id") and base.id == "Protocol")
+                            or (hasattr(base, "attr") and base.attr == "Protocol")
                             for base in node.bases
                         )
 
@@ -1832,15 +2111,21 @@ class APIDocGenerator:
                             methods = []
 
                             for item in node.body:
-                                if isinstance(item, ast.FunctionDef) and not item.name.startswith('_'):
+                                if isinstance(item, ast.FunctionDef) and not item.name.startswith(
+                                    "_"
+                                ):
                                     # Extract method signature
                                     params = []
                                     for arg in item.args.args:
-                                        if arg.arg != 'self':
+                                        if arg.arg != "self":
                                             # Get type annotation if present
                                             if arg.annotation:
                                                 try:
-                                                    type_str = ast.unparse(arg.annotation) if hasattr(ast, 'unparse') else "Any"
+                                                    type_str = (
+                                                        ast.unparse(arg.annotation)
+                                                        if hasattr(ast, "unparse")
+                                                        else "Any"
+                                                    )
                                                     params.append(f"{arg.arg}: {type_str}")
                                                 except (AttributeError, TypeError):
                                                     params.append(arg.arg)
@@ -1850,14 +2135,16 @@ class APIDocGenerator:
                                     signature = f"{item.name}({', '.join(params)})"
                                     methods.append((item.name, signature))
 
-                            self.protocols.append(ProtocolInfo(
-                                name=node.name,
-                                docstring=docstring.split('\n')[0],
-                                methods=methods[:10],  # First 10 methods
-                                file_path=str(protocol_file.relative_to(self.src_dir.parent)),
-                                is_runtime_checkable=is_runtime_checkable,
-                                line_number=node.lineno
-                            ))
+                            self.protocols.append(
+                                ProtocolInfo(
+                                    name=node.name,
+                                    docstring=docstring.split("\n")[0],
+                                    methods=methods[:10],  # First 10 methods
+                                    file_path=str(protocol_file.relative_to(self.src_dir.parent)),
+                                    is_runtime_checkable=is_runtime_checkable,
+                                    line_number=node.lineno,
+                                )
+                            )
                             is_runtime_checkable = False
 
             except Exception as e:
@@ -1883,7 +2170,7 @@ class APIDocGenerator:
 
             try:
                 content = file_path.read_text(encoding="utf-8")
-                lines = content.split('\n')
+                lines = content.split("\n")
 
                 # Extract code blocks from docstrings
                 in_docstring = False
@@ -1901,39 +2188,56 @@ class APIDocGenerator:
                         continue
 
                     # Look for Usage: or Example: headers
-                    if any(marker in line for marker in ['Usage:', 'Example:', 'Examples:']):
-                        example_title = line.strip().replace('=', '').strip()
+                    if any(marker in line for marker in ["Usage:", "Example:", "Examples:"]):
+                        example_title = line.strip().replace("=", "").strip()
                         continue
 
                     # Detect code block start
-                    if '```python' in line or (line.strip().startswith('>>>') and not in_example_block):
+                    if "```python" in line or (
+                        line.strip().startswith(">>>") and not in_example_block
+                    ):
                         in_example_block = True
                         example_lines = []
                         continue
 
                     # Detect code block end
-                    if in_example_block and ('```' in line or (not line.strip().startswith('>>>') and not line.strip().startswith('...') and example_lines)):
+                    if in_example_block and (
+                        "```" in line
+                        or (
+                            not line.strip().startswith(">>>")
+                            and not line.strip().startswith("...")
+                            and example_lines
+                        )
+                    ):
                         if len(example_lines) >= 3:  # At least 3 lines for meaningful example
                             # Clean up the code
-                            code = '\n'.join(example_lines).strip()
+                            code = "\n".join(example_lines).strip()
                             # Filter out malformed examples
-                            if (len(code) > 30 and
-                                code.count('\n') >= 2 and
-                                not code.startswith('...') and
-                                '(' in code):  # Has function calls
+                            if (
+                                len(code) > 30
+                                and code.count("\n") >= 2
+                                and not code.startswith("...")
+                                and "(" in code
+                            ):  # Has function calls
 
                                 # Clean title
-                                clean_title = example_title if example_title else f"Example from {file_path.name}"
+                                clean_title = (
+                                    example_title
+                                    if example_title
+                                    else f"Example from {file_path.name}"
+                                )
                                 if not clean_title.startswith(("Usage", "Example")):
                                     clean_title = f"Example: {clean_title}"
 
-                                self.usage_examples.append(UsageExample(
-                                    title=clean_title,
-                                    code=code,
-                                    description="",
-                                    source_file=str(file_path.relative_to(self.src_dir.parent)),
-                                    category=category
-                                ))
+                                self.usage_examples.append(
+                                    UsageExample(
+                                        title=clean_title,
+                                        code=code,
+                                        description="",
+                                        source_file=str(file_path.relative_to(self.src_dir.parent)),
+                                        category=category,
+                                    )
+                                )
 
                         in_example_block = False
                         example_lines = []
@@ -1943,7 +2247,7 @@ class APIDocGenerator:
                     # Collect code lines
                     if in_example_block:
                         # Remove >>> and ... prompts
-                        clean_line = line.replace('>>> ', '').replace('... ', '')
+                        clean_line = line.replace(">>> ", "").replace("... ", "")
                         if clean_line.strip():
                             example_lines.append(clean_line)
 
@@ -1964,16 +2268,18 @@ class APIDocGenerator:
                 if isinstance(node, ast.ClassDef):
                     # Check if it inherits from Exception or ThaliaError
                     for base in node.bases:
-                        base_name = base.id if hasattr(base, 'id') else str(base)
-                        if 'Error' in node.name or 'Exception' in node.name:
+                        base_name = base.id if hasattr(base, "id") else str(base)
+                        if "Error" in node.name or "Exception" in node.name:
                             docstring = ast.get_docstring(node) or "No docstring"
-                            self.exceptions.append(ExceptionInfo(
-                                name=node.name,
-                                base_class=base_name,
-                                docstring=docstring.split('\n')[0],
-                                file_path=str(errors_file.relative_to(self.src_dir.parent)),
-                                line_number=node.lineno
-                            ))
+                            self.exceptions.append(
+                                ExceptionInfo(
+                                    name=node.name,
+                                    base_class=base_name,
+                                    docstring=docstring.split("\n")[0],
+                                    file_path=str(errors_file.relative_to(self.src_dir.parent)),
+                                    line_number=node.lineno,
+                                )
+                            )
                             break
         except Exception as e:
             print(f"Warning: Could not parse {errors_file}: {e}")
@@ -1996,16 +2302,24 @@ class APIDocGenerator:
             classes = [d for d in self.datasets if not d.is_factory]
             factories = [d for d in self.datasets if d.is_factory]
 
-            f.write(f"Total: {len(classes)} dataset classes, {len(factories)} factory functions\n\n")
+            f.write(
+                f"Total: {len(classes)} dataset classes, {len(factories)} factory functions\n\n"
+            )
 
             # Add statistics by stage
             f.write("## 📊 Distribution by Stage\n\n")
             from collections import Counter
+
             stage_counts = Counter(d.stage for d in self.datasets if d.stage)
             f.write("| Stage | Count |\n")
             f.write("|-------|-------|\n")
-            for stage in ["Stage 0 (Temporal)", "Stage 0 (Phonology)", "Stage 1 (Visual)",
-                          "Stage 2 (Grammar)", "Stage 3 (Reading)"]:
+            for stage in [
+                "Stage 0 (Temporal)",
+                "Stage 0 (Phonology)",
+                "Stage 1 (Visual)",
+                "Stage 2 (Grammar)",
+                "Stage 3 (Reading)",
+            ]:
                 count = stage_counts.get(stage, 0)
                 f.write(f"| {stage} | {count} |\n")
             f.write("\n")
@@ -2028,7 +2342,7 @@ class APIDocGenerator:
                     class_link = self._make_source_link(
                         dataset.file_path,
                         line_number=dataset.line_number,
-                        display_text=f"`{dataset.name}`"
+                        display_text=f"`{dataset.name}`",
                     )
                     f.write(f"### {class_link}\n\n")
                     f.write(f"**Source**: {self._make_source_link(dataset.file_path)}\n\n")
@@ -2045,6 +2359,7 @@ class APIDocGenerator:
 
                 # Group by stage
                 from collections import defaultdict
+
                 by_stage = defaultdict(list)
                 for factory in factories:
                     stage = factory.stage or "Other"
@@ -2057,7 +2372,7 @@ class APIDocGenerator:
                     "Stage 1 (Visual)",
                     "Stage 2 (Grammar)",
                     "Stage 3 (Reading)",
-                    "Other"
+                    "Other",
                 ]
 
                 for stage in stage_order:
@@ -2068,7 +2383,7 @@ class APIDocGenerator:
                             func_link = self._make_source_link(
                                 factory.file_path,
                                 line_number=factory.line_number,
-                                display_text=f"`{factory.name}()`"
+                                display_text=f"`{factory.name}()`",
                             )
                             f.write(f"#### {func_link}\n\n")
                             f.write(f"**Source**: {self._make_source_link(factory.file_path)}\n\n")
@@ -2078,7 +2393,9 @@ class APIDocGenerator:
                                 f.write("| Parameter | Type | Default |\n")
                                 f.write("|-----------|------|----------|\n")
                                 for param_name, param_type, param_default in factory.parameters:
-                                    f.write(f"| `{param_name}` | `{param_type}` | `{param_default}` |\n")
+                                    f.write(
+                                        f"| `{param_name}` | `{param_type}` | `{param_default}` |\n"
+                                    )
                                 f.write("\n")
 
                             f.write(f"**Description**: {factory.docstring}\n\n")
@@ -2101,7 +2418,9 @@ class APIDocGenerator:
             f.write("### Common Issues\n\n")
             f.write("⚠️ **Encoding mismatch**: Ensure `device` matches brain device\n\n")
             f.write("⚠️ **Language mismatch**: Verify `Language` enum for multilingual datasets\n\n")
-            f.write("⚠️ **Insufficient timesteps**: Use at least 50-100 timesteps for temporal data\n\n")
+            f.write(
+                "⚠️ **Insufficient timesteps**: Use at least 50-100 timesteps for temporal data\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -2122,7 +2441,9 @@ class APIDocGenerator:
             f.write(f"Total: **{len(self.monitors)}** monitors\n\n")
 
             # Add badges
-            f.write(f"![Monitors](https://img.shields.io/badge/Monitors-{len(self.monitors)}-blue) ")
+            f.write(
+                f"![Monitors](https://img.shields.io/badge/Monitors-{len(self.monitors)}-blue) "
+            )
             f.write("![Diagnostics](https://img.shields.io/badge/Type-Diagnostics-yellow) ")
             f.write("![Real--time](https://img.shields.io/badge/Mode-Real--time-green)\n\n")
 
@@ -2147,7 +2468,7 @@ class APIDocGenerator:
                 class_link = self._make_source_link(
                     monitor.file_path,
                     line_number=monitor.line_number,
-                    display_text=f"`{monitor.name}`"
+                    display_text=f"`{monitor.name}`",
                 )
                 f.write(f"### {class_link}\n\n")
                 f.write(f"**Source**: {self._make_source_link(monitor.file_path)}\n\n")
@@ -2157,9 +2478,7 @@ class APIDocGenerator:
                     f.write("**Key Methods**:\n\n")
                     for _, signature, line_num in monitor.methods:
                         method_link = self._make_source_link(
-                            monitor.file_path,
-                            line_number=line_num,
-                            display_text=signature
+                            monitor.file_path, line_number=line_num, display_text=signature
                         )
                         f.write(f"- {method_link}\n")
                     f.write("\n")
@@ -2216,7 +2535,7 @@ class APIDocGenerator:
                 "StateError": "Invalid state transitions or state management issues",
                 "CheckpointError": "Problems loading or saving checkpoints",
                 "ValidationError": "Input validation failures",
-                "CompatibilityError": "Version or compatibility mismatches"
+                "CompatibilityError": "Version or compatibility mismatches",
             }
 
             f.write("| Exception | Use Case |\n")
@@ -2234,7 +2553,7 @@ class APIDocGenerator:
                 class_link = self._make_source_link(
                     exception.file_path,
                     line_number=exception.line_number,
-                    display_text=f"`{exception.name}`"
+                    display_text=f"`{exception.name}`",
                 )
                 f.write(f"### {class_link}\n\n")
                 f.write(f"**Inherits from**: `{exception.base_class}`\n\n")
@@ -2266,7 +2585,7 @@ class APIDocGenerator:
             f.write("Quick jump to module:\n\n")
             for i, module_name in enumerate(sorted(self.module_exports.keys())):
                 # Create anchor-safe module name
-                anchor = module_name.replace('.', '')
+                anchor = module_name.replace(".", "")
                 f.write(f"- [{module_name}](#{anchor})")
                 # Add line break every 3 modules for readability
                 if (i + 1) % 3 == 0:
@@ -2323,9 +2642,7 @@ class APIDocGenerator:
             for mixin in sorted(self.mixins, key=lambda m: m.name):
                 # Make class name clickable
                 class_link = self._make_source_link(
-                    mixin.file_path,
-                    line_number=mixin.line_number,
-                    display_text=f"`{mixin.name}`"
+                    mixin.file_path, line_number=mixin.line_number, display_text=f"`{mixin.name}`"
                 )
                 f.write(f"### {class_link}\n\n")
                 f.write(f"**Source**: {self._make_source_link(mixin.file_path)}\n\n")
@@ -2335,9 +2652,7 @@ class APIDocGenerator:
                     f.write("**Public Methods**:\n\n")
                     for _, signature, line_num in mixin.methods:
                         method_link = self._make_source_link(
-                            mixin.file_path,
-                            line_number=line_num,
-                            display_text=signature
+                            mixin.file_path, line_number=line_num, display_text=signature
                         )
                         f.write(f"- {method_link}\n")
                     f.write("\n")
@@ -2363,12 +2678,15 @@ class APIDocGenerator:
             f.write(f"Total: **{len(self.constants)}** constants\n\n")
 
             # Add badges
-            f.write(f"![Constants](https://img.shields.io/badge/Constants-{len(self.constants)}-blue) ")
+            f.write(
+                f"![Constants](https://img.shields.io/badge/Constants-{len(self.constants)}-blue) "
+            )
             f.write("![Biological](https://img.shields.io/badge/Type-Biological-orange) ")
             f.write("![References](https://img.shields.io/badge/Citations-Scientific-green)\n\n")
 
             # Group by category
             from collections import defaultdict
+
             by_category = defaultdict(list)
             for const in self.constants:
                 by_category[const.category].append(const)
@@ -2379,7 +2697,7 @@ class APIDocGenerator:
             f.write("pie title Constants by Category\n")
             for category in sorted(list(by_category.keys())[:8]):  # Top 8 categories
                 count = len(by_category[category])
-                safe_cat = category.replace('"', '').replace('(', '').replace(')', '')[:30]
+                safe_cat = category.replace('"', "").replace("(", "").replace(")", "")[:30]
                 f.write(f'    "{safe_cat}" : {count}\n')
             f.write("```\n\n")
 
@@ -2399,11 +2717,17 @@ class APIDocGenerator:
 
                 for const in constants:
                     # Truncate long values
-                    value_display = const.value[:17] + "..." if len(const.value) > 20 else const.value
+                    value_display = (
+                        const.value[:17] + "..." if len(const.value) > 20 else const.value
+                    )
                     bio_range = const.biological_range if const.biological_range else "—"
 
                     # Truncate long descriptions
-                    desc = const.docstring[:77] + "..." if len(const.docstring) > 80 else const.docstring
+                    desc = (
+                        const.docstring[:77] + "..."
+                        if len(const.docstring) > 80
+                        else const.docstring
+                    )
 
                     # Escape pipes
                     value_display = value_display.replace("|", "\\|")
@@ -2465,9 +2789,15 @@ class APIDocGenerator:
 
             # Cross-reference to configs
             f.write("## See Also\n\n")
-            f.write("- [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Config classes that use these constants\n")
-            f.write("- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these parameters\n")
-            f.write("- [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Pre-configured neuron populations\n\n")
+            f.write(
+                "- [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Config classes that use these constants\n"
+            )
+            f.write(
+                "- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these parameters\n"
+            )
+            f.write(
+                "- [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Pre-configured neuron populations\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -2494,7 +2824,7 @@ class APIDocGenerator:
                 class_link = self._make_source_link(
                     protocol.file_path,
                     line_number=protocol.line_number,
-                    display_text=f"`{protocol.name}`"
+                    display_text=f"`{protocol.name}`",
                 )
                 f.write(f"### {class_link}\n\n")
 
@@ -2536,6 +2866,7 @@ class APIDocGenerator:
 
             # Group by category
             from collections import defaultdict
+
             by_category = defaultdict(list)
             for example in self.usage_examples:
                 by_category[example.category].append(example)
@@ -2586,17 +2917,21 @@ class APIDocGenerator:
                             component_type = self._get_containing_class(node, tree) or "TopLevel"
                             docstring = ast.get_docstring(node) or ""
 
-                            self.checkpoint_structures.append(CheckpointStructure(
-                                component_type=component_type,
-                                file_path="thalia/" + str(py_file.relative_to(self.src_dir)),
-                                top_level_keys=state_fields,
-                                nested_structures={},
-                                docstring=docstring,
-                            ))
+                            self.checkpoint_structures.append(
+                                CheckpointStructure(
+                                    component_type=component_type,
+                                    file_path="thalia/" + str(py_file.relative_to(self.src_dir)),
+                                    top_level_keys=state_fields,
+                                    nested_structures={},
+                                    docstring=docstring,
+                                )
+                            )
             except Exception:
                 continue  # Skip files with parse errors
 
-    def _extract_state_dict_structure(self, func_node: ast.FunctionDef, content: str) -> List[StateField]:
+    def _extract_state_dict_structure(
+        self, func_node: ast.FunctionDef, content: str
+    ) -> List[StateField]:
         """Extract state dict keys from get_full_state() method."""
         fields = []
         seen_keys = set()
@@ -2620,13 +2955,15 @@ class APIDocGenerator:
                                 if key not in seen_keys:
                                     seen_keys.add(key)
                                     type_hint = self._infer_type_from_value(value_node)
-                                    fields.append(StateField(
-                                        key=key,
-                                        type_hint=type_hint,
-                                        description="",
-                                        required=True,
-                                        example="",
-                                    ))
+                                    fields.append(
+                                        StateField(
+                                            key=key,
+                                            type_hint=type_hint,
+                                            description="",
+                                            required=True,
+                                            example="",
+                                        )
+                                    )
 
                 # Also check for state["key"] = value patterns
                 for target in node.targets:
@@ -2644,13 +2981,15 @@ class APIDocGenerator:
                                 seen_keys.add(key)
                                 value_node = node.value
                                 type_hint = self._infer_type_from_value(value_node)
-                                fields.append(StateField(
-                                    key=key,
-                                    type_hint=type_hint,
-                                    description="",
-                                    required=True,
-                                    example="",
-                                ))
+                                fields.append(
+                                    StateField(
+                                        key=key,
+                                        type_hint=type_hint,
+                                        description="",
+                                        required=True,
+                                        example="",
+                                    )
+                                )
 
         return fields
 
@@ -2716,10 +3055,14 @@ class APIDocGenerator:
             f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
 
             # Add cross-reference to design doc
-            f.write("> **📚 For complete binary format specification, version compatibility, and implementation details, ")
+            f.write(
+                "> **📚 For complete binary format specification, version compatibility, and implementation details, "
+            )
             f.write("see [checkpoint_format.md](../design/checkpoint_format.md)**\n\n")
 
-            f.write("This document provides a quick reference for checkpoint usage and the state dictionary structure ")
+            f.write(
+                "This document provides a quick reference for checkpoint usage and the state dictionary structure "
+            )
             f.write("returned by `brain.get_full_state()`.\n\n")
 
             f.write("## Overview\n\n")
@@ -2735,10 +3078,14 @@ class APIDocGenerator:
             f.write("```\n\n")
 
             f.write("## Top-Level State Structure\n\n")
-            f.write("The checkpoint is a dictionary with these top-level keys returned by `DynamicBrain.get_full_state()`:\n\n")
+            f.write(
+                "The checkpoint is a dictionary with these top-level keys returned by `DynamicBrain.get_full_state()`:\n\n"
+            )
 
             # Find DynamicBrain structure
-            brain_struct = next((s for s in self.checkpoint_structures if s.component_type == "DynamicBrain"), None)
+            brain_struct = next(
+                (s for s in self.checkpoint_structures if s.component_type == "DynamicBrain"), None
+            )
 
             if brain_struct:
                 f.write("| Key | Type | Description |\n")
@@ -2775,7 +3122,9 @@ class APIDocGenerator:
             f.write("Each component (region or pathway) stores its state in the checkpoint.\n\n")
 
             # Find NeuralRegion structure
-            region_struct = next((s for s in self.checkpoint_structures if s.component_type == "NeuralRegion"), None)
+            region_struct = next(
+                (s for s in self.checkpoint_structures if s.component_type == "NeuralRegion"), None
+            )
 
             if region_struct:
                 f.write("### NeuralRegion State (Base Class)\n\n")
@@ -2814,7 +3163,10 @@ class APIDocGenerator:
                 f.write(f"**Source**: {self._make_source_link(region_struct.file_path)}\n\n")
 
             # Find AxonalProjection structure
-            pathway_struct = next((s for s in self.checkpoint_structures if s.component_type == "AxonalProjection"), None)
+            pathway_struct = next(
+                (s for s in self.checkpoint_structures if s.component_type == "AxonalProjection"),
+                None,
+            )
 
             if pathway_struct:
                 f.write("### AxonalProjection State (Pathways)\n\n")
@@ -2824,15 +3176,21 @@ class APIDocGenerator:
                 f.write("|-----|------|-------------|\n")
 
                 for field in pathway_struct.top_level_keys:
-                    f.write(f"| `{field.key}` | `{field.type_hint}` | {field.description or 'Pathway data'} |\n")
+                    f.write(
+                        f"| `{field.key}` | `{field.type_hint}` | {field.description or 'Pathway data'} |\n"
+                    )
 
                 f.write("\n")
                 f.write(f"**Source**: {self._make_source_link(pathway_struct.file_path)}\n\n")
 
             f.write("## File Formats\n\n")
             f.write("Checkpoints can be saved in two formats:\n\n")
-            f.write("1. **PyTorch Format** (`.pt`, `.pth`, `.ckpt`) - Standard PyTorch `torch.save()` format (default)\n")
-            f.write("2. **Binary Format** (`.thalia`, `.thalia.zst`) - Custom binary format with compression (advanced)\n\n")
+            f.write(
+                "1. **PyTorch Format** (`.pt`, `.pth`, `.ckpt`) - Standard PyTorch `torch.save()` format (default)\n"
+            )
+            f.write(
+                "2. **Binary Format** (`.thalia`, `.thalia.zst`) - Custom binary format with compression (advanced)\n\n"
+            )
 
             f.write("## Usage Examples\n\n")
             f.write("```python\n")
@@ -2844,9 +3202,13 @@ class APIDocGenerator:
             f.write("# Load checkpoint\n")
             f.write('brain.load_checkpoint("checkpoints/epoch_100.ckpt")\n\n')
             f.write("# Save with compression (binary format)\n")
-            f.write('brain.save_checkpoint("checkpoints/epoch_100.thalia.zst", compression="zstd")\n\n')
+            f.write(
+                'brain.save_checkpoint("checkpoints/epoch_100.thalia.zst", compression="zstd")\n\n'
+            )
             f.write("# Save with mixed precision\n")
-            f.write('brain.save_checkpoint("checkpoints/epoch_100.ckpt", precision_policy="fp16")\n')
+            f.write(
+                'brain.save_checkpoint("checkpoints/epoch_100.ckpt", precision_policy="fp16")\n'
+            )
             f.write("```\n\n")
 
             f.write("## Validation\n\n")
@@ -2859,9 +3221,15 @@ class APIDocGenerator:
             f.write("```\n\n")
 
             f.write("## See Also\n\n")
-            f.write("- **[Checkpoint Format Specification](../design/checkpoint_format.md)** - Complete binary format details, byte layouts, compression algorithms\n")
-            f.write("- **[Curriculum Strategy](../design/curriculum_strategy.md)** - Training stages and checkpoint usage in curriculum training\n")
-            f.write("- **[GETTING_STARTED_CURRICULUM](../GETTING_STARTED_CURRICULUM.md)** - Tutorial including checkpoint management\n\n")
+            f.write(
+                "- **[Checkpoint Format Specification](../design/checkpoint_format.md)** - Complete binary format details, byte layouts, compression algorithms\n"
+            )
+            f.write(
+                "- **[Curriculum Strategy](../design/curriculum_strategy.md)** - Training stages and checkpoint usage in curriculum training\n"
+            )
+            f.write(
+                "- **[GETTING_STARTED_CURRICULUM](../GETTING_STARTED_CURRICULUM.md)** - Tutorial including checkpoint management\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -2902,18 +3270,24 @@ class APIDocGenerator:
                                 definition = self._get_source_segment(content, node.value)
                                 if definition:
                                     # Extract docstring (next line after assignment)
-                                    description = self._extract_docstring_after_assignment(lines, node.lineno)
+                                    description = self._extract_docstring_after_assignment(
+                                        lines, node.lineno
+                                    )
 
                                     # Infer category from surrounding comments
-                                    category = self._infer_category_from_typing_module(lines, node.lineno)
+                                    category = self._infer_category_from_typing_module(
+                                        lines, node.lineno
+                                    )
 
-                                    self.type_aliases.append(TypeAliasInfo(
-                                        name=name,
-                                        definition=definition,
-                                        description=description,
-                                        file_path="thalia/typing.py",
-                                        category=category,
-                                    ))
+                                    self.type_aliases.append(
+                                        TypeAliasInfo(
+                                            name=name,
+                                            definition=definition,
+                                            description=description,
+                                            file_path="thalia/typing.py",
+                                            category=category,
+                                        )
+                                    )
         except Exception as e:
             print(f"Warning: Could not parse thalia.typing: {e}")
 
@@ -3005,14 +3379,16 @@ class APIDocGenerator:
                                 target_port = self._get_string_value(keyword.value)
 
                         if source and target and pathway_type:
-                            self.component_relations.append(ComponentRelation(
-                                source=source,
-                                target=target,
-                                pathway_type=pathway_type,
-                                preset_name=preset_name,
-                                source_port=source_port,
-                                target_port=target_port,
-                            ))
+                            self.component_relations.append(
+                                ComponentRelation(
+                                    source=source,
+                                    target=target,
+                                    pathway_type=pathway_type,
+                                    preset_name=preset_name,
+                                    source_port=source_port,
+                                    target_port=target_port,
+                                )
+                            )
 
     def _get_string_value(self, node: ast.AST) -> Optional[str]:
         """Extract string value from AST node."""
@@ -3033,12 +3409,15 @@ class APIDocGenerator:
             f.write(f"> Last updated: {timestamp}\n")
             f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
 
-            f.write("This document catalogs all type aliases used in Thalia for clearer type hints.\n\n")
+            f.write(
+                "This document catalogs all type aliases used in Thalia for clearer type hints.\n\n"
+            )
 
             f.write(f"Total: {len(self.type_aliases)} type aliases\n\n")
 
             # Group by category
             from collections import defaultdict
+
             by_category = defaultdict(list)
             for alias in self.type_aliases:
                 by_category[alias.category].append(alias)
@@ -3081,6 +3460,7 @@ class APIDocGenerator:
 
             # Group by preset
             from collections import defaultdict
+
             by_preset = defaultdict(list)
             for relation in self.component_relations:
                 by_preset[relation.preset_name].append(relation)
@@ -3108,7 +3488,9 @@ class APIDocGenerator:
                 for rel in relations:
                     src_port = rel.source_port or "default"
                     tgt_port = rel.target_port or "default"
-                    f.write(f"| `{rel.source}` | `{src_port}` | → | `{rel.target}` | `{tgt_port}` | `{rel.pathway_type}` |\n")
+                    f.write(
+                        f"| `{rel.source}` | `{src_port}` | → | `{rel.target}` | `{tgt_port}` | `{rel.pathway_type}` |\n"
+                    )
 
                 f.write("\n")
 
@@ -3179,10 +3561,14 @@ class APIDocGenerator:
 
                                             # Look for inline comments in source
                                             try:
-                                                lines = content.split('\n')
+                                                lines = content.split("\n")
                                                 for line in lines:
-                                                    if member_name in line and '=' in line and '#' in line:
-                                                        comment_part = line.split('#', 1)[1].strip()
+                                                    if (
+                                                        member_name in line
+                                                        and "=" in line
+                                                        and "#" in line
+                                                    ):
+                                                        comment_part = line.split("#", 1)[1].strip()
                                                         if comment_part:
                                                             comment = comment_part
                                                         break
@@ -3198,14 +3584,16 @@ class APIDocGenerator:
                                 if not rel_path.startswith("thalia/"):
                                     rel_path = "thalia/" + str(py_file.relative_to(self.src_dir))
 
-                                self.enumerations.append(EnumInfo(
-                                    name=node.name,
-                                    docstring=docstring,
-                                    values=values,
-                                    file_path=rel_path,
-                                    enum_type=enum_type,
-                                    line_number=node.lineno
-                                ))
+                                self.enumerations.append(
+                                    EnumInfo(
+                                        name=node.name,
+                                        docstring=docstring,
+                                        values=values,
+                                        file_path=rel_path,
+                                        enum_type=enum_type,
+                                        line_number=node.lineno,
+                                    )
+                                )
             except Exception:
                 continue
 
@@ -3226,13 +3614,14 @@ class APIDocGenerator:
 
             # Group by category (infer from file path)
             from collections import defaultdict
+
             by_category = defaultdict(list)
 
             for enum in self.enumerations:
                 # Infer category from path
-                parts = enum.file_path.split('\\')
+                parts = enum.file_path.split("\\")
                 if len(parts) > 1:
-                    category = parts[0].replace('_', ' ').title()
+                    category = parts[0].replace("_", " ").title()
                 else:
                     category = "Core"
                 by_category[category].append(enum)
@@ -3243,7 +3632,7 @@ class APIDocGenerator:
             for category in sorted(by_category.keys()):
                 count = len(by_category[category])
                 # Create anchor-safe category name
-                anchor = category.lower().replace(' ', '-').replace('/', '')
+                anchor = category.lower().replace(" ", "-").replace("/", "")
                 f.write(f"- [{category}](#{anchor}) ({count} enums)\n")
             f.write("\n")
 
@@ -3256,9 +3645,7 @@ class APIDocGenerator:
                 for enum in sorted(enums, key=lambda e: e.name):
                     # Make enum name clickable
                     enum_link = self._make_source_link(
-                        enum.file_path,
-                        line_number=enum.line_number,
-                        display_text=f"`{enum.name}`"
+                        enum.file_path, line_number=enum.line_number, display_text=f"`{enum.name}`"
                     )
                     f.write(f"#### {enum_link} ({enum.enum_type})\n\n")
 
@@ -3287,7 +3674,11 @@ class APIDocGenerator:
             try:
                 content = py_file.read_text(encoding="utf-8")
                 # Quick check for state-related classes
-                if "RegionState" not in content and "PathwayState" not in content and "BaseRegionState" not in content:
+                if (
+                    "RegionState" not in content
+                    and "PathwayState" not in content
+                    and "BaseRegionState" not in content
+                ):
                     continue
 
                 tree = ast.parse(content)
@@ -3297,8 +3688,13 @@ class APIDocGenerator:
                         # Check if inherits from state base classes
                         base_class = None
                         for base in node.bases:
-                            base_name = base.id if hasattr(base, 'id') else ""
-                            if base_name in ["RegionState", "BaseRegionState", "PathwayState", "NeuralComponentState"]:
+                            base_name = base.id if hasattr(base, "id") else ""
+                            if base_name in [
+                                "RegionState",
+                                "BaseRegionState",
+                                "PathwayState",
+                                "NeuralComponentState",
+                            ]:
                                 base_class = base_name
                                 break
 
@@ -3310,7 +3706,9 @@ class APIDocGenerator:
                         state_version = 1
                         for item in node.body:
                             # Look for STATE_VERSION
-                            if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                            if isinstance(item, ast.AnnAssign) and isinstance(
+                                item.target, ast.Name
+                            ):
                                 if item.target.id == "STATE_VERSION":
                                     if item.value:
                                         try:
@@ -3320,7 +3718,11 @@ class APIDocGenerator:
                                 else:
                                     # Regular field
                                     field_name = item.target.id
-                                    field_type = ast.unparse(item.annotation) if hasattr(ast, 'unparse') else "Any"
+                                    field_type = (
+                                        ast.unparse(item.annotation)
+                                        if hasattr(ast, "unparse")
+                                        else "Any"
+                                    )
 
                                     # Parse default value intelligently
                                     if item.value:
@@ -3341,7 +3743,8 @@ class APIDocGenerator:
                                             elif "default=" in default_str:
                                                 # Extract actual default value
                                                 import re
-                                                match = re.search(r'default=([^,)]+)', default_str)
+
+                                                match = re.search(r"default=([^,)]+)", default_str)
                                                 default = match.group(1) if match else default_str
                                             else:
                                                 default = "field(...)"
@@ -3354,7 +3757,10 @@ class APIDocGenerator:
                             elif isinstance(item, ast.Assign):
                                 # Handle ClassVar[int] = 1 style
                                 for target in item.targets:
-                                    if isinstance(target, ast.Name) and target.id == "STATE_VERSION":
+                                    if (
+                                        isinstance(target, ast.Name)
+                                        and target.id == "STATE_VERSION"
+                                    ):
                                         try:
                                             state_version = ast.literal_eval(item.value)
                                         except (ValueError, SyntaxError):
@@ -3365,16 +3771,18 @@ class APIDocGenerator:
                         # Determine component type
                         component_type = "pathway" if "Pathway" in node.name else "region"
 
-                        self.state_classes.append(StateClassInfo(
-                            name=node.name,
-                            base_class=base_class,
-                            docstring=docstring.split('\n')[0],
-                            fields=fields,
-                            state_version=state_version,
-                            file_path=str(py_file.relative_to(self.src_dir.parent)),
-                            component_type=component_type,
-                            line_number=node.lineno
-                        ))
+                        self.state_classes.append(
+                            StateClassInfo(
+                                name=node.name,
+                                base_class=base_class,
+                                docstring=docstring.split("\n")[0],
+                                fields=fields,
+                                state_version=state_version,
+                                file_path=str(py_file.relative_to(self.src_dir.parent)),
+                                component_type=component_type,
+                                line_number=node.lineno,
+                            )
+                        )
 
             except Exception as e:
                 print(f"Warning: Could not parse {py_file} for state classes: {e}")
@@ -3401,8 +3809,12 @@ class APIDocGenerator:
             pathway_states = [s for s in self.state_classes if s.component_type == "pathway"]
 
             f.write("## Overview\n\n")
-            f.write("State classes provide serialization support for checkpoints. Each state class:\n\n")
-            f.write("- Inherits from a base state class (`RegionState`, `BaseRegionState`, or `PathwayState`)\n")
+            f.write(
+                "State classes provide serialization support for checkpoints. Each state class:\n\n"
+            )
+            f.write(
+                "- Inherits from a base state class (`RegionState`, `BaseRegionState`, or `PathwayState`)\n"
+            )
             f.write("- Implements `to_dict()` and `from_dict()` for serialization\n")
             f.write("- Includes `STATE_VERSION` for migration support\n")
             f.write("- Contains only mutable state (not configuration or learned parameters)\n\n")
@@ -3426,9 +3838,7 @@ class APIDocGenerator:
             for state in sorted(region_states, key=lambda s: s.name):
                 # Make class name clickable
                 class_link = self._make_source_link(
-                    state.file_path,
-                    line_number=state.line_number,
-                    display_text=f"`{state.name}`"
+                    state.file_path, line_number=state.line_number, display_text=f"`{state.name}`"
                 )
                 f.write(f"### {class_link}\n\n")
                 f.write(f"**Base Class**: `{state.base_class}`  \n")
@@ -3444,9 +3854,13 @@ class APIDocGenerator:
                     f.write("|-------|------|----------|\n")
                     for field_name, field_type, default in state.fields:
                         # Truncate long types/defaults
-                        field_type_display = field_type if len(field_type) < 50 else field_type[:47] + "..."
+                        field_type_display = (
+                            field_type if len(field_type) < 50 else field_type[:47] + "..."
+                        )
                         default_display = default if len(default) < 30 else default[:27] + "..."
-                        f.write(f"| `{field_name}` | `{field_type_display}` | `{default_display}` |\n")
+                        f.write(
+                            f"| `{field_name}` | `{field_type_display}` | `{default_display}` |\n"
+                        )
                     f.write("\n")
 
                 f.write("---\n\n")
@@ -3461,7 +3875,7 @@ class APIDocGenerator:
                     class_link = self._make_source_link(
                         state.file_path,
                         line_number=state.line_number,
-                        display_text=f"`{state.name}`"
+                        display_text=f"`{state.name}`",
                     )
                     f.write(f"### {class_link}\n\n")
                     f.write(f"**Base Class**: `{state.base_class}`  \n")
@@ -3476,9 +3890,13 @@ class APIDocGenerator:
                         f.write("| Field | Type | Default |\n")
                         f.write("|-------|------|----------|\n")
                         for field_name, field_type, default in state.fields:
-                            field_type_display = field_type if len(field_type) < 50 else field_type[:47] + "..."
+                            field_type_display = (
+                                field_type if len(field_type) < 50 else field_type[:47] + "..."
+                            )
                             default_display = default if len(default) < 30 else default[:27] + "..."
-                            f.write(f"| `{field_name}` | `{field_type_display}` | `{default_display}` |\n")
+                            f.write(
+                                f"| `{field_name}` | `{field_type_display}` | `{default_display}` |\n"
+                            )
                         f.write("\n")
 
                     f.write("---\n\n")
@@ -3501,7 +3919,9 @@ class APIDocGenerator:
             f.write("```\n\n")
 
             f.write("### Serialization\n\n")
-            f.write("State classes automatically inherit `to_dict()` and `from_dict()` methods:\n\n")
+            f.write(
+                "State classes automatically inherit `to_dict()` and `from_dict()` methods:\n\n"
+            )
             f.write("```python\n")
             f.write("# Save state\n")
             f.write("state_dict = region.get_state().to_dict()\n\n")
@@ -3511,7 +3931,9 @@ class APIDocGenerator:
             f.write("```\n\n")
 
             f.write("### Version Migration\n\n")
-            f.write("When adding new fields, increment `STATE_VERSION` and add migration logic:\n\n")
+            f.write(
+                "When adding new fields, increment `STATE_VERSION` and add migration logic:\n\n"
+            )
             f.write("```python\n")
             f.write("@dataclass\n")
             f.write("class MyRegionState(BaseRegionState):\n")
@@ -3550,7 +3972,9 @@ class APIDocGenerator:
             # Add badges
             f.write("![Factories](https://img.shields.io/badge/Factories-4-blue) ")
             f.write("![Tested](https://img.shields.io/badge/Status-Tested-success) ")
-            f.write("![Biological](https://img.shields.io/badge/Type-Biologically--Accurate-orange)\n\n")
+            f.write(
+                "![Biological](https://img.shields.io/badge/Type-Biologically--Accurate-orange)\n\n"
+            )
 
             f.write("## 💡 Why Use Neuron Factories?\n\n")
             f.write("Neuron factories provide:\n")
@@ -3577,12 +4001,16 @@ class APIDocGenerator:
 
             for factory in sorted(self.neuron_factories, key=lambda f: f.name):
                 # Add complexity badge
-                complexity = "🟢 Simple" if len(factory.parameters) <= 3 else "🟡 Moderate" if len(factory.parameters) <= 5 else "🔴 Advanced"
+                complexity = (
+                    "🟢 Simple"
+                    if len(factory.parameters) <= 3
+                    else "🟡 Moderate" if len(factory.parameters) <= 5 else "🔴 Advanced"
+                )
                 # Make function name clickable
                 func_link = self._make_source_link(
                     factory.file_path,
                     line_number=factory.line_number,
-                    display_text=f"`{factory.name}()`"
+                    display_text=f"`{factory.name}()`",
                 )
                 f.write(f"### {func_link} {complexity}\n\n")
                 f.write(f"**Returns**: `{factory.return_type}`  \n")
@@ -3598,7 +4026,9 @@ class APIDocGenerator:
                     for param_name, param_type, param_default in factory.parameters:
                         default_str = param_default if param_default else "—"
                         if param_name == "**overrides":
-                            f.write("| `**overrides` | `Any` | — | Custom parameters to override defaults |\n")
+                            f.write(
+                                "| `**overrides` | `Any` | — | Custom parameters to override defaults |\n"
+                            )
                         else:
                             f.write(f"| `{param_name}` | `{param_type}` | `{default_str}` | |\n")
 
@@ -3642,31 +4072,37 @@ class APIDocGenerator:
             f.write("```python\n")
             f.write("from thalia.components.neurons import create_cortical_layer_neurons\n\n")
             f.write("# Create neurons for specific cortical layers\n")
-            f.write("l4 = create_cortical_layer_neurons(512, \"L4\", device)\n")
-            f.write("l23 = create_cortical_layer_neurons(256, \"L2/3\", device)\n")
-            f.write("l5 = create_cortical_layer_neurons(128, \"L5\", device)\n")
+            f.write('l4 = create_cortical_layer_neurons(512, "L4", device)\n')
+            f.write('l23 = create_cortical_layer_neurons(256, "L2/3", device)\n')
+            f.write('l5 = create_cortical_layer_neurons(128, "L5", device)\n')
             f.write("```\n\n")
 
             f.write("### Registry-Based Creation (NEW)\n\n")
             f.write("```python\n")
             f.write("from thalia.components.neurons import NeuronFactory\n\n")
             f.write("# Dynamic neuron creation by type name\n")
-            f.write("pyramidal = NeuronFactory.create(\"pyramidal\", n_neurons=100, device=device)\n")
-            f.write("relay = NeuronFactory.create(\"relay\", n_neurons=64, device=device)\n")
-            f.write("l23 = NeuronFactory.create(\"cortical_layer\", 256, device, layer=\"L2/3\")\n\n")
+            f.write('pyramidal = NeuronFactory.create("pyramidal", n_neurons=100, device=device)\n')
+            f.write('relay = NeuronFactory.create("relay", n_neurons=64, device=device)\n')
+            f.write('l23 = NeuronFactory.create("cortical_layer", 256, device, layer="L2/3")\n\n')
             f.write("# List available types\n")
             f.write("available = NeuronFactory.list_types()\n")
             f.write("print(available)  # ['cortical_layer', 'pyramidal', 'relay', 'trn']\n\n")
             f.write("# Check if type exists\n")
-            f.write("if NeuronFactory.has_type(\"pyramidal\"):\n")
-            f.write("    neurons = NeuronFactory.create(\"pyramidal\", 100, device)\n")
+            f.write('if NeuronFactory.has_type("pyramidal"):\n')
+            f.write('    neurons = NeuronFactory.create("pyramidal", 100, device)\n')
             f.write("```\n\n")
 
             # Cross-reference
             f.write("## See Also\n\n")
-            f.write("- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by factories\n")
-            f.write("- [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Neuron configuration classes\n")
-            f.write("- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions using these neurons\n\n")
+            f.write(
+                "- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by factories\n"
+            )
+            f.write(
+                "- [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Neuron configuration classes\n"
+            )
+            f.write(
+                "- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions using these neurons\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -3687,8 +4123,12 @@ class APIDocGenerator:
             f.write(f"Total: **{len(self.compute_functions)}** compute functions\n\n")
 
             # Add badges
-            f.write(f"![Functions](https://img.shields.io/badge/Functions-{len(self.compute_functions)}-blue) ")
-            f.write("![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ")
+            f.write(
+                f"![Functions](https://img.shields.io/badge/Functions-{len(self.compute_functions)}-blue) "
+            )
+            f.write(
+                "![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) "
+            )
             f.write("![Utils](https://img.shields.io/badge/Category-Utilities-green)\n\n")
 
             # Group by category
@@ -3702,9 +4142,15 @@ class APIDocGenerator:
             f.write("## 📋 Quick Reference by Category\n\n")
             f.write("| Category | Functions | Purpose |\n")
             f.write("|----------|-----------|----------|\n")
-            f.write(f"| **Oscillator** | {len(by_category.get('oscillator', []))} | Phase-based modulation and coupling |\n")
-            f.write(f"| **Neuromodulation** | {len(by_category.get('neuromodulation', []))} | Dopamine, ACh effect computation |\n")
-            f.write(f"| **Sizing** | {len(by_category.get('sizing', []))} | Region size calculations |\n\n")
+            f.write(
+                f"| **Oscillator** | {len(by_category.get('oscillator', []))} | Phase-based modulation and coupling |\n"
+            )
+            f.write(
+                f"| **Neuromodulation** | {len(by_category.get('neuromodulation', []))} | Dopamine, ACh effect computation |\n"
+            )
+            f.write(
+                f"| **Sizing** | {len(by_category.get('sizing', []))} | Region size calculations |\n\n"
+            )
 
             # Category overview diagram
             f.write("## 🔬 Function Categories\n\n")
@@ -3724,7 +4170,7 @@ class APIDocGenerator:
             category_names = {
                 "oscillator": "🌊 Oscillator Modulation Functions",
                 "neuromodulation": "💊 Neuromodulation Functions",
-                "sizing": "📏 Region Sizing Functions"
+                "sizing": "📏 Region Sizing Functions",
             }
 
             for category in ["oscillator", "neuromodulation", "sizing"]:
@@ -3738,7 +4184,7 @@ class APIDocGenerator:
                     func_link = self._make_source_link(
                         func.file_path,
                         line_number=func.line_number,
-                        display_text=f"`{func.name}()`"
+                        display_text=f"`{func.name}()`",
                     )
                     f.write(f"### {func_link}\n\n")
                     f.write(f"**Returns**: `{func.return_type}`  \n")
@@ -3780,7 +4226,9 @@ class APIDocGenerator:
             f.write(")\n\n")
             f.write("# Theta-based encoding/retrieval switching\n")
             f.write("theta_phase = oscillators['theta'].phase\n")
-            f.write("encoding_strength, retrieval_strength = compute_theta_encoding_retrieval(theta_phase)\n\n")
+            f.write(
+                "encoding_strength, retrieval_strength = compute_theta_encoding_retrieval(theta_phase)\n\n"
+            )
             f.write("# Gamma phase gating\n")
             f.write("gamma_phase = oscillators['gamma'].phase\n")
             f.write("gate = compute_gamma_phase_gate(gamma_phase, window_deg=60.0)\n")
@@ -3802,8 +4250,12 @@ class APIDocGenerator:
 
             # Cross-references
             f.write("## See Also\n\n")
-            f.write("- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by compute functions\n")
-            f.write("- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions that use these functions\n")
+            f.write(
+                "- [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by compute functions\n"
+            )
+            f.write(
+                "- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions that use these functions\n"
+            )
             f.write("- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Real-world usage examples\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
@@ -3825,7 +4277,9 @@ class APIDocGenerator:
             f.write(f"Total: **{len(self.visualization_functions)}** visualization functions\n\n")
 
             # Add badges
-            f.write(f"![Functions](https://img.shields.io/badge/Functions-{len(self.visualization_functions)}-blue) ")
+            f.write(
+                f"![Functions](https://img.shields.io/badge/Functions-{len(self.visualization_functions)}-blue) "
+            )
             f.write("![Viz](https://img.shields.io/badge/Type-Visualization-purple) ")
             f.write("![Analysis](https://img.shields.io/badge/Purpose-Analysis-green)\n\n")
 
@@ -3840,10 +4294,18 @@ class APIDocGenerator:
             f.write("## 📋 Quick Reference by Use Case\n\n")
             f.write("| Use Case | Functions | Purpose |\n")
             f.write("|----------|-----------|----------|\n")
-            f.write(f"| **Topology** | {len(by_category.get('topology', []))} | Network structure visualization |\n")
-            f.write(f"| **Training** | {len(by_category.get('training', []))} | Training progress monitoring |\n")
-            f.write(f"| **Diagnostics** | {len(by_category.get('diagnostics', []))} | Real-time health metrics |\n")
-            f.write(f"| **Critical Periods** | {len(by_category.get('critical_period', []))} | Developmental windows |\n\n")
+            f.write(
+                f"| **Topology** | {len(by_category.get('topology', []))} | Network structure visualization |\n"
+            )
+            f.write(
+                f"| **Training** | {len(by_category.get('training', []))} | Training progress monitoring |\n"
+            )
+            f.write(
+                f"| **Diagnostics** | {len(by_category.get('diagnostics', []))} | Real-time health metrics |\n"
+            )
+            f.write(
+                f"| **Critical Periods** | {len(by_category.get('critical_period', []))} | Developmental windows |\n\n"
+            )
 
             # Visualization workflow diagram
             f.write("## 📊 Visualization Workflow\n\n")
@@ -3865,7 +4327,7 @@ class APIDocGenerator:
                 "topology": "🧠 Network Topology Visualization",
                 "training": "📈 Training Progress Visualization",
                 "diagnostics": "🔬 Diagnostic Monitoring",
-                "critical_period": "🌱 Critical Period Analysis"
+                "critical_period": "🌱 Critical Period Analysis",
             }
 
             for category in ["topology", "training", "diagnostics", "critical_period"]:
@@ -3879,7 +4341,7 @@ class APIDocGenerator:
                     func_link = self._make_source_link(
                         func.file_path,
                         line_number=func.line_number,
-                        display_text=f"`{func.name}()`"
+                        display_text=f"`{func.name}()`",
                     )
                     f.write(f"### {func_link}\n\n")
                     f.write(f"**Returns**: `{func.return_type}`  \n")
@@ -3935,7 +4397,9 @@ class APIDocGenerator:
 
             f.write("### Real-Time Diagnostics\n\n")
             f.write("```python\n")
-            f.write("from thalia.training.visualization.live_diagnostics import LiveDiagnostics\n\n")
+            f.write(
+                "from thalia.training.visualization.live_diagnostics import LiveDiagnostics\n\n"
+            )
             f.write("# Create live diagnostic dashboard\n")
             f.write("diagnostics = LiveDiagnostics(brain, update_interval=10)\n")
             f.write("diagnostics.start()  # Auto-refreshing dashboard\n")
@@ -3959,9 +4423,13 @@ class APIDocGenerator:
 
             # Cross-references
             f.write("## See Also\n\n")
-            f.write("- [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) - Diagnostic monitor classes\n")
+            f.write(
+                "- [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) - Diagnostic monitor classes\n"
+            )
             f.write("- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - More visualization examples\n")
-            f.write("- [../MONITORING_GUIDE.md](../MONITORING_GUIDE.md) - Complete monitoring guide\n\n")
+            f.write(
+                "- [../MONITORING_GUIDE.md](../MONITORING_GUIDE.md) - Complete monitoring guide\n\n"
+            )
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")
 
@@ -3982,24 +4450,62 @@ class APIDocGenerator:
             f.write("## 📊 API Coverage\n\n")
             f.write("| Category | Count | Documentation |\n")
             f.write("|----------|-------|---------------|\n")
-            f.write(f"| **Regions** | {len(self.regions)} | [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) |\n")
-            f.write(f"| **Pathways** | {len(self.pathways)} | [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) |\n")
-            f.write(f"| **Learning Strategies** | {len(self.strategies)} | [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) |\n")
-            f.write(f"| **Configurations** | {len(self.configs)} | [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) |\n")
-            f.write(f"| **Datasets** | {len(self.datasets)} | [DATASETS_REFERENCE.md](DATASETS_REFERENCE.md) |\n")
-            f.write(f"| **Monitors** | {len(self.monitors)} | [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) |\n")
-            f.write(f"| **Mixins** | {len(self.mixins)} | [MIXINS_REFERENCE.md](MIXINS_REFERENCE.md) |\n")
-            f.write(f"| **Exceptions** | {len(self.exceptions)} | [EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md) |\n")
-            f.write(f"| **Constants** | {len(self.constants)} | [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) |\n")
-            f.write(f"| **Protocols** | {len(self.protocols)} | [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) |\n")
-            f.write(f"| **Type Aliases** | {len(self.type_aliases)} | [TYPE_ALIASES.md](TYPE_ALIASES.md) |\n")
-            f.write(f"| **Enumerations** | {len(self.enumerations)} | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |\n")
-            f.write(f"| **State Classes** | {len(self.state_classes)} | [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) |\n")
-            f.write(f"| **Neuron Factories** | {len(self.neuron_factories)} | [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) |\n")
-            f.write(f"| **Compute Functions** | {len(self.compute_functions)} | [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md) |\n")
-            f.write(f"| **Visualization Functions** | {len(self.visualization_functions)} | [VISUALIZATION_REFERENCE.md](VISUALIZATION_REFERENCE.md) |\n")
-            total = (len(self.regions) + len(self.pathways) + len(self.strategies) +
-                    len(self.configs) + len(self.datasets) + len(self.monitors))
+            f.write(
+                f"| **Regions** | {len(self.regions)} | [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) |\n"
+            )
+            f.write(
+                f"| **Pathways** | {len(self.pathways)} | [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) |\n"
+            )
+            f.write(
+                f"| **Learning Strategies** | {len(self.strategies)} | [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) |\n"
+            )
+            f.write(
+                f"| **Configurations** | {len(self.configs)} | [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Datasets** | {len(self.datasets)} | [DATASETS_REFERENCE.md](DATASETS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Monitors** | {len(self.monitors)} | [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Mixins** | {len(self.mixins)} | [MIXINS_REFERENCE.md](MIXINS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Exceptions** | {len(self.exceptions)} | [EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Constants** | {len(self.constants)} | [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Protocols** | {len(self.protocols)} | [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Type Aliases** | {len(self.type_aliases)} | [TYPE_ALIASES.md](TYPE_ALIASES.md) |\n"
+            )
+            f.write(
+                f"| **Enumerations** | {len(self.enumerations)} | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **State Classes** | {len(self.state_classes)} | [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Neuron Factories** | {len(self.neuron_factories)} | [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Compute Functions** | {len(self.compute_functions)} | [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md) |\n"
+            )
+            f.write(
+                f"| **Visualization Functions** | {len(self.visualization_functions)} | [VISUALIZATION_REFERENCE.md](VISUALIZATION_REFERENCE.md) |\n"
+            )
+            total = (
+                len(self.regions)
+                + len(self.pathways)
+                + len(self.strategies)
+                + len(self.configs)
+                + len(self.datasets)
+                + len(self.monitors)
+            )
             f.write(f"| **Total Components** | **{total}** | - |\n\n")
 
             # Alphabetical index
@@ -4046,7 +4552,7 @@ class APIDocGenerator:
                 "Core Components": ["Region", "Pathway"],
                 "Learning & Training": ["Strategy", "Dataset", "Monitor"],
                 "Configuration": ["Config", "Constant"],
-                "Utilities": ["Mixin", "Protocol", "Exception"]
+                "Utilities": ["Mixin", "Protocol", "Exception"],
             }
 
             for cat_name, cat_types in categories.items():
@@ -4060,15 +4566,32 @@ class APIDocGenerator:
             f.write("## 🔍 Search Guide\n\n")
             f.write("### By Task\n\n")
             f.write("- **Building a brain**: See [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md)\n")
-            f.write("- **Implementing learning**: See [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md)\n")
+            f.write(
+                "- **Implementing learning**: See [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md)\n"
+            )
             f.write("- **Creating datasets**: See [DATASETS_REFERENCE.md](DATASETS_REFERENCE.md)\n")
-            f.write("- **Monitoring training**: See [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md)\n")
-            f.write("- **Visualizing results**: See [VISUALIZATION_REFERENCE.md](VISUALIZATION_REFERENCE.md)\n")
-            f.write("- **Computing biological effects**: See [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md)\n")
-            f.write("- **Handling errors**: See [EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md)\n\n")
+            f.write(
+                "- **Monitoring training**: See [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md)\n"
+            )
+            f.write(
+                "- **Visualizing results**: See [VISUALIZATION_REFERENCE.md](VISUALIZATION_REFERENCE.md)\n"
+            )
+            f.write(
+                "- **Computing biological effects**: See [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md)\n"
+            )
+            f.write(
+                "- **Handling errors**: See [EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md)\n\n"
+            )
 
             f.write("### By Biological Region\n\n")
-            bio_regions = ["cortex", "hippocampus", "striatum", "cerebellum", "thalamus", "prefrontal"]
+            bio_regions = [
+                "cortex",
+                "hippocampus",
+                "striatum",
+                "cerebellum",
+                "thalamus",
+                "prefrontal",
+            ]
             for region in bio_regions:
                 matching = [r for r in self.regions if region in r.name.lower()]
                 if matching:
@@ -4092,14 +4615,20 @@ class APIDocGenerator:
                 tree = ast.parse(content)
 
                 module_path = py_file.relative_to(self.src_dir.parent)
-                module_name = str(module_path).replace("\\", ".").replace("/", ".").replace(".py", "")
+                module_name = (
+                    str(module_path).replace("\\", ".").replace("/", ".").replace(".py", "")
+                )
 
                 imports = set()
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Import):
                         for alias in node.names:
                             if alias.name.startswith("thalia"):
-                                imports.add(alias.name.split(".")[1] if len(alias.name.split(".")) > 1 else alias.name)
+                                imports.add(
+                                    alias.name.split(".")[1]
+                                    if len(alias.name.split(".")) > 1
+                                    else alias.name
+                                )
                     elif isinstance(node, ast.ImportFrom):
                         if node.module and node.module.startswith("thalia"):
                             parts = node.module.split(".")
@@ -4123,20 +4652,22 @@ class APIDocGenerator:
             f.write(f"> Last updated: {timestamp}\n")
             f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
 
-            f.write("This document visualizes the dependency relationships between Thalia modules.\n\n")
+            f.write(
+                "This document visualizes the dependency relationships between Thalia modules.\n\n"
+            )
 
             # Component-level dependency diagram
             f.write("## 🔗 Component Dependencies\n\n")
             f.write("```mermaid\n")
             f.write("graph TD\n")
-            f.write("    Core[\"Core (protocols, errors)\"]\n")
-            f.write("    Components[\"Components (neurons, synapses)\"]\n")
-            f.write("    Regions[\"Regions (cortex, hippocampus, etc.)\"]\n")
-            f.write("    Pathways[\"Pathways (axonal projection)\"]\n")
-            f.write("    Learning[\"Learning (strategies, registry)\"]\n")
-            f.write("    Brain[\"Brain (DynamicBrain)\"]\n")
-            f.write("    Training[\"Training (curriculum, monitors)\"]\n")
-            f.write("    Datasets[\"Datasets\"]\n\n")
+            f.write('    Core["Core (protocols, errors)"]\n')
+            f.write('    Components["Components (neurons, synapses)"]\n')
+            f.write('    Regions["Regions (cortex, hippocampus, etc.)"]\n')
+            f.write('    Pathways["Pathways (axonal projection)"]\n')
+            f.write('    Learning["Learning (strategies, registry)"]\n')
+            f.write('    Brain["Brain (DynamicBrain)"]\n')
+            f.write('    Training["Training (curriculum, monitors)"]\n')
+            f.write('    Datasets["Datasets"]\n\n')
 
             f.write("    Core --> Components\n")
             f.write("    Core --> Learning\n")
@@ -4154,15 +4685,15 @@ class APIDocGenerator:
             f.write("## 🧠 Region Dependencies\n\n")
             f.write("```mermaid\n")
             f.write("graph LR\n")
-            f.write("    NeuralRegion[\"NeuralRegion (base)\"]\n")
-            f.write("    Mixins[\"Mixins\"]\n")
-            f.write("    Config[\"*Config\"]\n")
-            f.write("    Neurons[\"ConductanceLIF\"]\n")
-            f.write("    Strategy[\"LearningStrategy\"]\n\n")
+            f.write('    NeuralRegion["NeuralRegion (base)"]\n')
+            f.write('    Mixins["Mixins"]\n')
+            f.write('    Config["*Config"]\n')
+            f.write('    Neurons["ConductanceLIF"]\n')
+            f.write('    Strategy["LearningStrategy"]\n\n')
 
             for region in self.regions[:6]:  # Show first 6 regions
                 safe_name = region.name.replace("-", "_").replace(" ", "_")
-                f.write(f"    {safe_name}[\"{region.name}\"]\n")
+                f.write(f'    {safe_name}["{region.name}"]\n')
                 f.write(f"    NeuralRegion --> {safe_name}\n")
                 f.write(f"    Mixins --> {safe_name}\n")
                 f.write(f"    Config --> {safe_name}\n")
@@ -4170,7 +4701,7 @@ class APIDocGenerator:
                 f.write(f"    Strategy --> {safe_name}\n")
 
             if len(self.regions) > 6:
-                f.write(f"    More[\"... +{len(self.regions)-6} more regions\"]\n")
+                f.write(f'    More["... +{len(self.regions)-6} more regions"]\n')
                 f.write("    NeuralRegion --> More\n")
             f.write("```\n\n")
 
@@ -4178,39 +4709,39 @@ class APIDocGenerator:
             f.write("## 📦 Module Import Layers\n\n")
             f.write("```mermaid\n")
             f.write("graph TB\n")
-            f.write("    subgraph Layer1[\"Layer 1: Foundation\"]\n")
-            f.write("        L1A[\"core.protocols\"]\n")
-            f.write("        L1B[\"core.errors\"]\n")
-            f.write("        L1C[\"config\"]\n")
+            f.write('    subgraph Layer1["Layer 1: Foundation"]\n')
+            f.write('        L1A["core.protocols"]\n')
+            f.write('        L1B["core.errors"]\n')
+            f.write('        L1C["config"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Layer2[\"Layer 2: Components\"]\n")
-            f.write("        L2A[\"components.neurons\"]\n")
-            f.write("        L2B[\"components.synapses\"]\n")
-            f.write("        L2C[\"neuromodulation\"]\n")
+            f.write('    subgraph Layer2["Layer 2: Components"]\n')
+            f.write('        L2A["components.neurons"]\n')
+            f.write('        L2B["components.synapses"]\n')
+            f.write('        L2C["neuromodulation"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Layer3[\"Layer 3: Learning\"]\n")
-            f.write("        L3A[\"learning.rules\"]\n")
-            f.write("        L3B[\"learning.strategies\"]\n")
-            f.write("        L3C[\"learning.registry\"]\n")
+            f.write('    subgraph Layer3["Layer 3: Learning"]\n')
+            f.write('        L3A["learning.rules"]\n')
+            f.write('        L3B["learning.strategies"]\n')
+            f.write('        L3C["learning.registry"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Layer4[\"Layer 4: Regions & Pathways\"]\n")
-            f.write("        L4A[\"regions.*\"]\n")
-            f.write("        L4B[\"pathways.*\"]\n")
-            f.write("        L4C[\"mixins.*\"]\n")
+            f.write('    subgraph Layer4["Layer 4: Regions & Pathways"]\n')
+            f.write('        L4A["regions.*"]\n')
+            f.write('        L4B["pathways.*"]\n')
+            f.write('        L4C["mixins.*"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Layer5[\"Layer 5: Brain\"]\n")
-            f.write("        L5A[\"core.dynamic_brain\"]\n")
-            f.write("        L5B[\"core.builder\"]\n")
+            f.write('    subgraph Layer5["Layer 5: Brain"]\n')
+            f.write('        L5A["core.dynamic_brain"]\n')
+            f.write('        L5B["core.builder"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Layer6[\"Layer 6: Training & Apps\"]\n")
-            f.write("        L6A[\"training.*\"]\n")
-            f.write("        L6B[\"datasets.*\"]\n")
-            f.write("        L6C[\"diagnostics.*\"]\n")
+            f.write('    subgraph Layer6["Layer 6: Training & Apps"]\n')
+            f.write('        L6A["training.*"]\n')
+            f.write('        L6B["datasets.*"]\n')
+            f.write('        L6C["diagnostics.*"]\n')
             f.write("    end\n\n")
 
             f.write("    Layer1 --> Layer2\n")
@@ -4225,9 +4756,13 @@ class APIDocGenerator:
             f.write("## 📋 Dependency Guidelines\n\n")
             f.write("### Import Rules\n\n")
             f.write("1. **Downward dependencies only**: Higher layers import from lower layers\n")
-            f.write("2. **No circular imports**: Modules at the same layer should not import each other\n")
+            f.write(
+                "2. **No circular imports**: Modules at the same layer should not import each other\n"
+            )
             f.write("3. **Core is foundation**: All modules can import from `core`\n")
-            f.write("4. **Regions are independent**: Regions should not import from other regions\n\n")
+            f.write(
+                "4. **Regions are independent**: Regions should not import from other regions\n\n"
+            )
 
             f.write("### Common Import Patterns\n\n")
             f.write("```python\n")
@@ -4286,40 +4821,42 @@ class APIDocGenerator:
             f.write(f"> Last updated: {timestamp}\n")
             f.write("> Generated from: `scripts/generate_api_docs.py`\n\n")
 
-            f.write("This guide provides architectural diagrams and design patterns for the Thalia framework.\n\n")
+            f.write(
+                "This guide provides architectural diagrams and design patterns for the Thalia framework.\n\n"
+            )
 
             # System overview
             f.write("## 🏗️ System Architecture Overview\n\n")
             f.write("```mermaid\n")
             f.write("graph TB\n")
-            f.write("    subgraph User[\"User Layer\"]\n")
-            f.write("        Script[\"Training Script\"]\n")
+            f.write('    subgraph User["User Layer"]\n')
+            f.write('        Script["Training Script"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph API[\"High-Level API\"]\n")
-            f.write("        Builder[\"BrainBuilder\"]\n")
-            f.write("        Trainer[\"CurriculumTrainer\"]\n")
-            f.write("        Datasets[\"Dataset Factories\"]\n")
+            f.write('    subgraph API["High-Level API"]\n')
+            f.write('        Builder["BrainBuilder"]\n')
+            f.write('        Trainer["CurriculumTrainer"]\n')
+            f.write('        Datasets["Dataset Factories"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Brain[\"Brain Layer\"]\n")
-            f.write("        DB[\"DynamicBrain\"]\n")
-            f.write("        Registry[\"ComponentRegistry\"]\n")
-            f.write("        Regions[\"Neural Regions\"]\n")
-            f.write("        Pathways[\"Axonal Pathways\"]\n")
+            f.write('    subgraph Brain["Brain Layer"]\n')
+            f.write('        DB["DynamicBrain"]\n')
+            f.write('        Registry["ComponentRegistry"]\n')
+            f.write('        Regions["Neural Regions"]\n')
+            f.write('        Pathways["Axonal Pathways"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Components[\"Component Layer\"]\n")
-            f.write("        Neurons[\"Neuron Models\"]\n")
-            f.write("        Synapses[\"Synaptic Weights\"]\n")
-            f.write("        Learning[\"Learning Strategies\"]\n")
-            f.write("        Neuromod[\"Neuromodulators\"]\n")
+            f.write('    subgraph Components["Component Layer"]\n')
+            f.write('        Neurons["Neuron Models"]\n')
+            f.write('        Synapses["Synaptic Weights"]\n')
+            f.write('        Learning["Learning Strategies"]\n')
+            f.write('        Neuromod["Neuromodulators"]\n')
             f.write("    end\n\n")
 
-            f.write("    subgraph Support[\"Support Systems\"]\n")
-            f.write("        Config[\"Configuration\"]\n")
-            f.write("        Diagnostics[\"Diagnostics\"]\n")
-            f.write("        Checkpoints[\"Checkpointing\"]\n")
+            f.write('    subgraph Support["Support Systems"]\n')
+            f.write('        Config["Configuration"]\n')
+            f.write('        Diagnostics["Diagnostics"]\n')
+            f.write('        Checkpoints["Checkpointing"]\n')
             f.write("    end\n\n")
 
             f.write("    Script --> Builder\n")
@@ -4344,14 +4881,14 @@ class APIDocGenerator:
             f.write("## 📊 Data Flow Architecture\n\n")
             f.write("```mermaid\n")
             f.write("graph LR\n")
-            f.write("    Input[\"Input Data\"]\n")
-            f.write("    Encoding[\"Spike Encoding\"]\n")
-            f.write("    Thalamus[\"Thalamus<br/>(relay)\"]  \n")
-            f.write("    Cortex[\"Cortex<br/>(processing)\"]\n")
-            f.write("    Hippo[\"Hippocampus<br/>(memory)\"]\n")
-            f.write("    Striatum[\"Striatum<br/>(action)\"]\n")
-            f.write("    Output[\"Output Spikes\"]\n")
-            f.write("    Dopamine[\"Dopamine<br/>(reward)\"]  \n\n")
+            f.write('    Input["Input Data"]\n')
+            f.write('    Encoding["Spike Encoding"]\n')
+            f.write('    Thalamus["Thalamus<br/>(relay)"]  \n')
+            f.write('    Cortex["Cortex<br/>(processing)"]\n')
+            f.write('    Hippo["Hippocampus<br/>(memory)"]\n')
+            f.write('    Striatum["Striatum<br/>(action)"]\n')
+            f.write('    Output["Output Spikes"]\n')
+            f.write('    Dopamine["Dopamine<br/>(reward)"]  \n\n')
 
             f.write("    Input --> Encoding\n")
             f.write("    Encoding --> Thalamus\n")
@@ -4516,9 +5053,13 @@ class APIDocGenerator:
             f.write("5. Use dynamic weight initialization\n\n")
 
             f.write("## 📚 Related Documentation\n\n")
-            f.write("- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - All available regions and pathways\n")
+            f.write(
+                "- [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - All available regions and pathways\n"
+            )
             f.write("- [DEPENDENCY_GRAPH.md](DEPENDENCY_GRAPH.md) - Module dependency structure\n")
-            f.write("- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rule selection\n")
+            f.write(
+                "- [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rule selection\n"
+            )
             f.write("- [API_INDEX.md](API_INDEX.md) - Complete component index\n\n")
 
         print(f"✅ Generated: {output_file.relative_to(self.docs_dir.parent)}")

@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalCheckpointManager
+from thalia.regions.prefrontal import Prefrontal, PrefrontalCheckpointManager, PrefrontalConfig
 
 
 def create_test_prefrontal(input_size: int, n_neurons: int, device: str, **kwargs) -> Prefrontal:
@@ -19,8 +19,8 @@ def create_test_prefrontal(input_size: int, n_neurons: int, device: str, **kwarg
         Prefrontal instance
     """
     sizes = {
-        'input_size': input_size,
-        'n_neurons': n_neurons,
+        "input_size": input_size,
+        "n_neurons": n_neurons,
     }
     config = PrefrontalConfig(**kwargs)
     return Prefrontal(config=config, sizes=sizes, device=device)
@@ -158,7 +158,7 @@ class TestPrefrontalNeuromorphic:
         # Verify restoration
         assert torch.allclose(
             small_prefrontal.synaptic_weights["default"].data,
-            torch.full_like(small_prefrontal.synaptic_weights["default"].data, 0.5)
+            torch.full_like(small_prefrontal.synaptic_weights["default"].data, 0.5),
         )
         expected_wm = torch.arange(50, dtype=torch.float32) * 0.1
         assert torch.allclose(small_prefrontal.state.working_memory, expected_wm, atol=1e-5)
@@ -179,8 +179,9 @@ class TestPrefrontalHybrid:
         manager.save(checkpoint_path)
 
         state = torch.load(checkpoint_path, weights_only=False)
-        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
-            "Small PFC should use neuromorphic format"
+        assert (
+            state["hybrid_metadata"]["selected_format"] == "neuromorphic"
+        ), "Small PFC should use neuromorphic format"
 
     def test_growth_enabled_uses_neuromorphic(self, device, tmp_path):
         """Prefrontal with growth (has grow_output) should use neuromorphic.
@@ -193,7 +194,8 @@ class TestPrefrontalHybrid:
             input_size=8,
             n_neurons=300,  # Large, but has growth capability
             device=device,
-            dt_ms=1.0)
+            dt_ms=1.0,
+        )
         manager = PrefrontalCheckpointManager(prefrontal)
 
         # Test actual format selection
@@ -202,8 +204,9 @@ class TestPrefrontalHybrid:
 
         state = torch.load(checkpoint_path, weights_only=False)
         # Prefrontal inherits grow_output from GrowthMixin, so should use neuromorphic
-        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
-            "PFC with growth should use neuromorphic format"
+        assert (
+            state["hybrid_metadata"]["selected_format"] == "neuromorphic"
+        ), "PFC with growth should use neuromorphic format"
 
     def test_hybrid_metadata_included(self, small_prefrontal, tmp_path):
         """Saved checkpoint should include hybrid metadata."""

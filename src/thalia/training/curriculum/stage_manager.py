@@ -132,13 +132,13 @@ Date: December 8, 2025
 
 from __future__ import annotations
 
-from collections import deque, defaultdict
+import time
+import traceback
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-import time
-import traceback
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -146,14 +146,14 @@ from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.config.curriculum_growth import (
     CurriculumGrowthConfig,
     CurriculumStage,
-    get_curriculum_growth_config,
     get_attention_stage_for_curriculum,
+    get_curriculum_growth_config,
 )
 from thalia.constants.regions import THALAMUS_ALPHA_SUPPRESSION
 from thalia.constants.training import (
-    FIRING_RATE_MINIMUM,
     CURRICULUM_LOAD_THRESHOLD,
     CURRICULUM_MARGIN,
+    FIRING_RATE_MINIMUM,
     get_attention_weights,
 )
 from thalia.coordination.growth import GrowthManager
@@ -183,18 +183,18 @@ from thalia.training.curriculum.safety_system import CurriculumSafetySystem
 from thalia.training.curriculum.stage_monitoring import InterventionType
 from thalia.training.visualization.live_diagnostics import LiveDiagnostics
 
-
 # ============================================================================
 # Cognitive Load Monitoring
 # ============================================================================
+
 
 class MechanismPriority(IntEnum):
     """Priority levels for cognitive mechanisms."""
 
     CRITICAL = 1  # Cannot be disabled (e.g., basic perception)
-    HIGH = 2      # Core mechanisms for current stage
-    MEDIUM = 3    # Supporting mechanisms
-    LOW = 4       # Optional enhancements
+    HIGH = 2  # Core mechanisms for current stage
+    MEDIUM = 3  # Supporting mechanisms
+    LOW = 4  # Optional enhancements
 
 
 @dataclass
@@ -520,7 +520,7 @@ class CognitiveLoadMonitor:
         """
         if not self._load_history:
             current = self.calculate_load()
-            return {'min': current, 'max': current, 'mean': current, 'current': current}
+            return {"min": current, "max": current, "mean": current, "current": current}
 
         # Filter by time window
         if window_seconds is not None:
@@ -531,14 +531,14 @@ class CognitiveLoadMonitor:
 
         if not history:
             current = self.calculate_load()
-            return {'min': current, 'max': current, 'mean': current, 'current': current}
+            return {"min": current, "max": current, "mean": current, "current": current}
 
         loads = [load for _, load in history]
         return {
-            'min': min(loads),
-            'max': max(loads),
-            'mean': sum(loads) / len(loads),
-            'current': self.calculate_load(),
+            "min": min(loads),
+            "max": max(loads),
+            "mean": sum(loads) / len(loads),
+            "current": self.calculate_load(),
         }
 
 
@@ -546,9 +546,11 @@ class CognitiveLoadMonitor:
 # Configuration Dataclasses
 # ============================================================================
 
+
 @dataclass
 class TaskConfig:
     """Configuration for a single task within a stage."""
+
     weight: float = 1.0  # Relative weight in curriculum sampling
     difficulty: float = 0.5  # Difficulty level (0-1)
     enabled: bool = True  # Whether task is active
@@ -627,6 +629,7 @@ class TrainingResult:
 # Main CurriculumTrainer Class
 # ============================================================================
 
+
 class CurriculumTrainer:
     """Orchestrate multi-stage curriculum training."""
 
@@ -635,7 +638,7 @@ class CurriculumTrainer:
         brain: Any,  # DynamicBrain
         growth_config: Optional[CurriculumGrowthConfig] = None,
         checkpoint_dir: Optional[str] = None,
-        device: str = 'cpu',
+        device: str = "cpu",
         verbose: bool = True,
         enable_live_diagnostics: bool = False,
         diagnostics_interval: int = 100,
@@ -663,8 +666,8 @@ class CurriculumTrainer:
         # Checkpoint manager (Tier 3.2 - unified checkpoint management)
         self.checkpoint_manager = CheckpointManager(
             brain=brain,
-            default_compression='zstd',
-            default_precision='fp32',
+            default_compression="zstd",
+            default_precision="fp32",
         )
 
         # Growth configuration
@@ -682,7 +685,9 @@ class CurriculumTrainer:
         self.memory_pressure = MemoryPressureDetector()
         self.sleep_controller = SleepStageController()
         self.critical_period_gating = CriticalPeriodGating()  # NEW: Critical period windows
-        self.noise_scheduler = NoiseScheduler(NoiseSchedulerConfig(verbose=verbose))  # NEW: Noise scheduling
+        self.noise_scheduler = NoiseScheduler(
+            NoiseSchedulerConfig(verbose=verbose)
+        )  # NEW: Noise scheduling
 
         # Safety system (NEW: Comprehensive safety monitoring)
         self.enable_safety_system = enable_safety_system
@@ -739,13 +744,13 @@ class CurriculumTrainer:
         # DynamicBrain - regions in components ModuleDict
         components = self.brain.components
         return {
-            'cortex': components['cortex'] if 'cortex' in components else None,
-            'hippocampus': components['hippocampus'] if 'hippocampus' in components else None,
-            'pfc': components['pfc'] if 'pfc' in components else None,
-            'prefrontal': components['pfc'] if 'pfc' in components else None,  # Alias
-            'striatum': components['striatum'] if 'striatum' in components else None,
-            'cerebellum': components['cerebellum'] if 'cerebellum' in components else None,
-            'thalamus': components['thalamus'] if 'thalamus' in components else None,
+            "cortex": components["cortex"] if "cortex" in components else None,
+            "hippocampus": components["hippocampus"] if "hippocampus" in components else None,
+            "pfc": components["pfc"] if "pfc" in components else None,
+            "prefrontal": components["pfc"] if "pfc" in components else None,  # Alias
+            "striatum": components["striatum"] if "striatum" in components else None,
+            "cerebellum": components["cerebellum"] if "cerebellum" in components else None,
+            "thalamus": components["thalamus"] if "thalamus" in components else None,
         }
 
     def _safety_checkpoint_callback(self, stage: int, reason: str):
@@ -757,9 +762,7 @@ class CurriculumTrainer:
         """
         if self.current_stage is not None:
             checkpoint_path = self._save_checkpoint(
-                self.current_stage,
-                self.global_step - self.stage_start_step,
-                reason=reason
+                self.current_stage, self.global_step - self.stage_start_step, reason=reason
             )
             if self.verbose:
                 print(f"Safety checkpoint saved: {checkpoint_path} (reason: {reason})")
@@ -820,9 +823,7 @@ class CurriculumTrainer:
 
         # Setup task sampling weights
         task_weights = {
-            name: cfg.weight
-            for name, cfg in config.task_configs.items()
-            if cfg.enabled
+            name: cfg.weight for name, cfg in config.task_configs.items() if cfg.enabled
         }
 
         try:
@@ -831,7 +832,7 @@ class CurriculumTrainer:
                 # 0. Update neurogenesis tracking for all regions
                 # This enables proper timestamping of neurons created during growth
                 for _component_name, component in self.brain.components.items():
-                    if hasattr(component, 'set_training_step'):
+                    if hasattr(component, "set_training_step"):
                         component.set_training_step(self.global_step)
 
                 # 1. Sample next task (interleaved practice)
@@ -863,8 +864,8 @@ class CurriculumTrainer:
                 # Time the forward pass
                 self.profiler.start_forward()
                 _output = self.brain.forward(
-                    task_data['input'],
-                    n_timesteps=task_data.get('n_timesteps', 10),
+                    task_data["input"],
+                    n_timesteps=task_data.get("n_timesteps", 10),
                 )
                 self.profiler.end_forward()
 
@@ -872,13 +873,16 @@ class CurriculumTrainer:
                 # Modulates dopamine → affects striatum three-factor learning
                 # For supervised tasks (MNIST, temporal), learning is unsupervised
                 # via cortical plasticity. Evaluation happens separately.
-                if 'reward' in task_data and task_data.get('task_type') in [
-                    'motor_control', 'reaching', 'manipulation', 'prediction',
-                    'reinforcement_learning',  # Explicit RL tasks
+                if "reward" in task_data and task_data.get("task_type") in [
+                    "motor_control",
+                    "reaching",
+                    "manipulation",
+                    "prediction",
+                    "reinforcement_learning",  # Explicit RL tasks
                 ]:
                     # Deliver external reward for RL tasks
                     # This modulates dopamine for striatum/PFC
-                    self.brain.deliver_reward(external_reward=task_data['reward'])
+                    self.brain.deliver_reward(external_reward=task_data["reward"])
 
                 # For classification/prediction tasks (MNIST, temporal, phonology):
                 # - Forward pass creates cortical representations
@@ -887,9 +891,9 @@ class CurriculumTrainer:
                 # - Evaluation happens periodically via milestone checks
 
                 # Track task-specific performance (if available)
-                if 'accuracy' in task_data or 'reward' in task_data:
-                    task_type = task_data.get('task_type', 'unknown')
-                    perf_value = task_data.get('accuracy', task_data.get('reward', 0.0))
+                if "accuracy" in task_data or "reward" in task_data:
+                    task_type = task_data.get("task_type", "unknown")
+                    perf_value = task_data.get("accuracy", task_data.get("reward", 0.0))
                     self.task_performance[task_type].append(float(perf_value))
 
                 # Record step completion for profiler
@@ -903,24 +907,22 @@ class CurriculumTrainer:
                 if self.safety_system:
                     # Build task result for safety monitoring
                     task_result = {
-                        'accuracy': task_data.get('accuracy', 0.0),
-                        'reward': task_data.get('reward', 0.0),
-                        'task_type': task_data.get('task_type', 'unknown'),
+                        "accuracy": task_data.get("accuracy", 0.0),
+                        "reward": task_data.get("reward", 0.0),
+                        "task_type": task_data.get("task_type", "unknown"),
                     }
 
                     # Add n-back accuracy if available (critical for Stage 1)
-                    if 'n_back_accuracy' in task_data:
-                        task_result['n_back_accuracy'] = task_data['n_back_accuracy']
+                    if "n_back_accuracy" in task_data:
+                        task_result["n_back_accuracy"] = task_data["n_back_accuracy"]
 
                     # Add module-specific performances if available
-                    if hasattr(self.brain, 'get_module_performances'):
-                        task_result['module_performances'] = self.brain.get_module_performances()
+                    if hasattr(self.brain, "get_module_performances"):
+                        task_result["module_performances"] = self.brain.get_module_performances()
 
                     # Update safety monitoring
                     intervention = self.safety_system.update(
-                        self.brain,
-                        self.global_step,
-                        task_result
+                        self.brain, self.global_step, task_result
                     )
 
                     # Handle intervention if triggered
@@ -953,9 +955,13 @@ class CurriculumTrainer:
                         if self.task_performance[task_name]:
                             recent_perf = list(self.task_performance[task_name])[-100:]
                             perf_values.extend(recent_perf)
-                    avg_performance = sum(perf_values) / max(1, len(perf_values)) if perf_values else 0.0
-                    criticality = metrics.get('criticality', 1.0) if metrics else 1.0
-                    self.noise_scheduler.update(stage, performance=avg_performance, criticality=criticality)
+                    avg_performance = (
+                        sum(perf_values) / max(1, len(perf_values)) if perf_values else 0.0
+                    )
+                    criticality = metrics.get("criticality", 1.0) if metrics else 1.0
+                    self.noise_scheduler.update(
+                        stage, performance=avg_performance, criticality=criticality
+                    )
 
                     # Apply updated noise profile
                     if step % 5000 == 0:  # Re-apply every 5000 steps for adaptation
@@ -1122,7 +1128,7 @@ class CurriculumTrainer:
                 print(f"✅ Safety gate passed - proceeding with transition")
 
         # Analyze pre-transition state
-        pre_transition_metrics = self.analyze_transition(old_stage, new_stage, phase='before')
+        pre_transition_metrics = self.analyze_transition(old_stage, new_stage, phase="before")
 
         # Extended consolidation before transition
         if self.verbose:
@@ -1154,7 +1160,7 @@ class CurriculumTrainer:
                 print(f"  Cognitive load: {config.cognitive_load.value}")
 
         # Analyze post-transition state
-        post_transition_metrics = self.analyze_transition(old_stage, new_stage, phase='after')
+        post_transition_metrics = self.analyze_transition(old_stage, new_stage, phase="after")
 
         # Log transition analysis
         if self.verbose:
@@ -1167,7 +1173,7 @@ class CurriculumTrainer:
         self,
         from_stage: CurriculumStage,
         to_stage: CurriculumStage,
-        phase: str = 'after',
+        phase: str = "after",
     ) -> Dict[str, Any]:
         """Analyze brain metrics before/after stage transition.
 
@@ -1194,25 +1200,27 @@ class CurriculumTrainer:
             >>> capacity_growth = post['capacity']['total_neurons'] - pre['capacity']['total_neurons']
         """
         analysis = {
-            'from_stage': from_stage.name,
-            'to_stage': to_stage.name,
-            'phase': phase,
-            'global_step': self.global_step,
-            'timestamp': time.time(),
+            "from_stage": from_stage.name,
+            "to_stage": to_stage.name,
+            "phase": phase,
+            "global_step": self.global_step,
+            "timestamp": time.time(),
         }
 
         # 1. CAPACITY METRICS (region growth)
         capacity_metrics = {}
-        if hasattr(self.brain, 'regions'):
+        if hasattr(self.brain, "regions"):
             for region_name, region in self.brain.regions.items():
-                if hasattr(region, 'config'):
-                    size = getattr(region.config, 'n_output', None) or getattr(region.config, 'n_neurons', None)
+                if hasattr(region, "config"):
+                    size = getattr(region.config, "n_output", None) or getattr(
+                        region.config, "n_neurons", None
+                    )
                     if size:
-                        capacity_metrics[f'{region_name}_size'] = size
+                        capacity_metrics[f"{region_name}_size"] = size
 
-            capacity_metrics['total_neurons'] = sum(capacity_metrics.values())
+            capacity_metrics["total_neurons"] = sum(capacity_metrics.values())
 
-        analysis['capacity'] = capacity_metrics
+        analysis["capacity"] = capacity_metrics
 
         # 2. PERFORMANCE METRICS (task accuracy, firing rates)
         performance_metrics = {}
@@ -1222,53 +1230,63 @@ class CurriculumTrainer:
             for task_name, perf_buffer in self.task_performance.items():
                 if perf_buffer:
                     recent_performance = list(perf_buffer)[-100:]  # Last 100 trials
-                    performance_metrics[f'{task_name}_accuracy'] = sum(recent_performance) / len(recent_performance)
+                    performance_metrics[f"{task_name}_accuracy"] = sum(recent_performance) / len(
+                        recent_performance
+                    )
 
         # Get brain diagnostics (firing rates, etc.)
-        if hasattr(self.brain, 'get_diagnostics'):
+        if hasattr(self.brain, "get_diagnostics"):
             brain_diag = self.brain.get_diagnostics()
             for region_name, region_diag in brain_diag.items():
                 if isinstance(region_diag, dict):
-                    firing_rate = region_diag.get('firing_rate', region_diag.get('avg_firing_rate'))
+                    firing_rate = region_diag.get("firing_rate", region_diag.get("avg_firing_rate"))
                     if firing_rate is not None:
-                        performance_metrics[f'{region_name}_firing_rate'] = firing_rate
+                        performance_metrics[f"{region_name}_firing_rate"] = firing_rate
 
-        analysis['performance'] = performance_metrics
+        analysis["performance"] = performance_metrics
 
         # 3. STABILITY METRICS (weight variance, activity patterns)
         stability_metrics = {}
 
         # Weight statistics from regions
-        if hasattr(self.brain, 'regions'):
+        if hasattr(self.brain, "regions"):
             for region_name, region in self.brain.regions.items():
-                if hasattr(region, 'weights'):
+                if hasattr(region, "weights"):
                     weights = region.weights.detach()
-                    stability_metrics[f'{region_name}_weight_mean'] = float(weights.mean())
-                    stability_metrics[f'{region_name}_weight_std'] = float(weights.std())
+                    stability_metrics[f"{region_name}_weight_mean"] = float(weights.mean())
+                    stability_metrics[f"{region_name}_weight_std"] = float(weights.std())
 
         # Weight statistics from pathways
-        if hasattr(self.brain, 'connections'):
+        if hasattr(self.brain, "connections"):
             for pathway_key, pathway in self.brain.connections.items():
-                if hasattr(pathway, 'get_diagnostics'):
+                if hasattr(pathway, "get_diagnostics"):
                     pathway_stats = pathway.get_diagnostics()
-                    if isinstance(pathway_stats, dict) and 'weight_mean' in pathway_stats:
+                    if isinstance(pathway_stats, dict) and "weight_mean" in pathway_stats:
                         pathway_name = f"{pathway_key[0]}_to_{pathway_key[1]}"
-                        stability_metrics[f'{pathway_name}_weight_mean'] = pathway_stats['weight_mean']
-                        stability_metrics[f'{pathway_name}_weight_std'] = pathway_stats.get('weight_std', 0.0)
+                        stability_metrics[f"{pathway_name}_weight_mean"] = pathway_stats[
+                            "weight_mean"
+                        ]
+                        stability_metrics[f"{pathway_name}_weight_std"] = pathway_stats.get(
+                            "weight_std", 0.0
+                        )
 
-        analysis['stability'] = stability_metrics
+        analysis["stability"] = stability_metrics
 
         # 4. HEALTH STATUS (detect issues)
         health_status = {}
-        if hasattr(self.brain, 'check_health'):
+        if hasattr(self.brain, "check_health"):
             try:
                 health_report = self.brain.check_health()
-                health_status['has_issues'] = bool(health_report.issues) if hasattr(health_report, 'issues') else False
-                health_status['issue_count'] = len(health_report.issues) if hasattr(health_report, 'issues') else 0
+                health_status["has_issues"] = (
+                    bool(health_report.issues) if hasattr(health_report, "issues") else False
+                )
+                health_status["issue_count"] = (
+                    len(health_report.issues) if hasattr(health_report, "issues") else 0
+                )
             except Exception as e:
-                health_status['error'] = str(e)
+                health_status["error"] = str(e)
 
-        analysis['health'] = health_status
+        analysis["health"] = health_status
 
         return analysis
 
@@ -1289,33 +1307,39 @@ class CurriculumTrainer:
 
         # Capacity growth
         print("\n📈 Capacity Growth:")
-        pre_capacity = pre_metrics.get('capacity', {})
-        post_capacity = post_metrics.get('capacity', {})
+        pre_capacity = pre_metrics.get("capacity", {})
+        post_capacity = post_metrics.get("capacity", {})
 
-        if 'total_neurons' in pre_capacity and 'total_neurons' in post_capacity:
-            growth = post_capacity['total_neurons'] - pre_capacity['total_neurons']
-            growth_pct = (growth / pre_capacity['total_neurons'] * 100) if pre_capacity['total_neurons'] > 0 else 0
-            print(f"  Total neurons: {pre_capacity['total_neurons']:,} → {post_capacity['total_neurons']:,} (+{growth:,}, +{growth_pct:.1f}%)")
+        if "total_neurons" in pre_capacity and "total_neurons" in post_capacity:
+            growth = post_capacity["total_neurons"] - pre_capacity["total_neurons"]
+            growth_pct = (
+                (growth / pre_capacity["total_neurons"] * 100)
+                if pre_capacity["total_neurons"] > 0
+                else 0
+            )
+            print(
+                f"  Total neurons: {pre_capacity['total_neurons']:,} → {post_capacity['total_neurons']:,} (+{growth:,}, +{growth_pct:.1f}%)"
+            )
 
         # Performance delta
         print("\n📊 Performance Delta:")
-        pre_perf = pre_metrics.get('performance', {})
-        post_perf = post_metrics.get('performance', {})
+        pre_perf = pre_metrics.get("performance", {})
+        post_perf = post_metrics.get("performance", {})
 
         for key in set(pre_perf.keys()) & set(post_perf.keys()):
-            if 'accuracy' in key:
+            if "accuracy" in key:
                 delta = post_perf[key] - pre_perf[key]
                 print(f"  {key}: {pre_perf[key]:.2%} → {post_perf[key]:.2%} ({delta:+.2%})")
 
         # Stability
         print("\n🔄 Stability:")
-        pre_stability = pre_metrics.get('stability', {})
-        post_stability = post_metrics.get('stability', {})
+        pre_stability = pre_metrics.get("stability", {})
+        post_stability = post_metrics.get("stability", {})
 
         # Check for weight drift
         weight_drifts = []
         for key in set(pre_stability.keys()) & set(post_stability.keys()):
-            if 'weight_mean' in key:
+            if "weight_mean" in key:
                 delta = abs(post_stability[key] - pre_stability[key])
                 if delta > 0.1:  # Significant drift
                     weight_drifts.append((key, delta))
@@ -1327,11 +1351,11 @@ class CurriculumTrainer:
 
         # Health status
         print("\n🏥 Health Status:")
-        pre_health = pre_metrics.get('health', {})
-        post_health = post_metrics.get('health', {})
+        pre_health = pre_metrics.get("health", {})
+        post_health = post_metrics.get("health", {})
 
-        pre_issues = pre_health.get('issue_count', 0)
-        post_issues = post_health.get('issue_count', 0)
+        pre_issues = pre_health.get("issue_count", 0)
+        post_issues = post_health.get("issue_count", 0)
 
         if post_issues > pre_issues:
             print(f"  ⚠️  New health issues: {pre_issues} → {post_issues}")
@@ -1385,19 +1409,19 @@ class CurriculumTrainer:
 
         # Get current milestone results if in stage training
         milestones = {}
-        if self.current_stage and hasattr(self, '_last_milestone_results'):
-            milestones = getattr(self, '_last_milestone_results', {})
+        if self.current_stage and hasattr(self, "_last_milestone_results"):
+            milestones = getattr(self, "_last_milestone_results", {})
 
         full_metadata = {
-            'global_step': self.global_step,
-            'current_stage': self.current_stage.value if self.current_stage else None,
-            'stage_start_step': self.stage_start_step,
-            'milestones': milestones,
-            'training_history': [
+            "global_step": self.global_step,
+            "current_stage": self.current_stage.value if self.current_stage else None,
+            "stage_start_step": self.stage_start_step,
+            "milestones": milestones,
+            "training_history": [
                 {
-                    'stage': r.stage.value,
-                    'success': r.success,
-                    'total_steps': r.total_steps,
+                    "stage": r.stage.value,
+                    "success": r.success,
+                    "total_steps": r.total_steps,
                 }
                 for r in self.training_history
             ],
@@ -1414,7 +1438,9 @@ class CurriculumTrainer:
 
         if self.verbose:
             print(f"💾 Checkpoint saved: {checkpoint_path}")
-            print(f"   Size: {save_info.get('size_mb', 0):.2f} MB, Time: {save_info.get('time_s', 0):.2f}s")
+            print(
+                f"   Size: {save_info.get('size_mb', 0):.2f} MB, Time: {save_info.get('time_s', 0):.2f}s"
+            )
 
         return str(checkpoint_path)
 
@@ -1438,11 +1464,11 @@ class CurriculumTrainer:
             print(f"   Time: {load_info.get('time_s', 0):.2f}s")
 
         if restore_trainer_state:
-            metadata = load_info.get('metadata', {})
-            self.global_step = metadata.get('global_step', 0)
-            self.stage_start_step = metadata.get('stage_start_step', 0)
+            metadata = load_info.get("metadata", {})
+            self.global_step = metadata.get("global_step", 0)
+            self.stage_start_step = metadata.get("stage_start_step", 0)
 
-            stage_value = metadata.get('current_stage')
+            stage_value = metadata.get("current_stage")
             if stage_value is not None:
                 self.current_stage = CurriculumStage(stage_value)
 
@@ -1450,7 +1476,9 @@ class CurriculumTrainer:
             print(f"✅ Checkpoint loaded: {path}")
             if restore_trainer_state:
                 print(f"   Global step: {self.global_step}")
-                print(f"   Current stage: {self.current_stage.name if self.current_stage else 'None'}")
+                print(
+                    f"   Current stage: {self.current_stage.name if self.current_stage else 'None'}"
+                )
 
     def add_callback(
         self,
@@ -1524,33 +1552,39 @@ class CurriculumTrainer:
             # Check minimum steps between growth events
             last_growth_step = None
             for event in result.growth_events:
-                if event.get('component_name') == region_name:
-                    last_growth_step = event.get('step', 0)
+                if event.get("component_name") == region_name:
+                    last_growth_step = event.get("step", 0)
 
             if last_growth_step is not None:
                 steps_since_growth = self.global_step - last_growth_step
                 if steps_since_growth < trigger.min_steps_between:
                     if self.verbose:
-                        print(f"  ⏳ {region_name}: Growth on cooldown "
-                              f"({steps_since_growth}/{trigger.min_steps_between} steps)")
+                        print(
+                            f"  ⏳ {region_name}: Growth on cooldown "
+                            f"({steps_since_growth}/{trigger.min_steps_between} steps)"
+                        )
                     continue
 
             # Calculate growth amount
             n_new_neurons = int(region.n_output * trigger.expansion_rate)
-            n_new_neurons = max(growth_config.min_neurons_per_growth,
-                               min(n_new_neurons, growth_config.max_neurons_per_growth))
+            n_new_neurons = max(
+                growth_config.min_neurons_per_growth,
+                min(n_new_neurons, growth_config.max_neurons_per_growth),
+            )
 
             # Check total growth limit
             original_size = region.n_output - sum(
-                e.get('n_neurons_added', 0)
+                e.get("n_neurons_added", 0)
                 for e in result.growth_events
-                if e.get('component_name') == region_name
+                if e.get("component_name") == region_name
             )
             current_ratio = region.n_output / max(original_size, 1)
             if current_ratio >= growth_config.max_total_growth:
                 if self.verbose:
-                    print(f"  🛑 {region_name}: Max growth limit reached "
-                          f"({current_ratio:.1f}x original)")
+                    print(
+                        f"  🛑 {region_name}: Max growth limit reached "
+                        f"({current_ratio:.1f}x original)"
+                    )
                 continue
 
             if self.verbose:
@@ -1570,14 +1604,14 @@ class CurriculumTrainer:
             _growth_event = growth_manager.grow_component(
                 component=region,
                 n_new=n_new_neurons,
-                initialization='sparse_random',
+                initialization="sparse_random",
                 sparsity=0.1,
                 reason=metrics.growth_reason,
-                component_type='region',
+                component_type="region",
             )
 
             # Grow connected pathways (automatic via DynamicPathwayManager)
-            if hasattr(self.brain, 'pathway_manager'):
+            if hasattr(self.brain, "pathway_manager"):
                 # Grow connected pathways (no longer needs adapters)
                 self.brain.pathway_manager.grow_connected_pathways(
                     component_name=region_name,
@@ -1593,17 +1627,19 @@ class CurriculumTrainer:
                 self.brain.consolidate(n_cycles=5, batch_size=32, verbose=False)
 
             # Record growth event
-            result.growth_events.append({
-                'step': self.global_step,
-                'stage': stage.name,
-                'component_name': region_name,
-                'component_type': 'region',
-                'n_neurons_added': n_new_neurons,
-                'old_size': region.n_output - n_new_neurons,
-                'new_size': region.n_output,
-                'reason': metrics.growth_reason,
-                'utilization_before': metrics.utilization,
-            })
+            result.growth_events.append(
+                {
+                    "step": self.global_step,
+                    "stage": stage.name,
+                    "component_name": region_name,
+                    "component_type": "region",
+                    "n_neurons_added": n_new_neurons,
+                    "old_size": region.n_output - n_new_neurons,
+                    "new_size": region.n_output,
+                    "reason": metrics.growth_reason,
+                    "utilization_before": metrics.utilization,
+                }
+            )
 
             if self.verbose:
                 print(f"  ✅ Growth complete: {region_name} now has {region.n_output} neurons\n")
@@ -1631,19 +1667,19 @@ class CurriculumTrainer:
 
         # Run consolidation automatically (handles HER, replay, mode switching)
         stats = self.brain.consolidate(
-            n_cycles=config.consolidation_cycles,
-            batch_size=32,
-            verbose=self.verbose
+            n_cycles=config.consolidation_cycles, batch_size=32, verbose=self.verbose
         )
 
         # Record consolidation event
-        result.consolidation_events.append({
-            'step': self.global_step,
-            'stage': stage.name,
-            'cycles': stats['cycles_completed'],
-            'total_replayed': stats['total_replayed'],
-            'her_enabled': stats['her_enabled'],
-        })
+        result.consolidation_events.append(
+            {
+                "step": self.global_step,
+                "stage": stage.name,
+                "cycles": stats["cycles_completed"],
+                "total_replayed": stats["total_replayed"],
+                "her_enabled": stats["her_enabled"],
+            }
+        )
 
         if self.verbose:
             print("  ✅ Consolidation complete")
@@ -1658,11 +1694,7 @@ class CurriculumTrainer:
             print(f"  Extended consolidation: {cycles} cycles")
 
         # Run extended consolidation automatically
-        stats = self.brain.consolidate(
-            n_cycles=cycles,
-            batch_size=64,
-            verbose=self.verbose
-        )
+        stats = self.brain.consolidate(n_cycles=cycles, batch_size=64, verbose=self.verbose)
 
         if self.verbose:
             print(f"  Replayed {stats['total_replayed']} total experiences")
@@ -1695,15 +1727,13 @@ class CurriculumTrainer:
         elif intervention == InterventionType.CONSOLIDATE:
             # Emergency consolidation needed
             print(f"⏸️ Triggering emergency consolidation")
-            self._check_and_trigger_consolidation(
-                stage, config, None, force=True
-            )
+            self._check_and_trigger_consolidation(stage, config, None, force=True)
 
         elif intervention == InterventionType.REDUCE_LOAD:
             # Reduce cognitive load
             print(f"📉 Reducing cognitive load")
             # Lower learning rates temporarily
-            if hasattr(self.brain, 'learning_rate'):
+            if hasattr(self.brain, "learning_rate"):
                 original_lr = self.brain.learning_rate
                 self.brain.learning_rate *= 0.5
                 if self.verbose:
@@ -1716,7 +1746,7 @@ class CurriculumTrainer:
             # Enable temporal separation of modalities
             print(f"🔀 Enabling temporal separation of modalities")
             # Set flag for subsequent training steps
-            if not hasattr(self, '_temporal_separation_active'):
+            if not hasattr(self, "_temporal_separation_active"):
                 self._temporal_separation_active = True
                 if self.verbose:
                     print(f"   Will alternate modality training")
@@ -1752,10 +1782,10 @@ class CurriculumTrainer:
 
         # Include current milestone progress in metadata
         milestone_metadata = {}
-        if hasattr(self, '_last_milestone_results'):
-            milestone_metadata = {'milestones': self._last_milestone_results}
+        if hasattr(self, "_last_milestone_results"):
+            milestone_metadata = {"milestones": self._last_milestone_results}
         if reason:
-            milestone_metadata['checkpoint_reason'] = reason
+            milestone_metadata["checkpoint_reason"] = reason
 
         return self.save_checkpoint(name=name, metadata=milestone_metadata)
 
@@ -1776,12 +1806,14 @@ class CurriculumTrainer:
         self.current_attention_stage = attention_stage
 
         if self.verbose:
-            print(f"🎯 Attention control: {attention_stage.name} "
-                  f"(bottom-up: {bottom_up_weight:.0%}, top-down: {top_down_weight:.0%})")
+            print(
+                f"🎯 Attention control: {attention_stage.name} "
+                f"(bottom-up: {bottom_up_weight:.0%}, top-down: {top_down_weight:.0%})"
+            )
 
         # Get thalamus region
         regions = self._get_brain_regions()
-        thalamus = regions.get('thalamus')
+        thalamus = regions.get("thalamus")
 
         if thalamus is None:
             if self.verbose:
@@ -1791,7 +1823,7 @@ class CurriculumTrainer:
         # Adjust thalamic alpha suppression (bottom-up gating)
         # Higher bottom-up weight → lower suppression (more reactive to salience)
         # Lower bottom-up weight → higher suppression (ignore distractors)
-        if hasattr(thalamus, 'thalamus_config'):
+        if hasattr(thalamus, "thalamus_config"):
             # Scale suppression inversely with bottom-up weight
             # Infant (100% bottom-up): 0.5x suppression (very reactive)
             # School-age (30% bottom-up): 1.5x suppression (ignore distractors)
@@ -1811,10 +1843,14 @@ class CurriculumTrainer:
             thalamus.thalamus_config.l6b_to_relay_strength = base_l6b * (0.5 + top_down_weight)
 
             if self.verbose:
-                print(f"  • Alpha suppression: {thalamus.thalamus_config.alpha_suppression_strength:.3f} "
-                      f"(scale: {suppression_scale:.2f}x)")
+                print(
+                    f"  • Alpha suppression: {thalamus.thalamus_config.alpha_suppression_strength:.3f} "
+                    f"(scale: {suppression_scale:.2f}x)"
+                )
                 print(f"  • L6a→TRN feedback: {thalamus.thalamus_config.l6a_to_trn_strength:.3f}")
-                print(f"  • L6b→relay feedback: {thalamus.thalamus_config.l6b_to_relay_strength:.3f}")
+                print(
+                    f"  • L6b→relay feedback: {thalamus.thalamus_config.l6b_to_relay_strength:.3f}"
+                )
 
     def _apply_noise_profile_to_brain(self) -> None:
         """Apply current noise profile to all brain regions and oscillators.
@@ -1835,29 +1871,33 @@ class CurriculumTrainer:
             membrane_noise = self.noise_scheduler.get_membrane_noise_for_region(region_name)
 
             # Apply to neurons if they exist
-            if hasattr(region, 'neurons') and region.neurons is not None:
-                if hasattr(region.neurons, 'config'):
+            if hasattr(region, "neurons") and region.neurons is not None:
+                if hasattr(region.neurons, "config"):
                     region.neurons.config.noise_std = membrane_noise
 
             # Apply weight noise flag to region (for learning)
-            if hasattr(region, '_weight_noise_enabled'):
+            if hasattr(region, "_weight_noise_enabled"):
                 region._weight_noise_enabled = profile.enable_weight_noise
-            if hasattr(region, '_weight_noise_std'):
+            if hasattr(region, "_weight_noise_std"):
                 region._weight_noise_std = profile.weight_noise_std
 
         # Apply working memory noise to PFC specifically
         regions = self._get_brain_regions()
-        pfc = regions.get('pfc')
-        if pfc is not None and hasattr(pfc, 'pfc_config'):
+        pfc = regions.get("pfc")
+        if pfc is not None and hasattr(pfc, "pfc_config"):
             pfc.pfc_config.wm_noise_std = profile.wm_noise_std
 
         # Apply oscillator phase noise to all oscillators
-        if hasattr(self.brain, 'oscillators'):
+        if hasattr(self.brain, "oscillators"):
             phase_noise_std = self.noise_scheduler.get_oscillator_phase_noise_std()
             # OscillatorManager stores oscillators in .oscillators dict
-            oscillators = self.brain.oscillators.oscillators if hasattr(self.brain.oscillators, 'oscillators') else {}
+            oscillators = (
+                self.brain.oscillators.oscillators
+                if hasattr(self.brain.oscillators, "oscillators")
+                else {}
+            )
             for _, oscillator in oscillators.items():
-                if hasattr(oscillator, 'config'):
+                if hasattr(oscillator, "config"):
                     oscillator.config.phase_noise_std = phase_noise_std
 
     def _apply_critical_period_modulation(
@@ -1890,17 +1930,19 @@ class CurriculumTrainer:
             try:
                 # Get window status for logging
                 status = self.critical_period_gating.get_window_status(domain, age)
-                multiplier = status['multiplier']
+                multiplier = status["multiplier"]
                 multipliers[domain] = multiplier
                 total_multiplier += multiplier
 
                 # Log if at critical transition points
                 last_phase = self._last_phase.get(domain)
-                if status['phase'] != last_phase:
+                if status["phase"] != last_phase:
                     if self.verbose:
-                        print(f"  🧠 Critical period: {domain} entering {status['phase']} phase "
-                              f"(multiplier: {multiplier:.2f})")
-                    self._last_phase[domain] = status['phase']
+                        print(
+                            f"  🧠 Critical period: {domain} entering {status['phase']} phase "
+                            f"(multiplier: {multiplier:.2f})"
+                        )
+                    self._last_phase[domain] = status["phase"]
 
             except Exception as e:
                 if self.verbose:
@@ -1913,9 +1955,9 @@ class CurriculumTrainer:
 
             # Apply to brain plasticity
             # Set as global plasticity modulator
-            if hasattr(self.brain, 'set_plasticity_modulator'):
+            if hasattr(self.brain, "set_plasticity_modulator"):
                 self.brain.set_plasticity_modulator(avg_multiplier)
-            elif hasattr(self.brain, 'state'):
+            elif hasattr(self.brain, "state"):
                 # Alternative: Set via brain state
                 self.brain.state.plasticity_modulator = avg_multiplier
 
@@ -1934,7 +1976,7 @@ class CurriculumTrainer:
         - Critical period status
         """
         metrics = {
-            'global_step': float(self.global_step),
+            "global_step": float(self.global_step),
         }
 
         # =====================================================================
@@ -1959,7 +2001,7 @@ class CurriculumTrainer:
                 brain_diag = {}
 
             # 3.1 Firing rates per region
-            spike_counts = brain_diag.get('spike_counts', {})
+            spike_counts = brain_diag.get("spike_counts", {})
 
             # Create structured region_firing_rates dict for progress callback
             region_firing_rates = {}
@@ -1967,88 +2009,92 @@ class CurriculumTrainer:
                 # Normalize by rough neuron count estimate
                 # This is approximate; actual firing rate calculation would need neuron counts
                 fr_value = spike_count / 100.0
-                metrics[f'firing_rate/{region_name}'] = fr_value
+                metrics[f"firing_rate/{region_name}"] = fr_value
                 region_firing_rates[region_name] = fr_value
 
             # Add structured dict for easy access in callbacks
             if region_firing_rates:
-                metrics['region_firing_rates'] = region_firing_rates
+                metrics["region_firing_rates"] = region_firing_rates
 
             # Overall average firing rate
             if spike_counts:
                 avg_fr = sum(spike_counts.values()) / (len(spike_counts) * 100.0)
-                metrics['firing_rate/average'] = avg_fr
-                metrics['avg_firing_rate'] = avg_fr  # Alias for progress callback
+                metrics["firing_rate/average"] = avg_fr
+                metrics["avg_firing_rate"] = avg_fr  # Alias for progress callback
             else:
-                metrics['firing_rate/average'] = 0.0
-                metrics['avg_firing_rate'] = 0.0
+                metrics["firing_rate/average"] = 0.0
+                metrics["avg_firing_rate"] = 0.0
 
             # 3.2 Weight statistics per pathway
-            pathway_diag = brain_diag.get('pathways', {})
+            pathway_diag = brain_diag.get("pathways", {})
             for pathway_name, pathway_data in pathway_diag.items():
                 # Extract weight statistics if available
                 if isinstance(pathway_data, dict):
-                    if 'weights_mean' in pathway_data:
-                        metrics[f'weights/{pathway_name}_mean'] = float(pathway_data['weights_mean'])
-                    if 'weights_std' in pathway_data:
-                        metrics[f'weights/{pathway_name}_std'] = float(pathway_data['weights_std'])
-                    if 'weights_min' in pathway_data:
-                        metrics[f'weights/{pathway_name}_min'] = float(pathway_data['weights_min'])
-                    if 'weights_max' in pathway_data:
-                        metrics[f'weights/{pathway_name}_max'] = float(pathway_data['weights_max'])
+                    if "weights_mean" in pathway_data:
+                        metrics[f"weights/{pathway_name}_mean"] = float(
+                            pathway_data["weights_mean"]
+                        )
+                    if "weights_std" in pathway_data:
+                        metrics[f"weights/{pathway_name}_std"] = float(pathway_data["weights_std"])
+                    if "weights_min" in pathway_data:
+                        metrics[f"weights/{pathway_name}_min"] = float(pathway_data["weights_min"])
+                    if "weights_max" in pathway_data:
+                        metrics[f"weights/{pathway_name}_max"] = float(pathway_data["weights_max"])
 
             # 3.3 Neuromodulator levels
-            dopamine = brain_diag.get('dopamine', {})
+            dopamine = brain_diag.get("dopamine", {})
             if dopamine:
-                da_global = float(dopamine.get('global', 0.0))
-                metrics['neuromodulator/dopamine_global'] = da_global
-                metrics['dopamine'] = da_global  # Alias for progress callback
-                metrics['neuromodulator/dopamine_tonic'] = float(dopamine.get('tonic', 0.0))
-                metrics['neuromodulator/dopamine_phasic'] = float(dopamine.get('phasic', 0.0))
+                da_global = float(dopamine.get("global", 0.0))
+                metrics["neuromodulator/dopamine_global"] = da_global
+                metrics["dopamine"] = da_global  # Alias for progress callback
+                metrics["neuromodulator/dopamine_tonic"] = float(dopamine.get("tonic", 0.0))
+                metrics["neuromodulator/dopamine_phasic"] = float(dopamine.get("phasic", 0.0))
             else:
-                metrics['dopamine'] = 0.0
+                metrics["dopamine"] = 0.0
 
-            lc_state = brain_diag.get('locus_coeruleus', {})
+            lc_state = brain_diag.get("locus_coeruleus", {})
             if lc_state:
-                metrics['neuromodulator/norepinephrine'] = float(lc_state.get('norepinephrine', 0.0))
-                metrics['neuromodulator/arousal'] = float(lc_state.get('arousal', 0.0))
+                metrics["neuromodulator/norepinephrine"] = float(
+                    lc_state.get("norepinephrine", 0.0)
+                )
+                metrics["neuromodulator/arousal"] = float(lc_state.get("arousal", 0.0))
 
-            nb_state = brain_diag.get('nucleus_basalis', {})
+            nb_state = brain_diag.get("nucleus_basalis", {})
             if nb_state:
-                metrics['neuromodulator/acetylcholine'] = float(nb_state.get('acetylcholine', 0.0))
+                metrics["neuromodulator/acetylcholine"] = float(nb_state.get("acetylcholine", 0.0))
 
             # 3.4 Oscillator state
-            metrics['oscillator/theta_phase'] = float(brain_diag.get('theta_phase', 0.0))
-            metrics['oscillator/theta_frequency'] = float(brain_diag.get('theta_frequency', 8.0))
+            metrics["oscillator/theta_phase"] = float(brain_diag.get("theta_phase", 0.0))
+            metrics["oscillator/theta_frequency"] = float(brain_diag.get("theta_frequency", 8.0))
 
         except Exception as e:
             # Graceful degradation if brain diagnostics fail
             if self.verbose:
                 print(f"  ⚠️ Warning: Failed to collect brain diagnostics: {e}")
                 traceback.print_exc()  # Always print traceback
-            metrics['firing_rate/average'] = 0.0
+            metrics["firing_rate/average"] = 0.0
 
         # =====================================================================
         # 4. HEALTH STATUS
         # =====================================================================
         try:
             # Reuse brain_diag from previous block if available, otherwise fetch it
-            if 'brain_diag' not in locals() or brain_diag is None:
+            if "brain_diag" not in locals() or brain_diag is None:
                 brain_diag = self.brain.get_diagnostics()
                 if brain_diag is None:
                     brain_diag = {}
 
             health_report = self.health_monitor.check_health(brain_diag)
 
-            metrics['health/is_healthy'] = 1.0 if health_report.is_healthy else 0.0
-            metrics['health/issue_count'] = float(len(health_report.issues))
+            metrics["health/is_healthy"] = 1.0 if health_report.is_healthy else 0.0
+            metrics["health/issue_count"] = float(len(health_report.issues))
 
             # Maximum severity across all issues
             if health_report.issues:
                 max_severity = max(issue.severity for issue in health_report.issues)
-                metrics['health/max_severity'] = float(max_severity)
+                metrics["health/max_severity"] = float(max_severity)
             else:
-                metrics['health/max_severity'] = 0.0
+                metrics["health/max_severity"] = 0.0
 
             # Count by issue type
             issue_counts = {}
@@ -2057,15 +2103,15 @@ class CurriculumTrainer:
                 issue_counts[issue_type] = issue_counts.get(issue_type, 0) + 1
 
             for issue_type, count in issue_counts.items():
-                metrics[f'health/issue_{issue_type}'] = float(count)
+                metrics[f"health/issue_{issue_type}"] = float(count)
 
         except Exception as e:
             if self.verbose:
                 print(f"  ⚠️ Warning: Failed to check health: {e}")
                 traceback.print_exc()  # Always print traceback
-            metrics['health/is_healthy'] = 1.0  # Assume healthy if check fails
-            metrics['health/issue_count'] = 0.0
-            metrics['health/max_severity'] = 0.0
+            metrics["health/is_healthy"] = 1.0  # Assume healthy if check fails
+            metrics["health/issue_count"] = 0.0
+            metrics["health/max_severity"] = 0.0
 
         # =====================================================================
         # 5. TASK-SPECIFIC PERFORMANCE
@@ -2076,31 +2122,30 @@ class CurriculumTrainer:
             if perf_buffer:
                 # Recent average (last 100 samples)
                 recent_avg = float(np.mean(list(perf_buffer)[-100:]))
-                metrics[f'task/{task_name}_accuracy'] = recent_avg
+                metrics[f"task/{task_name}_accuracy"] = recent_avg
                 task_performance_dict[task_name] = recent_avg
                 # Overall average
-                metrics[f'task/{task_name}_accuracy_all'] = float(np.mean(perf_buffer))
+                metrics[f"task/{task_name}_accuracy_all"] = float(np.mean(perf_buffer))
 
         # Add structured dict for easy access in callbacks
         if task_performance_dict:
-            metrics['task_performance'] = task_performance_dict
+            metrics["task_performance"] = task_performance_dict
             # Set highest performing task as current accuracy
-            metrics['accuracy'] = max(task_performance_dict.values()) if task_performance_dict else 0.0
-            metrics['task_accuracy'] = metrics['accuracy']  # Alias
+            metrics["accuracy"] = (
+                max(task_performance_dict.values()) if task_performance_dict else 0.0
+            )
+            metrics["task_accuracy"] = metrics["accuracy"]  # Alias
 
         # =====================================================================
         # 6. CRITICAL PERIOD STATUS
         # =====================================================================
         for domain in self.critical_period_gating.get_all_domains():
             try:
-                status = self.critical_period_gating.get_window_status(
-                    domain,
-                    self.global_step
-                )
-                metrics[f'critical_period/{domain}_multiplier'] = float(status['multiplier'])
-                metrics[f'critical_period/{domain}_progress'] = float(status['progress'])
-                metrics[f'critical_period/{domain}_phase'] = float(
-                    {'early': 0.0, 'peak': 1.0, 'late': 2.0}.get(status['phase'], -1.0)
+                status = self.critical_period_gating.get_window_status(domain, self.global_step)
+                metrics[f"critical_period/{domain}_multiplier"] = float(status["multiplier"])
+                metrics[f"critical_period/{domain}_progress"] = float(status["progress"])
+                metrics[f"critical_period/{domain}_phase"] = float(
+                    {"early": 0.0, "peak": 1.0, "late": 2.0}.get(status["phase"], -1.0)
                 )
             except Exception:
                 pass  # Skip unknown domains
@@ -2116,28 +2161,36 @@ class CurriculumTrainer:
         """Log training progress with key metrics highlighted."""
         if self.verbose and step % 5000 == 0:
             # Extract key metrics for clean display
-            steps_per_sec = metrics.get('performance/steps_per_sec', 0.0)
-            forward_ms = metrics.get('performance/avg_forward_ms', 0.0)
-            gpu_mb = metrics.get('memory/gpu_mb', 0.0)
-            cpu_mb = metrics.get('memory/cpu_mb', 0.0)
-            avg_fr = metrics.get('firing_rate/average', 0.0)
-            is_healthy = metrics.get('health/is_healthy', 1.0)
+            steps_per_sec = metrics.get("performance/steps_per_sec", 0.0)
+            forward_ms = metrics.get("performance/avg_forward_ms", 0.0)
+            gpu_mb = metrics.get("memory/gpu_mb", 0.0)
+            cpu_mb = metrics.get("memory/cpu_mb", 0.0)
+            avg_fr = metrics.get("firing_rate/average", 0.0)
+            is_healthy = metrics.get("health/is_healthy", 1.0)
 
             health_icon = "✅" if is_healthy > 0.5 else "⚠️"
 
-            print(f"[Stage {stage.name}] Step {step:,} | "
-                  f"{health_icon} {steps_per_sec:.1f} steps/s | "
-                  f"Forward: {forward_ms:.1f}ms | "
-                  f"GPU: {gpu_mb:.0f}MB | CPU: {cpu_mb:.0f}MB | "
-                  f"FR: {avg_fr:.3f}")
+            print(
+                f"[Stage {stage.name}] Step {step:,} | "
+                f"{health_icon} {steps_per_sec:.1f} steps/s | "
+                f"Forward: {forward_ms:.1f}ms | "
+                f"GPU: {gpu_mb:.0f}MB | CPU: {cpu_mb:.0f}MB | "
+                f"FR: {avg_fr:.3f}"
+            )
 
             # Safety system status (NEW)
             if self.safety_system:
                 status = self.safety_system.get_status()
-                health_emoji = "🟢" if status.health_score >= 0.7 else "🟡" if status.health_score >= 0.5 else "🔴"
-                print(f"         🛡️ Safety: {health_emoji} Health={status.health_score:.2f} | "
-                      f"Alerts={len(status.active_alerts)} | "
-                      f"Interventions={status.interventions_triggered}")
+                health_emoji = (
+                    "🟢"
+                    if status.health_score >= 0.7
+                    else "🟡" if status.health_score >= 0.5 else "🔴"
+                )
+                print(
+                    f"         🛡️ Safety: {health_emoji} Health={status.health_score:.2f} | "
+                    f"Alerts={len(status.active_alerts)} | "
+                    f"Interventions={status.interventions_triggered}"
+                )
 
                 if status.active_alerts:
                     print(f"              Active alerts: {', '.join(status.active_alerts)}")
@@ -2183,7 +2236,7 @@ class CurriculumTrainer:
             # Extract task and metric from criterion name
             # Format: "task_metric" (e.g., "mnist_accuracy", "reaching_success")
 
-            if hasattr(task_loader, 'evaluate'):
+            if hasattr(task_loader, "evaluate"):
                 # Task loader provides evaluation method
                 actual_value = task_loader.evaluate(self.brain, criterion)
             else:
@@ -2206,7 +2259,7 @@ class CurriculumTrainer:
         # 2.1 Firing rate stability
         firing_rates = self._get_region_firing_rates()
         firing_rate_ok = all(0.05 <= fr <= 0.15 for fr in firing_rates.values())
-        results['firing_rate_stability'] = firing_rate_ok
+        results["firing_rate_stability"] = firing_rate_ok
 
         if self.verbose:
             status = "✅" if firing_rate_ok else "❌"
@@ -2218,25 +2271,25 @@ class CurriculumTrainer:
 
         # 2.2 No runaway excitation
         no_runaway = all(fr < 0.8 for fr in firing_rates.values())
-        results['no_runaway_excitation'] = no_runaway
+        results["no_runaway_excitation"] = no_runaway
 
         # 2.3 No silent regions
         no_silence = all(fr > FIRING_RATE_MINIMUM for fr in firing_rates.values())
-        results['no_silent_regions'] = no_silence
+        results["no_silent_regions"] = no_silence
 
         # 2.4 Weight health (not saturated)
         weight_health = self._check_weight_saturation()
-        results['weight_health'] = weight_health
+        results["weight_health"] = weight_health
 
         if self.verbose:
             status = "✅" if weight_health else "❌"
             print(f"  {status} weight_health: {weight_health}")
 
         # 2.5 Oscillator accuracy (if theta oscillations used)
-        if hasattr(self.brain, 'oscillators') and hasattr(self.brain.oscillators, 'theta'):
+        if hasattr(self.brain, "oscillators") and hasattr(self.brain.oscillators, "theta"):
             theta_freq = self.brain.oscillators.theta.frequency_hz
             theta_ok = 7.5 <= theta_freq <= 8.5
-            results['theta_oscillations'] = theta_ok
+            results["theta_oscillations"] = theta_ok
 
             if self.verbose:
                 status = "✅" if theta_ok else "❌"
@@ -2249,7 +2302,7 @@ class CurriculumTrainer:
 
         if stage.value > -1:  # Not the first stage
             prev_stage_ok = self._check_backward_compatibility(stage)
-            results['backward_compatibility'] = prev_stage_ok
+            results["backward_compatibility"] = prev_stage_ok
 
             if self.verbose:
                 status = "✅" if prev_stage_ok else "❌"
@@ -2260,7 +2313,7 @@ class CurriculumTrainer:
         # =====================================================================
         if config.enable_growth:
             growth_ok = self._check_growth_progress(stage)
-            results['growth_progress'] = growth_ok
+            results["growth_progress"] = growth_ok
 
             if self.verbose:
                 status = "✅" if growth_ok else "❌"
@@ -2285,13 +2338,13 @@ class CurriculumTrainer:
             Actual performance value (0.0 to 1.0)
         """
         # Parse criterion name to extract task and metric
-        parts = criterion.split('_')
+        parts = criterion.split("_")
         if len(parts) >= 2:
-            task_name = '_'.join(parts[:-1])  # e.g., "mnist", "reaching"
+            task_name = "_".join(parts[:-1])  # e.g., "mnist", "reaching"
             metric = parts[-1]  # e.g., "accuracy", "success"
         else:
             task_name = criterion
-            metric = 'accuracy'
+            metric = "accuracy"
 
         # Run evaluation trials (e.g., 100 test samples)
         n_trials = 100
@@ -2300,7 +2353,7 @@ class CurriculumTrainer:
         for _ in range(n_trials):
             try:
                 # Get test sample
-                if hasattr(task_loader, 'get_test_sample'):
+                if hasattr(task_loader, "get_test_sample"):
                     test_data = task_loader.get_test_sample(task_name)
                 else:
                     # Fallback
@@ -2308,25 +2361,25 @@ class CurriculumTrainer:
 
                 # Forward pass
                 output = self.brain.forward(
-                    test_data['input'],
-                    n_timesteps=test_data.get('n_timesteps', 10),
+                    test_data["input"],
+                    n_timesteps=test_data.get("n_timesteps", 10),
                 )
 
                 # Evaluate based on metric type
-                if metric in ['accuracy', 'correct', 'success']:
+                if metric in ["accuracy", "correct", "success"]:
                     # Classification/binary success
-                    if 'label' in test_data:
+                    if "label" in test_data:
                         # Compare prediction to label
                         prediction = self._extract_prediction(output)
-                        correct += int(prediction == test_data['label'])
-                    elif 'reward' in test_data:
+                        correct += int(prediction == test_data["label"])
+                    elif "reward" in test_data:
                         # RL task - check if reward achieved
-                        correct += int(test_data['reward'] > 0)
-                elif metric in ['error', 'loss']:
+                        correct += int(test_data["reward"] > 0)
+                elif metric in ["error", "loss"]:
                     # Error metric (lower is better)
-                    if 'target' in test_data:
-                        error = self._compute_error(output, test_data['target'])
-                        correct += (1.0 - min(error, 1.0))
+                    if "target" in test_data:
+                        error = self._compute_error(output, test_data["target"])
+                        correct += 1.0 - min(error, 1.0)
             except Exception:
                 # Skip failed trials
                 continue
@@ -2341,7 +2394,7 @@ class CurriculumTrainer:
         For other tasks, may use different criteria.
         """
         # Use striatum's action as prediction
-        if hasattr(self.brain, 'striatum'):
+        if hasattr(self.brain, "striatum"):
             action, _confidence = self.brain.select_action(explore=False)
             return action
 
@@ -2362,11 +2415,11 @@ class CurriculumTrainer:
         firing_rates = {}
 
         region_mapping = {
-            'cortex': self.brain.components.get('cortex'),
-            'hippocampus': self.brain.components.get('hippocampus'),
-            'pfc': self.brain.components.get('pfc'),
-            'striatum': self.brain.components.get('striatum'),
-            'cerebellum': self.brain.components.get('cerebellum'),
+            "cortex": self.brain.components.get("cortex"),
+            "hippocampus": self.brain.components.get("hippocampus"),
+            "pfc": self.brain.components.get("pfc"),
+            "striatum": self.brain.components.get("striatum"),
+            "cerebellum": self.brain.components.get("cerebellum"),
         }
 
         for region_name, region in region_mapping.items():
@@ -2374,7 +2427,7 @@ class CurriculumTrainer:
                 continue
 
             # Get firing rate from current state
-            if hasattr(region, 'state') and hasattr(region.state, 'spikes'):
+            if hasattr(region, "state") and hasattr(region.state, "spikes"):
                 if region.state.spikes is not None:
                     firing_rates[region_name] = compute_firing_rate(region.state.spikes)
                 else:
@@ -2393,11 +2446,11 @@ class CurriculumTrainer:
         # Check each region for weight saturation
 
         region_mapping = {
-            'cortex': self.brain.components.get('cortex'),
-            'hippocampus': self.brain.components.get('hippocampus'),
-            'pfc': self.brain.components.get('pfc'),
-            'striatum': self.brain.components.get('striatum'),
-            'cerebellum': self.brain.components.get('cerebellum'),
+            "cortex": self.brain.components.get("cortex"),
+            "hippocampus": self.brain.components.get("hippocampus"),
+            "pfc": self.brain.components.get("pfc"),
+            "striatum": self.brain.components.get("striatum"),
+            "cerebellum": self.brain.components.get("cerebellum"),
         }
 
         for region_name, region in region_mapping.items():
@@ -2427,10 +2480,7 @@ class CurriculumTrainer:
             True if all previous stages maintained >90% of original performance
         """
         # Get all previous stages (stages with lower enum values)
-        previous_stages = [
-            stage for stage in CurriculumStage
-            if stage.value < current_stage.value
-        ]
+        previous_stages = [stage for stage in CurriculumStage if stage.value < current_stage.value]
 
         if not previous_stages:
             # First stage - no backward compatibility to check
@@ -2440,14 +2490,15 @@ class CurriculumTrainer:
         for prev_stage in previous_stages:
             # Find original performance from training history
             stage_results = [
-                r for r in self.training_history
-                if r.stage == prev_stage and r.success
+                r for r in self.training_history if r.stage == prev_stage and r.success
             ]
 
             if not stage_results:
                 # Previous stage was never successfully completed
                 if self.verbose:
-                    print(f"  ⚠️  backward_compatibility: No successful training for {prev_stage.name}")
+                    print(
+                        f"  ⚠️  backward_compatibility: No successful training for {prev_stage.name}"
+                    )
                 continue
 
             # Use last successful result for this stage
@@ -2485,19 +2536,25 @@ class CurriculumTrainer:
                         if current_performance >= retention_threshold:
                             retained_count += 1
                             if self.verbose:
-                                print(f"    ✅ Retained: {criterion} = {current_performance:.3f} "
-                                      f"(threshold: {retention_threshold:.3f})")
+                                print(
+                                    f"    ✅ Retained: {criterion} = {current_performance:.3f} "
+                                    f"(threshold: {retention_threshold:.3f})"
+                                )
                         else:
                             if self.verbose:
-                                print(f"    ❌ Lost: {criterion} = {current_performance:.3f} "
-                                      f"< {retention_threshold:.3f} (from {prev_stage.name})")
+                                print(
+                                    f"    ❌ Lost: {criterion} = {current_performance:.3f} "
+                                    f"< {retention_threshold:.3f} (from {prev_stage.name})"
+                                )
                     else:
                         # No threshold available - assume retained if > 0.5
                         if current_performance >= 0.50:
                             retained_count += 1
                         elif self.verbose:
-                            print(f"    ⚠️  {criterion}: {current_performance:.3f} "
-                                  f"(no original threshold available)")
+                            print(
+                                f"    ⚠️  {criterion}: {current_performance:.3f} "
+                                f"(no original threshold available)"
+                            )
 
                 except Exception as e:
                     if self.verbose:
@@ -2510,12 +2567,16 @@ class CurriculumTrainer:
                 retention_rate = retained_count / total_count
                 if retention_rate < 0.90:
                     if self.verbose:
-                        print(f"  ❌ {prev_stage.name}: Only {retention_rate:.1%} retained "
-                              f"({retained_count}/{total_count})")
+                        print(
+                            f"  ❌ {prev_stage.name}: Only {retention_rate:.1%} retained "
+                            f"({retained_count}/{total_count})"
+                        )
                     return False
                 elif self.verbose:
-                    print(f"  ✅ {prev_stage.name}: {retention_rate:.1%} retained "
-                          f"({retained_count}/{total_count})")
+                    print(
+                        f"  ✅ {prev_stage.name}: {retention_rate:.1%} retained "
+                        f"({retained_count}/{total_count})"
+                    )
 
         # All previous stages maintained
         return True
@@ -2556,13 +2617,13 @@ class CurriculumTrainer:
 
         # Parse criterion to extract task name and metric
         # Format: "task_metric" (e.g., "mnist_accuracy", "reaching_success")
-        parts = criterion.split('_')
+        parts = criterion.split("_")
         if len(parts) >= 2:
-            task_name = '_'.join(parts[:-1])  # e.g., "mnist", "reaching"
+            task_name = "_".join(parts[:-1])  # e.g., "mnist", "reaching"
             metric = parts[-1]  # e.g., "accuracy", "success"
         else:
             task_name = criterion
-            metric = 'accuracy'
+            metric = "accuracy"
 
         # Run test trials
         correct = 0
@@ -2572,7 +2633,7 @@ class CurriculumTrainer:
         for _ in range(n_trials):
             try:
                 # Get task sample
-                if hasattr(task_loader, 'get_test_sample'):
+                if hasattr(task_loader, "get_test_sample"):
                     task_data = task_loader.get_test_sample(task_name)
                 else:
                     task_data = task_loader.get_task(task_name)
@@ -2582,39 +2643,39 @@ class CurriculumTrainer:
 
                 try:
                     output = self.brain.forward(
-                        task_data['input'],
-                        n_timesteps=task_data.get('n_timesteps', 10),
+                        task_data["input"],
+                        n_timesteps=task_data.get("n_timesteps", 10),
                     )
                 finally:
                     # Restore plasticity state
                     self._restore_plasticity(original_plasticity_states)
 
                 # Evaluate based on metric type
-                if metric in ['accuracy', 'correct', 'success']:
+                if metric in ["accuracy", "correct", "success"]:
                     # Classification/binary success
-                    if 'label' in task_data:
+                    if "label" in task_data:
                         prediction = self._extract_prediction(output)
-                        correct += int(prediction == task_data['label'])
+                        correct += int(prediction == task_data["label"])
                         total += 1
-                    elif 'reward' in task_data:
+                    elif "reward" in task_data:
                         # RL task: reward > 0 counts as success
-                        correct += int(task_data['reward'] > 0.0)
+                        correct += int(task_data["reward"] > 0.0)
                         total += 1
-                    elif 'target' in task_data:
+                    elif "target" in task_data:
                         # Supervised task: check if close to target
-                        error = self._compute_error(output, task_data['target'])
+                        error = self._compute_error(output, task_data["target"])
                         correct += int(error < 0.1)  # Threshold for success
                         total += 1
-                elif metric in ['error', 'loss']:
+                elif metric in ["error", "loss"]:
                     # Lower is better
-                    if 'target' in task_data:
-                        error = self._compute_error(output, task_data['target'])
+                    if "target" in task_data:
+                        error = self._compute_error(output, task_data["target"])
                         accumulated_value += error
                         total += 1
-                elif metric == 'reward':
+                elif metric == "reward":
                     # Higher is better
-                    if 'reward' in task_data:
-                        accumulated_value += task_data['reward']
+                    if "reward" in task_data:
+                        accumulated_value += task_data["reward"]
                         total += 1
 
             except Exception as e:
@@ -2627,13 +2688,13 @@ class CurriculumTrainer:
         if total == 0:
             return 0.0
 
-        if metric in ['accuracy', 'correct', 'success']:
+        if metric in ["accuracy", "correct", "success"]:
             return correct / total
-        elif metric in ['error', 'loss']:
+        elif metric in ["error", "loss"]:
             # Convert error to performance (1 - normalized_error)
             avg_error = accumulated_value / total
             return max(0.0, 1.0 - avg_error)
-        elif metric == 'reward':
+        elif metric == "reward":
             # Normalize reward to [0, 1] range (assuming rewards in [-1, 1])
             avg_reward = accumulated_value / total
             return (avg_reward + 1.0) / 2.0
@@ -2650,7 +2711,7 @@ class CurriculumTrainer:
         original_states = {}
 
         for name, component in self.brain.components.items():
-            if hasattr(component, 'plasticity_enabled'):
+            if hasattr(component, "plasticity_enabled"):
                 original_states[name] = component.plasticity_enabled
                 component.plasticity_enabled = False
 
@@ -2665,7 +2726,7 @@ class CurriculumTrainer:
         for name, was_enabled in original_states.items():
             if name in self.brain.components:
                 component = self.brain.components[name]
-                if hasattr(component, 'plasticity_enabled'):
+                if hasattr(component, "plasticity_enabled"):
                     component.plasticity_enabled = was_enabled
 
     def _check_growth_progress(self, stage: CurriculumStage) -> bool:
@@ -2680,11 +2741,11 @@ class CurriculumTrainer:
         # Expected sizes per stage (from curriculum_strategy.md)
         expected_sizes = {
             CurriculumStage.SENSORIMOTOR: 35000,  # +5k from 30k initial
-            CurriculumStage.PHONOLOGY: 50000,     # +15k
-            CurriculumStage.TODDLER: 75000,       # +25k
-            CurriculumStage.GRAMMAR: 100000,      # +25k
-            CurriculumStage.READING: 120000,      # +20k
-            CurriculumStage.ABSTRACT: 135000,     # +15k
+            CurriculumStage.PHONOLOGY: 50000,  # +15k
+            CurriculumStage.TODDLER: 75000,  # +25k
+            CurriculumStage.GRAMMAR: 100000,  # +25k
+            CurriculumStage.READING: 120000,  # +20k
+            CurriculumStage.ABSTRACT: 135000,  # +15k
         }
 
         if stage not in expected_sizes:
@@ -2694,15 +2755,15 @@ class CurriculumTrainer:
         total_neurons = 0
 
         region_mapping = {
-            'cortex': self.brain.components.get('cortex'),
-            'hippocampus': self.brain.components.get('hippocampus'),
-            'pfc': self.brain.components.get('pfc'),
-            'striatum': self.brain.components.get('striatum'),
-            'cerebellum': self.brain.components.get('cerebellum'),
+            "cortex": self.brain.components.get("cortex"),
+            "hippocampus": self.brain.components.get("hippocampus"),
+            "pfc": self.brain.components.get("pfc"),
+            "striatum": self.brain.components.get("striatum"),
+            "cerebellum": self.brain.components.get("cerebellum"),
         }
 
         for region in region_mapping.values():
-            if region is not None and hasattr(region, 'n_output'):
+            if region is not None and hasattr(region, "n_output"):
                 total_neurons += region.n_output
 
         expected = expected_sizes[stage]
@@ -2750,9 +2811,11 @@ class CurriculumTrainer:
         Args:
             stage: Current curriculum stage
         """
-        if not hasattr(self.brain, 'prefrontal') or \
-           not hasattr(self.brain.prefrontal, 'goal_manager') or \
-           self.brain.prefrontal.goal_manager is None:
+        if (
+            not hasattr(self.brain, "prefrontal")
+            or not hasattr(self.brain.prefrontal, "goal_manager")
+            or self.brain.prefrontal.goal_manager is None
+        ):
             if self.verbose:
                 print("⚠️  Goal manager not available - skipping goal hierarchy setup")
             return
@@ -2780,15 +2843,15 @@ class CurriculumTrainer:
         """
         # 1. Tower of Hanoi goal hierarchy
         tower_hanoi = self._create_tower_hanoi_goal()
-        self._goal_hierarchies['tower_hanoi'] = tower_hanoi
+        self._goal_hierarchies["tower_hanoi"] = tower_hanoi
 
         # 2. Essay writing goal hierarchy
         essay = self._create_essay_goal()
-        self._goal_hierarchies['essay_writing'] = essay
+        self._goal_hierarchies["essay_writing"] = essay
 
         # 3. Maze solving goal hierarchy
         maze = self._create_maze_goal()
-        self._goal_hierarchies['maze_solving'] = maze
+        self._goal_hierarchies["maze_solving"] = maze
 
         # Set default goal hierarchy (essay is most general)
         self.brain.prefrontal.set_goal_hierarchy(essay)
@@ -2809,15 +2872,15 @@ class CurriculumTrainer:
         """
         # 1. Raven's matrices goal hierarchy
         ravens = self._create_ravens_goal()
-        self._goal_hierarchies['ravens_matrices'] = ravens
+        self._goal_hierarchies["ravens_matrices"] = ravens
 
         # 2. Hypothesis testing goal hierarchy
         hypothesis = self._create_hypothesis_testing_goal()
-        self._goal_hierarchies['hypothesis_testing'] = hypothesis
+        self._goal_hierarchies["hypothesis_testing"] = hypothesis
 
         # 3. Multi-premise reasoning goal hierarchy
         reasoning = self._create_reasoning_goal()
-        self._goal_hierarchies['multi_premise_reasoning'] = reasoning
+        self._goal_hierarchies["multi_premise_reasoning"] = reasoning
 
         # Set default goal hierarchy (hypothesis testing is most general)
         self.brain.prefrontal.set_goal_hierarchy(hypothesis)
@@ -2825,7 +2888,9 @@ class CurriculumTrainer:
         if self.verbose:
             print("    - Raven's matrices: 3-level hierarchy (analyze → induce → predict)")
             print("    - Hypothesis testing: 3-level hierarchy (generate → test → revise)")
-            print("    - Multi-premise reasoning: 3-level hierarchy (gather → integrate → conclude)")
+            print(
+                "    - Multi-premise reasoning: 3-level hierarchy (gather → integrate → conclude)"
+            )
             print("    - Default hierarchy: hypothesis_testing")
 
     def _create_tower_hanoi_goal(self) -> Goal:
@@ -2849,7 +2914,7 @@ class CurriculumTrainer:
 
         # Level 1: Individual disk movements (primitives)
         for i in range(3):
-            disk_goal = Goal(goal_id=4+i, name=f"move_disk_{i}", level=1)
+            disk_goal = Goal(goal_id=4 + i, name=f"move_disk_{i}", level=1)
             move_1.add_subgoal(disk_goal)
 
         return root
@@ -2877,9 +2942,7 @@ class CurriculumTrainer:
         for section_id, section in [(11, intro), (12, body), (13, conclusion)]:
             for i in range(3):
                 sentence_goal = Goal(
-                    goal_id=section_id*10 + i,
-                    name=f"{section.name}_sentence_{i}",
-                    level=1
+                    goal_id=section_id * 10 + i, name=f"{section.name}_sentence_{i}", level=1
                 )
                 section.add_subgoal(sentence_goal)
 
@@ -2896,7 +2959,7 @@ class CurriculumTrainer:
 
         # Level 1: Waypoints (decompose path)
         for i in range(4):  # 4 waypoints typical for maze
-            waypoint = Goal(goal_id=21+i, name=f"reach_waypoint_{i}", level=1)
+            waypoint = Goal(goal_id=21 + i, name=f"reach_waypoint_{i}", level=1)
             root.add_subgoal(waypoint)
 
         return root
@@ -3015,8 +3078,9 @@ class CurriculumTrainer:
         if goal is None:
             return False
 
-        if hasattr(self.brain, 'prefrontal') and \
-           hasattr(self.brain.prefrontal, 'set_goal_hierarchy'):
+        if hasattr(self.brain, "prefrontal") and hasattr(
+            self.brain.prefrontal, "set_goal_hierarchy"
+        ):
             self.brain.prefrontal.set_goal_hierarchy(goal)
             return True
 

@@ -41,16 +41,16 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
 
-
 # Optional psutil for system memory (graceful degradation if not available)
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     psutil = None  # type: ignore
@@ -74,6 +74,7 @@ class PerformanceStats:
         region_times_ms: Per-region average forward time (milliseconds)
         spike_stats: Spike propagation statistics
     """
+
     steps_per_sec: float = 0.0
     avg_forward_ms: float = 0.0
     std_forward_ms: float = 0.0
@@ -253,19 +254,19 @@ class PerformanceProfiler:
             device: Device to check ('cpu', 'cuda', or auto-detect)
         """
         if device is None:
-            device = str(brain.device) if hasattr(brain, 'device') else 'cpu'
+            device = str(brain.device) if hasattr(brain, "device") else "cpu"
 
         memory_info = {
-            'cpu_mb': self._get_cpu_memory(),
-            'gpu_mb': 0.0,
-            'gpu_allocated_mb': 0.0,
-            'gpu_reserved_mb': 0.0,
-            'tensor_count': self._count_brain_tensors(brain),
-            'total_parameters': self._count_parameters(brain),
+            "cpu_mb": self._get_cpu_memory(),
+            "gpu_mb": 0.0,
+            "gpu_allocated_mb": 0.0,
+            "gpu_reserved_mb": 0.0,
+            "tensor_count": self._count_brain_tensors(brain),
+            "total_parameters": self._count_parameters(brain),
         }
 
         # GPU memory (if available)
-        if 'cuda' in device and torch.cuda.is_available():
+        if "cuda" in device and torch.cuda.is_available():
             gpu_stats = self._get_gpu_memory(device)
             memory_info.update(gpu_stats)
 
@@ -300,22 +301,22 @@ class PerformanceProfiler:
         for region_name, rates in self.spike_rates.items():
             if rates:
                 stats.spike_stats[region_name] = {
-                    'avg_firing_rate': float(np.mean(rates)),
-                    'std_firing_rate': float(np.std(rates)),
+                    "avg_firing_rate": float(np.mean(rates)),
+                    "std_firing_rate": float(np.std(rates)),
                 }
 
         if self.spike_counts:
-            stats.spike_stats['total_avg_spikes'] = float(np.mean(self.spike_counts))
+            stats.spike_stats["total_avg_spikes"] = float(np.mean(self.spike_counts))
 
         # Memory (latest sample)
         if self.memory_samples:
             latest = self.memory_samples[-1]
-            stats.cpu_memory_mb = latest['cpu_mb']
-            stats.gpu_memory_mb = latest['gpu_mb']
-            stats.gpu_memory_allocated_mb = latest['gpu_allocated_mb']
-            stats.gpu_memory_reserved_mb = latest['gpu_reserved_mb']
-            stats.tensor_count = latest['tensor_count']
-            stats.total_parameters = latest['total_parameters']
+            stats.cpu_memory_mb = latest["cpu_mb"]
+            stats.gpu_memory_mb = latest["gpu_mb"]
+            stats.gpu_memory_allocated_mb = latest["gpu_allocated_mb"]
+            stats.gpu_memory_reserved_mb = latest["gpu_reserved_mb"]
+            stats.tensor_count = latest["tensor_count"]
+            stats.total_parameters = latest["total_parameters"]
 
         self._last_stats = stats
         return stats
@@ -329,24 +330,24 @@ class PerformanceProfiler:
         stats = self.get_stats()
 
         return {
-            'performance/steps_per_sec': stats.steps_per_sec,
-            'performance/avg_forward_ms': stats.avg_forward_ms,
-            'performance/std_forward_ms': stats.std_forward_ms,
-            'memory/cpu_mb': stats.cpu_memory_mb,
-            'memory/gpu_mb': stats.gpu_memory_mb,
-            'memory/gpu_allocated_mb': stats.gpu_memory_allocated_mb,
-            'memory/gpu_reserved_mb': stats.gpu_memory_reserved_mb,
-            'memory/tensor_count': float(stats.tensor_count),
-            'memory/total_parameters': float(stats.total_parameters),
+            "performance/steps_per_sec": stats.steps_per_sec,
+            "performance/avg_forward_ms": stats.avg_forward_ms,
+            "performance/std_forward_ms": stats.std_forward_ms,
+            "memory/cpu_mb": stats.cpu_memory_mb,
+            "memory/gpu_mb": stats.gpu_memory_mb,
+            "memory/gpu_allocated_mb": stats.gpu_memory_allocated_mb,
+            "memory/gpu_reserved_mb": stats.gpu_memory_reserved_mb,
+            "memory/tensor_count": float(stats.tensor_count),
+            "memory/total_parameters": float(stats.total_parameters),
         }
 
     def print_summary(self) -> None:
         """Print a formatted summary of current performance."""
         stats = self.get_stats()
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("⚡ PERFORMANCE SUMMARY")
-        print("="*60)
+        print("=" * 60)
         print(f"  Throughput:      {stats.steps_per_sec:>8.2f} steps/sec")
         print(f"  Forward pass:    {stats.avg_forward_ms:>8.2f} ± {stats.std_forward_ms:.2f} ms")
         print(f"  Total steps:     {self._total_steps:>8,d}")
@@ -363,11 +364,11 @@ class PerformanceProfiler:
         if stats.spike_stats:
             print("  Spike activity:")
             for region_name, spike_info in sorted(stats.spike_stats.items()):
-                if region_name != 'total_avg_spikes' and isinstance(spike_info, dict):
-                    avg_rate = spike_info['avg_firing_rate']
-                    std_rate = spike_info['std_firing_rate']
+                if region_name != "total_avg_spikes" and isinstance(spike_info, dict):
+                    avg_rate = spike_info["avg_firing_rate"]
+                    std_rate = spike_info["std_firing_rate"]
                     print(f"    {region_name:<20} {avg_rate*100:>6.2f}% ± {std_rate*100:.2f}%")
-            if 'total_avg_spikes' in stats.spike_stats:
+            if "total_avg_spikes" in stats.spike_stats:
                 print(f"    Total avg spikes:    {stats.spike_stats['total_avg_spikes']:>8.1f}")
             print()
 
@@ -377,7 +378,7 @@ class PerformanceProfiler:
         print(f"  GPU reserved:    {stats.gpu_memory_reserved_mb:>8.1f} MB")
         print(f"  Tensor count:    {stats.tensor_count:>8,d}")
         print(f"  Parameters:      {stats.total_parameters:>8,d}")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
     # =========================================================================
     # Internal helper methods
@@ -394,7 +395,7 @@ class PerformanceProfiler:
 
         try:
             process = psutil.Process()
-            return process.memory_info().rss / (1024 ** 2)  # Convert to MB
+            return process.memory_info().rss / (1024**2)  # Convert to MB
         except Exception:
             return 0.0
 
@@ -409,21 +410,21 @@ class PerformanceProfiler:
         """
         if not torch.cuda.is_available():
             return {
-                'gpu_mb': 0.0,
-                'gpu_allocated_mb': 0.0,
-                'gpu_reserved_mb': 0.0,
+                "gpu_mb": 0.0,
+                "gpu_allocated_mb": 0.0,
+                "gpu_reserved_mb": 0.0,
             }
 
         try:
             # Extract device index
-            if ':' in device:
-                device_idx = int(device.split(':')[1])
+            if ":" in device:
+                device_idx = int(device.split(":")[1])
             else:
                 device_idx = 0
 
             # PyTorch memory stats
-            allocated = torch.cuda.memory_allocated(device_idx) / (1024 ** 2)
-            reserved = torch.cuda.memory_reserved(device_idx) / (1024 ** 2)
+            allocated = torch.cuda.memory_allocated(device_idx) / (1024**2)
+            reserved = torch.cuda.memory_reserved(device_idx) / (1024**2)
 
             # Total GPU memory (if available via nvidia-smi)
             try:
@@ -434,16 +435,16 @@ class PerformanceProfiler:
                 gpu_mb = allocated
 
             return {
-                'gpu_mb': gpu_mb,
-                'gpu_allocated_mb': allocated,
-                'gpu_reserved_mb': reserved,
+                "gpu_mb": gpu_mb,
+                "gpu_allocated_mb": allocated,
+                "gpu_reserved_mb": reserved,
             }
 
         except Exception:
             return {
-                'gpu_mb': 0.0,
-                'gpu_allocated_mb': 0.0,
-                'gpu_reserved_mb': 0.0,
+                "gpu_mb": 0.0,
+                "gpu_allocated_mb": 0.0,
+                "gpu_reserved_mb": 0.0,
             }
 
     def _count_brain_tensors(self, brain: Any) -> int:
@@ -459,11 +460,11 @@ class PerformanceProfiler:
             count = 0
 
             # Count parameters (weights)
-            if hasattr(brain, 'parameters'):
+            if hasattr(brain, "parameters"):
                 count += sum(1 for _ in brain.parameters())
 
             # Count buffers (states)
-            if hasattr(brain, 'buffers'):
+            if hasattr(brain, "buffers"):
                 count += sum(1 for _ in brain.buffers())
 
             return count
@@ -481,7 +482,7 @@ class PerformanceProfiler:
             Total parameter count
         """
         try:
-            if hasattr(brain, 'parameters'):
+            if hasattr(brain, "parameters"):
                 return sum(p.numel() for p in brain.parameters() if p.requires_grad)
             return 0
         except Exception:
@@ -502,7 +503,7 @@ def quick_profile(brain: Any, n_steps: int = 100, verbose: bool = True) -> Perfo
     profiler = PerformanceProfiler()
 
     # Warm-up (exclude from timing)
-    dummy_input = torch.randn(100, device=brain.device if hasattr(brain, 'device') else 'cpu')
+    dummy_input = torch.randn(100, device=brain.device if hasattr(brain, "device") else "cpu")
     _ = brain.forward(dummy_input, n_timesteps=10)
 
     # Profile

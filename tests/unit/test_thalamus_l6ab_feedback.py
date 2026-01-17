@@ -12,8 +12,8 @@ Tests:
 import pytest
 import torch
 
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 @pytest.fixture

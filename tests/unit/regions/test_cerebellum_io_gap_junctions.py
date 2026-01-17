@@ -19,10 +19,7 @@ from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 def create_test_cerebellum(
-    input_size: int,
-    purkinje_size: int,
-    device: str = "cpu",
-    **kwargs
+    input_size: int, purkinje_size: int, device: str = "cpu", **kwargs
 ) -> Cerebellum:
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
     # Always compute granule_size (Cerebellum.__init__ requires it)
@@ -60,7 +57,9 @@ def test_io_gap_junction_disabled():
         gap_junctions_enabled=False,
     )
 
-    assert cerebellum.gap_junctions_io is None, "Gap junction module should not be initialized when disabled"
+    assert (
+        cerebellum.gap_junctions_io is None
+    ), "Gap junction module should not be initialized when disabled"
 
 
 def test_io_membrane_synchronization():
@@ -126,8 +125,8 @@ def test_error_sign_preservation():
 
     # Create target with mixed positive/negative errors
     target = torch.zeros(50, device=device)
-    target[10:15] = 1.0   # Positive error (should fire more)
-    target[20:25] = 0.0   # Negative error if these neurons fire
+    target[10:15] = 1.0  # Positive error (should fire more)
+    target[20:25] = 0.0  # Negative error if these neurons fire
 
     # Run forward (may produce spikes in 20:25 region)
     output = cerebellum(input_spikes)
@@ -180,9 +179,7 @@ def test_io_gap_junction_state_serialization():
     # Verify io_membrane was restored
     assert cerebellum2._io_membrane is not None
     assert torch.allclose(
-        cerebellum._io_membrane,
-        cerebellum2._io_membrane,
-        atol=1e-6
+        cerebellum._io_membrane, cerebellum2._io_membrane, atol=1e-6
     ), "IO membrane state not restored correctly"
 
 
@@ -213,9 +210,7 @@ def test_io_gap_junction_reset_state():
     # io_membrane should be zeros after reset
     assert cerebellum._io_membrane is not None
     assert torch.allclose(
-        cerebellum._io_membrane,
-        torch.zeros(50, device=device),
-        atol=1e-6
+        cerebellum._io_membrane, torch.zeros(50, device=device), atol=1e-6
     ), "IO membrane should be zeros after reset"
 
 

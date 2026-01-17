@@ -28,25 +28,25 @@ class LearningRule(Enum):
     """
 
     # Unsupervised learning (Cortex)
-    HEBBIAN = auto()           # Basic Hebbian: Δw ∝ pre × post
-    STDP = auto()              # Spike-Timing Dependent Plasticity
-    BCM = auto()               # Bienenstock-Cooper-Munro with sliding threshold
+    HEBBIAN = auto()  # Basic Hebbian: Δw ∝ pre × post
+    STDP = auto()  # Spike-Timing Dependent Plasticity
+    BCM = auto()  # Bienenstock-Cooper-Munro with sliding threshold
 
     # Supervised learning (Cerebellum)
     ERROR_CORRECTIVE = auto()  # Delta rule: Δw ∝ pre × (target - actual)
-    PERCEPTRON = auto()        # Binary error correction
+    PERCEPTRON = auto()  # Binary error correction
 
     # Reinforcement learning (Striatum)
-    THREE_FACTOR = auto()      # Δw ∝ eligibility × dopamine
-    ACTOR_CRITIC = auto()      # Policy gradient with value function
+    THREE_FACTOR = auto()  # Δw ∝ eligibility × dopamine
+    ACTOR_CRITIC = auto()  # Policy gradient with value function
     REWARD_MODULATED_STDP = auto()  # Δw ∝ STDP_eligibility × dopamine (striatum uses D1/D2 variant)
 
     # Episodic learning (Hippocampus)
-    ONE_SHOT = auto()          # Single-exposure learning
-    THETA_PHASE = auto()       # Phase-dependent encoding/retrieval
+    ONE_SHOT = auto()  # Single-exposure learning
+    THETA_PHASE = auto()  # Phase-dependent encoding/retrieval
 
     # Predictive STDP: combines spiking with prediction error modulation (Cortex)
-    PREDICTIVE_STDP = auto()   # Δw ∝ STDP × prediction_error (three-factor)
+    PREDICTIVE_STDP = auto()  # Δw ∝ STDP × prediction_error (three-factor)
 
 
 __all__ = ["LearningRule"]

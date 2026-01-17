@@ -46,15 +46,16 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Dict, List, Any, Optional
 import math
 from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class OscillatorIssue(Enum):
     """Types of oscillator health issues."""
+
     FREQUENCY_DRIFT = "frequency_drift"
     PHASE_LOCKING = "phase_locking"
     ABNORMAL_AMPLITUDE = "abnormal_amplitude"
@@ -94,6 +95,7 @@ class OscillatorHealthConfig:
         history_length: Number of timesteps to track
         severity_threshold: Minimum severity to report (0-100)
     """
+
     # Frequency ranges (Hz) - based on biological literature
     delta_freq_range: tuple = (0.5, 4.0)
     theta_freq_range: tuple = (4.0, 10.0)
@@ -104,19 +106,19 @@ class OscillatorHealthConfig:
 
     # Phase dynamics
     phase_change_min: float = 0.001  # Min phase change (radians) to avoid locking
-    phase_lock_window: int = 50      # Timesteps to check for stagnation
+    phase_lock_window: int = 50  # Timesteps to check for stagnation
 
     # Amplitude bounds
-    amplitude_min: float = 0.05      # Below this = dead oscillator
-    amplitude_max: float = 1.5       # Above this = pathological amplitude
+    amplitude_min: float = 0.05  # Below this = dead oscillator
+    amplitude_max: float = 1.5  # Above this = pathological amplitude
 
     # Coupling bounds
-    coupling_strength_min: float = 0.1   # Below this = ineffective coupling
-    coupling_strength_max: float = 1.0   # Above this = pathological coupling
+    coupling_strength_min: float = 0.1  # Below this = ineffective coupling
+    coupling_strength_max: float = 1.0  # Above this = pathological coupling
 
     # Cross-region synchrony thresholds
-    phase_coherence_min: float = 0.3     # Below this = poor synchrony
-    phase_coherence_window: int = 50     # Window for coherence computation
+    phase_coherence_min: float = 0.3  # Below this = poor synchrony
+    phase_coherence_window: int = 50  # Window for coherence computation
 
     # History and reporting
     history_length: int = 100
@@ -135,6 +137,7 @@ class OscillatorIssueReport:
         recommendation: Suggested fix
         metrics: Raw metrics that triggered this issue
     """
+
     issue_type: OscillatorIssue
     oscillator_name: str
     severity: float
@@ -154,6 +157,7 @@ class OscillatorHealthReport:
         summary: One-line summary
         metrics: Raw oscillator metrics
     """
+
     is_healthy: bool
     overall_severity: float
     issues: List[OscillatorIssueReport]
@@ -186,7 +190,7 @@ class OscillatorHealthMonitor:
         self._amplitude_history: Dict[str, deque] = {}
 
         # Initialize for known oscillators
-        for osc in ['delta', 'theta', 'alpha', 'beta', 'gamma', 'ripple']:
+        for osc in ["delta", "theta", "alpha", "beta", "gamma", "ripple"]:
             self._phase_history[osc] = deque(maxlen=self.config.history_length)
             self._frequency_history[osc] = deque(maxlen=self.config.history_length)
             self._amplitude_history[osc] = deque(maxlen=self.config.history_length)
@@ -229,12 +233,12 @@ class OscillatorHealthMonitor:
         # CHECK 1: Frequency Drift
         # =====================================================================
         freq_ranges = {
-            'delta': cfg.delta_freq_range,
-            'theta': cfg.theta_freq_range,
-            'alpha': cfg.alpha_freq_range,
-            'beta': cfg.beta_freq_range,
-            'gamma': cfg.gamma_freq_range,
-            'ripple': cfg.ripple_freq_range,
+            "delta": cfg.delta_freq_range,
+            "theta": cfg.theta_freq_range,
+            "alpha": cfg.alpha_freq_range,
+            "beta": cfg.beta_freq_range,
+            "gamma": cfg.gamma_freq_range,
+            "ripple": cfg.ripple_freq_range,
         }
 
         for osc, freq in frequencies.items():
@@ -245,25 +249,29 @@ class OscillatorHealthMonitor:
             if freq < min_freq:
                 deviation = min_freq - freq
                 severity = 100 * deviation / min_freq
-                issues.append(OscillatorIssueReport(
-                    issue_type=OscillatorIssue.FREQUENCY_DRIFT,
-                    oscillator_name=osc,
-                    severity=min(100, severity),
-                    description=f"{osc} frequency too low: {freq:.2f} Hz < {min_freq:.2f} Hz",
-                    recommendation=f"Increase {osc} frequency or check configuration",
-                    metrics={"frequency": freq, "min": min_freq, "max": max_freq},
-                ))
+                issues.append(
+                    OscillatorIssueReport(
+                        issue_type=OscillatorIssue.FREQUENCY_DRIFT,
+                        oscillator_name=osc,
+                        severity=min(100, severity),
+                        description=f"{osc} frequency too low: {freq:.2f} Hz < {min_freq:.2f} Hz",
+                        recommendation=f"Increase {osc} frequency or check configuration",
+                        metrics={"frequency": freq, "min": min_freq, "max": max_freq},
+                    )
+                )
             elif freq > max_freq:
                 deviation = freq - max_freq
                 severity = 100 * deviation / max_freq
-                issues.append(OscillatorIssueReport(
-                    issue_type=OscillatorIssue.FREQUENCY_DRIFT,
-                    oscillator_name=osc,
-                    severity=min(100, severity),
-                    description=f"{osc} frequency too high: {freq:.2f} Hz > {max_freq:.2f} Hz",
-                    recommendation=f"Decrease {osc} frequency or check configuration",
-                    metrics={"frequency": freq, "min": min_freq, "max": max_freq},
-                ))
+                issues.append(
+                    OscillatorIssueReport(
+                        issue_type=OscillatorIssue.FREQUENCY_DRIFT,
+                        oscillator_name=osc,
+                        severity=min(100, severity),
+                        description=f"{osc} frequency too high: {freq:.2f} Hz > {max_freq:.2f} Hz",
+                        recommendation=f"Decrease {osc} frequency or check configuration",
+                        metrics={"frequency": freq, "min": min_freq, "max": max_freq},
+                    )
+                )
 
         # =====================================================================
         # CHECK 2: Phase Locking (Stuck Oscillator)
@@ -273,11 +281,11 @@ class OscillatorHealthMonitor:
                 continue
 
             # Check if phase is changing
-            recent_phases = list(phase_hist)[-cfg.phase_lock_window:]
+            recent_phases = list(phase_hist)[-cfg.phase_lock_window :]
             phase_changes = []
             for i in range(1, len(recent_phases)):
                 # Handle phase wrapping (0 to 2π)
-                delta = recent_phases[i] - recent_phases[i-1]
+                delta = recent_phases[i] - recent_phases[i - 1]
                 if delta > math.pi:
                     delta -= 2 * math.pi
                 elif delta < -math.pi:
@@ -288,14 +296,16 @@ class OscillatorHealthMonitor:
 
             if avg_change < cfg.phase_change_min:
                 severity = 80.0  # Phase locking is critical
-                issues.append(OscillatorIssueReport(
-                    issue_type=OscillatorIssue.PHASE_LOCKING,
-                    oscillator_name=osc,
-                    severity=severity,
-                    description=f"{osc} phase locked (avg change: {avg_change:.6f} rad/step)",
-                    recommendation=f"Reset {osc} oscillator or check timestep configuration",
-                    metrics={"avg_phase_change": avg_change, "threshold": cfg.phase_change_min},
-                ))
+                issues.append(
+                    OscillatorIssueReport(
+                        issue_type=OscillatorIssue.PHASE_LOCKING,
+                        oscillator_name=osc,
+                        severity=severity,
+                        description=f"{osc} phase locked (avg change: {avg_change:.6f} rad/step)",
+                        recommendation=f"Reset {osc} oscillator or check timestep configuration",
+                        metrics={"avg_phase_change": avg_change, "threshold": cfg.phase_change_min},
+                    )
+                )
 
         # =====================================================================
         # CHECK 3: Abnormal Amplitude
@@ -303,24 +313,36 @@ class OscillatorHealthMonitor:
         for osc, amp in amplitudes.items():
             if amp < cfg.amplitude_min:
                 severity = 100 * (cfg.amplitude_min - amp) / cfg.amplitude_min
-                issues.append(OscillatorIssueReport(
-                    issue_type=OscillatorIssue.ABNORMAL_AMPLITUDE,
-                    oscillator_name=osc,
-                    severity=min(100, severity),
-                    description=f"{osc} amplitude too low: {amp:.3f} < {cfg.amplitude_min:.3f}",
-                    recommendation=f"Check coupling configuration or enable {osc}",
-                    metrics={"amplitude": amp, "min": cfg.amplitude_min, "max": cfg.amplitude_max},
-                ))
+                issues.append(
+                    OscillatorIssueReport(
+                        issue_type=OscillatorIssue.ABNORMAL_AMPLITUDE,
+                        oscillator_name=osc,
+                        severity=min(100, severity),
+                        description=f"{osc} amplitude too low: {amp:.3f} < {cfg.amplitude_min:.3f}",
+                        recommendation=f"Check coupling configuration or enable {osc}",
+                        metrics={
+                            "amplitude": amp,
+                            "min": cfg.amplitude_min,
+                            "max": cfg.amplitude_max,
+                        },
+                    )
+                )
             elif amp > cfg.amplitude_max:
                 severity = 100 * (amp - cfg.amplitude_max) / cfg.amplitude_max
-                issues.append(OscillatorIssueReport(
-                    issue_type=OscillatorIssue.ABNORMAL_AMPLITUDE,
-                    oscillator_name=osc,
-                    severity=min(100, severity),
-                    description=f"{osc} amplitude too high: {amp:.3f} > {cfg.amplitude_max:.3f}",
-                    recommendation=f"Reduce coupling strength for {osc}",
-                    metrics={"amplitude": amp, "min": cfg.amplitude_min, "max": cfg.amplitude_max},
-                ))
+                issues.append(
+                    OscillatorIssueReport(
+                        issue_type=OscillatorIssue.ABNORMAL_AMPLITUDE,
+                        oscillator_name=osc,
+                        severity=min(100, severity),
+                        description=f"{osc} amplitude too high: {amp:.3f} > {cfg.amplitude_max:.3f}",
+                        recommendation=f"Reduce coupling strength for {osc}",
+                        metrics={
+                            "amplitude": amp,
+                            "min": cfg.amplitude_min,
+                            "max": cfg.amplitude_max,
+                        },
+                    )
+                )
 
         # =====================================================================
         # CHECK 4: Dead Oscillator (No Signal Variation)
@@ -333,18 +355,25 @@ class OscillatorHealthMonitor:
                 amp_hist = list(self._amplitude_history[osc])
                 if len(amp_hist) >= 10:
                     recent_amps = amp_hist[-10:]
-                    amp_variance = sum((a - sum(recent_amps)/len(recent_amps))**2 for a in recent_amps) / len(recent_amps)
+                    amp_variance = sum(
+                        (a - sum(recent_amps) / len(recent_amps)) ** 2 for a in recent_amps
+                    ) / len(recent_amps)
 
                     if amp_variance < 0.001:  # Very low variance
                         severity = 60.0
-                        issues.append(OscillatorIssueReport(
-                            issue_type=OscillatorIssue.OSCILLATOR_DEAD,
-                            oscillator_name=osc,
-                            severity=severity,
-                            description=f"{osc} shows no amplitude variation (variance: {amp_variance:.6f})",
-                            recommendation=f"Check if {osc} is enabled and properly configured",
-                            metrics={"amplitude_variance": amp_variance, "recent_amplitude": signal},
-                        ))
+                        issues.append(
+                            OscillatorIssueReport(
+                                issue_type=OscillatorIssue.OSCILLATOR_DEAD,
+                                oscillator_name=osc,
+                                severity=severity,
+                                description=f"{osc} shows no amplitude variation (variance: {amp_variance:.6f})",
+                                recommendation=f"Check if {osc} is enabled and properly configured",
+                                metrics={
+                                    "amplitude_variance": amp_variance,
+                                    "recent_amplitude": signal,
+                                },
+                            )
+                        )
 
         # =====================================================================
         # CHECK 5: Coupling Health
@@ -356,32 +385,46 @@ class OscillatorHealthMonitor:
 
                 if strength < cfg.coupling_strength_min:
                     severity = 40.0
-                    issues.append(OscillatorIssueReport(
-                        issue_type=OscillatorIssue.COUPLING_FAILURE,
-                        oscillator_name=osc_name,
-                        severity=severity,
-                        description=f"{osc_name} coupling too weak: {strength:.3f} < {cfg.coupling_strength_min:.3f}",
-                        recommendation=f"Increase coupling strength for {osc_name}",
-                        metrics={"coupling_strength": strength, "min": cfg.coupling_strength_min},
-                    ))
+                    issues.append(
+                        OscillatorIssueReport(
+                            issue_type=OscillatorIssue.COUPLING_FAILURE,
+                            oscillator_name=osc_name,
+                            severity=severity,
+                            description=f"{osc_name} coupling too weak: {strength:.3f} < {cfg.coupling_strength_min:.3f}",
+                            recommendation=f"Increase coupling strength for {osc_name}",
+                            metrics={
+                                "coupling_strength": strength,
+                                "min": cfg.coupling_strength_min,
+                            },
+                        )
+                    )
                 elif strength > cfg.coupling_strength_max:
                     severity = 60.0
-                    issues.append(OscillatorIssueReport(
-                        issue_type=OscillatorIssue.PATHOLOGICAL_COUPLING,
-                        oscillator_name=osc_name,
-                        severity=severity,
-                        description=f"{osc_name} coupling too strong: {strength:.3f} > {cfg.coupling_strength_max:.3f}",
-                        recommendation=f"Reduce coupling strength for {osc_name}",
-                        metrics={"coupling_strength": strength, "max": cfg.coupling_strength_max},
-                    ))
+                    issues.append(
+                        OscillatorIssueReport(
+                            issue_type=OscillatorIssue.PATHOLOGICAL_COUPLING,
+                            oscillator_name=osc_name,
+                            severity=severity,
+                            description=f"{osc_name} coupling too strong: {strength:.3f} > {cfg.coupling_strength_max:.3f}",
+                            recommendation=f"Reduce coupling strength for {osc_name}",
+                            metrics={
+                                "coupling_strength": strength,
+                                "max": cfg.coupling_strength_max,
+                            },
+                        )
+                    )
 
         # =====================================================================
         # CHECK 6: Cross-Oscillator Synchrony (Theta-Gamma Coupling)
         # =====================================================================
         # Check for healthy theta-gamma phase-amplitude coupling
-        if 'theta' in phases and 'gamma' in amplitudes and len(self._phase_history.get('theta', [])) >= 20:
-            theta_phases = list(self._phase_history['theta'])[-20:]
-            gamma_amps = list(self._amplitude_history['gamma'])[-20:]
+        if (
+            "theta" in phases
+            and "gamma" in amplitudes
+            and len(self._phase_history.get("theta", [])) >= 20
+        ):
+            theta_phases = list(self._phase_history["theta"])[-20:]
+            gamma_amps = list(self._amplitude_history["gamma"])[-20:]
 
             # Compute correlation between theta phase and gamma amplitude
             # (simplified measure of phase-amplitude coupling)
@@ -389,9 +432,13 @@ class OscillatorHealthMonitor:
                 mean_phase = sum(theta_phases) / len(theta_phases)
                 mean_amp = sum(gamma_amps) / len(gamma_amps)
 
-                covariance = sum((p - mean_phase) * (a - mean_amp) for p, a in zip(theta_phases, gamma_amps)) / len(theta_phases)
-                phase_std = (sum((p - mean_phase)**2 for p in theta_phases) / len(theta_phases)) ** 0.5
-                amp_std = (sum((a - mean_amp)**2 for a in gamma_amps) / len(gamma_amps)) ** 0.5
+                covariance = sum(
+                    (p - mean_phase) * (a - mean_amp) for p, a in zip(theta_phases, gamma_amps)
+                ) / len(theta_phases)
+                phase_std = (
+                    sum((p - mean_phase) ** 2 for p in theta_phases) / len(theta_phases)
+                ) ** 0.5
+                amp_std = (sum((a - mean_amp) ** 2 for a in gamma_amps) / len(gamma_amps)) ** 0.5
 
                 if phase_std > 0 and amp_std > 0:
                     correlation = covariance / (phase_std * amp_std)
@@ -399,14 +446,16 @@ class OscillatorHealthMonitor:
                     # Healthy theta-gamma coupling should show moderate correlation
                     if abs(correlation) < 0.2:  # Very weak coupling
                         severity = 30.0
-                        issues.append(OscillatorIssueReport(
-                            issue_type=OscillatorIssue.SYNCHRONY_LOSS,
-                            oscillator_name="theta-gamma",
-                            severity=severity,
-                            description=f"Weak theta-gamma coupling (correlation: {correlation:.3f})",
-                            recommendation="Check cross-frequency coupling configuration",
-                            metrics={"theta_gamma_correlation": correlation},
-                        ))
+                        issues.append(
+                            OscillatorIssueReport(
+                                issue_type=OscillatorIssue.SYNCHRONY_LOSS,
+                                oscillator_name="theta-gamma",
+                                severity=severity,
+                                description=f"Weak theta-gamma coupling (correlation: {correlation:.3f})",
+                                recommendation="Check cross-frequency coupling configuration",
+                                metrics={"theta_gamma_correlation": correlation},
+                            )
+                        )
 
         # =====================================================================
         # Filter by severity threshold
@@ -465,8 +514,8 @@ class OscillatorHealthMonitor:
 
         def compute_stats(values):
             mean = sum(values) / len(values)
-            variance = sum((v - mean)**2 for v in values) / len(values)
-            std = variance ** 0.5
+            variance = sum((v - mean) ** 2 for v in values) / len(values)
+            std = variance**0.5
             return {
                 "mean": mean,
                 "std": std,
@@ -485,7 +534,7 @@ class OscillatorHealthMonitor:
         self,
         region1_phases: Dict[str, float],
         region2_phases: Dict[str, float],
-        oscillator: str = 'gamma',
+        oscillator: str = "gamma",
     ) -> float:
         """Compute phase coherence between two regions for a specific oscillator.
 
@@ -559,14 +608,14 @@ class OscillatorHealthMonitor:
                 Example: {('hippocampus', 'prefrontal'): {'theta': 0.85, 'gamma': 0.62}}
         """
         if oscillators is None:
-            oscillators = ['theta', 'gamma']  # Most important for curriculum
+            oscillators = ["theta", "gamma"]  # Most important for curriculum
 
         # Auto-generate all pairs if not specified
         if region_pairs is None:
             regions = list(region_phases.keys())
             region_pairs = []
             for i, r1 in enumerate(regions):
-                for r2 in regions[i+1:]:
+                for r2 in regions[i + 1 :]:
                     region_pairs.append((r1, r2))
 
         coherence_map = {}
@@ -614,10 +663,10 @@ class OscillatorHealthMonitor:
         if expected_synchrony is None:
             expected_synchrony = {
                 # Stage 1+: Working memory requires hippocampus-PFC theta coherence
-                ('hippocampus', 'prefrontal'): {'theta': 0.5},
+                ("hippocampus", "prefrontal"): {"theta": 0.5},
                 # Stage 2+: Cross-modal binding requires visual-auditory gamma coherence
-                ('visual_cortex', 'auditory_cortex'): {'gamma': 0.4},
-                ('cortex', 'hippocampus'): {'gamma': 0.3},  # General binding
+                ("visual_cortex", "auditory_cortex"): {"gamma": 0.4},
+                ("cortex", "hippocampus"): {"gamma": 0.3},  # General binding
             }
 
         # Compute actual coherence
@@ -640,13 +689,19 @@ class OscillatorHealthMonitor:
 
                 if coherence < min_coherence:
                     severity = 60.0 * (min_coherence - coherence) / min_coherence
-                    issues.append(OscillatorIssueReport(
-                        issue_type=OscillatorIssue.CROSS_REGION_DESYNCHRONY,
-                        oscillator_name=f"{pair_key}-{osc}",
-                        severity=min(100, severity),
-                        description=f"Low {osc} coherence between {region1} and {region2}: {coherence:.3f} < {min_coherence:.3f}",
-                        recommendation=f"Check {osc} oscillator synchronization or coupling strength between regions",
-                        metrics={"coherence": coherence, "expected": min_coherence, "oscillator": osc},
-                    ))
+                    issues.append(
+                        OscillatorIssueReport(
+                            issue_type=OscillatorIssue.CROSS_REGION_DESYNCHRONY,
+                            oscillator_name=f"{pair_key}-{osc}",
+                            severity=min(100, severity),
+                            description=f"Low {osc} coherence between {region1} and {region2}: {coherence:.3f} < {min_coherence:.3f}",
+                            recommendation=f"Check {osc} oscillator synchronization or coupling strength between regions",
+                            metrics={
+                                "coherence": coherence,
+                                "expected": min_coherence,
+                                "oscillator": osc,
+                            },
+                        )
+                    )
 
         return issues

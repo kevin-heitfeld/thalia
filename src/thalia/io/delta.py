@@ -32,18 +32,17 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
-from pathlib import Path
 import struct
-from typing import Dict, Any, Optional, Union
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 import torch
 
-
 # Delta magic number
-DELTA_MAGIC = b'\xCE\x94THL'  # Δ in UTF-8 + THL
+DELTA_MAGIC = b"\xce\x94THL"  # Δ in UTF-8 + THL
 
 DELTA_VERSION = 1
 
@@ -62,7 +61,7 @@ class DeltaHeader:
     def to_bytes(self) -> bytes:
         """Serialize to 64 bytes."""
         data = struct.pack(
-            '<5sI32sQQ',  # 5 + 4 + 32 + 8 + 8 = 57 bytes
+            "<5sI32sQQ",  # 5 + 4 + 32 + 8 + 8 = 57 bytes
             self.magic,
             self.delta_version,
             self.base_checkpoint_hash,
@@ -70,7 +69,7 @@ class DeltaHeader:
             self.current_step,
         )
         # Pad to 64 bytes (need 7 more bytes)
-        return data + b'\x00' * (64 - len(data))
+        return data + b"\x00" * (64 - len(data))
 
     @classmethod
     def from_bytes(cls, data: bytes) -> DeltaHeader:
@@ -78,7 +77,7 @@ class DeltaHeader:
         if len(data) < 64:
             raise ValueError(f"Delta header too short: {len(data)} < 64")
 
-        fields = struct.unpack('<5sI32sQQ', data[:57])  # Read 57 bytes
+        fields = struct.unpack("<5sI32sQQ", data[:57])  # Read 57 bytes
 
         return cls(
             magic=fields[0],
@@ -100,7 +99,7 @@ def compute_file_hash(path: Union[str, Path]) -> bytes:
     """
     hasher = hashlib.sha256()
 
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         while chunk := f.read(8192):
             hasher.update(chunk)
 
@@ -127,9 +126,9 @@ def compute_weight_delta(
     if current_weights.shape != base_weights.shape:
         # Shape changed (growth) - store full tensor
         return {
-            'type': 'full',
-            'tensor': current_weights,
-            'shape': list(current_weights.shape),
+            "type": "full",
+            "tensor": current_weights,
+            "shape": list(current_weights.shape),
         }
 
     # Compute differences
@@ -149,24 +148,24 @@ def compute_weight_delta(
             return None
 
         return {
-            'type': 'sparse',
-            'indices': indices.cpu(),
-            'values': values.cpu(),
-            'shape': list(current_weights.shape),
+            "type": "sparse",
+            "indices": indices.cpu(),
+            "values": values.cpu(),
+            "shape": list(current_weights.shape),
         }
     else:
         # Many changes - store full tensor is more efficient
         return {
-            'type': 'full',
-            'tensor': current_weights,
-            'shape': list(current_weights.shape),
+            "type": "full",
+            "tensor": current_weights,
+            "shape": list(current_weights.shape),
         }
 
 
 def apply_weight_delta(
     base_weights: torch.Tensor,
     delta_info: Dict[str, Any],
-    device: str = 'cpu',
+    device: str = "cpu",
 ) -> torch.Tensor:
     """Apply delta to base weights to reconstruct current weights.
 
@@ -178,15 +177,15 @@ def apply_weight_delta(
     Returns:
         Reconstructed current weights
     """
-    if delta_info['type'] == 'full':
+    if delta_info["type"] == "full":
         # Full replacement
-        return delta_info['tensor'].to(device)
+        return delta_info["tensor"].to(device)
 
-    elif delta_info['type'] == 'sparse':
+    elif delta_info["type"] == "sparse":
         # Sparse delta: start with base, apply changes
         result = base_weights.clone().to(device)
-        indices = delta_info['indices']
-        values = delta_info['values'].to(device)
+        indices = delta_info["indices"]
+        values = delta_info["values"].to(device)
 
         # Apply changes (handle multi-dimensional indexing)
         if indices.ndim == 2:
@@ -222,21 +221,21 @@ def compute_state_delta(
         Delta state with only changes
     """
     delta = {
-        'regions': {},
-        'pathways': {},
-        'metadata_changes': {},
+        "regions": {},
+        "pathways": {},
+        "metadata_changes": {},
     }
 
     # Compare regions
-    current_regions = current_state.get('regions', {})
-    base_regions = base_state.get('regions', {})
+    current_regions = current_state.get("regions", {})
+    base_regions = base_state.get("regions", {})
 
     for region_name, current_region in current_regions.items():
         if region_name not in base_regions:
             # New region - store full state
-            delta['regions'][region_name] = {
-                'type': 'new',
-                'state': current_region,
+            delta["regions"][region_name] = {
+                "type": "new",
+                "state": current_region,
             }
             continue
 
@@ -245,8 +244,8 @@ def compute_state_delta(
         has_changes = False
 
         # Compare weights
-        current_weights = current_region.get('weights', {})
-        base_weights = base_region.get('weights', {})
+        current_weights = current_region.get("weights", {})
+        base_weights = base_region.get("weights", {})
 
         weight_deltas = {}
         for weight_name, current_tensor in current_weights.items():
@@ -256,9 +255,9 @@ def compute_state_delta(
             if weight_name not in base_weights or base_weights[weight_name] is None:
                 # New weight matrix
                 weight_deltas[weight_name] = {
-                    'type': 'full',
-                    'tensor': current_tensor,
-                    'shape': list(current_tensor.shape),
+                    "type": "full",
+                    "tensor": current_tensor,
+                    "shape": list(current_tensor.shape),
                 }
                 has_changes = True
             else:
@@ -274,26 +273,26 @@ def compute_state_delta(
                     has_changes = True
 
         if has_changes:
-            region_delta['weights'] = weight_deltas
+            region_delta["weights"] = weight_deltas
 
             # Include non-weight state (always include for changed regions)
-            region_delta['config'] = current_region.get('config')
-            region_delta['neuron_state'] = current_region.get('neuron_state')
-            region_delta['learning_state'] = current_region.get('learning_state')
-            region_delta['oscillator_state'] = current_region.get('oscillator_state')
-            region_delta['neuromodulator_state'] = current_region.get('neuromodulator_state')
+            region_delta["config"] = current_region.get("config")
+            region_delta["neuron_state"] = current_region.get("neuron_state")
+            region_delta["learning_state"] = current_region.get("learning_state")
+            region_delta["oscillator_state"] = current_region.get("oscillator_state")
+            region_delta["neuromodulator_state"] = current_region.get("neuromodulator_state")
 
-            delta['regions'][region_name] = region_delta
+            delta["regions"][region_name] = region_delta
 
     # Compare pathways (similar logic)
-    current_pathways = current_state.get('pathways', {})
-    base_pathways = base_state.get('pathways', {})
+    current_pathways = current_state.get("pathways", {})
+    base_pathways = base_state.get("pathways", {})
 
     for pathway_name, current_pathway in current_pathways.items():
         if pathway_name not in base_pathways:
-            delta['pathways'][pathway_name] = {
-                'type': 'new',
-                'state': current_pathway,
+            delta["pathways"][pathway_name] = {
+                "type": "new",
+                "state": current_pathway,
             }
             continue
 
@@ -301,8 +300,8 @@ def compute_state_delta(
         pathway_delta = {}
         has_changes = False
 
-        current_weights = current_pathway.get('weights', {})
-        base_weights = base_pathway.get('weights', {})
+        current_weights = current_pathway.get("weights", {})
+        base_weights = base_pathway.get("weights", {})
 
         weight_deltas = {}
         for weight_name, current_tensor in current_weights.items():
@@ -311,9 +310,9 @@ def compute_state_delta(
 
             if weight_name not in base_weights or base_weights[weight_name] is None:
                 weight_deltas[weight_name] = {
-                    'type': 'full',
-                    'tensor': current_tensor,
-                    'shape': list(current_tensor.shape),
+                    "type": "full",
+                    "tensor": current_tensor,
+                    "shape": list(current_tensor.shape),
                 }
                 has_changes = True
             else:
@@ -328,15 +327,15 @@ def compute_state_delta(
                     has_changes = True
 
         if has_changes:
-            pathway_delta['weights'] = weight_deltas
-            pathway_delta['config'] = current_pathway.get('config')
-            pathway_delta['neuron_state'] = current_pathway.get('neuron_state')
-            pathway_delta['learning_state'] = current_pathway.get('learning_state')
+            pathway_delta["weights"] = weight_deltas
+            pathway_delta["config"] = current_pathway.get("config")
+            pathway_delta["neuron_state"] = current_pathway.get("neuron_state")
+            pathway_delta["learning_state"] = current_pathway.get("learning_state")
 
-            delta['pathways'][pathway_name] = pathway_delta
+            delta["pathways"][pathway_name] = pathway_delta
 
     # Store current training step
-    delta['training_steps'] = current_state.get('training_steps', 0)
+    delta["training_steps"] = current_state.get("training_steps", 0)
 
     return delta
 
@@ -344,7 +343,7 @@ def compute_state_delta(
 def reconstruct_state_from_delta(
     base_state: Dict[str, Any],
     delta_state: Dict[str, Any],
-    device: str = 'cpu',
+    device: str = "cpu",
 ) -> Dict[str, Any]:
     """Reconstruct full state by applying delta to base.
 
@@ -362,60 +361,60 @@ def reconstruct_state_from_delta(
     reconstructed = copy.deepcopy(base_state)
 
     # Apply region deltas
-    for region_name, region_delta in delta_state.get('regions', {}).items():
-        if region_delta.get('type') == 'new':
+    for region_name, region_delta in delta_state.get("regions", {}).items():
+        if region_delta.get("type") == "new":
             # New region - use full state
-            reconstructed['regions'][region_name] = region_delta['state']
+            reconstructed["regions"][region_name] = region_delta["state"]
         else:
             # Apply weight deltas
-            base_region = reconstructed['regions'][region_name]
+            base_region = reconstructed["regions"][region_name]
 
-            for weight_name, weight_delta in region_delta.get('weights', {}).items():
-                if weight_name in base_region['weights']:
-                    base_region['weights'][weight_name] = apply_weight_delta(
-                        base_region['weights'][weight_name],
+            for weight_name, weight_delta in region_delta.get("weights", {}).items():
+                if weight_name in base_region["weights"]:
+                    base_region["weights"][weight_name] = apply_weight_delta(
+                        base_region["weights"][weight_name],
                         weight_delta,
                         device=device,
                     )
                 else:
                     # New weight
-                    base_region['weights'][weight_name] = weight_delta['tensor'].to(device)
+                    base_region["weights"][weight_name] = weight_delta["tensor"].to(device)
 
             # Update non-weight state
-            if 'neuron_state' in region_delta:
-                base_region['neuron_state'] = region_delta['neuron_state']
-            if 'learning_state' in region_delta:
-                base_region['learning_state'] = region_delta['learning_state']
-            if 'oscillator_state' in region_delta:
-                base_region['oscillator_state'] = region_delta['oscillator_state']
-            if 'neuromodulator_state' in region_delta:
-                base_region['neuromodulator_state'] = region_delta['neuromodulator_state']
+            if "neuron_state" in region_delta:
+                base_region["neuron_state"] = region_delta["neuron_state"]
+            if "learning_state" in region_delta:
+                base_region["learning_state"] = region_delta["learning_state"]
+            if "oscillator_state" in region_delta:
+                base_region["oscillator_state"] = region_delta["oscillator_state"]
+            if "neuromodulator_state" in region_delta:
+                base_region["neuromodulator_state"] = region_delta["neuromodulator_state"]
 
     # Apply pathway deltas (similar logic)
-    for pathway_name, pathway_delta in delta_state.get('pathways', {}).items():
-        if pathway_delta.get('type') == 'new':
-            reconstructed['pathways'][pathway_name] = pathway_delta['state']
+    for pathway_name, pathway_delta in delta_state.get("pathways", {}).items():
+        if pathway_delta.get("type") == "new":
+            reconstructed["pathways"][pathway_name] = pathway_delta["state"]
         else:
-            base_pathway = reconstructed['pathways'][pathway_name]
+            base_pathway = reconstructed["pathways"][pathway_name]
 
-            for weight_name, weight_delta in pathway_delta.get('weights', {}).items():
-                if weight_name in base_pathway['weights']:
-                    base_pathway['weights'][weight_name] = apply_weight_delta(
-                        base_pathway['weights'][weight_name],
+            for weight_name, weight_delta in pathway_delta.get("weights", {}).items():
+                if weight_name in base_pathway["weights"]:
+                    base_pathway["weights"][weight_name] = apply_weight_delta(
+                        base_pathway["weights"][weight_name],
                         weight_delta,
                         device=device,
                     )
                 else:
-                    base_pathway['weights'][weight_name] = weight_delta['tensor'].to(device)
+                    base_pathway["weights"][weight_name] = weight_delta["tensor"].to(device)
 
-            if 'neuron_state' in pathway_delta:
-                base_pathway['neuron_state'] = pathway_delta['neuron_state']
-            if 'learning_state' in pathway_delta:
-                base_pathway['learning_state'] = pathway_delta['learning_state']
+            if "neuron_state" in pathway_delta:
+                base_pathway["neuron_state"] = pathway_delta["neuron_state"]
+            if "learning_state" in pathway_delta:
+                base_pathway["learning_state"] = pathway_delta["learning_state"]
 
     # Update training steps
-    if 'training_steps' in delta_state:
-        reconstructed['training_steps'] = delta_state['training_steps']
+    if "training_steps" in delta_state:
+        reconstructed["training_steps"] = delta_state["training_steps"]
 
     return reconstructed
 
@@ -458,36 +457,37 @@ def save_delta_checkpoint(
         magic=DELTA_MAGIC,
         delta_version=DELTA_VERSION,
         base_checkpoint_hash=base_hash,
-        base_step=base_state.get('training_steps', 0),
-        current_step=current_state.get('training_steps', 0),
+        base_step=base_state.get("training_steps", 0),
+        current_step=current_state.get("training_steps", 0),
     )
 
     # Prepare metadata
     if metadata is None:
         metadata = {}
 
-    metadata['delta_info'] = {
-        'base_checkpoint': str(base_checkpoint_path),
-        'base_hash': base_hash.hex(),
-        'base_step': header.base_step,
-        'current_step': header.current_step,
-        'threshold': threshold,
+    metadata["delta_info"] = {
+        "base_checkpoint": str(base_checkpoint_path),
+        "base_hash": base_hash.hex(),
+        "base_step": header.base_step,
+        "current_step": header.current_step,
+        "threshold": threshold,
     }
 
     # Write delta file
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, 'wb') as f:
+    with open(output_path, "wb") as f:
         # Write header
         f.write(header.to_bytes())
 
         # Write delta state as JSON (with tensor encoding)
         import pickle
+
         pickle.dump(delta_state, f)
 
         # Write metadata
-        metadata_json = json.dumps(metadata, indent=2).encode('utf-8')
-        f.write(struct.pack('<I', len(metadata_json)))
+        metadata_json = json.dumps(metadata, indent=2).encode("utf-8")
+        f.write(struct.pack("<I", len(metadata_json)))
         f.write(metadata_json)
 
     # Compute statistics
@@ -496,24 +496,24 @@ def save_delta_checkpoint(
     compression_factor = base_size / delta_size if delta_size > 0 else 1.0
     savings_percent = (1 - (delta_size / base_size)) * 100 if base_size > 0 else 0.0
 
-    num_changed_regions = len(delta_state['regions'])
-    num_changed_pathways = len(delta_state['pathways'])
+    num_changed_regions = len(delta_state["regions"])
+    num_changed_pathways = len(delta_state["pathways"])
 
     return {
-        'base_checkpoint': str(base_checkpoint_path),
-        'delta_checkpoint': str(output_path),
-        'base_size_mb': base_size / (1024 * 1024),
-        'delta_size_mb': delta_size / (1024 * 1024),
-        'compression_ratio': compression_factor,  # e.g., 3.0 means 3x smaller
-        'savings_percent': savings_percent,  # e.g., 66.7 means 66.7% savings
-        'changed_regions': num_changed_regions,
-        'changed_pathways': num_changed_pathways,
+        "base_checkpoint": str(base_checkpoint_path),
+        "delta_checkpoint": str(output_path),
+        "base_size_mb": base_size / (1024 * 1024),
+        "delta_size_mb": delta_size / (1024 * 1024),
+        "compression_ratio": compression_factor,  # e.g., 3.0 means 3x smaller
+        "savings_percent": savings_percent,  # e.g., 66.7 means 66.7% savings
+        "changed_regions": num_changed_regions,
+        "changed_pathways": num_changed_pathways,
     }
 
 
 def load_delta_checkpoint(
     delta_path: Union[str, Path],
-    device: str = 'cpu',
+    device: str = "cpu",
 ) -> Dict[str, Any]:
     """Load delta checkpoint and reconstruct full state.
 
@@ -526,17 +526,18 @@ def load_delta_checkpoint(
     Returns:
         Reconstructed full state
     """
-    from .checkpoint import BrainCheckpoint
-    from .compression import detect_compression, decompress_data
-    import pickle
     import io
+    import pickle
+
+    from .checkpoint import BrainCheckpoint
+    from .compression import decompress_data, detect_compression
 
     delta_path = Path(delta_path)
 
     # Check for compression and read file
     compression = detect_compression(delta_path)
 
-    with open(delta_path, 'rb') as f:
+    with open(delta_path, "rb") as f:
         file_data = f.read()
 
     if compression is not None:
@@ -557,12 +558,12 @@ def load_delta_checkpoint(
 
     # Read metadata
     metadata_length_bytes = f.read(4)
-    metadata_length = struct.unpack('<I', metadata_length_bytes)[0]
+    metadata_length = struct.unpack("<I", metadata_length_bytes)[0]
     metadata_json = f.read(metadata_length)
-    metadata = json.loads(metadata_json.decode('utf-8'))
+    metadata = json.loads(metadata_json.decode("utf-8"))
 
     # Find base checkpoint
-    base_checkpoint_path = metadata['delta_info']['base_checkpoint']
+    base_checkpoint_path = metadata["delta_info"]["base_checkpoint"]
     base_checkpoint_path = Path(base_checkpoint_path)
 
     if not base_checkpoint_path.is_absolute():
@@ -577,7 +578,7 @@ def load_delta_checkpoint(
 
     # Verify base checkpoint hash
     base_hash = compute_file_hash(base_checkpoint_path)
-    expected_hash = bytes.fromhex(metadata['delta_info']['base_hash'])
+    expected_hash = bytes.fromhex(metadata["delta_info"]["base_hash"])
 
     if base_hash != expected_hash:
         raise ValueError(
@@ -596,6 +597,7 @@ def load_delta_checkpoint(
     # Restore FP16 tensors to FP32 (delta may have been saved with FP16)
     # Safe to modify in-place since reconstructed_state is already a fresh copy
     from .precision import restore_precision_to_fp32
+
     reconstructed_state = restore_precision_to_fp32(reconstructed_state, in_place=True)
 
     return reconstructed_state

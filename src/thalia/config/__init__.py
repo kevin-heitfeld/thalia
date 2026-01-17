@@ -32,8 +32,8 @@ from __future__ import annotations
 
 # Re-export component configs from core/
 from thalia.core.base.component_config import (
-    NeuralComponentConfig,
     LearningComponentConfig,
+    NeuralComponentConfig,
     PathwayConfig,
 )
 
@@ -47,39 +47,39 @@ from thalia.regions.prefrontal import PrefrontalConfig
 from thalia.regions.striatum.config import StriatumConfig
 
 from .base import BaseConfig
-from .learning_config import (
-    BaseLearningConfig,
-    ModulatedLearningConfig,
-    STDPLearningConfig,
-    HebbianLearningConfig,
-)
-from .global_config import GlobalConfig
 from .brain_config import (
     BrainConfig,
-    RegionSizes,
     CortexType,
     NeuromodulationConfig,
+    RegionSizes,
 )
-from .training_config import TrainingConfig
+from .global_config import GlobalConfig
 from .language_config import (
-    LanguageConfig,
-    EncodingConfig,
     DecodingConfig,
+    EncodingConfig,
+    LanguageConfig,
     PositionConfig,
     SequenceMemoryConfig,
 )
+from .learning_config import (
+    BaseLearningConfig,
+    HebbianLearningConfig,
+    ModulatedLearningConfig,
+    STDPLearningConfig,
+)
+from .size_calculator import BiologicalRatios, LayerSizeCalculator
 from .thalia_config import ThaliaConfig, print_config
+from .training_config import TrainingConfig
 from .validation import (
-    validate_thalia_config,
-    validate_brain_config,
-    validate_global_consistency,
-    validate_region_sizes,
-    check_config_and_warn,
     ConfigValidationError,
     ValidatedConfig,
     ValidatorRegistry,
+    check_config_and_warn,
+    validate_brain_config,
+    validate_global_consistency,
+    validate_region_sizes,
+    validate_thalia_config,
 )
-from .size_calculator import LayerSizeCalculator, BiologicalRatios
 
 __all__ = [
     # Main config

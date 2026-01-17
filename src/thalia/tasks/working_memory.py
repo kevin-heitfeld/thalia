@@ -42,16 +42,16 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Any
 import math
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
-from thalia.tasks.stimulus_utils import create_random_stimulus
-from thalia.regions.prefrontal import Prefrontal
 from thalia.constants.task import MATCH_PROBABILITY_DEFAULT
+from thalia.regions.prefrontal import Prefrontal
+from thalia.tasks.stimulus_utils import create_random_stimulus
 
 
 @dataclass
@@ -67,12 +67,13 @@ class WorkingMemoryTaskConfig:
         retrieval_window_ms: Time window for retrieval
         device: Computation device
     """
+
     theta_freq_hz: float = 8.0
     gamma_freq_hz: float = 40.0
     items_per_theta_cycle: int = 8
     dt_ms: float = 1.0
     encoding_window_ms: float = 100.0  # 100ms to encode
-    retrieval_window_ms: float = 50.0   # 50ms to retrieve
+    retrieval_window_ms: float = 50.0  # 50ms to retrieve
     device: str = "cpu"
 
 
@@ -108,11 +109,7 @@ class ThetaGammaEncoder(nn.Module):
         # Time tracking
         self.item_count = 0
 
-    def set_oscillator_phases(
-        self,
-        phases: Dict[str, float],
-        signals: Dict[str, float]
-    ) -> None:
+    def set_oscillator_phases(self, phases: Dict[str, float], signals: Dict[str, float]) -> None:
         """Receive current oscillator phases from brain.
 
         This should be called before encoding/retrieval operations
@@ -122,10 +119,10 @@ class ThetaGammaEncoder(nn.Module):
             phases: Dict mapping oscillator name to phase [0, 2π)
             signals: Dict mapping oscillator name to signal [-1, 1]
         """
-        self._theta_phase = phases.get('theta', 0.0)
-        self._gamma_phase = phases.get('gamma', 0.0)
-        self._theta_signal = signals.get('theta', 0.0)
-        self._gamma_signal = signals.get('gamma', 0.0)
+        self._theta_phase = phases.get("theta", 0.0)
+        self._gamma_phase = phases.get("gamma", 0.0)
+        self._theta_signal = signals.get("theta", 0.0)
+        self._gamma_signal = signals.get("gamma", 0.0)
 
     def get_encoding_phase(self, item_index: int) -> Tuple[float, float]:
         """
@@ -221,12 +218,7 @@ class NBackTask:
                   (C matches? B matches!)
     """
 
-    def __init__(
-        self,
-        prefrontal: Prefrontal,
-        config: WorkingMemoryTaskConfig,
-        n_back: int = 2
-    ):
+    def __init__(self, prefrontal: Prefrontal, config: WorkingMemoryTaskConfig, n_back: int = 2):
         """
         Initialize N-back task.
 
@@ -254,11 +246,7 @@ class NBackTask:
         self.correct = []
         self.encoder.item_count = 0
 
-    def encode_item(
-        self,
-        stimulus: torch.Tensor,
-        item_index: int
-    ) -> Dict[str, Any]:
+    def encode_item(self, stimulus: torch.Tensor, item_index: int) -> Dict[str, Any]:
         """
         Encode a stimulus into working memory at specific theta phase.
 
@@ -281,11 +269,7 @@ class NBackTask:
         dopamine_signal = 0.8 * excitability  # High when gamma peaks
 
         # Forward through prefrontal with encoding
-        self.prefrontal.forward(
-            stimulus,
-            dopamine_signal=dopamine_signal,
-            dt=self.config.dt_ms
-        )
+        self.prefrontal.forward(stimulus, dopamine_signal=dopamine_signal, dt=self.config.dt_ms)
 
         # Note: Oscillators are advanced by brain, not here
 
@@ -293,13 +277,11 @@ class NBackTask:
             "theta_phase": theta_phase,
             "gamma_phase": gamma_phase,
             "excitability": excitability,
-            "dopamine": dopamine_signal
+            "dopamine": dopamine_signal,
         }
 
     def retrieve_item(
-        self,
-        current_index: int,
-        n_back: int
+        self, current_index: int, n_back: int
     ) -> Tuple[Optional[torch.Tensor], Dict[str, Any]]:
         """
         Retrieve item from N positions back using phase addressing.
@@ -331,19 +313,19 @@ class NBackTask:
         if self.prefrontal.state.spikes is None:
             return None, {"error": "PFC has not produced output yet"}
 
-        retrieved = self.prefrontal.state.spikes.float()  # Convert bool spikes to float for comparison
+        retrieved = (
+            self.prefrontal.state.spikes.float()
+        )  # Convert bool spikes to float for comparison
 
         # Note: Oscillators are advanced by brain, not here
 
         return retrieved, {
             "target_phase": target_phase,
-            "retrieved_activity": retrieved.mean().item()
+            "retrieved_activity": retrieved.mean().item(),
         }
 
     def present_stimulus(
-        self,
-        stimulus: torch.Tensor,
-        store_history: bool = True
+        self, stimulus: torch.Tensor, store_history: bool = True
     ) -> Tuple[bool, Dict[str, Any]]:
         """
         Present a stimulus and check for N-back match.
@@ -392,15 +374,13 @@ class NBackTask:
             **retrieval_info,
             "item_index": current_index,
             "is_match": is_match,
-            "can_retrieve": current_index >= self.n_back
+            "can_retrieve": current_index >= self.n_back,
         }
 
         return is_match, metrics
 
     def run_sequence(
-        self,
-        stimulus_sequence: List[torch.Tensor],
-        target_matches: Optional[List[bool]] = None
+        self, stimulus_sequence: List[torch.Tensor], target_matches: Optional[List[bool]] = None
     ) -> Dict[str, Any]:
         """
         Run full N-back sequence and compute accuracy.
@@ -428,10 +408,7 @@ class NBackTask:
             # Only count items where retrieval is possible
             valid_indices = [i for i in range(len(target_matches)) if i >= self.n_back]
             if valid_indices:
-                correct = sum(
-                    responses[i] == target_matches[i]
-                    for i in valid_indices
-                )
+                correct = sum(responses[i] == target_matches[i] for i in valid_indices)
                 accuracy = correct / len(valid_indices)
 
         return {
@@ -439,7 +416,7 @@ class NBackTask:
             "n_items": len(stimulus_sequence),
             "responses": responses,
             "metrics": metrics_list,
-            "n_back": self.n_back
+            "n_back": self.n_back,
         }
 
     def get_statistics(self) -> Dict[str, Any]:
@@ -452,7 +429,7 @@ class NBackTask:
             "n_responses": len(self.responses),
             "n_correct": sum(self.correct),
             "accuracy": sum(self.correct) / len(self.correct) if self.correct else 0.0,
-            "n_back": self.n_back
+            "n_back": self.n_back,
         }
 
 
@@ -461,7 +438,7 @@ def create_n_back_sequence(
     n_dims: int,
     n_back: int = 2,
     match_probability: float = MATCH_PROBABILITY_DEFAULT,
-    device: str = "cpu"
+    device: str = "cpu",
 ) -> Tuple[List[torch.Tensor], List[bool]]:
     """
     Create random N-back sequence with specified match probability.
@@ -489,7 +466,7 @@ def create_n_back_sequence(
             # Create novel item
             stimulus = create_random_stimulus(n_dims, device)
             stimulus = stimulus / (stimulus.norm() + 1e-8)  # Normalize
-            is_match = (i >= n_back and (stimulus == sequence[i - n_back]).all().item())
+            is_match = i >= n_back and (stimulus == sequence[i - n_back]).all().item()
 
         sequence.append(stimulus)
         matches.append(is_match)
@@ -499,12 +476,13 @@ def create_n_back_sequence(
 
 # Convenience functions matching plan specification
 
+
 def theta_gamma_n_back(
     prefrontal: Prefrontal,
     stimulus_sequence: List[torch.Tensor],
     n: int = 2,
     theta_freq_hz: float = 8.0,
-    gamma_freq_hz: float = 40.0
+    gamma_freq_hz: float = 40.0,
 ) -> List[bool]:
     """
     N-back task using theta phase coding (matches plan specification).
@@ -522,9 +500,7 @@ def theta_gamma_n_back(
         results: List of match indicators
     """
     config = WorkingMemoryTaskConfig(
-        theta_freq_hz=theta_freq_hz,
-        gamma_freq_hz=gamma_freq_hz,
-        device=str(prefrontal.device)
+        theta_freq_hz=theta_freq_hz, gamma_freq_hz=gamma_freq_hz, device=str(prefrontal.device)
     )
 
     task = NBackTask(prefrontal, config, n_back=n)

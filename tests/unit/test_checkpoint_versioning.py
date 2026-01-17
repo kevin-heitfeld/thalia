@@ -12,17 +12,17 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from thalia.io.checkpoint import BrainCheckpoint
-from thalia.io.binary_format import MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION
 from thalia import __version__ as THALIA_VERSION
+from thalia.io.binary_format import MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION
+from thalia.io.checkpoint import BrainCheckpoint
 
 
 class MockBrain:
     """Minimal mock brain for testing checkpoint save/load."""
 
     def __init__(self):
-        self.device = 'cpu'
-        self.config = type('obj', (object,), {'device': 'cpu'})()
+        self.device = "cpu"
+        self.config = type("obj", (object,), {"device": "cpu"})()
         self._growth_history = []
 
     def get_full_state(self):
@@ -35,7 +35,7 @@ class MockBrain:
                     },
                     "weights": {
                         "test_weight": torch.rand(100, 50),
-                    }
+                    },
                 }
             },
             "training_steps": 1000,
@@ -47,7 +47,7 @@ def test_checkpoint_includes_versions():
     """Checkpoint metadata should include version information."""
     brain = MockBrain()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".thalia") as f:
         checkpoint_path = f.name
 
     try:
@@ -83,7 +83,7 @@ def test_checkpoint_info_shows_versions():
     """Checkpoint info should display version information."""
     brain = MockBrain()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".thalia") as f:
         checkpoint_path = f.name
 
     try:
@@ -108,10 +108,13 @@ def test_checkpoint_info_shows_versions():
         Path(checkpoint_path).unlink(missing_ok=True)
 
 
-@pytest.mark.parametrize("version_patch,expect_error,error_match", [
-    ("major", True, "Incompatible checkpoint format version"),
-    ("minor", False, "Checkpoint format version mismatch"),
-])
+@pytest.mark.parametrize(
+    "version_patch,expect_error,error_match",
+    [
+        ("major", True, "Incompatible checkpoint format version"),
+        ("minor", False, "Checkpoint format version mismatch"),
+    ],
+)
 def test_load_different_version(version_patch, expect_error, error_match):
     """Test loading checkpoints with different version components.
 
@@ -125,7 +128,7 @@ def test_load_different_version(version_patch, expect_error, error_match):
     """
     brain = MockBrain()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".thalia") as f:
         checkpoint_path = f.name
 
     try:
@@ -134,10 +137,10 @@ def test_load_different_version(version_patch, expect_error, error_match):
 
         # Monkey-patch version to simulate different version
         if version_patch == "major":
-            patch_target = 'thalia.io.checkpoint.MAJOR_VERSION'
+            patch_target = "thalia.io.checkpoint.MAJOR_VERSION"
             patch_value = MAJOR_VERSION + 1
         else:  # minor
-            patch_target = 'thalia.io.checkpoint.MINOR_VERSION'
+            patch_target = "thalia.io.checkpoint.MINOR_VERSION"
             patch_value = MINOR_VERSION + 1
 
         with patch(patch_target, patch_value):
@@ -158,16 +161,16 @@ def test_load_different_thalia_version_warns():
     """Loading checkpoint from different Thalia version should warn."""
     brain = MockBrain()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".thalia") as f:
         checkpoint_path = f.name
 
     try:
         # Save checkpoint with mocked version
-        with patch('thalia.io.checkpoint.THALIA_VERSION', '0.1.0'):
+        with patch("thalia.io.checkpoint.THALIA_VERSION", "0.1.0"):
             BrainCheckpoint.save(brain, checkpoint_path)
 
         # Load with current version (should warn about version mismatch)
-        if THALIA_VERSION != '0.1.0':  # Only test if versions actually differ
+        if THALIA_VERSION != "0.1.0":  # Only test if versions actually differ
             with pytest.warns(UserWarning, match="Checkpoint was saved with Thalia"):
                 state = BrainCheckpoint.load(checkpoint_path)
                 assert state is not None
@@ -180,7 +183,7 @@ def test_load_compatible_version_no_warning():
     """Loading checkpoint with same version should not warn."""
     brain = MockBrain()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.thalia') as f:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".thalia") as f:
         checkpoint_path = f.name
 
     try:
@@ -189,6 +192,7 @@ def test_load_compatible_version_no_warning():
 
         # Load should succeed without warnings
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # Turn warnings into errors
             state = BrainCheckpoint.load(checkpoint_path)
@@ -201,11 +205,12 @@ def test_load_compatible_version_no_warning():
 
 def test_version_in_binary_header():
     """Binary header should contain version information."""
-    from thalia.io.binary_format import CheckpointHeader
     import time
 
+    from thalia.io.binary_format import CheckpointHeader
+
     header = CheckpointHeader(
-        magic=b'THAL',
+        magic=b"THAL",
         major_version=MAJOR_VERSION,
         minor_version=MINOR_VERSION,
         patch_version=PATCH_VERSION,

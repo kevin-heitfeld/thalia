@@ -68,7 +68,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -108,6 +108,7 @@ class MetabolicConfig:
 
         dt: Simulation timestep (ms)
     """
+
     energy_per_spike: float = 0.001
     baseline_cost: float = 0.0
     energy_budget: float = 1.0
@@ -339,9 +340,7 @@ class MetabolicConstraint(nn.Module):
             "total_penalties": self._total_penalties,
             "timesteps": self._timesteps,
             "avg_spikes_per_timestep": self.get_average_spikes_per_timestep(),
-            "avg_energy_per_timestep": (
-                self._total_energy / max(1, self._timesteps)
-            ),
+            "avg_energy_per_timestep": (self._total_energy / max(1, self._timesteps)),
         }
 
     def forward(
@@ -447,8 +446,5 @@ class RegionalMetabolicBudget:
             "total_penalty": self.get_total_penalty(),
             "region_costs": self.region_costs.copy(),
             "region_penalties": self.region_penalties.copy(),
-            "region_efficiencies": {
-                r: self.get_region_efficiency(r)
-                for r in self.region_budgets
-            },
+            "region_efficiencies": {r: self.get_region_efficiency(r) for r in self.region_budgets},
         }

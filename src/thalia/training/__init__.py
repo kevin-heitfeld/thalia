@@ -21,73 +21,65 @@ Date: December 12, 2025
 
 from __future__ import annotations
 
-
 # Import from reorganized subdirectories
-from thalia.training.curriculum import (
-    # Curriculum mechanics
-    InterleavedCurriculumSampler,
-    InterleavedCurriculumSamplerConfig,
-    SpacedRepetitionScheduler,
-    SpacedRepetitionSchedulerConfig,
-    TestingPhaseProtocol,
-    TestingPhaseConfig,
-    ProductiveFailurePhase,
-    ProductiveFailureConfig,
-    CurriculumDifficultyCalibrator,
-    DifficultyCalibratorConfig,
-    StageTransitionProtocol,
-    StageTransitionConfig,
-    TransitionWeekConfig,
-    # Stage manager
-    CurriculumTrainer,
-    StageConfig,
-    TaskConfig,
-    TrainingResult,
-    MechanismPriority,
+from thalia.training.curriculum import (  # Curriculum mechanics; Stage manager; Noise scheduling; Stage evaluation; Logger
     ActiveMechanism,
     CognitiveLoadMonitor,
-    # Noise scheduling
+    CurriculumDifficultyCalibrator,
+    CurriculumLogger,
+    CurriculumTrainer,
+    DifficultyCalibratorConfig,
+    InterleavedCurriculumSampler,
+    InterleavedCurriculumSamplerConfig,
+    LogLevel,
+    MechanismPriority,
+    NoiseProfile,
     NoiseScheduler,
     NoiseSchedulerConfig,
-    NoiseProfile,
     NoiseType,
-    # Stage evaluation
-    evaluate_stage_sensorimotor,
-    evaluate_stage_phonology,
-    evaluate_stage_toddler,
-    check_system_health,
-    generate_evaluation_report,
-    # Logger
-    CurriculumLogger,
-    LogLevel,
+    ProductiveFailureConfig,
+    ProductiveFailurePhase,
+    SpacedRepetitionScheduler,
+    SpacedRepetitionSchedulerConfig,
+    StageConfig,
     StageLog,
+    StageTransitionConfig,
+    StageTransitionProtocol,
+    TaskConfig,
+    TestingPhaseConfig,
+    TestingPhaseProtocol,
+    TrainingResult,
+    TransitionWeekConfig,
+    check_system_health,
+    evaluate_stage_phonology,
+    evaluate_stage_sensorimotor,
+    evaluate_stage_toddler,
+    generate_evaluation_report,
 )
-from thalia.training.datasets import (
-    # Task loaders
+from thalia.training.datasets import (  # Task loaders; Data pipeline
     BaseTaskLoader,
-    SensorimotorTaskLoader,
-    SensorimotorConfig,
-    PhonologyTaskLoader,
-    PhonologyConfig,
-    TaskLoaderRegistry,
-    create_sensorimotor_loader,
-    create_phonology_loader,
-    # Data pipeline
-    TextDataPipeline,
     DataConfig,
+    PhonologyConfig,
+    PhonologyTaskLoader,
+    SensorimotorConfig,
+    SensorimotorTaskLoader,
+    TaskLoaderRegistry,
+    TextDataPipeline,
+    create_phonology_loader,
+    create_sensorimotor_loader,
 )
 from thalia.training.evaluation import (
-    MetacognitiveCalibrator,
-    CalibrationSample,
-    CalibrationPrediction,
     CalibrationMetrics,
+    CalibrationPrediction,
+    CalibrationSample,
+    MetacognitiveCalibrator,
     create_simple_task_generator,
 )
 from thalia.training.visualization import (
-    TrainingMonitor,
-    quick_monitor,
     LiveDiagnostics,
+    TrainingMonitor,
     quick_diagnostics,
+    quick_monitor,
 )
 
 __all__ = [

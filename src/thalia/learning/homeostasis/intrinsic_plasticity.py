@@ -90,7 +90,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -129,9 +129,10 @@ class IntrinsicPlasticityConfig:
 
         dt: Simulation timestep (ms)
     """
+
     target_rate: float = 0.1
-    tau_rate: float = 1000.0         # 1 second for rate averaging
-    tau_threshold: float = 10000.0   # 10 seconds for threshold adaptation
+    tau_rate: float = 1000.0  # 1 second for rate averaging
+    tau_threshold: float = 10000.0  # 10 seconds for threshold adaptation
     learning_rate: Optional[float] = None  # Computed from tau if None
     v_thresh_min: float = 0.5
     v_thresh_max: float = 2.0
@@ -278,7 +279,7 @@ class IntrinsicPlasticity(nn.Module):
         return self.rate_avg - self.config.target_rate
 
     @auto_diagnostics(
-        scalars=['_update_count'],
+        scalars=["_update_count"],
     )
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information.
@@ -294,9 +295,7 @@ class IntrinsicPlasticity(nn.Module):
             "threshold_max": self.thresholds.max().item(),
             "target_rate": self.config.target_rate,
             "rate_error_mean": self.get_rate_errors().mean().item(),
-            "avg_adaptation": (
-                self._total_adaptation / max(1, self._update_count)
-            ),
+            "avg_adaptation": (self._total_adaptation / max(1, self._update_count)),
         }
 
     def forward(
@@ -392,7 +391,7 @@ class PopulationIntrinsicPlasticity(nn.Module):
         return input_current * self._excitability
 
     @auto_diagnostics(
-        scalars=['_rate_avg', '_excitability'],
+        scalars=["_rate_avg", "_excitability"],
     )
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information.

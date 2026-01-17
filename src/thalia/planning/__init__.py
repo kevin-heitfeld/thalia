@@ -63,14 +63,14 @@ from __future__ import annotations
 # Mental Simulation Coordinator
 from thalia.planning.coordinator import (
     MentalSimulationCoordinator,
-    SimulationConfig,
     Rollout,
+    SimulationConfig,
 )
 
 # Dyna Background Planning
 from thalia.planning.dyna import (
-    DynaPlanner,
     DynaConfig,
+    DynaPlanner,
 )
 
 __all__ = [
@@ -78,7 +78,6 @@ __all__ = [
     "MentalSimulationCoordinator",
     "SimulationConfig",
     "Rollout",
-
     # Dyna Background Planning
     "DynaPlanner",
     "DynaConfig",

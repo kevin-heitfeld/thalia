@@ -19,14 +19,14 @@ class TestPrefrontal(RegionTestBase):
     def create_region(self, **kwargs):
         """Create Prefrontal instance for testing."""
         # Extract sizes from kwargs
-        input_size = kwargs.pop('input_size', 100)
-        n_neurons = kwargs.pop('n_neurons', 50)
-        device = kwargs.pop('device', 'cpu')
+        input_size = kwargs.pop("input_size", 100)
+        n_neurons = kwargs.pop("n_neurons", 50)
+        device = kwargs.pop("device", "cpu")
 
         # Create sizes dict
         sizes = {
-            'input_size': input_size,
-            'n_neurons': n_neurons,
+            "input_size": input_size,
+            "n_neurons": n_neurons,
         }
 
         # Create config with behavioral parameters only
@@ -37,7 +37,7 @@ class TestPrefrontal(RegionTestBase):
         """Return default prefrontal parameters."""
         return {
             "input_size": 100,  # Size parameter (passed via sizes dict)
-            "n_neurons": 50,    # Size parameter (passed via sizes dict)
+            "n_neurons": 50,  # Size parameter (passed via sizes dict)
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -45,8 +45,8 @@ class TestPrefrontal(RegionTestBase):
     def get_min_params(self):
         """Return minimal valid parameters for quick tests."""
         return {
-            "input_size": 20,   # Size parameter (passed via sizes dict)
-            "n_neurons": 10,    # Size parameter (passed via sizes dict)
+            "input_size": 20,  # Size parameter (passed via sizes dict)
+            "n_neurons": 10,  # Size parameter (passed via sizes dict)
             "device": "cpu",
             "dt_ms": 1.0,
         }
@@ -198,8 +198,9 @@ class TestPrefrontal(RegionTestBase):
 
             # Weights should change (STDP applied)
             final_weights = region.synaptic_weights["default"]
-            assert not torch.allclose(initial_weights, final_weights, atol=1e-6), \
-                "Expected weight changes from STDP"
+            assert not torch.allclose(
+                initial_weights, final_weights, atol=1e-6
+            ), "Expected weight changes from STDP"
 
     def test_stp_in_recurrent(self):
         """Test short-term plasticity in recurrent connections."""
@@ -225,7 +226,7 @@ class TestPrefrontal(RegionTestBase):
 
         # Context 1: Strong input on first half
         context1 = torch.zeros(self._get_input_size(params), device=region.device)
-        context1[:self._get_input_size(params)//2] = 1.0
+        context1[: self._get_input_size(params) // 2] = 1.0
         region.forward(context1)
         state1 = region.get_state()
 
@@ -234,15 +235,16 @@ class TestPrefrontal(RegionTestBase):
 
         # Context 2: Strong input on second half
         context2 = torch.zeros(self._get_input_size(params), device=region.device)
-        context2[self._get_input_size(params)//2:] = 1.0
+        context2[self._get_input_size(params) // 2 :] = 1.0
         region.forward(context2)
         state2 = region.get_state()
 
         # States should differ (context-sensitive)
-        if hasattr(state1, 'spikes') and hasattr(state2, 'spikes'):
-          if state1.spikes is not None and state2.spikes is not None:
-            assert not torch.equal(state1.spikes, state2.spikes), \
-                "Expected different responses to different contexts"
+        if hasattr(state1, "spikes") and hasattr(state2, "spikes"):
+            if state1.spikes is not None and state2.spikes is not None:
+                assert not torch.equal(
+                    state1.spikes, state2.spikes
+                ), "Expected different responses to different contexts"
 
 
 # Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)

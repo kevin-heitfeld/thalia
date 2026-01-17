@@ -6,15 +6,21 @@ Centralizes management of VTA dopamine, LC norepinephrine, and NB acetylcholine 
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 
 from thalia.components.coding import compute_firing_rate
 from thalia.neuromodulation.homeostasis import NeuromodulatorCoordination
-from thalia.neuromodulation.systems.locus_coeruleus import LocusCoeruleusSystem, LocusCoeruleusConfig
-from thalia.neuromodulation.systems.nucleus_basalis import NucleusBasalisSystem, NucleusBasalisConfig
-from thalia.neuromodulation.systems.vta import VTADopamineSystem, VTAConfig
+from thalia.neuromodulation.systems.locus_coeruleus import (
+    LocusCoeruleusConfig,
+    LocusCoeruleusSystem,
+)
+from thalia.neuromodulation.systems.nucleus_basalis import (
+    NucleusBasalisConfig,
+    NucleusBasalisSystem,
+)
+from thalia.neuromodulation.systems.vta import VTAConfig, VTADopamineSystem
 
 
 class NeuromodulatorManager:
@@ -75,14 +81,10 @@ class NeuromodulatorManager:
 
         # Apply biological coordination between systems
         # 1. NE-ACh: Optimal encoding at moderate arousal (inverted-U)
-        acetylcholine = self.coordination.coordinate_ne_ach(
-            norepinephrine, acetylcholine
-        )
+        acetylcholine = self.coordination.coordinate_ne_ach(norepinephrine, acetylcholine)
 
         # 2. DA-ACh: High reward without novelty suppresses encoding
-        acetylcholine = self.coordination.coordinate_da_ach(
-            dopamine_raw, acetylcholine
-        )
+        acetylcholine = self.coordination.coordinate_da_ach(dopamine_raw, acetylcholine)
 
         # 3. DA-NE: High uncertainty + reward enhances both
         # Note: Requires prediction error, which is computed in brain.py
@@ -91,20 +93,22 @@ class NeuromodulatorManager:
         # Biologically accurate dopamine projection strengths
         # Based on anatomical innervation density from VTA/SNc
         dopamine_projections = {
-            "striatum": 1.0,        # Dense VTA/SNc projection (direct pathway)
-            "prefrontal": 0.8,      # Strong VTA projection (mesocortical pathway)
-            "pfc": 0.8,             # Alias for prefrontal
-            "cortex": 0.3,          # Sparse, layer-specific (mainly L5)
-            "hippocampus": 0.1,     # Minimal direct (mostly via septum/VTA)
-            "thalamus": 0.2,        # Moderate SNc projection
-            "cerebellum": 0.0,      # No dopamine (uses climbing fiber errors)
+            "striatum": 1.0,  # Dense VTA/SNc projection (direct pathway)
+            "prefrontal": 0.8,  # Strong VTA projection (mesocortical pathway)
+            "pfc": 0.8,  # Alias for prefrontal
+            "cortex": 0.3,  # Sparse, layer-specific (mainly L5)
+            "hippocampus": 0.1,  # Minimal direct (mostly via septum/VTA)
+            "thalamus": 0.2,  # Moderate SNc projection
+            "cerebellum": 0.0,  # No dopamine (uses climbing fiber errors)
         }
 
         # Broadcast coordinated signals to all regions with region-specific DA scaling
         for region_name, region in regions.items():
-            if hasattr(region, 'set_neuromodulators'):
+            if hasattr(region, "set_neuromodulators"):
                 # Scale dopamine based on biological projection strength
-                da_scale = dopamine_projections.get(region_name, 0.5)  # Default 50% for unknown regions
+                da_scale = dopamine_projections.get(
+                    region_name, 0.5
+                )  # Default 50% for unknown regions
                 dopamine_scaled = dopamine_raw * da_scale
 
                 region.set_neuromodulators(dopamine_scaled, norepinephrine, acetylcholine)
@@ -133,16 +137,16 @@ class NeuromodulatorManager:
                 uncertainty += 0.3
 
         # 2. Hippocampus pattern matching uncertainty
-        pattern_comparison = hippocampus_diagnostics.get('pattern_comparison', {})
-        if 'dg_similarity' in pattern_comparison:
-            similarity = pattern_comparison['dg_similarity']
+        pattern_comparison = hippocampus_diagnostics.get("pattern_comparison", {})
+        if "dg_similarity" in pattern_comparison:
+            similarity = pattern_comparison["dg_similarity"]
             # Middle similarity = ambiguous (neither novel nor familiar)
             if 0.3 < similarity < 0.7:
                 uncertainty += 0.4
 
         # 3. Novelty contributes to uncertainty
-        if 'dg_similarity' in pattern_comparison:
-            novelty = 1.0 - pattern_comparison['dg_similarity']
+        if "dg_similarity" in pattern_comparison:
+            novelty = 1.0 - pattern_comparison["dg_similarity"]
             uncertainty += 0.3 * novelty
 
         return min(1.0, uncertainty)
@@ -245,27 +249,35 @@ class NeuromodulatorManager:
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get neuromodulator system diagnostics."""
         return {
-            'dopamine': self.vta.get_global_dopamine(),
-            'norepinephrine': self.locus_coeruleus.get_norepinephrine(),
-            'acetylcholine': self.nucleus_basalis.get_acetylcholine(),
-            'vta': self.vta.get_state(),
-            'locus_coeruleus': self.locus_coeruleus.get_state(),
-            'nucleus_basalis': self.nucleus_basalis.get_state(),
+            "dopamine": self.vta.get_global_dopamine(),
+            "norepinephrine": self.locus_coeruleus.get_norepinephrine(),
+            "acetylcholine": self.nucleus_basalis.get_acetylcholine(),
+            "vta": self.vta.get_state(),
+            "locus_coeruleus": self.locus_coeruleus.get_state(),
+            "nucleus_basalis": self.nucleus_basalis.get_state(),
         }
 
     def get_state(self) -> Dict[str, Any]:
         """Get checkpoint state for all neuromodulator systems."""
         return {
-            'vta': self.vta.get_state() if hasattr(self.vta, 'get_state') else {},
-            'locus_coeruleus': self.locus_coeruleus.get_state() if hasattr(self.locus_coeruleus, 'get_state') else {},
-            'nucleus_basalis': self.nucleus_basalis.get_state() if hasattr(self.nucleus_basalis, 'get_state') else {},
+            "vta": self.vta.get_state() if hasattr(self.vta, "get_state") else {},
+            "locus_coeruleus": (
+                self.locus_coeruleus.get_state()
+                if hasattr(self.locus_coeruleus, "get_state")
+                else {}
+            ),
+            "nucleus_basalis": (
+                self.nucleus_basalis.get_state()
+                if hasattr(self.nucleus_basalis, "get_state")
+                else {}
+            ),
         }
 
     def load_state(self, state_dict: Dict[str, Any]) -> None:
         """Load checkpoint state for all neuromodulator systems."""
-        if 'vta' in state_dict and hasattr(self.vta, 'load_state'):
-            self.vta.load_state(state_dict['vta'])
-        if 'locus_coeruleus' in state_dict and hasattr(self.locus_coeruleus, 'load_state'):
-            self.locus_coeruleus.load_state(state_dict['locus_coeruleus'])
-        if 'nucleus_basalis' in state_dict and hasattr(self.nucleus_basalis, 'load_state'):
-            self.nucleus_basalis.load_state(state_dict['nucleus_basalis'])
+        if "vta" in state_dict and hasattr(self.vta, "load_state"):
+            self.vta.load_state(state_dict["vta"])
+        if "locus_coeruleus" in state_dict and hasattr(self.locus_coeruleus, "load_state"):
+            self.locus_coeruleus.load_state(state_dict["locus_coeruleus"])
+        if "nucleus_basalis" in state_dict and hasattr(self.nucleus_basalis, "load_state"):
+            self.nucleus_basalis.load_state(state_dict["nucleus_basalis"])

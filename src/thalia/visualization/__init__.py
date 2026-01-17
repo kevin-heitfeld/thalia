@@ -9,15 +9,14 @@ Provides tools for visualizing:
 
 from __future__ import annotations
 
-
 from .network_graph import (
-    visualize_brain_topology,
     export_topology_to_graphviz,
     plot_connectivity_matrix,
+    visualize_brain_topology,
 )
 
 __all__ = [
-    'visualize_brain_topology',
-    'export_topology_to_graphviz',
-    'plot_connectivity_matrix',
+    "visualize_brain_topology",
+    "export_topology_to_graphviz",
+    "plot_connectivity_matrix",
 ]

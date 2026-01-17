@@ -200,6 +200,7 @@ class Configurable(Protocol):
 # Compound Protocols
 # =============================================================================
 
+
 @runtime_checkable
 class NeuralComponentProtocol(Forwardable, Learnable, Resettable, Diagnosable, Protocol):
     """Full protocol for neural components (regions, pathways, populations).
@@ -210,6 +211,7 @@ class NeuralComponentProtocol(Forwardable, Learnable, Resettable, Diagnosable, P
     - Reset state (reset/reset_state)
     - Provide diagnostics (get_diagnostics)
     """
+
     pass
 
 

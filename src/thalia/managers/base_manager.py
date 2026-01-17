@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass
-from typing import Generic, TypeVar, Optional, Dict, Any
+from typing import Any, Dict, Generic, Optional, TypeVar
 
 import torch
 
@@ -68,6 +68,7 @@ class ManagerContext:
         dt_ms: Simulation timestep in milliseconds
         metadata: Additional context-specific data
     """
+
     device: torch.device
     n_input: Optional[int] = None
     n_output: Optional[int] = None
@@ -79,7 +80,7 @@ class ManagerContext:
             self.metadata = {}
 
 
-TConfig = TypeVar('TConfig')
+TConfig = TypeVar("TConfig")
 
 
 class BaseManager(ABC, Generic[TConfig]):

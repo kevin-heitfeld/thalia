@@ -11,23 +11,24 @@ Tests:
 """
 
 import json
-from pathlib import Path
-import pytest
 import tempfile
-import torch
+from pathlib import Path
 from unittest.mock import Mock
 
-from thalia.core.brain_builder import BrainBuilder
-from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
+import pytest
+import torch
+
 from thalia.config import GlobalConfig
 from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.core.brain_builder import BrainBuilder
+from thalia.core.dynamic_brain import ComponentSpec, ConnectionSpec, DynamicBrain
 from thalia.pathways.axonal_projection import AxonalProjection
-
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 # ============================================================================
 # Test Helpers
 # ============================================================================
+
 
 def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu") -> ThalamicRelay:
     """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
@@ -42,6 +43,7 @@ def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu") 
 # DynamicBrain Tests
 # ============================================================================
 
+
 def test_dynamic_brain_creation():
     """Test DynamicBrain instantiation."""
     global_config = GlobalConfig(device="cpu", dt_ms=1.0)
@@ -53,8 +55,7 @@ def test_dynamic_brain_creation():
 
     connections = {
         ("region1", "region2"): AxonalProjection(
-            sources=[("region1", None, 64, 1.0)],
-            device="cpu"
+            sources=[("region1", None, 64, 1.0)], device="cpu"
         ),
     }
 
@@ -78,14 +79,8 @@ def test_dynamic_brain_topology_graph():
     }
 
     connections = {
-        ("a", "b"): AxonalProjection(
-            sources=[("a", None, 64, 1.0)],
-            device="cpu"
-        ),
-        ("b", "c"): AxonalProjection(
-            sources=[("b", None, 64, 1.0)],
-            device="cpu"
-        ),
+        ("a", "b"): AxonalProjection(sources=[("a", None, 64, 1.0)], device="cpu"),
+        ("b", "c"): AxonalProjection(sources=[("b", None, 64, 1.0)], device="cpu"),
     }
 
     brain = DynamicBrain(components, connections, global_config)
@@ -148,10 +143,7 @@ def test_dynamic_brain_add_connection():
     brain = DynamicBrain(components, {}, global_config)
 
     # Add connection
-    pathway = AxonalProjection(
-        sources=[("a", None, 64, 1.0)],
-        device="cpu"
-    )
+    pathway = AxonalProjection(sources=[("a", None, 64, 1.0)], device="cpu")
     brain.add_connection("a", "b", pathway)
 
     # connections dict uses tuple keys, not string keys
@@ -186,6 +178,7 @@ def test_dynamic_brain_reset_state():
 # ============================================================================
 # BrainBuilder Tests
 # ============================================================================
+
 
 def test_brain_builder_creation():
     """Test BrainBuilder instantiation."""
@@ -245,12 +238,14 @@ def test_brain_builder_save_load_spec():
         config_params={"n_neurons": 64},
     )
 
-    builder._connections.append(ConnectionSpec(
-        source="region1",
-        target="region2",
-        pathway_type="mock_pathway",
-        config_params={},
-    ))
+    builder._connections.append(
+        ConnectionSpec(
+            source="region1",
+            target="region2",
+            pathway_type="mock_pathway",
+            config_params={},
+        )
+    )
 
     # Save to temp file
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
@@ -283,6 +278,7 @@ def test_brain_builder_list_presets():
 
 def test_brain_builder_preset_registration():
     """Test preset architecture registration."""
+
     def custom_preset(builder: BrainBuilder, **overrides):
         # Mock preset builder
         pass
@@ -302,6 +298,7 @@ def test_brain_builder_preset_registration():
 # Mock Failure Tests
 # ============================================================================
 
+
 def test_brain_handles_connection_validation_failure():
     """Test brain validates incompatible connections.
 
@@ -320,10 +317,7 @@ def test_brain_handles_connection_validation_failure():
     # Create pathway with output size that doesn't match target input
     # Source outputs 64, but target expects 128 → dimension mismatch
     # AxonalProjection expects tuples: (region_name, port, size, delay_ms)
-    pathway = AxonalProjection(
-        sources=[("source", None, 64, 1.0)],
-        device="cpu"
-    )
+    pathway = AxonalProjection(sources=[("source", None, 64, 1.0)], device="cpu")
 
     # Should raise error during validation
     # Note: DynamicBrain may not validate this automatically yet
@@ -334,7 +328,9 @@ def test_brain_handles_connection_validation_failure():
         assert ("source", "target") in brain.connections
     except (ValueError, AssertionError, RuntimeError) as e:
         # Expected: dimension validation error
-        assert any(keyword in str(e).lower() for keyword in ["dimension", "size", "mismatch", "shape"])
+        assert any(
+            keyword in str(e).lower() for keyword in ["dimension", "size", "mismatch", "shape"]
+        )
 
 
 def test_brain_forward_with_missing_inputs():
@@ -361,7 +357,9 @@ def test_brain_forward_with_missing_inputs():
         assert "outputs" in result
     except (KeyError, ValueError) as e:
         # Expected: clear error about missing inputs
-        assert any(keyword in str(e).lower() for keyword in ["missing", "input", "required", "region_b"])
+        assert any(
+            keyword in str(e).lower() for keyword in ["missing", "input", "required", "region_b"]
+        )
 
 
 if __name__ == "__main__":

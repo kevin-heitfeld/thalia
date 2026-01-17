@@ -23,11 +23,12 @@ Date: December 17, 2025
 from __future__ import annotations
 
 from typing import Optional
+
 import torch
 import torch.nn as nn
 
-from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.synapses.weight_init import WeightInitializer
 
 
 class DeepCerebellarNuclei(nn.Module):
@@ -76,7 +77,7 @@ class DeepCerebellarNuclei(nn.Module):
                 n_output=n_output,
                 n_input=n_purkinje,
                 sparsity=0.2,  # 20% connectivity
-                scale=1.5,     # Strong inhibition
+                scale=1.5,  # Strong inhibition
                 device=device,
             ).abs()  # Make positive (inhibitory conductance)
         )
@@ -88,7 +89,7 @@ class DeepCerebellarNuclei(nn.Module):
                 n_output=n_output,
                 n_input=n_mossy,
                 sparsity=0.1,  # 10% connectivity
-                scale=0.8,     # Moderate excitation
+                scale=0.8,  # Moderate excitation
                 device=device,
             ).abs()  # Make positive (excitatory)
         )
@@ -98,16 +99,16 @@ class DeepCerebellarNuclei(nn.Module):
         # Key: Use biologically realistic reversal potentials to prevent pathological oscillations
         dcn_config = ConductanceLIFConfig(
             v_threshold=-50.0,  # mV, relatively low threshold for spontaneous activity
-            v_reset=-60.0,      # mV, moderate hyperpolarization (not too deep)
-            E_L=-60.0,          # mV, leak/resting potential (match reset for stability)
-            E_E=-45.0,          # mV, excitatory reversal (just above threshold, not 0!)
-            E_I=-80.0,          # mV, inhibitory reversal (hyperpolarizing)
-            g_L=0.05,           # Leak conductance (moderate)
-            tau_mem=20.0,       # ms, longer integration for irregular firing
-            tau_E=3.0,          # ms, excitatory conductance decay
-            tau_I=8.0,          # ms, inhibitory conductance decay (slower for sustained effect)
-            dt_ms=dt_ms,        # Timestep in milliseconds
-            noise_std=0.5,      # mV, membrane noise to break synchrony
+            v_reset=-60.0,  # mV, moderate hyperpolarization (not too deep)
+            E_L=-60.0,  # mV, leak/resting potential (match reset for stability)
+            E_E=-45.0,  # mV, excitatory reversal (just above threshold, not 0!)
+            E_I=-80.0,  # mV, inhibitory reversal (hyperpolarizing)
+            g_L=0.05,  # Leak conductance (moderate)
+            tau_mem=20.0,  # ms, longer integration for irregular firing
+            tau_E=3.0,  # ms, excitatory conductance decay
+            tau_I=8.0,  # ms, inhibitory conductance decay (slower for sustained effect)
+            dt_ms=dt_ms,  # Timestep in milliseconds
+            noise_std=0.5,  # mV, membrane noise to break synchrony
         )
         self.dcn_neurons = ConductanceLIF(
             n_neurons=n_output,
@@ -120,19 +121,23 @@ class DeepCerebellarNuclei(nn.Module):
         # Use Gaussian distribution with moderate drive
         self.tonic_excitation = torch.normal(
             mean=0.08,  # Reduced from 0.12 for more stable dynamics
-            std=0.02,   # Reduced from 0.03 for tighter distribution
+            std=0.02,  # Reduced from 0.03 for tighter distribution
             size=(n_output,),
             device=device,
-        ).clamp(min=0.03, max=0.15)  # Narrower biological range
+        ).clamp(
+            min=0.03, max=0.15
+        )  # Narrower biological range
 
         # Initialize neurons with heterogeneous membrane potentials
         # Prevents synchronized oscillations from identical initial conditions
         v_init = torch.normal(
             mean=-60.0,  # Around reset potential
-            std=5.0,     # Moderate spread
+            std=5.0,  # Moderate spread
             size=(n_output,),
             device=device,
-        ).clamp(min=-70.0, max=-50.0)  # Keep subthreshold
+        ).clamp(
+            min=-70.0, max=-50.0
+        )  # Keep subthreshold
 
         # Set initial membrane potentials (will be set after first reset_state)
         self._initial_v = v_init
@@ -140,7 +145,7 @@ class DeepCerebellarNuclei(nn.Module):
     def forward(
         self,
         purkinje_spikes: torch.Tensor,  # [n_purkinje]
-        mossy_spikes: torch.Tensor,     # [n_mossy]
+        mossy_spikes: torch.Tensor,  # [n_mossy]
     ) -> torch.Tensor:
         """Generate motor output from Purkinje inhibition and mossy excitation.
 
@@ -152,16 +157,10 @@ class DeepCerebellarNuclei(nn.Module):
             Motor command spikes [n_output]
         """
         # Purkinje inhibition (conductance, positive)
-        purkinje_inh = torch.mv(
-            self.purkinje_to_dcn,
-            purkinje_spikes.float()
-        )
+        purkinje_inh = torch.mv(self.purkinje_to_dcn, purkinje_spikes.float())
 
         # Mossy fiber excitation (collateral)
-        mossy_exc = torch.mv(
-            self.mossy_to_dcn,
-            mossy_spikes.float()
-        )
+        mossy_exc = torch.mv(self.mossy_to_dcn, mossy_spikes.float())
 
         # Add heterogeneous tonic excitation (DCN neurons are intrinsically active)
         # Note: ConductanceLIF now has built-in noise_std, so no manual noise needed
@@ -184,10 +183,12 @@ class DeepCerebellarNuclei(nn.Module):
         # Re-initialize with heterogeneous membrane potentials to break synchrony
         v_init = torch.normal(
             mean=-60.0,  # Around reset potential
-            std=5.0,     # Moderate spread
+            std=5.0,  # Moderate spread
             size=(self.n_output,),
             device=self.device,
-        ).clamp(min=-70.0, max=-50.0)  # Keep subthreshold
+        ).clamp(
+            min=-70.0, max=-50.0
+        )  # Keep subthreshold
         self.dcn_neurons.membrane.data = v_init
 
     def get_state(self) -> dict:
@@ -304,7 +305,7 @@ class DeepCerebellarNuclei(nn.Module):
         )
         self.dcn_neurons.to(self.device)
 
-    def grow_input(self, n_new: int, source: str = 'purkinje') -> None:
+    def grow_input(self, n_new: int, source: str = "purkinje") -> None:
         """Grow input dimension from Purkinje or mossy fibers.
 
         Expands weight matrix columns to accept more input neurons.
@@ -317,7 +318,7 @@ class DeepCerebellarNuclei(nn.Module):
             - Adds columns to purkinje_to_dcn or mossy_to_dcn
             - Updates n_purkinje or n_mossy
         """
-        if source == 'purkinje':
+        if source == "purkinje":
             # Add columns to Purkinje→DCN weights
             new_weights = WeightInitializer.sparse_random(
                 n_output=self.n_output,
@@ -330,7 +331,7 @@ class DeepCerebellarNuclei(nn.Module):
                 torch.cat([self.purkinje_to_dcn.data, new_weights], dim=1)
             )
             self.n_purkinje += n_new
-        elif source == 'mossy':
+        elif source == "mossy":
             # Add columns to mossy→DCN weights
             new_weights = WeightInitializer.sparse_random(
                 n_output=self.n_output,

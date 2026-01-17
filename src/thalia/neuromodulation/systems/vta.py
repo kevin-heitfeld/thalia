@@ -43,7 +43,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from thalia.neuromodulation.homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
+from thalia.neuromodulation.homeostasis import (
+    NeuromodulatorHomeostasis,
+    NeuromodulatorHomeostasisConfig,
+)
 
 
 @dataclass
@@ -52,6 +55,7 @@ class VTAConfig:
 
     Parameters control dopamine dynamics and normalization.
     """
+
     # Phasic dopamine decay (reuptake by DAT transporters)
     # τ = 200ms → decay = exp(-dt/τ) ≈ 0.995 per ms
     phasic_decay_per_ms: float = 0.995
@@ -62,7 +66,7 @@ class VTAConfig:
 
     # Adaptive normalization for RPE
     rpe_avg_tau: float = 0.9  # EMA decay for running average
-    rpe_clip: float = 2.0      # Clip normalized RPE to this range
+    rpe_clip: float = 2.0  # Clip normalized RPE to this range
 
     # Dopamine physiological limits
     min_dopamine: float = -2.0
@@ -113,16 +117,18 @@ class VTADopamineSystem:
         self.config = config or VTAConfig()
 
         # Dopamine components
-        self._tonic_dopamine: float = 0.0   # Slow baseline (intrinsic)
+        self._tonic_dopamine: float = 0.0  # Slow baseline (intrinsic)
         self._phasic_dopamine: float = 0.0  # Fast bursts (external)
         self._global_dopamine: float = 0.0  # Combined signal
 
         # Adaptive normalization state
-        self._avg_abs_rpe: float = 0.5      # Running average of |RPE|
-        self._rpe_history_count: int = 0    # Number of rewards seen
+        self._avg_abs_rpe: float = 0.5  # Running average of |RPE|
+        self._rpe_history_count: int = 0  # Number of rewards seen
 
         # Homeostatic regulation
-        homeostatic_cfg = self.config.homeostatic_config or NeuromodulatorHomeostasisConfig(target_level=0.0)
+        homeostatic_cfg = self.config.homeostatic_config or NeuromodulatorHomeostasisConfig(
+            target_level=0.0
+        )
         self._homeostatic = NeuromodulatorHomeostasis(config=homeostatic_cfg)
 
     def update(self, dt_ms: float, intrinsic_reward: float) -> None:
@@ -139,12 +145,10 @@ class VTADopamineSystem:
         """
         # Update tonic dopamine (slow, smoothed)
         alpha = self.config.tonic_alpha
-        self._tonic_dopamine = (
-            (1 - alpha) * self._tonic_dopamine + alpha * intrinsic_reward
-        )
+        self._tonic_dopamine = (1 - alpha) * self._tonic_dopamine + alpha * intrinsic_reward
 
         # Decay phasic dopamine (fast, exponential)
-        decay = self.config.phasic_decay_per_ms ** dt_ms
+        decay = self.config.phasic_decay_per_ms**dt_ms
         self._phasic_dopamine *= decay
 
         # Compute global dopamine
@@ -152,8 +156,7 @@ class VTADopamineSystem:
 
         # Clip to physiological range
         self._global_dopamine = max(
-            self.config.min_dopamine,
-            min(self.config.max_dopamine, self._global_dopamine)
+            self.config.min_dopamine, min(self.config.max_dopamine, self._global_dopamine)
         )
 
         # Update homeostatic regulation
@@ -184,8 +187,7 @@ class VTADopamineSystem:
         # Update global dopamine immediately
         self._global_dopamine = self._tonic_dopamine + self._phasic_dopamine
         self._global_dopamine = max(
-            self.config.min_dopamine,
-            min(self.config.max_dopamine, self._global_dopamine)
+            self.config.min_dopamine, min(self.config.max_dopamine, self._global_dopamine)
         )
 
         return normalized_rpe
@@ -216,19 +218,14 @@ class VTADopamineSystem:
             alpha = 1.0 - self.config.rpe_avg_tau
 
         # Update running average of |RPE|
-        self._avg_abs_rpe = (
-            self.config.rpe_avg_tau * self._avg_abs_rpe + alpha * abs_rpe
-        )
+        self._avg_abs_rpe = self.config.rpe_avg_tau * self._avg_abs_rpe + alpha * abs_rpe
 
         # Normalize RPE by running average (with epsilon for stability)
         epsilon = 0.1
         normalized_rpe = rpe / (self._avg_abs_rpe + epsilon)
 
         # Clip to prevent extreme updates
-        return max(
-            -self.config.rpe_clip,
-            min(self.config.rpe_clip, normalized_rpe)
-        )
+        return max(-self.config.rpe_clip, min(self.config.rpe_clip, normalized_rpe))
 
     def get_global_dopamine(self, apply_homeostasis: bool = True) -> float:
         """Get current global dopamine level for broadcast to regions.
@@ -266,12 +263,12 @@ class VTADopamineSystem:
             Dictionary with all VTA state
         """
         return {
-            'tonic_dopamine': self._tonic_dopamine,
-            'phasic_dopamine': self._phasic_dopamine,
-            'global_dopamine': self._global_dopamine,
-            'avg_abs_rpe': self._avg_abs_rpe,
-            'rpe_history_count': self._rpe_history_count,
-            'homeostatic': self._homeostatic.get_state(),
+            "tonic_dopamine": self._tonic_dopamine,
+            "phasic_dopamine": self._phasic_dopamine,
+            "global_dopamine": self._global_dopamine,
+            "avg_abs_rpe": self._avg_abs_rpe,
+            "rpe_history_count": self._rpe_history_count,
+            "homeostatic": self._homeostatic.get_state(),
         }
 
     def set_state(self, state: dict) -> None:
@@ -280,13 +277,13 @@ class VTADopamineSystem:
         Args:
             state: Dictionary from get_state()
         """
-        self._tonic_dopamine = state['tonic_dopamine']
-        self._phasic_dopamine = state['phasic_dopamine']
-        self._global_dopamine = state['global_dopamine']
-        self._avg_abs_rpe = state['avg_abs_rpe']
-        self._rpe_history_count = state['rpe_history_count']
-        if 'homeostatic' in state:
-            self._homeostatic.set_state(state['homeostatic'])
+        self._tonic_dopamine = state["tonic_dopamine"]
+        self._phasic_dopamine = state["phasic_dopamine"]
+        self._global_dopamine = state["global_dopamine"]
+        self._avg_abs_rpe = state["avg_abs_rpe"]
+        self._rpe_history_count = state["rpe_history_count"]
+        if "homeostatic" in state:
+            self._homeostatic.set_state(state["homeostatic"])
 
     def reset_state(self) -> None:
         """Reset VTA to initial state."""
@@ -320,13 +317,13 @@ class VTADopamineSystem:
         homeostatic_health = self._homeostatic.check_health()
 
         return {
-            'is_healthy': len(issues) == 0 and homeostatic_health['is_healthy'],
-            'issues': issues + homeostatic_health['issues'],
-            'warnings': homeostatic_health['warnings'],
-            'tonic': self._tonic_dopamine,
-            'phasic': self._phasic_dopamine,
-            'global': self._global_dopamine,
-            'avg_abs_rpe': self._avg_abs_rpe,
-            'rewards_seen': self._rpe_history_count,
-            'receptor_sensitivity': homeostatic_health['sensitivity'],
+            "is_healthy": len(issues) == 0 and homeostatic_health["is_healthy"],
+            "issues": issues + homeostatic_health["issues"],
+            "warnings": homeostatic_health["warnings"],
+            "tonic": self._tonic_dopamine,
+            "phasic": self._phasic_dopamine,
+            "global": self._global_dopamine,
+            "avg_abs_rpe": self._avg_abs_rpe,
+            "rewards_seen": self._rpe_history_count,
+            "receptor_sensitivity": homeostatic_health["sensitivity"],
         }

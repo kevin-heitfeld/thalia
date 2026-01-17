@@ -19,11 +19,10 @@ References:
 - Frankland & Bontempi (2005): Recent vs remote memories
 """
 
-import torch
 import pytest
+import torch
 
-from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
-
+from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
 
 # =====================================================================
 # FIXTURES
@@ -103,7 +102,9 @@ def test_multiscale_config_validation():
 
     # Check ranges
     assert config.fast_trace_tau_ms > 0, "fast_trace_tau should be positive"
-    assert config.slow_trace_tau_ms > config.fast_trace_tau_ms, "slow_trace_tau should be > fast_trace_tau"
+    assert (
+        config.slow_trace_tau_ms > config.fast_trace_tau_ms
+    ), "slow_trace_tau should be > fast_trace_tau"
     assert 0 < config.consolidation_rate < 1, "consolidation_rate should be in (0, 1)"
     assert 0 < config.slow_trace_contribution < 1, "slow_trace_contribution should be in (0, 1)"
 
@@ -246,7 +247,9 @@ def test_fast_trace_decays_over_time(
     # Fast trace should decay significantly after 200ms
     # With tau=1000ms: after 200ms, remaining = exp(-200/1000) ≈ 82%
     # But with learning also happening, decay is slower. Accept 90% threshold.
-    assert final_fast < initial_fast * 0.95, f"Fast trace should decay to <95% (was {final_fast/initial_fast*100:.1f}%)"
+    assert (
+        final_fast < initial_fast * 0.95
+    ), f"Fast trace should decay to <95% (was {final_fast/initial_fast*100:.1f}%)"
     assert final_fast > 0.01, "Fast trace should not completely disappear"
 
 
@@ -311,7 +314,9 @@ def test_slow_trace_accumulates_via_consolidation(
 
     # Check that slow trace has started to accumulate
     slow_trace_norm = hpc._ca3_ca3_slow.abs().sum().item()
-    assert slow_trace_norm > 0.001, f"Slow trace should accumulate via consolidation (got {slow_trace_norm})"
+    assert (
+        slow_trace_norm > 0.001
+    ), f"Slow trace should accumulate via consolidation (got {slow_trace_norm})"
 
 
 def test_slow_trace_persists_longer_than_fast(
@@ -356,8 +361,9 @@ def test_slow_trace_persists_longer_than_fast(
     fast_retention = final_fast / (initial_fast + 1e-8)
     slow_retention = final_slow / (initial_slow + 1e-8)
 
-    assert slow_retention > fast_retention, \
-        f"Slow trace should persist longer (fast={fast_retention:.3f}, slow={slow_retention:.3f})"
+    assert (
+        slow_retention > fast_retention
+    ), f"Slow trace should persist longer (fast={fast_retention:.3f}, slow={slow_retention:.3f})"
 
 
 def test_slow_trace_decay_timescale(
@@ -390,7 +396,9 @@ def test_slow_trace_decay_timescale(
     final_value = hpc._ca3_ca3_slow.abs().mean().item()
 
     # Allow 20% tolerance (discrete approximation + numerical errors)
-    assert 0.25 < final_value < 0.50, f"After 1 slow tau, trace should be ~0.37 (got {final_value:.3f})"
+    assert (
+        0.25 < final_value < 0.50
+    ), f"After 1 slow tau, trace should be ~0.37 (got {final_value:.3f})"
 
 
 # =====================================================================
@@ -431,8 +439,9 @@ def test_consolidation_transfers_fast_to_slow(
     final_slow = hpc._ca3_ca3_slow.abs().sum().item()
 
     # Slow trace should have increased (consolidation from fast)
-    assert final_slow > initial_slow, \
-        f"Slow trace should grow via consolidation (initial={initial_slow:.4f}, final={final_slow:.4f})"
+    assert (
+        final_slow > initial_slow
+    ), f"Slow trace should grow via consolidation (initial={initial_slow:.4f}, final={final_slow:.4f})"
 
 
 def test_consolidation_rate_controls_transfer_speed(
@@ -479,8 +488,9 @@ def test_consolidation_rate_controls_transfer_speed(
     fast_transfer = hpc_fast._ca3_ca3_slow.abs().sum().item()
 
     # Faster consolidation rate should produce more slow trace accumulation
-    assert fast_transfer > slow_transfer * 2, \
-        f"Fast consolidation rate should transfer more (slow={slow_transfer:.4f}, fast={fast_transfer:.4f})"
+    assert (
+        fast_transfer > slow_transfer * 2
+    ), f"Fast consolidation rate should transfer more (slow={slow_transfer:.4f}, fast={fast_transfer:.4f})"
 
 
 def test_consolidation_preserves_fast_trace_structure(
@@ -524,7 +534,9 @@ def test_consolidation_preserves_fast_trace_structure(
     correlation = (fast_norm * slow_norm).mean().item()
 
     # Positive correlation indicates structural similarity
-    assert correlation > 0.1, f"Slow trace should preserve fast trace structure (correlation={correlation:.3f})"
+    assert (
+        correlation > 0.1
+    ), f"Slow trace should preserve fast trace structure (correlation={correlation:.3f})"
 
 
 # =====================================================================
@@ -684,8 +696,9 @@ def test_fast_trace_tau_biological():
 
     # Biological: Synaptic tagging lasts ~1-10 minutes
     # (Frey & Morris 1997, Redondo & Morris 2011)
-    assert 30_000 <= config.fast_trace_tau_ms <= 600_000, \
-        "Fast trace tau should match biological synaptic tagging (1-10 min)"
+    assert (
+        30_000 <= config.fast_trace_tau_ms <= 600_000
+    ), "Fast trace tau should match biological synaptic tagging (1-10 min)"
 
 
 def test_slow_trace_tau_biological():
@@ -697,8 +710,9 @@ def test_slow_trace_tau_biological():
 
     # Biological: Systems consolidation over hours to days
     # (McClelland et al. 1995, Dudai et al. 2015)
-    assert 1_800_000 <= config.slow_trace_tau_ms <= 86_400_000, \
-        "Slow trace tau should match biological systems consolidation (0.5-24 hours)"
+    assert (
+        1_800_000 <= config.slow_trace_tau_ms <= 86_400_000
+    ), "Slow trace tau should match biological systems consolidation (0.5-24 hours)"
 
 
 def test_consolidation_rate_biological():
@@ -710,8 +724,9 @@ def test_consolidation_rate_biological():
 
     # Biological: Consolidation is gradual over hours/days
     # Not instantaneous transfer
-    assert 0.0001 <= config.consolidation_rate <= 0.01, \
-        "Consolidation should be gradual (0.01-1% per timestep)"
+    assert (
+        0.0001 <= config.consolidation_rate <= 0.01
+    ), "Consolidation should be gradual (0.01-1% per timestep)"
 
 
 def test_slow_trace_contribution_biological():
@@ -723,8 +738,9 @@ def test_slow_trace_contribution_biological():
 
     # Biological: Semantic memory provides stability but shouldn't dominate
     # episodic flexibility. 10-30% weight is reasonable.
-    assert 0.05 <= config.slow_trace_contribution <= 0.3, \
-        "Slow trace contribution should balance stability and flexibility (5-30%)"
+    assert (
+        0.05 <= config.slow_trace_contribution <= 0.3
+    ), "Slow trace contribution should balance stability and flexibility (5-30%)"
 
 
 # =====================================================================

@@ -17,12 +17,11 @@ File Format:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import struct
-from typing import Dict, Any, BinaryIO, List, Tuple
-
+from dataclasses import dataclass
+from typing import Any, BinaryIO, Dict, List, Tuple
 
 # Format version
 MAJOR_VERSION = 0
@@ -30,7 +29,7 @@ MINOR_VERSION = 1
 PATCH_VERSION = 0
 
 # Magic number for Thalia files
-MAGIC_NUMBER = b'THAL'
+MAGIC_NUMBER = b"THAL"
 
 # Header size (fixed)
 HEADER_SIZE = 256
@@ -62,7 +61,7 @@ class CheckpointHeader:
     def to_bytes(self) -> bytes:
         """Serialize header to 256 bytes."""
         data = struct.pack(
-            '<4sHHHHQQQQQQQQQQII',
+            "<4sHHHHQQQQQQQQQQII",
             self.magic,
             self.major_version,
             self.minor_version,
@@ -82,7 +81,7 @@ class CheckpointHeader:
             self.checksum_type,
         )
         # Pad to 256 bytes with zeros
-        return data + b'\x00' * (HEADER_SIZE - len(data))
+        return data + b"\x00" * (HEADER_SIZE - len(data))
 
     @classmethod
     def from_bytes(cls, data: bytes) -> CheckpointHeader:
@@ -90,7 +89,7 @@ class CheckpointHeader:
         if len(data) < HEADER_SIZE:
             raise ValueError(f"Header data too short: {len(data)} < {HEADER_SIZE}")
 
-        fields = struct.unpack('<4sHHHHQQQQQQQQQQII', data[:100])
+        fields = struct.unpack("<4sHHHHQQQQQQQQQQII", data[:100])
 
         return cls(
             magic=fields[0],
@@ -146,10 +145,10 @@ class RegionIndexEntry:
     def to_bytes(self) -> bytes:
         """Serialize entry to 48 bytes."""
         # Encode name as null-terminated string, truncate/pad to 32 bytes
-        name_bytes = self.region_name.encode('utf-8')[:31]
-        name_bytes = name_bytes + b'\x00' * (32 - len(name_bytes))
+        name_bytes = self.region_name.encode("utf-8")[:31]
+        name_bytes = name_bytes + b"\x00" * (32 - len(name_bytes))
 
-        return name_bytes + struct.pack('<QQ', self.data_offset, self.data_length)
+        return name_bytes + struct.pack("<QQ", self.data_offset, self.data_length)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> RegionIndexEntry:
@@ -159,12 +158,12 @@ class RegionIndexEntry:
 
         # Extract null-terminated string
         name_bytes = data[:32]
-        null_pos = name_bytes.find(b'\x00')
+        null_pos = name_bytes.find(b"\x00")
         if null_pos >= 0:
             name_bytes = name_bytes[:null_pos]
-        region_name = name_bytes.decode('utf-8')
+        region_name = name_bytes.decode("utf-8")
 
-        data_offset, data_length = struct.unpack('<QQ', data[32:48])
+        data_offset, data_length = struct.unpack("<QQ", data[32:48])
 
         return cls(
             region_name=region_name,
@@ -191,7 +190,7 @@ class BinaryWriter:
 
     def write_json(self, data: Dict[str, Any]) -> int:
         """Write JSON data and return bytes written."""
-        json_bytes = json.dumps(data, indent=2).encode('utf-8')
+        json_bytes = json.dumps(data, indent=2).encode("utf-8")
         self.file.write(json_bytes)
         self.hasher.update(json_bytes)
         self._write_count += len(json_bytes)
@@ -263,7 +262,7 @@ class BinaryReader:
         self.hasher.update(data)
         self._read_count += length
 
-        return json.loads(data.decode('utf-8'))
+        return json.loads(data.decode("utf-8"))
 
     def read_bytes(self, offset: int, length: int) -> bytes:
         """Read raw bytes at specific offset."""
@@ -294,7 +293,7 @@ class BinaryReader:
         num_entries = length // 48
 
         for i in range(num_entries):
-            entry_data = data[i * 48:(i + 1) * 48]
+            entry_data = data[i * 48 : (i + 1) * 48]
             entries.append(RegionIndexEntry.from_bytes(entry_data))
 
         return entries

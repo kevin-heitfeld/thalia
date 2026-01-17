@@ -16,9 +16,9 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.regions.cortex.layered_cortex import LayeredCortex
-from thalia.regions.cortex.config import LayeredCortexConfig
 from thalia.config import LayerSizeCalculator
+from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions.cortex.layered_cortex import LayeredCortex
 
 
 class TestLayeredCortex(RegionTestBase):
@@ -36,7 +36,7 @@ class TestLayeredCortex(RegionTestBase):
         device = kwargs.pop("device", "cpu")
 
         # Known size parameters (structural)
-        size_params = {'l4_size', 'l23_size', 'l5_size', 'l6a_size', 'l6b_size', 'input_size'}
+        size_params = {"l4_size", "l23_size", "l5_size", "l6a_size", "l6b_size", "input_size"}
 
         # Separate sizes from behavioral config params
         sizes = {k: v for k, v in kwargs.items() if k in size_params}
@@ -91,15 +91,15 @@ class TestLayeredCortex(RegionTestBase):
             frame_locals = frame_info.frame.f_locals
 
             # Check for 'region' variable
-            if 'region' in frame_locals:
-                region = frame_locals['region']
-                if hasattr(region, 'input_size'):
+            if "region" in frame_locals:
+                region = frame_locals["region"]
+                if hasattr(region, "input_size"):
                     return region.input_size
 
             # Also check 'self' for any stored region reference
-            if 'self' in frame_locals:
-                obj = frame_locals['self']
-                if hasattr(obj, '_test_region') and hasattr(obj._test_region, 'input_size'):
+            if "self" in frame_locals:
+                obj = frame_locals["self"]
+                if hasattr(obj, "_test_region") and hasattr(obj._test_region, "input_size"):
                     return obj._test_region.input_size
 
         # Ultimate fallback: if we still can't find it, raise a clear error
@@ -117,15 +117,15 @@ class TestLayeredCortex(RegionTestBase):
             frame_locals = frame_info.frame.f_locals
 
             # Check for 'region' variable
-            if 'region' in frame_locals:
-                region = frame_locals['region']
-                if hasattr(region, 'output_size'):
+            if "region" in frame_locals:
+                region = frame_locals["region"]
+                if hasattr(region, "output_size"):
                     return region.output_size
 
             # Also check 'self' for stored region reference
-            if 'self' in frame_locals:
-                obj = frame_locals['self']
-                if hasattr(obj, '_test_region') and hasattr(obj._test_region, 'output_size'):
+            if "self" in frame_locals:
+                obj = frame_locals["self"]
+                if hasattr(obj, "_test_region") and hasattr(obj._test_region, "output_size"):
                     return obj._test_region.output_size
 
         # Ultimate fallback

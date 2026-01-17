@@ -21,12 +21,12 @@ if str(project_root) not in sys.path:
 import pytest
 import torch
 
+from tests.utils.test_helpers import generate_random_weights, generate_sparse_spikes
 from thalia.synapses.spillover import (
-    SpilloverTransmission,
     SpilloverConfig,
+    SpilloverTransmission,
     apply_spillover_to_weights,
 )
-from tests.utils.test_helpers import generate_sparse_spikes, generate_random_weights
 
 
 @pytest.fixture
@@ -53,13 +53,15 @@ class TestSpilloverInitialization:
 
         # Contract: effective weights should equal direct weights
         effective = spillover.get_effective_weights()
-        assert torch.allclose(effective, base_weights), \
-            "Disabled spillover should return original weights"
+        assert torch.allclose(
+            effective, base_weights
+        ), "Disabled spillover should return original weights"
 
         # Contract: spillover weights should be zero
         spillover_weights = spillover.get_spillover_weights()
-        assert torch.allclose(spillover_weights, torch.zeros_like(base_weights)), \
-            "Disabled spillover should have zero spillover weights"
+        assert torch.allclose(
+            spillover_weights, torch.zeros_like(base_weights)
+        ), "Disabled spillover should have zero spillover weights"
 
     def test_connectivity_mode(self, base_weights, device):
         """Test connectivity-based spillover initialization."""
@@ -72,13 +74,15 @@ class TestSpilloverInitialization:
 
         # Contract: spillover weights should exist
         spillover_weights = spillover.get_spillover_weights()
-        assert spillover_weights.abs().sum() > 0, \
-            "Connectivity spillover should create non-zero weights"
+        assert (
+            spillover_weights.abs().sum() > 0
+        ), "Connectivity spillover should create non-zero weights"
 
         # Contract: effective weights should be augmented
         effective = spillover.get_effective_weights()
-        assert not torch.allclose(effective, base_weights), \
-            "Effective weights should differ from direct weights"
+        assert not torch.allclose(
+            effective, base_weights
+        ), "Effective weights should differ from direct weights"
 
     def test_similarity_mode(self, base_weights, device):
         """Test similarity-based spillover initialization."""
@@ -91,8 +95,9 @@ class TestSpilloverInitialization:
         spillover = SpilloverTransmission(base_weights, config, device)
 
         spillover_weights = spillover.get_spillover_weights()
-        assert spillover_weights.abs().sum() > 0, \
-            "Similarity spillover should create non-zero weights"
+        assert (
+            spillover_weights.abs().sum() > 0
+        ), "Similarity spillover should create non-zero weights"
 
     def test_lateral_mode(self, base_weights, device):
         """Test lateral (banded) spillover initialization."""
@@ -105,8 +110,7 @@ class TestSpilloverInitialization:
         spillover = SpilloverTransmission(base_weights, config, device)
 
         spillover_weights = spillover.get_spillover_weights()
-        assert spillover_weights.abs().sum() > 0, \
-            "Lateral spillover should create non-zero weights"
+        assert spillover_weights.abs().sum() > 0, "Lateral spillover should create non-zero weights"
 
 
 class TestSpilloverStrength:
@@ -125,13 +129,11 @@ class TestSpilloverStrength:
         direct_norm = base_weights.abs().sum().item()
         spillover_norm = spillover.get_spillover_weights().abs().sum().item()
 
-        assert spillover_norm < direct_norm, \
-            "Spillover should be weaker than direct transmission"
+        assert spillover_norm < direct_norm, "Spillover should be weaker than direct transmission"
 
         # Contract: spillover fraction should be roughly equal to strength parameter
         fraction = spillover.get_spillover_fraction()
-        assert 0.05 < fraction < 0.30, \
-            f"Spillover fraction should be ~0.15, got {fraction:.3f}"
+        assert 0.05 < fraction < 0.30, f"Spillover fraction should be ~0.15, got {fraction:.3f}"
 
     def test_spillover_strength_scaling(self, base_weights, device):
         """Test that spillover strength parameter correctly scales spillover."""
@@ -145,8 +147,9 @@ class TestSpilloverStrength:
         strong_weights = strong_spillover.get_spillover_weights().abs().sum().item()
 
         # Contract: stronger config should produce larger spillover weights
-        assert strong_weights > weak_weights, \
-            "Higher spillover strength should produce larger weights"
+        assert (
+            strong_weights > weak_weights
+        ), "Higher spillover strength should produce larger weights"
 
     def test_normalization_prevents_runaway(self, base_weights, device):
         """Test that normalization prevents excessive excitation."""
@@ -165,8 +168,9 @@ class TestSpilloverStrength:
         direct_max = base_weights.abs().max().item()
         effective_max = effective.abs().max().item()
 
-        assert effective_max < direct_max * 2.0, \
-            f"Normalization should prevent runaway (effective_max={effective_max:.3f}, direct_max={direct_max:.3f})"
+        assert (
+            effective_max < direct_max * 2.0
+        ), f"Normalization should prevent runaway (effective_max={effective_max:.3f}, direct_max={direct_max:.3f})"
 
 
 class TestSpilloverForwardPass:
@@ -187,8 +191,9 @@ class TestSpilloverForwardPass:
 
         # Contract: output should be valid (no NaN, reasonable range)
         assert not torch.isnan(output_current).any(), "Output should not contain NaN"
-        assert output_current.shape == (base_weights.shape[0],), \
-            "Output shape should match number of postsynaptic neurons"
+        assert output_current.shape == (
+            base_weights.shape[0],
+        ), "Output shape should match number of postsynaptic neurons"
 
     def test_spillover_affects_output(self, base_weights, device):
         """Test that spillover measurably affects output currents."""
@@ -205,13 +210,15 @@ class TestSpilloverForwardPass:
         output_with_spillover = input_spikes.float() @ spillover.get_effective_weights().T
 
         # Contract: spillover should change output
-        assert not torch.allclose(output_direct, output_with_spillover), \
-            "Spillover should affect output currents"
+        assert not torch.allclose(
+            output_direct, output_with_spillover
+        ), "Spillover should affect output currents"
 
         # Contract: spillover should increase overall excitation (for excitatory synapses)
         if (base_weights >= 0).all():
-            assert output_with_spillover.sum() >= output_direct.sum(), \
-                "Spillover should increase excitation for excitatory synapses"
+            assert (
+                output_with_spillover.sum() >= output_direct.sum()
+            ), "Spillover should increase excitation for excitatory synapses"
 
     def test_apply_spillover_convenience_function(self, base_weights, device):
         """Test convenience function for applying spillover."""
@@ -221,10 +228,12 @@ class TestSpilloverForwardPass:
         effective_weights = apply_spillover_to_weights(base_weights, config, device)
 
         # Contract: should return augmented weights
-        assert effective_weights.shape == base_weights.shape, \
-            "Convenience function should preserve weight matrix shape"
-        assert not torch.allclose(effective_weights, base_weights), \
-            "Convenience function should augment weights"
+        assert (
+            effective_weights.shape == base_weights.shape
+        ), "Convenience function should preserve weight matrix shape"
+        assert not torch.allclose(
+            effective_weights, base_weights
+        ), "Convenience function should augment weights"
 
 
 class TestSpilloverModes:
@@ -245,8 +254,7 @@ class TestSpilloverModes:
 
         # Contract: spillover should exist (shared inputs create connectivity)
         # Note: Exact spillover pattern depends on implementation details
-        assert spillover_weights.abs().sum() > 0, \
-            "Connectivity mode should create spillover"
+        assert spillover_weights.abs().sum() > 0, "Connectivity mode should create spillover"
 
     def test_similarity_uses_weight_patterns(self, device):
         """Test similarity mode identifies neurons with similar weight patterns."""
@@ -269,8 +277,7 @@ class TestSpilloverModes:
         spillover_weights = spillover.get_spillover_weights()
 
         # Contract: spillover should exist
-        assert spillover_weights.abs().sum() > 0, \
-            "Similarity mode should create spillover"
+        assert spillover_weights.abs().sum() > 0, "Similarity mode should create spillover"
 
     def test_lateral_uses_index_proximity(self, device):
         """Test lateral mode creates banded spillover."""
@@ -293,8 +300,9 @@ class TestSpilloverModes:
                 dist = abs(i - j)
                 if dist > config.lateral_radius:
                     # Should have minimal spillover beyond radius
-                    assert spillover_weights[i, j].abs() < 0.01, \
-                        f"Lateral spillover should be weak beyond radius (dist={dist})"
+                    assert (
+                        spillover_weights[i, j].abs() < 0.01
+                    ), f"Lateral spillover should be weak beyond radius (dist={dist})"
 
 
 class TestSpilloverUpdate:
@@ -313,13 +321,15 @@ class TestSpilloverUpdate:
 
         # Contract: spillover should be recomputed
         updated_spillover = spillover.get_spillover_weights()
-        assert not torch.allclose(initial_spillover, updated_spillover), \
-            "Spillover should be recomputed after weight update"
+        assert not torch.allclose(
+            initial_spillover, updated_spillover
+        ), "Spillover should be recomputed after weight update"
 
         # Contract: effective weights should reflect changes
         updated_effective = spillover.get_effective_weights()
-        assert torch.allclose(updated_effective, new_weights + updated_spillover), \
-            "Effective weights should be direct + spillover after update"
+        assert torch.allclose(
+            updated_effective, new_weights + updated_spillover
+        ), "Effective weights should be direct + spillover after update"
 
 
 class TestBiologicalConstraints:
@@ -336,8 +346,9 @@ class TestBiologicalConstraints:
 
         # Contract: diagonal should have minimal spillover (self-connections)
         diagonal = torch.diag(spillover_weights)
-        assert diagonal.abs().max() < 0.01, \
-            "Neurons should not have significant spillover to themselves"
+        assert (
+            diagonal.abs().max() < 0.01
+        ), "Neurons should not have significant spillover to themselves"
 
     def test_spillover_is_excitatory_preserving(self, device):
         """Test that excitatory synapses produce excitatory spillover."""
@@ -352,8 +363,7 @@ class TestBiologicalConstraints:
         # Contract: spillover should preserve sign (excitatory → excitatory)
         # Note: Some spillover might be negative due to competition, but majority should be positive
         positive_fraction = (spillover_weights > 0).sum().item() / spillover_weights.numel()
-        assert positive_fraction > 0.5, \
-            "Excitatory spillover should be mostly excitatory"
+        assert positive_fraction > 0.5, "Excitatory spillover should be mostly excitatory"
 
     def test_spillover_strength_biological_range(self, base_weights, device):
         """Test that spillover strength is in biological range (10-20%)."""
@@ -364,8 +374,9 @@ class TestBiologicalConstraints:
             fraction = spillover.get_spillover_fraction()
 
             # Contract: fraction should be roughly equal to configured strength
-            assert 0.05 < fraction < 0.30, \
-                f"Spillover fraction {fraction:.3f} should be in biological range for strength={strength}"
+            assert (
+                0.05 < fraction < 0.30
+            ), f"Spillover fraction {fraction:.3f} should be in biological range for strength={strength}"
 
 
 if __name__ == "__main__":

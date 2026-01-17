@@ -49,7 +49,7 @@ delegating action selection logic to this specialized module.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import torch
 
@@ -223,7 +223,7 @@ class ActionSelectionMixin:
 
         # UCB bonus - delegate to exploration component if available
         ucb_bonus = torch.zeros_like(net_votes)
-        if hasattr(self, 'exploration'):
+        if hasattr(self, "exploration"):
             ucb_bonus = self.exploration.compute_ucb_bonus()
         elif self.config.ucb_exploration and self._total_trials > 0:
             # Fallback: compute UCB locally if exploration not available
@@ -242,7 +242,9 @@ class ActionSelectionMixin:
             if len(action_nets) > 1:
                 net_range = max(action_nets) - min(action_nets)
                 temperature = self.config.uncertainty_temperature
-                bias_factor = net_range / (temperature + net_range) if (temperature + net_range) > 0 else 0.0
+                bias_factor = (
+                    net_range / (temperature + net_range) if (temperature + net_range) > 0 else 0.0
+                )
                 min_boost = self.config.min_exploration_boost
                 max_boost = 0.5
                 exploration_prob = min_boost + bias_factor * (max_boost - min_boost)
@@ -264,9 +266,7 @@ class ActionSelectionMixin:
             if self.config.softmax_action_selection:
                 # Use configured temperature, or fall back to default constant
                 temperature = getattr(
-                    self.config,
-                    'softmax_temperature',
-                    SOFTMAX_TEMPERATURE_DEFAULT
+                    self.config, "softmax_temperature", SOFTMAX_TEMPERATURE_DEFAULT
                 )
                 selection_values_norm = selection_values - selection_values.max()
                 probs = torch.softmax(selection_values_norm / temperature, dim=0)
@@ -282,7 +282,9 @@ class ActionSelectionMixin:
 
         # Update bookkeeping ONCE per trial
         self.state_tracker.set_last_action(selected_action, self.state_tracker.exploring)
-        self.state_tracker.update_exploration_stats(uncertainty=0.0, exploration_prob=exploration_prob)
+        self.state_tracker.update_exploration_stats(
+            uncertainty=0.0, exploration_prob=exploration_prob
+        )
         self.update_action_counts(selected_action)
 
         return {

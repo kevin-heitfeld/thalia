@@ -42,8 +42,8 @@ from typing import Dict, Optional
 
 from thalia.config.curriculum_growth import CurriculumStage
 from thalia.constants.neuron import (
-    NOISE_STD_NONE,
     NOISE_STD_LOW,
+    NOISE_STD_NONE,
 )
 from thalia.constants.training import (
     NOISE_CRITICALITY_BOOST,
@@ -55,10 +55,11 @@ from thalia.constants.training import (
 
 class NoiseType(Enum):
     """Types of noise that can be scheduled."""
-    MEMBRANE = "membrane"      # Neuron membrane potential noise
-    WEIGHT = "weight"          # Synaptic weight perturbation
-    SPIKE = "spike"            # Temporal jitter
-    INPUT = "input"            # Data augmentation
+
+    MEMBRANE = "membrane"  # Neuron membrane potential noise
+    WEIGHT = "weight"  # Synaptic weight perturbation
+    SPIKE = "spike"  # Temporal jitter
+    INPUT = "input"  # Data augmentation
 
 
 @dataclass
@@ -82,7 +83,7 @@ class NoiseProfile:
 
     # Data augmentation strength (0.0 = none, 1.0 = aggressive)
     augmentation_strength: float = 0.0
-    enable_augmentation: bool = False    # Working memory noise (PFC)
+    enable_augmentation: bool = False  # Working memory noise (PFC)
     wm_noise_std: float = 0.02
 
     # Proprioceptive noise (sensorimotor tasks)
@@ -114,7 +115,9 @@ class NoiseSchedulerConfig:
     # Adaptive noise based on criticality
     enable_criticality_adaptation: bool = True
     criticality_noise_boost: float = NOISE_CRITICALITY_BOOST  # Multiply noise when subcritical
-    criticality_noise_reduction: float = NOISE_CRITICALITY_REDUCTION  # Multiply noise when supercritical
+    criticality_noise_reduction: float = (
+        NOISE_CRITICALITY_REDUCTION  # Multiply noise when supercritical
+    )
 
     # Adaptive noise based on performance
     enable_performance_adaptation: bool = True
@@ -314,8 +317,7 @@ class NoiseScheduler:
             profile = self.config.stage_overrides[stage]
         else:
             profile = self._default_profiles.get(
-                stage,
-                self._default_profiles[CurriculumStage.ABSTRACT]  # Default to highest
+                stage, self._default_profiles[CurriculumStage.ABSTRACT]  # Default to highest
             )
 
         # Apply adaptive multiplier if enabled
@@ -337,11 +339,14 @@ class NoiseScheduler:
             membrane_noise_std=profile.membrane_noise_std * self._adaptation_multiplier,
             weight_noise_std=profile.weight_noise_std * self._adaptation_multiplier,
             enable_weight_noise=profile.enable_weight_noise,
-            oscillator_phase_noise_std=profile.oscillator_phase_noise_std * self._adaptation_multiplier,
+            oscillator_phase_noise_std=profile.oscillator_phase_noise_std
+            * self._adaptation_multiplier,
             enable_oscillator_phase_noise=profile.enable_oscillator_phase_noise,
             spike_jitter_ms=profile.spike_jitter_ms * self._adaptation_multiplier,
             enable_spike_jitter=profile.enable_spike_jitter,
-            augmentation_strength=min(1.0, profile.augmentation_strength * self._adaptation_multiplier),
+            augmentation_strength=min(
+                1.0, profile.augmentation_strength * self._adaptation_multiplier
+            ),
             enable_augmentation=profile.enable_augmentation,
             wm_noise_std=profile.wm_noise_std * self._adaptation_multiplier,
             proprioception_noise_scale=profile.proprioception_noise_scale,  # Keep stable
@@ -424,14 +429,14 @@ class NoiseScheduler:
 
         # Region-specific adjustments (biological variation)
         region_factors = {
-            'cortex_l4': 1.0,     # Standard
-            'cortex_l23': 1.0,    # Standard
-            'cortex_l5': 0.8,     # Slightly lower (more stable)
-            'hippocampus': 1.2,   # Higher (more variable)
-            'prefrontal': 0.9,    # Lower (needs stability for WM)
-            'striatum': 1.0,      # Standard
-            'cerebellum': 0.7,    # Lower (precise timing needed)
-            'thalamus': 0.8,      # Lower (relay precision)
+            "cortex_l4": 1.0,  # Standard
+            "cortex_l23": 1.0,  # Standard
+            "cortex_l5": 0.8,  # Slightly lower (more stable)
+            "hippocampus": 1.2,  # Higher (more variable)
+            "prefrontal": 0.9,  # Lower (needs stability for WM)
+            "striatum": 1.0,  # Standard
+            "cerebellum": 0.7,  # Lower (precise timing needed)
+            "thalamus": 0.8,  # Lower (relay precision)
         }
 
         factor = region_factors.get(region_name.lower(), 1.0)
@@ -492,8 +497,8 @@ class NoiseScheduler:
 
 
 __all__ = [
-    'NoiseType',
-    'NoiseProfile',
-    'NoiseSchedulerConfig',
-    'NoiseScheduler',
+    "NoiseType",
+    "NoiseProfile",
+    "NoiseSchedulerConfig",
+    "NoiseScheduler",
 ]

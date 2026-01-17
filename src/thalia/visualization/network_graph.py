@@ -27,14 +27,15 @@ Usage:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import numpy as np
 
 try:
     import networkx as nx
+
     NETWORKX_AVAILABLE = True
 except ImportError:
     NETWORKX_AVAILABLE = False
@@ -44,8 +45,8 @@ from thalia.constants.visualization import (
     DEFAULT_NODE_SIZE_SCALE,
     EDGE_ALPHA_DEFAULT,
     EDGE_WIDTH_SCALE,
-    HIERARCHICAL_Y_SPACING,
     HIERARCHICAL_X_SPACING,
+    HIERARCHICAL_Y_SPACING,
     LAYOUT_ITERATIONS,
     LAYOUT_K_FACTOR,
     LEGEND_FRAMEALPHA,
@@ -55,7 +56,7 @@ from thalia.constants.visualization import (
 
 def visualize_brain_topology(
     brain: Any,
-    layout: str = 'hierarchical',
+    layout: str = "hierarchical",
     figsize: Tuple[int, int] = (16, 12),
     node_size_scale: float = DEFAULT_NODE_SIZE_SCALE,
     show_weights: bool = True,
@@ -83,8 +84,7 @@ def visualize_brain_topology(
     """
     if not NETWORKX_AVAILABLE:
         raise ImportError(
-            "NetworkX is required for network visualization. "
-            "Install with: pip install networkx"
+            "NetworkX is required for network visualization. " "Install with: pip install networkx"
         )
 
     # Create directed graph
@@ -105,7 +105,7 @@ def visualize_brain_topology(
             type=region_type,
             label=f"{name}\n({n_neurons}N)",
         )
-        region_info[name] = {'neurons': n_neurons, 'type': region_type}
+        region_info[name] = {"neurons": n_neurons, "type": region_type}
 
     # Add edges (pathways)
     for (source, target), pathway in brain.connections.items():
@@ -125,38 +125,39 @@ def visualize_brain_topology(
     fig, ax = plt.subplots(figsize=figsize)
 
     # Choose layout
-    if layout == 'hierarchical':
+    if layout == "hierarchical":
         pos = _hierarchical_layout(G, region_info)
-    elif layout == 'spring':
+    elif layout == "spring":
         pos = nx.spring_layout(G, k=LAYOUT_K_FACTOR, iterations=LAYOUT_ITERATIONS)
-    elif layout == 'circular':
+    elif layout == "circular":
         pos = nx.circular_layout(G)
-    elif layout == 'shell':
+    elif layout == "shell":
         pos = nx.shell_layout(G)
     else:
         raise ValueError(f"Unknown layout: {layout}")
 
     # Node colors by region type
     region_colors = {
-        'sensory': '#FF6B6B',      # Red
-        'cortex': '#4ECDC4',       # Teal
-        'striatum': '#95E1D3',     # Mint
-        'hippocampus': '#F38181',  # Pink
-        'cerebellum': '#AA96DA',   # Purple
-        'thalamus': '#FCBAD3',     # Light pink
-        'vta': '#FFFFD2',          # Light yellow
-        'prefrontal': '#A8D8EA',   # Light blue
-        'motor': '#FFB6B9',        # Peach
-        'other': '#E0E0E0',        # Gray
+        "sensory": "#FF6B6B",  # Red
+        "cortex": "#4ECDC4",  # Teal
+        "striatum": "#95E1D3",  # Mint
+        "hippocampus": "#F38181",  # Pink
+        "cerebellum": "#AA96DA",  # Purple
+        "thalamus": "#FCBAD3",  # Light pink
+        "vta": "#FFFFD2",  # Light yellow
+        "prefrontal": "#A8D8EA",  # Light blue
+        "motor": "#FFB6B9",  # Peach
+        "other": "#E0E0E0",  # Gray
     }
 
     # Get node attributes
-    node_colors = [region_colors.get(data['type'], '#E0E0E0') for _, data in G.nodes(data=True)]
-    node_sizes = [data['neurons'] * node_size_scale / 100 for _, data in G.nodes(data=True)]
+    node_colors = [region_colors.get(data["type"], "#E0E0E0") for _, data in G.nodes(data=True)]
+    node_sizes = [data["neurons"] * node_size_scale / 100 for _, data in G.nodes(data=True)]
 
     # Draw nodes
     nx.draw_networkx_nodes(
-        G, pos,
+        G,
+        pos,
         node_color=node_colors,
         node_size=node_sizes,
         alpha=NODE_ALPHA_DEFAULT,
@@ -164,35 +165,38 @@ def visualize_brain_topology(
     )
 
     # Draw edges with varying thickness based on weight
-    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+    edge_weights = [G[u][v]["weight"] for u, v in G.edges()]
     max_weight = max(edge_weights) if edge_weights else 1.0
     edge_widths = [w / max_weight * EDGE_WIDTH_SCALE for w in edge_weights]
 
     nx.draw_networkx_edges(
-        G, pos,
+        G,
+        pos,
         width=edge_widths,
         alpha=EDGE_ALPHA_DEFAULT,
-        edge_color='#888888',
+        edge_color="#888888",
         arrows=True,
         arrowsize=20,
-        connectionstyle=f'arc3,rad={ARC_RADIUS}',
+        connectionstyle=f"arc3,rad={ARC_RADIUS}",
         ax=ax,
     )
 
     # Draw labels
     nx.draw_networkx_labels(
-        G, pos,
-        labels={node: data['label'] for node, data in G.nodes(data=True)},
+        G,
+        pos,
+        labels={node: data["label"] for node, data in G.nodes(data=True)},
         font_size=9,
-        font_weight='bold',
+        font_weight="bold",
         ax=ax,
     )
 
     # Draw edge labels if requested
     if show_weights:
-        edge_labels = {(u, v): data['label'] for u, v, data in G.edges(data=True)}
+        edge_labels = {(u, v): data["label"] for u, v, data in G.edges(data=True)}
         nx.draw_networkx_edge_labels(
-            G, pos,
+            G,
+            pos,
             edge_labels=edge_labels,
             font_size=7,
             ax=ax,
@@ -202,11 +206,11 @@ def visualize_brain_topology(
     legend_patches = [
         mpatches.Patch(color=color, label=rtype.capitalize())
         for rtype, color in region_colors.items()
-        if rtype != 'other'
+        if rtype != "other"
     ]
     ax.legend(
         handles=legend_patches,
-        loc='upper right',
+        loc="upper right",
         framealpha=LEGEND_FRAMEALPHA,
         fontsize=10,
     )
@@ -214,8 +218,8 @@ def visualize_brain_topology(
     # Title and formatting
     if title is None:
         title = f"Brain Topology ({len(G.nodes())} regions, {len(G.edges())} pathways)"
-    ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
-    ax.axis('off')
+    ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
+    ax.axis("off")
     plt.tight_layout()
 
     return G
@@ -241,7 +245,7 @@ def export_topology_to_graphviz(
     """
     output_path = Path(output_path)
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         f.write("digraph BrainTopology {\n")
         f.write("  rankdir=LR;\n")
         f.write("  node [shape=box, style=rounded];\n\n")
@@ -252,7 +256,9 @@ def export_topology_to_graphviz(
             region_type = _get_region_type(name)
             color = _get_graphviz_color(region_type)
 
-            f.write(f'  "{name}" [label="{name}\\n{n_neurons}N", fillcolor="{color}", style=filled];\n')
+            f.write(
+                f'  "{name}" [label="{name}\\n{n_neurons}N", fillcolor="{color}", style=filled];\n'
+            )
 
         f.write("\n")
 
@@ -271,7 +277,7 @@ def export_topology_to_graphviz(
 def plot_connectivity_matrix(
     brain: Any,
     figsize: Tuple[int, int] = (12, 10),
-    cmap: str = 'viridis',
+    cmap: str = "viridis",
 ) -> None:
     """Plot connectivity matrix heatmap.
 
@@ -301,22 +307,22 @@ def plot_connectivity_matrix(
 
     # Plot
     _fig, ax = plt.subplots(figsize=figsize)
-    im = ax.imshow(matrix, cmap=cmap, aspect='auto')
+    im = ax.imshow(matrix, cmap=cmap, aspect="auto")
 
     # Axis labels
     ax.set_xticks(range(n_regions))
     ax.set_yticks(range(n_regions))
-    ax.set_xticklabels(region_names, rotation=45, ha='right')
+    ax.set_xticklabels(region_names, rotation=45, ha="right")
     ax.set_yticklabels(region_names)
 
     # Colorbar
     cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label('Connection Strength', rotation=270, labelpad=20)
+    cbar.set_label("Connection Strength", rotation=270, labelpad=20)
 
     # Title
-    ax.set_title('Region Connectivity Matrix', fontsize=14, fontweight='bold', pad=20)
-    ax.set_xlabel('Target Region')
-    ax.set_ylabel('Source Region')
+    ax.set_title("Region Connectivity Matrix", fontsize=14, fontweight="bold", pad=20)
+    ax.set_xlabel("Target Region")
+    ax.set_ylabel("Source Region")
 
     plt.tight_layout()
 
@@ -324,6 +330,7 @@ def plot_connectivity_matrix(
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
 
 def _get_neuron_count(region: Any) -> int:
     """Get neuron count from region.
@@ -338,11 +345,11 @@ def _get_neuron_count(region: Any) -> int:
         Tries multiple attribute paths: n_neurons, config.n_neurons, membrane.shape[0]
     """
     # Try various attributes
-    if hasattr(region, 'n_neurons'):
+    if hasattr(region, "n_neurons"):
         return region.n_neurons
-    elif hasattr(region, 'config') and hasattr(region.config, 'n_neurons'):
+    elif hasattr(region, "config") and hasattr(region.config, "n_neurons"):
         return region.config.n_neurons
-    elif hasattr(region, 'membrane') and hasattr(region.membrane, 'shape'):
+    elif hasattr(region, "membrane") and hasattr(region.membrane, "shape"):
         return region.membrane.shape[0]
     else:
         return 0
@@ -365,26 +372,26 @@ def _get_region_type(name: str) -> str:
     name_lower = name.lower()
 
     # Check specific types first (before more general ones)
-    if 'prefrontal' in name_lower or 'pfc' in name_lower:
-        return 'prefrontal'
-    elif 'visual' in name_lower or 'auditory' in name_lower or 'sensory' in name_lower:
-        return 'sensory'
-    elif 'striatum' in name_lower:
-        return 'striatum'
-    elif 'hippocampus' in name_lower:
-        return 'hippocampus'
-    elif 'cerebellum' in name_lower:
-        return 'cerebellum'
-    elif 'thalamus' in name_lower:
-        return 'thalamus'
-    elif 'vta' in name_lower:
-        return 'vta'
-    elif 'motor' in name_lower:
-        return 'motor'
-    elif 'cortex' in name_lower:
-        return 'cortex'
+    if "prefrontal" in name_lower or "pfc" in name_lower:
+        return "prefrontal"
+    elif "visual" in name_lower or "auditory" in name_lower or "sensory" in name_lower:
+        return "sensory"
+    elif "striatum" in name_lower:
+        return "striatum"
+    elif "hippocampus" in name_lower:
+        return "hippocampus"
+    elif "cerebellum" in name_lower:
+        return "cerebellum"
+    elif "thalamus" in name_lower:
+        return "thalamus"
+    elif "vta" in name_lower:
+        return "vta"
+    elif "motor" in name_lower:
+        return "motor"
+    elif "cortex" in name_lower:
+        return "cortex"
     else:
-        return 'other'
+        return "other"
 
 
 def _get_pathway_strength(pathway: Any) -> float:
@@ -399,7 +406,7 @@ def _get_pathway_strength(pathway: Any) -> float:
     Note:
         Returns 0.0 for pathways without weights attribute
     """
-    if hasattr(pathway, 'weights'):
+    if hasattr(pathway, "weights"):
         weights = pathway.weights
         if weights is not None:
             return float(weights.mean().item())
@@ -418,22 +425,22 @@ def _hierarchical_layout(G: Any, region_info: Dict[str, Any]) -> Dict[str, Tuple
     - Layer 5: Motor
     """
     layers = {
-        'sensory': 0,
-        'cortex': 1,
-        'hippocampus': 2,
-        'striatum': 2,
-        'thalamus': 3,
-        'cerebellum': 3,
-        'vta': 4,
-        'prefrontal': 4,
-        'motor': 5,
-        'other': 3,
+        "sensory": 0,
+        "cortex": 1,
+        "hippocampus": 2,
+        "striatum": 2,
+        "thalamus": 3,
+        "cerebellum": 3,
+        "vta": 4,
+        "prefrontal": 4,
+        "motor": 5,
+        "other": 3,
     }
 
     # Group nodes by layer
     layer_nodes = {}
     for node, info in region_info.items():
-        layer = layers.get(info['type'], 3)
+        layer = layers.get(info["type"], 3)
         if layer not in layer_nodes:
             layer_nodes[layer] = []
         layer_nodes[layer].append(node)
@@ -478,15 +485,15 @@ def _get_graphviz_color(region_type: str) -> str:
         - other: 'lightgray' (default)
     """
     colors = {
-        'sensory': 'lightcoral',
-        'cortex': 'lightblue',
-        'striatum': 'lightgreen',
-        'hippocampus': 'lightpink',
-        'cerebellum': 'plum',
-        'thalamus': 'wheat',
-        'vta': 'lightyellow',
-        'prefrontal': 'lightcyan',
-        'motor': 'peachpuff',
-        'other': 'lightgray',
+        "sensory": "lightcoral",
+        "cortex": "lightblue",
+        "striatum": "lightgreen",
+        "hippocampus": "lightpink",
+        "cerebellum": "plum",
+        "thalamus": "wheat",
+        "vta": "lightyellow",
+        "prefrontal": "lightcyan",
+        "motor": "peachpuff",
+        "other": "lightgray",
     }
-    return colors.get(region_type, 'lightgray')
+    return colors.get(region_type, "lightgray")

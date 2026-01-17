@@ -50,20 +50,20 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
 from collections import deque
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
-from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
 from thalia.components.coding.spike_coding import CodingStrategy
-from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
-from thalia.utils.core_utils import cosine_similarity_safe
-from thalia.mixins import ConfigurableMixin, DiagnosticCollectorMixin
 from thalia.config import SequenceMemoryConfig
+from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
+from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
+from thalia.mixins import ConfigurableMixin, DiagnosticCollectorMixin
+from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
+from thalia.utils.core_utils import cosine_similarity_safe
 
 
 @dataclass
@@ -73,12 +73,13 @@ class SequenceContext:
     Represents a remembered sequence or context that can be
     used for prediction or associative recall.
     """
-    tokens: torch.Tensor           # Token IDs in sequence
-    activations: torch.Tensor      # Hippocampal CA3 pattern for this context
-    position: int                  # Position in larger context
-    timestamp: int = 0             # When this was stored
-    retrieval_count: int = 0       # How many times retrieved
-    strength: float = 1.0          # Memory strength (decays or strengthens)
+
+    tokens: torch.Tensor  # Token IDs in sequence
+    activations: torch.Tensor  # Hippocampal CA3 pattern for this context
+    position: int  # Position in larger context
+    timestamp: int = 0  # When this was stored
+    retrieval_count: int = 0  # How many times retrieved
+    strength: float = 1.0  # Memory strength (decays or strengthens)
 
     def to(self, device: torch.device) -> SequenceContext:
         """Move tensors to device."""
@@ -158,19 +159,20 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
         self.ca3_size = self.hippocampus.ca3_size
 
         # Stored contexts (for explicit storage, beyond what CA3 learns)
-        self.stored_contexts: deque[SequenceContext] = deque(
-            maxlen=config.max_stored_contexts
-        )
+        self.stored_contexts: deque[SequenceContext] = deque(maxlen=config.max_stored_contexts)
 
         # Association weights: next-token prediction
         # These learn which CA3 patterns predict which next CA3 patterns
         from thalia.components.synapses.weight_init import WeightInitializer
         from thalia.constants.learning import WEIGHT_INIT_SCALE_RECURRENT
+
         self.association_weights = nn.Parameter(
             WeightInitializer.gaussian(
-                self.ca3_size, self.ca3_size,
-                mean=0.0, std=WEIGHT_INIT_SCALE_RECURRENT,
-                device=self.device
+                self.ca3_size,
+                self.ca3_size,
+                mean=0.0,
+                std=WEIGHT_INIT_SCALE_RECURRENT,
+                device=self.device,
             )
         )
 
@@ -220,7 +222,7 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
 
         for pos in range(seq_len):
             # Get current token
-            current_token = token_ids[:, pos:pos+1]  # [batch, 1]
+            current_token = token_ids[:, pos : pos + 1]  # [batch, 1]
 
             # Encode token to spikes
             spikes, _ = self.encoder(current_token)  # [batch, 1, timesteps, neurons]
@@ -228,12 +230,16 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
 
             # Add position encoding
             pos_ids = torch.tensor([[pos]], device=self.device)  # [1, 1]
-            position_enc = self.position_encoder(pos_ids, as_spikes=True)  # [1, 1, timesteps, neurons]
+            position_enc = self.position_encoder(
+                pos_ids, as_spikes=True
+            )  # [1, 1, timesteps, neurons]
             position_enc = position_enc.squeeze(0).squeeze(0)  # [timesteps, neurons]
 
             # Combine: phase modulates spike probability
             n_timesteps = min(token_spikes.size(1), position_enc.size(0))
-            combined_spikes = token_spikes[:, :n_timesteps, :] * (1.0 + 0.5 * position_enc[:n_timesteps, :])
+            combined_spikes = token_spikes[:, :n_timesteps, :] * (
+                1.0 + 0.5 * position_enc[:n_timesteps, :]
+            )
 
             # Process through hippocampus (use sum over timesteps as input)
             # Theta modulation computed internally by hippocampus
@@ -325,8 +331,7 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
         # Use association weights to predict next pattern
         # next_pattern ≈ W @ context_pattern
         predicted_pattern = torch.matmul(
-            self.association_weights,
-            context_pattern.float().squeeze()
+            self.association_weights, context_pattern.float().squeeze()
         )
 
         # Apply threshold to make it sparse (like real CA3 output)

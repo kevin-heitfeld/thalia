@@ -8,19 +8,19 @@ from __future__ import annotations
 
 from thalia.components.coding.spike_coding import (
     CodingStrategy,
-    SpikeCodingConfig,
-    SpikeEncoder,
-    SpikeDecoder,
-    RateEncoder,
     RateDecoder,
+    RateEncoder,
+    SpikeCodingConfig,
+    SpikeDecoder,
+    SpikeEncoder,
     compute_spike_similarity,
 )
 from thalia.components.coding.spike_utils import (
     compute_firing_rate,
     compute_spike_count,
     compute_spike_density,
-    is_silent,
     is_saturated,
+    is_silent,
 )
 
 __all__ = [

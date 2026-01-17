@@ -262,9 +262,7 @@ class GapJunctionCoupling(nn.Module):
             }
 
         # Count neurons with at least one gap junction
-        has_coupling = (self.coupling_matrix.sum(dim=1) > 0) | (
-            self.coupling_matrix.sum(dim=0) > 0
-        )
+        has_coupling = (self.coupling_matrix.sum(dim=1) > 0) | (self.coupling_matrix.sum(dim=0) > 0)
         n_coupled = has_coupling.sum().item()
 
         # Count total connections (undirected, so divide by 2)
@@ -272,9 +270,7 @@ class GapJunctionCoupling(nn.Module):
 
         # Average neighbors per coupled neuron
         neighbors_per_neuron = (self.coupling_matrix > 0).sum(dim=1).float()
-        avg_neighbors = (
-            neighbors_per_neuron[has_coupling].mean().item() if n_coupled > 0 else 0.0
-        )
+        avg_neighbors = neighbors_per_neuron[has_coupling].mean().item() if n_coupled > 0 else 0.0
 
         # Coupling density among interneurons
         n_interneurons = self.interneuron_mask.sum().item()

@@ -20,7 +20,7 @@ Phase: 2 - Model-Based Planning
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -77,7 +77,7 @@ class MentalSimulationCoordinator:
         hippocampus,  # Hippocampus instance
         striatum,  # Striatum instance
         cortex=None,  # Optional Cortex instance
-        config: Optional[SimulationConfig] = None
+        config: Optional[SimulationConfig] = None,
     ):
         self.pfc = pfc
         self.hippocampus = hippocampus
@@ -89,7 +89,7 @@ class MentalSimulationCoordinator:
         self,
         current_state: torch.Tensor,
         action_sequence: List[int],
-        goal_context: Optional[torch.Tensor] = None
+        goal_context: Optional[torch.Tensor] = None,
     ) -> Rollout:
         """
         Simulate a specific action sequence.
@@ -116,15 +116,13 @@ class MentalSimulationCoordinator:
             similar_episodes = self.hippocampus.retrieve_similar(
                 query_state=simulated_state,
                 query_action=action,
-                k=self.config.n_similar_experiences
+                k=self.config.n_similar_experiences,
             )
 
             # 2. Predict next state using PFC prediction
             #    Informed by similar past experiences
             next_state_pred = self._predict_next_state(
-                current=simulated_state,
-                action=action,
-                similar_experiences=similar_episodes
+                current=simulated_state, action=action, similar_experiences=similar_episodes
             )
 
             # 3. Predict reward from similar experiences
@@ -133,8 +131,7 @@ class MentalSimulationCoordinator:
             # 4. Evaluate predicted state using striatum
             if goal_context is not None:
                 state_value = self.striatum.evaluate_state(
-                    next_state_pred,
-                    pfc_goal_context=goal_context
+                    next_state_pred, pfc_goal_context=goal_context
                 )
             else:
                 state_value = self.striatum.evaluate_state(next_state_pred)
@@ -157,14 +154,14 @@ class MentalSimulationCoordinator:
             actions=actions,
             rewards=rewards,
             cumulative_value=cumulative_value,
-            uncertainty=uncertainty
+            uncertainty=uncertainty,
         )
 
     def plan_best_action(
         self,
         current_state: torch.Tensor,
         available_actions: List[int],
-        goal_context: Optional[torch.Tensor] = None
+        goal_context: Optional[torch.Tensor] = None,
     ) -> Tuple[int, Rollout]:
         """
         Search for best action using tree search.
@@ -181,22 +178,18 @@ class MentalSimulationCoordinator:
             best_rollout: Full best trajectory
         """
         best_action = None
-        best_value = float('-inf')
+        best_value = float("-inf")
         best_rollout = None
 
         # Limit actions to consider (branching factor)
         if len(available_actions) > self.config.branching_factor:
             # Use striatum to prioritize which actions to explore
             action_priorities = self._get_action_priorities(
-                current_state,
-                available_actions,
-                goal_context
+                current_state, available_actions, goal_context
             )
             top_actions = sorted(
-                available_actions,
-                key=lambda a: action_priorities[a],
-                reverse=True
-            )[:self.config.branching_factor]
+                available_actions, key=lambda a: action_priorities[a], reverse=True
+            )[: self.config.branching_factor]
         else:
             top_actions = available_actions
 
@@ -204,17 +197,10 @@ class MentalSimulationCoordinator:
         for action in top_actions:
             # Simulate depth steps ahead
             action_sequence = [action] + self._generate_greedy_sequence(
-                current_state,
-                action,
-                self.config.depth - 1,
-                goal_context
+                current_state, action, self.config.depth - 1, goal_context
             )
 
-            rollout = self.simulate_rollout(
-                current_state,
-                action_sequence,
-                goal_context
-            )
+            rollout = self.simulate_rollout(current_state, action_sequence, goal_context)
 
             # Keep best
             if rollout.cumulative_value > best_value:
@@ -225,10 +211,7 @@ class MentalSimulationCoordinator:
         return best_action, best_rollout
 
     def _predict_next_state(
-        self,
-        current: torch.Tensor,
-        action: int,
-        similar_experiences: List[Dict]
+        self, current: torch.Tensor, action: int, similar_experiences: List[Dict]
     ) -> torch.Tensor:
         """
         Predict next state using PFC prediction + hippocampal memory.
@@ -242,10 +225,10 @@ class MentalSimulationCoordinator:
             total_weight = 0.0
 
             for exp in similar_experiences:
-                similarity = exp['similarity']
+                similarity = exp["similarity"]
                 if similarity > self.config.similarity_threshold:
                     # Use actual outcome from memory
-                    weighted_prediction += similarity * exp['next_state']
+                    weighted_prediction += similarity * exp["next_state"]
                     total_weight += similarity
 
             if total_weight > 0:
@@ -253,16 +236,12 @@ class MentalSimulationCoordinator:
             else:
                 # No good matches - use PFC prediction alone
                 next_state = self.pfc.predict_next_state(
-                    current,
-                    action,
-                    n_actions=self.striatum.n_actions
+                    current, action, n_actions=self.striatum.n_actions
                 )
         else:
             # No similar experiences - use PFC prediction
             next_state = self.pfc.predict_next_state(
-                current,
-                action,
-                n_actions=self.striatum.n_actions
+                current, action, n_actions=self.striatum.n_actions
             )
 
         # Add simulation noise
@@ -281,9 +260,9 @@ class MentalSimulationCoordinator:
         total_weight = 0.0
 
         for exp in similar_experiences:
-            similarity = exp['similarity']
+            similarity = exp["similarity"]
             if similarity > self.config.similarity_threshold:
-                weighted_reward += similarity * exp['reward']
+                weighted_reward += similarity * exp["reward"]
                 total_weight += similarity
 
         if total_weight > 0:
@@ -297,14 +276,13 @@ class MentalSimulationCoordinator:
             return 1.0  # Max uncertainty
 
         # Uncertainty = 1 - average similarity
-        avg_similarity = sum(exp['similarity'] for exp in similar_experiences) / len(similar_experiences)
+        avg_similarity = sum(exp["similarity"] for exp in similar_experiences) / len(
+            similar_experiences
+        )
         return 1.0 - avg_similarity
 
     def _get_action_priorities(
-        self,
-        state: torch.Tensor,
-        actions: List[int],
-        goal_context: Optional[torch.Tensor]
+        self, state: torch.Tensor, actions: List[int], goal_context: Optional[torch.Tensor]
     ) -> Dict[int, float]:
         """
         Get action priorities from striatum (for pruning search tree).
@@ -324,7 +302,7 @@ class MentalSimulationCoordinator:
         start_state: torch.Tensor,
         first_action: int,
         remaining_depth: int,
-        goal_context: Optional[torch.Tensor]
+        goal_context: Optional[torch.Tensor],
     ) -> List[int]:
         """
         Generate greedy action sequence for remainder of rollout.
@@ -337,15 +315,14 @@ class MentalSimulationCoordinator:
         for _ in range(remaining_depth):
             # Predict next state from first action
             similar = self.hippocampus.retrieve_similar(
-                query_state=state,
-                k=self.config.n_similar_experiences
+                query_state=state, k=self.config.n_similar_experiences
             )
 
             next_state = self._predict_next_state(state, first_action, similar)
 
             # Choose best action from this state
             best_action = 0
-            best_value = float('-inf')
+            best_value = float("-inf")
 
             for action in range(self.striatum.n_actions):
                 value = self.striatum.evaluate_state(next_state, goal_context)

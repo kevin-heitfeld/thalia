@@ -38,93 +38,91 @@ __version__ = "0.2.0"
 # PUBLIC API - For notebooks, experiments, and external users
 # ============================================================================
 
-# Configuration
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-
-# Type Aliases (for better type hints)
-from thalia.typing import (
-    ComponentGraph,
-    ConnectionGraph,
-    TopologyGraph,
-    SourceSpec,
-    SourcePort,
-    TargetPort,
-    SourceOutputs,
-    InputSizes,
-    SynapticWeights,
-    LearningStrategies,
-    StateDict,
-    CheckpointMetadata,
-    # DiagnosticsDict removed - use specific TypedDict subclasses instead
-    NeuromodulatorLevels,
-    BatchData,
-)
-
-# Brain System
-from thalia.core.dynamic_brain import DynamicBrain
-
-from thalia.core.base.component_config import NeuralComponentConfig
-
-# Brain Regions
-from thalia.regions import (
-    Striatum,
-    StriatumConfig,
-    LayeredCortex,
-    LayeredCortexConfig,
-    PredictiveCortex,
-    PredictiveCortexConfig,
-    Cerebellum,
-    CerebellumConfig,
-    Prefrontal,
-    PrefrontalConfig,
-    Hippocampus,
-    HippocampusConfig,
-)
-
 # Core Components
 from thalia.components.neurons.neuron import ConductanceLIF
-from thalia.components.synapses.weight_init import WeightInitializer, InitStrategy
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.stp_presets import STP_PRESETS, STPPreset, get_stp_config
-from thalia.utils.core_utils import clamp_weights
+from thalia.components.synapses.weight_init import InitStrategy, WeightInitializer
+
+# Configuration
+from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig
+
+# Oscillators
+from thalia.coordination.oscillator import (
+    OSCILLATOR_DEFAULTS,
+    OscillatorManager,
+    SinusoidalOscillator,
+)
+from thalia.core.base.component_config import NeuralComponentConfig
 
 # Diagnostics
 from thalia.core.diagnostics_keys import DiagnosticKeys
 
-# Oscillators
-from thalia.coordination.oscillator import (
-    SinusoidalOscillator,
-    OscillatorManager,
-    OSCILLATOR_DEFAULTS,
-)
-
-# Neuromodulator Systems
-from thalia.neuromodulation.homeostasis import (
-    NeuromodulatorHomeostasis,
-    NeuromodulatorHomeostasisConfig,
-    NeuromodulatorCoordination,
-    inverted_u_function,
-)
-from thalia.neuromodulation.systems.vta import (
-    VTADopamineSystem,
-    VTAConfig,
-)
-from thalia.neuromodulation.systems.locus_coeruleus import (
-    LocusCoeruleusSystem,
-    LocusCoeruleusConfig,
-)
-from thalia.neuromodulation.systems.nucleus_basalis import (
-    NucleusBasalisSystem,
-    NucleusBasalisConfig,
-)
+# Brain System
+from thalia.core.dynamic_brain import DynamicBrain
 
 # Learning Rules
 from thalia.learning import (
     BCMRule,
-    STDPStrategy,
     HebbianStrategy,
+    STDPStrategy,
     UnifiedHomeostasis,
 )
+
+# Neuromodulator Systems
+from thalia.neuromodulation.homeostasis import (
+    NeuromodulatorCoordination,
+    NeuromodulatorHomeostasis,
+    NeuromodulatorHomeostasisConfig,
+    inverted_u_function,
+)
+from thalia.neuromodulation.systems.locus_coeruleus import (
+    LocusCoeruleusConfig,
+    LocusCoeruleusSystem,
+)
+from thalia.neuromodulation.systems.nucleus_basalis import (
+    NucleusBasalisConfig,
+    NucleusBasalisSystem,
+)
+from thalia.neuromodulation.systems.vta import (
+    VTAConfig,
+    VTADopamineSystem,
+)
+
+# Brain Regions
+from thalia.regions import (
+    Cerebellum,
+    CerebellumConfig,
+    Hippocampus,
+    HippocampusConfig,
+    LayeredCortex,
+    LayeredCortexConfig,
+    PredictiveCortex,
+    PredictiveCortexConfig,
+    Prefrontal,
+    PrefrontalConfig,
+    Striatum,
+    StriatumConfig,
+)
+
+# Type Aliases (for better type hints)
+from thalia.typing import (  # DiagnosticsDict removed - use specific TypedDict subclasses instead
+    BatchData,
+    CheckpointMetadata,
+    ComponentGraph,
+    ConnectionGraph,
+    InputSizes,
+    LearningStrategies,
+    NeuromodulatorLevels,
+    SourceOutputs,
+    SourcePort,
+    SourceSpec,
+    StateDict,
+    SynapticWeights,
+    TargetPort,
+    TopologyGraph,
+)
+from thalia.utils.core_utils import clamp_weights
 
 # Visualization (optional - requires manim)
 # try:
@@ -135,9 +133,9 @@ from thalia.learning import (
 MANIM_AVAILABLE = False
 
 # Namespaces for topic-level imports
-from thalia import regions  # noqa: F401
 from thalia import core  # noqa: F401
 from thalia import learning  # noqa: F401
+from thalia import regions  # noqa: F401
 
 __all__ = [
     # Version

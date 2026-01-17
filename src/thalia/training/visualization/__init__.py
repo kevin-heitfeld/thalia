@@ -12,14 +12,13 @@ Date: December 12, 2025
 
 from __future__ import annotations
 
-
-from thalia.training.visualization.monitor import (
-    TrainingMonitor,
-    quick_monitor,
-)
 from thalia.training.visualization.live_diagnostics import (
     LiveDiagnostics,
     quick_diagnostics,
+)
+from thalia.training.visualization.monitor import (
+    TrainingMonitor,
+    quick_monitor,
 )
 
 __all__ = [

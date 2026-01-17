@@ -21,7 +21,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Union
+from typing import Any, Dict, Union
 
 import torch
 
@@ -39,50 +39,53 @@ class PrecisionPolicy:
         conductances: Precision for synaptic conductances ('fp32', 'fp16')
         default: Default precision for unspecified tensors ('fp32', 'fp16')
     """
-    weights: str = 'fp32'
-    biases: str = 'fp32'
-    membrane: str = 'fp32'
-    traces: str = 'fp32'
-    thresholds: str = 'fp32'
-    conductances: str = 'fp32'
-    default: str = 'fp32'
+
+    weights: str = "fp32"
+    biases: str = "fp32"
+    membrane: str = "fp32"
+    traces: str = "fp32"
+    thresholds: str = "fp32"
+    conductances: str = "fp32"
+    default: str = "fp32"
 
     def __post_init__(self):
         """Validate precision strings."""
-        valid = {'fp32', 'fp16', 'auto'}
+        valid = {"fp32", "fp16", "auto"}
         for field, value in self.__dict__.items():
             if value not in valid:
-                raise ValueError(f"Invalid precision '{value}' for field '{field}'. Must be one of {valid}")
+                raise ValueError(
+                    f"Invalid precision '{value}' for field '{field}'. Must be one of {valid}"
+                )
 
 
 # Predefined policies
 PRECISION_POLICIES = {
-    'fp32': PrecisionPolicy(
-        weights='fp32',
-        biases='fp32',
-        membrane='fp32',
-        traces='fp32',
-        thresholds='fp32',
-        conductances='fp32',
-        default='fp32',
+    "fp32": PrecisionPolicy(
+        weights="fp32",
+        biases="fp32",
+        membrane="fp32",
+        traces="fp32",
+        thresholds="fp32",
+        conductances="fp32",
+        default="fp32",
     ),
-    'fp16': PrecisionPolicy(
-        weights='fp16',
-        biases='fp32',  # Keep biases in FP32 for stability
-        membrane='fp32',  # Keep membrane in FP32 for accuracy
-        traces='fp16',  # Traces can be FP16
-        thresholds='fp32',  # Keep thresholds in FP32
-        conductances='fp16',  # Conductances can be FP16
-        default='fp32',
+    "fp16": PrecisionPolicy(
+        weights="fp16",
+        biases="fp32",  # Keep biases in FP32 for stability
+        membrane="fp32",  # Keep membrane in FP32 for accuracy
+        traces="fp16",  # Traces can be FP16
+        thresholds="fp32",  # Keep thresholds in FP32
+        conductances="fp16",  # Conductances can be FP16
+        default="fp32",
     ),
-    'mixed': PrecisionPolicy(
-        weights='auto',  # Auto-detect based on size
-        biases='fp32',
-        membrane='fp32',
-        traces='fp16',
-        thresholds='fp32',
-        conductances='fp16',
-        default='fp32',
+    "mixed": PrecisionPolicy(
+        weights="auto",  # Auto-detect based on size
+        biases="fp32",
+        membrane="fp32",
+        traces="fp16",
+        thresholds="fp32",
+        conductances="fp16",
+        default="fp32",
     ),
 }
 
@@ -100,7 +103,7 @@ def get_precision_policy(policy: Union[str, PrecisionPolicy, None]) -> Precision
         ValueError: If policy name is invalid
     """
     if policy is None:
-        return PRECISION_POLICIES['fp32']
+        return PRECISION_POLICIES["fp32"]
     elif isinstance(policy, str):
         if policy not in PRECISION_POLICIES:
             raise ValueError(
@@ -133,28 +136,28 @@ def determine_tensor_precision(
     name_lower = tensor_name.lower()
 
     # Check for specific patterns
-    if 'weight' in name_lower or 'w_' in name_lower:
+    if "weight" in name_lower or "w_" in name_lower:
         precision = policy.weights
-    elif 'bias' in name_lower or 'b_' in name_lower:
+    elif "bias" in name_lower or "b_" in name_lower:
         precision = policy.biases
-    elif 'membrane' in name_lower or 'v_mem' in name_lower:
+    elif "membrane" in name_lower or "v_mem" in name_lower:
         precision = policy.membrane
-    elif 'trace' in name_lower or 'eligibility' in name_lower or 'stdp' in name_lower:
+    elif "trace" in name_lower or "eligibility" in name_lower or "stdp" in name_lower:
         precision = policy.traces
-    elif 'threshold' in name_lower or 'v_thresh' in name_lower or 'theta' in name_lower:
+    elif "threshold" in name_lower or "v_thresh" in name_lower or "theta" in name_lower:
         precision = policy.thresholds
-    elif 'conductance' in name_lower or 'g_' in name_lower:
+    elif "conductance" in name_lower or "g_" in name_lower:
         precision = policy.conductances
     else:
         precision = policy.default
 
     # Handle 'auto' precision
-    if precision == 'auto':
+    if precision == "auto":
         # Use FP16 for large tensors (>1MB), FP32 for small ones
         size_mb = tensor.numel() * tensor.element_size() / (1024 * 1024)
-        precision = 'fp16' if size_mb > 1.0 else 'fp32'
+        precision = "fp16" if size_mb > 1.0 else "fp32"
 
-    return torch.float16 if precision == 'fp16' else torch.float32
+    return torch.float16 if precision == "fp16" else torch.float32
 
 
 def convert_tensor_precision(
@@ -199,9 +202,10 @@ def apply_precision_policy_to_state(
 
     if not in_place:
         import copy
+
         state = copy.deepcopy(state)
 
-    _apply_precision_recursive(state, policy, parent_key='')
+    _apply_precision_recursive(state, policy, parent_key="")
 
     return state
 
@@ -209,7 +213,7 @@ def apply_precision_policy_to_state(
 def _apply_precision_recursive(
     obj: Any,
     policy: PrecisionPolicy,
-    parent_key: str = '',
+    parent_key: str = "",
 ) -> None:
     """Recursively apply precision policy to nested structures.
 
@@ -253,6 +257,7 @@ def restore_precision_to_fp32(
     """
     if not in_place:
         import copy
+
         state = copy.deepcopy(state)
 
     _restore_fp32_recursive(state)
@@ -292,11 +297,11 @@ def get_precision_statistics(state: Dict[str, Any]) -> Dict[str, Any]:
         Statistics dict with counts and sizes by precision
     """
     stats = {
-        'fp32': {'count': 0, 'bytes': 0},
-        'fp16': {'count': 0, 'bytes': 0},
-        'fp64': {'count': 0, 'bytes': 0},
-        'int': {'count': 0, 'bytes': 0},
-        'other': {'count': 0, 'bytes': 0},
+        "fp32": {"count": 0, "bytes": 0},
+        "fp16": {"count": 0, "bytes": 0},
+        "fp64": {"count": 0, "bytes": 0},
+        "int": {"count": 0, "bytes": 0},
+        "other": {"count": 0, "bytes": 0},
     }
 
     def _count_recursive(obj: Any) -> None:
@@ -310,32 +315,32 @@ def get_precision_statistics(state: Dict[str, Any]) -> Dict[str, Any]:
             num_bytes = obj.numel() * obj.element_size()
 
             if obj.dtype == torch.float32:
-                stats['fp32']['count'] += 1
-                stats['fp32']['bytes'] += num_bytes
+                stats["fp32"]["count"] += 1
+                stats["fp32"]["bytes"] += num_bytes
             elif obj.dtype == torch.float16:
-                stats['fp16']['count'] += 1
-                stats['fp16']['bytes'] += num_bytes
+                stats["fp16"]["count"] += 1
+                stats["fp16"]["bytes"] += num_bytes
             elif obj.dtype == torch.float64:
-                stats['fp64']['count'] += 1
-                stats['fp64']['bytes'] += num_bytes
+                stats["fp64"]["count"] += 1
+                stats["fp64"]["bytes"] += num_bytes
             elif obj.dtype in (torch.int32, torch.int64, torch.int8, torch.int16):
-                stats['int']['count'] += 1
-                stats['int']['bytes'] += num_bytes
+                stats["int"]["count"] += 1
+                stats["int"]["bytes"] += num_bytes
             else:
-                stats['other']['count'] += 1
-                stats['other']['bytes'] += num_bytes
+                stats["other"]["count"] += 1
+                stats["other"]["bytes"] += num_bytes
 
     _count_recursive(state)
 
     # Add human-readable sizes
-    total_bytes = sum(s['bytes'] for s in stats.values())
+    total_bytes = sum(s["bytes"] for s in stats.values())
     for key in stats:
-        stats[key]['mb'] = stats[key]['bytes'] / (1024 * 1024)
+        stats[key]["mb"] = stats[key]["bytes"] / (1024 * 1024)
         if total_bytes > 0:
-            stats[key]['percent'] = 100.0 * stats[key]['bytes'] / total_bytes
+            stats[key]["percent"] = 100.0 * stats[key]["bytes"] / total_bytes
         else:
-            stats[key]['percent'] = 0.0
+            stats[key]["percent"] = 0.0
 
-    stats['total_mb'] = total_bytes / (1024 * 1024)
+    stats["total_mb"] = total_bytes / (1024 * 1024)
 
     return stats

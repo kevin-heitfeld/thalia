@@ -129,7 +129,6 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-
 # =============================================================================
 # Validation Control
 # =============================================================================
@@ -230,7 +229,7 @@ class NeuromodulatorMixin:
         self,
         dopamine: Optional[float] = None,
         norepinephrine: Optional[float] = None,
-        acetylcholine: Optional[float] = None
+        acetylcholine: Optional[float] = None,
     ) -> None:
         """Set neuromodulator levels atomically (efficient broadcast).
 
@@ -285,15 +284,12 @@ class NeuromodulatorMixin:
         Raises:
             ValueError: If name is not a recognized neuromodulator or value is invalid
         """
-        valid_names = {'dopamine', 'acetylcholine', 'norepinephrine'}
+        valid_names = {"dopamine", "acetylcholine", "norepinephrine"}
         if name not in valid_names:
-            raise ValueError(
-                f"Unknown neuromodulator '{name}'. "
-                f"Valid names: {valid_names}"
-            )
+            raise ValueError(f"Unknown neuromodulator '{name}'. " f"Valid names: {valid_names}")
 
         # Validate value based on neuromodulator type
-        if name == 'dopamine':
+        if name == "dopamine":
             validate_finite(level, name, valid_range=(-2.0, 2.0))
         else:  # norepinephrine, acetylcholine
             validate_finite(level, name, valid_range=(0.0, 2.0))
@@ -357,7 +353,7 @@ class NeuromodulatorMixin:
             Modulated learning rate
         """
         if base_lr is None:
-            base_lr = getattr(self, 'base_learning_rate', 0.01)
+            base_lr = getattr(self, "base_learning_rate", 0.01)
 
         modulation = 1.0 + dopamine_sensitivity * self.state.dopamine
         # Clamp to non-negative (can't have negative learning rate)
@@ -372,7 +368,7 @@ class NeuromodulatorMixin:
             Dict with dopamine, acetylcholine, norepinephrine levels
         """
         return {
-            'dopamine': self.state.dopamine,
-            'acetylcholine': self.state.acetylcholine,
-            'norepinephrine': self.state.norepinephrine,
+            "dopamine": self.state.dopamine,
+            "acetylcholine": self.state.acetylcholine,
+            "norepinephrine": self.state.norepinephrine,
         }

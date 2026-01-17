@@ -14,22 +14,22 @@ Date: December 2025
 
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
-from typing import Dict, Any
+from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 import torch
 
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-
 
 # =====================================================================
 # FIXTURES
 # =====================================================================
+
 
 @pytest.fixture
 def device():
@@ -70,7 +70,10 @@ def sample_input(device):
 # TEST: Full Brain Checkpoint Cycle
 # =====================================================================
 
-def test_full_brain_checkpoint_save_load(simple_brain, sample_input, temp_checkpoint_dir, global_config, device):
+
+def test_full_brain_checkpoint_save_load(
+    simple_brain, sample_input, temp_checkpoint_dir, global_config, device
+):
     """Test complete brain checkpoint cycle preserves all state.
 
     This is the most critical integration test - verifies that:
@@ -125,25 +128,31 @@ def test_full_brain_checkpoint_save_load(simple_brain, sample_input, temp_checkp
             loaded_spikes = loaded[region_name]
 
             # Both should be same type (dict or tensor or None or scalar)
-            assert type(orig_spikes) == type(loaded_spikes), \
-                f"Region {region_name} output types differ at t={t}"
+            assert type(orig_spikes) == type(
+                loaded_spikes
+            ), f"Region {region_name} output types differ at t={t}"
 
             if orig_spikes is not None and loaded_spikes is not None:
                 # Handle both tensors and nested dicts
                 if isinstance(orig_spikes, dict) and isinstance(loaded_spikes, dict):
                     # Verify nested dict structure matches
-                    assert orig_spikes.keys() == loaded_spikes.keys(), \
-                        f"Region {region_name} nested keys differ at t={t}"
+                    assert (
+                        orig_spikes.keys() == loaded_spikes.keys()
+                    ), f"Region {region_name} nested keys differ at t={t}"
                     for key in orig_spikes.keys():
                         if orig_spikes[key] is not None and loaded_spikes[key] is not None:
                             # Verify shapes match (if tensors)
                             if isinstance(orig_spikes[key], torch.Tensor):
-                                assert orig_spikes[key].shape == loaded_spikes[key].shape, \
-                                    f"Region {region_name}.{key} shapes differ at t={t}"
-                elif isinstance(orig_spikes, torch.Tensor) and isinstance(loaded_spikes, torch.Tensor):
+                                assert (
+                                    orig_spikes[key].shape == loaded_spikes[key].shape
+                                ), f"Region {region_name}.{key} shapes differ at t={t}"
+                elif isinstance(orig_spikes, torch.Tensor) and isinstance(
+                    loaded_spikes, torch.Tensor
+                ):
                     # Verify tensor shapes match
-                    assert orig_spikes.shape == loaded_spikes.shape, \
-                        f"Region {region_name} shapes differ at t={t}"
+                    assert (
+                        orig_spikes.shape == loaded_spikes.shape
+                    ), f"Region {region_name} shapes differ at t={t}"
                 # Scalars (floats) don't need shape check
 
 
@@ -172,7 +181,7 @@ def test_region_isolation(simple_brain, sample_input, device):
     original_state = first_region.get_state()
 
     # Modify first region's state
-    if hasattr(first_region, 'state') and hasattr(first_region.state, 'membrane'):
+    if hasattr(first_region, "state") and hasattr(first_region.state, "membrane"):
         if first_region.state.membrane is not None:
             first_region.state.membrane.fill_(999.0)  # Obvious modification
 
@@ -181,10 +190,9 @@ def test_region_isolation(simple_brain, sample_input, device):
 
     # Verify first region's state was restored (not the modified value)
     restored_state = first_region.get_state()
-    if hasattr(original_state, 'membrane') and original_state.membrane is not None:
+    if hasattr(original_state, "membrane") and original_state.membrane is not None:
         assert not torch.allclose(
-            restored_state.membrane,
-            torch.full_like(restored_state.membrane, 999.0)
+            restored_state.membrane, torch.full_like(restored_state.membrane, 999.0)
         ), "Modified state should not persist after reload"
 
     # Verify other regions are unaffected
@@ -228,6 +236,7 @@ def test_checkpoint_with_pathways(global_config, device, temp_checkpoint_dir):
     )
     loaded_dict = torch.load(checkpoint_path, weights_only=False)
     from thalia.pathways.axonal_projection import AxonalProjectionState
+
     loaded_state = AxonalProjectionState.from_dict(loaded_dict, device=device)
     projection2.load_state(loaded_state)
 
@@ -294,16 +303,20 @@ def test_device_transfer_cpu_to_cuda(global_config, sample_input, temp_checkpoin
     # Verify all region tensors are on CUDA
     for region_name, region in cuda_brain.components.items():
         # Check neuron device directly (more reliable than state intermediate)
-        if hasattr(region, 'neurons') and region.neurons is not None:
-            if hasattr(region.neurons, 'membrane') and region.neurons.membrane is not None:
-                assert region.neurons.membrane.device.type == "cuda", \
-                    f"{region_name} membrane should be on CUDA"
+        if hasattr(region, "neurons") and region.neurons is not None:
+            if hasattr(region.neurons, "membrane") and region.neurons.membrane is not None:
+                assert (
+                    region.neurons.membrane.device.type == "cuda"
+                ), f"{region_name} membrane should be on CUDA"
         # For pathway-based regions (striatum), check pathway neurons
-        elif hasattr(region, 'd1_pathway') and hasattr(region.d1_pathway, 'neurons'):
-            if region.d1_pathway.neurons is not None and hasattr(region.d1_pathway.neurons, 'membrane'):
+        elif hasattr(region, "d1_pathway") and hasattr(region.d1_pathway, "neurons"):
+            if region.d1_pathway.neurons is not None and hasattr(
+                region.d1_pathway.neurons, "membrane"
+            ):
                 if region.d1_pathway.neurons.membrane is not None:
-                    assert region.d1_pathway.neurons.membrane.device.type == "cuda", \
-                        f"{region_name} membrane should be on CUDA"
+                    assert (
+                        region.d1_pathway.neurons.membrane.device.type == "cuda"
+                    ), f"{region_name} membrane should be on CUDA"
 
     # Run forward pass on CUDA (should not error)
     cuda_input = sample_input.to("cuda")
@@ -316,11 +329,13 @@ def test_device_transfer_cpu_to_cuda(global_config, sample_input, temp_checkpoin
             if isinstance(region_output, dict):
                 for key, val in region_output.items():
                     if isinstance(val, torch.Tensor):
-                        assert val.device.type == "cuda", \
-                            f"{region_name}[{key}] output should be on CUDA"
+                        assert (
+                            val.device.type == "cuda"
+                        ), f"{region_name}[{key}] output should be on CUDA"
             elif isinstance(region_output, torch.Tensor):
-                assert region_output.device.type == "cuda", \
-                    f"{region_name} output should be on CUDA"
+                assert (
+                    region_output.device.type == "cuda"
+                ), f"{region_name} output should be on CUDA"
 
 
 def test_partial_state_load(device, temp_checkpoint_dir):
@@ -344,8 +359,8 @@ def test_partial_state_load(device, temp_checkpoint_dir):
     state_dict = full_state.to_dict()
 
     # Remove some optional fields
-    if 'stp_recurrent_state' in state_dict:
-        del state_dict['stp_recurrent_state']
+    if "stp_recurrent_state" in state_dict:
+        del state_dict["stp_recurrent_state"]
 
     # Save modified checkpoint
     checkpoint_path = temp_checkpoint_dir / "partial_checkpoint.pt"
@@ -355,6 +370,7 @@ def test_partial_state_load(device, temp_checkpoint_dir):
     pfc2 = Prefrontal(config, sizes, device)
     loaded_dict = torch.load(checkpoint_path, weights_only=False)
     from thalia.regions.prefrontal import PrefrontalState
+
     loaded_state = PrefrontalState.from_dict(loaded_dict, device=device)
     pfc2.load_state(loaded_state)
 
@@ -368,6 +384,7 @@ def test_partial_state_load(device, temp_checkpoint_dir):
 # =====================================================================
 # TEST: Edge Cases
 # =====================================================================
+
 
 def test_empty_brain_checkpoint(global_config, temp_checkpoint_dir, device):
     """Test checkpoint of brain immediately after creation (no run)."""
@@ -423,13 +440,15 @@ def test_checkpoint_preserves_configuration(simple_brain, temp_checkpoint_dir, d
     torch.save(checkpoint, checkpoint_path)
 
     # Checkpoint should contain config information
-    assert 'config' in checkpoint or 'metadata' in checkpoint, \
-        "Checkpoint should contain configuration metadata"
+    assert (
+        "config" in checkpoint or "metadata" in checkpoint
+    ), "Checkpoint should contain configuration metadata"
 
 
 # =====================================================================
 # SUMMARY
 # =====================================================================
+
 
 def test_integration_summary():
     """Test suite summary."""

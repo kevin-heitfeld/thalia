@@ -12,13 +12,13 @@ Author: Thalia Project
 Date: December 2025
 """
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
-from thalia.regions.striatum import Striatum, StriatumConfig
-from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
+from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
+from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
@@ -38,6 +38,7 @@ class TestEligibilityTraceDecay:
     def test_eligibility_decays_exponentially(self, striatum_config):
         """Verify eligibility traces decay with e^(-t/tau) after checkpoint load."""
         from thalia.config import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -81,12 +82,17 @@ class TestEligibilityTraceDecay:
 
         # Eligibility decay is affected by ongoing activity and noise
         # Expect 50-95% decay (looser bounds for biological realism)
-        assert 0.05 < d1_ratio < 0.50, f"D1 eligibility decay ratio {d1_ratio:.3f} should show decay (expected ~{expected_ratio:.3f})"
-        assert 0.05 < d2_ratio < 0.50, f"D2 eligibility decay ratio {d2_ratio:.3f} should show decay (expected ~{expected_ratio:.3f})"
+        assert (
+            0.05 < d1_ratio < 0.50
+        ), f"D1 eligibility decay ratio {d1_ratio:.3f} should show decay (expected ~{expected_ratio:.3f})"
+        assert (
+            0.05 < d2_ratio < 0.50
+        ), f"D2 eligibility decay ratio {d2_ratio:.3f} should show decay (expected ~{expected_ratio:.3f})"
 
     def test_eligibility_no_sudden_jumps(self, striatum_config):
         """Verify no discontinuities in eligibility at checkpoint boundary."""
         from thalia.config import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -106,7 +112,9 @@ class TestEligibilityTraceDecay:
 
         # Check eligibility unchanged immediately after load
         elig_after = striatum.d1_pathway.eligibility
-        assert torch.allclose(elig_before, elig_after, atol=1e-6), "Eligibility should not jump at checkpoint"
+        assert torch.allclose(
+            elig_before, elig_after, atol=1e-6
+        ), "Eligibility should not jump at checkpoint"
 
 
 class TestMembranePotentialBounds:
@@ -148,20 +156,32 @@ class TestMembranePotentialBounds:
             # L4 neurons
             if cortex.l4_neurons.membrane is not None:
                 v_l4 = cortex.l4_neurons.membrane
-                assert (v_l4 >= -85).all(), f"L4 hyperpolarization below K+ reversal: {v_l4.min():.1f}mV"
-                assert (v_l4 <= 60).all(), f"L4 depolarization above Na+ reversal: {v_l4.max():.1f}mV"
+                assert (
+                    v_l4 >= -85
+                ).all(), f"L4 hyperpolarization below K+ reversal: {v_l4.min():.1f}mV"
+                assert (
+                    v_l4 <= 60
+                ).all(), f"L4 depolarization above Na+ reversal: {v_l4.max():.1f}mV"
 
             # L2/3 neurons
             if cortex.l23_neurons.membrane is not None:
                 v_l23 = cortex.l23_neurons.membrane
-                assert (v_l23 >= -85).all(), f"L2/3 hyperpolarization below K+ reversal: {v_l23.min():.1f}mV"
-                assert (v_l23 <= 60).all(), f"L2/3 depolarization above Na+ reversal: {v_l23.max():.1f}mV"
+                assert (
+                    v_l23 >= -85
+                ).all(), f"L2/3 hyperpolarization below K+ reversal: {v_l23.min():.1f}mV"
+                assert (
+                    v_l23 <= 60
+                ).all(), f"L2/3 depolarization above Na+ reversal: {v_l23.max():.1f}mV"
 
             # L5 neurons
             if cortex.l5_neurons.membrane is not None:
                 v_l5 = cortex.l5_neurons.membrane
-                assert (v_l5 >= -85).all(), f"L5 hyperpolarization below K+ reversal: {v_l5.min():.1f}mV"
-                assert (v_l5 <= 60).all(), f"L5 depolarization above Na+ reversal: {v_l5.max():.1f}mV"
+                assert (
+                    v_l5 >= -85
+                ).all(), f"L5 hyperpolarization below K+ reversal: {v_l5.min():.1f}mV"
+                assert (
+                    v_l5 <= 60
+                ).all(), f"L5 depolarization above Na+ reversal: {v_l5.max():.1f}mV"
 
     def test_membrane_no_nan_or_inf(self, cortex_config, cortex_sizes):
         """Verify no NaN or Inf values in membrane potentials."""
@@ -203,6 +223,7 @@ class TestNeuromodulatorBounds:
     def test_dopamine_stays_in_valid_range(self, striatum_config):
         """Verify dopamine levels stay in [0, 1.5] range."""
         from thalia.config import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -229,6 +250,7 @@ class TestNeuromodulatorBounds:
     def test_neuromodulators_preserved_in_checkpoint(self, striatum_config):
         """Verify all neuromodulator levels preserved across checkpoint."""
         from thalia.config import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -245,8 +267,12 @@ class TestNeuromodulatorBounds:
         striatum2.load_state(state)
 
         # Verify levels preserved
-        assert abs(striatum2.forward_coordinator._tonic_dopamine - 0.8) < 0.01, "Dopamine not preserved"
-        assert abs(striatum2.forward_coordinator._ne_level - 0.5) < 0.01, "Norepinephrine not preserved"
+        assert (
+            abs(striatum2.forward_coordinator._tonic_dopamine - 0.8) < 0.01
+        ), "Dopamine not preserved"
+        assert (
+            abs(striatum2.forward_coordinator._ne_level - 0.5) < 0.01
+        ), "Norepinephrine not preserved"
 
 
 class TestNoNegativeSpikes:
@@ -255,9 +281,7 @@ class TestNoNegativeSpikes:
     @pytest.fixture
     def thalamus_config(self) -> ThalamicRelayConfig:
         """Create thalamus config."""
-        return ThalamicRelayConfig(
-            device="cpu",
-            dt_ms=1.0)
+        return ThalamicRelayConfig(device="cpu", dt_ms=1.0)
 
     def test_no_negative_spikes_before_checkpoint(self, thalamus_config):
         """Verify no negative spikes during normal operation."""
@@ -289,7 +313,9 @@ class TestNoNegativeSpikes:
         for _ in range(50):
             relay_spikes = thalamus2.forward(torch.rand(30) > 0.8)
 
-            assert (relay_spikes >= 0).all(), f"Negative relay spikes after load: {relay_spikes.min():.3f}"
+            assert (
+                relay_spikes >= 0
+            ).all(), f"Negative relay spikes after load: {relay_spikes.min():.3f}"
 
 
 class TestSTDPTraceContinuity:
@@ -321,8 +347,12 @@ class TestSTDPTraceContinuity:
             cortex.forward({"default": torch.rand(20) > 0.7})
 
         # Record traces before checkpoint
-        l4_trace_before = cortex.state.l4_trace.clone() if cortex.state.l4_trace is not None else None
-        l23_trace_before = cortex.state.l23_trace.clone() if cortex.state.l23_trace is not None else None
+        l4_trace_before = (
+            cortex.state.l4_trace.clone() if cortex.state.l4_trace is not None else None
+        )
+        l23_trace_before = (
+            cortex.state.l23_trace.clone() if cortex.state.l23_trace is not None else None
+        )
 
         # Save and load
         state = cortex.get_state()
@@ -330,9 +360,13 @@ class TestSTDPTraceContinuity:
 
         # Check traces unchanged immediately after load
         if l4_trace_before is not None:
-            assert torch.allclose(cortex.state.l4_trace, l4_trace_before, atol=1e-6), "L4 trace jumped at checkpoint"
+            assert torch.allclose(
+                cortex.state.l4_trace, l4_trace_before, atol=1e-6
+            ), "L4 trace jumped at checkpoint"
         if l23_trace_before is not None:
-            assert torch.allclose(cortex.state.l23_trace, l23_trace_before, atol=1e-6), "L2/3 trace jumped at checkpoint"
+            assert torch.allclose(
+                cortex.state.l23_trace, l23_trace_before, atol=1e-6
+            ), "L2/3 trace jumped at checkpoint"
 
     def test_stdp_trace_decay_continues(self, cortex_config, cortex_sizes):
         """Verify STDP traces decay naturally after checkpoint."""
@@ -347,7 +381,9 @@ class TestSTDPTraceContinuity:
         cortex2 = LayeredCortex(config=cortex_config, sizes=cortex_sizes, device="cpu")
         cortex2.load_state(state)
 
-        initial_trace = cortex2.state.l4_trace.clone() if cortex2.state.l4_trace is not None else None
+        initial_trace = (
+            cortex2.state.l4_trace.clone() if cortex2.state.l4_trace is not None else None
+        )
 
         # Run with no input (pure decay)
         if initial_trace is not None:
@@ -375,6 +411,7 @@ class TestCA3PersistentActivity:
     def test_ca3_persistent_activity_preserved(self, hippocampus_config):
         """Verify CA3 attractor state preserved across checkpoint."""
         from thalia.config import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.hippocampus_from_input(ec_input_size=20)
         sizes["input_size"] = 20
@@ -396,7 +433,9 @@ class TestCA3PersistentActivity:
 
             # Verify persistent activity preserved
             loaded_persistent = hippocampus2.state.ca3_persistent
-            assert torch.allclose(loaded_persistent, initial_persistent, atol=1e-6), "CA3 persistent activity not preserved"
+            assert torch.allclose(
+                loaded_persistent, initial_persistent, atol=1e-6
+            ), "CA3 persistent activity not preserved"
 
             # Continue with minimal input - attractor should maintain activity
             for _ in range(5):
@@ -411,6 +450,7 @@ class TestCA3PersistentActivity:
     def test_ca3_pattern_not_reset(self, hippocampus_config):
         """Verify CA3 pattern doesn't reset to zero at checkpoint."""
         from thalia.config import LayerSizeCalculator
+
         calc = LayerSizeCalculator()
         sizes = calc.hippocampus_from_input(ec_input_size=20)
         sizes["input_size"] = 20
@@ -421,7 +461,11 @@ class TestCA3PersistentActivity:
             hippocampus.forward(torch.rand(20) > 0.6)
 
         # Check some CA3 activity exists
-        ca3_spikes_before = hippocampus.state.ca3_spikes.clone() if hippocampus.state.ca3_spikes is not None else None
+        ca3_spikes_before = (
+            hippocampus.state.ca3_spikes.clone()
+            if hippocampus.state.ca3_spikes is not None
+            else None
+        )
 
         # Save and load
         state = hippocampus.get_state()
@@ -430,4 +474,6 @@ class TestCA3PersistentActivity:
         # CA3 state should be preserved, not reset
         if ca3_spikes_before is not None:
             ca3_spikes_after = hippocampus.state.ca3_spikes
-            assert torch.equal(ca3_spikes_before, ca3_spikes_after), "CA3 spikes should be preserved exactly"
+            assert torch.equal(
+                ca3_spikes_before, ca3_spikes_after
+            ), "CA3 spikes should be preserved exactly"

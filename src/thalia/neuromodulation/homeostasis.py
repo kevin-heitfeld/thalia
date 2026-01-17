@@ -76,8 +76,8 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -87,6 +87,7 @@ class NeuromodulatorHomeostasisConfig:
 
     Controls how receptor sensitivity adapts to sustained neuromodulator levels.
     """
+
     # Enable/disable homeostatic regulation
     enabled: bool = True
 
@@ -95,8 +96,8 @@ class NeuromodulatorHomeostasisConfig:
     tau: float = 0.999
 
     # Receptor sensitivity bounds
-    min_sensitivity: float = 0.5   # Maximum downregulation (50% of baseline)
-    max_sensitivity: float = 1.5   # Maximum upregulation (150% of baseline)
+    min_sensitivity: float = 0.5  # Maximum downregulation (50% of baseline)
+    max_sensitivity: float = 1.5  # Maximum upregulation (150% of baseline)
 
     # Target average level (what system tries to maintain)
     target_level: float = 0.5
@@ -140,7 +141,7 @@ class NeuromodulatorHomeostasis:
         Args:
             config: Homeostatic configuration (uses defaults if None)
         """
-        self.config = config or NeuromodulatorHomeostasisConfig()        # State
+        self.config = config or NeuromodulatorHomeostasisConfig()  # State
         self._receptor_sensitivity: float = 1.0  # Current sensitivity [0.5, 1.5]
         self._avg_level: float = self.config.target_level  # Running average of signal
         self._update_count: int = 0  # Number of updates (for diagnostics)
@@ -171,16 +172,14 @@ class NeuromodulatorHomeostasis:
 
         # Clamp to physiological range
         target_sensitivity = max(
-            self.config.min_sensitivity,
-            min(self.config.max_sensitivity, target_sensitivity)
+            self.config.min_sensitivity, min(self.config.max_sensitivity, target_sensitivity)
         )
 
         # Update sensitivity slowly (to avoid oscillations)
         sensitivity_alpha = 0.01  # Very slow sensitivity changes
         self._receptor_sensitivity = (
-            (1 - sensitivity_alpha) * self._receptor_sensitivity +
-            sensitivity_alpha * target_sensitivity
-        )
+            1 - sensitivity_alpha
+        ) * self._receptor_sensitivity + sensitivity_alpha * target_sensitivity
 
     def apply_sensitivity(self, signal: float) -> float:
         """Apply receptor sensitivity to neuromodulator signal.
@@ -218,9 +217,9 @@ class NeuromodulatorHomeostasis:
             State dictionary
         """
         return {
-            'receptor_sensitivity': self._receptor_sensitivity,
-            'avg_level': self._avg_level,
-            'update_count': self._update_count,
+            "receptor_sensitivity": self._receptor_sensitivity,
+            "avg_level": self._avg_level,
+            "update_count": self._update_count,
         }
 
     def set_state(self, state: dict) -> None:
@@ -229,9 +228,9 @@ class NeuromodulatorHomeostasis:
         Args:
             state: State dictionary from get_state()
         """
-        self._receptor_sensitivity = state['receptor_sensitivity']
-        self._avg_level = state['avg_level']
-        self._update_count = state['update_count']
+        self._receptor_sensitivity = state["receptor_sensitivity"]
+        self._avg_level = state["avg_level"]
+        self._update_count = state["update_count"]
 
     def reset(self) -> None:
         """Reset to initial state."""
@@ -250,21 +249,25 @@ class NeuromodulatorHomeostasis:
 
         # Check for abnormal sensitivity
         if self._receptor_sensitivity < 0.6:
-            warnings.append(f"Low sensitivity (receptors downregulated): {self._receptor_sensitivity:.2f}")
+            warnings.append(
+                f"Low sensitivity (receptors downregulated): {self._receptor_sensitivity:.2f}"
+            )
         if self._receptor_sensitivity > 1.4:
-            warnings.append(f"High sensitivity (receptors upregulated): {self._receptor_sensitivity:.2f}")
+            warnings.append(
+                f"High sensitivity (receptors upregulated): {self._receptor_sensitivity:.2f}"
+            )
 
         # Check for extreme average levels
         if self._avg_level > 2.0:
             issues.append(f"Excessive neuromodulator levels: {self._avg_level:.2f}")
 
         return {
-            'is_healthy': len(issues) == 0,
-            'issues': issues,
-            'warnings': warnings,
-            'sensitivity': self._receptor_sensitivity,
-            'avg_level': self._avg_level,
-            'updates': self._update_count,
+            "is_healthy": len(issues) == 0,
+            "issues": issues,
+            "warnings": warnings,
+            "sensitivity": self._receptor_sensitivity,
+            "avg_level": self._avg_level,
+            "updates": self._update_count,
         }
 
 
@@ -287,8 +290,7 @@ class NeuromodulatorCoordination:
     """
 
     @staticmethod
-    def coordinate_da_ach(dopamine: float, acetylcholine: float,
-                          strength: float = 0.3) -> float:
+    def coordinate_da_ach(dopamine: float, acetylcholine: float, strength: float = 0.3) -> float:
         """Coordinate dopamine and acetylcholine.
 
         Biological mechanism:
@@ -312,8 +314,9 @@ class NeuromodulatorCoordination:
         return acetylcholine
 
     @staticmethod
-    def coordinate_ne_ach(norepinephrine: float, acetylcholine: float,
-                          optimal_arousal: float = 0.5) -> float:
+    def coordinate_ne_ach(
+        norepinephrine: float, acetylcholine: float, optimal_arousal: float = 0.5
+    ) -> float:
         """Coordinate norepinephrine and acetylcholine.
 
         Biological mechanism:
@@ -337,8 +340,9 @@ class NeuromodulatorCoordination:
         return acetylcholine * arousal_factor
 
     @staticmethod
-    def coordinate_da_ne(dopamine: float, norepinephrine: float,
-                         prediction_error: float) -> tuple[float, float]:
+    def coordinate_da_ne(
+        dopamine: float, norepinephrine: float, prediction_error: float
+    ) -> tuple[float, float]:
         """Coordinate dopamine and norepinephrine for learning.
 
         Biological mechanism:

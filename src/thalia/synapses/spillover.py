@@ -31,7 +31,6 @@ from typing import Literal, Optional
 
 import torch
 
-
 SpilloverMode = Literal["connectivity", "similarity", "lateral"]
 
 
@@ -50,6 +49,7 @@ class SpilloverConfig:
         similarity_threshold: Minimum similarity for spillover in similarity mode (default: 0.5)
         normalize: Whether to normalize spillover weights to prevent runaway excitation
     """
+
     enabled: bool = False
     strength: float = 0.15  # Spillover ~15% of direct synaptic strength
     mode: SpilloverMode = "connectivity"

@@ -96,9 +96,9 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Tuple, Optional, Any
 import math
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Tuple
 
 from thalia.core.errors import ConfigurationError
 
@@ -115,6 +115,7 @@ class CriticalPeriodWindow:
         late_floor: Minimum multiplier after window closes (default 0.2)
         decay_rate: How quickly plasticity declines after window (default 20000 steps)
     """
+
     start_step: int
     end_step: int
     peak_multiplier: float = 1.2
@@ -130,50 +131,61 @@ class CriticalPeriodConfig:
     Default windows based on human developmental timeline,
     compressed to training steps.
     """
+
     # Phonology: Native phoneme discrimination (infant)
-    phonology: CriticalPeriodWindow = field(default_factory=lambda: CriticalPeriodWindow(
-        start_step=0,
-        end_step=50000,
-        peak_multiplier=1.2,
-        early_multiplier=0.5,
-        late_floor=0.2,
-    ))
+    phonology: CriticalPeriodWindow = field(
+        default_factory=lambda: CriticalPeriodWindow(
+            start_step=0,
+            end_step=50000,
+            peak_multiplier=1.2,
+            early_multiplier=0.5,
+            late_floor=0.2,
+        )
+    )
 
     # Grammar: Syntax acquisition (toddler-child)
-    grammar: CriticalPeriodWindow = field(default_factory=lambda: CriticalPeriodWindow(
-        start_step=25000,
-        end_step=150000,
-        peak_multiplier=1.2,
-        early_multiplier=0.5,
-        late_floor=0.2,
-    ))
+    grammar: CriticalPeriodWindow = field(
+        default_factory=lambda: CriticalPeriodWindow(
+            start_step=25000,
+            end_step=150000,
+            peak_multiplier=1.2,
+            early_multiplier=0.5,
+            late_floor=0.2,
+        )
+    )
 
     # Semantics: Vocabulary and meaning (extended window)
-    semantics: CriticalPeriodWindow = field(default_factory=lambda: CriticalPeriodWindow(
-        start_step=50000,
-        end_step=300000,
-        peak_multiplier=1.15,  # Slightly lower peak
-        early_multiplier=0.6,
-        late_floor=0.3,  # Higher floor (easier to learn late)
-    ))
+    semantics: CriticalPeriodWindow = field(
+        default_factory=lambda: CriticalPeriodWindow(
+            start_step=50000,
+            end_step=300000,
+            peak_multiplier=1.15,  # Slightly lower peak
+            early_multiplier=0.6,
+            late_floor=0.3,  # Higher floor (easier to learn late)
+        )
+    )
 
     # Face recognition: Early visual expertise
-    face_recognition: CriticalPeriodWindow = field(default_factory=lambda: CriticalPeriodWindow(
-        start_step=0,
-        end_step=100000,
-        peak_multiplier=1.2,
-        early_multiplier=0.5,
-        late_floor=0.25,
-    ))
+    face_recognition: CriticalPeriodWindow = field(
+        default_factory=lambda: CriticalPeriodWindow(
+            start_step=0,
+            end_step=100000,
+            peak_multiplier=1.2,
+            early_multiplier=0.5,
+            late_floor=0.25,
+        )
+    )
 
     # Motor skills: Sensorimotor coordination
-    motor: CriticalPeriodWindow = field(default_factory=lambda: CriticalPeriodWindow(
-        start_step=0,
-        end_step=75000,
-        peak_multiplier=1.25,  # Very high peak for motor
-        early_multiplier=0.4,
-        late_floor=0.3,
-    ))
+    motor: CriticalPeriodWindow = field(
+        default_factory=lambda: CriticalPeriodWindow(
+            start_step=0,
+            end_step=75000,
+            peak_multiplier=1.25,  # Very high peak for motor
+            early_multiplier=0.4,
+            late_floor=0.3,
+        )
+    )
 
 
 class CriticalPeriodGating:
@@ -214,11 +226,11 @@ class CriticalPeriodGating:
 
         # Build domain lookup
         self._windows: Dict[str, CriticalPeriodWindow] = {
-            'phonology': self.config.phonology,
-            'grammar': self.config.grammar,
-            'semantics': self.config.semantics,
-            'face_recognition': self.config.face_recognition,
-            'motor': self.config.motor,
+            "phonology": self.config.phonology,
+            "grammar": self.config.grammar,
+            "semantics": self.config.semantics,
+            "face_recognition": self.config.face_recognition,
+            "motor": self.config.motor,
         }
 
     def add_domain(
@@ -272,8 +284,7 @@ class CriticalPeriodGating:
         """
         if domain not in self._windows:
             raise ConfigurationError(
-                f"Unknown domain '{domain}'. Available domains: "
-                f"{list(self._windows.keys())}"
+                f"Unknown domain '{domain}'. Available domains: " f"{list(self._windows.keys())}"
             )
 
         window = self._windows[domain]
@@ -320,8 +331,7 @@ class CriticalPeriodGating:
 
             # Interpolate between floor and peak
             multiplier = (
-                window.late_floor +
-                (window.peak_multiplier - window.late_floor) * decay_factor
+                window.late_floor + (window.peak_multiplier - window.late_floor) * decay_factor
             )
 
             return multiplier
@@ -353,28 +363,28 @@ class CriticalPeriodGating:
         multiplier = self._compute_multiplier(age, window)
 
         if age < window.start_step:
-            phase = 'early'
+            phase = "early"
             progress = 0.0
             steps_remaining = window.end_step - age
         elif age <= window.end_step:
-            phase = 'peak'
+            phase = "peak"
             window_length = window.end_step - window.start_step
             progress = (age - window.start_step) / window_length if window_length > 0 else 1.0
             steps_remaining = window.end_step - age
         else:
-            phase = 'late'
+            phase = "late"
             progress = 1.0
             steps_remaining = None
 
         return {
-            'domain': domain,
-            'age': age,
-            'phase': phase,
-            'multiplier': multiplier,
-            'progress': progress,
-            'steps_remaining': steps_remaining,
-            'window_start': window.start_step,
-            'window_end': window.end_step,
+            "domain": domain,
+            "age": age,
+            "phase": phase,
+            "multiplier": multiplier,
+            "progress": progress,
+            "steps_remaining": steps_remaining,
+            "window_start": window.start_step,
+            "window_end": window.end_step,
         }
 
     def get_all_domains(self) -> list[str]:

@@ -18,19 +18,19 @@ Usage:
 
 from __future__ import annotations
 
-from pathlib import Path
 import threading
 import time
-from typing import Dict, Any, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 
 from thalia.constants.visualization import (
-    TEXT_POSITION_CENTER,
-    PROGRESS_BAR_HEIGHT,
-    AXIS_MARGIN_POSITIVE,
-    AXIS_MARGIN_NEGATIVE,
     ALPHA_SEMI_TRANSPARENT,
+    AXIS_MARGIN_NEGATIVE,
+    AXIS_MARGIN_POSITIVE,
+    PROGRESS_BAR_HEIGHT,
+    TEXT_POSITION_CENTER,
 )
 
 
@@ -61,7 +61,9 @@ class TrainingMonitor:
         self.data = self._load_data()
 
         # Set matplotlib style
-        plt.style.use('seaborn-v0_8-darkgrid' if 'seaborn-v0_8-darkgrid' in plt.style.available else 'default')
+        plt.style.use(
+            "seaborn-v0_8-darkgrid" if "seaborn-v0_8-darkgrid" in plt.style.available else "default"
+        )
 
     def _load_data(self) -> Dict[str, Any]:
         """Load training data from checkpoints."""
@@ -69,8 +71,8 @@ class TrainingMonitor:
 
         if not self.checkpoint_dir.exists():
             return {
-                'error': f"Checkpoint directory not found: {self.checkpoint_dir}",
-                'checkpoints': [],
+                "error": f"Checkpoint directory not found: {self.checkpoint_dir}",
+                "checkpoints": [],
             }
 
         # Find all checkpoints
@@ -78,8 +80,8 @@ class TrainingMonitor:
 
         if not checkpoint_files:
             return {
-                'error': "No checkpoints found",
-                'checkpoints': [],
+                "error": "No checkpoints found",
+                "checkpoints": [],
             }
 
         # Load metadata from each checkpoint
@@ -87,14 +89,14 @@ class TrainingMonitor:
         for cp_file in sorted(checkpoint_files):
             try:
                 info = BrainCheckpoint.info(cp_file)
-                info['path'] = cp_file
+                info["path"] = cp_file
                 checkpoints.append(info)
             except Exception as e:
                 print(f"Warning: Failed to load {cp_file}: {e}")
 
         return {
-            'checkpoints': checkpoints,
-            'latest': checkpoints[-1] if checkpoints else None,
+            "checkpoints": checkpoints,
+            "latest": checkpoints[-1] if checkpoints else None,
         }
 
     def refresh(self, sections: Optional[List[str]] = None) -> None:
@@ -111,28 +113,28 @@ class TrainingMonitor:
             self.show_all()
         else:
             for section in sections:
-                if section == 'progress':
+                if section == "progress":
                     self.show_progress()
-                elif section == 'metrics':
+                elif section == "metrics":
                     self.show_metrics()
-                elif section == 'growth':
+                elif section == "growth":
                     self.show_growth()
 
     def show_progress(self) -> None:
         """Display training progress with matplotlib."""
-        if 'error' in self.data:
+        if "error" in self.data:
             print(f"[ERROR] {self.data['error']}")
             return
 
-        latest = self.data.get('latest')
+        latest = self.data.get("latest")
         if not latest:
             print("No checkpoint data available")
             return
 
-        metadata = latest.get('metadata', {})
-        stage_name = metadata.get('stage_name', 'Unknown')
-        step = metadata.get('step', 0)
-        total_steps = metadata.get('total_steps', 0)
+        metadata = latest.get("metadata", {})
+        stage_name = metadata.get("stage_name", "Unknown")
+        step = metadata.get("step", 0)
+        total_steps = metadata.get("total_steps", 0)
 
         progress_pct = (step / total_steps * 100) if total_steps > 0 else 0
         remaining = 100 - progress_pct
@@ -141,15 +143,21 @@ class TrainingMonitor:
         _, (ax1, ax2) = plt.subplots(1, 2, figsize=(self.figsize[0], 4))
 
         # Left: Progress pie chart
-        colors = ['#4CAF50', '#E0E0E0']
+        colors = ["#4CAF50", "#E0E0E0"]
         explode = (0.05, 0)
-        ax1.pie([progress_pct, remaining], labels=['Complete', 'Remaining'],
-                autopct='%1.1f%%', colors=colors, explode=explode,
-                startangle=90, textprops={'fontsize': 12, 'weight': 'bold'})
-        ax1.set_title(f'🧠 {stage_name} Progress', fontsize=14, fontweight='bold')
+        ax1.pie(
+            [progress_pct, remaining],
+            labels=["Complete", "Remaining"],
+            autopct="%1.1f%%",
+            colors=colors,
+            explode=explode,
+            startangle=90,
+            textprops={"fontsize": 12, "weight": "bold"},
+        )
+        ax1.set_title(f"🧠 {stage_name} Progress", fontsize=14, fontweight="bold")
 
         # Right: Status text
-        ax2.axis('off')
+        ax2.axis("off")
         status_text = f"""
         Stage: {stage_name}
         Step: {step:,} / {total_steps:,}
@@ -159,20 +167,26 @@ class TrainingMonitor:
 
         Status: {'[COMPLETE]' if progress_pct >= 100 else '[TRAINING]'}
         """
-        ax2.text(0.1, TEXT_POSITION_CENTER, status_text.strip(), fontsize=11, family='monospace',
-                verticalalignment='center', bbox=dict(boxstyle='round',
-                facecolor='wheat', alpha=0.3))
+        ax2.text(
+            0.1,
+            TEXT_POSITION_CENTER,
+            status_text.strip(),
+            fontsize=11,
+            family="monospace",
+            verticalalignment="center",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.3),
+        )
 
         plt.tight_layout()
         plt.show()
 
     def show_metrics(self) -> None:
         """Display training metrics over time."""
-        if 'error' in self.data:
+        if "error" in self.data:
             print(f"[ERROR] {self.data['error']}")
             return
 
-        if not self.data['checkpoints']:
+        if not self.data["checkpoints"]:
             print("No checkpoint data available")
             return
 
@@ -180,10 +194,10 @@ class TrainingMonitor:
         steps = []
         metrics_data = {}
 
-        for cp in self.data['checkpoints']:
-            metadata = cp.get('metadata', {})
-            step = metadata.get('step', 0)
-            metrics = metadata.get('metrics', {})
+        for cp in self.data["checkpoints"]:
+            metadata = cp.get("metadata", {})
+            step = metadata.get("step", 0)
+            metrics = metadata.get("metrics", {})
 
             if not metrics:
                 continue
@@ -217,28 +231,28 @@ class TrainingMonitor:
             col = idx % n_cols
             ax = axes[row][col]
 
-            ax.plot(steps, values, linewidth=2, marker='o', markersize=4, color='#2196F3')
-            ax.set_xlabel('Step', fontsize=10)
+            ax.plot(steps, values, linewidth=2, marker="o", markersize=4, color="#2196F3")
+            ax.set_xlabel("Step", fontsize=10)
             ax.set_ylabel(metric_name, fontsize=10)
-            ax.set_title(f'📈 {metric_name}', fontsize=11, fontweight='bold')
+            ax.set_title(f"📈 {metric_name}", fontsize=11, fontweight="bold")
             ax.grid(True, alpha=0.3)
 
         # Hide unused subplots
         for idx in range(n_metrics, n_rows * n_cols):
             row = idx // n_cols
             col = idx % n_cols
-            axes[row][col].axis('off')
+            axes[row][col].axis("off")
 
         plt.tight_layout()
         plt.show()
 
     def show_growth(self) -> None:
         """Display neuron growth over time."""
-        if 'error' in self.data:
+        if "error" in self.data:
             print(f"[ERROR] {self.data['error']}")
             return
 
-        if not self.data['checkpoints']:
+        if not self.data["checkpoints"]:
             print("No checkpoint data available")
             return
 
@@ -246,17 +260,17 @@ class TrainingMonitor:
         steps = []
         region_counts = {}
 
-        for cp in self.data['checkpoints']:
-            metadata = cp.get('metadata', {})
-            step = metadata.get('step', 0)
-            regions = metadata.get('regions', {})
+        for cp in self.data["checkpoints"]:
+            metadata = cp.get("metadata", {})
+            step = metadata.get("step", 0)
+            regions = metadata.get("regions", {})
 
             if not regions:
                 continue
 
             steps.append(step)
             for region_name, region_info in regions.items():
-                n_neurons = region_info.get('n_neurons', 0)
+                n_neurons = region_info.get("n_neurons", 0)
                 if region_name not in region_counts:
                     region_counts[region_name] = []
                 region_counts[region_name].append(n_neurons)
@@ -273,22 +287,35 @@ class TrainingMonitor:
         colors = plt.cm.Set3(range(len(region_counts)))
 
         for idx, (region_name, counts) in enumerate(region_counts.items()):
-            ax.fill_between(steps, bottom, [b + c for b, c in zip(bottom, counts)],
-                           label=region_name, alpha=0.7, color=colors[idx])
+            ax.fill_between(
+                steps,
+                bottom,
+                [b + c for b, c in zip(bottom, counts)],
+                label=region_name,
+                alpha=0.7,
+                color=colors[idx],
+            )
             bottom = [b + c for b, c in zip(bottom, counts)]
 
-        ax.set_xlabel('Training Step', fontsize=12)
-        ax.set_ylabel('Number of Neurons', fontsize=12)
-        ax.set_title('🌱 Neurogenesis: Brain Growth Over Time', fontsize=14, fontweight='bold')
-        ax.legend(loc='upper left', fontsize=9)
+        ax.set_xlabel("Training Step", fontsize=12)
+        ax.set_ylabel("Number of Neurons", fontsize=12)
+        ax.set_title("🌱 Neurogenesis: Brain Growth Over Time", fontsize=14, fontweight="bold")
+        ax.legend(loc="upper left", fontsize=9)
         ax.grid(True, alpha=0.3)
 
         # Add total count annotation
         total = sum(counts[-1] for counts in region_counts.values())
-        ax.text(0.98, 0.98, f'Total: {total:,} neurons',
-               transform=ax.transAxes, fontsize=11, fontweight='bold',
-               verticalalignment='top', horizontalalignment='right',
-               bbox=dict(boxstyle='round', facecolor='yellow', alpha=ALPHA_SEMI_TRANSPARENT))
+        ax.text(
+            0.98,
+            0.98,
+            f"Total: {total:,} neurons",
+            transform=ax.transAxes,
+            fontsize=11,
+            fontweight="bold",
+            verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="yellow", alpha=ALPHA_SEMI_TRANSPARENT),
+        )
 
         plt.tight_layout()
         plt.show()
@@ -315,7 +342,7 @@ class TrainingMonitor:
 
         def refresh_loop():
             while not self._stop_refresh:
-                plt.close('all')  # Close previous figures
+                plt.close("all")  # Close previous figures
                 self.refresh(sections)
                 time.sleep(interval)
 
@@ -338,7 +365,7 @@ class TrainingMonitor:
         Args:
             output_path: Path to save report (PNG or PDF)
         """
-        if 'error' in self.data:
+        if "error" in self.data:
             print(f"[ERROR] Cannot save report: {self.data['error']}")
             return
 
@@ -359,34 +386,41 @@ class TrainingMonitor:
         self._plot_growth_to_ax(ax_growth)
 
         # Add title
-        fig.suptitle('🧠 Thalia Training Report', fontsize=18, fontweight='bold')
+        fig.suptitle("🧠 Thalia Training Report", fontsize=18, fontweight="bold")
 
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"[OK] Report saved to: {output_path}")
         plt.close(fig)
 
     def _plot_progress_to_ax(self, ax):
         """Helper to plot progress to specific axes."""
-        latest = self.data.get('latest')
+        latest = self.data.get("latest")
         if not latest:
-            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No data', ha='center', va='center')
-            ax.axis('off')
+            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, "No data", ha="center", va="center")
+            ax.axis("off")
             return
 
-        metadata = latest.get('metadata', {})
-        step = metadata.get('step', 0)
-        total_steps = metadata.get('total_steps', 0)
+        metadata = latest.get("metadata", {})
+        step = metadata.get("step", 0)
+        total_steps = metadata.get("total_steps", 0)
         progress_pct = (step / total_steps * 100) if total_steps > 0 else 0
 
-        ax.barh([0], [progress_pct], color='#4CAF50', height=PROGRESS_BAR_HEIGHT)
-        ax.barh([0], [100 - progress_pct], left=[progress_pct], color='#E0E0E0', height=PROGRESS_BAR_HEIGHT)
+        ax.barh([0], [progress_pct], color="#4CAF50", height=PROGRESS_BAR_HEIGHT)
+        ax.barh(
+            [0],
+            [100 - progress_pct],
+            left=[progress_pct],
+            color="#E0E0E0",
+            height=PROGRESS_BAR_HEIGHT,
+        )
         ax.set_xlim(0, 100)
         ax.set_ylim(AXIS_MARGIN_NEGATIVE, AXIS_MARGIN_POSITIVE)
-        ax.set_xlabel('Progress (%)')
-        ax.set_title('Training Progress')
+        ax.set_xlabel("Progress (%)")
+        ax.set_title("Training Progress")
         ax.set_yticks([])
-        ax.text(progress_pct / 2, 0, f'{progress_pct:.1f}%',
-               ha='center', va='center', fontweight='bold')
+        ax.text(
+            progress_pct / 2, 0, f"{progress_pct:.1f}%", ha="center", va="center", fontweight="bold"
+        )
 
     def _plot_metrics_to_ax(self, ax):
         """Helper to plot metrics to specific axes."""
@@ -394,10 +428,10 @@ class TrainingMonitor:
         steps = []
         avg_metric = []
 
-        for cp in self.data['checkpoints']:
-            metadata = cp.get('metadata', {})
-            step = metadata.get('step', 0)
-            metrics = metadata.get('metrics', {})
+        for cp in self.data["checkpoints"]:
+            metadata = cp.get("metadata", {})
+            step = metadata.get("step", 0)
+            metrics = metadata.get("metrics", {})
 
             if metrics:
                 steps.append(step)
@@ -406,39 +440,47 @@ class TrainingMonitor:
                 avg_metric.append(sum(numeric_vals) / len(numeric_vals) if numeric_vals else 0)
 
         if steps:
-            ax.plot(steps, avg_metric, linewidth=2, color='#2196F3')
-            ax.set_xlabel('Step')
-            ax.set_ylabel('Average Metric Value')
-            ax.set_title('Metrics Over Time')
+            ax.plot(steps, avg_metric, linewidth=2, color="#2196F3")
+            ax.set_xlabel("Step")
+            ax.set_ylabel("Average Metric Value")
+            ax.set_title("Metrics Over Time")
             ax.grid(True, alpha=0.3)
         else:
-            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No metrics', ha='center', va='center')
-            ax.axis('off')
+            ax.text(
+                TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, "No metrics", ha="center", va="center"
+            )
+            ax.axis("off")
 
     def _plot_growth_to_ax(self, ax):
         """Helper to plot growth to specific axes."""
         steps = []
         total_neurons = []
 
-        for cp in self.data['checkpoints']:
-            metadata = cp.get('metadata', {})
-            step = metadata.get('step', 0)
-            regions = metadata.get('regions', {})
+        for cp in self.data["checkpoints"]:
+            metadata = cp.get("metadata", {})
+            step = metadata.get("step", 0)
+            regions = metadata.get("regions", {})
 
             if regions:
                 steps.append(step)
-                total = sum(r.get('n_neurons', 0) for r in regions.values())
+                total = sum(r.get("n_neurons", 0) for r in regions.values())
                 total_neurons.append(total)
 
         if steps:
-            ax.plot(steps, total_neurons, linewidth=2, color='#4CAF50', marker='o')
-            ax.set_xlabel('Step')
-            ax.set_ylabel('Total Neurons')
-            ax.set_title('Neurogenesis')
+            ax.plot(steps, total_neurons, linewidth=2, color="#4CAF50", marker="o")
+            ax.set_xlabel("Step")
+            ax.set_ylabel("Total Neurons")
+            ax.set_title("Neurogenesis")
             ax.grid(True, alpha=0.3)
         else:
-            ax.text(TEXT_POSITION_CENTER, TEXT_POSITION_CENTER, 'No growth data', ha='center', va='center')
-            ax.axis('off')
+            ax.text(
+                TEXT_POSITION_CENTER,
+                TEXT_POSITION_CENTER,
+                "No growth data",
+                ha="center",
+                va="center",
+            )
+            ax.axis("off")
 
 
 def quick_monitor(checkpoint_dir: str) -> None:

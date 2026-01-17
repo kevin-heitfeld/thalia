@@ -72,10 +72,11 @@ class RobustnessConfig:
         criticality: Criticality monitoring configuration
         metabolic: Metabolic constraint configuration
     """
+
     # Enable/disable flags
     enable_ei_balance: bool = True
     enable_criticality: bool = False  # Research/diagnostics only
-    enable_metabolic: bool = False    # Sparse coding objective
+    enable_metabolic: bool = False  # Sparse coding objective
 
     # Sub-configurations
     ei_balance: EIBalanceConfig = field(default_factory=EIBalanceConfig)
@@ -97,7 +98,7 @@ class RobustnessConfig:
         Performance impact: ~10-15% overhead vs no robustness
         """
         return cls(
-            enable_ei_balance=True,      # Essential for recurrence
+            enable_ei_balance=True,  # Essential for recurrence
             enable_criticality=False,
             enable_metabolic=False,
         )

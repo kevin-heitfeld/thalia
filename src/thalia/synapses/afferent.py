@@ -19,7 +19,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -41,6 +41,7 @@ class AfferentSynapsesConfig:
         stp_config: Configuration for STP (if enabled)
         device: Torch device
     """
+
     n_neurons: int
     n_inputs: int
     learning_rule: str = "hebbian"
@@ -103,6 +104,7 @@ class AfferentSynapses(nn.Module):
         # Synaptic weights [n_neurons, n_inputs]
         # Initialize with small random values (Gaussian)
         from thalia.components.synapses.weight_init import WeightInitializer
+
         self.weights = nn.Parameter(
             WeightInitializer.gaussian(
                 n_output=config.n_neurons,
@@ -118,6 +120,7 @@ class AfferentSynapses(nn.Module):
             self.learning_strategy = learning_strategy
         else:
             from thalia.learning.rules.strategies import create_strategy
+
             self.learning_strategy = create_strategy(
                 rule_name=config.learning_rule,
                 learning_rate=config.learning_rate,
@@ -127,7 +130,11 @@ class AfferentSynapses(nn.Module):
         self.stp: Optional[Any] = None  # Will be ShortTermPlasticity if enabled
         if config.use_stp:
             try:
-                from thalia.components.plasticity.stp import ShortTermPlasticity, STPConfig as STPConfigClass
+                from thalia.components.plasticity.stp import (
+                    ShortTermPlasticity,
+                )
+                from thalia.components.plasticity.stp import STPConfig as STPConfigClass
+
                 stp_config = config.stp_config or STPConfigClass()
                 self.stp = ShortTermPlasticity(
                     n_synapses=config.n_inputs,
@@ -226,6 +233,7 @@ class AfferentSynapses(nn.Module):
 
         # Create expanded weight matrix
         from thalia.components.synapses.weight_init import WeightInitializer
+
         new_weights = torch.zeros(
             self.config.n_neurons,
             new_n_inputs,
@@ -273,6 +281,7 @@ class AfferentSynapses(nn.Module):
 
         # Create expanded weight matrix
         from thalia.components.synapses.weight_init import WeightInitializer
+
         new_weights = torch.zeros(
             new_n_neurons,
             self.config.n_inputs,

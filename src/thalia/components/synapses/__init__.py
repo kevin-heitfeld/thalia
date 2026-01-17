@@ -6,32 +6,32 @@ This module provides synaptic mechanisms for spiking neural networks.
 
 from __future__ import annotations
 
-from thalia.components.synapses.weight_init import (
-    InitStrategy,
-    WeightInitializer,
-)
 from thalia.components.synapses.stp import (
     ShortTermPlasticity,
     STPConfig,
-    STPType,
     STPSynapse,
+    STPType,
 )
 from thalia.components.synapses.stp_presets import (
     STP_PRESETS,
     STPPreset,
+    create_heterogeneous_stp_configs,
     get_stp_config,
     list_presets,
     sample_heterogeneous_stp_params,
-    create_heterogeneous_stp_configs,
 )
 from thalia.components.synapses.traces import (
-    SpikeTrace,
     PairedTraces,
+    SpikeTrace,
     TraceConfig,
+    compute_decay,
     compute_stdp_update,
     create_trace,
     update_trace,
-    compute_decay,
+)
+from thalia.components.synapses.weight_init import (
+    InitStrategy,
+    WeightInitializer,
 )
 
 __all__ = [

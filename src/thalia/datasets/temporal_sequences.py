@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple, Dict
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -25,6 +25,7 @@ import torch
 
 class PatternType(Enum):
     """Types of sequential patterns."""
+
     ABC = "abc"  # Linear sequence A→B→C
     ABA = "aba"  # Repetition with gap A→B→A
     AAB = "aab"  # Immediate repetition A→A→B
@@ -35,6 +36,7 @@ class PatternType(Enum):
 @dataclass
 class SequenceConfig:
     """Configuration for temporal sequence generation."""
+
     n_symbols: int = 5  # Number of distinct symbols
     sequence_length: int = 10  # Length of each sequence
     pattern_types: List[PatternType] = None  # Patterns to generate
@@ -170,7 +172,7 @@ class TemporalSequenceDataset:
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
 
-        return sequence[:self.config.sequence_length]
+        return sequence[: self.config.sequence_length]
 
     def _generate_aba(self) -> List[int]:
         """Generate A→B→A repetition pattern."""
@@ -184,7 +186,7 @@ class TemporalSequenceDataset:
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
 
-        return sequence[:self.config.sequence_length]
+        return sequence[: self.config.sequence_length]
 
     def _generate_aab(self) -> List[int]:
         """Generate A→A→B immediate repetition pattern."""
@@ -198,7 +200,7 @@ class TemporalSequenceDataset:
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
 
-        return sequence[:self.config.sequence_length]
+        return sequence[: self.config.sequence_length]
 
     def _generate_abac(self) -> List[int]:
         """Generate A→B→A→C hierarchical pattern."""
@@ -212,13 +214,12 @@ class TemporalSequenceDataset:
         while len(sequence) < self.config.sequence_length:
             sequence.append(np.random.randint(0, self.config.n_symbols))
 
-        return sequence[:self.config.sequence_length]
+        return sequence[: self.config.sequence_length]
 
     def _generate_random(self) -> List[int]:
         """Generate random sequence (no structure)."""
         return [
-            np.random.randint(0, self.config.n_symbols)
-            for _ in range(self.config.sequence_length)
+            np.random.randint(0, self.config.n_symbols) for _ in range(self.config.sequence_length)
         ]
 
     def _add_violation(self, sequence: List[int]) -> List[int]:
@@ -345,7 +346,7 @@ class TemporalSequenceDataset:
 
                 # Run brain on sequence
                 for t in range(len(seq) - 1):
-                    brain_output = brain.forward(seq[t:t+1])  # Single timestep
+                    brain_output = brain.forward(seq[t : t + 1])  # Single timestep
                     predicted_symbol = torch.argmax(brain_output)
                     target_symbol = torch.argmax(targets[t])
 

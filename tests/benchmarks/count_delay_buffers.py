@@ -1,7 +1,7 @@
 """Profile pathway overhead."""
 
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 def count_delay_buffers():
@@ -11,7 +11,7 @@ def count_delay_buffers():
 
     total_buffers = 0
     for (src, tgt), pathway in brain.connections.items():
-        if hasattr(pathway, '_delay_buffers'):
+        if hasattr(pathway, "_delay_buffers"):
             n_buffers = len(pathway._delay_buffers)
             total_buffers += n_buffers
             print(f"  {src} -> {tgt}: {n_buffers} delay buffers")

@@ -16,21 +16,20 @@ Available Mixins:
 
 from __future__ import annotations
 
-
-from thalia.mixins.device_mixin import DeviceMixin
-from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.configurable_mixin import ConfigurableMixin
+from thalia.mixins.device_mixin import DeviceMixin
 from thalia.mixins.diagnostic_collector_mixin import DiagnosticCollectorMixin
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
+from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 
 __all__ = [
-    'DeviceMixin',
-    'ResettableMixin',
-    'ConfigurableMixin',
-    'DiagnosticCollectorMixin',
-    'DiagnosticsMixin',
-    'GrowthMixin',
-    'StateLoadingMixin',
+    "DeviceMixin",
+    "ResettableMixin",
+    "ConfigurableMixin",
+    "DiagnosticCollectorMixin",
+    "DiagnosticsMixin",
+    "GrowthMixin",
+    "StateLoadingMixin",
 ]

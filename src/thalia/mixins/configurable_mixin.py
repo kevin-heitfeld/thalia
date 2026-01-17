@@ -10,7 +10,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from thalia.config import ThaliaConfig
@@ -64,9 +64,7 @@ class ConfigurableMixin:
         # Get the converter method from ThaliaConfig
         converter = getattr(config, cls.CONFIG_CONVERTER_METHOD, None)
         if converter is None:
-            raise AttributeError(
-                f"ThaliaConfig has no method '{cls.CONFIG_CONVERTER_METHOD}'"
-            )
+            raise AttributeError(f"ThaliaConfig has no method '{cls.CONFIG_CONVERTER_METHOD}'")
 
         # Convert and instantiate
         component_config = converter()

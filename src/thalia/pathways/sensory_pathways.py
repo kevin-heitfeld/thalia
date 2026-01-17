@@ -101,11 +101,11 @@ Date: December 2025
 
 from __future__ import annotations
 
+import math
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-import math
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -118,6 +118,7 @@ from thalia.managers.component_registry import register_pathway
 
 class Modality(Enum):
     """Sensory modalities."""
+
     VISION = "vision"
     AUDITION = "audition"
     LANGUAGE = "language"
@@ -132,9 +133,10 @@ class SensoryPathwayConfig:
     All sensory pathways share these parameters to ensure
     compatible output formats for brain integration.
     """
+
     # Output format (must match brain's input expectations)
     output_size: int = 256  # Number of output neurons
-    n_timesteps: int = 20   # Timesteps per input
+    n_timesteps: int = 20  # Timesteps per input
 
     # Sparse coding
     sparsity: float = 0.05  # Target sparsity
@@ -216,9 +218,9 @@ class SensoryPathway(LearnableComponent):
         return {
             "modality": self.get_modality().value,
             "config": {
-                "n_timesteps": getattr(self.config, 'n_timesteps', None),
-                "output_size": getattr(self.config, 'output_size', None),
-            }
+                "n_timesteps": getattr(self.config, "n_timesteps", None),
+                "output_size": getattr(self.config, "output_size", None),
+            },
         }
 
     def to_brain_format(
@@ -235,15 +237,16 @@ class SensoryPathway(LearnableComponent):
             f"Sensory pathway output must be 2D [n_timesteps, output_size], "
             f"got shape {spikes.shape}. Use temporal/latency coding."
         )
-        assert spikes.dtype == torch.bool, (
-            f"Sensory pathway output must be bool (ADR-004), got {spikes.dtype}"
-        )
+        assert (
+            spikes.dtype == torch.bool
+        ), f"Sensory pathway output must be bool (ADR-004), got {spikes.dtype}"
         return spikes
 
 
 # =============================================================================
 # VISUAL PATHWAY - Retinal Processing
 # =============================================================================
+
 
 @dataclass
 class VisualConfig(SensoryPathwayConfig):
@@ -254,6 +257,7 @@ class VisualConfig(SensoryPathwayConfig):
     - Bipolar cells: Center-surround processing
     - Ganglion cells: ON/OFF channels, motion detection
     """
+
     # Input image properties
     input_height: int = 28
     input_width: int = 28
@@ -264,7 +268,7 @@ class VisualConfig(SensoryPathwayConfig):
     use_temporal_contrast: bool = True  # Respond to changes
 
     # Ganglion cell types
-    n_on_cells: int = 128   # ON-center cells
+    n_on_cells: int = 128  # ON-center cells
     n_off_cells: int = 128  # OFF-center cells
 
     # DVS-style event encoding
@@ -313,7 +317,7 @@ class RetinalEncoder(nn.Module):
         # Create coordinate grids
         x = torch.arange(size) - size // 2
         y = torch.arange(size) - size // 2
-        xx, yy = torch.meshgrid(x, y, indexing='ij')
+        xx, yy = torch.meshgrid(x, y, indexing="ij")
 
         # Gaussian functions
         center = torch.exp(-(xx**2 + yy**2) / (2 * sigma_center**2))
@@ -356,19 +360,18 @@ class RetinalEncoder(nn.Module):
             # Single channel image: [H, W] → [1, H, W]
             image = image.unsqueeze(0)  # Add channel dim
 
-        assert image.dim() == 3, (
-            f"RetinalEncoder expects [C, H, W] or [H, W], got shape {image.shape}"
-        )
+        assert (
+            image.dim() == 3
+        ), f"RetinalEncoder expects [C, H, W] or [H, W], got shape {image.shape}"
 
         # PyTorch conv2d requires [batch, channels, height, width]
         # This is a legitimate exception to ADR-005 (PyTorch API requirement)
         image = image.unsqueeze(0)  # [C, H, W] → [1, C, H, W]
 
         # Initialize adaptation state on first call
-        if not hasattr(self, 'adaptation_state') or reset_adaptation:
+        if not hasattr(self, "adaptation_state") or reset_adaptation:
             self.adaptation_state = torch.zeros(
-                1, image.shape[1], image.shape[2], image.shape[3],
-                device=image.device
+                1, image.shape[1], image.shape[2], image.shape[3], device=image.device
             )
 
         # 1. Photoreceptor response (log transform for light adaptation)
@@ -377,7 +380,10 @@ class RetinalEncoder(nn.Module):
         # 2. Temporal contrast (respond to changes)
         if self.config.use_temporal_contrast:
             temporal_diff = photo_response - self.adaptation_state
-            self.adaptation_state = self.adaptation_state * RETINA_ADAPTATION_DECAY + photo_response * RETINA_ADAPTATION_RATE
+            self.adaptation_state = (
+                self.adaptation_state * RETINA_ADAPTATION_DECAY
+                + photo_response * RETINA_ADAPTATION_RATE
+            )
         else:
             temporal_diff = photo_response
 
@@ -393,7 +399,7 @@ class RetinalEncoder(nn.Module):
             cs_response = temporal_diff
 
         # 4. ON and OFF channels
-        on_response = F.relu(cs_response)   # Responds to brightness increase
+        on_response = F.relu(cs_response)  # Responds to brightness increase
         off_response = F.relu(-cs_response)  # Responds to brightness decrease
 
         # 5. Flatten and combine ON/OFF
@@ -405,7 +411,9 @@ class RetinalEncoder(nn.Module):
         # 6. Project to output size: [2*features] → [output_size]
         # nn.Linear requires [batch, features], so temporarily add batch dim
         combined = combined.unsqueeze(0)  # [2*features] → [1, 2*features]
-        ganglion_activity = self.spatial_pool(combined).squeeze(0)  # [1, output_size] → [output_size]
+        ganglion_activity = self.spatial_pool(combined).squeeze(
+            0
+        )  # [1, output_size] → [output_size]
 
         # ADR-005: ganglion_activity is now 1D [output_size]
         assert ganglion_activity.dim() == 1, f"Expected 1D, got {ganglion_activity.shape}"
@@ -444,7 +452,8 @@ class RetinalEncoder(nn.Module):
         n_timesteps = self.config.n_timesteps
 
         spikes = torch.zeros(
-            n_timesteps, n_neurons,
+            n_timesteps,
+            n_neurons,
             dtype=torch.bool,
             device=activity.device,
         )
@@ -482,7 +491,7 @@ class RetinalEncoder(nn.Module):
     aliases=["visual_pathway", "retinal_pathway"],
     description="Visual pathway from retinal encoding to cortical spikes",
     version="1.0",
-    author="Thalia Project"
+    author="Thalia Project",
 )
 class VisualPathway(SensoryPathway):
     """Complete visual pathway from image to cortical input."""
@@ -534,6 +543,7 @@ class VisualPathway(SensoryPathway):
 # AUDITORY PATHWAY - Cochlear Processing
 # =============================================================================
 
+
 @dataclass
 class AuditoryConfig(SensoryPathwayConfig):
     """Configuration for auditory pathway.
@@ -543,6 +553,7 @@ class AuditoryConfig(SensoryPathwayConfig):
     - Hair cells: Mechanical to electrical transduction
     - Auditory nerve: Spike encoding
     """
+
     # Audio properties
     sample_rate: int = 16000
     n_fft: int = 512
@@ -550,7 +561,7 @@ class AuditoryConfig(SensoryPathwayConfig):
 
     # Cochlear filterbank
     n_filters: int = 64  # Number of frequency channels
-    f_min: float = 80.0   # Minimum frequency
+    f_min: float = 80.0  # Minimum frequency
     f_max: float = 7600.0  # Maximum frequency
 
     # Temporal integration
@@ -651,7 +662,7 @@ class CochlearEncoder(nn.Module):
         )
 
         # Initialize adaptation state on first call
-        if not hasattr(self, 'adaptation_state') or reset_adaptation:
+        if not hasattr(self, "adaptation_state") or reset_adaptation:
             self.adaptation_state = torch.zeros(self.config.n_filters, device=audio.device)
 
         # 1. Compute spectrogram (like basilar membrane frequency decomposition)
@@ -660,7 +671,7 @@ class CochlearEncoder(nn.Module):
         magnitude = torch.abs(spec)
 
         # Take first n_fft//2+1 bins
-        magnitude = magnitude[:self.config.n_fft // 2 + 1]  # [n_fft//2+1]
+        magnitude = magnitude[: self.config.n_fft // 2 + 1]  # [n_fft//2+1]
 
         # 2. Apply filterbank (cochlear frequency channels)
         cochlear_response = torch.matmul(self.filterbank, magnitude)  # [n_filters]
@@ -668,12 +679,17 @@ class CochlearEncoder(nn.Module):
         # 3. Hair cell processing
         # Half-wave rectification (already positive from magnitude)
         # Compressive nonlinearity (like hair cell response)
-        hair_cell_response = torch.pow(cochlear_response + LATENCY_EPSILON, HAIR_CELL_COMPRESSION_EXPONENT)
+        hair_cell_response = torch.pow(
+            cochlear_response + LATENCY_EPSILON, HAIR_CELL_COMPRESSION_EXPONENT
+        )
 
         # 4. Adaptation (auditory nerve adapts to sustained sounds)
         adapted = hair_cell_response - self.adaptation_state * HAIR_CELL_ADAPTATION_SUPPRESSION
         adapted = F.relu(adapted)
-        self.adaptation_state = self.adaptation_state * AUDITORY_NERVE_ADAPTATION_DECAY + hair_cell_response * AUDITORY_NERVE_ADAPTATION_RATE
+        self.adaptation_state = (
+            self.adaptation_state * AUDITORY_NERVE_ADAPTATION_DECAY
+            + hair_cell_response * AUDITORY_NERVE_ADAPTATION_RATE
+        )
 
         # 5. Project to output size
         output_activity = self.output_projection(adapted)
@@ -730,7 +746,7 @@ class CochlearEncoder(nn.Module):
     aliases=["auditory_pathway", "cochlear_pathway"],
     description="Auditory pathway from cochlear encoding to cortical spikes",
     version="1.0",
-    author="Thalia Project"
+    author="Thalia Project",
 )
 class AuditoryPathway(SensoryPathway):
     """Complete auditory pathway from audio to cortical input."""
@@ -777,14 +793,15 @@ class AuditoryPathway(SensoryPathway):
         return Modality.AUDITION
 
 
-
 # =============================================================================
 # LANGUAGE PATHWAY - Text/Token Processing
 # =============================================================================
 
+
 @dataclass
 class LanguageConfig(SensoryPathwayConfig):
     """Configuration for language pathway."""
+
     vocab_size: int = 50257
     embedding_dim: int = 256
     use_position_encoding: bool = True
@@ -796,7 +813,7 @@ class LanguageConfig(SensoryPathwayConfig):
     aliases=["language_pathway", "linguistic_pathway"],
     description="Language pathway from token encoding to cortical spikes",
     version="1.0",
-    author="Thalia Project"
+    author="Thalia Project",
 )
 class LanguagePathway(SensoryPathway):
     """
@@ -930,10 +947,10 @@ class LanguagePathway(SensoryPathway):
         return Modality.LANGUAGE
 
 
-
 # =============================================================================
 # MULTIMODAL INTEGRATION
 # =============================================================================
+
 
 class MultimodalPathway(nn.Module):
     """
@@ -1027,6 +1044,7 @@ class MultimodalPathway(nn.Module):
 # =============================================================================
 # FACTORY FUNCTIONS
 # =============================================================================
+
 
 def create_visual_pathway(
     output_size: int = 256,

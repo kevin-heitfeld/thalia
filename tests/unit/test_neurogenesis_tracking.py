@@ -4,22 +4,26 @@ Tests for neurogenesis history tracking in Prefrontal and Hippocampus regions.
 Tests that neuron birth timestamps are properly tracked and recorded in checkpoints.
 """
 
-import torch
 import pytest
+import torch
 
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
+from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 
 
-def create_test_prefrontal(input_size: int = 64, n_neurons: int = 50, device: str = "cpu") -> Prefrontal:
+def create_test_prefrontal(
+    input_size: int = 64, n_neurons: int = 50, device: str = "cpu"
+) -> Prefrontal:
     """Create Prefrontal for testing with new (config, sizes, device) pattern."""
     sizes = {"input_size": input_size, "n_neurons": n_neurons}
     config = PrefrontalConfig(device=device)
     return Prefrontal(config, sizes, device)
 
 
-def create_test_hippocampus(input_size: int = 100, total_neurons: int = 200, device: str = "cpu") -> TrisynapticHippocampus:
+def create_test_hippocampus(
+    input_size: int = 100, total_neurons: int = 200, device: str = "cpu"
+) -> TrisynapticHippocampus:
     """Create Hippocampus for testing with new (config, sizes, device) pattern."""
     sizes = {
         "input_size": input_size,
@@ -39,7 +43,7 @@ class TestPrefrontalNeurogenesisTracking:
         """All initial neurons should have birth_step=0."""
         pfc = create_test_prefrontal(input_size=64, n_neurons=50, device="cpu")
 
-        assert hasattr(pfc, '_neuron_birth_steps')
+        assert hasattr(pfc, "_neuron_birth_steps")
         assert pfc._neuron_birth_steps.shape == (50,)
         assert torch.all(pfc._neuron_birth_steps == 0)
 
@@ -116,9 +120,9 @@ class TestHippocampusNeurogenesisTracking:
         """All initial neurons should have birth_step=0."""
         hippo = create_test_hippocampus(input_size=64, total_neurons=512, device="cpu")
 
-        assert hasattr(hippo, '_neuron_birth_steps_dg')
-        assert hasattr(hippo, '_neuron_birth_steps_ca3')
-        assert hasattr(hippo, '_neuron_birth_steps_ca1')
+        assert hasattr(hippo, "_neuron_birth_steps_dg")
+        assert hasattr(hippo, "_neuron_birth_steps_ca3")
+        assert hasattr(hippo, "_neuron_birth_steps_ca1")
 
         assert torch.all(hippo._neuron_birth_steps_dg == 0)
         assert torch.all(hippo._neuron_birth_steps_ca3 == 0)
@@ -141,7 +145,7 @@ class TestHippocampusNeurogenesisTracking:
 
         # Set training step and grow
         hippo.set_training_step(3000)
-        hippo.grow_layer('CA1', n_new=8)  # Add 8 CA1 neurons
+        hippo.grow_layer("CA1", n_new=8)  # Add 8 CA1 neurons
 
         # Check all layers grew
         assert hippo.dg_size > initial_dg
@@ -168,7 +172,7 @@ class TestHippocampusNeurogenesisTracking:
 
         # Grow at specific timestep
         hippo.set_training_step(4500)
-        hippo.grow_layer('CA1', n_new=4)
+        hippo.grow_layer("CA1", n_new=4)
 
         # Get neuromorphic checkpoint
         state = hippo.checkpoint_manager.get_neuromorphic_state()

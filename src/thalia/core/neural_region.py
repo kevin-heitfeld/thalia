@@ -17,7 +17,8 @@ Biological accuracy:
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Any, Protocol
+from typing import Any, Dict, Optional, Protocol
+
 import torch
 import torch.nn as nn
 
@@ -31,27 +32,33 @@ from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
-from thalia.typing import SourceOutputs, StateDict, InputSizes, LearningStrategies
+from thalia.typing import InputSizes, LearningStrategies, SourceOutputs, StateDict
 
 
 # Custom warning for performance issues
 class PerformanceWarning(UserWarning):
     """Warning for performance-degrading configurations."""
 
+
 # Type hint for learning strategies (duck typing)
 class LearningStrategy(Protocol):
     """Protocol for learning strategies that can update synaptic weights."""
+
     def compute_update(
-        self,
-        weights: torch.Tensor,
-        pre_spikes: torch.Tensor,
-        post_spikes: torch.Tensor,
-        **kwargs
-    ) -> tuple[torch.Tensor, Dict[str, Any]]:
-        ...
+        self, weights: torch.Tensor, pre_spikes: torch.Tensor, post_spikes: torch.Tensor, **kwargs
+    ) -> tuple[torch.Tensor, Dict[str, Any]]: ...
 
 
-class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMixin, ResettableMixin, DiagnosticsMixin, StateLoadingMixin, LearningStrategyMixin):
+class NeuralRegion(
+    nn.Module,
+    BrainComponentMixin,
+    NeuromodulatorMixin,
+    GrowthMixin,
+    ResettableMixin,
+    DiagnosticsMixin,
+    StateLoadingMixin,
+    LearningStrategyMixin,
+):
     """Base class for brain regions with biologically accurate synaptic inputs.
 
     This is a NEW hierarchy for v3.0 architecture, independent of the legacy
@@ -132,7 +139,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
         default_learning_rule: Optional[str] = None,
         device: str = "cpu",
         dt_ms: float = 1.0,
-        **kwargs
+        **kwargs,
     ):
         """Initialize neural region with neurons and empty synaptic weight dict.
 
@@ -181,7 +188,9 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
         self,
         source_name: str,
         n_input: int,
-        learning_rule: Optional[str] = ...,  # Sentinel: ... = use default, None = no learning, str = specific rule
+        learning_rule: Optional[
+            str
+        ] = ...,  # Sentinel: ... = use default, None = no learning, str = specific rule
         sparsity: float = 0.2,
         weight_scale: float = 0.3,
     ) -> None:
@@ -266,7 +275,11 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
             ValueError: If input source not registered with add_input_source()
         """
         # Infer device from actual parameter location (in case .to(device) was called)
-        device = next(self.parameters()).device if len(list(self.parameters())) > 0 else torch.device(self.device)
+        device = (
+            next(self.parameters()).device
+            if len(list(self.parameters())) > 0
+            else torch.device(self.device)
+        )
 
         # Compute synaptic currents for each source
         g_exc_total = torch.zeros(self.n_neurons, device=device)
@@ -291,7 +304,11 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
                 new_weights, _ = plasticity.compute_update(
                     weights=weights,
                     pre=input_spikes,
-                    post=self.output_spikes if self.output_spikes is not None else torch.zeros(self.n_neurons, device=device),
+                    post=(
+                        self.output_spikes
+                        if self.output_spikes is not None
+                        else torch.zeros(self.n_neurons, device=device)
+                    ),
                 )
 
                 # Update synaptic weights in-place
@@ -314,7 +331,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
 
         # Reset learning rule states
         for strategy in self.plasticity_rules.values():
-            if hasattr(strategy, 'reset_state'):
+            if hasattr(strategy, "reset_state"):
                 strategy.reset_state()
 
     def _reset_subsystems(self, *subsystem_names: str) -> None:
@@ -333,7 +350,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
         for name in subsystem_names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)
-                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                if subsystem is not None and hasattr(subsystem, "reset_state"):
                     subsystem.reset_state()
 
     # =========================================================================
@@ -353,17 +370,17 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
         # Firing rate
         if self.output_spikes is not None:
             firing_rate = self.output_spikes.float().mean().item()
-            diagnostics['firing_rate'] = firing_rate
+            diagnostics["firing_rate"] = firing_rate
 
         # Weight statistics for each source
         for source_name, weights in self.synaptic_weights.items():
             w = weights.detach()
-            diagnostics[f'{source_name}_weight_mean'] = w.mean().item()
-            diagnostics[f'{source_name}_weight_std'] = w.std().item()
+            diagnostics[f"{source_name}_weight_mean"] = w.mean().item()
+            diagnostics[f"{source_name}_weight_std"] = w.std().item()
 
         # Neuron count
-        diagnostics['n_neurons'] = self.n_neurons
-        diagnostics['n_sources'] = len(self.input_sources)
+        diagnostics["n_neurons"] = self.n_neurons
+        diagnostics["n_sources"] = len(self.input_sources)
 
         return diagnostics
 
@@ -383,7 +400,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
             overall_severity=0.0,
             issues=[],
             summary=f"{self.__class__.__name__}: Healthy",
-            metrics=self.get_diagnostics()
+            metrics=self.get_diagnostics(),
         )
 
     def get_capacity_metrics(self) -> Any:
@@ -425,17 +442,16 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
             Dictionary with weights, config, and metadata
         """
         state = {
-            'type': self.__class__.__name__,
-            'n_neurons': self.n_neurons,
-            'n_input': self.n_input,
-            'n_output': self.n_output,
-            'device': str(self.device),
-            'dt_ms': self.dt_ms,
-            'default_learning_rule': self.default_learning_rule,
-            'input_sources': self.input_sources.copy(),
-            'synaptic_weights': {
-                name: weights.detach().cpu()
-                for name, weights in self.synaptic_weights.items()
+            "type": self.__class__.__name__,
+            "n_neurons": self.n_neurons,
+            "n_input": self.n_input,
+            "n_output": self.n_output,
+            "device": str(self.device),
+            "dt_ms": self.dt_ms,
+            "default_learning_rule": self.default_learning_rule,
+            "input_sources": self.input_sources.copy(),
+            "synaptic_weights": {
+                name: weights.detach().cpu() for name, weights in self.synaptic_weights.items()
             },
         }
         return state
@@ -447,14 +463,14 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
             state: Dictionary from get_full_state()
         """
         # Validate compatibility
-        if state['n_neurons'] != self.n_neurons:
+        if state["n_neurons"] != self.n_neurons:
             raise ValueError(
                 f"State mismatch: saved {state['n_neurons']} neurons, "
                 f"current has {self.n_neurons}"
             )
 
         # Restore synaptic weights
-        for name, weights_cpu in state['synaptic_weights'].items():
+        for name, weights_cpu in state["synaptic_weights"].items():
             if name in self.synaptic_weights:
                 self.synaptic_weights[name].data = weights_cpu.to(self.device)
             else:
@@ -485,7 +501,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow component's input dimension.
@@ -506,7 +522,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow component's output dimension by adding neurons.

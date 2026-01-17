@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, ClassVar, Tuple
+from typing import Any, ClassVar, Dict, Optional, Tuple
 
 import torch
 
@@ -208,7 +208,9 @@ class AxonalProjectionState(PathwayState):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: Optional[torch.device] = None) -> AxonalProjectionState:
+    def from_dict(
+        cls, data: Dict[str, Any], device: Optional[torch.device] = None
+    ) -> AxonalProjectionState:
         """Deserialize delay buffers from dictionary.
 
         Args:
@@ -246,6 +248,7 @@ class AxonalProjectionState(PathwayState):
 
 
 # Utility functions for state management
+
 
 def save_pathway_state(pathway: Any) -> Dict[str, Any]:
     """Save pathway state using its get_state() method.

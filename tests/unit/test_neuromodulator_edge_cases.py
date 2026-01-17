@@ -19,10 +19,10 @@ Priority: P0 (Critical)
 import pytest
 import torch
 
-from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.striatum import Striatum, StriatumConfig
 
 
 @pytest.fixture
@@ -35,12 +35,13 @@ def device():
 # Helper Functions - Region Creation
 # =============================================================================
 
+
 def create_test_striatum(
     n_actions: int = 3,
     neurons_per_action: int = 4,
     input_size: int = 50,
     device: str = "cpu",
-    **kwargs
+    **kwargs,
 ) -> Striatum:
     """Create Striatum for testing with new (config, sizes, device) pattern."""
     calc = LayerSizeCalculator()
@@ -53,10 +54,7 @@ def create_test_striatum(
 
 
 def create_test_hippocampus(
-    input_size: int = 40,
-    output_size: int = 30,
-    device: str = "cpu",
-    **kwargs
+    input_size: int = 40, output_size: int = 30, device: str = "cpu", **kwargs
 ) -> Hippocampus:
     """Create Hippocampus for testing with new (config, sizes, device) pattern."""
     sizes = {
@@ -71,10 +69,7 @@ def create_test_hippocampus(
 
 
 def create_test_prefrontal(
-    input_size: int = 30,
-    n_neurons: int = 15,
-    device: str = "cpu",
-    **kwargs
+    input_size: int = 30, n_neurons: int = 15, device: str = "cpu", **kwargs
 ) -> Prefrontal:
     """Create Prefrontal for testing with new (config, sizes, device) pattern."""
     sizes = {"input_size": input_size, "n_neurons": n_neurons}
@@ -86,6 +81,7 @@ def create_test_prefrontal(
 # Extreme Value Tests - Striatum (Dopamine)
 # =============================================================================
 
+
 @pytest.mark.parametrize("dopamine", [-2.0, -1.0, 0.0, 1.0, 2.0])
 def test_striatum_handles_valid_dopamine_range(dopamine, device):
     """Test striatum handles valid dopamine values within biological range.
@@ -93,7 +89,9 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
     Biological context: Dopamine should be in [-2, 2] range for biological
     plausibility. Values within this range should work without issues.
     """
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=4, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=4, input_size=50, device=str(device)
+    )
     striatum.set_neuromodulators(dopamine=dopamine)
 
     input_spikes = torch.rand(50, device=device) > 0.8
@@ -107,8 +105,9 @@ def test_striatum_handles_valid_dopamine_range(dopamine, device):
 
     # Output shape should be valid (striatum outputs BOTH D1 and D2 MSN spikes concatenated)
     expected_size = striatum.n_output  # D1 + D2 pathway MSN neurons
-    assert output.shape[0] == expected_size, \
-        f"Expected output size {expected_size}, got {output.shape[0]}"
+    assert (
+        output.shape[0] == expected_size
+    ), f"Expected output size {expected_size}, got {output.shape[0]}"
 
 
 @pytest.mark.parametrize("dopamine", [-10.0, -3.0, 3.0, 10.0, 100.0])
@@ -118,7 +117,9 @@ def test_striatum_rejects_extreme_dopamine(dopamine, device):
     Extreme values outside [-2, 2] indicate upstream bugs or configuration
     errors and should be caught early with validation.
     """
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=4, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=4, input_size=50, device=str(device)
+    )
 
     # Should raise ValueError for out-of-range values
     with pytest.raises(ValueError, match="(?i)(invalid|dopamine|range)"):
@@ -128,6 +129,7 @@ def test_striatum_rejects_extreme_dopamine(dopamine, device):
 # =============================================================================
 # Extreme Value Tests - Hippocampus (Acetylcholine)
 # =============================================================================
+
 
 @pytest.mark.parametrize("acetylcholine", [0.0, 0.5, 1.0, 1.5, 2.0])
 def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
@@ -143,10 +145,8 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
     output = hippocampus(input_spikes)
 
     # Robustness checks
-    assert not torch.isnan(output).any(), \
-        f"NaN output with acetylcholine={acetylcholine}"
-    assert not torch.isinf(output.float()).any(), \
-        f"Inf output with acetylcholine={acetylcholine}"
+    assert not torch.isnan(output).any(), f"NaN output with acetylcholine={acetylcholine}"
+    assert not torch.isinf(output.float()).any(), f"Inf output with acetylcholine={acetylcholine}"
     assert output.shape[0] == hippocampus.n_output
 
 
@@ -168,6 +168,7 @@ def test_hippocampus_rejects_extreme_acetylcholine(acetylcholine, device):
 # Extreme Value Tests - Prefrontal (Norepinephrine)
 # =============================================================================
 
+
 @pytest.mark.parametrize("norepinephrine", [0.0, 0.5, 1.0, 1.5, 2.0])
 def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
     """Test PFC handles valid norepinephrine values within biological range.
@@ -182,10 +183,8 @@ def test_prefrontal_handles_valid_norepinephrine_range(norepinephrine, device):
     output = prefrontal(input_spikes)
 
     # Check stability
-    assert not torch.isnan(output).any(), \
-        f"NaN output with norepinephrine={norepinephrine}"
-    assert not torch.isinf(output.float()).any(), \
-        f"Inf output with norepinephrine={norepinephrine}"
+    assert not torch.isnan(output).any(), f"NaN output with norepinephrine={norepinephrine}"
+    assert not torch.isinf(output.float()).any(), f"Inf output with norepinephrine={norepinephrine}"
     assert output.shape[0] == prefrontal.n_neurons
 
 
@@ -207,68 +206,65 @@ def test_prefrontal_rejects_extreme_norepinephrine(norepinephrine, device):
 # Invalid Value Tests (NaN, Inf)
 # =============================================================================
 
+
 def test_striatum_rejects_nan_dopamine(device):
     """Test striatum rejects NaN dopamine with clear error.
 
     NaN should never be a valid neuromodulator value and should be caught
     early with a descriptive error message.
     """
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=10, input_size=50, device=str(device)
+    )
 
     # Should raise clear error for NaN
-    with pytest.raises(
-        ValueError,
-        match="(?i)(invalid|nan|neuromodulator|dopamine)"
-    ):
-        striatum.set_neuromodulators(dopamine=float('nan'))
+    with pytest.raises(ValueError, match="(?i)(invalid|nan|neuromodulator|dopamine)"):
+        striatum.set_neuromodulators(dopamine=float("nan"))
 
 
 def test_striatum_rejects_inf_dopamine(device):
     """Test striatum rejects Inf dopamine with clear error."""
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=10, input_size=50, device=str(device)
+    )
 
-    with pytest.raises(
-        ValueError,
-        match="(?i)(invalid|inf|neuromodulator|dopamine)"
-    ):
-        striatum.set_neuromodulators(dopamine=float('inf'))
+    with pytest.raises(ValueError, match="(?i)(invalid|inf|neuromodulator|dopamine)"):
+        striatum.set_neuromodulators(dopamine=float("inf"))
 
 
 def test_hippocampus_rejects_nan_acetylcholine(device):
     """Test hippocampus rejects NaN acetylcholine with clear error."""
     hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
 
-    with pytest.raises(
-        ValueError,
-        match="(?i)(invalid|nan|neuromodulator|acetylcholine)"
-    ):
-        hippocampus.set_neuromodulators(acetylcholine=float('nan'))
+    with pytest.raises(ValueError, match="(?i)(invalid|nan|neuromodulator|acetylcholine)"):
+        hippocampus.set_neuromodulators(acetylcholine=float("nan"))
 
 
 def test_prefrontal_rejects_nan_norepinephrine(device):
     """Test PFC rejects NaN norepinephrine with clear error."""
     pfc = create_test_prefrontal(input_size=50, n_neurons=30, device=str(device))
 
-    with pytest.raises(
-        ValueError,
-        match="(?i)(invalid|nan|neuromodulator|norepinephrine)"
-    ):
-        pfc.set_neuromodulators(norepinephrine=float('nan'))
+    with pytest.raises(ValueError, match="(?i)(invalid|nan|neuromodulator|norepinephrine)"):
+        pfc.set_neuromodulators(norepinephrine=float("nan"))
 
 
 # =============================================================================
 # Multi-Modulator Interaction Tests
 # =============================================================================
 
-@pytest.mark.parametrize("dopamine,norepinephrine", [
-    (0.0, 0.0),   # Both at minimum
-    (1.0, 1.0),   # Both at standard level
-    (2.0, 2.0),   # Both at maximum valid range
-    (0.0, 2.0),   # Opposing extremes within range
-    (2.0, 0.0),
-    (-1.0, 1.0),  # DA negative (punishment), NE elevated
-    (1.0, 0.5),   # Mixed moderate levels
-])
+
+@pytest.mark.parametrize(
+    "dopamine,norepinephrine",
+    [
+        (0.0, 0.0),  # Both at minimum
+        (1.0, 1.0),  # Both at standard level
+        (2.0, 2.0),  # Both at maximum valid range
+        (0.0, 2.0),  # Opposing extremes within range
+        (2.0, 0.0),
+        (-1.0, 1.0),  # DA negative (punishment), NE elevated
+        (1.0, 0.5),  # Mixed moderate levels
+    ],
+)
 def test_prefrontal_handles_valid_combined_modulators(dopamine, norepinephrine, device):
     """Test PFC handles multiple neuromodulator interactions within valid ranges.
 
@@ -286,18 +282,19 @@ def test_prefrontal_handles_valid_combined_modulators(dopamine, norepinephrine, 
     output = pfc(input_spikes)
 
     # Robustness with combined modulators
-    assert not torch.isnan(output).any(), \
-        f"NaN with DA={dopamine}, NE={norepinephrine}"
-    assert not torch.isinf(output.float()).any(), \
-        f"Inf with DA={dopamine}, NE={norepinephrine}"
+    assert not torch.isnan(output).any(), f"NaN with DA={dopamine}, NE={norepinephrine}"
+    assert not torch.isinf(output.float()).any(), f"Inf with DA={dopamine}, NE={norepinephrine}"
 
 
-@pytest.mark.parametrize("dopamine,norepinephrine", [
-    (5.0, 5.0),   # Both elevated beyond range
-    (-3.0, -1.0), # Both below range
-    (10.0, 0.0),  # DA way too high
-    (0.0, 10.0),  # NE way too high
-])
+@pytest.mark.parametrize(
+    "dopamine,norepinephrine",
+    [
+        (5.0, 5.0),  # Both elevated beyond range
+        (-3.0, -1.0),  # Both below range
+        (10.0, 0.0),  # DA way too high
+        (0.0, 10.0),  # NE way too high
+    ],
+)
 def test_prefrontal_rejects_invalid_combined_modulators(dopamine, norepinephrine, device):
     """Test PFC rejects invalid combinations of neuromodulators.
 
@@ -317,6 +314,7 @@ def test_prefrontal_rejects_invalid_combined_modulators(dopamine, norepinephrine
 # Temporal Stability Tests
 # =============================================================================
 
+
 def test_striatum_stable_with_fluctuating_dopamine(device):
     """Test striatum remains stable with rapidly changing dopamine.
 
@@ -324,7 +322,9 @@ def test_striatum_stable_with_fluctuating_dopamine(device):
     errors in reinforcement learning. System should handle temporal
     variability without instability.
     """
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=10, input_size=50, device=str(device)
+    )
 
     input_spikes = torch.rand(50, device=device) > 0.8
 
@@ -336,10 +336,8 @@ def test_striatum_stable_with_fluctuating_dopamine(device):
         output = striatum({"default": input_spikes})
 
         # Should not crash or produce invalid outputs
-        assert not torch.isnan(output).any(), \
-            f"NaN at timestep {t} with dopamine={da}"
-        assert not torch.isinf(output.float()).any(), \
-            f"Inf at timestep {t} with dopamine={da}"
+        assert not torch.isnan(output).any(), f"NaN at timestep {t} with dopamine={da}"
+        assert not torch.isinf(output.float()).any(), f"Inf at timestep {t} with dopamine={da}"
 
 
 def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
@@ -359,15 +357,16 @@ def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
         hippocampus.set_neuromodulators(acetylcholine=ach)
         output = hippocampus(input_spikes)
 
-        assert not torch.isnan(output).any(), \
-            f"NaN at timestep {t} with acetylcholine={ach}"
-        assert not torch.isinf(output.float()).any(), \
-            f"Inf at timestep {t} with acetylcholine={ach}"
+        assert not torch.isnan(output).any(), f"NaN at timestep {t} with acetylcholine={ach}"
+        assert not torch.isinf(
+            output.float()
+        ).any(), f"Inf at timestep {t} with acetylcholine={ach}"
 
 
 # =============================================================================
 # Learning Stability Tests
 # =============================================================================
+
 
 @pytest.mark.parametrize("modulator_value", [-2.0, -1.0, 0.0, 1.0, 2.0])
 def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
@@ -376,11 +375,13 @@ def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
     Critical for biological plausibility: Learning should remain stable
     across the full valid dopamine range [-2, 2].
     """
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=10, input_size=50, device=str(device)
+    )
 
     # Get initial weights if accessible
     initial_weights = {}
-    if hasattr(striatum, 'synaptic_weights'):
+    if hasattr(striatum, "synaptic_weights"):
         for source, weights in striatum.synaptic_weights.items():
             initial_weights[source] = weights.clone()
 
@@ -393,17 +394,21 @@ def test_striatum_learning_stable_with_valid_dopamine(modulator_value, device):
         striatum({"default": input_spikes})
 
     # Check weights are still valid
-    if hasattr(striatum, 'synaptic_weights'):
+    if hasattr(striatum, "synaptic_weights"):
         for source, weights in striatum.synaptic_weights.items():
-            assert not torch.isnan(weights).any(), \
-                f"Learning produced NaN with dopamine={modulator_value}"
-            assert not torch.isinf(weights).any(), \
-                f"Learning produced Inf with dopamine={modulator_value}"
+            assert not torch.isnan(
+                weights
+            ).any(), f"Learning produced NaN with dopamine={modulator_value}"
+            assert not torch.isinf(
+                weights
+            ).any(), f"Learning produced Inf with dopamine={modulator_value}"
             # Weights should remain in reasonable range
-            assert weights.min() >= -0.5, \
-                f"Weights below valid range with dopamine={modulator_value}"
-            assert weights.max() <= 1.5, \
-                f"Weights above valid range with dopamine={modulator_value}"
+            assert (
+                weights.min() >= -0.5
+            ), f"Weights below valid range with dopamine={modulator_value}"
+            assert (
+                weights.max() <= 1.5
+            ), f"Weights above valid range with dopamine={modulator_value}"
 
 
 @pytest.mark.parametrize("acetylcholine", [0.0, 0.5, 1.0, 1.5, 2.0])
@@ -424,13 +429,15 @@ def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, dev
         output = hippocampus(input_spikes)
 
         # Output should remain valid throughout learning
-        assert not torch.isnan(output).any(), \
-            f"NaN during learning with acetylcholine={acetylcholine}"
-        assert not torch.isinf(output.float()).any(), \
-            f"Inf during learning with acetylcholine={acetylcholine}"
+        assert not torch.isnan(
+            output
+        ).any(), f"NaN during learning with acetylcholine={acetylcholine}"
+        assert not torch.isinf(
+            output.float()
+        ).any(), f"Inf during learning with acetylcholine={acetylcholine}"
 
     # Check weights if accessible
-    if hasattr(hippocampus, 'synaptic_weights'):
+    if hasattr(hippocampus, "synaptic_weights"):
         for weights in hippocampus.synaptic_weights.values():
             assert not torch.isnan(weights).any(), "Learning produced NaN weights"
             assert not torch.isinf(weights).any(), "Learning produced Inf weights"
@@ -440,13 +447,16 @@ def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, dev
 # Extended Stability Tests
 # =============================================================================
 
+
 def test_striatum_extended_run_with_valid_dopamine(device):
     """Test striatum stability over extended run with valid dopamine range.
 
     Longer test (100 steps) to catch delayed instabilities that might
     not appear in short tests. Uses maximum valid dopamine (2.0).
     """
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=10, input_size=50, device=str(device)
+    )
 
     # Use maximum valid dopamine (e.g., large RPE)
     striatum.set_neuromodulators(dopamine=2.0)
@@ -458,19 +468,15 @@ def test_striatum_extended_run_with_valid_dopamine(device):
 
         # Check every 25 steps for efficiency
         if step % 25 == 0:
-            assert not torch.isnan(output).any(), \
-                f"NaN at step {step}"
-            assert not torch.isinf(output.float()).any(), \
-                f"Inf at step {step}"
+            assert not torch.isnan(output).any(), f"NaN at step {step}"
+            assert not torch.isinf(output.float()).any(), f"Inf at step {step}"
 
             # Check internal state if accessible
-            if hasattr(striatum, 'neurons'):
-                if hasattr(striatum.neurons, 'membrane') and striatum.neurons.membrane is not None:
+            if hasattr(striatum, "neurons"):
+                if hasattr(striatum.neurons, "membrane") and striatum.neurons.membrane is not None:
                     membrane = striatum.neurons.membrane
-                    assert not torch.isnan(membrane).any(), \
-                        f"NaN in membrane at step {step}"
-                    assert not torch.isinf(membrane).any(), \
-                        f"Inf in membrane at step {step}"
+                    assert not torch.isnan(membrane).any(), f"NaN in membrane at step {step}"
+                    assert not torch.isinf(membrane).any(), f"Inf in membrane at step {step}"
 
 
 def test_multi_region_neuromodulator_stability(device):
@@ -481,7 +487,9 @@ def test_multi_region_neuromodulator_stability(device):
     Uses maximum valid values for each neuromodulator.
     """
     # Create multiple regions
-    striatum = create_test_striatum(n_actions=3, neurons_per_action=10, input_size=50, device=str(device))
+    striatum = create_test_striatum(
+        n_actions=3, neurons_per_action=10, input_size=50, device=str(device)
+    )
     hippocampus = create_test_hippocampus(input_size=40, output_size=30, device=str(device))
     pfc = create_test_prefrontal(input_size=50, n_neurons=30, device=str(device))
 

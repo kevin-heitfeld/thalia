@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple, List, Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -28,6 +28,7 @@ import torch
 
 class Language(Enum):
     """Supported languages for phonological training."""
+
     ENGLISH = "en"
     GERMAN = "de"
     SPANISH = "es"
@@ -35,6 +36,7 @@ class Language(Enum):
 
 class PhonemeCategory(Enum):
     """Phoneme categories for discrimination tasks (multi-language)."""
+
     # ===== UNIVERSAL: Voicing contrasts (VOT continuum) =====
     P = "p"  # Voiceless bilabial stop (VOT ~60ms)
     B = "b"  # Voiced bilabial stop (VOT ~0ms)
@@ -87,6 +89,7 @@ class PhonemeCategory(Enum):
 @dataclass
 class PhonemeFeatures:
     """Acoustic features for a phoneme."""
+
     # Voice Onset Time (for stops, in ms)
     vot: Optional[float] = None
 
@@ -107,12 +110,10 @@ PHONEME_FEATURES: Dict[PhonemeCategory, PhonemeFeatures] = {
     PhonemeCategory.P: PhonemeFeatures(vot=60.0, duration=100.0),
     PhonemeCategory.T: PhonemeFeatures(vot=70.0, duration=100.0),
     PhonemeCategory.K: PhonemeFeatures(vot=80.0, duration=100.0),
-
     # ===== UNIVERSAL: Voiced stops (short VOT) =====
     PhonemeCategory.B: PhonemeFeatures(vot=5.0, duration=100.0),
     PhonemeCategory.D: PhonemeFeatures(vot=5.0, duration=100.0),
     PhonemeCategory.G: PhonemeFeatures(vot=5.0, duration=100.0),
-
     # ===== ENGLISH: Vowels =====
     PhonemeCategory.AA: PhonemeFeatures(f1=730.0, f2=1090.0, f3=2440.0, duration=150.0),
     PhonemeCategory.AE: PhonemeFeatures(f1=660.0, f2=1720.0, f3=2410.0, duration=150.0),
@@ -122,32 +123,54 @@ PHONEME_FEATURES: Dict[PhonemeCategory, PhonemeFeatures] = {
     PhonemeCategory.IY: PhonemeFeatures(f1=270.0, f2=2290.0, f3=3010.0, duration=150.0),
     PhonemeCategory.UH: PhonemeFeatures(f1=440.0, f2=1020.0, f3=2240.0, duration=150.0),
     PhonemeCategory.UW: PhonemeFeatures(f1=300.0, f2=870.0, f3=2240.0, duration=150.0),
-
     # ===== GERMAN: Unique vowels =====
     PhonemeCategory.UE: PhonemeFeatures(f1=270.0, f2=2100.0, f3=2700.0, duration=150.0),  # /y/ über
-    PhonemeCategory.OE: PhonemeFeatures(f1=390.0, f2=1680.0, f3=2300.0, duration=150.0),  # /ø/ schön
-    PhonemeCategory.AE_DE: PhonemeFeatures(f1=530.0, f2=1840.0, f3=2480.0, duration=180.0),  # /ɛː/ Käse (longer)
-
+    PhonemeCategory.OE: PhonemeFeatures(
+        f1=390.0, f2=1680.0, f3=2300.0, duration=150.0
+    ),  # /ø/ schön
+    PhonemeCategory.AE_DE: PhonemeFeatures(
+        f1=530.0, f2=1840.0, f3=2480.0, duration=180.0
+    ),  # /ɛː/ Käse (longer)
     # ===== GERMAN: Consonants =====
-    PhonemeCategory.X: PhonemeFeatures(f1=1500.0, f2=2500.0, f3=3500.0, duration=120.0),  # /x/ Bach (fricative noise)
-    PhonemeCategory.R_UVULAR: PhonemeFeatures(f1=500.0, f2=1400.0, f3=2200.0, duration=80.0),  # /ʁ/ uvular r
-
+    PhonemeCategory.X: PhonemeFeatures(
+        f1=1500.0, f2=2500.0, f3=3500.0, duration=120.0
+    ),  # /x/ Bach (fricative noise)
+    PhonemeCategory.R_UVULAR: PhonemeFeatures(
+        f1=500.0, f2=1400.0, f3=2200.0, duration=80.0
+    ),  # /ʁ/ uvular r
     # ===== SPANISH: 5-vowel system =====
-    PhonemeCategory.A_ES: PhonemeFeatures(f1=700.0, f2=1200.0, f3=2500.0, duration=150.0),  # /a/ casa
-    PhonemeCategory.E_ES: PhonemeFeatures(f1=400.0, f2=2000.0, f3=2800.0, duration=150.0),  # /e/ peso
-    PhonemeCategory.I_ES: PhonemeFeatures(f1=280.0, f2=2250.0, f3=3000.0, duration=150.0),  # /i/ piso
-    PhonemeCategory.O_ES: PhonemeFeatures(f1=400.0, f2=800.0, f3=2300.0, duration=150.0),   # /o/ poco
-    PhonemeCategory.U_ES: PhonemeFeatures(f1=300.0, f2=700.0, f3=2200.0, duration=150.0),   # /u/ puro
-
+    PhonemeCategory.A_ES: PhonemeFeatures(
+        f1=700.0, f2=1200.0, f3=2500.0, duration=150.0
+    ),  # /a/ casa
+    PhonemeCategory.E_ES: PhonemeFeatures(
+        f1=400.0, f2=2000.0, f3=2800.0, duration=150.0
+    ),  # /e/ peso
+    PhonemeCategory.I_ES: PhonemeFeatures(
+        f1=280.0, f2=2250.0, f3=3000.0, duration=150.0
+    ),  # /i/ piso
+    PhonemeCategory.O_ES: PhonemeFeatures(
+        f1=400.0, f2=800.0, f3=2300.0, duration=150.0
+    ),  # /o/ poco
+    PhonemeCategory.U_ES: PhonemeFeatures(
+        f1=300.0, f2=700.0, f3=2200.0, duration=150.0
+    ),  # /u/ puro
     # ===== SPANISH: Critical tap vs trill =====
-    PhonemeCategory.R_TAP: PhonemeFeatures(f1=500.0, f2=1500.0, f3=2500.0, duration=30.0),   # /ɾ/ pero (single tap)
-    PhonemeCategory.R_TRILL: PhonemeFeatures(f1=500.0, f2=1500.0, f3=2500.0, duration=100.0),  # /r/ perro (trill)
-
+    PhonemeCategory.R_TAP: PhonemeFeatures(
+        f1=500.0, f2=1500.0, f3=2500.0, duration=30.0
+    ),  # /ɾ/ pero (single tap)
+    PhonemeCategory.R_TRILL: PhonemeFeatures(
+        f1=500.0, f2=1500.0, f3=2500.0, duration=100.0
+    ),  # /r/ perro (trill)
     # ===== SPANISH: Voiced fricatives (intervocalic) =====
-    PhonemeCategory.B_FRIC: PhonemeFeatures(f1=300.0, f2=900.0, f3=2200.0, duration=80.0),  # /β/ cabo
-    PhonemeCategory.D_FRIC: PhonemeFeatures(f1=300.0, f2=1700.0, f3=2600.0, duration=80.0),  # /ð/ cada
-    PhonemeCategory.G_FRIC: PhonemeFeatures(f1=300.0, f2=2200.0, f3=2850.0, duration=80.0),  # /ɣ/ hago
-
+    PhonemeCategory.B_FRIC: PhonemeFeatures(
+        f1=300.0, f2=900.0, f3=2200.0, duration=80.0
+    ),  # /β/ cabo
+    PhonemeCategory.D_FRIC: PhonemeFeatures(
+        f1=300.0, f2=1700.0, f3=2600.0, duration=80.0
+    ),  # /ð/ cada
+    PhonemeCategory.G_FRIC: PhonemeFeatures(
+        f1=300.0, f2=2200.0, f3=2850.0, duration=80.0
+    ),  # /ɣ/ hago
     # ===== UNIVERSAL: Nasals =====
     PhonemeCategory.M: PhonemeFeatures(f1=280.0, f2=900.0, f3=2200.0, duration=120.0),
     PhonemeCategory.N: PhonemeFeatures(f1=280.0, f2=1700.0, f3=2600.0, duration=120.0),
@@ -159,46 +182,77 @@ PHONEME_FEATURES: Dict[PhonemeCategory, PhonemeFeatures] = {
 LANGUAGE_PHONEMES: Dict[Language, List[PhonemeCategory]] = {
     Language.ENGLISH: [
         # Stops
-        PhonemeCategory.P, PhonemeCategory.B,
-        PhonemeCategory.T, PhonemeCategory.D,
-        PhonemeCategory.K, PhonemeCategory.G,
+        PhonemeCategory.P,
+        PhonemeCategory.B,
+        PhonemeCategory.T,
+        PhonemeCategory.D,
+        PhonemeCategory.K,
+        PhonemeCategory.G,
         # Vowels
-        PhonemeCategory.AA, PhonemeCategory.AE, PhonemeCategory.AH,
-        PhonemeCategory.EH, PhonemeCategory.IH, PhonemeCategory.IY,
-        PhonemeCategory.UH, PhonemeCategory.UW,
+        PhonemeCategory.AA,
+        PhonemeCategory.AE,
+        PhonemeCategory.AH,
+        PhonemeCategory.EH,
+        PhonemeCategory.IH,
+        PhonemeCategory.IY,
+        PhonemeCategory.UH,
+        PhonemeCategory.UW,
         # Nasals
-        PhonemeCategory.M, PhonemeCategory.N, PhonemeCategory.NG,
+        PhonemeCategory.M,
+        PhonemeCategory.N,
+        PhonemeCategory.NG,
     ],
     Language.GERMAN: [
         # Stops (shared with English)
-        PhonemeCategory.P, PhonemeCategory.B,
-        PhonemeCategory.T, PhonemeCategory.D,
-        PhonemeCategory.K, PhonemeCategory.G,
+        PhonemeCategory.P,
+        PhonemeCategory.B,
+        PhonemeCategory.T,
+        PhonemeCategory.D,
+        PhonemeCategory.K,
+        PhonemeCategory.G,
         # German-specific vowels
-        PhonemeCategory.UE, PhonemeCategory.OE, PhonemeCategory.AE_DE,
+        PhonemeCategory.UE,
+        PhonemeCategory.OE,
+        PhonemeCategory.AE_DE,
         # Also use some English vowels
-        PhonemeCategory.IY, PhonemeCategory.IH,
-        PhonemeCategory.UW, PhonemeCategory.UH,
-        PhonemeCategory.AA, PhonemeCategory.EH,
+        PhonemeCategory.IY,
+        PhonemeCategory.IH,
+        PhonemeCategory.UW,
+        PhonemeCategory.UH,
+        PhonemeCategory.AA,
+        PhonemeCategory.EH,
         # German consonants
-        PhonemeCategory.X, PhonemeCategory.R_UVULAR,
+        PhonemeCategory.X,
+        PhonemeCategory.R_UVULAR,
         # Nasals
-        PhonemeCategory.M, PhonemeCategory.N, PhonemeCategory.NG,
+        PhonemeCategory.M,
+        PhonemeCategory.N,
+        PhonemeCategory.NG,
     ],
     Language.SPANISH: [
         # Stops (shared with English)
-        PhonemeCategory.P, PhonemeCategory.B,
-        PhonemeCategory.T, PhonemeCategory.D,
-        PhonemeCategory.K, PhonemeCategory.G,
+        PhonemeCategory.P,
+        PhonemeCategory.B,
+        PhonemeCategory.T,
+        PhonemeCategory.D,
+        PhonemeCategory.K,
+        PhonemeCategory.G,
         # Spanish 5-vowel system
-        PhonemeCategory.A_ES, PhonemeCategory.E_ES, PhonemeCategory.I_ES,
-        PhonemeCategory.O_ES, PhonemeCategory.U_ES,
+        PhonemeCategory.A_ES,
+        PhonemeCategory.E_ES,
+        PhonemeCategory.I_ES,
+        PhonemeCategory.O_ES,
+        PhonemeCategory.U_ES,
         # Critical tap/trill distinction
-        PhonemeCategory.R_TAP, PhonemeCategory.R_TRILL,
+        PhonemeCategory.R_TAP,
+        PhonemeCategory.R_TRILL,
         # Voiced fricatives
-        PhonemeCategory.B_FRIC, PhonemeCategory.D_FRIC, PhonemeCategory.G_FRIC,
+        PhonemeCategory.B_FRIC,
+        PhonemeCategory.D_FRIC,
+        PhonemeCategory.G_FRIC,
         # Nasals
-        PhonemeCategory.M, PhonemeCategory.N,
+        PhonemeCategory.M,
+        PhonemeCategory.N,
     ],
 }
 
@@ -267,6 +321,7 @@ LANGUAGE_CONTRASTS: Dict[Language, Dict[str, List[Tuple[PhonemeCategory, Phoneme
 @dataclass
 class PhonologicalConfig:
     """Configuration for phonological dataset."""
+
     # Language selection
     language: Language = Language.ENGLISH  # Primary language for training
 
@@ -300,7 +355,9 @@ class PhonologicalDataset:
     Used in Stage 0 for critical period phonology learning.
     """
 
-    def __init__(self, config: Optional[PhonologicalConfig] = None, language: Optional[Language] = None):
+    def __init__(
+        self, config: Optional[PhonologicalConfig] = None, language: Optional[Language] = None
+    ):
         self.config = config or PhonologicalConfig()
 
         # Override language if specified
@@ -379,15 +436,15 @@ class PhonologicalDataset:
             vot_step = max(0, min(n_time - 1, vot_step))
 
             # Burst at onset (high frequencies)
-            spectrogram[n_freq//2:, :5] = 0.8
+            spectrogram[n_freq // 2 :, :5] = 0.8
 
             # Voicing onset after VOT (low frequencies)
-            spectrogram[:n_freq//4, vot_step:] = 0.9
+            spectrogram[: n_freq // 4, vot_step:] = 0.9
 
             # Formant transitions (mid frequencies)
             for t in range(vot_step, min(vot_step + 20, n_time)):
                 ratio = (t - vot_step) / 20.0
-                spectrogram[n_freq//4:n_freq//2, t] = 0.6 * ratio
+                spectrogram[n_freq // 4 : n_freq // 2, t] = 0.6 * ratio
 
         elif features.f1 is not None:
             # Vowel: encode formants as energy peaks in frequency dimension
@@ -583,9 +640,13 @@ class PhonologicalDataset:
         if len(stimuli_list) == 0:
             # Return empty tensors with correct shape
             if task_type == "discrimination":
-                stimuli = torch.zeros(0, self.config.n_freq_channels, 2*self.config.n_time_steps, device=self.device)
+                stimuli = torch.zeros(
+                    0, self.config.n_freq_channels, 2 * self.config.n_time_steps, device=self.device
+                )
             else:
-                stimuli = torch.zeros(0, self.config.n_freq_channels, self.config.n_time_steps, device=self.device)
+                stimuli = torch.zeros(
+                    0, self.config.n_freq_channels, self.config.n_time_steps, device=self.device
+                )
             labels = torch.zeros(0, dtype=torch.long, device=self.device)
         else:
             stimuli = torch.stack(stimuli_list, dim=0)
@@ -645,6 +706,7 @@ class PhonologicalDataset:
 
         # Convert to z-scores
         from scipy.stats import norm
+
         d_prime = norm.ppf(hit_rate) - norm.ppf(fa_rate)
 
         return {
@@ -657,9 +719,7 @@ class PhonologicalDataset:
     def get_statistics(self) -> Dict[str, any]:
         """Get cumulative performance statistics."""
         overall_accuracy = (
-            self.stats["n_correct"] / self.stats["n_trials"]
-            if self.stats["n_trials"] > 0
-            else 0.0
+            self.stats["n_correct"] / self.stats["n_trials"] if self.stats["n_trials"] > 0 else 0.0
         )
 
         by_contrast_accuracy = {

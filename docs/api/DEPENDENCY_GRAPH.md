@@ -183,4 +183,3 @@ from thalia.diagnostics import HealthMonitor
 2. **Registry**: Use `ComponentRegistry` for dynamic lookup
 3. **Dependency Injection**: Pass dependencies through constructors
 4. **Type hints**: Use string literals for forward references
-

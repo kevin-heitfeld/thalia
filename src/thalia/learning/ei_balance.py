@@ -45,7 +45,6 @@ import torch
 import torch.nn as nn
 
 from thalia.components.coding import compute_firing_rate
-
 from thalia.diagnostics import auto_diagnostics
 
 
@@ -79,9 +78,10 @@ class EIBalanceConfig:
 
         dt: Simulation timestep (ms)
     """
+
     target_ratio: float = 4.0
-    tau_balance: float = 5000.0      # 5 second time constant
-    adaptation_rate: float = 0.001    # Slow adaptation
+    tau_balance: float = 5000.0  # 5 second time constant
+    adaptation_rate: float = 0.001  # Slow adaptation
     ratio_min: float = 1.0
     ratio_max: float = 10.0
     inh_scale_min: float = 0.1
@@ -206,8 +206,7 @@ class EIBalanceRegulator(nn.Module):
         self._inh_scale = self._inh_scale * (1 + scale_adjustment)
 
         # Clamp to safe range
-        self._inh_scale = max(cfg.inh_scale_min,
-                              min(cfg.inh_scale_max, self._inh_scale))
+        self._inh_scale = max(cfg.inh_scale_min, min(cfg.inh_scale_max, self._inh_scale))
 
         # Store history for diagnostics
         self._ratio_history.append(current_ratio)
@@ -274,7 +273,7 @@ class EIBalanceRegulator(nn.Module):
             return "balanced"
 
     @auto_diagnostics(
-        scalars=['_exc_avg', '_inh_avg', '_inh_scale'],
+        scalars=["_exc_avg", "_inh_avg", "_inh_scale"],
     )
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information.

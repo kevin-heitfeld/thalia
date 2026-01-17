@@ -13,40 +13,39 @@ This package provides monitoring and analysis tools for network health:
 
 from __future__ import annotations
 
-
+from .auto_collect import auto_diagnostics
 from .criticality import (
+    AvalancheAnalyzer,
     CriticalityConfig,
     CriticalityMonitor,
     CriticalityState,
-    AvalancheAnalyzer,
 )
+from .dashboard import Dashboard
 from .health_monitor import (
     HealthConfig,
+    HealthIssue,
     HealthMonitor,
     HealthReport,
     IssueReport,
-    HealthIssue,
+)
+from .metacognition import (
+    CalibrationNetwork,
+    ConfidenceEstimator,
+    MetacognitiveMonitor,
+    MetacognitiveMonitorConfig,
+    MetacognitiveStage,
 )
 from .oscillator_health import (
     OscillatorHealthConfig,
     OscillatorHealthMonitor,
     OscillatorHealthReport,
-    OscillatorIssueReport,
     OscillatorIssue,
+    OscillatorIssueReport,
 )
 from .performance_profiler import (
     PerformanceProfiler,
     PerformanceStats,
     quick_profile,
-)
-from .dashboard import Dashboard
-from .auto_collect import auto_diagnostics
-from .metacognition import (
-    MetacognitiveMonitor,
-    MetacognitiveMonitorConfig,
-    MetacognitiveStage,
-    ConfidenceEstimator,
-    CalibrationNetwork,
 )
 
 __all__ = [

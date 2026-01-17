@@ -51,6 +51,7 @@ NE_GAIN_MAX = 1.5
 # Helper Functions
 # =============================================================================
 
+
 def decay_constant_to_tau(decay_per_ms: float, dt_ms: float = 1.0) -> float:
     """Convert decay constant to time constant."""
     return -dt_ms / math.log(decay_per_ms)

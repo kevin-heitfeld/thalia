@@ -81,7 +81,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Any, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from thalia.config import GlobalConfig
 from thalia.config.size_calculator import LayerSizeCalculator
@@ -92,17 +92,31 @@ from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.cortex import calculate_layer_sizes
 
-
 # Size parameter names that should be separated from behavioral config
 SIZE_PARAMS = {
-    'l4_size', 'l23_size', 'l5_size', 'l6a_size', 'l6b_size',
-    'input_size', 'output_size', 'n_input', 'n_output',
-    'dg_size', 'ca3_size', 'ca2_size', 'ca1_size',  # Hippocampus
-    'relay_size', 'trn_size',  # Thalamus
-    'purkinje_size', 'granule_size',  # Cerebellum
-    'n_neurons', 'n_actions', 'neurons_per_action',  # Generic + Striatum
-    'd1_size', 'd2_size',  # Striatum pathways
-    'input_sources',  # Striatum multi-source
+    "l4_size",
+    "l23_size",
+    "l5_size",
+    "l6a_size",
+    "l6b_size",
+    "input_size",
+    "output_size",
+    "n_input",
+    "n_output",
+    "dg_size",
+    "ca3_size",
+    "ca2_size",
+    "ca1_size",  # Hippocampus
+    "relay_size",
+    "trn_size",  # Thalamus
+    "purkinje_size",
+    "granule_size",  # Cerebellum
+    "n_neurons",
+    "n_actions",
+    "neurons_per_action",  # Generic + Striatum
+    "d1_size",
+    "d2_size",  # Striatum pathways
+    "input_sources",  # Striatum multi-source
 }
 
 
@@ -147,9 +161,9 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
 
     if registry_name == "striatum":
         # Striatum needs n_actions + neurons_per_action → d1_size, d2_size
-        if 'n_actions' in size_params:
-            n_actions = size_params['n_actions']
-            neurons_per_action = size_params.get('neurons_per_action', 10)
+        if "n_actions" in size_params:
+            n_actions = size_params["n_actions"]
+            neurons_per_action = size_params.get("neurons_per_action", 10)
 
             # Compute d1_size and d2_size
             computed = calc.striatum_from_actions(n_actions, neurons_per_action)
@@ -160,17 +174,17 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
 
     elif registry_name == "cerebellum":
         # Cerebellum needs purkinje_size → granule_size
-        if 'purkinje_size' in size_params and 'granule_size' not in size_params:
-            purkinje_size = size_params['purkinje_size']
-            expansion = size_params.get('granule_expansion_factor', 4.0)
+        if "purkinje_size" in size_params and "granule_size" not in size_params:
+            purkinje_size = size_params["purkinje_size"]
+            expansion = size_params.get("granule_expansion_factor", 4.0)
             calc = LayerSizeCalculator()
             computed = calc.cerebellum_from_purkinje(purkinje_size, expansion)
             return {**size_params, **computed}
 
     elif registry_name == "hippocampus":
         # Hippocampus needs input_size → all layer sizes
-        if 'input_size' in size_params and 'dg_size' not in size_params:
-            input_size = size_params['input_size']
+        if "input_size" in size_params and "dg_size" not in size_params:
+            input_size = size_params["input_size"]
             calc = LayerSizeCalculator()
             computed = calc.hippocampus_from_input(input_size)
             return {**size_params, **computed}
@@ -295,10 +309,7 @@ class BrainBuilder:
 
         if not found:
             available = self._registry.list_components()
-            raise KeyError(
-                f"Registry name '{registry_name}' not found. "
-                f"Available: {available}"
-            )
+            raise KeyError(f"Registry name '{registry_name}' not found. " f"Available: {available}")
 
         # Create component spec
         spec = ComponentSpec(
@@ -398,9 +409,7 @@ class BrainBuilder:
 
         isolated = set(self._components.keys()) - connected_components
         if isolated:
-            issues.append(
-                f"Warning: Isolated components (no connections): {isolated}"
-            )
+            issues.append(f"Warning: Isolated components (no connections): {isolated}")
 
         return issues
 
@@ -417,7 +426,9 @@ class BrainBuilder:
         - Sensory ports ('ec_l3'): Set as ec_l3_input_size
         """
         # Build incoming connection map with port information
-        incoming: Dict[str, List[Tuple[str, ConnectionSpec]]] = {name: [] for name in self._components}
+        incoming: Dict[str, List[Tuple[str, ConnectionSpec]]] = {
+            name: [] for name in self._components
+        }
         for conn in self._connections:
             incoming[conn.target].append((conn.source, conn))
 
@@ -461,7 +472,9 @@ class BrainBuilder:
                     feedback_sources.append((source_name, conn))
                 else:
                     # Unknown port - treat as feedforward with warning
-                    print(f"Warning: Unknown target_port '{target_port}' on connection to '{name}', treating as feedforward")
+                    print(
+                        f"Warning: Unknown target_port '{target_port}' on connection to '{name}', treating as feedforward"
+                    )
                     feedforward_sources.append((source_name, conn))
 
             # Infer input_size from feedforward connections
@@ -476,8 +489,10 @@ class BrainBuilder:
             # Set port-specific sizes
             if sensory_sources:
                 # ec_l3_input_size for hippocampus
-                ec_l3_size = sum(self._get_source_output_size(src, conn.source_port)
-                                for src, conn in sensory_sources)
+                ec_l3_size = sum(
+                    self._get_source_output_size(src, conn.source_port)
+                    for src, conn in sensory_sources
+                )
                 spec.config_params["ec_l3_input_size"] = ec_l3_size
 
             # Note: top_down, pfc_modulation, and l6_feedback are handled separately in forward pass
@@ -570,7 +585,9 @@ class BrainBuilder:
             config = source_spec.config_params
 
             # All layer sizes are now required
-            if not all(k in config for k in ["l4_size", "l23_size", "l5_size", "l6a_size", "l6b_size"]):
+            if not all(
+                k in config for k in ["l4_size", "l23_size", "l5_size", "l6a_size", "l6b_size"]
+            ):
                 raise ValueError(
                     f"BrainBuilder: Cortex '{source_name}' must specify all layer sizes "
                     f"(l4_size, l23_size, l5_size, l6a_size, l6b_size)"
@@ -608,7 +625,9 @@ class BrainBuilder:
             f"Registry: {source_spec.registry_name}, Params: {list(source_spec.config_params.keys())}"
         )
 
-    def _get_pathway_source_size(self, source_comp: LearnableComponent, source_port: Optional[str]) -> int:
+    def _get_pathway_source_size(
+        self, source_comp: LearnableComponent, source_port: Optional[str]
+    ) -> int:
         """Get output size for pathway from source component and port.
 
         Args:
@@ -623,16 +642,16 @@ class BrainBuilder:
             return source_comp.n_output
 
         # Check for layer-specific outputs (cortex)
-        if hasattr(source_comp, 'l23_size') and hasattr(source_comp, 'l5_size'):
+        if hasattr(source_comp, "l23_size") and hasattr(source_comp, "l5_size"):
             if source_port == "l23":
                 return source_comp.l23_size
             elif source_port == "l5":
                 return source_comp.l5_size
-            elif source_port == "l4" and hasattr(source_comp, 'l4_size'):
+            elif source_port == "l4" and hasattr(source_comp, "l4_size"):
                 return source_comp.l4_size
-            elif source_port == "l6a" and hasattr(source_comp, 'l6a_size'):
+            elif source_port == "l6a" and hasattr(source_comp, "l6a_size"):
                 return source_comp.l6a_size
-            elif source_port == "l6b" and hasattr(source_comp, 'l6b_size'):
+            elif source_port == "l6b" and hasattr(source_comp, "l6b_size"):
                 return source_comp.l6b_size
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
@@ -664,8 +683,8 @@ class BrainBuilder:
         for (source_name, target_key), spec in connection_specs.items():
             # Handle compound keys like "striatum" or "striatum:feedforward"
             target_name = target_key.split(":")[0] if ":" in target_key else target_key
-            target_port = spec.target_port if hasattr(spec, 'target_port') else None
-            source_port = spec.source_port if hasattr(spec, 'source_port') else None
+            target_port = spec.target_port if hasattr(spec, "target_port") else None
+            source_port = spec.source_port if hasattr(spec, "source_port") else None
 
             if target_name not in targets_to_sources:
                 targets_to_sources[target_name] = []
@@ -682,26 +701,32 @@ class BrainBuilder:
 
             # Special handling for Striatum (has add_input_source_striatum)
             # Check this FIRST before checking for standard add_input_source
-            if hasattr(target_comp, 'add_input_source_striatum'):
+            if hasattr(target_comp, "add_input_source_striatum"):
                 for source_name, source_port, source_size in sources:
                     # Build source key (with port if specified)
                     source_key = f"{source_name}:{source_port}" if source_port else source_name
 
                     # Skip if input source already registered (avoid duplicate registration)
-                    if hasattr(target_comp, 'input_sources') and source_key in target_comp.input_sources:
+                    if (
+                        hasattr(target_comp, "input_sources")
+                        and source_key in target_comp.input_sources
+                    ):
                         continue
 
                     # Call striatum-specific method (creates D1/D2 weights)
                     target_comp.add_input_source_striatum(source_key, n_input=source_size)
 
             # Check if target has standard add_input_source method (NeuralRegion, etc.)
-            elif hasattr(target_comp, 'add_input_source'):
+            elif hasattr(target_comp, "add_input_source"):
                 for source_name, source_port, source_size in sources:
                     # Build source key (with port if specified)
                     source_key = f"{source_name}:{source_port}" if source_port else source_name
 
                     # Skip if input source already registered (avoid duplicate registration)
-                    if hasattr(target_comp, 'input_sources') and source_key in target_comp.input_sources:
+                    if (
+                        hasattr(target_comp, "input_sources")
+                        and source_key in target_comp.input_sources
+                    ):
                         continue
 
                     # Call add_input_source (standard NeuralRegion method)
@@ -743,21 +768,25 @@ class BrainBuilder:
 
             if target_delays:
                 # New format with per-target delays
-                sources.append((
-                    spec.source,      # region_name
-                    spec.source_port, # port (can be None)
-                    source_size,      # size
-                    delay_ms,         # default delay
-                    target_delays,    # dict of target-specific delays
-                ))
+                sources.append(
+                    (
+                        spec.source,  # region_name
+                        spec.source_port,  # port (can be None)
+                        source_size,  # size
+                        delay_ms,  # default delay
+                        target_delays,  # dict of target-specific delays
+                    )
+                )
             else:
                 # Standard format (backward compatible)
-                sources.append((
-                    spec.source,      # region_name
-                    spec.source_port, # port (can be None)
-                    source_size,      # size
-                    delay_ms,         # delay_ms
-                ))
+                sources.append(
+                    (
+                        spec.source,  # region_name
+                        spec.source_port,  # port (can be None)
+                        source_size,  # size
+                        delay_ms,  # delay_ms
+                    )
+                )
 
         # Create AxonalProjection with target_name for delay selection
         projection = AxonalProjection(
@@ -769,7 +798,9 @@ class BrainBuilder:
 
         return projection
 
-    def _get_pathway_target_size(self, target_comp: LearnableComponent, target_port: Optional[str]) -> int:
+    def _get_pathway_target_size(
+        self, target_comp: LearnableComponent, target_port: Optional[str]
+    ) -> int:
         """Get output size for pathway to target component.
 
         External pathways (between regions) act as axonal projections that
@@ -829,9 +860,7 @@ class BrainBuilder:
         components: Dict[str, LearnableComponent] = {}
         for name, spec in self._components.items():
             # Get config class from registry
-            config_class = self._registry.get_config_class(
-                spec.component_type, spec.registry_name
-            )
+            config_class = self._registry.get_config_class(spec.component_type, spec.registry_name)
 
             if config_class is None:
                 # Legacy component without config class metadata
@@ -844,7 +873,8 @@ class BrainBuilder:
             # Create config instance with device and dt_ms
             # Filter out internal flags (starting with _)
             config_params_filtered = {
-                k: v for k, v in spec.config_params.items()
+                k: v
+                for k, v in spec.config_params.items()
                 if not k.startswith("_")  # Remove internal flags like _has_topdown
             }
 
@@ -855,10 +885,12 @@ class BrainBuilder:
             size_params = _compute_region_sizes(spec.registry_name, size_params)
 
             # Add global params to behavioral config
-            behavioral_params.update({
-                "device": self.global_config.device,
-                "dt_ms": self.global_config.dt_ms,
-            })
+            behavioral_params.update(
+                {
+                    "device": self.global_config.device,
+                    "dt_ms": self.global_config.dt_ms,
+                }
+            )
             config = config_class(**behavioral_params)
 
             # Create component from registry
@@ -872,7 +904,7 @@ class BrainBuilder:
             )
 
             # Move component to correct device (config device string might not be applied)
-            if hasattr(component, 'to'):
+            if hasattr(component, "to"):
                 component.to(self.global_config.device)
 
             components[name] = component
@@ -903,12 +935,14 @@ class BrainBuilder:
 
                 # Special handling for AxonalProjection (v2.0 architecture)
                 if spec.pathway_type in ("axonal", "axonal_projection"):
-                    pathway = self._create_axonal_projection(
-                        target_specs, components, target_name
-                    )
+                    pathway = self._create_axonal_projection(target_specs, components, target_name)
                     # Use compound key if target_port specified (e.g., cortex→thalamus with l6a vs l6b)
                     # This allows multiple pathways with same (source, target) but different ports
-                    conn_key = (spec.source, f"{spec.target}:{target_port}") if target_port else (spec.source, spec.target)
+                    conn_key = (
+                        (spec.source, f"{spec.target}:{target_port}")
+                        if target_port
+                        else (spec.source, spec.target)
+                    )
                     connections[conn_key] = pathway
                     spec.instance = pathway
                     continue
@@ -921,9 +955,7 @@ class BrainBuilder:
                         break
 
                 if pathway_component_type is None:
-                    raise ValueError(
-                        f"Pathway '{spec.pathway_type}' not found in registry"
-                    )
+                    raise ValueError(f"Pathway '{spec.pathway_type}' not found in registry")
 
                 # Get pathway config class
                 config_class = self._registry.get_config_class(
@@ -943,7 +975,8 @@ class BrainBuilder:
                 # Create pathway config with source/target sizes and global params
                 # Filter out port specifications (they're not pathway config params)
                 filtered_config_params = {
-                    k: v for k, v in spec.config_params.items()
+                    k: v
+                    for k, v in spec.config_params.items()
                     if not k.startswith("_")  # Remove internal flags
                 }
 
@@ -964,23 +997,29 @@ class BrainBuilder:
                 )
 
                 # Move pathway to correct device
-                if hasattr(pathway, 'to'):
+                if hasattr(pathway, "to"):
                     pathway.to(self.global_config.device)
 
                 # Use compound key if target_port specified
-                conn_key = (spec.source, f"{spec.target}:{target_port}") if target_port else (spec.source, spec.target)
+                conn_key = (
+                    (spec.source, f"{spec.target}:{target_port}")
+                    if target_port
+                    else (spec.source, spec.target)
+                )
                 connections[conn_key] = pathway
                 spec.instance = pathway
 
             else:
                 # Multiple sources - must use AxonalProjection
                 # Legacy SpikingPathway/MultiSourcePathway no longer supported
-                pathway = self._create_axonal_projection(
-                    target_specs, components, target_name
-                )
+                pathway = self._create_axonal_projection(target_specs, components, target_name)
                 # Use compound key if target_port specified
                 first_spec = target_specs[0]
-                conn_key = (first_spec.source, f"{first_spec.target}:{target_port}") if target_port else (first_spec.source, first_spec.target)
+                conn_key = (
+                    (first_spec.source, f"{first_spec.target}:{target_port}")
+                    if target_port
+                    else (first_spec.source, first_spec.target)
+                )
                 connections[conn_key] = pathway
                 for spec in target_specs:
                     spec.instance = pathway
@@ -1160,9 +1199,7 @@ class BrainBuilder:
         """
         if name not in cls._presets:
             available = list(cls._presets.keys())
-            raise KeyError(
-                f"Preset '{name}' not found. Available: {available}"
-            )
+            raise KeyError(f"Preset '{name}' not found. Available: {available}")
 
         preset = cls._presets[name]
         builder = cls(global_config)
@@ -1179,10 +1216,7 @@ class BrainBuilder:
         Returns:
             List of (name, description) tuples
         """
-        return [
-            (name, preset.description)
-            for name, preset in cls._presets.items()
-        ]
+        return [(name, preset.description) for name, preset in cls._presets.items()]
 
     @classmethod
     def preset_builder(
@@ -1244,6 +1278,7 @@ class PresetArchitecture:
 # Built-in Preset Architectures
 # ============================================================================
 
+
 def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     """Minimal 3-component brain for testing.
 
@@ -1264,7 +1299,9 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Input interface - uses thalamic relay (which has real neurons for sensory filtering)
     # Must specify input_size, relay_size, and trn_size explicitly (no incoming connections)
-    builder.add_component("input", "thalamic_relay", input_size=input_size, relay_size=input_size, trn_size=0)
+    builder.add_component(
+        "input", "thalamic_relay", input_size=input_size, relay_size=input_size, trn_size=0
+    )
 
     # Processing components - input_size inferred from connections
     builder.add_component("process", "layered_cortex", **calculate_layer_sizes(process_size))
@@ -1334,8 +1371,12 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Striatum: n_actions and neurons_per_action → d1_size, d2_size via _compute_region_sizes
     # input_size will be inferred from connections (cortex + hippocampus + pfc)
-    builder.add_component("striatum", "striatum", n_actions=striatum_actions,
-                         neurons_per_action=striatum_neurons_per_action)
+    builder.add_component(
+        "striatum",
+        "striatum",
+        n_actions=striatum_actions,
+        neurons_per_action=striatum_neurons_per_action,
+    )
 
     # Cerebellum: specify purkinje_size
     builder.add_component("cerebellum", "cerebellum", purkinje_size=cerebellum_purkinje_size)
@@ -1366,8 +1407,22 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # - Membrane dynamics (tau_mem~20ms): integration to threshold
     # - Refractory periods (tau_ref): post-spike delays
     # These neural dynamics add ~10-20ms to total loop period, producing gamma oscillations
-    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6a", target_port="l6a_feedback", axonal_delay_ms=10.0)
-    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6b", target_port="l6b_feedback", axonal_delay_ms=5.0)
+    builder.connect(
+        "cortex",
+        "thalamus",
+        pathway_type="axonal",
+        source_port="l6a",
+        target_port="l6a_feedback",
+        axonal_delay_ms=10.0,
+    )
+    builder.connect(
+        "cortex",
+        "thalamus",
+        pathway_type="axonal",
+        source_port="l6b",
+        target_port="l6b_feedback",
+        axonal_delay_ms=5.0,
+    )
 
     # Cortex ⇄ Hippocampus: Bidirectional memory integration
     # Entorhinal cortex ↔ hippocampus: moderately myelinated (Witter et al. 2000)
@@ -1399,12 +1454,18 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Receives multi-modal input (sensory + goals), outputs predictions
     # Corticopontocerebellar pathway: via pontine nuclei (Schmahmann 1996)
     # Distance: ~10-15cm total, includes relay → 20-30ms delay
-    builder.connect("cortex", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0)  # Sensorimotor input
+    builder.connect(
+        "cortex", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0
+    )  # Sensorimotor input
     # PFC → Cerebellum: similar pathway length
-    builder.connect("pfc", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0)     # Goal/context input
+    builder.connect(
+        "pfc", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0
+    )  # Goal/context input
     # Cerebellum → Cortex: via thalamus (VL/VA nuclei), moderately fast
     # Distance: ~8-12cm, includes thalamic relay → 15-20ms delay
-    builder.connect("cerebellum", "cortex", pathway_type="axonal", axonal_delay_ms=17.5)  # Forward model predictions
+    builder.connect(
+        "cerebellum", "cortex", pathway_type="axonal", axonal_delay_ms=17.5
+    )  # Forward model predictions
 
 
 # Register built-in presets

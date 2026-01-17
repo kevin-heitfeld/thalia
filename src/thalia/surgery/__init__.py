@@ -91,28 +91,24 @@ Date: December 12, 2025 (Tier 3 Implementation)
 
 from __future__ import annotations
 
-
-from .lesion import (
-    lesion_region,
-    partial_lesion,
-    temporary_lesion,
-    restore_region,
-)
-
 from .ablation import (
     ablate_pathway,
     restore_pathway,
 )
-
-from .plasticity import (
-    freeze_region,
-    unfreeze_region,
-    freeze_pathway,
-    unfreeze_pathway,
-)
-
 from .growth import (
     add_region_to_trained_brain,
+)
+from .lesion import (
+    lesion_region,
+    partial_lesion,
+    restore_region,
+    temporary_lesion,
+)
+from .plasticity import (
+    freeze_pathway,
+    freeze_region,
+    unfreeze_pathway,
+    unfreeze_region,
 )
 
 __all__ = [
@@ -121,17 +117,14 @@ __all__ = [
     "partial_lesion",
     "temporary_lesion",
     "restore_region",
-
     # Ablation operations
     "ablate_pathway",
     "restore_pathway",
-
     # Plasticity control
     "freeze_region",
     "unfreeze_region",
     "freeze_pathway",
     "unfreeze_pathway",
-
     # Growth operations
     "add_region_to_trained_brain",
 ]

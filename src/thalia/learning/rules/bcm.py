@@ -59,11 +59,11 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from thalia.core.errors import ComponentError
 from thalia.constants.learning import (
     LEARNING_RATE_BCM,
     TAU_BCM_THRESHOLD,
 )
+from thalia.core.errors import ComponentError
 
 
 @dataclass
@@ -91,13 +91,14 @@ class BCMConfig:
 
         dt: Simulation timestep (ms)
     """
-    tau_theta: float = TAU_BCM_THRESHOLD    # Slow adaptation (5 seconds)
-    theta_init: float = 0.01                # Initial threshold
-    theta_min: float = 1e-6                 # Minimum threshold
-    theta_max: float = 1.0                  # Maximum threshold
+
+    tau_theta: float = TAU_BCM_THRESHOLD  # Slow adaptation (5 seconds)
+    theta_init: float = 0.01  # Initial threshold
+    theta_min: float = 1e-6  # Minimum threshold
+    theta_max: float = 1.0  # Maximum threshold
     learning_rate: float = LEARNING_RATE_BCM  # Base learning rate
-    p: float = 2.0                          # Power for threshold (c^p)
-    dt: float = 1.0                         # Timestep
+    p: float = 2.0  # Power for threshold (c^p)
+    dt: float = 1.0  # Timestep
 
     @property
     def decay_theta(self) -> float:
@@ -149,12 +150,10 @@ class BCMRule(nn.Module):
 
         # Register constants
         self.register_buffer(
-            "decay_theta",
-            torch.tensor(self.config.decay_theta, dtype=torch.float32)
+            "decay_theta", torch.tensor(self.config.decay_theta, dtype=torch.float32)
         )
         self.register_buffer(
-            "one_minus_decay",
-            torch.tensor(1.0 - self.config.decay_theta, dtype=torch.float32)
+            "one_minus_decay", torch.tensor(1.0 - self.config.decay_theta, dtype=torch.float32)
         )
 
         # Sliding threshold (per neuron)
@@ -173,14 +172,12 @@ class BCMRule(nn.Module):
             (self.n_post,),
             self.config.theta_init,
             device=device,  # type: ignore[arg-type]
-            dtype=torch.float32
+            dtype=torch.float32,
         )
 
         # Activity trace for smoother updates
         self.activity_trace = torch.zeros(
-            (self.n_post,),
-            device=device,  # type: ignore[arg-type]
-            dtype=torch.float32
+            (self.n_post,), device=device, dtype=torch.float32  # type: ignore[arg-type]
         )
 
     def compute_phi(
@@ -241,17 +238,10 @@ class BCMRule(nn.Module):
         c_p = post_activity.pow(self.config.p)  # (n_post,)
 
         # Update threshold with EMA (per-neuron)
-        self.theta = (
-            self.decay_theta * self.theta +
-            self.one_minus_decay * c_p
-        )
+        self.theta = self.decay_theta * self.theta + self.one_minus_decay * c_p
 
         # Clamp to valid range
-        self.theta = torch.clamp(
-            self.theta,
-            self.config.theta_min,
-            self.config.theta_max
-        )
+        self.theta = torch.clamp(self.theta, self.config.theta_min, self.config.theta_max)
 
     def forward(
         self,
@@ -276,7 +266,7 @@ class BCMRule(nn.Module):
         # Hebbian outer product modulated by BCM
         # dw[i,j] = pre[i] * phi[j] = pre[i] * post[j] * (post[j] - theta[j])
         # Averaged over batch
-        dw = torch.einsum('bi,bj->ij', pre_activity, phi) / pre_activity.shape[0]
+        dw = torch.einsum("bi,bj->ij", pre_activity, phi) / pre_activity.shape[0]
 
         # Scale by learning rate
         dw = self.config.learning_rate * dw
@@ -309,21 +299,14 @@ class BCMRule(nn.Module):
         """
         dw = self(pre_activity, post_activity)
 
-        synapse.weight.data = torch.clamp(
-            synapse.weight.data + dw,
-            w_min,
-            w_max
-        )
+        synapse.weight.data = torch.clamp(synapse.weight.data + dw, w_min, w_max)
 
         return dw
 
     def get_threshold(self) -> torch.Tensor:
         """Get current sliding threshold."""
         if self.theta is None:
-            raise ComponentError(
-                "BCM",
-                "BCM state not initialized. Call reset_state() first."
-            )
+            raise ComponentError("BCM", "BCM state not initialized. Call reset_state() first.")
         return self.theta.clone()
 
     def get_state(self) -> dict[str, Optional[torch.Tensor]]:

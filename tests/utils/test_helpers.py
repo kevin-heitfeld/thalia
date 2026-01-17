@@ -33,15 +33,12 @@ from typing import List, Optional
 
 import torch
 
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
 def generate_sparse_spikes(
-    n_neurons: int,
-    firing_rate: float = 0.2,
-    device: str = "cpu",
-    dtype: torch.dtype = torch.bool
+    n_neurons: int, firing_rate: float = 0.2, device: str = "cpu", dtype: torch.dtype = torch.bool
 ) -> torch.Tensor:
     """Generate binary spike vector with specified firing rate.
 
@@ -78,7 +75,7 @@ def generate_random_weights(
     scale: float = 0.5,
     sparsity: float = 0.0,
     device: str = "cpu",
-    positive_only: bool = False
+    positive_only: bool = False,
 ) -> torch.Tensor:
     """Generate random weight matrix with optional sparsity.
 
@@ -117,10 +114,7 @@ def generate_random_weights(
 
 
 def generate_batch_spikes(
-    batch_size: int,
-    n_neurons: int,
-    firing_rate: float = 0.2,
-    device: str = "cpu"
+    batch_size: int, n_neurons: int, firing_rate: float = 0.2, device: str = "cpu"
 ) -> torch.Tensor:
     """Generate batch of spike vectors.
 
@@ -141,10 +135,9 @@ def generate_batch_spikes(
         >>> spikes.shape
         torch.Size([32, 100])
     """
-    return torch.stack([
-        generate_sparse_spikes(n_neurons, firing_rate, device)
-        for _ in range(batch_size)
-    ])
+    return torch.stack(
+        [generate_sparse_spikes(n_neurons, firing_rate, device) for _ in range(batch_size)]
+    )
 
 
 def create_test_region_config(**overrides):
@@ -194,7 +187,7 @@ def create_minimal_thalia_config(
     hippocampus_size: int = 40,
     pfc_size: int = 20,
     n_actions: int = 5,
-    **overrides
+    **overrides,
 ) -> "ThaliaConfig":
     """Create minimal ThaliaConfig for testing.
 
@@ -242,9 +235,7 @@ def create_minimal_thalia_config(
 
 
 def create_test_brain(
-    regions: Optional[List[str]] = None,
-    device: str = "cpu",
-    **config_overrides
+    regions: Optional[List[str]] = None, device: str = "cpu", **config_overrides
 ) -> "DynamicBrain":
     """Create minimal DynamicBrain for testing.
 
@@ -280,10 +271,7 @@ def create_test_brain(
 
 
 def create_test_spike_input(
-    n_neurons: int,
-    n_timesteps: int = 10,
-    firing_rate: float = 0.2,
-    device: str = "cpu"
+    n_neurons: int, n_timesteps: int = 10, firing_rate: float = 0.2, device: str = "cpu"
 ) -> torch.Tensor:
     """Create temporal spike sequence for testing.
 
@@ -306,10 +294,9 @@ def create_test_spike_input(
         >>> spikes.dtype
         torch.bool
     """
-    return torch.stack([
-        generate_sparse_spikes(n_neurons, firing_rate, device)
-        for _ in range(n_timesteps)
-    ])
+    return torch.stack(
+        [generate_sparse_spikes(n_neurons, firing_rate, device) for _ in range(n_timesteps)]
+    )
 
 
 def create_test_checkpoint_path(tmp_path: "pathlib.Path", name: str = "test_checkpoint") -> str:

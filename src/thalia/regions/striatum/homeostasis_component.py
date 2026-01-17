@@ -37,7 +37,7 @@ Region-specific homeostasis components integrate global mechanisms:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 import torch.nn as nn
@@ -61,6 +61,7 @@ class HomeostasisManagerConfig(BaseConfig):
 
     Extends UnifiedHomeostasisConfig with striatum-specific parameters.
     """
+
     unified_homeostasis_enabled: bool = True
     target_firing_rate_hz: float = 5.0
     weight_budget: float = 1.0
@@ -140,7 +141,9 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
 
         # Extract dimensions from context
         self.n_actions = context.n_output if context.n_output else 1
-        self.neurons_per_action = context.metadata.get("neurons_per_action", 1) if context.metadata else 1
+        self.neurons_per_action = (
+            context.metadata.get("neurons_per_action", 1) if context.metadata else 1
+        )
 
         # Get D1/D2 sizes from metadata (computed in striatum.__init__)
         # These are the actual pathway sizes, NOT n_actions * neurons_per_action
@@ -176,10 +179,7 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
             self.unified_homeostasis = None
 
     def apply_homeostasis(
-        self,
-        d1_weights: nn.Parameter,
-        d2_weights: nn.Parameter,
-        **kwargs
+        self, d1_weights: nn.Parameter, d2_weights: nn.Parameter, **kwargs
     ) -> Dict[str, Any]:
         """Apply homeostatic regulation to D1/D2 weights.
 
@@ -233,7 +233,9 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         # Delegate to unified homeostasis controller
         return self.unified_homeostasis.compute_excitability()
 
-    def update_activity(self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, decay: float | None = None) -> None:
+    def update_activity(
+        self, d1_spikes: torch.Tensor, d2_spikes: torch.Tensor, decay: float | None = None
+    ) -> None:
         """Update activity tracking for homeostatic regulation.
 
         Tracks running average of D1/D2 firing rates to enable dynamic
@@ -265,7 +267,7 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
             n_new_d2: Number of new D2 neurons to add
         """
         # Update internal neuron count (total)
-        self.n_neurons += (n_new_d1 + n_new_d2)
+        self.n_neurons += n_new_d1 + n_new_d2
 
         # Delegate to unified homeostasis to expand activity tracking for D1 and D2
         if self.unified_homeostasis is not None:
@@ -274,9 +276,11 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
     def get_homeostasis_diagnostics(self) -> Dict[str, Any]:
         """Get homeostasis-specific diagnostics."""
         diag = super().get_homeostasis_diagnostics()
-        diag.update({
-            "unified_homeostasis_enabled": self.unified_homeostasis is not None,
-        })
+        diag.update(
+            {
+                "unified_homeostasis_enabled": self.unified_homeostasis is not None,
+            }
+        )
         return diag
 
 

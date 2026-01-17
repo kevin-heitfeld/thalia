@@ -12,7 +12,7 @@ Biological role: "NOGO" signal for action suppression
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 
@@ -94,8 +94,10 @@ class D2Pathway(StriatumPathway):
         self.weights.data = new_weights
 
         # Add pathway identifier
-        metrics['pathway'] = 'D2'
-        metrics['dopamine_sign'] = 'positive' if dopamine > 0 else 'negative' if dopamine < 0 else 'zero'
-        metrics['inverted_response'] = True  # Flag to indicate D2's inverted learning
+        metrics["pathway"] = "D2"
+        metrics["dopamine_sign"] = (
+            "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
+        )
+        metrics["inverted_response"] = True  # Flag to indicate D2's inverted learning
 
         return metrics

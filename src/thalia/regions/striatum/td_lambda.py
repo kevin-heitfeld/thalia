@@ -72,15 +72,15 @@ Date: December 10, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import torch
 
 from thalia.constants.regions import (
-    STRIATUM_TD_LAMBDA,
     STRIATUM_GAMMA,
-    STRIATUM_TD_MIN_TRACE,
     STRIATUM_TD_ACCUMULATING,
+    STRIATUM_TD_LAMBDA,
+    STRIATUM_TD_MIN_TRACE,
 )
 
 
@@ -141,10 +141,7 @@ class TDLambdaTraces:
         self.device = torch.device(self.config.device)
 
         # Eligibility traces [n_output, n_input]
-        self.traces = torch.zeros(
-            n_output, n_input,
-            device=self.device
-        )
+        self.traces = torch.zeros(n_output, n_input, device=self.device)
 
         # Running product γλ for efficient decay
         self.decay_factor = self.config.gamma * self.config.lambda_
@@ -171,9 +168,7 @@ class TDLambdaTraces:
 
         # Zero out very small traces for efficiency
         self.traces = torch.where(
-            self.traces.abs() < self.config.min_trace,
-            torch.zeros_like(self.traces),
-            self.traces
+            self.traces.abs() < self.config.min_trace, torch.zeros_like(self.traces), self.traces
         )
 
     def get(self) -> torch.Tensor:
@@ -226,13 +221,10 @@ class TDLambdaTraces:
         self.n_input = self.n_input + n_new
 
         # Create new traces with expanded input dimension
-        self.traces = torch.zeros(
-            self.n_output, self.n_input,
-            device=self.device
-        )
+        self.traces = torch.zeros(self.n_output, self.n_input, device=self.device)
 
         # Copy old traces (preserve existing credit assignment)
-        self.traces[:, :old_traces.shape[1]] = old_traces
+        self.traces[:, : old_traces.shape[1]] = old_traces
 
         # New columns initialized to zero (no credit yet for new inputs)
 
@@ -439,12 +431,8 @@ class TDLambdaLearner:
         """Get diagnostic information."""
         trace_diag = self.traces.get_diagnostics()
 
-        avg_td_error = (
-            self._cumulative_td_error / max(1, self._total_updates)
-        )
-        avg_trace_magnitude = (
-            self._cumulative_trace_magnitude / max(1, self._total_updates)
-        )
+        avg_td_error = self._cumulative_td_error / max(1, self._total_updates)
+        avg_trace_magnitude = self._cumulative_trace_magnitude / max(1, self._total_updates)
 
         return {
             "total_updates": self._total_updates,
@@ -487,11 +475,11 @@ def compute_n_step_return(
 
         for k in range(min(n, T - t)):
             # Add discounted reward
-            return_val += (gamma ** k) * rewards[t + k]
+            return_val += (gamma**k) * rewards[t + k]
 
         # Add bootstrap value if episode didn't end
         if t + n < T:
-            return_val += (gamma ** n) * values[t + n]
+            return_val += (gamma**n) * values[t + n]
 
         returns[t] = return_val
 

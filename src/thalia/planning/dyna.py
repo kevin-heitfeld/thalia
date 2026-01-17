@@ -16,9 +16,9 @@ Phase: 2 - Model-Based Planning
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import random
-from typing import Optional, Dict
+from dataclasses import dataclass
+from typing import Dict, Optional
 
 import torch
 
@@ -56,7 +56,7 @@ class DynaPlanner:
         coordinator,  # MentalSimulationCoordinator instance
         striatum,  # Striatum instance
         hippocampus,  # Hippocampus instance
-        config: Optional[DynaConfig] = None
+        config: Optional[DynaConfig] = None,
     ):
         self.coordinator = coordinator
         self.striatum = striatum
@@ -73,7 +73,7 @@ class DynaPlanner:
         reward: float,
         next_state: torch.Tensor,
         done: bool,
-        goal_context: Optional[torch.Tensor] = None
+        goal_context: Optional[torch.Tensor] = None,
     ) -> None:
         """
         Process real experience and trigger background planning.
@@ -91,7 +91,10 @@ class DynaPlanner:
         # 3. Update priority for this state (for prioritized sweeping)
         if self.config.use_prioritized_sweeping:
             # Compute TD error as priority (approximation)
-            if hasattr(self.striatum, 'value_estimates') and self.striatum.value_estimates is not None:
+            if (
+                hasattr(self.striatum, "value_estimates")
+                and self.striatum.value_estimates is not None
+            ):
                 current_value = self.striatum.evaluate_state(state, goal_context)
                 next_value = self.striatum.evaluate_state(next_state, goal_context)
                 td_error = abs(reward + 0.95 * next_value - current_value)
@@ -125,9 +128,7 @@ class DynaPlanner:
 
             # Use coordinator to simulate outcome
             rollout = self.coordinator.simulate_rollout(
-                current_state=sampled_state,
-                action_sequence=[action],
-                goal_context=goal_context
+                current_state=sampled_state, action_sequence=[action], goal_context=goal_context
             )
 
             if len(rollout.states) < 2 or len(rollout.rewards) < 1:

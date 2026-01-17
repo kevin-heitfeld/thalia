@@ -77,7 +77,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 import torch
 
@@ -186,37 +186,37 @@ class BaseRegionState:
     def to_dict(self) -> Dict[str, Any]:
         """Serialize common state fields."""
         return {
-            'state_version': self.STATE_VERSION,
-            'spikes': self.spikes,
-            'membrane': self.membrane,
-            'dopamine': self.dopamine,
-            'acetylcholine': self.acetylcholine,
-            'norepinephrine': self.norepinephrine,
+            "state_version": self.STATE_VERSION,
+            "spikes": self.spikes,
+            "membrane": self.membrane,
+            "dopamine": self.dopamine,
+            "acetylcholine": self.acetylcholine,
+            "norepinephrine": self.norepinephrine,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], device: str) -> BaseRegionState:
         """Deserialize common state fields."""
-        version = data.get('state_version', 1)
+        version = data.get("state_version", 1)
         if version != cls.STATE_VERSION:
             # Future: Handle version migration
             pass
 
         # Transfer tensors to target device
-        spikes = data.get('spikes')
+        spikes = data.get("spikes")
         if spikes is not None and isinstance(spikes, torch.Tensor):
             spikes = spikes.to(device)
 
-        membrane = data.get('membrane')
+        membrane = data.get("membrane")
         if membrane is not None and isinstance(membrane, torch.Tensor):
             membrane = membrane.to(device)
 
         return cls(
             spikes=spikes,
             membrane=membrane,
-            dopamine=data.get('dopamine', DA_BASELINE_STANDARD),
-            acetylcholine=data.get('acetylcholine', ACH_BASELINE),
-            norepinephrine=data.get('norepinephrine', NE_BASELINE),
+            dopamine=data.get("dopamine", DA_BASELINE_STANDARD),
+            acetylcholine=data.get("acetylcholine", ACH_BASELINE),
+            norepinephrine=data.get("norepinephrine", NE_BASELINE),
         )
 
     def reset(self) -> None:
@@ -231,6 +231,7 @@ class BaseRegionState:
 # =====================================================================
 # UTILITY FUNCTIONS
 # =====================================================================
+
 
 def save_region_state(state: RegionState, path: str | Path) -> None:
     """Save region state to checkpoint file.
@@ -308,12 +309,13 @@ def get_state_version(state_dict: Dict[str, Any]) -> int:
         - Version checking before deserialization
         - Migration decision logic
     """
-    return state_dict.get('state_version', 1)
+    return state_dict.get("state_version", 1)
 
 
 # =====================================================================
 # TYPE VALIDATION
 # =====================================================================
+
 
 def validate_state_protocol(state_class: Type) -> bool:
     """Check if class implements RegionState protocol correctly.
@@ -332,16 +334,16 @@ def validate_state_protocol(state_class: Type) -> bool:
     Example:
         >>> assert validate_state_protocol(HippocampusState)
     """
-    required_methods = ['to_dict', 'from_dict', 'reset']
+    required_methods = ["to_dict", "from_dict", "reset"]
 
     for method in required_methods:
         if not hasattr(state_class, method):
             return False
 
     # Check from_dict is classmethod
-    if not isinstance(getattr(state_class, 'from_dict', None), classmethod):
+    if not isinstance(getattr(state_class, "from_dict", None), classmethod):
         # In Python 3.11+, classmethods are callable, so check differently
-        from_dict_attr = getattr(state_class, 'from_dict', None)
+        from_dict_attr = getattr(state_class, "from_dict", None)
         if from_dict_attr is None or not callable(from_dict_attr):
             return False
 

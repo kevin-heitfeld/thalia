@@ -9,10 +9,9 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 
 import torch
 
+from tests.utils.region_test_base import RegionTestBase
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
-
-from tests.utils.region_test_base import RegionTestBase
 
 
 class TestCerebellum(RegionTestBase):
@@ -93,9 +92,12 @@ class TestCerebellum(RegionTestBase):
         region.forward(input_spikes)
 
         # Verify granule layer exists and expands representation
-        expected_granules = int(self._get_region_input_size(region) * params["granule_expansion_factor"])
-        assert expected_granules > self._get_region_input_size(region), \
-            "Granule cells should expand input representation"
+        expected_granules = int(
+            self._get_region_input_size(region) * params["granule_expansion_factor"]
+        )
+        assert expected_granules > self._get_region_input_size(
+            region
+        ), "Granule cells should expand input representation"
 
         # Check if granule activity is tracked
         state = region.get_state()
@@ -210,7 +212,9 @@ class TestCerebellum(RegionTestBase):
         # Create temporal pattern (onset at specific time)
         for t in range(50):
             if t < 10:
-                input_spikes = torch.zeros(self._get_region_input_size(region), device=region.device)
+                input_spikes = torch.zeros(
+                    self._get_region_input_size(region), device=region.device
+                )
             else:
                 input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
 
@@ -254,8 +258,9 @@ class TestCerebellum(RegionTestBase):
             if state.granule_spikes is not None:
                 # Granule cells typically maintain ~5% sparsity
                 granule_activity = state.granule_spikes.float().mean().item()
-                assert 0.0 <= granule_activity <= 0.3, \
-                    f"Expected sparse granule activity, got {granule_activity}"
+                assert (
+                    0.0 <= granule_activity <= 0.3
+                ), f"Expected sparse granule activity, got {granule_activity}"
 
     def test_purkinje_complex_spike(self):
         """Test Purkinje cells can generate complex spikes."""

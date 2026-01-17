@@ -36,13 +36,14 @@ from thalia.core.errors import ConfigurationError
 
 class CodingStrategy(Enum):
     """Spike coding strategies (shared across encoders/decoders)."""
-    RATE = "rate"           # Spike count encodes value
-    TEMPORAL = "temporal"   # Spike timing encodes value
+
+    RATE = "rate"  # Spike count encodes value
+    TEMPORAL = "temporal"  # Spike timing encodes value
     POPULATION = "population"  # Population codes
-    PHASE = "phase"         # Phase relative to oscillation
-    BURST = "burst"         # Burst patterns
-    SDR = "sdr"             # Sparse distributed representation
-    WTA = "wta"             # Winner-take-all
+    PHASE = "phase"  # Phase relative to oscillation
+    BURST = "burst"  # Burst patterns
+    SDR = "sdr"  # Sparse distributed representation
+    WTA = "wta"  # Winner-take-all
 
 
 @dataclass
@@ -52,6 +53,7 @@ class SpikeCodingConfig:
     All encoders/decoders should inherit from this to ensure
     compatible parameters.
     """
+
     # Core dimensions
     n_neurons: int = 1024
     n_timesteps: int = 20
@@ -171,7 +173,10 @@ class SpikeEncoder(nn.Module, ABC):
         elif strategy == CodingStrategy.TEMPORAL:
             # Temporal coding: Stronger features spike earlier
             spikes = torch.zeros(
-                batch, seq_len, self.config.n_timesteps, n_neurons,
+                batch,
+                seq_len,
+                self.config.n_timesteps,
+                n_neurons,
                 device=self.device,
             )
 
@@ -201,7 +206,10 @@ class SpikeEncoder(nn.Module, ABC):
         elif strategy == CodingStrategy.SDR:
             # Sparse Distributed Representation: Top-k activation
             spikes = torch.zeros(
-                batch, seq_len, self.config.n_timesteps, n_neurons,
+                batch,
+                seq_len,
+                self.config.n_timesteps,
+                n_neurons,
                 device=self.device,
             )
 
@@ -221,7 +229,10 @@ class SpikeEncoder(nn.Module, ABC):
             # Phase coding: spike timing encodes information
             # Higher activation = earlier spikes within theta cycle
             spikes = torch.zeros(
-                batch, seq_len, self.config.n_timesteps, n_neurons,
+                batch,
+                seq_len,
+                self.config.n_timesteps,
+                n_neurons,
                 device=self.device,
             )
 
@@ -285,7 +296,7 @@ class SpikeDecoder(nn.Module, ABC):
             # Track first spike times for latency decoding
             self.register_buffer(
                 "first_spike_time",
-                torch.full((1, self.config.n_neurons), float('inf')),
+                torch.full((1, self.config.n_neurons), float("inf")),
             )
 
         elif strategy == CodingStrategy.WTA:
@@ -372,7 +383,7 @@ class SpikeDecoder(nn.Module, ABC):
         """Reset temporal integration state."""
         self.integration_state.zero_()
         if hasattr(self, "first_spike_time"):
-            self.first_spike_time.fill_(float('inf'))
+            self.first_spike_time.fill_(float("inf"))
 
 
 class RateEncoder(SpikeEncoder):

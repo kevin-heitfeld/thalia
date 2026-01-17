@@ -16,19 +16,19 @@ Author: Thalia Test Quality Audit
 Date: December 21, 2025
 """
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
 from thalia.learning import (
-    HebbianStrategy,
-    STDPStrategy,
     BCMStrategy,
-    ThreeFactorStrategy,
-    HebbianConfig,
-    STDPConfig,
     BCMStrategyConfig,
+    HebbianConfig,
+    HebbianStrategy,
+    STDPConfig,
+    STDPStrategy,
     ThreeFactorConfig,
+    ThreeFactorStrategy,
 )
 
 
@@ -105,9 +105,7 @@ class TestHebbianStress:
         pre = torch.rand(200, device=device) > 0.99
         post = torch.rand(100, device=device) > 0.99
 
-        new_weights, metrics = strategy.compute_update(
-            weights, pre.float(), post.float()
-        )
+        new_weights, metrics = strategy.compute_update(weights, pre.float(), post.float())
 
         assert not torch.isnan(new_weights).any()
         assert not torch.isinf(new_weights).any()
@@ -211,7 +209,7 @@ class TestSTDPStress:
 
         # Potentiation should increase weights more than depression
         assert weights_potentiate.mean() > 0.5  # Increased
-        assert weights_depress.mean() < 0.5    # Decreased
+        assert weights_depress.mean() < 0.5  # Decreased
 
 
 class TestBCMStress:
@@ -241,7 +239,7 @@ class TestBCMStress:
             thresholds.append(metrics["theta_mean"])
 
         # Threshold should converge to activity^2
-        expected_theta = activity_level ** 2
+        expected_theta = activity_level**2
         final_theta = thresholds[-1]
 
         assert abs(final_theta - expected_theta) < 0.05  # Within 5%
@@ -559,12 +557,33 @@ class TestMetricValidation:
 class TestCrossStrategyStability:
     """Cross-cutting stability tests for all strategies."""
 
-    @pytest.mark.parametrize("strategy_type,config", [
-        ("hebbian", HebbianConfig(learning_rate=0.01, w_min=0.0, w_max=1.0)),
-        ("stdp", STDPConfig(learning_rate=0.001, a_plus=0.01, a_minus=0.012, tau_plus=20.0, w_min=0.0, w_max=1.0)),
-        ("bcm", BCMStrategyConfig(learning_rate=0.01, tau_theta=100.0, theta_init=0.1, w_min=0.0, w_max=1.0)),
-        ("three_factor", ThreeFactorConfig(learning_rate=0.01, eligibility_tau=100.0, w_min=0.0, w_max=1.0)),
-    ])
+    @pytest.mark.parametrize(
+        "strategy_type,config",
+        [
+            ("hebbian", HebbianConfig(learning_rate=0.01, w_min=0.0, w_max=1.0)),
+            (
+                "stdp",
+                STDPConfig(
+                    learning_rate=0.001,
+                    a_plus=0.01,
+                    a_minus=0.012,
+                    tau_plus=20.0,
+                    w_min=0.0,
+                    w_max=1.0,
+                ),
+            ),
+            (
+                "bcm",
+                BCMStrategyConfig(
+                    learning_rate=0.01, tau_theta=100.0, theta_init=0.1, w_min=0.0, w_max=1.0
+                ),
+            ),
+            (
+                "three_factor",
+                ThreeFactorConfig(learning_rate=0.01, eligibility_tau=100.0, w_min=0.0, w_max=1.0),
+            ),
+        ],
+    )
     def test_strategy_handles_nan_inputs(self, strategy_type, config, device):
         """All strategies should detect and handle NaN inputs gracefully.
 
@@ -582,7 +601,7 @@ class TestCrossStrategyStability:
         strategy = strategy_map[strategy_type](config)
 
         weights = torch.ones(5, 10, device=device) * 0.5
-        pre = torch.tensor([float('nan')] * 10, device=device)
+        pre = torch.tensor([float("nan")] * 10, device=device)
         post = torch.ones(5, device=device)
 
         kwargs = {}
@@ -593,15 +612,37 @@ class TestCrossStrategyStability:
         new_weights, _ = strategy.compute_update(weights, pre, post, **kwargs)
 
         # Document that NaN propagates (expected current behavior)
-        assert torch.isnan(new_weights).any(), \
-            "NaN inputs currently propagate through learning strategies"
+        assert torch.isnan(
+            new_weights
+        ).any(), "NaN inputs currently propagate through learning strategies"
 
-    @pytest.mark.parametrize("strategy_type,config", [
-        ("hebbian", HebbianConfig(learning_rate=0.01, w_min=0.0, w_max=1.0)),
-        ("stdp", STDPConfig(learning_rate=0.001, a_plus=0.01, a_minus=0.012, tau_plus=20.0, w_min=0.0, w_max=1.0)),
-        ("bcm", BCMStrategyConfig(learning_rate=0.01, tau_theta=100.0, theta_init=0.1, w_min=0.0, w_max=1.0)),
-        ("three_factor", ThreeFactorConfig(learning_rate=0.01, eligibility_tau=100.0, w_min=0.0, w_max=1.0)),
-    ])
+    @pytest.mark.parametrize(
+        "strategy_type,config",
+        [
+            ("hebbian", HebbianConfig(learning_rate=0.01, w_min=0.0, w_max=1.0)),
+            (
+                "stdp",
+                STDPConfig(
+                    learning_rate=0.001,
+                    a_plus=0.01,
+                    a_minus=0.012,
+                    tau_plus=20.0,
+                    w_min=0.0,
+                    w_max=1.0,
+                ),
+            ),
+            (
+                "bcm",
+                BCMStrategyConfig(
+                    learning_rate=0.01, tau_theta=100.0, theta_init=0.1, w_min=0.0, w_max=1.0
+                ),
+            ),
+            (
+                "three_factor",
+                ThreeFactorConfig(learning_rate=0.01, eligibility_tau=100.0, w_min=0.0, w_max=1.0),
+            ),
+        ],
+    )
     def test_strategy_weight_conservation(self, strategy_type, config, device):
         """Weight changes should be bounded by learning rate."""
         strategy_map = {

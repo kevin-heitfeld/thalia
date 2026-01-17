@@ -12,18 +12,18 @@ v3.0 Architecture:
 
 from __future__ import annotations
 
-# Protocol
-from thalia.pathways.protocol import NeuralPathway
-
 # Core pathway types
 from thalia.pathways.axonal_projection import AxonalProjection
 
+# Protocol
+from thalia.pathways.protocol import NeuralPathway
+
 # Sensory pathways
 from thalia.pathways.sensory_pathways import (
-    SensoryPathway,
-    VisualPathway,
     AuditoryPathway,
     LanguagePathway,
+    SensoryPathway,
+    VisualPathway,
 )
 
 __all__ = [

@@ -233,9 +233,10 @@ class AttentionStage(Enum):
     - Colombo (2001): Infant attention development
     - Diamond (2013): Executive function emergence
     """
-    INFANT = 0      # Stage 0: Pure bottom-up (100% reactive)
-    TODDLER = 1     # Stage 1: Mostly bottom-up (70% reactive, 30% goal-directed)
-    PRESCHOOL = 2   # Stage 2: Balanced (50% reactive, 50% goal-directed)
+
+    INFANT = 0  # Stage 0: Pure bottom-up (100% reactive)
+    TODDLER = 1  # Stage 1: Mostly bottom-up (70% reactive, 30% goal-directed)
+    PRESCHOOL = 2  # Stage 2: Balanced (50% reactive, 50% goal-directed)
     SCHOOL_AGE = 3  # Stage 3+: Top-down dominant (30% reactive, 70% goal-directed)
 
 
@@ -267,11 +268,11 @@ PERFORMANCE_DROP_WARNING_GENERAL = 0.10  # 10% drop triggers warning (general)
 
 # Safety System Thresholds (Graceful Degradation)
 SAFETY_CRITICAL_THRESHOLD = 0.30  # 30% performance drop → emergency shutdown
-SAFETY_LIMITED_THRESHOLD = 0.50   # 50% performance drop → partial shutdown
+SAFETY_LIMITED_THRESHOLD = 0.50  # 50% performance drop → partial shutdown
 SAFETY_DEGRADABLE_THRESHOLD = 0.70  # 70% performance drop → intervention needed
-CRITICAL_SYSTEMS = {'working_memory', 'oscillators', 'replay'}  # Cannot degrade
-DEGRADABLE_SYSTEMS = {'language', 'grammar', 'reading'}  # Can degrade gracefully
-LIMITED_DEGRADATION = {'vision', 'phonology'}  # Limited degradation allowed
+CRITICAL_SYSTEMS = {"working_memory", "oscillators", "replay"}  # Cannot degrade
+DEGRADABLE_SYSTEMS = {"language", "grammar", "reading"}  # Can degrade gracefully
+LIMITED_DEGRADATION = {"vision", "phonology"}  # Limited degradation allowed
 
 # Stage Evaluation Thresholds
 RUNAWAY_EXCITATION_THRESHOLD = 0.8  # Maximum acceptable firing rate

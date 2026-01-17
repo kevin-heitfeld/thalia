@@ -16,8 +16,8 @@ since growth APIs and behavior vary significantly between components.
 import pytest
 import torch
 
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 # Component factories - only using simple components that share contracts
@@ -26,7 +26,7 @@ def create_thalamus():
     config = ThalamicRelayConfig()
     calc = LayerSizeCalculator()
     sizes = calc.thalamus_from_relay(relay_size=80)
-    sizes['input_size'] = 100  # Override with test-specific input size
+    sizes["input_size"] = 100  # Override with test-specific input size
     return ThalamicRelay(config=config, sizes=sizes, device="cpu")
 
 
@@ -96,14 +96,16 @@ def test_component_forward_contract(component_factory, input_size, expected_outp
     output = component(input_spikes)
 
     # Shape contract
-    assert output.shape[0] == expected_output_size, (
-        f"Output shape should be ({expected_output_size},), got {output.shape}"
-    )
+    assert (
+        output.shape[0] == expected_output_size
+    ), f"Output shape should be ({expected_output_size},), got {output.shape}"
 
     # Dtype contract
-    assert output.dtype in [torch.bool, torch.uint8, torch.float32], (
-        f"Output dtype should be spike-compatible, got {output.dtype}"
-    )
+    assert output.dtype in [
+        torch.bool,
+        torch.uint8,
+        torch.float32,
+    ], f"Output dtype should be spike-compatible, got {output.dtype}"
 
     # Validity contract
     assert not torch.isnan(output.float()).any(), "Output contains NaN"
@@ -147,9 +149,9 @@ def test_component_state_dict_contract(component_factory):
             component.load_state_dict(state)
 
             # State should be restored
-            assert torch.allclose(component.neurons.membrane, original_membrane, atol=1e-6), (
-                "Membrane state not restored correctly"
-            )
+            assert torch.allclose(
+                component.neurons.membrane, original_membrane, atol=1e-6
+            ), "Membrane state not restored correctly"
 
 
 @pytest.mark.parametrize(

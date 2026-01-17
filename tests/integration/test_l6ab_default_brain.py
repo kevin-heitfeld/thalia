@@ -11,13 +11,13 @@ Tests end-to-end functionality:
 - L6b→relay excitatory modulation
 """
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from scipy import signal
 
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 @pytest.fixture
@@ -32,7 +32,9 @@ def global_config(device):
     return GlobalConfig(device=device, dt_ms=1.0, theta_frequency_hz=8.0)
 
 
-def measure_oscillation_frequency(spikes: torch.Tensor, dt_ms: float, window_size: int = 200) -> float:
+def measure_oscillation_frequency(
+    spikes: torch.Tensor, dt_ms: float, window_size: int = 200
+) -> float:
     """Measure dominant oscillation frequency from spike train.
 
     Args:
@@ -93,7 +95,7 @@ class TestL6abDefaultBrain:
         thalamus = brain.components["thalamus"]
 
         # Test contract: n_relay matches config and is valid
-        assert hasattr(thalamus, 'n_relay')
+        assert hasattr(thalamus, "n_relay")
         assert thalamus.n_relay > 0
         assert thalamus.n_relay == thalamus.relay_size  # Contract: matches relay_size
 
@@ -131,8 +133,7 @@ class TestL6abDefaultBrain:
 
         # Check for multi-source pathways to thalamus
         thalamus_pathways = [
-            (name, conn) for name, conn in brain.connections.items()
-            if "thalamus" in name
+            (name, conn) for name, conn in brain.connections.items() if "thalamus" in name
         ]
 
         assert len(thalamus_pathways) > 0, "Should have pathways to thalamus"
@@ -164,18 +165,29 @@ class TestL6abDefaultBrain:
             _ = brain({"thalamus": sensory_input}, n_timesteps=1)
 
         # Check L6a activity
-        l6a_active = cortex.state.l6a_spikes.sum().item() if cortex.state.l6a_spikes is not None else 0
+        l6a_active = (
+            cortex.state.l6a_spikes.sum().item() if cortex.state.l6a_spikes is not None else 0
+        )
 
         # Check L6b activity
-        l6b_active = cortex.state.l6b_spikes.sum().item() if cortex.state.l6b_spikes is not None else 0
+        l6b_active = (
+            cortex.state.l6b_spikes.sum().item() if cortex.state.l6b_spikes is not None else 0
+        )
 
         # Check thalamus received feedback (may be None if not properly routed)
-        relay_active = thalamus.state.relay_spikes.sum().item() if thalamus.state.relay_spikes is not None else 0
-        trn_active = thalamus.state.trn_spikes.sum().item() if thalamus.state.trn_spikes is not None else 0
+        relay_active = (
+            thalamus.state.relay_spikes.sum().item()
+            if thalamus.state.relay_spikes is not None
+            else 0
+        )
+        trn_active = (
+            thalamus.state.trn_spikes.sum().item() if thalamus.state.trn_spikes is not None else 0
+        )
 
         # Verify thalamus is functional (activity may be sparse or zero)
-        assert thalamus.state.relay_spikes is not None or thalamus.state.relay_membrane is not None, \
-            "Thalamus should have initialized state"
+        assert (
+            thalamus.state.relay_spikes is not None or thalamus.state.relay_membrane is not None
+        ), "Thalamus should have initialized state"
 
         # L6 activity may be sparse/zero with default parameters
         print(f"L6a: {l6a_active}, L6b: {l6b_active}, Relay: {relay_active}, TRN: {trn_active}")
@@ -213,10 +225,14 @@ class TestL6abDefaultBrain:
             _ = brain({"thalamus": sensory_input}, n_timesteps=1)
 
         # Check L6a activity
-        l6a_spikes = cortex.state.l6a_spikes.sum().item() if cortex.state.l6a_spikes is not None else 0
+        l6a_spikes = (
+            cortex.state.l6a_spikes.sum().item() if cortex.state.l6a_spikes is not None else 0
+        )
 
         # Check TRN activity
-        trn_spikes = thalamus.state.trn_spikes.sum().item() if thalamus.state.trn_spikes is not None else 0
+        trn_spikes = (
+            thalamus.state.trn_spikes.sum().item() if thalamus.state.trn_spikes is not None else 0
+        )
 
         print(f"L6a spikes: {l6a_spikes}, TRN spikes: {trn_spikes}")
 
@@ -242,10 +258,16 @@ class TestL6abDefaultBrain:
             _ = brain({"thalamus": sensory_input}, n_timesteps=1)
 
         # Check L6b activity
-        l6b_spikes = cortex.state.l6b_spikes.sum().item() if cortex.state.l6b_spikes is not None else 0
+        l6b_spikes = (
+            cortex.state.l6b_spikes.sum().item() if cortex.state.l6b_spikes is not None else 0
+        )
 
         # Check relay activity (may be None if not yet activated)
-        relay_spikes = thalamus.state.relay_spikes.sum().item() if thalamus.state.relay_spikes is not None else 0
+        relay_spikes = (
+            thalamus.state.relay_spikes.sum().item()
+            if thalamus.state.relay_spikes is not None
+            else 0
+        )
 
         print(f"L6b spikes: {l6b_spikes}, Relay spikes: {relay_spikes}")
 
@@ -280,8 +302,12 @@ class TestL6abDefaultBrain:
         for _ in range(n_timesteps):
             _ = brain({"thalamus": sensory_input}, n_timesteps=1)
 
-            l6a_spikes = cortex.state.l6a_spikes.sum().item() if cortex.state.l6a_spikes is not None else 0
-            l6b_spikes = cortex.state.l6b_spikes.sum().item() if cortex.state.l6b_spikes is not None else 0
+            l6a_spikes = (
+                cortex.state.l6a_spikes.sum().item() if cortex.state.l6a_spikes is not None else 0
+            )
+            l6b_spikes = (
+                cortex.state.l6b_spikes.sum().item() if cortex.state.l6b_spikes is not None else 0
+            )
 
             l6a_activity.append(l6a_spikes)
             l6b_activity.append(l6b_spikes)
@@ -329,15 +355,11 @@ class TestL6abDefaultBrain:
 
         # Should include L6a and L6b metrics (cumulative spike counts in health dict)
         # or active_count in region_specific.layer_activity dict
-        has_l6a = (
-            "l6a_cumulative_spikes" in diagnostics.get("health", {}) or
-            "l6a" in diagnostics.get("region_specific", {}).get("layer_activity", {})
-        )
-        has_l6b = (
-            "l6b_cumulative_spikes" in diagnostics.get("health", {}) or
-            "l6b" in diagnostics.get("region_specific", {}).get("layer_activity", {})
-        )
-        assert has_l6a, \
-            f"Diagnostics should include L6a metrics. Keys: {list(diagnostics.keys())}"
-        assert has_l6b, \
-            f"Diagnostics should include L6b metrics. Keys: {list(diagnostics.keys())}"
+        has_l6a = "l6a_cumulative_spikes" in diagnostics.get(
+            "health", {}
+        ) or "l6a" in diagnostics.get("region_specific", {}).get("layer_activity", {})
+        has_l6b = "l6b_cumulative_spikes" in diagnostics.get(
+            "health", {}
+        ) or "l6b" in diagnostics.get("region_specific", {}).get("layer_activity", {})
+        assert has_l6a, f"Diagnostics should include L6a metrics. Keys: {list(diagnostics.keys())}"
+        assert has_l6b, f"Diagnostics should include L6b metrics. Keys: {list(diagnostics.keys())}"

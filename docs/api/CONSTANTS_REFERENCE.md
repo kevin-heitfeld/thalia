@@ -48,4 +48,3 @@ from thalia.neuromodulation.constants import (
 - [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Config classes that use these constants
 - [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these parameters
 - [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Pre-configured neuron populations
-

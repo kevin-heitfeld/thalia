@@ -88,20 +88,20 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from typing import Optional, Dict, Any, Union
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn
 
 from thalia.components.coding import compute_firing_rate, compute_spike_count
-from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
+from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.components.neurons import create_relay_neurons, create_trn_neurons
-from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, STPConfig, STPType
+from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
 from thalia.constants.regions import (
-    THALAMUS_ALPHA_SUPPRESSION,
     THALAMUS_ALPHA_GATE_THRESHOLD,
+    THALAMUS_ALPHA_SUPPRESSION,
     THALAMUS_BURST_GAIN,
     THALAMUS_BURST_SPIKE_COUNT,
     THALAMUS_BURST_THRESHOLD,
@@ -116,15 +116,15 @@ from thalia.constants.regions import (
     THALAMUS_SURROUND_INHIBITION,
     THALAMUS_SURROUND_WIDTH_RATIO,
     THALAMUS_TONIC_THRESHOLD,
-    THALAMUS_TRN_FEEDBACK_SPARSITY,
     THALAMUS_TRN_FEEDBACK_SCALE,
+    THALAMUS_TRN_FEEDBACK_SPARSITY,
     THALAMUS_TRN_FEEDFORWARD_SPARSITY,
     THALAMUS_TRN_INHIBITION,
     THALAMUS_TRN_RECURRENT,
 )
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.region_state import BaseRegionState
 from thalia.core.neural_region import NeuralRegion
+from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
 from thalia.typing import ThalamicRelayDiagnostics
 from thalia.utils.input_routing import InputRouter
@@ -270,7 +270,7 @@ class ThalamicRelayState(BaseRegionState):
 
     # Short-term plasticity state (HIGH PRIORITY for sensory gating)
     stp_sensory_relay_state: Optional[Dict[str, torch.Tensor]] = None  # Sensory → relay STP
-    stp_l6_feedback_state: Optional[Dict[str, torch.Tensor]] = None    # L6 → relay STP
+    stp_l6_feedback_state: Optional[Dict[str, torch.Tensor]] = None  # L6 → relay STP
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize state to dictionary for checkpointing.
@@ -305,7 +305,7 @@ class ThalamicRelayState(BaseRegionState):
     def from_dict(
         cls,
         data: Dict[str, Any],  # Changed from state_dict to data to match base class
-        device: str = "cpu",   # Changed from Optional[torch.device] to str to match base class
+        device: str = "cpu",  # Changed from Optional[torch.device] to str to match base class
     ) -> ThalamicRelayState:
         """Deserialize state from dictionary.
 
@@ -316,12 +316,15 @@ class ThalamicRelayState(BaseRegionState):
         Returns:
             ThalamicRelayState instance with restored state
         """
+
         def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
             if t is None:
                 return t
             return t.to(device)
 
-        def transfer_nested_dict(d: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+        def transfer_nested_dict(
+            d: Optional[Dict[str, torch.Tensor]],
+        ) -> Optional[Dict[str, torch.Tensor]]:
             """Transfer nested dict of tensors to device."""
             if d is None:
                 return d
@@ -458,7 +461,8 @@ class ThalamicRelay(NeuralRegion):
 
         # Relay gain per neuron (learned modulation of filtered input)
         self.relay_gain = nn.Parameter(
-            torch.ones(self.relay_size, device=self.device, requires_grad=False) * config.relay_strength
+            torch.ones(self.relay_size, device=self.device, requires_grad=False)
+            * config.relay_strength
         )
 
         # Input → TRN (collateral activation)
@@ -470,7 +474,7 @@ class ThalamicRelay(NeuralRegion):
                 scale=THALAMUS_RELAY_SCALE,
                 device=self.device,
             ),
-            requires_grad=False
+            requires_grad=False,
         )
 
         # Relay → TRN (collateral activation)
@@ -482,7 +486,7 @@ class ThalamicRelay(NeuralRegion):
                 scale=THALAMUS_TRN_FEEDBACK_SCALE,
                 device=self.device,
             ),
-            requires_grad=False
+            requires_grad=False,
         )
 
         # TRN → Relay (inhibitory feedback)
@@ -494,7 +498,7 @@ class ThalamicRelay(NeuralRegion):
                 scale=config.trn_inhibition_strength,
                 device=self.device,
             ),
-            requires_grad=False
+            requires_grad=False,
         )
 
         # TRN → TRN (recurrent inhibition for oscillations)
@@ -506,7 +510,7 @@ class ThalamicRelay(NeuralRegion):
                 scale=config.trn_recurrent_strength,
                 device=self.device,
             ),
-            requires_grad=False
+            requires_grad=False,
         )
 
         # =====================================================================
@@ -591,10 +595,10 @@ class ThalamicRelay(NeuralRegion):
         # Register STP modules with their growth patterns:
         if self.stp_sensory_relay is not None:
             # Non-recurrent (n_input -> relay_size): grows in both contexts
-            self._register_stp('stp_sensory_relay', direction='both')
+            self._register_stp("stp_sensory_relay", direction="both")
         if self.stp_l6_feedback is not None:
             # Recurrent (relay_size -> relay_size): only grows during grow_output
-            self._register_stp('stp_l6_feedback', direction='post', recurrent=True)
+            self._register_stp("stp_l6_feedback", direction="post", recurrent=True)
 
         # Note: TRN growth is manual (maintains current ratio, not fixed ratio)
 
@@ -632,27 +636,20 @@ class ThalamicRelay(NeuralRegion):
         input_norm = input_idx / max(1, self.input_size - 1)
 
         # Distance matrix [n_relay, n_input]
-        distances = torch.abs(
-            relay_norm.unsqueeze(1) - input_norm.unsqueeze(0)
-        )
+        distances = torch.abs(relay_norm.unsqueeze(1) - input_norm.unsqueeze(0))
 
         # Center (narrow Gaussian)
         width_center = self.config.spatial_filter_width
-        center = self.config.center_excitation * torch.exp(
-            -distances**2 / (2 * width_center**2)
-        )
+        center = self.config.center_excitation * torch.exp(-(distances**2) / (2 * width_center**2))
 
         # Surround (wider Gaussian)
         width_surround = width_center * THALAMUS_SURROUND_WIDTH_RATIO
         surround = self.config.surround_inhibition * torch.exp(
-            -distances**2 / (2 * width_surround**2)
+            -(distances**2) / (2 * width_surround**2)
         )
 
         # DoG filter
-        self.register_buffer(
-            'center_surround_filter',
-            center - surround
-        )
+        self.register_buffer("center_surround_filter", center - surround)
 
     def set_oscillator_phases(
         self,
@@ -675,8 +672,8 @@ class ThalamicRelay(NeuralRegion):
         super().set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
 
         # Store alpha amplitude from signals for gating
-        if signals and 'alpha' in signals:
-            self._alpha_amplitude = signals['alpha']
+        if signals and "alpha" in signals:
+            self._alpha_amplitude = signals["alpha"]
 
     def _compute_alpha_gate(self) -> torch.Tensor:
         """Compute attentional gating from alpha oscillation.
@@ -732,8 +729,8 @@ class ThalamicRelay(NeuralRegion):
             torch.where(
                 tonic_mask,
                 torch.ones_like(membrane),  # Tonic mode
-                self.state.current_mode  # Maintain
-            )
+                self.state.current_mode,  # Maintain
+            ),
         )
 
         return self.state.current_mode
@@ -784,12 +781,12 @@ class ThalamicRelay(NeuralRegion):
             return torch.zeros(self.n_output, dtype=torch.bool, device=self.device)
 
         # ADR-005: Expect 1D input
-        assert input_spikes.dim() == 1, (
-            f"Thalamus.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
-        )
-        assert input_spikes.shape[0] == self.input_size, (
-            f"Thalamus.forward: input has {input_spikes.shape[0]} neurons, expected {self.input_size}"
-        )
+        assert (
+            input_spikes.dim() == 1
+        ), f"Thalamus.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
+        assert (
+            input_spikes.shape[0] == self.input_size
+        ), f"Thalamus.forward: input has {input_spikes.shape[0]} neurons, expected {self.input_size}"
 
         # =====================================================================
         # 1. APPLY CENTER-SURROUND SPATIAL FILTER
@@ -797,10 +794,9 @@ class ThalamicRelay(NeuralRegion):
         # Filter input spikes spatially before relay (ADR-005: 1D)
         # Convert bool to float for matmul (ADR-004)
         input_float = input_spikes.float()
-        filtered_input = torch.mv(
-            self.center_surround_filter,
-            input_float
-        ).clamp(min=0)  # [n_relay]
+        filtered_input = torch.mv(self.center_surround_filter, input_float).clamp(
+            min=0
+        )  # [n_relay]
 
         # Apply STP to sensory input → relay if enabled
         # CRITICAL for novelty detection and attention capture
@@ -809,7 +805,9 @@ class ThalamicRelay(NeuralRegion):
             sensory_efficacy = self.stp_sensory_relay(input_spikes.float())  # [n_input, n_relay]
             # Transpose to match filter output shape [n_relay]
             # Apply efficacy as multiplicative modulation of filtered input
-            filtered_input = filtered_input * sensory_efficacy.mean(dim=0)  # Average over input neurons
+            filtered_input = filtered_input * sensory_efficacy.mean(
+                dim=0
+            )  # Average over input neurons
 
         # =====================================================================
         # 2. COMPUTE ALPHA ATTENTIONAL GATE
@@ -849,7 +847,9 @@ class ThalamicRelay(NeuralRegion):
             if self.stp_l6_feedback is not None:
                 # L6 feedback depression: Sustained cortical feedback reduces thalamic transmission
                 # Implements efficient filtering: Cortex can suppress irrelevant thalamic activity
-                l6_efficacy = self.stp_l6_feedback(cortical_l6b_feedback.float())  # [n_relay, n_relay]
+                l6_efficacy = self.stp_l6_feedback(
+                    cortical_l6b_feedback.float()
+                )  # [n_relay, n_relay]
                 # Apply per-postsynaptic efficacy (diagonal since L6b size == relay size)
                 l6b_excitation = l6b_excitation * l6_efficacy.diag()
 
@@ -864,32 +864,35 @@ class ThalamicRelay(NeuralRegion):
                 # Initialize buffer if needed
                 if self._trn_relay_delay_buffer is None:
                     self._trn_relay_delay_buffer = torch.zeros(
-                        self._trn_relay_delay_steps, self.n_trn,
+                        self._trn_relay_delay_steps,
+                        self.n_trn,
                         dtype=torch.bool,
-                        device=self.device
+                        device=self.device,
                     )
                     self._trn_relay_delay_ptr = 0
 
                 # Read delayed TRN spikes
-                read_idx = (self._trn_relay_delay_ptr - self._trn_relay_delay_steps) % self._trn_relay_delay_buffer.shape[0]
+                read_idx = (
+                    self._trn_relay_delay_ptr - self._trn_relay_delay_steps
+                ) % self._trn_relay_delay_buffer.shape[0]
                 trn_spikes_delayed = self._trn_relay_delay_buffer[read_idx]
 
                 # Write current TRN spikes to buffer
                 self._trn_relay_delay_buffer[self._trn_relay_delay_ptr] = self.state.trn_spikes
 
                 # Advance pointer (circular buffer)
-                self._trn_relay_delay_ptr = (self._trn_relay_delay_ptr + 1) % self._trn_relay_delay_buffer.shape[0]
+                self._trn_relay_delay_ptr = (
+                    self._trn_relay_delay_ptr + 1
+                ) % self._trn_relay_delay_buffer.shape[0]
 
                 # Compute inhibition from delayed spikes
                 relay_inhibition = torch.mv(
-                    self.trn_to_relay,
-                    trn_spikes_delayed.float()
+                    self.trn_to_relay, trn_spikes_delayed.float()
                 )  # [n_relay]
             else:
                 # No delay (instantaneous inhibition)
                 relay_inhibition = torch.mv(
-                    self.trn_to_relay,
-                    self.state.trn_spikes.float()
+                    self.trn_to_relay, self.state.trn_spikes.float()
                 )  # [n_relay]
         else:
             relay_inhibition = torch.zeros(self.n_relay, device=self.device)
@@ -912,9 +915,7 @@ class ThalamicRelay(NeuralRegion):
         if burst_mask.any():
             # Amplify burst spikes
             burst_amplified = torch.where(
-                burst_mask,
-                burst_amplified * self.config.burst_gain,
-                burst_amplified
+                burst_mask, burst_amplified * self.config.burst_gain, burst_amplified
             )
 
         # Binarize and convert to bool (ADR-004)
@@ -954,10 +955,7 @@ class ThalamicRelay(NeuralRegion):
 
         # TRN recurrent inhibition
         if self.state.trn_spikes is not None:
-            trn_inhibition = torch.mv(
-                self.trn_recurrent,
-                self.state.trn_spikes.float()
-            )  # [n_trn]
+            trn_inhibition = torch.mv(self.trn_recurrent, self.state.trn_spikes.float())  # [n_trn]
         else:
             trn_inhibition = torch.zeros(self.n_trn, device=self.device)
 
@@ -1002,8 +1000,16 @@ class ThalamicRelay(NeuralRegion):
         stp_sensory_state = None
         if self.stp_sensory_relay is not None:
             stp_sensory_state = {
-                "u": self.stp_sensory_relay.u.clone() if self.stp_sensory_relay.u is not None else None,
-                "x": self.stp_sensory_relay.x.clone() if self.stp_sensory_relay.x is not None else None,
+                "u": (
+                    self.stp_sensory_relay.u.clone()
+                    if self.stp_sensory_relay.u is not None
+                    else None
+                ),
+                "x": (
+                    self.stp_sensory_relay.x.clone()
+                    if self.stp_sensory_relay.x is not None
+                    else None
+                ),
             }
 
         stp_l6_state = None
@@ -1022,14 +1028,24 @@ class ThalamicRelay(NeuralRegion):
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
             # Relay neuron state
-            relay_spikes=self.state.relay_spikes.clone() if self.state.relay_spikes is not None else None,
-            relay_membrane=self.state.relay_membrane.clone() if self.state.relay_membrane is not None else None,
+            relay_spikes=(
+                self.state.relay_spikes.clone() if self.state.relay_spikes is not None else None
+            ),
+            relay_membrane=(
+                self.state.relay_membrane.clone() if self.state.relay_membrane is not None else None
+            ),
             # TRN state
             trn_spikes=self.state.trn_spikes.clone() if self.state.trn_spikes is not None else None,
-            trn_membrane=self.state.trn_membrane.clone() if self.state.trn_membrane is not None else None,
+            trn_membrane=(
+                self.state.trn_membrane.clone() if self.state.trn_membrane is not None else None
+            ),
             # Mode state
-            current_mode=self.state.current_mode.clone() if self.state.current_mode is not None else None,
-            burst_counter=self.state.burst_counter.clone() if self.state.burst_counter is not None else None,
+            current_mode=(
+                self.state.current_mode.clone() if self.state.current_mode is not None else None
+            ),
+            burst_counter=(
+                self.state.burst_counter.clone() if self.state.burst_counter is not None else None
+            ),
             # Gating state
             alpha_gate=self.state.alpha_gate.clone() if self.state.alpha_gate is not None else None,
             # STP state
@@ -1051,16 +1067,26 @@ class ThalamicRelay(NeuralRegion):
         self.state.norepinephrine = state.norepinephrine
 
         # Restore relay neuron state
-        self.state.relay_spikes = state.relay_spikes.clone() if state.relay_spikes is not None else None
-        self.state.relay_membrane = state.relay_membrane.clone() if state.relay_membrane is not None else None
+        self.state.relay_spikes = (
+            state.relay_spikes.clone() if state.relay_spikes is not None else None
+        )
+        self.state.relay_membrane = (
+            state.relay_membrane.clone() if state.relay_membrane is not None else None
+        )
 
         # Restore TRN state
         self.state.trn_spikes = state.trn_spikes.clone() if state.trn_spikes is not None else None
-        self.state.trn_membrane = state.trn_membrane.clone() if state.trn_membrane is not None else None
+        self.state.trn_membrane = (
+            state.trn_membrane.clone() if state.trn_membrane is not None else None
+        )
 
         # Restore mode state
-        self.state.current_mode = state.current_mode.clone() if state.current_mode is not None else None
-        self.state.burst_counter = state.burst_counter.clone() if state.burst_counter is not None else None
+        self.state.current_mode = (
+            state.current_mode.clone() if state.current_mode is not None else None
+        )
+        self.state.burst_counter = (
+            state.burst_counter.clone() if state.burst_counter is not None else None
+        )
 
         # Restore gating state
         self.state.alpha_gate = state.alpha_gate.clone() if state.alpha_gate is not None else None
@@ -1118,13 +1144,17 @@ class ThalamicRelay(NeuralRegion):
         """
         from thalia.core.diagnostics_schema import (
             compute_activity_metrics,
-            compute_plasticity_metrics,
             compute_health_metrics,
+            compute_plasticity_metrics,
         )
 
         # Compute activity metrics from relay neurons (primary output)
         activity = compute_activity_metrics(
-            output_spikes=self.state.relay_spikes if self.state.relay_spikes is not None else torch.zeros(self.n_relay, device=self.device),
+            output_spikes=(
+                self.state.relay_spikes
+                if self.state.relay_spikes is not None
+                else torch.zeros(self.n_relay, device=self.device)
+            ),
             total_neurons=self.n_relay,
         )
 
@@ -1143,8 +1173,16 @@ class ThalamicRelay(NeuralRegion):
 
         # Compute health metrics
         health_tensors = {
-            "relay_spikes": self.state.relay_spikes if self.state.relay_spikes is not None else torch.zeros(self.n_relay, device=self.device),
-            "trn_spikes": self.state.trn_spikes if self.state.trn_spikes is not None else torch.zeros(self.n_trn, device=self.device),
+            "relay_spikes": (
+                self.state.relay_spikes
+                if self.state.relay_spikes is not None
+                else torch.zeros(self.n_relay, device=self.device)
+            ),
+            "trn_spikes": (
+                self.state.trn_spikes
+                if self.state.trn_spikes is not None
+                else torch.zeros(self.n_trn, device=self.device)
+            ),
         }
         if self.state.relay_membrane is not None:
             health_tensors["relay_membrane"] = self.state.relay_membrane
@@ -1158,7 +1196,9 @@ class ThalamicRelay(NeuralRegion):
 
         # Add thalamus-specific health metrics
         if self.state.current_mode is not None:
-            burst_fraction = (self.state.current_mode < THALAMUS_MODE_THRESHOLD).float().mean().item()
+            burst_fraction = (
+                (self.state.current_mode < THALAMUS_MODE_THRESHOLD).float().mean().item()
+            )
             health["burst_mode_fraction"] = burst_fraction
             health["tonic_mode_fraction"] = 1.0 - burst_fraction
 
@@ -1213,7 +1253,7 @@ class ThalamicRelay(NeuralRegion):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow thalamus input dimension when upstream region grows.
@@ -1237,14 +1277,11 @@ class ThalamicRelay(NeuralRegion):
         # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)
         # Expand input_to_trn [n_trn, input] → [n_trn, input+n_new]
         self.input_to_trn.data = self._grow_weight_matrix_cols(
-            self.input_to_trn.data,
-            n_new,
-            initializer=initialization,
-            sparsity=sparsity
+            self.input_to_trn.data, n_new, initializer=initialization, sparsity=sparsity
         )
 
         # Phase 2: Auto-grow registered STP modules
-        self._auto_grow_registered_components('input', n_new)
+        self._auto_grow_registered_components("input", n_new)
 
         # Rebuild center-surround filter with new input size
         self.input_size = new_n_input
@@ -1253,7 +1290,7 @@ class ThalamicRelay(NeuralRegion):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow thalamus output dimension (relay neuron population).
@@ -1284,51 +1321,33 @@ class ThalamicRelay(NeuralRegion):
         # 2. Expand input_to_trn [n_trn, input] → [n_trn+growth, input]
         if n_trn_growth > 0:
             self.input_to_trn.data = self._grow_weight_matrix_rows(
-                self.input_to_trn.data,
-                n_trn_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                self.input_to_trn.data, n_trn_growth, initializer=initialization, sparsity=sparsity
             )
 
         # 3. Expand relay_to_trn [n_trn, n_relay] → [n_trn+growth, n_relay+n_new]
         if n_trn_growth > 0:
             # Add rows then columns for new TRN and relay neurons
             expanded_relay_trn = self._grow_weight_matrix_rows(
-                self.relay_to_trn.data,
-                n_trn_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                self.relay_to_trn.data, n_trn_growth, initializer=initialization, sparsity=sparsity
             )
             self.relay_to_trn.data = self._grow_weight_matrix_cols(
-                expanded_relay_trn,
-                n_new,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_relay_trn, n_new, initializer=initialization, sparsity=sparsity
             )
         else:
             # Just add columns
             self.relay_to_trn.data = self._grow_weight_matrix_cols(
-                self.relay_to_trn.data,
-                n_new,
-                initializer=initialization,
-                sparsity=sparsity
+                self.relay_to_trn.data, n_new, initializer=initialization, sparsity=sparsity
             )
 
         # 4. Expand trn_to_relay [n_relay, n_trn] → [n_relay+n_new, n_trn+growth]
         # Add rows for new relay neurons
         expanded_trn_relay = self._grow_weight_matrix_rows(
-            self.trn_to_relay.data,
-            n_new,
-            initializer=initialization,
-            sparsity=sparsity
+            self.trn_to_relay.data, n_new, initializer=initialization, sparsity=sparsity
         )
         if n_trn_growth > 0:
             # Add columns for new TRN neurons
             self.trn_to_relay.data = self._grow_weight_matrix_cols(
-                expanded_trn_relay,
-                n_trn_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_trn_relay, n_trn_growth, initializer=initialization, sparsity=sparsity
             )
         else:
             self.trn_to_relay.data = expanded_trn_relay
@@ -1336,16 +1355,10 @@ class ThalamicRelay(NeuralRegion):
         # 5. Expand trn_recurrent [n_trn, n_trn] → [n_trn+growth, n_trn+growth]
         if n_trn_growth > 0:
             expanded_trn_recurrent = self._grow_weight_matrix_rows(
-                self.trn_recurrent.data,
-                n_trn_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                self.trn_recurrent.data, n_trn_growth, initializer=initialization, sparsity=sparsity
             )
             self.trn_recurrent.data = self._grow_weight_matrix_cols(
-                expanded_trn_recurrent,
-                n_trn_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_trn_recurrent, n_trn_growth, initializer=initialization, sparsity=sparsity
             )
 
         # 6. Expand neuron populations using efficient in-place growth (ConductanceLIF)
@@ -1360,7 +1373,7 @@ class ThalamicRelay(NeuralRegion):
             self.trn_neurons.grow_neurons(n_trn_growth)
 
         # Phase 2: Auto-grow registered STP modules
-        self._auto_grow_registered_components('output', n_new)
+        self._auto_grow_registered_components("output", n_new)
 
         # 7. Update instance size tracking
         self.relay_size = new_n_relay
@@ -1374,7 +1387,7 @@ class ThalamicRelay(NeuralRegion):
     def grow_relay(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow relay neuron population (SEMANTIC API).
@@ -1401,7 +1414,7 @@ class ThalamicRelay(NeuralRegion):
         but TRN can learn attention patterns. For now, keep fixed.
         """
         return {
-            'thalamus_learning': 0.0,
+            "thalamus_learning": 0.0,
         }
 
     def get_full_state(self) -> Dict[str, Any]:
@@ -1416,7 +1429,7 @@ class ThalamicRelay(NeuralRegion):
 
 
 __all__ = [
-    'ThalamicRelay',
-    'ThalamicRelayConfig',
-    'ThalamicRelayState',
+    "ThalamicRelay",
+    "ThalamicRelayConfig",
+    "ThalamicRelayState",
 ]

@@ -14,14 +14,15 @@ Run this as part of CI/CD or pre-commit hooks.
 import ast
 import re
 import sys
-from pathlib import Path
-from typing import List, Dict, Set, Tuple
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Set, Tuple
 
 
 @dataclass
 class ValidationResult:
     """Results from documentation validation."""
+
     passed: bool = True
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -53,7 +54,7 @@ class DocumentationValidator:
 
         for py_file in self.src_dir.rglob("*.py"):
             try:
-                with open(py_file, 'r', encoding='utf-8') as f:
+                with open(py_file, "r", encoding="utf-8") as f:
                     tree = ast.parse(f.read(), filename=str(py_file))
 
                 for node in ast.walk(tree):
@@ -72,7 +73,7 @@ class DocumentationValidator:
 
         for py_file in self.src_dir.rglob("*.py"):
             try:
-                with open(py_file, 'r', encoding='utf-8') as f:
+                with open(py_file, "r", encoding="utf-8") as f:
                     tree = ast.parse(f.read(), filename=str(py_file))
 
                 for node in ast.walk(tree):
@@ -115,7 +116,7 @@ class DocumentationValidator:
     def _validate_markdown_file(self, md_file: Path, result: ValidationResult) -> None:
         """Validate a single markdown file."""
         try:
-            with open(md_file, 'r', encoding='utf-8') as f:
+            with open(md_file, "r", encoding="utf-8") as f:
                 content = f.read()
         except UnicodeDecodeError:
             result.add_warning(f"{md_file}: Could not read file (encoding issue)")
@@ -137,11 +138,7 @@ class DocumentationValidator:
         return matches
 
     def _validate_python_code(
-        self,
-        code: str,
-        file_path: Path,
-        block_num: int,
-        result: ValidationResult
+        self, code: str, file_path: Path, block_num: int, result: ValidationResult
     ) -> None:
         """Validate Python code block."""
 
@@ -160,8 +157,7 @@ class DocumentationValidator:
         for pattern, old, new in outdated_patterns:
             if re.search(pattern, code):
                 result.add_error(
-                    f"{file_path} (block {block_num}): Uses outdated '{old}', "
-                    f"should be '{new}'"
+                    f"{file_path} (block {block_num}): Uses outdated '{old}', " f"should be '{new}'"
                 )
 
         # Check imports
@@ -171,11 +167,7 @@ class DocumentationValidator:
         self._validate_function_calls(code, file_path, block_num, result)
 
     def _validate_imports(
-        self,
-        code: str,
-        file_path: Path,
-        block_num: int,
-        result: ValidationResult
+        self, code: str, file_path: Path, block_num: int, result: ValidationResult
     ) -> None:
         """Validate import statements using AST parsing to handle multi-line imports."""
 
@@ -196,7 +188,7 @@ class DocumentationValidator:
                 # Extract imported names
                 imports = []
                 for alias in node.names:
-                    if alias.name == '*':
+                    if alias.name == "*":
                         continue  # Skip wildcard imports
                     imports.append(alias.name)
 
@@ -219,11 +211,7 @@ class DocumentationValidator:
                             pass
 
     def _validate_function_calls(
-        self,
-        code: str,
-        file_path: Path,
-        block_num: int,
-        result: ValidationResult
+        self, code: str, file_path: Path, block_num: int, result: ValidationResult
     ) -> None:
         """Validate function calls against actual codebase."""
 

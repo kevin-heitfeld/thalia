@@ -13,8 +13,9 @@ Date: January 14, 2026
 
 import pytest
 import torch
-from thalia.core.dynamic_brain import BrainBuilder
+
 from thalia.config import GlobalConfig
+from thalia.core.dynamic_brain import BrainBuilder
 
 
 @pytest.fixture
@@ -31,8 +32,12 @@ class TestMultiSourceWeightStructure:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -57,16 +62,26 @@ class TestMultiSourceWeightStructure:
 
         assert striatum.synaptic_weights["cortex:l5_d1"].shape == (striatum.d1_size, cortex.l5_size)
         assert striatum.synaptic_weights["cortex:l5_d2"].shape == (striatum.d2_size, cortex.l5_size)
-        assert striatum.synaptic_weights["hippocampus_d1"].shape == (striatum.d1_size, hippo.n_output)
-        assert striatum.synaptic_weights["hippocampus_d2"].shape == (striatum.d2_size, hippo.n_output)
+        assert striatum.synaptic_weights["hippocampus_d1"].shape == (
+            striatum.d1_size,
+            hippo.n_output,
+        )
+        assert striatum.synaptic_weights["hippocampus_d2"].shape == (
+            striatum.d2_size,
+            hippo.n_output,
+        )
 
     def test_eligibility_traces_per_source(self, global_config):
         """Test that eligibility traces are tracked per source-pathway."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -80,7 +95,7 @@ class TestMultiSourceWeightStructure:
         # Initialize eligibility traces by running forward pass once
         dummy_inputs = {
             "cortex:l5": torch.zeros(32, device=striatum.device),
-            "hippocampus": torch.zeros(64, device=striatum.device)
+            "hippocampus": torch.zeros(64, device=striatum.device),
         }
         striatum(dummy_inputs)
 
@@ -91,8 +106,14 @@ class TestMultiSourceWeightStructure:
         assert "hippocampus_d2" in striatum._eligibility_d2
 
         # Verify eligibility dimensions match weights
-        assert striatum._eligibility_d1["cortex:l5_d1"].shape == striatum.synaptic_weights["cortex:l5_d1"].shape
-        assert striatum._eligibility_d2["cortex:l5_d2"].shape == striatum.synaptic_weights["cortex:l5_d2"].shape
+        assert (
+            striatum._eligibility_d1["cortex:l5_d1"].shape
+            == striatum.synaptic_weights["cortex:l5_d1"].shape
+        )
+        assert (
+            striatum._eligibility_d2["cortex:l5_d2"].shape
+            == striatum.synaptic_weights["cortex:l5_d2"].shape
+        )
 
     def test_stp_modules_per_source(self, global_config):
         """Test that STP modules are created per source-pathway."""
@@ -100,8 +121,12 @@ class TestMultiSourceWeightStructure:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10, stp_enabled=True)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=10, stp_enabled=True
+        )
 
         builder.connect("thalamus", "cortex")
         builder.connect("cortex", "striatum", source_port="l5")
@@ -127,8 +152,12 @@ class TestMultiSourceForwardPass:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -143,10 +172,7 @@ class TestMultiSourceForwardPass:
         cortex_spikes = torch.rand(32) > 0.9  # Sparse spikes
         hippo_spikes = torch.rand(64) > 0.9
 
-        inputs = {
-            "cortex:l5": cortex_spikes,
-            "hippocampus": hippo_spikes
-        }
+        inputs = {"cortex:l5": cortex_spikes, "hippocampus": hippo_spikes}
 
         # Forward pass should work
         output = striatum(inputs)
@@ -159,8 +185,12 @@ class TestMultiSourceForwardPass:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -199,8 +229,12 @@ class TestMultiSourceLearning:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -214,7 +248,7 @@ class TestMultiSourceLearning:
         # Initialize eligibility traces by running forward pass once
         dummy_inputs = {
             "cortex:l5": torch.zeros(32, device=striatum.device),
-            "hippocampus": torch.zeros(64, device=striatum.device)
+            "hippocampus": torch.zeros(64, device=striatum.device),
         }
         striatum(dummy_inputs)
 
@@ -231,8 +265,12 @@ class TestMultiSourceLearning:
                 break
 
         # Cortex eligibility should change, hippocampus should not
-        cortex_changed = not torch.allclose(striatum._eligibility_d1["cortex:l5_d1"], initial_elig_cortex_d1)
-        hippo_unchanged = torch.allclose(striatum._eligibility_d1["hippocampus_d1"], initial_elig_hippo_d1)
+        cortex_changed = not torch.allclose(
+            striatum._eligibility_d1["cortex:l5_d1"], initial_elig_cortex_d1
+        )
+        hippo_unchanged = torch.allclose(
+            striatum._eligibility_d1["hippocampus_d1"], initial_elig_hippo_d1
+        )
 
         assert cortex_changed, (
             f"Cortex eligibility should update when cortex spikes "
@@ -246,8 +284,12 @@ class TestMultiSourceLearning:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -273,8 +315,12 @@ class TestMultiSourceLearning:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -286,10 +332,7 @@ class TestMultiSourceLearning:
         striatum = brain.components["striatum"]
 
         # Build eligibility by running forward pass
-        inputs = {
-            "cortex:l5": torch.rand(32) > 0.7,
-            "hippocampus": torch.rand(64) > 0.7
-        }
+        inputs = {"cortex:l5": torch.rand(32) > 0.7, "hippocampus": torch.rand(64) > 0.7}
         striatum(inputs)
 
         # Store weights before learning
@@ -307,7 +350,9 @@ class TestMultiSourceLearning:
         cortex_changed = not torch.allclose(cortex_d1_before, cortex_d1_after)
         hippo_changed = not torch.allclose(hippo_d1_before, hippo_d1_after)
 
-        assert cortex_changed or hippo_changed, "At least one source should have weight changes after learning"
+        assert (
+            cortex_changed or hippo_changed
+        ), "At least one source should have weight changes after learning"
         assert "d1_ltp" in metrics, "Learning metrics should be returned"
 
 
@@ -319,7 +364,9 @@ class TestMultiSourceGrowth:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")
@@ -343,18 +390,28 @@ class TestMultiSourceGrowth:
         new_d1_shape = striatum.synaptic_weights["cortex:l5_d1"].shape
         new_d2_shape = striatum.synaptic_weights["cortex:l5_d2"].shape
 
-        assert new_d1_shape[0] == initial_d1_neurons, f"D1 neurons should stay {initial_d1_neurons}, got {new_d1_shape[0]}"
-        assert new_d1_shape[1] == new_l5_size, f"D1 input should be {new_l5_size}, got {new_d1_shape[1]}"
+        assert (
+            new_d1_shape[0] == initial_d1_neurons
+        ), f"D1 neurons should stay {initial_d1_neurons}, got {new_d1_shape[0]}"
+        assert (
+            new_d1_shape[1] == new_l5_size
+        ), f"D1 input should be {new_l5_size}, got {new_d1_shape[1]}"
 
-        assert new_d2_shape[0] == initial_d2_neurons, f"D2 neurons should stay {initial_d2_neurons}, got {new_d2_shape[0]}"
-        assert new_d2_shape[1] == new_l5_size, f"D2 input should be {new_l5_size}, got {new_d2_shape[1]}"
+        assert (
+            new_d2_shape[0] == initial_d2_neurons
+        ), f"D2 neurons should stay {initial_d2_neurons}, got {new_d2_shape[0]}"
+        assert (
+            new_d2_shape[1] == new_l5_size
+        ), f"D2 input should be {new_l5_size}, got {new_d2_shape[1]}"
 
     def test_grow_input_raises_error(self, global_config):
         """Test that grow_input raises NotImplementedError directing to grow_source."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
         builder.connect("thalamus", "cortex")

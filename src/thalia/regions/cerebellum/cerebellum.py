@@ -59,26 +59,22 @@ When to Use:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
 import math
-from typing import Optional, Dict, Any, Union
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Optional, Union
 
 import torch
 
-from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.component_state import NeuralComponentState
-from thalia.core.neural_region import NeuralRegion
-from thalia.core.region_state import BaseRegionState
 from thalia.components.neurons import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
-    V_THRESHOLD_STANDARD,
-    V_RESET_STANDARD,
-    E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    E_LEAK,
+    V_RESET_STANDARD,
+    V_THRESHOLD_STANDARD,
+    ConductanceLIF,
+    ConductanceLIFConfig,
 )
-from thalia.components.synapses import WeightInitializer, ShortTermPlasticity, STPConfig, STPType
+from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
 from thalia.config.learning_config import ErrorCorrectiveLearningConfig
 from thalia.constants.neuromodulation import (
     ACH_BASELINE,
@@ -86,12 +82,20 @@ from thalia.constants.neuromodulation import (
     NE_BASELINE,
     compute_ne_gain,
 )
-from thalia.learning import EligibilityTraceManager, EligibilitySTDPConfig as STDPConfig
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.core.component_state import NeuralComponentState
+from thalia.core.neural_region import NeuralRegion
+from thalia.core.region_state import BaseRegionState
+from thalia.learning import EligibilitySTDPConfig as STDPConfig
+from thalia.learning import EligibilityTraceManager
+from thalia.learning.homeostasis.synaptic_homeostasis import (
+    UnifiedHomeostasis,
+    UnifiedHomeostasisConfig,
+)
 from thalia.managers.component_registry import register_region
 from thalia.regions.cerebellum import (
-    EnhancedPurkinjeCell,
     DeepCerebellarNuclei,
+    EnhancedPurkinjeCell,
     GranuleCellLayer,
 )
 from thalia.typing import CerebellumDiagnostics
@@ -288,35 +292,35 @@ class CerebellumState(BaseRegionState):
     # ========================================================================
     # TRACE MANAGER STATE (both modes)
     # ========================================================================
-    input_trace: Optional[torch.Tensor] = None              # [n_input] or [n_granule] if enhanced
-    output_trace: Optional[torch.Tensor] = None             # [n_output]
-    stdp_eligibility: Optional[torch.Tensor] = None         # [n_output, n_input/n_granule]
+    input_trace: Optional[torch.Tensor] = None  # [n_input] or [n_granule] if enhanced
+    output_trace: Optional[torch.Tensor] = None  # [n_output]
+    stdp_eligibility: Optional[torch.Tensor] = None  # [n_output, n_input/n_granule]
 
     # ========================================================================
     # CLIMBING FIBER ERROR (both modes)
     # ========================================================================
-    climbing_fiber_error: Optional[torch.Tensor] = None     # [n_output] - Error signal from IO
-    io_membrane: Optional[torch.Tensor] = None              # [n_output] - IO membrane for gap junctions
+    climbing_fiber_error: Optional[torch.Tensor] = None  # [n_output] - Error signal from IO
+    io_membrane: Optional[torch.Tensor] = None  # [n_output] - IO membrane for gap junctions
 
     # ========================================================================
     # CLASSIC MODE NEURON STATE (use_enhanced=False)
     # ========================================================================
-    v_mem: Optional[torch.Tensor] = None           # [n_output] - Membrane voltage
-    g_exc: Optional[torch.Tensor] = None           # [n_output] - Excitatory conductance
-    g_inh: Optional[torch.Tensor] = None           # [n_output] - Inhibitory conductance
+    v_mem: Optional[torch.Tensor] = None  # [n_output] - Membrane voltage
+    g_exc: Optional[torch.Tensor] = None  # [n_output] - Excitatory conductance
+    g_inh: Optional[torch.Tensor] = None  # [n_output] - Inhibitory conductance
 
     # ========================================================================
     # SHORT-TERM PLASTICITY STATE
     # ========================================================================
     stp_pf_purkinje_state: Optional[Dict[str, torch.Tensor]] = None  # Classic mode STP
-    stp_mf_granule_state: Optional[Dict[str, torch.Tensor]] = None   # Enhanced mode STP
+    stp_mf_granule_state: Optional[Dict[str, torch.Tensor]] = None  # Enhanced mode STP
 
     # ========================================================================
     # ENHANCED MICROCIRCUIT STATE (use_enhanced=True)
     # ========================================================================
-    granule_layer_state: Optional[Dict[str, Any]] = None       # GranuleCellLayer state
-    purkinje_cells_state: Optional[list] = None                # List of EnhancedPurkinjeCell states
-    deep_nuclei_state: Optional[Dict[str, Any]] = None         # DeepCerebellarNuclei state
+    granule_layer_state: Optional[Dict[str, Any]] = None  # GranuleCellLayer state
+    purkinje_cells_state: Optional[list] = None  # List of EnhancedPurkinjeCell states
+    deep_nuclei_state: Optional[Dict[str, Any]] = None  # DeepCerebellarNuclei state
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize state to dictionary.
@@ -329,25 +333,20 @@ class CerebellumState(BaseRegionState):
             "input_trace": self.input_trace,
             "output_trace": self.output_trace,
             "stdp_eligibility": self.stdp_eligibility,
-
             # Error signal
             "climbing_fiber_error": self.climbing_fiber_error,
             "io_membrane": self.io_membrane,
-
             # Classic neuron state
             "v_mem": self.v_mem,
             "g_exc": self.g_exc,
             "g_inh": self.g_inh,
-
             # STP state
             "stp_pf_purkinje_state": self.stp_pf_purkinje_state,
             "stp_mf_granule_state": self.stp_mf_granule_state,
-
             # Neuromodulators
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
             "norepinephrine": self.norepinephrine,
-
             # Enhanced microcircuit
             "granule_layer_state": self.granule_layer_state,
             "purkinje_cells_state": self.purkinje_cells_state,
@@ -372,7 +371,9 @@ class CerebellumState(BaseRegionState):
             return tensor.to(dev) if tensor is not None else None
 
         # Helper for STP state dicts
-        def stp_to_device(stp_state: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+        def stp_to_device(
+            stp_state: Optional[Dict[str, torch.Tensor]],
+        ) -> Optional[Dict[str, torch.Tensor]]:
             if stp_state is None:
                 return None
             return {k: v.to(dev) if v is not None else None for k, v in stp_state.items()}
@@ -382,24 +383,19 @@ class CerebellumState(BaseRegionState):
             input_trace=to_device(data.get("input_trace")),
             output_trace=to_device(data.get("output_trace")),
             stdp_eligibility=to_device(data.get("stdp_eligibility")),
-
             # Error signal (may be None if state is uninitialized)
             climbing_fiber_error=to_device(data.get("climbing_fiber_error")),
-
             # Classic neuron state (optional)
             v_mem=to_device(data.get("v_mem")),
             g_exc=to_device(data.get("g_exc")),
             g_inh=to_device(data.get("g_inh")),
-
             # STP state (optional)
             stp_pf_purkinje_state=stp_to_device(data.get("stp_pf_purkinje_state")),
             stp_mf_granule_state=stp_to_device(data.get("stp_mf_granule_state")),
-
             # Neuromodulators (base tonic baseline)
             dopamine=data.get("dopamine", DA_BASELINE_STANDARD),
             acetylcholine=data.get("acetylcholine", ACH_BASELINE),
             norepinephrine=data.get("norepinephrine", NE_BASELINE),
-
             # Enhanced microcircuit (optional)
             granule_layer_state=data.get("granule_layer_state"),
             purkinje_cells_state=data.get("purkinje_cells_state"),
@@ -547,11 +543,15 @@ class Cerebellum(NeuralRegion):
         self.device = torch.device(device)
 
         # Extract sizes
-        self.input_size = sizes['input_size']
-        self.granule_size = sizes['granule_size']
-        self.purkinje_size = sizes['purkinje_size']
+        self.input_size = sizes["input_size"]
+        self.granule_size = sizes["granule_size"]
+        self.purkinje_size = sizes["purkinje_size"]
         self.n_output = self.purkinje_size  # Purkinje cells are output
-        self.total_neurons = (self.granule_size + self.purkinje_size) if config.use_enhanced_microcircuit else self.purkinje_size
+        self.total_neurons = (
+            (self.granule_size + self.purkinje_size)
+            if config.use_enhanced_microcircuit
+            else self.purkinje_size
+        )
 
         # Initialize NeuralRegion (Phase 2 pattern)
         super().__init__(
@@ -585,15 +585,17 @@ class Cerebellum(NeuralRegion):
 
             # Enhanced Purkinje cells (one per output neuron)
             # Pass granule layer size as n_parallel_fibers for eager initialization
-            self.purkinje_cells = torch.nn.ModuleList([
-                EnhancedPurkinjeCell(
-                    n_parallel_fibers=self.granule_layer.n_granule,
-                    n_dendrites=self.config.purkinje_n_dendrites,
-                    device=device,
-                    dt_ms=config.dt_ms,
-                )
-                for _ in range(self.purkinje_size)
-            ])
+            self.purkinje_cells = torch.nn.ModuleList(
+                [
+                    EnhancedPurkinjeCell(
+                        n_parallel_fibers=self.granule_layer.n_granule,
+                        n_dendrites=self.config.purkinje_n_dendrites,
+                        device=device,
+                        dt_ms=config.dt_ms,
+                    )
+                    for _ in range(self.purkinje_size)
+                ]
+            )
 
             # Deep cerebellar nuclei (final output)
             self.deep_nuclei = DeepCerebellarNuclei(
@@ -674,10 +676,7 @@ class Cerebellum(NeuralRegion):
             self.stp_pf_purkinje = ShortTermPlasticity(
                 n_pre=expanded_input,
                 n_post=self.purkinje_size,
-                config=STPConfig.from_type(
-                    self.config.stp_pf_purkinje_type,
-                    dt=config.dt_ms
-                ),
+                config=STPConfig.from_type(self.config.stp_pf_purkinje_type, dt=config.dt_ms),
                 per_synapse=True,  # Per-synapse dynamics for maximum precision
             )
             self.stp_pf_purkinje.to(self.device)
@@ -688,10 +687,7 @@ class Cerebellum(NeuralRegion):
                 self.stp_mf_granule = ShortTermPlasticity(
                     n_pre=self.input_size,
                     n_post=self.granule_layer.n_granule,
-                    config=STPConfig.from_type(
-                        self.config.stp_mf_granule_type,
-                        dt=config.dt_ms
-                    ),
+                    config=STPConfig.from_type(self.config.stp_mf_granule_type, dt=config.dt_ms),
                     per_synapse=True,
                 )
                 self.stp_mf_granule.to(self.device)
@@ -722,7 +718,7 @@ class Cerebellum(NeuralRegion):
         # internally computes functional connectivity neighborhoods.
         self.gap_junctions_io: Optional[GapJunctionCoupling] = None
         if self.config.gap_junctions_enabled:
-            from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
+            from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 
             gap_config = GapJunctionConfig(
                 enabled=True,
@@ -738,7 +734,9 @@ class Cerebellum(NeuralRegion):
             # weights shape: [purkinje_size, n_input] → each row is a Purkinje cell's input pattern
             self.gap_junctions_io = GapJunctionCoupling(
                 n_neurons=self.purkinje_size,
-                afferent_weights=self.synaptic_weights["default"].detach(),  # Use actual weights, not similarity
+                afferent_weights=self.synaptic_weights[
+                    "default"
+                ].detach(),  # Use actual weights, not similarity
                 config=gap_config,
                 interneuron_mask=None,  # All IO neurons participate
                 device=self.device,
@@ -754,7 +752,7 @@ class Cerebellum(NeuralRegion):
             n_input=n_input,
             mean=self.config.w_max * 0.1,
             std=0.02,
-            device=self.device
+            device=self.device,
         )
         return torch.nn.Parameter(
             clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
@@ -834,7 +832,7 @@ class Cerebellum(NeuralRegion):
         # Peak learning at β = π (beta trough = movement initiation)
         phase_diff = abs(self._beta_phase - math.pi)
         width = math.pi / 4  # ±45° learning window
-        gate = math.exp(-(phase_diff ** 2) / (2 * width ** 2))
+        gate = math.exp(-(phase_diff**2) / (2 * width**2))
 
         # Modulate by ALL coupling effects (theta, beta modulation)
         # This gives emergent theta-beta-gamma triple coupling automatically
@@ -860,7 +858,7 @@ class Cerebellum(NeuralRegion):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow output dimension by adding Purkinje cells.
@@ -917,20 +915,20 @@ class Cerebellum(NeuralRegion):
                 )
 
             # Grow DCN to accept more Purkinje inputs and produce more outputs
-            self.deep_nuclei.grow_input(n_new, source='purkinje')
+            self.deep_nuclei.grow_input(n_new, source="purkinje")
             self.deep_nuclei.grow_output(n_new)
 
         # =====================================================================
         # 4. GROW TRACE MANAGER
         # =====================================================================
-        self._trace_manager = self._trace_manager.grow_dimension(n_new, dimension='output')
+        self._trace_manager = self._trace_manager.grow_dimension(n_new, dimension="output")
 
         # =====================================================================
         # 5. GROW STP MODULES (manual growth due to complex routing)
         # =====================================================================
         # stp_pf_purkinje tracks parallel fiber→Purkinje, needs post growth
         if self.stp_pf_purkinje is not None:
-            self.stp_pf_purkinje.grow(n_new, target='post')
+            self.stp_pf_purkinje.grow(n_new, target="post")
         # stp_mf_granule tracks mossy→granule, does NOT grow with output
         # (granule size is determined by input * expansion, not output)
 
@@ -945,7 +943,7 @@ class Cerebellum(NeuralRegion):
         self,
         layer_name: str,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow specific cerebellar layer (SEMANTIC API).
@@ -960,7 +958,7 @@ class Cerebellum(NeuralRegion):
             Currently only Purkinje cell growth supported (output layer).
             Granule layer growth would require mossy fiber expansion.
         """
-        if layer_name.lower() in ['purkinje', 'output']:
+        if layer_name.lower() in ["purkinje", "output"]:
             self.grow_output(n_new, initialization, sparsity)
         else:
             raise NotImplementedError(
@@ -1165,7 +1163,9 @@ class Cerebellum(NeuralRegion):
         # error 0.0 → min_count spikes
         # error 1.0 → max_count spikes
         spike_range = cfg.max_complex_spike_count - cfg.min_complex_spike_count
-        n_spikes = cfg.min_complex_spike_count + spike_range * torch.clamp(error_magnitude, 0.0, 1.0)
+        n_spikes = cfg.min_complex_spike_count + spike_range * torch.clamp(
+            error_magnitude, 0.0, 1.0
+        )
 
         # Round to integer spike counts (stochastic rounding for biological variability)
         n_spikes_floor = n_spikes.floor()
@@ -1207,8 +1207,7 @@ class Cerebellum(NeuralRegion):
             f"got shape {output_spikes.shape}"
         )
         assert target.dim() == 1, (
-            f"Cerebellum._apply_error_learning: target must be 1D, "
-            f"got shape {target.shape}"
+            f"Cerebellum._apply_error_learning: target must be 1D, " f"got shape {target.shape}"
         )
 
         cfg = self.config
@@ -1310,7 +1309,9 @@ class Cerebellum(NeuralRegion):
         if not self.use_enhanced:
             # Classic pathway: update global weights
             old_weights = self.weights.clone()
-            self.weights.data = clamp_weights(self.weights + dw, self.config.w_min, self.config.w_max, inplace=False)
+            self.weights.data = clamp_weights(
+                self.weights + dw, self.config.w_min, self.config.w_max, inplace=False
+            )
 
             # Synaptic scaling for homeostasis using UnifiedHomeostasis
             if cfg.homeostasis_enabled:
@@ -1324,7 +1325,7 @@ class Cerebellum(NeuralRegion):
             actual_dw = torch.zeros_like(self.weights)
 
             # Get granule spikes (stored during forward pass)
-            if not hasattr(self, 'last_effective_input'):
+            if not hasattr(self, "last_effective_input"):
                 # No forward pass yet, skip learning
                 return {"error": 0.0, "ltp": 0.0, "ltd": 0.0}
 
@@ -1348,23 +1349,23 @@ class Cerebellum(NeuralRegion):
                 # Update this Purkinje cell's dendritic weights
                 new_weights = purkinje.pf_synaptic_weights.squeeze(0) + cell_dw
                 purkinje.pf_synaptic_weights.data = clamp_weights(
-                    new_weights.unsqueeze(0),
-                    cfg.w_min,
-                    cfg.w_max,
-                    inplace=False
+                    new_weights.unsqueeze(0), cfg.w_min, cfg.w_max, inplace=False
                 )
 
                 # Apply synaptic homeostasis per Purkinje cell
                 if cfg.homeostasis_enabled:
                     purkinje.pf_synaptic_weights.data = self.homeostasis.normalize_weights(
-                        purkinje.pf_synaptic_weights.data,
-                        dim=1
+                        purkinje.pf_synaptic_weights.data, dim=1
                     )
 
                 # Track actual weight change for this cell (for metrics)
                 # Note: actual_dw has shape [n_output, n_input] but Purkinje weights are [1, n_granule]
                 # We'll just record the sum of changes per cell
-                cell_weight_change = (purkinje.pf_synaptic_weights.squeeze(0) - old_pf_weights.squeeze(0)).sum().item()
+                cell_weight_change = (
+                    (purkinje.pf_synaptic_weights.squeeze(0) - old_pf_weights.squeeze(0))
+                    .sum()
+                    .item()
+                )
                 if i < actual_dw.shape[0]:
                     # Store change magnitude in first column for metrics
                     actual_dw[i, 0] = cell_weight_change
@@ -1427,7 +1428,9 @@ class Cerebellum(NeuralRegion):
         super().reset_state()
 
         # Reset subsystems (trace manager handles its own traces)
-        self._reset_subsystems('_trace_manager', 'climbing_fiber', 'stp_pf_purkinje', 'stp_mf_granule')
+        self._reset_subsystems(
+            "_trace_manager", "climbing_fiber", "stp_pf_purkinje", "stp_mf_granule"
+        )
 
         # Initialize IO membrane for gap junctions
         if self.gap_junctions_io is not None:
@@ -1449,7 +1452,7 @@ class Cerebellum(NeuralRegion):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow cerebellum input dimension (parallel fibers).
@@ -1466,10 +1469,7 @@ class Cerebellum(NeuralRegion):
 
         # Expand self.weights [n_output, input] → [n_output, input+n_new]
         self.weights.data = self._grow_weight_matrix_cols(
-            self.weights.data,
-            n_new,
-            initializer=initialization,
-            sparsity=sparsity
+            self.weights.data, n_new, initializer=initialization, sparsity=sparsity
         )
 
         # Determine trace manager input size (depends on pathway)
@@ -1500,13 +1500,13 @@ class Cerebellum(NeuralRegion):
         )
 
         # Grow STP modules for input dimension (auto-detect all modules)
-        self._auto_grow_stp_modules('pre', n_new)
+        self._auto_grow_stp_modules("pre", n_new)
 
         # Grow granule layer if using enhanced microcircuit
         if self.use_enhanced and self.granule_layer is not None:
             self.granule_layer.grow_input(n_new)
             # Also grow deep nuclei mossy input (receives same mossy fibers)
-            self.deep_nuclei.grow_input(n_new, source='mossy')
+            self.deep_nuclei.grow_input(n_new, source="mossy")
 
         # Update instance variable
         self.input_size = new_n_input
@@ -1528,15 +1528,19 @@ class Cerebellum(NeuralRegion):
         """
         from thalia.core.diagnostics_schema import (
             compute_activity_metrics,
-            compute_plasticity_metrics,
             compute_health_metrics,
+            compute_plasticity_metrics,
         )
 
         cfg = self.config
 
         # Compute activity metrics from output spikes
         activity = compute_activity_metrics(
-            output_spikes=self.output_spikes if self.output_spikes is not None else torch.zeros(self.purkinje_size, device=self.device),
+            output_spikes=(
+                self.output_spikes
+                if self.output_spikes is not None
+                else torch.zeros(self.purkinje_size, device=self.device)
+            ),
             total_neurons=self.purkinje_size,
         )
 
@@ -1581,9 +1585,17 @@ class Cerebellum(NeuralRegion):
                 "error_threshold": cfg.error_threshold,
             },
             "traces": {
-                "input_mean": self.input_trace.mean().item() if self.input_trace is not None else 0.0,
-                "output_mean": self.output_trace.mean().item() if self.output_trace is not None else 0.0,
-                "eligibility_mean": self.stdp_eligibility.mean().item() if self.stdp_eligibility is not None else 0.0,
+                "input_mean": (
+                    self.input_trace.mean().item() if self.input_trace is not None else 0.0
+                ),
+                "output_mean": (
+                    self.output_trace.mean().item() if self.output_trace is not None else 0.0
+                ),
+                "eligibility_mean": (
+                    self.stdp_eligibility.mean().item()
+                    if self.stdp_eligibility is not None
+                    else 0.0
+                ),
             },
             "oscillations": {
                 "beta_phase": self._beta_phase,
@@ -1658,8 +1670,8 @@ class Cerebellum(NeuralRegion):
         if not self.use_enhanced and self.neurons is not None:
             neuron_state = self.neurons.get_state()
             v_mem = neuron_state["membrane"]  # ConductanceLIF uses "membrane" key
-            g_exc = neuron_state["g_E"]       # ConductanceLIF uses "g_E" key
-            g_inh = neuron_state["g_I"]       # ConductanceLIF uses "g_I" key
+            g_exc = neuron_state["g_E"]  # ConductanceLIF uses "g_E" key
+            g_inh = neuron_state["g_I"]  # ConductanceLIF uses "g_I" key
 
         # Enhanced microcircuit state
         granule_state = None
@@ -1683,25 +1695,20 @@ class Cerebellum(NeuralRegion):
             input_trace=self.input_trace.clone(),
             output_trace=self.output_trace.clone(),
             stdp_eligibility=self.stdp_eligibility.clone(),
-
             # Error signal
             climbing_fiber_error=climbing_error.clone(),
             io_membrane=io_mem.clone() if io_mem is not None else None,
-
             # Classic neuron state
             v_mem=v_mem.clone() if v_mem is not None else None,
             g_exc=g_exc.clone() if g_exc is not None else None,
             g_inh=g_inh.clone() if g_inh is not None else None,
-
             # STP state
             stp_pf_purkinje_state=stp_pf_state,
             stp_mf_granule_state=stp_mf_state,
-
             # Neuromodulators (from NeuromodulatorMixin state)
             dopamine=self.state.dopamine,
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
-
             # Enhanced microcircuit
             granule_layer_state=granule_state,
             purkinje_cells_state=purkinje_state,
@@ -1750,10 +1757,10 @@ class Cerebellum(NeuralRegion):
             if state.v_mem is not None and state.g_exc is not None and state.g_inh is not None:
                 neuron_state = {
                     "membrane": state.v_mem.to(self.device),  # Map to ConductanceLIF "membrane" key
-                    "g_E": state.g_exc.to(self.device),       # Map to ConductanceLIF "g_E" key
-                    "g_I": state.g_inh.to(self.device),       # Map to ConductanceLIF "g_I" key
-                    "g_adapt": None,                          # Not tracked in CerebellumState
-                    "refractory": None,                       # Not tracked in CerebellumState
+                    "g_E": state.g_exc.to(self.device),  # Map to ConductanceLIF "g_E" key
+                    "g_I": state.g_inh.to(self.device),  # Map to ConductanceLIF "g_I" key
+                    "g_adapt": None,  # Not tracked in CerebellumState
+                    "refractory": None,  # Not tracked in CerebellumState
                 }
                 self.neurons.load_state(neuron_state)
 

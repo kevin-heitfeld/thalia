@@ -14,35 +14,34 @@ Components:
 
 from __future__ import annotations
 
-
-from thalia.memory.sequence import (
-    SequenceMemory,
-    SequenceContext,
+from thalia.memory.consolidation.advanced_consolidation import (
+    InterferenceResolution,
+    InterferenceResolutionConfig,
+    Schema,
+    SchemaExtractionConfig,
+    SchemaExtractionConsolidation,
+    SemanticReorganization,
+    SemanticReorganizationConfig,
+    run_advanced_consolidation,
+)
+from thalia.memory.consolidation.consolidation import (
+    ConsolidationMetrics,
+    ConsolidationSnapshot,
+    ConsolidationTrigger,
+    ConsolidationTriggerConfig,
+    MemoryPressureConfig,
+    MemoryPressureDetector,
+    SleepStage,
+    SleepStageConfig,
+    SleepStageController,
 )
 from thalia.memory.context import (
     ContextBuffer,
     ContextBufferConfig,
 )
-from thalia.memory.consolidation.consolidation import (
-    MemoryPressureDetector,
-    MemoryPressureConfig,
-    SleepStageController,
-    SleepStageConfig,
-    SleepStage,
-    ConsolidationMetrics,
-    ConsolidationSnapshot,
-    ConsolidationTrigger,
-    ConsolidationTriggerConfig,
-)
-from thalia.memory.consolidation.advanced_consolidation import (
-    SchemaExtractionConsolidation,
-    SchemaExtractionConfig,
-    Schema,
-    SemanticReorganization,
-    SemanticReorganizationConfig,
-    InterferenceResolution,
-    InterferenceResolutionConfig,
-    run_advanced_consolidation,
+from thalia.memory.sequence import (
+    SequenceContext,
+    SequenceMemory,
 )
 
 __all__ = [

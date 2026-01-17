@@ -6,8 +6,8 @@ Tests the full workflow: BrainBuilder → connections → NeuralRegion.add_input
 import pytest
 import torch
 
-from thalia.core.neural_region import NeuralRegion
 from thalia.config import GlobalConfig
+from thalia.core.neural_region import NeuralRegion
 
 
 class SimpleNeuralRegion(NeuralRegion):

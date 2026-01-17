@@ -11,10 +11,12 @@ Run with: pytest tests/benchmarks/test_clock_driven_performance.py -v
 """
 
 import time
-import torch
+
 import pytest
-from thalia.core.brain_builder import BrainBuilder
+import torch
+
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 @pytest.fixture
@@ -101,17 +103,17 @@ if __name__ == "__main__":
     config = GlobalConfig(device="cpu", dt_ms=1.0)
     suite = TestClockDrivenPerformance()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("CLOCK-DRIVEN EXECUTION BENCHMARKS")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     try:
         suite.test_benchmark_default_brain_1000_steps(config)
         suite.test_benchmark_minimal_brain_10000_steps(config)
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("ALL BENCHMARKS PASSED")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
     except AssertionError as e:
         print(f"\n❌ Benchmark failed: {e}\n")

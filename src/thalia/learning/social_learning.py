@@ -16,13 +16,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 
 
 class SocialCueType(Enum):
     """Types of social cues."""
+
     DEMONSTRATION = "demonstration"  # Observed action
     OSTENSIVE = "ostensive"  # Teaching signal (eye contact, motherese)
     GAZE = "gaze"  # Gaze direction
@@ -33,6 +34,7 @@ class SocialCueType(Enum):
 @dataclass
 class SocialLearningConfig:
     """Configuration for social learning."""
+
     imitation_boost: float = 2.0  # Multiplier for demonstration learning
     pedagogy_boost: float = 1.5  # Multiplier for teaching contexts
     gaze_influence: float = 0.3  # Weight of gaze in attention
@@ -43,6 +45,7 @@ class SocialLearningConfig:
 @dataclass
 class SocialContext:
     """Context for social learning episode."""
+
     cue_type: SocialCueType
     demonstration_present: bool = False
     ostensive_cues: Dict[str, bool] = None  # eye_contact, motherese, pointing
@@ -252,17 +255,13 @@ class SocialLearningModule:
             gaze_direction = gaze_direction / (gaze_direction.abs().sum() + 1e-8)
 
         # Weight by gaze influence
-        gaze_modulation = self._compute_gaze_modulation(
-            gaze_direction,
-            shared_attention_strength
-        )
+        gaze_modulation = self._compute_gaze_modulation(gaze_direction, shared_attention_strength)
 
         # Combine with existing attention
         # gaze_influence controls how much gaze affects attention
         modulated_attention = (
-            (1.0 - self.config.gaze_influence) * attention_weights +
-            self.config.gaze_influence * gaze_modulation
-        )
+            1.0 - self.config.gaze_influence
+        ) * attention_weights + self.config.gaze_influence * gaze_modulation
 
         # Normalize
         modulated_attention = modulated_attention / (modulated_attention.sum() + 1e-8)
@@ -376,9 +375,9 @@ class SocialLearningModule:
     def get_statistics(self) -> Dict[str, Any]:
         """Get social learning statistics."""
         total_events = (
-            self.statistics["n_demonstrations"] +
-            self.statistics["n_pedagogy_episodes"] +
-            self.statistics["n_joint_attention"]
+            self.statistics["n_demonstrations"]
+            + self.statistics["n_pedagogy_episodes"]
+            + self.statistics["n_joint_attention"]
         )
 
         return {

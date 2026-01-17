@@ -285,7 +285,9 @@ class BaseCheckpointManager(ABC):
         return {
             "membrane_potential": (
                 neurons.membrane.detach().clone()
-                if neurons is not None and hasattr(neurons, 'membrane') and neurons.membrane is not None
+                if neurons is not None
+                and hasattr(neurons, "membrane")
+                and neurons.membrane is not None
                 else None
             ),
             "n_neurons": n_neurons,
@@ -336,7 +338,10 @@ class BaseCheckpointManager(ABC):
             capacity = neuron_state["n_neurons_capacity"]
 
             if capacity < active:
-                return False, f"Capacity ({capacity}) < active neurons ({active}). Corrupted checkpoint?"
+                return (
+                    False,
+                    f"Capacity ({capacity}) < active neurons ({active}). Corrupted checkpoint?",
+                )
 
             return True, None
 
@@ -422,9 +427,13 @@ class BaseCheckpointManager(ABC):
 
             # Check alignment with growth unit
             if n_grow_neurons % neurons_per_unit != 0:
-                return False, 0, (
-                    f"Checkpoint neuron count ({checkpoint_active}) is not aligned with "
-                    f"growth unit ({neurons_per_unit} neurons/unit). Cannot auto-grow {region_name}."
+                return (
+                    False,
+                    0,
+                    (
+                        f"Checkpoint neuron count ({checkpoint_active}) is not aligned with "
+                        f"growth unit ({neurons_per_unit} neurons/unit). Cannot auto-grow {region_name}."
+                    ),
                 )
 
             n_grow_units = n_grow_neurons // neurons_per_unit
@@ -580,9 +589,9 @@ class BaseCheckpointManager(ABC):
         # Validate format (basic check)
         if "format" not in state:
             import warnings
+
             warnings.warn(
-                "Checkpoint missing 'format' field. Assuming elastic_tensor format.",
-                UserWarning
+                "Checkpoint missing 'format' field. Assuming elastic_tensor format.", UserWarning
             )
         elif state["format"] != "elastic_tensor":
             raise ValueError(
@@ -594,10 +603,8 @@ class BaseCheckpointManager(ABC):
         is_compatible, error_msg = self.validate_checkpoint_compatibility(state)
         if not is_compatible:
             import warnings
-            warnings.warn(
-                f"Checkpoint version compatibility warning: {error_msg}",
-                UserWarning
-            )
+
+            warnings.warn(f"Checkpoint version compatibility warning: {error_msg}", UserWarning)
 
         # Delegate to region-specific restore logic
         self.restore_state(state)
@@ -622,7 +629,9 @@ class BaseCheckpointManager(ABC):
 
     # ==================== OPTIONAL METHODS ====================
 
-    def validate_checkpoint_compatibility(self, state: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    def validate_checkpoint_compatibility(
+        self, state: Dict[str, Any]
+    ) -> tuple[bool, Optional[str]]:
         """Validate checkpoint format and version compatibility.
 
         Consolidates version checking logic used across checkpoint managers.
@@ -707,6 +716,7 @@ class BaseCheckpointManager(ABC):
             Dict with checkpoint metadata (path, format, size, etc.)
         """
         from pathlib import Path
+
         path = Path(path)
 
         # Auto-select format using region-specific logic
@@ -755,6 +765,7 @@ class BaseCheckpointManager(ABC):
             ValueError: If checkpoint is missing hybrid_metadata or has invalid format
         """
         from pathlib import Path
+
         path = Path(path)
 
         # Load checkpoint from disk

@@ -171,9 +171,7 @@ class StateLoadingMixin:
             elif hasattr(self, "state") and hasattr(self.state, "norepinephrine"):
                 self.state.norepinephrine = norepinephrine
 
-    def _restore_stp_state(
-        self, state_dict: Dict[str, Any], stp_attr_name: str = "stp"
-    ) -> None:
+    def _restore_stp_state(self, state_dict: Dict[str, Any], stp_attr_name: str = "stp") -> None:
         """Restore short-term plasticity (STP) state.
 
         Args:
@@ -201,9 +199,7 @@ class StateLoadingMixin:
             if "x" in stp_state and hasattr(stp_module, "x"):
                 stp_module.x.data = stp_state["x"].to(self.device)
 
-    def _restore_multi_stp_state(
-        self, state_dict: Dict[str, Any], stp_names: list[str]
-    ) -> None:
+    def _restore_multi_stp_state(self, state_dict: Dict[str, Any], stp_names: list[str]) -> None:
         """Restore multiple STP modules (common in multi-pathway regions).
 
         Args:

@@ -44,8 +44,8 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Any
 import warnings
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
@@ -85,42 +85,57 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         # 1. NEURON STATE - Use base class utility for common extraction
         neuron_state = self.extract_neuron_state_common(
-            neurons=s.d1_pathway.neurons,
-            n_neurons=s.d1_size + s.d2_size,
-            device=s.device
+            neurons=s.d1_pathway.neurons, n_neurons=s.d1_size + s.d2_size, device=s.device
         )
         # Add elastic tensor metadata
-        neuron_state.update(self.extract_elastic_tensor_metadata(
-            n_active=s.n_neurons_active,
-            n_capacity=s.n_neurons_capacity
-        ))
+        neuron_state.update(
+            self.extract_elastic_tensor_metadata(
+                n_active=s.n_neurons_active, n_capacity=s.n_neurons_capacity
+            )
+        )
         # Add striatum-specific fields
-        neuron_state.update({
-            "n_actions": s.n_actions,
-            "total_input": s.input_size,
-            "total_neurons": s.d1_size + s.d2_size,
-        })
+        neuron_state.update(
+            {
+                "n_actions": s.n_actions,
+                "total_input": s.input_size,
+                "total_neurons": s.d1_size + s.d2_size,
+            }
+        )
 
         # 2. PATHWAY STATE (Multi-source weights, eligibility, etc.)
         # PHASE 5: Multi-source architecture - save per-source weights and eligibility
         pathway_state = {
             "d1_state": s.d1_pathway.get_state(),
             "d2_state": s.d2_pathway.get_state(),
-
             # Multi-source weights (Phase 5)
-            "synaptic_weights": {key: tensor.detach().clone() for key, tensor in s.synaptic_weights.items()},
-
+            "synaptic_weights": {
+                key: tensor.detach().clone() for key, tensor in s.synaptic_weights.items()
+            },
             # Multi-source eligibility traces (Phase 3)
-            "eligibility_d1": {key: tensor.detach().clone() for key, tensor in s._eligibility_d1.items()} if hasattr(s, '_eligibility_d1') else {},
-            "eligibility_d2": {key: tensor.detach().clone() for key, tensor in s._eligibility_d2.items()} if hasattr(s, '_eligibility_d2') else {},
-
+            "eligibility_d1": (
+                {key: tensor.detach().clone() for key, tensor in s._eligibility_d1.items()}
+                if hasattr(s, "_eligibility_d1")
+                else {}
+            ),
+            "eligibility_d2": (
+                {key: tensor.detach().clone() for key, tensor in s._eligibility_d2.items()}
+                if hasattr(s, "_eligibility_d2")
+                else {}
+            ),
             # Per-source STP modules (Phase 5)
-            "stp_modules": {key: {'u': stp.u.detach().clone() if stp.u is not None else None,
-                                   'x': stp.x.detach().clone() if stp.x is not None else None}
-                            for key, stp in s.stp_modules.items()} if hasattr(s, 'stp_modules') else {},
-
+            "stp_modules": (
+                {
+                    key: {
+                        "u": stp.u.detach().clone() if stp.u is not None else None,
+                        "x": stp.x.detach().clone() if stp.x is not None else None,
+                    }
+                    for key, stp in s.stp_modules.items()
+                }
+                if hasattr(s, "stp_modules")
+                else {}
+            ),
             # Input source tracking
-            "input_sources": dict(s.input_sources) if hasattr(s, 'input_sources') else {},
+            "input_sources": dict(s.input_sources) if hasattr(s, "input_sources") else {},
         }
 
         # 3. LEARNING STATE
@@ -128,15 +143,17 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             # Trial accumulators (now managed by state_tracker)
             "d1_votes_accumulated": s.state_tracker._d1_votes_accumulated.detach().clone(),
             "d2_votes_accumulated": s.state_tracker._d2_votes_accumulated.detach().clone(),
-
             # Homeostatic state
             "activity_ema": s._activity_ema,
             "trial_spike_count": s._trial_spike_count,
             "trial_timesteps": s._trial_timesteps,
             "homeostatic_scaling_applied": s._homeostatic_scaling_applied,
-
             # Homeostasis manager state (if enabled)
-            "homeostasis_manager_state": s.homeostasis.unified_homeostasis.get_state() if (s.homeostasis is not None and s.homeostasis.unified_homeostasis is not None) else None,
+            "homeostasis_manager_state": (
+                s.homeostasis.unified_homeostasis.get_state()
+                if (s.homeostasis is not None and s.homeostasis.unified_homeostasis is not None)
+                else None
+            ),
         }
 
         # 4. EXPLORATION STATE (delegate to ExplorationManager)
@@ -159,7 +176,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         # 6. GOAL MODULATION STATE (if enabled)
         goal_state = {}
-        if hasattr(s, 'pfc_modulation_d1') and s.pfc_modulation_d1 is not None:
+        if hasattr(s, "pfc_modulation_d1") and s.pfc_modulation_d1 is not None:
             goal_state = {
                 "pfc_modulation_d1": s.pfc_modulation_d1.detach().clone(),
                 "pfc_modulation_d2": s.pfc_modulation_d2.detach().clone(),
@@ -173,8 +190,12 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         # 8. D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
         delay_state = {
-            "d1_delay_buffer": s._d1_delay_buffer.detach().clone() if s._d1_delay_buffer is not None else None,
-            "d2_delay_buffer": s._d2_delay_buffer.detach().clone() if s._d2_delay_buffer is not None else None,
+            "d1_delay_buffer": (
+                s._d1_delay_buffer.detach().clone() if s._d1_delay_buffer is not None else None
+            ),
+            "d2_delay_buffer": (
+                s._d2_delay_buffer.detach().clone() if s._d2_delay_buffer is not None else None
+            ),
             "d1_delay_ptr": s._d1_delay_ptr,
             "d2_delay_ptr": s._d2_delay_ptr,
         }
@@ -217,7 +238,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 checkpoint_active=neuron_state["n_neurons_active"],
                 current_active=s.n_neurons_active,
                 neurons_per_unit=s.neurons_per_action,
-                region_name="Striatum"
+                region_name="Striatum",
             )
 
             if warning_msg:
@@ -249,28 +270,28 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 warnings.warn(
                     f"Checkpoint has source '{key}' but current brain doesn't. "
                     "Skipping this source weight.",
-                    UserWarning
+                    UserWarning,
                 )
 
         # Restore multi-source eligibility traces
-        if "eligibility_d1" in pathway_state and hasattr(s, '_eligibility_d1'):
+        if "eligibility_d1" in pathway_state and hasattr(s, "_eligibility_d1"):
             for key, elig in pathway_state["eligibility_d1"].items():
                 if key in s._eligibility_d1:
                     s._eligibility_d1[key] = elig.to(s.device)
 
-        if "eligibility_d2" in pathway_state and hasattr(s, '_eligibility_d2'):
+        if "eligibility_d2" in pathway_state and hasattr(s, "_eligibility_d2"):
             for key, elig in pathway_state["eligibility_d2"].items():
                 if key in s._eligibility_d2:
                     s._eligibility_d2[key] = elig.to(s.device)
 
         # Restore per-source STP modules
-        if "stp_modules" in pathway_state and hasattr(s, 'stp_modules'):
+        if "stp_modules" in pathway_state and hasattr(s, "stp_modules"):
             for key, stp_state in pathway_state["stp_modules"].items():
                 if key in s.stp_modules:
-                    if stp_state['u'] is not None and s.stp_modules[key].u is not None:
-                        s.stp_modules[key].u.data = stp_state['u'].to(s.device)
-                    if stp_state['x'] is not None and s.stp_modules[key].x is not None:
-                        s.stp_modules[key].x.data = stp_state['x'].to(s.device)
+                    if stp_state["u"] is not None and s.stp_modules[key].u is not None:
+                        s.stp_modules[key].u.data = stp_state["u"].to(s.device)
+                    if stp_state["x"] is not None and s.stp_modules[key].x is not None:
+                        s.stp_modules[key].x.data = stp_state["x"].to(s.device)
 
         # Restore input source tracking
         if "input_sources" in pathway_state:
@@ -290,8 +311,14 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         s._homeostatic_scaling_applied = learning_state["homeostatic_scaling_applied"]
 
         # Homeostasis manager
-        if s.homeostasis is not None and "homeostasis_manager_state" in learning_state and learning_state["homeostasis_manager_state"] is not None:
-            s.homeostasis.unified_homeostasis.load_state(learning_state["homeostasis_manager_state"])
+        if (
+            s.homeostasis is not None
+            and "homeostasis_manager_state" in learning_state
+            and learning_state["homeostasis_manager_state"] is not None
+        ):
+            s.homeostasis.unified_homeostasis.load_state(
+                learning_state["homeostasis_manager_state"]
+            )
 
         # 4. RESTORE EXPLORATION STATE
         exploration_state = state["exploration_state"]
@@ -313,7 +340,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         # 6. RESTORE GOAL MODULATION STATE (if present)
         if "goal_state" in state and state["goal_state"]:
             goal_state = state["goal_state"]
-            if hasattr(s, 'pfc_modulation_d1'):
+            if hasattr(s, "pfc_modulation_d1"):
                 s.pfc_modulation_d1.data = goal_state["pfc_modulation_d1"].to(s.device)
                 s.pfc_modulation_d2.data = goal_state["pfc_modulation_d2"].to(s.device)
 
@@ -336,7 +363,9 @@ class StriatumCheckpointManager(BaseCheckpointManager):
     # NEUROMORPHIC FORMAT (Phase 2) - Neuron-Centric Checkpoints
     # =========================================================================
 
-    def _extract_synapses_for_neuron(self, neuron_idx: int, weights: torch.Tensor, eligibility: torch.Tensor, source_prefix: str) -> list[Dict[str, Any]]:
+    def _extract_synapses_for_neuron(
+        self, neuron_idx: int, weights: torch.Tensor, eligibility: torch.Tensor, source_prefix: str
+    ) -> list[Dict[str, Any]]:
         """Extract synapses for a single neuron (striatum-specific with eligibility).
 
         Args:
@@ -473,7 +502,9 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                                     weights.data[idx, input_idx] = synapse["weight"]
                                     # Restore eligibility
                                     if d1_key in s._eligibility_d1:
-                                        s._eligibility_d1[d1_key][idx, input_idx] = synapse["eligibility"]
+                                        s._eligibility_d1[d1_key][idx, input_idx] = synapse[
+                                            "eligibility"
+                                        ]
                         elif neuron_type == "D2-MSN":
                             d2_key = f"{source_name}_d2"
                             if d2_key in s.synaptic_weights:
@@ -482,7 +513,9 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                                     weights.data[idx, input_idx] = synapse["weight"]
                                     # Restore eligibility
                                     if d2_key in s._eligibility_d2:
-                                        s._eligibility_d2[d2_key][idx, input_idx] = synapse["eligibility"]
+                                        s._eligibility_d2[d2_key][idx, input_idx] = synapse[
+                                            "eligibility"
+                                        ]
                     except (ValueError, IndexError, KeyError):
                         # Invalid source ID format or missing source, skip
                         pass
@@ -501,7 +534,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             warnings.warn(
                 f"Checkpoint has {missing_count} neurons not in current brain. "
                 f"Skipped those neurons. Restored {restored_count} neurons.",
-                UserWarning
+                UserWarning,
             )
 
         # Check for extra neurons in brain
@@ -513,7 +546,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             warnings.warn(
                 f"Brain has {len(extra_ids)} neurons not in checkpoint. "
                 f"Keeping their current state.",
-                UserWarning
+                UserWarning,
             )
 
     # =========================================================================
@@ -584,7 +617,9 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         n_d1 = s.d1_size
 
         for i in range(n_d1):
-            neuron_id = s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
+            neuron_id = (
+                s.neuron_ids[i] if i < len(s.neuron_ids) else f"striatum_d1_neuron_{i}_step0"
+            )
 
             # Extract creation step from ID (format: "..._step{N}")
             created_step = 0
@@ -595,10 +630,10 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             incoming_synapses = []
             for source_name, source_size in s.input_sources.items():
                 # Source format: "source_d1" or "source_d2"
-                if source_name.endswith('_d1'):
+                if source_name.endswith("_d1"):
                     d1_key = source_name
-                    base_source = source_name.rsplit('_d1', 1)[0]
-                elif source_name.endswith('_d2'):
+                    base_source = source_name.rsplit("_d1", 1)[0]
+                elif source_name.endswith("_d2"):
                     # Skip D2 sources when processing D1 neurons
                     continue
                 else:
@@ -608,11 +643,17 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
                 if d1_key in s.synaptic_weights:
                     weights = s.synaptic_weights[d1_key]
-                    eligibility = s._eligibility_d1.get(d1_key, torch.zeros_like(weights)) if hasattr(s, '_eligibility_d1') else torch.zeros_like(weights)
+                    eligibility = (
+                        s._eligibility_d1.get(d1_key, torch.zeros_like(weights))
+                        if hasattr(s, "_eligibility_d1")
+                        else torch.zeros_like(weights)
+                    )
 
                     # Extract synapses for this neuron from this source
                     source_prefix = f"{base_source}_neuron"
-                    synapses = self._extract_synapses_for_neuron(i, weights, eligibility, source_prefix)
+                    synapses = self._extract_synapses_for_neuron(
+                        i, weights, eligibility, source_prefix
+                    )
                     incoming_synapses.extend(synapses)
 
             neuron_data = {
@@ -620,7 +661,11 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 "type": "D1-MSN",
                 "region": "striatum",
                 "created_step": created_step,
-                "membrane": s.d1_pathway.neurons.membrane[i].item() if s.d1_pathway.neurons.membrane is not None else 0.0,
+                "membrane": (
+                    s.d1_pathway.neurons.membrane[i].item()
+                    if s.d1_pathway.neurons.membrane is not None
+                    else 0.0
+                ),
                 "incoming_synapses": incoming_synapses,
             }
             neurons.append(neuron_data)
@@ -630,7 +675,11 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         for i in range(n_d2):
             neuron_idx = n_d1 + i
-            neuron_id = s.neuron_ids[neuron_idx] if neuron_idx < len(s.neuron_ids) else f"striatum_d2_neuron_{i}_step0"
+            neuron_id = (
+                s.neuron_ids[neuron_idx]
+                if neuron_idx < len(s.neuron_ids)
+                else f"striatum_d2_neuron_{i}_step0"
+            )
 
             # Extract creation step from ID
             created_step = 0
@@ -641,10 +690,10 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             incoming_synapses = []
             for source_name, source_size in s.input_sources.items():
                 # Source format: "source_d1" or "source_d2"
-                if source_name.endswith('_d2'):
+                if source_name.endswith("_d2"):
                     d2_key = source_name
-                    base_source = source_name.rsplit('_d2', 1)[0]
-                elif source_name.endswith('_d1'):
+                    base_source = source_name.rsplit("_d2", 1)[0]
+                elif source_name.endswith("_d1"):
                     # Skip D1 sources when processing D2 neurons
                     continue
                 else:
@@ -654,11 +703,17 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
                 if d2_key in s.synaptic_weights:
                     weights = s.synaptic_weights[d2_key]
-                    eligibility = s._eligibility_d2.get(d2_key, torch.zeros_like(weights)) if hasattr(s, '_eligibility_d2') else torch.zeros_like(weights)
+                    eligibility = (
+                        s._eligibility_d2.get(d2_key, torch.zeros_like(weights))
+                        if hasattr(s, "_eligibility_d2")
+                        else torch.zeros_like(weights)
+                    )
 
                     # Extract synapses for this neuron from this source
                     source_prefix = f"{base_source}_neuron"
-                    synapses = self._extract_synapses_for_neuron(i, weights, eligibility, source_prefix)
+                    synapses = self._extract_synapses_for_neuron(
+                        i, weights, eligibility, source_prefix
+                    )
                     incoming_synapses.extend(synapses)
 
             neuron_data = {
@@ -666,7 +721,11 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 "type": "D2-MSN",
                 "region": "striatum",
                 "created_step": created_step,
-                "membrane": s.d2_pathway.neurons.membrane[i].item() if s.d2_pathway.neurons.membrane is not None else 0.0,
+                "membrane": (
+                    s.d2_pathway.neurons.membrane[i].item()
+                    if s.d2_pathway.neurons.membrane is not None
+                    else 0.0
+                ),
                 "incoming_synapses": incoming_synapses,
             }
             neurons.append(neuron_data)
@@ -686,7 +745,11 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "trial_timesteps": s._trial_timesteps,
             "homeostatic_scaling_applied": s._homeostatic_scaling_applied,
             # Homeostasis manager state (if enabled)
-            "homeostasis_manager_state": s.homeostasis.unified_homeostasis.get_state() if (s.homeostasis is not None and s.homeostasis.unified_homeostasis is not None) else None,
+            "homeostasis_manager_state": (
+                s.homeostasis.unified_homeostasis.get_state()
+                if (s.homeostasis is not None and s.homeostasis.unified_homeostasis is not None)
+                else None
+            ),
         }
 
     def _get_neuromodulator_state(self) -> Dict[str, Any]:
@@ -694,7 +757,9 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         s = self.striatum
         # Use centralized neuromodulator API from LearnableComponent
         return {
-            "dopamine": s.get_neuromodulator("dopamine") if hasattr(s, 'get_neuromodulator') else 0.0,
+            "dopamine": (
+                s.get_neuromodulator("dopamine") if hasattr(s, "get_neuromodulator") else 0.0
+            ),
         }
 
     def _get_region_state(self) -> Dict[str, Any]:
@@ -710,15 +775,29 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "last_action": s.state_tracker.last_action,
             "recent_spikes": s.state_tracker.recent_spikes.detach().clone(),
             # Value estimation state (if RPE enabled)
-            "value_estimates": s.value_estimates.detach().clone() if s.value_estimates is not None else None,
+            "value_estimates": (
+                s.value_estimates.detach().clone() if s.value_estimates is not None else None
+            ),
             "last_rpe": s.state_tracker._last_rpe,
             "last_expected": s.state_tracker._last_expected,
             # Goal modulation state (if enabled)
-            "pfc_modulation_d1": s.pfc_modulation_d1.detach().clone() if hasattr(s, 'pfc_modulation_d1') and s.pfc_modulation_d1 is not None else None,
-            "pfc_modulation_d2": s.pfc_modulation_d2.detach().clone() if hasattr(s, 'pfc_modulation_d2') and s.pfc_modulation_d2 is not None else None,
+            "pfc_modulation_d1": (
+                s.pfc_modulation_d1.detach().clone()
+                if hasattr(s, "pfc_modulation_d1") and s.pfc_modulation_d1 is not None
+                else None
+            ),
+            "pfc_modulation_d2": (
+                s.pfc_modulation_d2.detach().clone()
+                if hasattr(s, "pfc_modulation_d2") and s.pfc_modulation_d2 is not None
+                else None
+            ),
             # D1/D2 pathway delay buffers (temporal competition)
-            "d1_delay_buffer": s._d1_delay_buffer.detach().clone() if s._d1_delay_buffer is not None else None,
-            "d2_delay_buffer": s._d2_delay_buffer.detach().clone() if s._d2_delay_buffer is not None else None,
+            "d1_delay_buffer": (
+                s._d1_delay_buffer.detach().clone() if s._d1_delay_buffer is not None else None
+            ),
+            "d2_delay_buffer": (
+                s._d2_delay_buffer.detach().clone() if s._d2_delay_buffer is not None else None
+            ),
             "d1_delay_ptr": s._d1_delay_ptr,
             "d2_delay_ptr": s._d2_delay_ptr,
         }

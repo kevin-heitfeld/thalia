@@ -50,13 +50,9 @@ class Sequential(StimulusPattern):
         # Validate all frames have same shape and device
         for i, frame in enumerate(frames[1:], 1):
             if frame.shape != self._shape:
-                raise ValueError(
-                    f"Frame {i} has shape {frame.shape}, expected {self._shape}"
-                )
+                raise ValueError(f"Frame {i} has shape {frame.shape}, expected {self._shape}")
             if frame.device != self._device:
-                raise ValueError(
-                    f"Frame {i} on device {frame.device}, expected {self._device}"
-                )
+                raise ValueError(f"Frame {i} on device {frame.device}, expected {self._device}")
 
     def get_input(self, timestep: int, dt_ms: float) -> Optional[torch.Tensor]:
         """Get input for timestep (frames[t] if within sequence, else None)."""

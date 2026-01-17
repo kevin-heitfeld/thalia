@@ -93,17 +93,13 @@ def compute_spike_density(spikes: torch.Tensor, window_size: int) -> torch.Tenso
     if spikes.dim() == 1:
         spikes = spikes.unsqueeze(0).unsqueeze(0)  # [1, 1, time]
         kernel = torch.ones(1, 1, window_size, device=spikes.device) / window_size
-        density = torch.nn.functional.conv1d(
-            spikes.float(), kernel, padding=window_size // 2
-        )
+        density = torch.nn.functional.conv1d(spikes.float(), kernel, padding=window_size // 2)
         return density.squeeze()
     elif spikes.dim() == 2:
         # [time, neurons] → [neurons, 1, time]
         spikes_t = spikes.t().unsqueeze(1)
         kernel = torch.ones(1, 1, window_size, device=spikes.device) / window_size
-        density = torch.nn.functional.conv1d(
-            spikes_t.float(), kernel, padding=window_size // 2
-        )
+        density = torch.nn.functional.conv1d(spikes_t.float(), kernel, padding=window_size // 2)
         return density.squeeze(1).t()
     else:
         raise ValueError(f"Expected 1D or 2D spike tensor, got {spikes.dim()}D")

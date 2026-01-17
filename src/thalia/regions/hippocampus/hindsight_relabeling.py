@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -99,7 +99,7 @@ class EpisodeBuffer:
         goal: torch.Tensor,
         reward: float,
         done: bool,
-        achieved_goal: Optional[torch.Tensor] = None
+        achieved_goal: Optional[torch.Tensor] = None,
     ):
         """Add transition to current episode."""
         transition = EpisodeTransition(
@@ -110,7 +110,7 @@ class EpisodeBuffer:
             reward=reward,
             done=done,
             timestep=len(self.current_episode),
-            achieved_goal=achieved_goal.clone() if achieved_goal is not None else None
+            achieved_goal=achieved_goal.clone() if achieved_goal is not None else None,
         )
         self.current_episode.append(transition)
 
@@ -165,7 +165,7 @@ class HindsightRelabeler:
         goal: torch.Tensor,
         reward: float,
         done: bool,
-        achieved_goal: Optional[torch.Tensor] = None
+        achieved_goal: Optional[torch.Tensor] = None,
     ):
         """Add transition to buffer for later relabeling."""
         # If achieved_goal not provided, use next_state as proxy
@@ -177,10 +177,7 @@ class HindsightRelabeler:
         )
 
     def sample_hindsight_goals(
-        self,
-        episode: List[EpisodeTransition],
-        transition_idx: int,
-        k: int
+        self, episode: List[EpisodeTransition], transition_idx: int, k: int
     ) -> List[torch.Tensor]:
         """
         Sample k hindsight goals for a transition.
@@ -206,35 +203,25 @@ class HindsightRelabeler:
                 return [episode[-1].achieved_goal] * k
 
             # Sample k indices (with replacement if needed)
-            sampled_indices = torch.randint(
-                len(future_indices),
-                (k,),
-                device=self.config.device
-            )
+            sampled_indices = torch.randint(len(future_indices), (k,), device=self.config.device)
             goals = [
-                episode[transition_idx + 1 + idx.item()].achieved_goal
-                for idx in sampled_indices
+                episode[transition_idx + 1 + idx.item()].achieved_goal for idx in sampled_indices
             ]
             return goals
 
         elif self.config.strategy == HERStrategy.EPISODE:
             # Sample from any state in episode
-            sampled_indices = torch.randint(
-                len(episode),
-                (k,),
-                device=self.config.device
-            )
+            sampled_indices = torch.randint(len(episode), (k,), device=self.config.device)
             goals = [episode[idx.item()].achieved_goal for idx in sampled_indices]
             return goals
 
         elif self.config.strategy == HERStrategy.RANDOM:
             # Sample random goals (baseline - not very useful)
             from thalia.components.synapses.weight_init import WeightInitializer
+
             return [
                 WeightInitializer.gaussian(
-                    self.config.goal_dim, 1,
-                    mean=0.0, std=1.0,
-                    device=self.config.device
+                    self.config.goal_dim, 1, mean=0.0, std=1.0, device=self.config.device
                 ).squeeze()
                 for _ in range(k)
             ]
@@ -242,22 +229,17 @@ class HindsightRelabeler:
         else:
             raise ValueError(f"Unknown HER strategy: {self.config.strategy}")
 
-    def check_goal_achieved(
-        self,
-        achieved_goal: torch.Tensor,
-        target_goal: torch.Tensor
-    ) -> bool:
+    def check_goal_achieved(self, achieved_goal: torch.Tensor, target_goal: torch.Tensor) -> bool:
         """Check if achieved goal matches target goal."""
         # Convert to float for distance computation (handles bool/spike tensors)
-        achieved_float = achieved_goal.float() if achieved_goal.dtype == torch.bool else achieved_goal
+        achieved_float = (
+            achieved_goal.float() if achieved_goal.dtype == torch.bool else achieved_goal
+        )
         target_float = target_goal.float() if target_goal.dtype == torch.bool else target_goal
         distance = torch.norm(achieved_float - target_float)
         return distance < self.config.goal_tolerance
 
-    def relabel_episode(
-        self,
-        episode: List[EpisodeTransition]
-    ) -> List[EpisodeTransition]:
+    def relabel_episode(self, episode: List[EpisodeTransition]) -> List[EpisodeTransition]:
         """
         Generate hindsight experiences from episode.
 
@@ -276,17 +258,12 @@ class HindsightRelabeler:
             augmented.append(transition)
 
             # Generate hindsight goals
-            hindsight_goals = self.sample_hindsight_goals(
-                episode, i, self.config.k_hindsight
-            )
+            hindsight_goals = self.sample_hindsight_goals(episode, i, self.config.k_hindsight)
 
             # Create hindsight transitions
             for hindsight_goal in hindsight_goals:
                 # Check if this goal was achieved
-                achieved = self.check_goal_achieved(
-                    transition.achieved_goal,
-                    hindsight_goal
-                )
+                achieved = self.check_goal_achieved(transition.achieved_goal, hindsight_goal)
                 hindsight_reward = 1.0 if achieved else 0.0
 
                 # Create relabeled transition
@@ -298,16 +275,14 @@ class HindsightRelabeler:
                     reward=hindsight_reward,  # RELABELED REWARD
                     done=transition.done,
                     timestep=transition.timestep,
-                    achieved_goal=transition.achieved_goal.clone()
+                    achieved_goal=transition.achieved_goal.clone(),
                 )
                 augmented.append(hindsight_transition)
 
         return augmented
 
     def sample_replay_batch(
-        self,
-        batch_size: int = 32,
-        recent_episodes: int = 10
+        self, batch_size: int = 32, recent_episodes: int = 10
     ) -> List[EpisodeTransition]:
         """
         Sample batch of experiences for replay learning.
@@ -344,7 +319,8 @@ class HindsightRelabeler:
             hindsight_transitions = self.relabel_episode(episode)
             # Sample from hindsight (skip originals)
             hindsight_only = [
-                t for t in hindsight_transitions
+                t
+                for t in hindsight_transitions
                 if not any(torch.equal(t.goal, orig.goal) for orig in episode)
             ]
             if len(hindsight_only) > 0:
@@ -359,27 +335,24 @@ class HindsightRelabeler:
 
         if len(episodes) == 0:
             return {
-                'n_episodes': 0,
-                'n_transitions': 0,
-                'avg_episode_length': 0.0,
-                'success_rate': 0.0
+                "n_episodes": 0,
+                "n_transitions": 0,
+                "avg_episode_length": 0.0,
+                "success_rate": 0.0,
             }
 
         n_transitions = sum(len(ep) for ep in episodes)
         avg_length = n_transitions / len(episodes)
 
         # Count successes (original reward > 0)
-        n_success = sum(
-            1 for ep in episodes
-            if any(t.reward > 0 for t in ep)
-        )
+        n_success = sum(1 for ep in episodes if any(t.reward > 0 for t in ep))
         success_rate = n_success / len(episodes)
 
         return {
-            'n_episodes': len(episodes),
-            'n_transitions': n_transitions,
-            'avg_episode_length': avg_length,
-            'success_rate': success_rate
+            "n_episodes": len(episodes),
+            "n_transitions": n_transitions,
+            "avg_episode_length": avg_length,
+            "success_rate": success_rate,
         }
 
 
@@ -407,12 +380,10 @@ class HippocampalHERIntegration:
         goal: torch.Tensor,
         reward: float,
         done: bool,
-        achieved_goal: Optional[torch.Tensor] = None
+        achieved_goal: Optional[torch.Tensor] = None,
     ):
         """Add experience during active learning."""
-        self.relabeler.add_transition(
-            state, action, next_state, goal, reward, done, achieved_goal
-        )
+        self.relabeler.add_transition(state, action, next_state, goal, reward, done, achieved_goal)
 
     def enter_consolidation(self):
         """Enter consolidation mode (sleep/offline)."""
@@ -422,10 +393,7 @@ class HippocampalHERIntegration:
         """Exit consolidation mode (wake/online)."""
         self.consolidation_mode = False
 
-    def replay_for_learning(
-        self,
-        batch_size: int = 32
-    ) -> List[EpisodeTransition]:
+    def replay_for_learning(self, batch_size: int = 32) -> List[EpisodeTransition]:
         """
         Generate replay batch for learning.
 
@@ -443,7 +411,7 @@ class HippocampalHERIntegration:
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics about HER system."""
         stats = self.relabeler.get_replay_statistics()
-        stats['consolidation_mode'] = self.consolidation_mode
-        stats['strategy'] = self.config.strategy.value
-        stats['k_hindsight'] = self.config.k_hindsight
+        stats["consolidation_mode"] = self.consolidation_mode
+        stats["strategy"] = self.config.strategy.value
+        stats["k_hindsight"] = self.config.k_hindsight
         return stats

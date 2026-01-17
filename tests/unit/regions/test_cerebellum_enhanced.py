@@ -18,9 +18,9 @@ import torch
 
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.regions.cerebellum.deep_nuclei import DeepCerebellarNuclei
 from thalia.regions.cerebellum.granule_layer import GranuleCellLayer
 from thalia.regions.cerebellum.purkinje_cell import EnhancedPurkinjeCell
-from thalia.regions.cerebellum.deep_nuclei import DeepCerebellarNuclei
 
 
 @pytest.fixture
@@ -99,12 +99,15 @@ class TestGranuleCellLayer:
 
         # Contract: granule cells = mossy fibers × expansion factor
         expected_granule = int(128 * 4.0)
-        assert granule_layer.n_granule == expected_granule, \
-            f"Should have {expected_granule} granule cells (4× expansion)"
+        assert (
+            granule_layer.n_granule == expected_granule
+        ), f"Should have {expected_granule} granule cells (4× expansion)"
 
         # Contract: mossy→granule weights exist
-        assert granule_layer.weights.shape == (expected_granule, 128), \
-            "Weights should connect mossy fibers to granule cells"
+        assert granule_layer.weights.shape == (
+            expected_granule,
+            128,
+        ), "Weights should connect mossy fibers to granule cells"
 
     def test_granule_layer_expansion(self, device):
         """Test 4× expansion from mossy fibers to granule cells."""
@@ -120,8 +123,9 @@ class TestGranuleCellLayer:
         )
 
         # Contract: output dimension is 4× input
-        assert granule_layer.n_granule == int(n_mossy * expansion), \
-            "Granule cells should be 4× mossy fibers"
+        assert granule_layer.n_granule == int(
+            n_mossy * expansion
+        ), "Granule cells should be 4× mossy fibers"
 
     def test_granule_layer_sparsity(self, device):
         """Test 3% sparse coding in granule layer."""
@@ -148,8 +152,7 @@ class TestGranuleCellLayer:
 
         # Contract: average sparsity should be ~3% (biological)
         avg_sparsity = sum(sparsity_measurements) / len(sparsity_measurements)
-        assert 0.01 < avg_sparsity < 0.05, \
-            f"Granule sparsity should be ~3%, got {avg_sparsity:.3f}"
+        assert 0.01 < avg_sparsity < 0.05, f"Granule sparsity should be ~3%, got {avg_sparsity:.3f}"
 
     def test_granule_layer_output_type(self, device):
         """Test granule layer output is bool spikes (ADR-004)."""
@@ -165,10 +168,10 @@ class TestGranuleCellLayer:
         parallel_fiber_spikes = granule_layer(mossy_spikes)
 
         # Contract: output should be bool (ADR-004)
-        assert parallel_fiber_spikes.dtype == torch.bool, \
-            "Parallel fiber spikes should be bool (ADR-004)"
-        assert parallel_fiber_spikes.dim() == 1, \
-            "Output should be 1D (ADR-005)"
+        assert (
+            parallel_fiber_spikes.dtype == torch.bool
+        ), "Parallel fiber spikes should be bool (ADR-004)"
+        assert parallel_fiber_spikes.dim() == 1, "Output should be 1D (ADR-005)"
 
     def test_granule_connectivity_sparsity(self, device):
         """Test mossy→granule connectivity is sparse (~5%)."""
@@ -189,8 +192,9 @@ class TestGranuleCellLayer:
 
         # Contract: mossy→granule should be ~5% connected (95% zeros)
         # Note: Implementation uses 5% connectivity
-        assert connectivity_sparsity > 0.90, \
-            f"Mossy→granule should be sparse (~95% zeros), got {connectivity_sparsity:.3f}"
+        assert (
+            connectivity_sparsity > 0.90
+        ), f"Mossy→granule should be sparse (~95% zeros), got {connectivity_sparsity:.3f}"
 
 
 class TestEnhancedPurkinjeCell:
@@ -207,10 +211,11 @@ class TestEnhancedPurkinjeCell:
         )
 
         # Contract: dendrites exist
-        assert purkinje.n_dendrites == n_dendrites, f"Should have {n_dendrites} dendritic compartments"
+        assert (
+            purkinje.n_dendrites == n_dendrites
+        ), f"Should have {n_dendrites} dendritic compartments"
         assert purkinje.n_dendrites > 0, "Invariant: positive dendrites"
-        assert hasattr(purkinje, 'dendrite_voltage'), \
-            "Should have dendritic voltage state"
+        assert hasattr(purkinje, "dendrite_voltage"), "Should have dendritic voltage state"
 
     def test_purkinje_simple_spikes(self, device):
         """Test Purkinje generates simple spikes from parallel fibers."""
@@ -234,8 +239,7 @@ class TestEnhancedPurkinjeCell:
 
         # Contract: should generate some simple spikes
         # (Simple spikes: 40-100 Hz in biology, so expect several in 20ms)
-        assert simple_spike_count > 0, \
-            "Purkinje should generate simple spikes from parallel fibers"
+        assert simple_spike_count > 0, "Purkinje should generate simple spikes from parallel fibers"
 
     def test_purkinje_complex_spikes(self, device):
         """Test climbing fiber triggers complex spikes."""
@@ -263,8 +267,9 @@ class TestEnhancedPurkinjeCell:
                 break
 
         # Contract: climbing fiber should trigger complex spike response
-        assert complex_spike_detected or purkinje.calcium.sum() > 0, \
-            "Climbing fiber should trigger calcium response (complex spike)"
+        assert (
+            complex_spike_detected or purkinje.calcium.sum() > 0
+        ), "Climbing fiber should trigger calcium response (complex spike)"
 
     def test_purkinje_complex_spike_refractory(self, device):
         """Test complex spikes have refractory period (~100ms)."""
@@ -296,8 +301,9 @@ class TestEnhancedPurkinjeCell:
         # Contract: second complex spike should be delayed by refractory period
         if second_complex_time is not None:
             refractory = second_complex_time - first_complex_time
-            assert refractory >= 100, \
-                f"Complex spike refractory should be ~100ms, got {refractory}ms"
+            assert (
+                refractory >= 100
+            ), f"Complex spike refractory should be ~100ms, got {refractory}ms"
 
     def test_purkinje_calcium_dynamics(self, device):
         """Test dendritic calcium dynamics with complex spikes."""
@@ -342,10 +348,11 @@ class TestDeepCerebellarNuclei:
         )
 
         # Contract: DCN has correct connectivity
-        assert dcn.purkinje_to_dcn.shape == (64, 64), \
-            "Purkinje→DCN should connect Purkinje to DCN"
-        assert dcn.mossy_to_dcn.shape == (64, 128), \
-            "Mossy→DCN should provide excitatory collaterals"
+        assert dcn.purkinje_to_dcn.shape == (64, 64), "Purkinje→DCN should connect Purkinje to DCN"
+        assert dcn.mossy_to_dcn.shape == (
+            64,
+            128,
+        ), "Mossy→DCN should provide excitatory collaterals"
 
     def test_dcn_purkinje_inhibition(self, device):
         """Test Purkinje cells inhibit DCN."""
@@ -384,8 +391,7 @@ class TestDeepCerebellarNuclei:
         baseline_avg = sum(baseline_outputs) / len(baseline_outputs)
         inhibited_avg = sum(inhibited_outputs) / len(inhibited_outputs)
 
-        assert inhibited_avg < baseline_avg, \
-            "Purkinje inhibition should reduce DCN activity"
+        assert inhibited_avg < baseline_avg, "Purkinje inhibition should reduce DCN activity"
 
     def test_dcn_mossy_excitation(self, device):
         """Test mossy fiber collaterals excite DCN."""
@@ -417,8 +423,7 @@ class TestDeepCerebellarNuclei:
         weak_avg = sum(weak_outputs) / len(weak_outputs)
         strong_avg = sum(strong_outputs) / len(strong_outputs)
 
-        assert strong_avg >= weak_avg, \
-            "Stronger mossy input should maintain/increase DCN activity"
+        assert strong_avg >= weak_avg, "Stronger mossy input should maintain/increase DCN activity"
 
     def test_dcn_output_type(self, device):
         """Test DCN output is bool spikes (ADR-004)."""
@@ -453,20 +458,23 @@ class TestEnhancedCerebellumIntegration:
         expected_granule_size = cerebellum_enhanced.granule_size
 
         # Contract: granule layer exists
-        assert cerebellum_enhanced.granule_layer is not None, \
-            "Enhanced cerebellum should have granule layer"
-        assert cerebellum_enhanced.granule_layer.n_granule == expected_granule_size, \
-            f"Granule layer should have {expected_granule_size} cells"
+        assert (
+            cerebellum_enhanced.granule_layer is not None
+        ), "Enhanced cerebellum should have granule layer"
+        assert (
+            cerebellum_enhanced.granule_layer.n_granule == expected_granule_size
+        ), f"Granule layer should have {expected_granule_size} cells"
 
         # Contract: enhanced Purkinje cells exist
-        assert cerebellum_enhanced.purkinje_cells is not None, \
-            "Enhanced cerebellum should have Purkinje cell list"
-        assert len(cerebellum_enhanced.purkinje_cells) == n_output, \
-            "Should have one Purkinje cell per output neuron"
+        assert (
+            cerebellum_enhanced.purkinje_cells is not None
+        ), "Enhanced cerebellum should have Purkinje cell list"
+        assert (
+            len(cerebellum_enhanced.purkinje_cells) == n_output
+        ), "Should have one Purkinje cell per output neuron"
 
         # Contract: DCN exists
-        assert cerebellum_enhanced.deep_nuclei is not None, \
-            "Enhanced cerebellum should have DCN"
+        assert cerebellum_enhanced.deep_nuclei is not None, "Enhanced cerebellum should have DCN"
 
     def test_enhanced_forward_pipeline(self, cerebellum_enhanced, device):
         """Test enhanced cerebellum processes mossy→granule→Purkinje→DCN."""
@@ -482,10 +490,13 @@ class TestEnhancedCerebellumIntegration:
 
         # Contract: intermediate states should exist
         # (Granule layer should have processed input)
-        assert cerebellum_enhanced.granule_layer.neurons.membrane is not None, \
-            "Granule layer should have membrane state after forward"
+        assert (
+            cerebellum_enhanced.granule_layer.neurons.membrane is not None
+        ), "Granule layer should have membrane state after forward"
 
-    def test_enhanced_vs_classic_compatibility(self, cerebellum_classic, cerebellum_enhanced, device):
+    def test_enhanced_vs_classic_compatibility(
+        self, cerebellum_classic, cerebellum_enhanced, device
+    ):
         """Test both enhanced and classic cerebellum work with same input."""
         mossy_spikes = torch.rand(128, device=device) > 0.8
 
@@ -496,10 +507,12 @@ class TestEnhancedCerebellumIntegration:
         enhanced_output = cerebellum_enhanced(mossy_spikes)
 
         # Contract: both should produce valid outputs
-        assert classic_output.shape == enhanced_output.shape, \
-            "Classic and enhanced should have same output shape"
-        assert classic_output.dtype == enhanced_output.dtype == torch.bool, \
-            "Both should output bool spikes"
+        assert (
+            classic_output.shape == enhanced_output.shape
+        ), "Classic and enhanced should have same output shape"
+        assert (
+            classic_output.dtype == enhanced_output.dtype == torch.bool
+        ), "Both should output bool spikes"
 
     def test_enhanced_cerebellum_learning(self, cerebellum_enhanced, device):
         """Test enhanced cerebellum supports error-corrective learning."""
@@ -514,8 +527,9 @@ class TestEnhancedCerebellumIntegration:
 
         # Contract: error delivery should work
         assert isinstance(metrics, dict), "deliver_error should return metrics"
-        assert "error" in metrics or "total_error" in metrics, \
-            "Metrics should include error information"
+        assert (
+            "error" in metrics or "total_error" in metrics
+        ), "Metrics should include error information"
 
     def test_enhanced_cerebellum_checkpoint(self, cerebellum_enhanced, device):
         """Test enhanced cerebellum checkpoint includes all components."""
@@ -529,16 +543,12 @@ class TestEnhancedCerebellumIntegration:
 
         # Contract: checkpoint should include enhanced components
         assert "config" in state, "Checkpoint should include config"
-        assert state["config"]["use_enhanced_microcircuit"], \
-            "Config should indicate enhanced mode"
+        assert state["config"]["use_enhanced_microcircuit"], "Config should indicate enhanced mode"
 
         if "enhanced_state" in state:
-            assert "granule_layer" in state["enhanced_state"], \
-                "Should checkpoint granule layer"
-            assert "purkinje_cells" in state["enhanced_state"], \
-                "Should checkpoint Purkinje cells"
-            assert "deep_nuclei" in state["enhanced_state"], \
-                "Should checkpoint DCN"
+            assert "granule_layer" in state["enhanced_state"], "Should checkpoint granule layer"
+            assert "purkinje_cells" in state["enhanced_state"], "Should checkpoint Purkinje cells"
+            assert "deep_nuclei" in state["enhanced_state"], "Should checkpoint DCN"
 
     def test_enhanced_cerebellum_growth(self, cerebellum_enhanced):
         """Test enhanced cerebellum grows correctly."""
@@ -549,17 +559,18 @@ class TestEnhancedCerebellumIntegration:
         cerebellum_enhanced.grow_output(n_new=32)
 
         # Contract: output size increased
-        assert cerebellum_enhanced.purkinje_size == initial_output + 32, \
-            "Output size should increase by 32"
+        assert (
+            cerebellum_enhanced.purkinje_size == initial_output + 32
+        ), "Output size should increase by 32"
 
         # Contract: Purkinje cells increased
         new_purkinje_count = len(cerebellum_enhanced.purkinje_cells)
-        assert new_purkinje_count == initial_purkinje_count + 32, \
-            "Should add 32 new Purkinje cells"
+        assert new_purkinje_count == initial_purkinje_count + 32, "Should add 32 new Purkinje cells"
 
         # Contract: DCN grew
-        assert cerebellum_enhanced.deep_nuclei.n_output == initial_output + 32, \
-            "DCN output should grow with cerebellum"
+        assert (
+            cerebellum_enhanced.deep_nuclei.n_output == initial_output + 32
+        ), "DCN output should grow with cerebellum"
 
 
 class TestParallelFiberTiming:
@@ -595,8 +606,9 @@ class TestParallelFiberTiming:
 
         # Should see activity variation (not all at once)
         assert max(spike_counts) > 0, "Should have some granule activity"
-        assert len(set(spike_counts)) > 1, \
-            "Granule activity should vary over time (temporal delays)"
+        assert (
+            len(set(spike_counts)) > 1
+        ), "Granule activity should vary over time (temporal delays)"
 
     def test_parallel_fiber_spatial_distribution(self, device):
         """Test parallel fibers provide spatially distributed input to Purkinje."""
@@ -623,15 +635,16 @@ class TestParallelFiberTiming:
         fourth_quarter = parallel_fibers[384:512].sum().item()
 
         # At least two quarters should have activity (expansion distributes input)
-        active_quarters = sum([
-            first_quarter > 0,
-            second_quarter > 0,
-            third_quarter > 0,
-            fourth_quarter > 0,
-        ])
+        active_quarters = sum(
+            [
+                first_quarter > 0,
+                second_quarter > 0,
+                third_quarter > 0,
+                fourth_quarter > 0,
+            ]
+        )
 
-        assert active_quarters >= 2, \
-            "Granule expansion should distribute mossy input spatially"
+        assert active_quarters >= 2, "Granule expansion should distribute mossy input spatially"
 
 
 class TestBackwardCompatibility:

@@ -45,14 +45,14 @@ print(report)
 
 from __future__ import annotations
 
+import json
+import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import json
-import logging
 from pathlib import Path
-import time
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 
 class LogLevel(Enum):
@@ -145,21 +145,15 @@ class CurriculumLogger:
         if console_output:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(getattr(logging, log_level.value))
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             console_handler.setFormatter(formatter)
             self.logger.addHandler(console_handler)
 
         # File handler
         if file_output:
-            file_handler = logging.FileHandler(
-                self.log_dir / "curriculum_training.log"
-            )
+            file_handler = logging.FileHandler(self.log_dir / "curriculum_training.log")
             file_handler.setLevel(getattr(logging, log_level.value))
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
@@ -204,17 +198,17 @@ class CurriculumLogger:
         msg += f"[Stage {stage} Start] {stage_name}\n"
         msg += f"  Duration: {config.get('duration_weeks', '?')} weeks\n"
 
-        if 'tasks' in config:
-            tasks = config['tasks']
-            weights = config.get('task_weights', {})
+        if "tasks" in config:
+            tasks = config["tasks"]
+            weights = config.get("task_weights", {})
             msg += "  Tasks:\n"
             for task in tasks:
                 weight_pct = weights.get(task, 1.0 / len(tasks)) * 100
                 msg += f"    - {task}: {weight_pct:.0f}%\n"
 
-        if 'success_criteria' in config:
+        if "success_criteria" in config:
             msg += "  Success Criteria:\n"
-            for metric, threshold in config['success_criteria'].items():
+            for metric, threshold in config["success_criteria"].items():
                 msg += f"    - {metric}: >{threshold:.2f}\n"
 
         msg += f"{'='*80}\n"
@@ -519,8 +513,7 @@ class CurriculumLogger:
             n_recent = max(1, len(stage_log.step_metrics) // 10)
             recent_metrics = stage_log.step_metrics[-n_recent:]
 
-            metric_names = [k for k in recent_metrics[0].keys()
-                          if k not in ['step', 'timestamp']]
+            metric_names = [k for k in recent_metrics[0].keys() if k not in ["step", "timestamp"]]
 
             for metric in metric_names:
                 values = [m[metric] for m in recent_metrics if metric in m]
@@ -533,21 +526,16 @@ class CurriculumLogger:
         if stage_log.growth_events:
             report.append(f"Growth Events: {len(stage_log.growth_events)}")
             for event in stage_log.growth_events:
-                step_info = f"Step {event['step']}" if event['step'] else "N/A"
-                report.append(
-                    f"  {step_info} - {event['region']}: "
-                    f"+{event['n_added']} neurons"
-                )
+                step_info = f"Step {event['step']}" if event["step"] else "N/A"
+                report.append(f"  {step_info} - {event['region']}: " f"+{event['n_added']} neurons")
                 report.append(f"    Reason: {event['reason']}")
             report.append("")
 
         # Consolidation events
         if stage_log.consolidation_events:
-            report.append(
-                f"Consolidation Events: {len(stage_log.consolidation_events)}"
-            )
-            total_patterns = sum(e['n_patterns'] for e in stage_log.consolidation_events)
-            total_duration = sum(e['duration_seconds'] for e in stage_log.consolidation_events)
+            report.append(f"Consolidation Events: {len(stage_log.consolidation_events)}")
+            total_patterns = sum(e["n_patterns"] for e in stage_log.consolidation_events)
+            total_duration = sum(e["duration_seconds"] for e in stage_log.consolidation_events)
             report.append(f"  Total patterns replayed: {total_patterns}")
             report.append(f"  Total duration: {total_duration:.1f}s")
             report.append("")
@@ -556,12 +544,12 @@ class CurriculumLogger:
         if stage_log.milestone_checks:
             report.append(f"Milestone Checks: {len(stage_log.milestone_checks)}")
             for i, check in enumerate(stage_log.milestone_checks, 1):
-                week_info = f"Week {check['week']}" if check['week'] else "N/A"
-                passed = sum(1 for v in check['results'].values() if v)
-                total = len(check['results'])
+                week_info = f"Week {check['week']}" if check["week"] else "N/A"
+                passed = sum(1 for v in check["results"].values() if v)
+                total = len(check["results"])
                 report.append(f"  Check {i} ({week_info}): {passed}/{total} passed")
 
-                for milestone, result in check['results'].items():
+                for milestone, result in check["results"].items():
                     symbol = "✅" if result else "❌"
                     report.append(f"    {symbol} {milestone}")
             report.append("")
@@ -570,9 +558,7 @@ class CurriculumLogger:
         if stage_log.transitions:
             report.append("Transitions:")
             for transition in stage_log.transitions:
-                report.append(
-                    f"  {transition['old_stage']} → {transition['new_stage']}"
-                )
+                report.append(f"  {transition['old_stage']} → {transition['new_stage']}")
                 report.append(f"    Reason: {transition['reason']}")
             report.append("")
 
@@ -613,7 +599,7 @@ class CurriculumLogger:
                 report.append("  Duration: In progress")
 
             if stage_log.step_metrics:
-                total_steps = stage_log.step_metrics[-1]['step']
+                total_steps = stage_log.step_metrics[-1]["step"]
                 report.append(f"  Total steps: {total_steps}")
 
             report.append(f"  Growth events: {len(stage_log.growth_events)}")
@@ -652,7 +638,7 @@ class CurriculumLogger:
             "transitions": stage_log.transitions,
         }
 
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(log_dict, f, indent=2)
 
     def save_session(self, filename: Optional[str] = None) -> None:
@@ -686,7 +672,7 @@ class CurriculumLogger:
                 "n_transitions": len(stage_log.transitions),
             }
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(session_data, f, indent=2)
 
         self.logger.info(f"Session saved to {filepath}")

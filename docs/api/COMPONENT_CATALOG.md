@@ -341,4 +341,3 @@ Total: **4** pathways
 - [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Neuron populations used by regions
 - [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules used by components
 - [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) - State classes for checkpointing
-

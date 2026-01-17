@@ -54,17 +54,17 @@ class STPType(Enum):
     """Predefined synapse types based on Markram et al. (1998) classification."""
 
     # Depressing synapses (high U, dominant depression)
-    DEPRESSING = "depressing"         # Strong initial, rapid fatigue (U=0.5)
+    DEPRESSING = "depressing"  # Strong initial, rapid fatigue (U=0.5)
     DEPRESSING_MODERATE = "depressing_moderate"  # Moderate depression (U=0.4, thalamic sensory)
     DEPRESSING_STRONG = "depressing_strong"  # Strong depression (U=0.7, thalamic L6 feedback)
     DEPRESSING_FAST = "depressing_fast"  # Very fast depression, quick recovery (U=0.8)
 
     # Facilitating synapses (low U, dominant facilitation)
-    FACILITATING = "facilitating"     # Weak initial, builds up with activity
+    FACILITATING = "facilitating"  # Weak initial, builds up with activity
     FACILITATING_STRONG = "facilitating_strong"  # Very strong facilitation
 
     # Mixed dynamics
-    PSEUDOLINEAR = "pseudolinear"     # Balanced, roughly linear response
+    PSEUDOLINEAR = "pseudolinear"  # Balanced, roughly linear response
 
     # No STP (pass-through)
     NONE = "none"
@@ -98,10 +98,11 @@ class STPConfig:
 
         dt: Simulation timestep (ms)
     """
-    U: float = 0.5              # Baseline release probability
-    tau_d: float = 200.0        # Depression recovery (ms)
-    tau_f: float = 50.0         # Facilitation decay (ms)
-    dt: float = 1.0             # Timestep (ms)
+
+    U: float = 0.5  # Baseline release probability
+    tau_d: float = 200.0  # Depression recovery (ms)
+    tau_f: float = 50.0  # Facilitation decay (ms)
+    dt: float = 1.0  # Timestep (ms)
 
     @classmethod
     def from_type(cls, stp_type: STPType, dt: float = 1.0) -> STPConfig:
@@ -193,21 +194,14 @@ class ShortTermPlasticity(nn.Module):
 
         # Register constants
         self.register_buffer("U", torch.tensor(self.config.U, dtype=torch.float32))
+        self.register_buffer("decay_d", torch.tensor(self.config.decay_d, dtype=torch.float32))
+        self.register_buffer("decay_f", torch.tensor(self.config.decay_f, dtype=torch.float32))
         self.register_buffer(
-            "decay_d",
-            torch.tensor(self.config.decay_d, dtype=torch.float32)
-        )
-        self.register_buffer(
-            "decay_f",
-            torch.tensor(self.config.decay_f, dtype=torch.float32)
-        )
-        self.register_buffer(
-            "recovery_d",
-            torch.tensor(1.0 - self.config.decay_d, dtype=torch.float32)
+            "recovery_d", torch.tensor(1.0 - self.config.decay_d, dtype=torch.float32)
         )
         self.register_buffer(
             "recovery_f",
-            torch.tensor((1.0 - self.config.decay_f) * self.config.U, dtype=torch.float32)
+            torch.tensor((1.0 - self.config.decay_f) * self.config.U, dtype=torch.float32),
         )
 
         # State variables (initialized on first forward or reset)
@@ -244,12 +238,12 @@ class ShortTermPlasticity(nn.Module):
 
             Multiply this with synaptic weights to get effective transmission.
         """
-        assert pre_spikes.dim() == 1, (
-            f"STP.forward: Expected 1D pre_spikes (ADR-005), got shape {pre_spikes.shape}"
-        )
-        assert pre_spikes.shape[0] == self.n_pre, (
-            f"STP.forward: pre_spikes has {pre_spikes.shape[0]} neurons, expected {self.n_pre}"
-        )
+        assert (
+            pre_spikes.dim() == 1
+        ), f"STP.forward: Expected 1D pre_spikes (ADR-005), got shape {pre_spikes.shape}"
+        assert (
+            pre_spikes.shape[0] == self.n_pre
+        ), f"STP.forward: pre_spikes has {pre_spikes.shape[0]} neurons, expected {self.n_pre}"
 
         if self.u is None:
             self.reset_state()
@@ -330,7 +324,7 @@ class ShortTermPlasticity(nn.Module):
         if state["x"] is not None:
             self.x = state["x"].to(self.U.device)
 
-    def grow(self, n_new: int, target: str = 'pre') -> None:
+    def grow(self, n_new: int, target: str = "pre") -> None:
         """Grow STP dimensions by adding new neurons.
 
         Args:
@@ -341,7 +335,7 @@ class ShortTermPlasticity(nn.Module):
             - Updates n_pre or n_post
             - Expands state tensors (u, x) with baseline values
         """
-        if target == 'pre':
+        if target == "pre":
             old_n_pre = self.n_pre
             self.n_pre = old_n_pre + n_new
 
@@ -377,7 +371,7 @@ class ShortTermPlasticity(nn.Module):
                     self.u = torch.cat([self.u, new_u], dim=0)
                     self.x = torch.cat([self.x, new_x], dim=0)
 
-        elif target == 'post':
+        elif target == "post":
             if self.n_post is None:
                 raise ValueError("Cannot grow 'post' dimension when n_post is None")
 
@@ -502,7 +496,7 @@ class STPSynapse(nn.Module):
             # pre_spikes is (batch, n_pre)
             effective_w = w * efficacy
             # (batch, n_pre) @ (batch, n_pre, n_post) needs einsum
-            post_current = torch.einsum('bi,bij->bj', pre_spikes, effective_w)
+            post_current = torch.einsum("bi,bij->bj", pre_spikes, effective_w)
         else:
             # efficacy is (batch, n_pre)
             # Modulate spikes by efficacy, then project

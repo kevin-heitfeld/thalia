@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Dict
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -32,6 +32,7 @@ from thalia.constants.architecture import (
 
 class MetacognitiveStage(Enum):
     """Developmental stages of metacognitive ability."""
+
     TODDLER = 1  # Binary: know vs don't know
     PRESCHOOL = 2  # Coarse: high/medium/low
     SCHOOL_AGE = 3  # Continuous but poorly calibrated
@@ -41,6 +42,7 @@ class MetacognitiveStage(Enum):
 @dataclass
 class MetacognitiveMonitorConfig:
     """Configuration for metacognitive monitoring."""
+
     input_size: int = 256  # Size of population activity
     hidden_size: int = 64  # Hidden layer for calibration network
     stage: MetacognitiveStage = MetacognitiveStage.TODDLER
@@ -129,13 +131,10 @@ class CalibrationNetwork(nn.Module):
             nn.Linear(config.hidden_size, config.hidden_size),
             nn.ReLU(),
             nn.Linear(config.hidden_size, 1),
-            nn.Sigmoid()  # Output calibrated confidence [0, 1]
+            nn.Sigmoid(),  # Output calibrated confidence [0, 1]
         )
 
-        self.optimizer = torch.optim.Adam(
-            self.network.parameters(),
-            lr=config.calibration_lr
-        )
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=config.calibration_lr)
 
         # Training statistics
         self.n_updates = 0
@@ -154,10 +153,7 @@ class CalibrationNetwork(nn.Module):
         return self.network(raw_confidence)
 
     def update(
-        self,
-        raw_confidence: float,
-        actual_correct: float,
-        dopamine: Optional[float] = None
+        self, raw_confidence: float, actual_correct: float, dopamine: Optional[float] = None
     ) -> Dict[str, float]:
         """
         Update calibration network based on feedback.
@@ -181,17 +177,12 @@ class CalibrationNetwork(nn.Module):
         with torch.enable_grad():
             # Forward pass
             raw_conf_tensor = torch.tensor(
-                [[raw_confidence]],
-                device=self.network[0].weight.device,
-                requires_grad=True
+                [[raw_confidence]], device=self.network[0].weight.device, requires_grad=True
             )
             calibrated = self.forward(raw_conf_tensor)
 
             # Compute loss (mean squared error)
-            target = torch.tensor(
-                [[actual_correct]],
-                device=calibrated.device
-            )
+            target = torch.tensor([[actual_correct]], device=calibrated.device)
             loss = ((calibrated - target) ** 2).mean()
 
             # Backward pass with dopamine gating
@@ -251,8 +242,7 @@ class MetacognitiveMonitor:
         }
 
     def estimate_confidence(
-        self,
-        population_activity: torch.Tensor
+        self, population_activity: torch.Tensor
     ) -> Tuple[float, Dict[str, float]]:
         """
         Estimate confidence with stage-appropriate granularity.
@@ -268,9 +258,7 @@ class MetacognitiveMonitor:
         population_activity = population_activity.to(self.device)
 
         # Get raw confidence
-        raw_confidence = self.confidence_estimator.estimate_raw_confidence(
-            population_activity
-        )
+        raw_confidence = self.confidence_estimator.estimate_raw_confidence(population_activity)
 
         # Stage-specific processing
         if self.config.stage == MetacognitiveStage.TODDLER:
@@ -293,10 +281,7 @@ class MetacognitiveMonitor:
 
         elif self.config.stage == MetacognitiveStage.ADOLESCENT:
             # Well-calibrated through learning
-            raw_tensor = torch.tensor(
-                [[raw_confidence]],
-                device=self.device
-            )
+            raw_tensor = torch.tensor([[raw_confidence]], device=self.device)
             calibrated = self.calibration_network(raw_tensor)
             confidence = calibrated.item()
 
@@ -352,7 +337,7 @@ class MetacognitiveMonitor:
         self,
         population_activity: torch.Tensor,
         actual_correct: bool,
-        dopamine: Optional[float] = None
+        dopamine: Optional[float] = None,
     ) -> Dict[str, float]:
         """
         Train calibration network (Stage 3-4 only).
@@ -365,22 +350,17 @@ class MetacognitiveMonitor:
         Returns:
             metrics: Training metrics
         """
-        if self.config.stage not in [
-            MetacognitiveStage.SCHOOL_AGE,
-            MetacognitiveStage.ADOLESCENT
-        ]:
+        if self.config.stage not in [MetacognitiveStage.SCHOOL_AGE, MetacognitiveStage.ADOLESCENT]:
             return {"error": "Calibration only available in Stage 3-4"}
 
         # Get raw confidence
-        raw_confidence = self.confidence_estimator.estimate_raw_confidence(
-            population_activity
-        )
+        raw_confidence = self.confidence_estimator.estimate_raw_confidence(population_activity)
 
         # Update calibration network
         metrics = self.calibration_network.update(
             raw_confidence=raw_confidence,
             actual_correct=1.0 if actual_correct else 0.0,
-            dopamine=dopamine
+            dopamine=dopamine,
         )
 
         return metrics
@@ -397,7 +377,8 @@ class MetacognitiveMonitor:
         """Get monitoring statistics."""
         abstention_rate = (
             self.statistics["n_abstentions"] / self.statistics["n_estimates"]
-            if self.statistics["n_estimates"] > 0 else 0.0
+            if self.statistics["n_estimates"] > 0
+            else 0.0
         )
 
         return {

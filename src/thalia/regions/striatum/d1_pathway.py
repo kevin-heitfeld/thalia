@@ -12,7 +12,7 @@ Biological role: "GO" signal for action selection
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 
@@ -88,7 +88,9 @@ class D1Pathway(StriatumPathway):
         self.weights.data = new_weights
 
         # Add pathway identifier
-        metrics['pathway'] = 'D1'
-        metrics['dopamine_sign'] = 'positive' if dopamine > 0 else 'negative' if dopamine < 0 else 'zero'
+        metrics["pathway"] = "D1"
+        metrics["dopamine_sign"] = (
+            "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
+        )
 
         return metrics

@@ -4,8 +4,8 @@ Tests that neuron populations can be grown dynamically while preserving
 existing neuron state - critical for developmental/curriculum learning.
 """
 
-import torch
 import pytest
+import torch
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -13,12 +13,15 @@ from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfi
 class TestNeuronGrowth:
     """Test suite for ConductanceLIF.grow_neurons() method."""
 
-    @pytest.mark.parametrize("initial_n,growth_amount", [
-        (50, 10),
-        (100, 20),
-        (200, 50),
-        (500, 100),
-    ])
+    @pytest.mark.parametrize(
+        "initial_n,growth_amount",
+        [
+            (50, 10),
+            (100, 20),
+            (200, 50),
+            (500, 100),
+        ],
+    )
     def test_grow_neurons_various_sizes(self, initial_n, growth_amount):
         """Test growth works with various population sizes."""
         config = ConductanceLIFConfig()
@@ -76,7 +79,9 @@ class TestNeuronGrowth:
         assert neurons.g_E[initial_n:].allclose(torch.zeros(growth_amount))
         assert neurons.g_I[initial_n:].allclose(torch.zeros(growth_amount))
         assert neurons.g_adapt[initial_n:].allclose(torch.zeros(growth_amount))
-        assert neurons.refractory[initial_n:].allclose(torch.zeros(growth_amount, dtype=torch.int32))
+        assert neurons.refractory[initial_n:].allclose(
+            torch.zeros(growth_amount, dtype=torch.int32)
+        )
 
     def test_grow_neurons_functional_after_growth(self):
         """Test that neurons remain functional after growth."""
@@ -155,7 +160,9 @@ class TestNeuronGrowth:
         torch.testing.assert_close(neurons.v_threshold[:initial_n], old_thresholds)
 
         # New thresholds use default
-        assert neurons.v_threshold[initial_n:].allclose(torch.full((growth_amount,), config.v_threshold))
+        assert neurons.v_threshold[initial_n:].allclose(
+            torch.full((growth_amount,), config.v_threshold)
+        )
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_grow_neurons_device_consistency(self):
@@ -207,8 +214,8 @@ class TestGrowthIntegrationWithRegions:
 
         # Create sizes dict (Phase 2 pattern)
         sizes = {
-            'input_size': 128,
-            'n_neurons': initial_n,
+            "input_size": 128,
+            "n_neurons": initial_n,
         }
 
         # Create config with behavioral parameters only

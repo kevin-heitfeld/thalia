@@ -8,13 +8,13 @@ This is an exact copy of test_streaming_trainer.py but using DynamicBrain instea
 import pytest
 import torch
 
-from thalia.training.streaming import (
-    StreamingTrainer,
-    StreamConfig,
-    ExperienceBuffer,
-    DriftDetector,
-)
 from tests.utils import create_test_brain
+from thalia.training.streaming import (
+    DriftDetector,
+    ExperienceBuffer,
+    StreamConfig,
+    StreamingTrainer,
+)
 
 
 @pytest.fixture
@@ -34,12 +34,13 @@ def test_stream_config_defaults():
     """Test StreamConfig has valid default values."""
     config = StreamConfig()
     # Test contract: defaults should be reasonable
-    assert 0 < config.eval_frequency <= 100000, \
-        f"Eval frequency should be positive and reasonable, got {config.eval_frequency}"
-    assert isinstance(config.enable_replay, bool), \
-        "Replay flag should be boolean"
-    assert 0 < config.replay_buffer_size <= 1000000, \
-        f"Buffer size should be positive and reasonable, got {config.replay_buffer_size}"
+    assert (
+        0 < config.eval_frequency <= 100000
+    ), f"Eval frequency should be positive and reasonable, got {config.eval_frequency}"
+    assert isinstance(config.enable_replay, bool), "Replay flag should be boolean"
+    assert (
+        0 < config.replay_buffer_size <= 1000000
+    ), f"Buffer size should be positive and reasonable, got {config.replay_buffer_size}"
 
 
 def test_experience_buffer_add_and_sample():
@@ -52,8 +53,7 @@ def test_experience_buffer_add_and_sample():
         buffer.add({"input": torch.randn(10), "label": i})
 
     # Test contract: buffer should contain added samples
-    assert len(buffer) == n_samples_added, \
-        f"Buffer should contain {n_samples_added} samples"
+    assert len(buffer) == n_samples_added, f"Buffer should contain {n_samples_added} samples"
 
     # Sample
     sample = buffer.sample_random()
@@ -73,8 +73,7 @@ def test_experience_buffer_max_capacity():
         buffer.add({"value": i})
 
     # Test contract: buffer should not exceed capacity
-    assert len(buffer) == capacity, \
-        f"Buffer should be capped at capacity ({capacity})"
+    assert len(buffer) == capacity, f"Buffer should be capped at capacity ({capacity})"
 
     # Check oldest samples were dropped
     samples = [buffer.buffer[i]["value"] for i in range(len(buffer))]
@@ -182,10 +181,7 @@ def test_streaming_trainer_process_sample(mock_brain):
         yield sample
 
     # Contract: Should process sample without raising
-    stats = trainer.train_online(
-        data_stream=single_sample_stream(),
-        max_samples=1
-    )
+    stats = trainer.train_online(data_stream=single_sample_stream(), max_samples=1)
 
     # Verify sample was processed
     assert stats.samples_processed == 1, "Should process one sample"
@@ -210,6 +206,7 @@ def test_streaming_trainer_train_online(mock_brain):
 
     # Create simple stream
     max_samples = 150
+
     def data_stream():
         for i in range(max_samples):
             yield {"input": torch.randn(10), "label": i % 5}
@@ -222,8 +219,7 @@ def test_streaming_trainer_train_online(mock_brain):
     )
 
     # Test contract: should process requested number of samples
-    assert stats.samples_processed == max_samples, \
-        f"Should process {max_samples} samples"
+    assert stats.samples_processed == max_samples, f"Should process {max_samples} samples"
     assert stats.duration_seconds > 0, "Should track training duration"
     assert len(stats.performance_history) > 0, "Should have evaluation history"
 
@@ -281,8 +277,9 @@ def test_streaming_trainer_early_stop(mock_brain):
     )
 
     # Test contract: should process exactly max_samples
-    assert stats.samples_processed == max_samples, \
-        f"Should stop at {max_samples} samples (not process indefinitely)"
+    assert (
+        stats.samples_processed == max_samples
+    ), f"Should stop at {max_samples} samples (not process indefinitely)"
 
 
 def test_streaming_trainer_performance_summary(mock_brain):

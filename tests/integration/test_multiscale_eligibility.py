@@ -11,8 +11,8 @@ Validates that:
 import pytest
 import torch
 
-from thalia.core.dynamic_brain import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.dynamic_brain import BrainBuilder
 
 
 @pytest.fixture
@@ -34,12 +34,17 @@ def brain_with_multi_eligibility(global_config):
 
     # Add components with multi-timescale eligibility enabled
     builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-    builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-    builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+    builder.add_component(
+        "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+    )
+    builder.add_component(
+        "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+    )
 
     # Create striatum with multi-timescale eligibility enabled
     builder.add_component(
-        "striatum", "striatum",
+        "striatum",
+        "striatum",
         n_actions=4,
         neurons_per_action=10,
         use_multiscale_eligibility=True,
@@ -68,10 +73,10 @@ class TestMultiTimescaleEligibility:
         _, striatum = brain_with_multi_eligibility
 
         # After initialization, fast/slow trace dicts should exist
-        assert hasattr(striatum, '_eligibility_d1_fast')
-        assert hasattr(striatum, '_eligibility_d2_fast')
-        assert hasattr(striatum, '_eligibility_d1_slow')
-        assert hasattr(striatum, '_eligibility_d2_slow')
+        assert hasattr(striatum, "_eligibility_d1_fast")
+        assert hasattr(striatum, "_eligibility_d2_fast")
+        assert hasattr(striatum, "_eligibility_d1_slow")
+        assert hasattr(striatum, "_eligibility_d2_slow")
 
         # Initially empty (no forward passes yet)
         assert len(striatum._eligibility_d1_fast) == 0
@@ -132,8 +137,9 @@ class TestMultiTimescaleEligibility:
         if initial_magnitude > 0:
             decay_ratio = final_magnitude / initial_magnitude
             # Allow range [0.3, 0.5] (1/e ≈ 0.37)
-            assert 0.2 < decay_ratio < 0.6, \
-                f"Fast trace decay {decay_ratio:.3f} not in expected range (should be ~1/e = 0.37)"
+            assert (
+                0.2 < decay_ratio < 0.6
+            ), f"Fast trace decay {decay_ratio:.3f} not in expected range (should be ~1/e = 0.37)"
 
     def test_slow_trace_persistence(self, brain_with_multi_eligibility):
         """Test that slow traces persist much longer than fast traces."""
@@ -167,14 +173,16 @@ class TestMultiTimescaleEligibility:
 
         if initial_fast > 0:
             fast_ratio = final_fast / initial_fast
-            assert fast_ratio < 0.01, \
-                f"Fast trace should be nearly zero after 5s, but ratio is {fast_ratio:.4f}"
+            assert (
+                fast_ratio < 0.01
+            ), f"Fast trace should be nearly zero after 5s, but ratio is {fast_ratio:.4f}"
 
         if initial_slow > 0:
             slow_ratio = final_slow / initial_slow
             # After 5s (tau=60s), should retain ~92% (exp(-5/60) ≈ 0.92)
-            assert slow_ratio > 0.80, \
-                f"Slow trace should persist after 5s, but ratio is {slow_ratio:.4f}"
+            assert (
+                slow_ratio > 0.80
+            ), f"Slow trace should persist after 5s, but ratio is {slow_ratio:.4f}"
 
     def test_consolidation_from_fast_to_slow(self, brain_with_multi_eligibility):
         """Test that fast traces consolidate into slow traces."""
@@ -197,8 +205,9 @@ class TestMultiTimescaleEligibility:
         # Slow trace magnitude should be smaller than fast trace
         # (consolidation rate is only 1% per timestep)
         fast_magnitude = striatum._eligibility_d1_fast[source_key].abs().sum().item()
-        assert slow_magnitude < fast_magnitude, \
-            f"Slow trace {slow_magnitude:.4f} should be smaller than fast {fast_magnitude:.4f}"
+        assert (
+            slow_magnitude < fast_magnitude
+        ), f"Slow trace {slow_magnitude:.4f} should be smaller than fast {fast_magnitude:.4f}"
 
     def test_combined_eligibility_in_learning(self, brain_with_multi_eligibility):
         """Test that deliver_reward uses combined eligibility."""
@@ -227,8 +236,9 @@ class TestMultiTimescaleEligibility:
 
         # Weight change magnitude should be reasonable
         # (not exactly predictable due to learning rate and clamping)
-        assert weight_change < initial_weights.numel() * 0.1, \
-            "Weight change should not be too large"
+        assert (
+            weight_change < initial_weights.numel() * 0.1
+        ), "Weight change should not be too large"
 
 
 class TestSingleTimescaleMode:
@@ -241,10 +251,15 @@ class TestSingleTimescaleMode:
 
         # Add components with single-timescale (default)
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
         builder.add_component(
-            "striatum", "striatum",
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
+        builder.add_component(
+            "striatum",
+            "striatum",
             n_actions=4,
             neurons_per_action=10,
             use_multiscale_eligibility=False,  # Explicitly disable
@@ -265,14 +280,14 @@ class TestSingleTimescaleMode:
         _, striatum = brain_single_timescale
 
         # Should NOT have separate fast/slow dicts
-        assert not hasattr(striatum, '_eligibility_d1_fast')
-        assert not hasattr(striatum, '_eligibility_d2_fast')
-        assert not hasattr(striatum, '_eligibility_d1_slow')
-        assert not hasattr(striatum, '_eligibility_d2_slow')
+        assert not hasattr(striatum, "_eligibility_d1_fast")
+        assert not hasattr(striatum, "_eligibility_d2_fast")
+        assert not hasattr(striatum, "_eligibility_d1_slow")
+        assert not hasattr(striatum, "_eligibility_d2_slow")
 
         # Should still have regular eligibility dicts
-        assert hasattr(striatum, '_eligibility_d1')
-        assert hasattr(striatum, '_eligibility_d2')
+        assert hasattr(striatum, "_eligibility_d1")
+        assert hasattr(striatum, "_eligibility_d2")
 
     def test_single_timescale_learning(self, brain_single_timescale):
         """Test that learning works in single-timescale mode."""

@@ -11,47 +11,45 @@ Provides task-specific datasets for each developmental stage:
 
 from __future__ import annotations
 
-from thalia.datasets.phonology import (
-    PhonologicalDataset,
-    PhonologicalConfig,
-    PhonemeCategory,
-    PhonemeFeatures,
-    PHONEME_FEATURES,
-    Language,
-    LANGUAGE_PHONEMES,
-    LANGUAGE_CONTRASTS,
-)
-
-from thalia.datasets.temporal_sequences import (
-    TemporalSequenceDataset,
-    SequenceConfig,
-    PatternType,
-    create_stage0_temporal_dataset,
-)
-
 from thalia.datasets.cifar_wrapper import (
-    CIFARForThalia,
     CIFARConfig,
+    CIFARForThalia,
     create_stage1_cifar_datasets,
 )
-
 from thalia.datasets.grammar import (
-    GrammarDataset,
-    GrammarConfig,
-    GrammarVocabulary,
-    GrammarRule,
     AgreementType,
-    Language as GrammarLanguage,
+    GrammarConfig,
+    GrammarDataset,
+    GrammarRule,
+    GrammarVocabulary,
+)
+from thalia.datasets.grammar import Language as GrammarLanguage
+from thalia.datasets.grammar import (
     create_stage2_grammar_dataset,
 )
-
+from thalia.datasets.phonology import (
+    LANGUAGE_CONTRASTS,
+    LANGUAGE_PHONEMES,
+    PHONEME_FEATURES,
+    Language,
+    PhonemeCategory,
+    PhonemeFeatures,
+    PhonologicalConfig,
+    PhonologicalDataset,
+)
+from thalia.datasets.reading import Language as ReadingLanguage
 from thalia.datasets.reading import (
-    ReadingDataset,
     ReadingConfig,
-    ReadingVocabulary,
+    ReadingDataset,
     ReadingTask,
-    Language as ReadingLanguage,
+    ReadingVocabulary,
     create_stage3_reading_dataset,
+)
+from thalia.datasets.temporal_sequences import (
+    PatternType,
+    SequenceConfig,
+    TemporalSequenceDataset,
+    create_stage0_temporal_dataset,
 )
 
 __all__ = [

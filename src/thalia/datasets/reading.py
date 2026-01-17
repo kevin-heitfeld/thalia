@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -26,6 +26,7 @@ import torch
 
 class Language(Enum):
     """Supported languages for reading tasks."""
+
     ENGLISH = "en"
     GERMAN = "de"
     SPANISH = "es"
@@ -33,6 +34,7 @@ class Language(Enum):
 
 class ReadingTask(Enum):
     """Types of reading tasks."""
+
     PHONEME_TO_WORD = "phoneme_to_word"  # Decode phonemes → word
     WORD_TO_MEANING = "word_to_meaning"  # Map word → semantic features
     SENTENCE_COMPLETION = "sentence_completion"  # Fill in missing word
@@ -43,6 +45,7 @@ class ReadingTask(Enum):
 @dataclass
 class ReadingConfig:
     """Configuration for reading dataset."""
+
     vocab_size: int = 500  # Total vocabulary
     max_sentence_length: int = 10  # Max words per sentence
     max_phonemes: int = 15  # Max phonemes per word
@@ -98,13 +101,13 @@ class ReadingVocabulary:
         self.idx2phoneme = {idx: p for p, idx in self.phoneme2idx.items()}
 
         # Special tokens
-        self.word2idx['<PAD>'] = len(self.word2idx)
-        self.word2idx['<UNK>'] = len(self.word2idx)
-        self.pad_idx = self.word2idx['<PAD>']
-        self.unk_idx = self.word2idx['<UNK>']
+        self.word2idx["<PAD>"] = len(self.word2idx)
+        self.word2idx["<UNK>"] = len(self.word2idx)
+        self.pad_idx = self.word2idx["<PAD>"]
+        self.unk_idx = self.word2idx["<UNK>"]
 
-        self.phoneme2idx['<PAD>'] = len(self.phoneme2idx)
-        self.phoneme_pad_idx = self.phoneme2idx['<PAD>']
+        self.phoneme2idx["<PAD>"] = len(self.phoneme2idx)
+        self.phoneme_pad_idx = self.phoneme2idx["<PAD>"]
 
         self.vocab_size = len(self.word2idx)
         self.n_phonemes = len(self.phoneme2idx)
@@ -113,152 +116,152 @@ class ReadingVocabulary:
         """Initialize English vocabulary."""
         # Common nouns
         self.nouns = {
-            'cat': ['k', 'æ', 't'],
-            'dog': ['d', 'ɔ', 'g'],
-            'ball': ['b', 'ɔ', 'l'],
-            'book': ['b', 'ʊ', 'k'],
-            'car': ['k', 'ɑ', 'r'],
-            'tree': ['t', 'r', 'i'],
-            'bird': ['b', 'ɜ', 'r', 'd'],
-            'fish': ['f', 'ɪ', 'ʃ'],
-            'house': ['h', 'aʊ', 's'],
-            'girl': ['g', 'ɜ', 'r', 'l'],
-            'boy': ['b', 'ɔɪ'],
+            "cat": ["k", "æ", "t"],
+            "dog": ["d", "ɔ", "g"],
+            "ball": ["b", "ɔ", "l"],
+            "book": ["b", "ʊ", "k"],
+            "car": ["k", "ɑ", "r"],
+            "tree": ["t", "r", "i"],
+            "bird": ["b", "ɜ", "r", "d"],
+            "fish": ["f", "ɪ", "ʃ"],
+            "house": ["h", "aʊ", "s"],
+            "girl": ["g", "ɜ", "r", "l"],
+            "boy": ["b", "ɔɪ"],
         }
 
         # Common verbs
         self.verbs = {
-            'runs': ['r', 'ʌ', 'n', 'z'],
-            'jumps': ['dʒ', 'ʌ', 'm', 'p', 's'],
-            'eats': ['i', 't', 's'],
-            'sees': ['s', 'i', 'z'],
-            'reads': ['r', 'i', 'd', 'z'],
-            'plays': ['p', 'l', 'eɪ', 'z'],
-            'throws': ['θ', 'r', 'oʊ', 'z'],
-            'catches': ['k', 'æ', 'tʃ', 'ɪ', 'z'],
+            "runs": ["r", "ʌ", "n", "z"],
+            "jumps": ["dʒ", "ʌ", "m", "p", "s"],
+            "eats": ["i", "t", "s"],
+            "sees": ["s", "i", "z"],
+            "reads": ["r", "i", "d", "z"],
+            "plays": ["p", "l", "eɪ", "z"],
+            "throws": ["θ", "r", "oʊ", "z"],
+            "catches": ["k", "æ", "tʃ", "ɪ", "z"],
         }
 
         # Common adjectives
         self.adjectives = {
-            'big': ['b', 'ɪ', 'g'],
-            'small': ['s', 'm', 'ɔ', 'l'],
-            'red': ['r', 'ɛ', 'd'],
-            'blue': ['b', 'l', 'u'],
-            'fast': ['f', 'æ', 's', 't'],
-            'happy': ['h', 'æ', 'p', 'i'],
+            "big": ["b", "ɪ", "g"],
+            "small": ["s", "m", "ɔ", "l"],
+            "red": ["r", "ɛ", "d"],
+            "blue": ["b", "l", "u"],
+            "fast": ["f", "æ", "s", "t"],
+            "happy": ["h", "æ", "p", "i"],
         }
 
         # Function words
         self.function_words = {
-            'the': ['ð', 'ə'],
-            'a': ['ə'],
-            'in': ['ɪ', 'n'],
-            'on': ['ɑ', 'n'],
-            'with': ['w', 'ɪ', 'θ'],
-            'is': ['ɪ', 'z'],
+            "the": ["ð", "ə"],
+            "a": ["ə"],
+            "in": ["ɪ", "n"],
+            "on": ["ɑ", "n"],
+            "with": ["w", "ɪ", "θ"],
+            "is": ["ɪ", "z"],
         }
 
     def _init_german(self):
         """Initialize German vocabulary with IPA phonemes."""
         # Common nouns (German nouns are capitalized)
         self.nouns = {
-            'Katze': ['k', 'a', 't', 's', 'ə'],  # cat
-            'Hund': ['h', 'ʊ', 'n', 't'],  # dog
-            'Ball': ['b', 'a', 'l'],  # ball
-            'Buch': ['b', 'uː', 'x'],  # book
-            'Auto': ['aʊ', 't', 'o'],  # car
-            'Baum': ['b', 'aʊ', 'm'],  # tree
-            'Vogel': ['f', 'oː', 'g', 'əl'],  # bird
-            'Fisch': ['f', 'ɪ', 'ʃ'],  # fish
-            'Haus': ['h', 'aʊ', 's'],  # house
-            'Mädchen': ['m', 'ɛː', 't', 'ç', 'ən'],  # girl
-            'Junge': ['j', 'ʊ', 'ŋ', 'ə'],  # boy
+            "Katze": ["k", "a", "t", "s", "ə"],  # cat
+            "Hund": ["h", "ʊ", "n", "t"],  # dog
+            "Ball": ["b", "a", "l"],  # ball
+            "Buch": ["b", "uː", "x"],  # book
+            "Auto": ["aʊ", "t", "o"],  # car
+            "Baum": ["b", "aʊ", "m"],  # tree
+            "Vogel": ["f", "oː", "g", "əl"],  # bird
+            "Fisch": ["f", "ɪ", "ʃ"],  # fish
+            "Haus": ["h", "aʊ", "s"],  # house
+            "Mädchen": ["m", "ɛː", "t", "ç", "ən"],  # girl
+            "Junge": ["j", "ʊ", "ŋ", "ə"],  # boy
         }
 
         # Common verbs
         self.verbs = {
-            'läuft': ['l', 'ɔɪ', 'f', 't'],  # runs
-            'springt': ['ʃ', 'p', 'r', 'ɪ', 'ŋ', 't'],  # jumps
-            'isst': ['ɪ', 's', 't'],  # eats
-            'sieht': ['z', 'iː', 't'],  # sees
-            'liest': ['l', 'iː', 's', 't'],  # reads
-            'spielt': ['ʃ', 'p', 'iː', 'l', 't'],  # plays
-            'wirft': ['v', 'ɪ', 'r', 'f', 't'],  # throws
-            'fängt': ['f', 'ɛ', 'ŋ', 't'],  # catches
+            "läuft": ["l", "ɔɪ", "f", "t"],  # runs
+            "springt": ["ʃ", "p", "r", "ɪ", "ŋ", "t"],  # jumps
+            "isst": ["ɪ", "s", "t"],  # eats
+            "sieht": ["z", "iː", "t"],  # sees
+            "liest": ["l", "iː", "s", "t"],  # reads
+            "spielt": ["ʃ", "p", "iː", "l", "t"],  # plays
+            "wirft": ["v", "ɪ", "r", "f", "t"],  # throws
+            "fängt": ["f", "ɛ", "ŋ", "t"],  # catches
         }
 
         # Common adjectives
         self.adjectives = {
-            'groß': ['g', 'r', 'oː', 's'],  # big
-            'klein': ['k', 'l', 'aɪ', 'n'],  # small
-            'rot': ['r', 'oː', 't'],  # red
-            'blau': ['b', 'l', 'aʊ'],  # blue
-            'schnell': ['ʃ', 'n', 'ɛ', 'l'],  # fast
-            'glücklich': ['g', 'l', 'ʏ', 'k', 'l', 'ɪ', 'ç'],  # happy
+            "groß": ["g", "r", "oː", "s"],  # big
+            "klein": ["k", "l", "aɪ", "n"],  # small
+            "rot": ["r", "oː", "t"],  # red
+            "blau": ["b", "l", "aʊ"],  # blue
+            "schnell": ["ʃ", "n", "ɛ", "l"],  # fast
+            "glücklich": ["g", "l", "ʏ", "k", "l", "ɪ", "ç"],  # happy
         }
 
         # Function words
         self.function_words = {
-            'der': ['d', 'eː', 'ɐ'],  # the (masc)
-            'die': ['d', 'iː'],  # the (fem/plural)
-            'das': ['d', 'a', 's'],  # the (neut)
-            'ein': ['aɪ', 'n'],  # a (masc/neut)
-            'eine': ['aɪ', 'n', 'ə'],  # a (fem)
-            'in': ['ɪ', 'n'],  # in
-            'auf': ['aʊ', 'f'],  # on
-            'mit': ['m', 'ɪ', 't'],  # with
-            'ist': ['ɪ', 's', 't'],  # is
+            "der": ["d", "eː", "ɐ"],  # the (masc)
+            "die": ["d", "iː"],  # the (fem/plural)
+            "das": ["d", "a", "s"],  # the (neut)
+            "ein": ["aɪ", "n"],  # a (masc/neut)
+            "eine": ["aɪ", "n", "ə"],  # a (fem)
+            "in": ["ɪ", "n"],  # in
+            "auf": ["aʊ", "f"],  # on
+            "mit": ["m", "ɪ", "t"],  # with
+            "ist": ["ɪ", "s", "t"],  # is
         }
 
     def _init_spanish(self):
         """Initialize Spanish vocabulary with IPA phonemes."""
         # Common nouns
         self.nouns = {
-            'gato': ['g', 'a', 't', 'o'],  # cat
-            'perro': ['p', 'e', 'r', 'o'],  # dog
-            'pelota': ['p', 'e', 'l', 'o', 't', 'a'],  # ball
-            'libro': ['l', 'i', 'β', 'r', 'o'],  # book
-            'coche': ['k', 'o', 't͡ʃ', 'e'],  # car
-            'árbol': ['a', 'r', 'β', 'o', 'l'],  # tree
-            'pájaro': ['p', 'a', 'x', 'a', 'r', 'o'],  # bird
-            'pez': ['p', 'e', 's'],  # fish
-            'casa': ['k', 'a', 's', 'a'],  # house
-            'niña': ['n', 'i', 'ɲ', 'a'],  # girl
-            'niño': ['n', 'i', 'ɲ', 'o'],  # boy
+            "gato": ["g", "a", "t", "o"],  # cat
+            "perro": ["p", "e", "r", "o"],  # dog
+            "pelota": ["p", "e", "l", "o", "t", "a"],  # ball
+            "libro": ["l", "i", "β", "r", "o"],  # book
+            "coche": ["k", "o", "t͡ʃ", "e"],  # car
+            "árbol": ["a", "r", "β", "o", "l"],  # tree
+            "pájaro": ["p", "a", "x", "a", "r", "o"],  # bird
+            "pez": ["p", "e", "s"],  # fish
+            "casa": ["k", "a", "s", "a"],  # house
+            "niña": ["n", "i", "ɲ", "a"],  # girl
+            "niño": ["n", "i", "ɲ", "o"],  # boy
         }
 
         # Common verbs
         self.verbs = {
-            'corre': ['k', 'o', 'r', 'e'],  # runs
-            'salta': ['s', 'a', 'l', 't', 'a'],  # jumps
-            'come': ['k', 'o', 'm', 'e'],  # eats
-            've': ['b', 'e'],  # sees
-            'lee': ['l', 'e', 'e'],  # reads
-            'juega': ['x', 'w', 'e', 'ɣ', 'a'],  # plays
-            'lanza': ['l', 'a', 'n', 's', 'a'],  # throws
-            'atrapa': ['a', 't', 'r', 'a', 'p', 'a'],  # catches
+            "corre": ["k", "o", "r", "e"],  # runs
+            "salta": ["s", "a", "l", "t", "a"],  # jumps
+            "come": ["k", "o", "m", "e"],  # eats
+            "ve": ["b", "e"],  # sees
+            "lee": ["l", "e", "e"],  # reads
+            "juega": ["x", "w", "e", "ɣ", "a"],  # plays
+            "lanza": ["l", "a", "n", "s", "a"],  # throws
+            "atrapa": ["a", "t", "r", "a", "p", "a"],  # catches
         }
 
         # Common adjectives
         self.adjectives = {
-            'grande': ['g', 'r', 'a', 'n', 'd', 'e'],  # big
-            'pequeño': ['p', 'e', 'k', 'e', 'ɲ', 'o'],  # small
-            'rojo': ['r', 'o', 'x', 'o'],  # red
-            'azul': ['a', 's', 'u', 'l'],  # blue
-            'rápido': ['r', 'a', 'p', 'i', 'ð', 'o'],  # fast
-            'feliz': ['f', 'e', 'l', 'i', 's'],  # happy
+            "grande": ["g", "r", "a", "n", "d", "e"],  # big
+            "pequeño": ["p", "e", "k", "e", "ɲ", "o"],  # small
+            "rojo": ["r", "o", "x", "o"],  # red
+            "azul": ["a", "s", "u", "l"],  # blue
+            "rápido": ["r", "a", "p", "i", "ð", "o"],  # fast
+            "feliz": ["f", "e", "l", "i", "s"],  # happy
         }
 
         # Function words
         self.function_words = {
-            'el': ['e', 'l'],  # the (masc)
-            'la': ['l', 'a'],  # the (fem)
-            'un': ['u', 'n'],  # a (masc)
-            'una': ['u', 'n', 'a'],  # a (fem)
-            'en': ['e', 'n'],  # in
-            'sobre': ['s', 'o', 'β', 'r', 'e'],  # on
-            'con': ['k', 'o', 'n'],  # with
-            'es': ['e', 's'],  # is
+            "el": ["e", "l"],  # the (masc)
+            "la": ["l", "a"],  # the (fem)
+            "un": ["u", "n"],  # a (masc)
+            "una": ["u", "n", "a"],  # a (fem)
+            "en": ["e", "n"],  # in
+            "sobre": ["s", "o", "β", "r", "e"],  # on
+            "con": ["k", "o", "n"],  # with
+            "es": ["e", "s"],  # is
         }
 
 
@@ -333,8 +336,8 @@ class ReadingDataset:
             phoneme_indices.append(self.vocab.phoneme_pad_idx)
 
         task_data = {
-            'phonemes': torch.tensor(
-                phoneme_indices[:self.config.max_phonemes],
+            "phonemes": torch.tensor(
+                phoneme_indices[: self.config.max_phonemes],
                 dtype=torch.long,
                 device=self.config.device,
             )
@@ -366,20 +369,24 @@ class ReadingDataset:
         word = np.random.choice(list(self.vocab.all_words.keys()))
 
         # Determine semantic features
-        is_animate = 1 if word in self.vocab.nouns and word in ['cat', 'dog', 'bird', 'fish', 'girl', 'boy'] else 0
+        is_animate = (
+            1
+            if word in self.vocab.nouns and word in ["cat", "dog", "bird", "fish", "girl", "boy"]
+            else 0
+        )
         is_object = 1 if word in self.vocab.nouns else 0
         is_action = 1 if word in self.vocab.verbs else 0
 
         # Size (simplified)
-        if word in ['cat', 'dog', 'bird', 'fish', 'ball', 'book']:
+        if word in ["cat", "dog", "bird", "fish", "ball", "book"]:
             size = 0  # small
-        elif word in ['car', 'tree', 'house']:
+        elif word in ["car", "tree", "house"]:
             size = 2  # large
         else:
             size = 1  # medium
 
         task_data = {
-            'word': torch.tensor(
+            "word": torch.tensor(
                 self.vocab.word2idx[word],
                 dtype=torch.long,
                 device=self.config.device,
@@ -405,10 +412,10 @@ class ReadingDataset:
             label: Missing word index
         """
         # Generate simple sentence: Det + Noun + Verb + Det + Noun
-        det1 = 'the'
+        det1 = "the"
         subj = np.random.choice(list(self.vocab.nouns.keys()))
         verb = np.random.choice(list(self.vocab.verbs.keys()))
-        det2 = 'the'
+        det2 = "the"
         obj = np.random.choice(list(self.vocab.nouns.keys()))
 
         sentence = [det1, subj, verb, det2, obj]
@@ -416,7 +423,7 @@ class ReadingDataset:
         # Remove one content word (noun or verb)
         missing_pos = np.random.choice([1, 2, 4])  # subj, verb, or obj
         missing_word = sentence[missing_pos]
-        sentence[missing_pos] = '<UNK>'
+        sentence[missing_pos] = "<UNK>"
 
         # Convert to indices
         sentence_indices = [self.vocab.word2idx.get(w, self.vocab.unk_idx) for w in sentence]
@@ -426,12 +433,12 @@ class ReadingDataset:
             sentence_indices.append(self.vocab.pad_idx)
 
         task_data = {
-            'sentence': torch.tensor(
-                sentence_indices[:self.config.max_sentence_length],
+            "sentence": torch.tensor(
+                sentence_indices[: self.config.max_sentence_length],
                 dtype=torch.long,
                 device=self.config.device,
             ),
-            'missing_position': torch.tensor(
+            "missing_position": torch.tensor(
                 missing_pos,
                 dtype=torch.long,
                 device=self.config.device,
@@ -458,25 +465,25 @@ class ReadingDataset:
             label: Answer word index
         """
         # Generate sentence
-        det1 = 'the'
-        subj = np.random.choice(['girl', 'boy', 'cat', 'dog'])
+        det1 = "the"
+        subj = np.random.choice(["girl", "boy", "cat", "dog"])
         verb = np.random.choice(list(self.vocab.verbs.keys()))
-        det2 = 'the'
+        det2 = "the"
         obj = np.random.choice(list(self.vocab.nouns.keys()))
 
         sentence = [det1, subj, verb, det2, obj]
 
         # Generate question
-        question_type = np.random.choice(['who', 'what_action', 'what_object'])
+        question_type = np.random.choice(["who", "what_action", "what_object"])
 
-        if question_type == 'who':
-            question = ['who', verb]  # Who <verbs>?
+        if question_type == "who":
+            question = ["who", verb]  # Who <verbs>?
             answer = subj
-        elif question_type == 'what_action':
-            question = ['what', 'does', subj]  # What does <subj> do?
+        elif question_type == "what_action":
+            question = ["what", "does", subj]  # What does <subj> do?
             answer = verb
         else:  # what_object
-            question = ['what', 'object']  # What object?
+            question = ["what", "object"]  # What object?
             answer = obj
 
         # Convert to indices
@@ -490,13 +497,13 @@ class ReadingDataset:
             question_indices.append(self.vocab.pad_idx)
 
         task_data = {
-            'sentence': torch.tensor(
-                sentence_indices[:self.config.max_sentence_length],
+            "sentence": torch.tensor(
+                sentence_indices[: self.config.max_sentence_length],
                 dtype=torch.long,
                 device=self.config.device,
             ),
-            'question': torch.tensor(
-                question_indices[:self.config.max_sentence_length],
+            "question": torch.tensor(
+                question_indices[: self.config.max_sentence_length],
                 dtype=torch.long,
                 device=self.config.device,
             ),
@@ -522,10 +529,10 @@ class ReadingDataset:
             label: (3,) roles [agent_idx, action_idx, patient_idx]
         """
         # Generate sentence
-        det1 = 'the'
-        subj = np.random.choice(['girl', 'boy', 'cat', 'dog'])
+        det1 = "the"
+        subj = np.random.choice(["girl", "boy", "cat", "dog"])
         verb = np.random.choice(list(self.vocab.verbs.keys()))
-        det2 = 'the'
+        det2 = "the"
         obj = np.random.choice(list(self.vocab.nouns.keys()))
 
         sentence = [det1, subj, verb, det2, obj]
@@ -542,8 +549,8 @@ class ReadingDataset:
             sentence_indices.append(self.vocab.pad_idx)
 
         task_data = {
-            'sentence': torch.tensor(
-                sentence_indices[:self.config.max_sentence_length],
+            "sentence": torch.tensor(
+                sentence_indices[: self.config.max_sentence_length],
                 dtype=torch.long,
                 device=self.config.device,
             ),

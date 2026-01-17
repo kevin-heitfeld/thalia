@@ -19,23 +19,23 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.core.base.component_config import PathwayConfig
 from thalia.components.neurons import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
-    V_THRESHOLD_STANDARD,
-    V_RESET_STANDARD,
-    E_LEAK,
     E_EXCITATORY,
     E_INHIBITORY,
+    E_LEAK,
+    V_RESET_STANDARD,
+    V_THRESHOLD_STANDARD,
+    ConductanceLIF,
+    ConductanceLIFConfig,
 )
 from thalia.components.synapses import WeightInitializer
-from thalia.learning import create_striatum_strategy, ThreeFactorConfig
+from thalia.core.base.component_config import PathwayConfig
+from thalia.learning import ThreeFactorConfig, create_striatum_strategy
 from thalia.mixins import GrowthMixin, ResettableMixin
 
 
@@ -74,6 +74,7 @@ class StriatumPathwayState:
         neuron_g_I: Inhibitory conductance [n_output] (can be None)
         neuron_refractory: Refractory counters [n_output] (can be None)
     """
+
     weights: torch.Tensor
     eligibility: Optional[torch.Tensor]
     neuron_membrane: Optional[torch.Tensor]
@@ -111,6 +112,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         # Pathways access weights via parent's synaptic_weights dict
         # Use weakref to avoid circular reference during .to(device)
         import weakref
+
         self._parent_striatum_ref: Optional[weakref.ref] = None  # WeakRef to Striatum
         self._weight_source: Optional[str] = None  # e.g., "default_d1" or "default_d2"
 
@@ -147,7 +149,9 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             )
         parent = self._parent_striatum_ref()
         if parent is None:
-            raise RuntimeError(f"{self.__class__.__name__}: Parent striatum has been garbage collected")
+            raise RuntimeError(
+                f"{self.__class__.__name__}: Parent striatum has been garbage collected"
+            )
         return parent.synaptic_weights[self._weight_source]
 
     @weights.setter
@@ -164,7 +168,9 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             )
         parent = self._parent_striatum_ref()
         if parent is None:
-            raise RuntimeError(f"{self.__class__.__name__}: Parent striatum has been garbage collected")
+            raise RuntimeError(
+                f"{self.__class__.__name__}: Parent striatum has been garbage collected"
+            )
         # Extract tensor data from nn.Parameter if needed
         if isinstance(value, nn.Parameter):
             parent.synaptic_weights[self._weight_source].data = value.data
@@ -183,22 +189,25 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         Falls back to learning_strategy only if parent ref not available (legacy/standalone pathways).
         """
         # Prefer parent striatum's eligibility dict (new multi-source architecture)
-        if hasattr(self, '_parent_striatum_ref') and self._parent_striatum_ref is not None:
+        if hasattr(self, "_parent_striatum_ref") and self._parent_striatum_ref is not None:
             parent = self._parent_striatum_ref()
             if parent is not None:
                 # Get pathway-specific eligibility dict (_eligibility_d1 or _eligibility_d2)
                 pathway_type = type(self).__name__
-                if 'D1' in pathway_type:
-                    elig_dict = getattr(parent, '_eligibility_d1', {})
+                if "D1" in pathway_type:
+                    elig_dict = getattr(parent, "_eligibility_d1", {})
                 else:
-                    elig_dict = getattr(parent, '_eligibility_d2', {})
+                    elig_dict = getattr(parent, "_eligibility_d2", {})
 
                 # Return first available eligibility trace (usually only one source in tests)
                 if elig_dict:
                     return next(iter(elig_dict.values()))
 
         # Fallback: learning_strategy (backward compatibility for standalone pathways)
-        if hasattr(self.learning_strategy, 'eligibility') and self.learning_strategy.eligibility is not None:
+        if (
+            hasattr(self.learning_strategy, "eligibility")
+            and self.learning_strategy.eligibility is not None
+        ):
             return self.learning_strategy.eligibility
 
         return None
@@ -313,7 +322,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             Metrics dict with numeric values and string metadata (pathway type, dopamine sign)
         """
 
-    def grow(self, n_new_neurons: int, initialization: str = 'xavier') -> None:
+    def grow(self, n_new_neurons: int, initialization: str = "xavier") -> None:
         """
         Add new neurons to pathway (for adding new actions).
 
@@ -371,12 +380,15 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         """
         # Strategy: Create new columns by initializing new [n_output, n_new_inputs] block
         # Always use Xavier initialization (striatum pathway default)
-        new_cols = WeightInitializer.xavier(
-            n_output=self.config.n_output,
-            n_input=n_new_inputs,
-            gain=0.2,
-            device=self.device,
-        ) * self.config.w_max
+        new_cols = (
+            WeightInitializer.xavier(
+                n_output=self.config.n_output,
+                n_input=n_new_inputs,
+                gain=0.2,
+                device=self.device,
+            )
+            * self.config.w_max
+        )
 
         # Concatenate along input dimension (columns)
         expanded = torch.cat([self.weights.data, new_cols], dim=1)
@@ -396,10 +408,14 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         return StriatumPathwayState(
             weights=self.weights.detach().clone(),
             eligibility=self.eligibility.clone() if self.eligibility is not None else None,
-            neuron_membrane=self.neurons.membrane.clone() if self.neurons.membrane is not None else None,
+            neuron_membrane=(
+                self.neurons.membrane.clone() if self.neurons.membrane is not None else None
+            ),
             neuron_g_E=self.neurons.g_E.clone() if self.neurons.g_E is not None else None,
             neuron_g_I=self.neurons.g_I.clone() if self.neurons.g_I is not None else None,
-            neuron_refractory=self.neurons.refractory.clone() if self.neurons.refractory is not None else None,
+            neuron_refractory=(
+                self.neurons.refractory.clone() if self.neurons.refractory is not None else None
+            ),
         )
 
     def load_state(self, state: StriatumPathwayState) -> None:
@@ -416,15 +432,15 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             eligibility_value = state.eligibility
 
             # Try to load into parent's eligibility dict (new multi-source architecture)
-            if hasattr(self, '_parent_striatum_ref') and self._parent_striatum_ref is not None:
+            if hasattr(self, "_parent_striatum_ref") and self._parent_striatum_ref is not None:
                 parent = self._parent_striatum_ref()
-                if parent is not None and hasattr(self, '_weight_source'):
+                if parent is not None and hasattr(self, "_weight_source"):
                     # Determine pathway type and eligibility dict
                     pathway_type = type(self).__name__
-                    if 'D1' in pathway_type:
-                        elig_attr = '_eligibility_d1'
+                    if "D1" in pathway_type:
+                        elig_attr = "_eligibility_d1"
                     else:
-                        elig_attr = '_eligibility_d2'
+                        elig_attr = "_eligibility_d2"
 
                     # Ensure eligibility dict exists
                     if not hasattr(parent, elig_attr):

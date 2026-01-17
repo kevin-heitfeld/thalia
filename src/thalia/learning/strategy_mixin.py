@@ -49,7 +49,7 @@ Usage Example:
 
 from __future__ import annotations
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -115,7 +115,7 @@ class LearningStrategyMixin:
             Dict of learning metrics (ltp, ltd, net_change, etc.)
         """
         # Check if plasticity is enabled
-        if not getattr(self, 'plasticity_enabled', True):
+        if not getattr(self, "plasticity_enabled", True):
             return {}
 
         # Check if strategy is configured
@@ -123,12 +123,12 @@ class LearningStrategyMixin:
             return {}
 
         # Get dopamine modulation if not explicitly provided
-        if modulator is None and hasattr(self, 'state'):
-            modulator = getattr(self.state, 'dopamine', 0.0)
+        if modulator is None and hasattr(self, "state"):
+            modulator = getattr(self.state, "dopamine", 0.0)
 
         # Get effective learning rate (dopamine modulated)
         base_lr = self.learning_strategy.config.learning_rate
-        if hasattr(self, 'get_effective_learning_rate'):
+        if hasattr(self, "get_effective_learning_rate"):
             effective_lr = self.get_effective_learning_rate(base_lr)  # type: ignore
 
             # Early exit if learning rate too small
@@ -162,7 +162,7 @@ class LearningStrategyMixin:
 
         finally:
             # Restore original learning rate
-            if hasattr(self, 'get_effective_learning_rate'):
+            if hasattr(self, "get_effective_learning_rate"):
                 self.learning_strategy.config.learning_rate = original_lr
 
     def reset_learning_state(self) -> None:
@@ -201,5 +201,5 @@ class LearningStrategyMixin:
 
 
 __all__ = [
-    'LearningStrategyMixin',
+    "LearningStrategyMixin",
 ]

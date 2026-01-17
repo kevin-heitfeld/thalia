@@ -24,7 +24,7 @@ Date: January 2026
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from thalia.config.base import BaseConfig
 
@@ -294,10 +294,10 @@ class PathwayConfig(NeuralComponentConfig):
         """Synchronize n_neurons with n_output for pathway consistency."""
         # For pathways, n_neurons should match n_output (target size)
         if self.n_neurons == 0:
-            object.__setattr__(self, 'n_neurons', self.n_output)
+            object.__setattr__(self, "n_neurons", self.n_output)
 
         # Synchronize learning_rate with stdp_lr if stdp_lr was explicitly set
-        if hasattr(self, 'stdp_lr') and self.stdp_lr != 0.01:
+        if hasattr(self, "stdp_lr") and self.stdp_lr != 0.01:
             self.learning_rate = self.stdp_lr
 
     # =========================================================================

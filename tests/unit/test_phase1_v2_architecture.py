@@ -73,14 +73,18 @@ class TestAxonalProjection:
         # t=1: write zeros, read t=-1 (empty)
         # t=2: write zeros, read t=0 (spikes appear!)
         projection.forward(source_outputs)  # t=0
-        projection.forward({
-            "cortex": torch.zeros_like(cortex_spikes),
-            "hippocampus": torch.zeros_like(hipp_spikes),
-        })  # t=1
-        delayed_outputs = projection.forward({
-            "cortex": torch.zeros_like(cortex_spikes),
-            "hippocampus": torch.zeros_like(hipp_spikes),
-        })  # t=2 - now cortex spikes appear (2ms delay)
+        projection.forward(
+            {
+                "cortex": torch.zeros_like(cortex_spikes),
+                "hippocampus": torch.zeros_like(hipp_spikes),
+            }
+        )  # t=1
+        delayed_outputs = projection.forward(
+            {
+                "cortex": torch.zeros_like(cortex_spikes),
+                "hippocampus": torch.zeros_like(hipp_spikes),
+            }
+        )  # t=2 - now cortex spikes appear (2ms delay)
 
         # Check dict structure
         assert isinstance(delayed_outputs, dict)
@@ -88,39 +92,53 @@ class TestAxonalProjection:
         assert "hippocampus" in delayed_outputs
 
         # Check individual outputs
-        assert delayed_outputs["cortex"].shape == (10,), \
-            f"Cortex output shape should be (10,), got {delayed_outputs['cortex'].shape}"
-        assert delayed_outputs["cortex"].dtype == torch.bool, \
-            f"Cortex output should be bool spikes, got {delayed_outputs['cortex'].dtype}"
-        assert not torch.isnan(delayed_outputs["cortex"].float()).any(), \
-            "Cortex output contains NaN values"
+        assert delayed_outputs["cortex"].shape == (
+            10,
+        ), f"Cortex output shape should be (10,), got {delayed_outputs['cortex'].shape}"
+        assert (
+            delayed_outputs["cortex"].dtype == torch.bool
+        ), f"Cortex output should be bool spikes, got {delayed_outputs['cortex'].dtype}"
+        assert not torch.isnan(
+            delayed_outputs["cortex"].float()
+        ).any(), "Cortex output contains NaN values"
 
-        assert delayed_outputs["hippocampus"].shape == (5,), \
-            f"Hippocampus output shape should be (5,), got {delayed_outputs['hippocampus'].shape}"
-        assert delayed_outputs["hippocampus"].dtype == torch.bool, \
-            f"Hippocampus output should be bool spikes, got {delayed_outputs['hippocampus'].dtype}"
-        assert not torch.isnan(delayed_outputs["hippocampus"].float()).any(), \
-            "Hippocampus output contains NaN values"
+        assert delayed_outputs["hippocampus"].shape == (
+            5,
+        ), f"Hippocampus output shape should be (5,), got {delayed_outputs['hippocampus'].shape}"
+        assert (
+            delayed_outputs["hippocampus"].dtype == torch.bool
+        ), f"Hippocampus output should be bool spikes, got {delayed_outputs['hippocampus'].dtype}"
+        assert not torch.isnan(
+            delayed_outputs["hippocampus"].float()
+        ).any(), "Hippocampus output contains NaN values"
 
         assert delayed_outputs["cortex"].all()  # Cortex ones appear after 2ms delay
-        assert not delayed_outputs["hippocampus"].any()  # Hippocampus zeros (3ms delay, not reached yet)
+        assert not delayed_outputs[
+            "hippocampus"
+        ].any()  # Hippocampus zeros (3ms delay, not reached yet)
 
         # Test concatenation (if target region needs it)
         concatenated = torch.cat([delayed_outputs["cortex"], delayed_outputs["hippocampus"]])
-        assert concatenated.shape == (15,), \
-            f"Concatenated output shape should be (15,), got {concatenated.shape}"
-        assert concatenated.dtype == torch.bool, \
-            f"Concatenated output should be bool spikes, got {concatenated.dtype}"
-        assert not torch.isnan(concatenated.float()).any(), \
-            "Concatenated output contains NaN values"
+        assert concatenated.shape == (
+            15,
+        ), f"Concatenated output shape should be (15,), got {concatenated.shape}"
+        assert (
+            concatenated.dtype == torch.bool
+        ), f"Concatenated output should be bool spikes, got {concatenated.dtype}"
+        assert not torch.isnan(
+            concatenated.float()
+        ).any(), "Concatenated output contains NaN values"
         assert concatenated[:10].all()  # First 10 are ones from cortex
         assert not concatenated[10:].any()  # Last 5 are zeros from hippocampus
 
-    @pytest.mark.parametrize("delay_ms,expected_steps", [
-        (1.0, 2),  # 1ms delay = 2 steps to see spikes
-        (2.0, 3),  # 2ms delay = 3 steps
-        (5.0, 6),  # 5ms delay = 6 steps
-    ])
+    @pytest.mark.parametrize(
+        "delay_ms,expected_steps",
+        [
+            (1.0, 2),  # 1ms delay = 2 steps to see spikes
+            (2.0, 3),  # 2ms delay = 3 steps
+            (5.0, 6),  # 5ms delay = 6 steps
+        ],
+    )
     def test_axonal_delays_various_durations(self, delay_ms, expected_steps):
         """Test axonal delays with various durations.
 
@@ -148,13 +166,18 @@ class TestAxonalProjection:
 
         # At expected_steps, delayed spikes should appear
         final_output = projection.forward({"cortex": torch.zeros(5, dtype=torch.bool)})
-        assert final_output["cortex"].all(), f"Spikes didn't appear at expected step {expected_steps}"
+        assert final_output[
+            "cortex"
+        ].all(), f"Spikes didn't appear at expected step {expected_steps}"
 
-    @pytest.mark.parametrize("initial_size,growth_amount", [
-        (64, 16),
-        (128, 20),
-        (256, 50),
-    ])
+    @pytest.mark.parametrize(
+        "initial_size,growth_amount",
+        [
+            (64, 16),
+            (128, 20),
+            (256, 50),
+        ],
+    )
     def test_grow_source_various_sizes(self, initial_size, growth_amount):
         """Test growing sources with various initial sizes and growth amounts.
 
@@ -181,12 +204,15 @@ class TestAxonalProjection:
         test_spikes = torch.zeros(new_size, dtype=torch.bool)
         test_spikes[:10] = True
         output = projection.forward({"cortex": test_spikes})
-        assert output["cortex"].shape == (new_size,), \
-            f"Output shape should be ({new_size},) after growth, got {output['cortex'].shape}"
-        assert output["cortex"].dtype == torch.bool, \
-            f"Output should be bool spikes, got {output['cortex'].dtype}"
-        assert not torch.isnan(output["cortex"].float()).any(), \
-            "Output contains NaN values after growth"
+        assert output["cortex"].shape == (
+            new_size,
+        ), f"Output shape should be ({new_size},) after growth, got {output['cortex'].shape}"
+        assert (
+            output["cortex"].dtype == torch.bool
+        ), f"Output should be bool spikes, got {output['cortex'].dtype}"
+        assert not torch.isnan(
+            output["cortex"].float()
+        ).any(), "Output contains NaN values after growth"
 
     def test_grow_output(self):
         """Test that reset clears delay buffers."""
@@ -222,12 +248,12 @@ class TestAfferentSynapses:
 
         synapses = AfferentSynapses(config)
 
-        assert synapses.weights.shape == (70, 224), \
-            f"Weight shape should be (70, 224), got {synapses.weights.shape}"
-        assert not torch.isnan(synapses.weights).any(), \
-            "Weights contain NaN values"
-        assert not torch.isinf(synapses.weights).any(), \
-            "Weights contain Inf values"
+        assert synapses.weights.shape == (
+            70,
+            224,
+        ), f"Weight shape should be (70, 224), got {synapses.weights.shape}"
+        assert not torch.isnan(synapses.weights).any(), "Weights contain NaN values"
+        assert not torch.isinf(synapses.weights).any(), "Weights contain Inf values"
         assert synapses.learning_strategy is not None
 
     def test_forward_integration(self):
@@ -248,14 +274,14 @@ class TestAfferentSynapses:
         # Forward pass
         synaptic_current = synapses(input_spikes)
 
-        assert synaptic_current.shape == (10,), \
-            f"Synaptic current shape should be (10,), got {synaptic_current.shape}"
-        assert synaptic_current.dtype == torch.float32, \
-            f"Synaptic current should be float32, got {synaptic_current.dtype}"
-        assert not torch.isnan(synaptic_current).any(), \
-            "Synaptic current contains NaN values"
-        assert not torch.isinf(synaptic_current).any(), \
-            "Synaptic current contains Inf values"
+        assert synaptic_current.shape == (
+            10,
+        ), f"Synaptic current shape should be (10,), got {synaptic_current.shape}"
+        assert (
+            synaptic_current.dtype == torch.float32
+        ), f"Synaptic current should be float32, got {synaptic_current.dtype}"
+        assert not torch.isnan(synaptic_current).any(), "Synaptic current contains NaN values"
+        assert not torch.isinf(synaptic_current).any(), "Synaptic current contains Inf values"
 
     def test_learning(self):
         """Test that learning updates weights."""
@@ -299,19 +325,21 @@ class TestAfferentSynapses:
 
         synapses = AfferentSynapses(config)
 
-        assert synapses.weights.shape == (n_neurons, initial_inputs), \
-            f"Initial weight shape should be ({n_neurons}, {initial_inputs}), got {synapses.weights.shape}"
+        assert synapses.weights.shape == (
+            n_neurons,
+            initial_inputs,
+        ), f"Initial weight shape should be ({n_neurons}, {initial_inputs}), got {synapses.weights.shape}"
 
         # Grow inputs
         synapses.grow_input(n_new=growth_amount)
 
         new_inputs = initial_inputs + growth_amount
-        assert synapses.weights.shape == (n_neurons, new_inputs), \
-            f"Weight shape after growth should be ({n_neurons}, {new_inputs}), got {synapses.weights.shape}"
-        assert not torch.isnan(synapses.weights).any(), \
-            "Weights contain NaN after input growth"
-        assert not torch.isinf(synapses.weights).any(), \
-            "Weights contain Inf after input growth"
+        assert synapses.weights.shape == (
+            n_neurons,
+            new_inputs,
+        ), f"Weight shape after growth should be ({n_neurons}, {new_inputs}), got {synapses.weights.shape}"
+        assert not torch.isnan(synapses.weights).any(), "Weights contain NaN after input growth"
+        assert not torch.isinf(synapses.weights).any(), "Weights contain Inf after input growth"
         assert synapses.config.n_inputs == new_inputs
 
     def test_grow_output(self):
@@ -325,20 +353,22 @@ class TestAfferentSynapses:
 
         synapses = AfferentSynapses(config)
 
-        assert synapses.weights.shape == (70, 224), \
-            f"Initial weight shape should be (70, 224), got {synapses.weights.shape}"
+        assert synapses.weights.shape == (
+            70,
+            224,
+        ), f"Initial weight shape should be (70, 224), got {synapses.weights.shape}"
 
         # Grow by 20 neurons
         synapses.grow_output(20)
 
         expected_n_neurons = 90
         expected_n_inputs = 224
-        assert synapses.weights.shape == (expected_n_neurons, expected_n_inputs), \
-            f"Weight shape after growth should be ({expected_n_neurons}, {expected_n_inputs}), got {synapses.weights.shape}"
-        assert not torch.isnan(synapses.weights).any(), \
-            "Weights contain NaN after output growth"
-        assert not torch.isinf(synapses.weights).any(), \
-            "Weights contain Inf after output growth"
+        assert synapses.weights.shape == (
+            expected_n_neurons,
+            expected_n_inputs,
+        ), f"Weight shape after growth should be ({expected_n_neurons}, {expected_n_inputs}), got {synapses.weights.shape}"
+        assert not torch.isnan(synapses.weights).any(), "Weights contain NaN after output growth"
+        assert not torch.isinf(synapses.weights).any(), "Weights contain Inf after output growth"
         assert synapses.config.n_neurons == expected_n_neurons
 
     def test_checkpoint_state(self):
@@ -357,12 +387,12 @@ class TestAfferentSynapses:
 
         assert "weights" in state
         assert "config" in state
-        assert state["weights"].shape == (10, 5), \
-            f"Saved weights shape should be (10, 5), got {state['weights'].shape}"
-        assert not torch.isnan(state["weights"]).any(), \
-            "Saved weights contain NaN values"
-        assert not torch.isinf(state["weights"]).any(), \
-            "Saved weights contain Inf values"
+        assert state["weights"].shape == (
+            10,
+            5,
+        ), f"Saved weights shape should be (10, 5), got {state['weights'].shape}"
+        assert not torch.isnan(state["weights"]).any(), "Saved weights contain NaN values"
+        assert not torch.isinf(state["weights"]).any(), "Saved weights contain Inf values"
 
         # Save original weights
         original_weights = synapses.weights.data.clone()
@@ -415,28 +445,29 @@ class TestIntegration:
         assert isinstance(routed_spikes, dict)
 
         # Concatenate for synaptic processing
-        concatenated = torch.cat([
-            routed_spikes["cortex"],
-            routed_spikes["hippocampus"],
-            routed_spikes["pfc"]
-        ])
-        assert concatenated.shape == (224,), \
-            f"Concatenated shape should be (224,), got {concatenated.shape}"
-        assert concatenated.dtype == torch.bool, \
-            f"Concatenated output should be bool spikes, got {concatenated.dtype}"
-        assert not torch.isnan(concatenated.float()).any(), \
-            "Concatenated output contains NaN values"
+        concatenated = torch.cat(
+            [routed_spikes["cortex"], routed_spikes["hippocampus"], routed_spikes["pfc"]]
+        )
+        assert concatenated.shape == (
+            224,
+        ), f"Concatenated shape should be (224,), got {concatenated.shape}"
+        assert (
+            concatenated.dtype == torch.bool
+        ), f"Concatenated output should be bool spikes, got {concatenated.dtype}"
+        assert not torch.isnan(
+            concatenated.float()
+        ).any(), "Concatenated output contains NaN values"
 
         # Integrate through synapses
         synaptic_current = synapses(concatenated)
-        assert synaptic_current.shape == (70,), \
-            f"Synaptic current shape should be (70,), got {synaptic_current.shape}"
-        assert synaptic_current.dtype == torch.float32, \
-            f"Synaptic current should be float32, got {synaptic_current.dtype}"
-        assert not torch.isnan(synaptic_current).any(), \
-            "Synaptic current contains NaN values"
-        assert not torch.isinf(synaptic_current).any(), \
-            "Synaptic current contains Inf values"
+        assert synaptic_current.shape == (
+            70,
+        ), f"Synaptic current shape should be (70,), got {synaptic_current.shape}"
+        assert (
+            synaptic_current.dtype == torch.float32
+        ), f"Synaptic current should be float32, got {synaptic_current.dtype}"
+        assert not torch.isnan(synaptic_current).any(), "Synaptic current contains NaN values"
+        assert not torch.isinf(synaptic_current).any(), "Synaptic current contains Inf values"
 
     def test_growth_coordination(self):
         """Test coordinated growth of projection and synapses."""
@@ -465,12 +496,16 @@ class TestIntegration:
         # Verify sizes match
         assert projection.n_output == new_size
         assert synapses.config.n_inputs == new_size
-        assert synapses.weights.shape == (70, new_size), \
-            f"Weight shape after coordinated growth should be (70, {new_size}), got {synapses.weights.shape}"
-        assert not torch.isnan(synapses.weights).any(), \
-            "Weights contain NaN after coordinated growth"
-        assert not torch.isinf(synapses.weights).any(), \
-            "Weights contain Inf after coordinated growth"
+        assert synapses.weights.shape == (
+            70,
+            new_size,
+        ), f"Weight shape after coordinated growth should be (70, {new_size}), got {synapses.weights.shape}"
+        assert not torch.isnan(
+            synapses.weights
+        ).any(), "Weights contain NaN after coordinated growth"
+        assert not torch.isinf(
+            synapses.weights
+        ).any(), "Weights contain Inf after coordinated growth"
 
 
 if __name__ == "__main__":

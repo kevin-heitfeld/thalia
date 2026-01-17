@@ -7,27 +7,26 @@ semantic reorganization, and interference resolution.
 
 from __future__ import annotations
 
-
+from thalia.memory.consolidation.advanced_consolidation import (
+    InterferenceResolution,
+    InterferenceResolutionConfig,
+    Schema,
+    SchemaExtractionConfig,
+    SchemaExtractionConsolidation,
+    SemanticReorganization,
+    SemanticReorganizationConfig,
+    run_advanced_consolidation,
+)
 from thalia.memory.consolidation.consolidation import (
-    MemoryPressureDetector,
-    MemoryPressureConfig,
-    SleepStageController,
-    SleepStageConfig,
-    SleepStage,
     ConsolidationMetrics,
     ConsolidationSnapshot,
     ConsolidationTrigger,
     ConsolidationTriggerConfig,
-)
-from thalia.memory.consolidation.advanced_consolidation import (
-    SchemaExtractionConsolidation,
-    SchemaExtractionConfig,
-    Schema,
-    SemanticReorganization,
-    SemanticReorganizationConfig,
-    InterferenceResolution,
-    InterferenceResolutionConfig,
-    run_advanced_consolidation,
+    MemoryPressureConfig,
+    MemoryPressureDetector,
+    SleepStage,
+    SleepStageConfig,
+    SleepStageController,
 )
 from thalia.memory.consolidation.manager import (
     ConsolidationManager,

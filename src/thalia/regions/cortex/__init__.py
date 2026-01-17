@@ -18,7 +18,6 @@ Date: December 2025
 
 from __future__ import annotations
 
-
 from .config import LayeredCortexConfig, LayeredCortexState, calculate_layer_sizes
 from .layered_cortex import LayeredCortex
 from .predictive_cortex import PredictiveCortex, PredictiveCortexConfig, PredictiveCortexState

@@ -1,9 +1,11 @@
 """Quick profiling to identify bottlenecks in forward pass."""
 
 import time
+
 import torch
-from thalia.core.brain_builder import BrainBuilder
+
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 def profile_forward_pass():

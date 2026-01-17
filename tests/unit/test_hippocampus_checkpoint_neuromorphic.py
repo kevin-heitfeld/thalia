@@ -106,7 +106,9 @@ class TestHippocampusNeuromorphic:
         # Set distinctive weights (use valid indices for n_input=4)
         small_hippocampus.synaptic_weights["ec_dg"].data[0, 2] = 0.777  # DG neuron 0, EC input 2
         small_hippocampus.synaptic_weights["dg_ca3"].data[2, 1] = 0.888  # CA3 neuron 2, DG input 1
-        small_hippocampus.synaptic_weights["ca3_ca1"].data[3, 2] = 0.999  # CA1 neuron 3, CA3 input 2
+        small_hippocampus.synaptic_weights["ca3_ca1"].data[
+            3, 2
+        ] = 0.999  # CA1 neuron 3, CA3 input 2
 
         # Save
         small_hippocampus.checkpoint_manager.save(checkpoint_path)
@@ -121,8 +123,9 @@ class TestHippocampusHybrid:
         small_hippocampus.checkpoint_manager.save(checkpoint_path)
 
         state = torch.load(checkpoint_path, weights_only=False)
-        assert state["hybrid_metadata"]["selected_format"] == "neuromorphic", \
-            "Small hippocampus should use neuromorphic format"
+        assert (
+            state["hybrid_metadata"]["selected_format"] == "neuromorphic"
+        ), "Small hippocampus should use neuromorphic format"
 
     def test_hybrid_metadata_included(self, small_hippocampus, tmp_path):
         """Hybrid checkpoints should include metadata about format selection."""
@@ -172,19 +175,19 @@ def test_hippocampus_extreme_acetylcholine(small_hippocampus, acetylcholine):
 
     # Contract: no numerical instability in any layer
     for layer_name, neurons in [
-        ('dg', small_hippocampus.dg_neurons),
-        ('ca3', small_hippocampus.ca3_neurons),
-        ('ca1', small_hippocampus.ca1_neurons),
+        ("dg", small_hippocampus.dg_neurons),
+        ("ca3", small_hippocampus.ca3_neurons),
+        ("ca1", small_hippocampus.ca1_neurons),
     ]:
         membrane = neurons.membrane
 
-        assert not torch.isnan(membrane).any(), \
-            f"NaN in {layer_name} membrane with ACh={acetylcholine}"
-        assert not torch.isinf(membrane).any(), \
-            f"Inf in {layer_name} membrane with ACh={acetylcholine}"
+        assert not torch.isnan(
+            membrane
+        ).any(), f"NaN in {layer_name} membrane with ACh={acetylcholine}"
+        assert not torch.isinf(
+            membrane
+        ).any(), f"Inf in {layer_name} membrane with ACh={acetylcholine}"
 
         # Contract: membrane stays in reasonable range
-        assert (membrane >= -20.0).all(), \
-            f"{layer_name} membrane too low with ACh={acetylcholine}"
-        assert (membrane <= 10.0).all(), \
-            f"{layer_name} membrane too high with ACh={acetylcholine}"
+        assert (membrane >= -20.0).all(), f"{layer_name} membrane too low with ACh={acetylcholine}"
+        assert (membrane <= 10.0).all(), f"{layer_name} membrane too high with ACh={acetylcholine}"

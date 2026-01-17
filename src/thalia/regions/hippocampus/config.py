@@ -8,7 +8,7 @@ trisynaptic hippocampus (DG→CA3→CA1).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -35,14 +35,15 @@ class Episode:
     During sleep replay, sequences are replayed time-compressed using
     the gamma oscillator to drive slot-by-slot reactivation.
     """
-    state: torch.Tensor          # Activity pattern at decision time (or final state)
-    action: int                   # Selected action
-    reward: float                 # Received reward
-    correct: bool                 # Whether the action was correct
+
+    state: torch.Tensor  # Activity pattern at decision time (or final state)
+    action: int  # Selected action
+    reward: float  # Received reward
+    correct: bool  # Whether the action was correct
     context: Optional[torch.Tensor] = None  # Context/cue pattern
     metadata: Optional[Dict[str, Any]] = None  # Additional info
-    priority: float = 1.0         # Replay priority
-    timestamp: int = 0            # When this episode occurred
+    priority: float = 1.0  # Replay priority
+    timestamp: int = 0  # When this episode occurred
     sequence: Optional[List[torch.Tensor]] = None  # Sequence of states for gamma-driven replay
 
 
@@ -64,23 +65,24 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     Pure behavioral configuration. Sizes (input_size, dg_size, ca3_size, ca2_size, ca1_size)
     are passed separately via the `sizes` dict parameter to __init__().
     """
+
     # Override default learning rate with CA3-specific fast learning
     learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
 
     # DG sparsity (VERY sparse for pattern separation)
     dg_sparsity: float = HIPPOCAMPUS_SPARSITY_TARGET
-    dg_inhibition: float = 5.0     # Strong lateral inhibition
+    dg_inhibition: float = 5.0  # Strong lateral inhibition
 
     # CA3 recurrent dynamics
     ca3_recurrent_strength: float = 0.4  # Strength of recurrent connections
-    ca3_sparsity: float = 0.10           # 10% active
+    ca3_sparsity: float = 0.10  # 10% active
 
     # CA2 dynamics (social memory and temporal context)
-    ca2_sparsity: float = 0.12     # 12% active (slightly higher than CA3)
+    ca2_sparsity: float = 0.12  # 12% active (slightly higher than CA3)
     ca2_plasticity_resistance: float = 0.1  # CA3→CA2 has 10x weaker plasticity (stability hub)
 
     # CA1 output
-    ca1_sparsity: float = 0.15     # 15% active
+    ca1_sparsity: float = 0.15  # 15% active
 
     # Coincidence detection for comparison
     coincidence_window: float = 5.0  # ms window for spike coincidence
@@ -92,7 +94,7 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     enable_spillover: bool = True  # Override base config (disabled by default)
     spillover_mode: str = "connectivity"  # Use shared inputs for neighborhood
     spillover_strength: float = 0.18  # 18% for CA regions (slightly higher than cortex)
-    match_threshold: float = 0.3     # Fraction of coincident spikes for match
+    match_threshold: float = 0.3  # Fraction of coincident spikes for match
 
     # NMDA receptor parameters for CA1 coincidence detection
     # The threshold must be set high enough that only CA1 neurons with STRONG
@@ -100,22 +102,22 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # connectivity, each CA1 receives 0.2-2.2 weighted input (mean ~1.0).
     # With tau=50ms and 15 test timesteps, the trace reaches ~40% of equilibrium,
     # so threshold=0.4 ensures only neurons with above-average CA3 input participate.
-    nmda_tau: float = 50.0           # NMDA time constant (ms) - slow kinetics
-    nmda_threshold: float = 0.4      # Threshold tuned for typical test duration
-    nmda_steepness: float = 12.0     # Sharp discrimination above threshold
-    ampa_ratio: float = 0.05         # Minimal ungated response (discrimination comes from NMDA)
+    nmda_tau: float = 50.0  # NMDA time constant (ms) - slow kinetics
+    nmda_threshold: float = 0.4  # Threshold tuned for typical test duration
+    nmda_steepness: float = 12.0  # Sharp discrimination above threshold
+    ampa_ratio: float = 0.05  # Minimal ungated response (discrimination comes from NMDA)
 
     # Pathway-specific learning rates
     # Note: learning_rate (inherited from STDPLearningConfig) is used for CA3 recurrent
     ca3_ca2_learning_rate: float = 0.001  # Very weak CA3→CA2 (stability mechanism)
-    ec_ca2_learning_rate: float = 0.01    # Strong EC→CA2 direct (temporal encoding)
+    ec_ca2_learning_rate: float = 0.01  # Strong EC→CA2 direct (temporal encoding)
     ca2_ca1_learning_rate: float = 0.005  # Moderate CA2→CA1 (social context to output)
-    ec_ca1_learning_rate: float = 0.5     # Strong learning for EC→CA1 alignment
+    ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
 
     # Feedforward inhibition parameters
-    ffi_threshold: float = 0.3       # Input change threshold to trigger FFI
-    ffi_strength: float = 0.8        # How much FFI suppresses activity
-    ffi_tau: float = 5.0             # FFI decay time constant (ms)
+    ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
+    ffi_strength: float = 0.8  # How much FFI suppresses activity
+    ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
     # =========================================================================
     # INTER-LAYER AXONAL DELAYS
@@ -146,8 +148,8 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     #
     # This creates bistability: once a neuron starts firing, the persistent
     # activity helps keep it firing, stabilizing attractor states.
-    ca3_persistent_tau: float = 300.0    # Decay time constant (ms) - very slow decay
-    ca3_persistent_gain: float = 3.0     # Strong persistent contribution
+    ca3_persistent_tau: float = 300.0  # Decay time constant (ms) - very slow decay
+    ca3_persistent_gain: float = 3.0  # Strong persistent contribution
 
     # EC Layer III input size (for direct EC→CA1 pathway)
     # If 0, uses the same input as EC layer II (n_input)
@@ -179,11 +181,11 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # - Chevaleyre & Siegelbaum (2010): CA2 plasticity properties
     stp_enabled: bool = True
     stp_mossy_type: STPType = STPType.FACILITATING_STRONG  # DG→CA3 (MF)
-    stp_ca3_ca2_type: STPType = STPType.DEPRESSING         # CA3→CA2 (stability)
-    stp_ca2_ca1_type: STPType = STPType.FACILITATING       # CA2→CA1 (sequences)
-    stp_ec_ca2_type: STPType = STPType.DEPRESSING          # EC→CA2 direct
-    stp_schaffer_type: STPType = STPType.DEPRESSING        # CA3→CA1 (SC)
-    stp_ec_ca1_type: STPType = STPType.DEPRESSING          # EC→CA1 direct
+    stp_ca3_ca2_type: STPType = STPType.DEPRESSING  # CA3→CA2 (stability)
+    stp_ca2_ca1_type: STPType = STPType.FACILITATING  # CA2→CA1 (sequences)
+    stp_ec_ca2_type: STPType = STPType.DEPRESSING  # EC→CA2 direct
+    stp_schaffer_type: STPType = STPType.DEPRESSING  # CA3→CA1 (SC)
+    stp_ec_ca1_type: STPType = STPType.DEPRESSING  # EC→CA1 direct
     # CA3→CA3 recurrent: DEPRESSING - prevents frozen attractors
     # Without STD, the same neurons fire every timestep because recurrent
     # connections reinforce active neurons. With STD, frequently-firing
@@ -241,7 +243,7 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     # stale attractors from dominating. In real brains, theta troughs
     # (encoding phase) partially reset the network.
     theta_reset_persistent: bool = True  # Reset ca3_persistent at theta trough
-    theta_reset_fraction: float = 0.5    # How much to decay (0=none, 1=full)
+    theta_reset_fraction: float = 0.5  # How much to decay (0=none, 1=full)
 
     # =========================================================================
     # THETA-GAMMA COUPLING (Phase Coding - EMERGENT)
@@ -257,8 +259,8 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
 
     # Phase diversity initialization: adds timing jitter to initial weights
     # This seeds the emergence of phase preferences (otherwise all neurons identical)
-    phase_diversity_init: bool = True     # Initialize weights with timing diversity
-    phase_jitter_std_ms: float = 5.0      # Std dev of timing jitter (0-10ms)
+    phase_diversity_init: bool = True  # Initialize weights with timing diversity
+    phase_jitter_std_ms: float = 5.0  # Std dev of timing jitter (0-10ms)
 
     # =========================================================================
     # HINDSIGHT EXPERIENCE REPLAY (HER)
@@ -354,13 +356,13 @@ class HippocampusState(BaseRegionState):
     ffi_strength: float = 0.0
 
     # Short-term plasticity state for 7 pathways
-    stp_mossy_state: Optional[Dict[str, torch.Tensor]] = None         # DG→CA3 facilitation
-    stp_ca3_ca2_state: Optional[Dict[str, torch.Tensor]] = None       # CA3→CA2 depression
-    stp_ca2_ca1_state: Optional[Dict[str, torch.Tensor]] = None       # CA2→CA1 facilitation
-    stp_ec_ca2_state: Optional[Dict[str, torch.Tensor]] = None        # EC→CA2 direct
-    stp_schaffer_state: Optional[Dict[str, torch.Tensor]] = None      # CA3→CA1 depression
-    stp_ec_ca1_state: Optional[Dict[str, torch.Tensor]] = None        # EC→CA1 direct
-    stp_ca3_recurrent_state: Optional[Dict[str, torch.Tensor]] = None # CA3 recurrent
+    stp_mossy_state: Optional[Dict[str, torch.Tensor]] = None  # DG→CA3 facilitation
+    stp_ca3_ca2_state: Optional[Dict[str, torch.Tensor]] = None  # CA3→CA2 depression
+    stp_ca2_ca1_state: Optional[Dict[str, torch.Tensor]] = None  # CA2→CA1 facilitation
+    stp_ec_ca2_state: Optional[Dict[str, torch.Tensor]] = None  # EC→CA2 direct
+    stp_schaffer_state: Optional[Dict[str, torch.Tensor]] = None  # CA3→CA1 depression
+    stp_ec_ca1_state: Optional[Dict[str, torch.Tensor]] = None  # EC→CA1 direct
+    stp_ca3_recurrent_state: Optional[Dict[str, torch.Tensor]] = None  # CA3 recurrent
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize state to dictionary for checkpointing.
@@ -418,12 +420,15 @@ class HippocampusState(BaseRegionState):
         Returns:
             HippocampusState instance with restored state
         """
+
         def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
             if t is None:
                 return t
             return t.to(device)
 
-        def transfer_nested_dict(d: Optional[Dict[str, torch.Tensor]]) -> Optional[Dict[str, torch.Tensor]]:
+        def transfer_nested_dict(
+            d: Optional[Dict[str, torch.Tensor]],
+        ) -> Optional[Dict[str, torch.Tensor]]:
             """Transfer nested dict of tensors to device."""
             if d is None:
                 return d
@@ -439,7 +444,9 @@ class HippocampusState(BaseRegionState):
             # Layer activities
             dg_spikes=transfer_tensor(data.get("dg_spikes")),
             ca3_spikes=transfer_tensor(data.get("ca3_spikes")),
-            ca2_spikes=transfer_tensor(data.get("ca2_spikes")),  # Backward compatible (None if missing)
+            ca2_spikes=transfer_tensor(
+                data.get("ca2_spikes")
+            ),  # Backward compatible (None if missing)
             ca1_spikes=transfer_tensor(data.get("ca1_spikes")),
             # CA3 state
             ca3_membrane=transfer_tensor(data.get("ca3_membrane")),
@@ -450,7 +457,9 @@ class HippocampusState(BaseRegionState):
             sample_trace=transfer_tensor(data.get("sample_trace")),
             dg_trace=transfer_tensor(data.get("dg_trace")),
             ca3_trace=transfer_tensor(data.get("ca3_trace")),
-            ca2_trace=transfer_tensor(data.get("ca2_trace")),  # Backward compatible (None if missing)
+            ca2_trace=transfer_tensor(
+                data.get("ca2_trace")
+            ),  # Backward compatible (None if missing)
             nmda_trace=transfer_tensor(data.get("nmda_trace")),
             stored_dg_pattern=transfer_tensor(data.get("stored_dg_pattern")),
             ffi_strength=data.get("ffi_strength", 0.0),

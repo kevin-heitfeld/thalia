@@ -17,26 +17,29 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Optional, Union, BinaryIO, Literal
+from typing import BinaryIO, Literal, Optional, Union
 
 try:
     import zstandard as zstd
+
     ZSTD_AVAILABLE = True
 except ImportError:
     ZSTD_AVAILABLE = False
 
 try:
     import lz4.frame
+
     LZ4_AVAILABLE = True
 except ImportError:
     LZ4_AVAILABLE = False
 
 
-CompressionType = Literal['zstd', 'lz4', None]
+CompressionType = Literal["zstd", "lz4", None]
 
 
 class CompressionError(Exception):
     """Raised when compression/decompression fails."""
+
     pass
 
 
@@ -57,23 +60,23 @@ def detect_compression(path: Union[str, Path]) -> CompressionType:
     path = Path(path)
 
     # Check extension first (fast)
-    if path.suffix == '.zst':
-        return 'zstd'
-    elif path.suffix == '.lz4':
-        return 'lz4'
+    if path.suffix == ".zst":
+        return "zstd"
+    elif path.suffix == ".lz4":
+        return "lz4"
 
     # If no extension indicator, check magic bytes
     if path.exists():
         try:
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 magic = f.read(4)
 
             # zstd magic: 28 b5 2f fd (little-endian 0xFD2FB528)
-            if magic == b'\x28\xb5\x2f\xfd':
-                return 'zstd'
+            if magic == b"\x28\xb5\x2f\xfd":
+                return "zstd"
             # lz4 magic: 04 22 4d 18
-            elif magic == b'\x04\x22\x4d\x18':
-                return 'lz4'
+            elif magic == b"\x04\x22\x4d\x18":
+                return "lz4"
         except (IOError, OSError):
             pass
 
@@ -82,7 +85,7 @@ def detect_compression(path: Union[str, Path]) -> CompressionType:
 
 def compress_data(
     data: bytes,
-    compression: CompressionType = 'zstd',
+    compression: CompressionType = "zstd",
     level: int = 3,
 ) -> bytes:
     """Compress data using specified algorithm.
@@ -101,7 +104,7 @@ def compress_data(
     if compression is None:
         return data
 
-    if compression == 'zstd':
+    if compression == "zstd":
         if not ZSTD_AVAILABLE:
             raise CompressionError(
                 "zstd compression requested but zstandard package not installed. "
@@ -114,7 +117,7 @@ def compress_data(
         except Exception as e:
             raise CompressionError(f"zstd compression failed: {e}")
 
-    elif compression == 'lz4':
+    elif compression == "lz4":
         if not LZ4_AVAILABLE:
             raise CompressionError(
                 "lz4 compression requested but lz4 package not installed. "
@@ -149,7 +152,7 @@ def decompress_data(
     if compression is None:
         return data
 
-    if compression == 'zstd':
+    if compression == "zstd":
         if not ZSTD_AVAILABLE:
             raise CompressionError(
                 "zstd decompression required but zstandard package not installed. "
@@ -162,7 +165,7 @@ def decompress_data(
         except Exception as e:
             raise CompressionError(f"zstd decompression failed: {e}")
 
-    elif compression == 'lz4':
+    elif compression == "lz4":
         if not LZ4_AVAILABLE:
             raise CompressionError(
                 "lz4 decompression required but lz4 package not installed. "
@@ -181,7 +184,7 @@ def decompress_data(
 def compress_file(
     input_path: Union[str, Path],
     output_path: Optional[Union[str, Path]] = None,
-    compression: CompressionType = 'zstd',
+    compression: CompressionType = "zstd",
     level: int = 3,
 ) -> Path:
     """Compress an existing checkpoint file.
@@ -202,24 +205,24 @@ def compress_file(
     input_path = Path(input_path)
 
     if output_path is None:
-        if compression == 'zstd':
-            output_path = input_path.with_suffix(input_path.suffix + '.zst')
-        elif compression == 'lz4':
-            output_path = input_path.with_suffix(input_path.suffix + '.lz4')
+        if compression == "zstd":
+            output_path = input_path.with_suffix(input_path.suffix + ".zst")
+        elif compression == "lz4":
+            output_path = input_path.with_suffix(input_path.suffix + ".lz4")
         else:
             raise ValueError("output_path required when compression is None")
     else:
         output_path = Path(output_path)
 
     # Read input file
-    with open(input_path, 'rb') as f:
+    with open(input_path, "rb") as f:
         data = f.read()
 
     # Compress
     compressed = compress_data(data, compression=compression, level=level)
 
     # Write output
-    with open(output_path, 'wb') as f:
+    with open(output_path, "wb") as f:
         f.write(compressed)
 
     return output_path
@@ -248,24 +251,24 @@ def decompress_file(
 
     if output_path is None:
         # Remove compression extension
-        if compression == 'zstd' and input_path.suffix == '.zst':
-            output_path = input_path.with_suffix('')
-        elif compression == 'lz4' and input_path.suffix == '.lz4':
-            output_path = input_path.with_suffix('')
+        if compression == "zstd" and input_path.suffix == ".zst":
+            output_path = input_path.with_suffix("")
+        elif compression == "lz4" and input_path.suffix == ".lz4":
+            output_path = input_path.with_suffix("")
         else:
             raise ValueError("output_path required")
     else:
         output_path = Path(output_path)
 
     # Read compressed file
-    with open(input_path, 'rb') as f:
+    with open(input_path, "rb") as f:
         compressed_data = f.read()
 
     # Decompress
     data = decompress_data(compressed_data, compression=compression)
 
     # Write output
-    with open(output_path, 'wb') as f:
+    with open(output_path, "wb") as f:
         f.write(data)
 
     return output_path
@@ -300,9 +303,9 @@ class CompressedFile:
 
     def __enter__(self) -> BinaryIO:
         """Open file for reading/writing."""
-        if 'r' in self.mode:
+        if "r" in self.mode:
             # Read mode: decompress entire file into buffer
-            with open(self.path, 'rb') as f:
+            with open(self.path, "rb") as f:
                 compressed = f.read()
             decompressed = decompress_data(compressed, self.compression)
             self.buffer = io.BytesIO(decompressed)
@@ -313,12 +316,12 @@ class CompressedFile:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Close file and compress if writing."""
-        if 'w' in self.mode and exc_type is None:
+        if "w" in self.mode and exc_type is None:
             # Compress buffer and write to file
             data = self.buffer.getvalue()
             compressed = compress_data(data, self.compression, self.level)
 
-            with open(self.path, 'wb') as f:
+            with open(self.path, "wb") as f:
                 f.write(compressed)
 
         self.buffer.close()

@@ -371,9 +371,7 @@ class LayerSizeCalculator:
     # STRIATUM CALCULATIONS
     # =========================================================================
 
-    def striatum_from_actions(
-        self, n_actions: int, neurons_per_action: int = 10
-    ) -> Dict[str, int]:
+    def striatum_from_actions(self, n_actions: int, neurons_per_action: int = 10) -> Dict[str, int]:
         """Calculate striatum sizes from number of actions.
 
         Pattern: Population coding with D1/D2 opponent pathways.

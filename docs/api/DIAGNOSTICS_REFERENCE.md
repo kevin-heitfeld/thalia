@@ -111,4 +111,3 @@ graph LR
 - Store history for trend analysis
 - Use thresholds to trigger adaptive responses
 - Log detailed diagnostics only when issues detected
-

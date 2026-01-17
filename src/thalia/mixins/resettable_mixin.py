@@ -41,14 +41,9 @@ class ResettableMixin:
             Subclasses should override this method to reset their
             specific state variables.
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement reset_state()"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} must implement reset_state()")
 
-    def reset_standard_state(
-        self,
-        state_attrs: Optional[List[str]] = None
-    ) -> None:
+    def reset_standard_state(self, state_attrs: Optional[List[str]] = None) -> None:
         """Helper to reset common state attributes to None.
 
         This helper reduces boilerplate in region reset() methods by

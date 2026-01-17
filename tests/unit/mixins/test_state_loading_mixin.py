@@ -1,13 +1,14 @@
 """Tests for StateLoadingMixin."""
 
-import torch
-import pytest
-
-from thalia.mixins.state_loading_mixin import StateLoadingMixin
-from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
-from thalia.core.region_state import BaseRegionState
 from dataclasses import dataclass
 from typing import Optional
+
+import pytest
+import torch
+
+from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.core.region_state import BaseRegionState
+from thalia.mixins.state_loading_mixin import StateLoadingMixin
 
 
 @dataclass

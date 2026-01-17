@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple, List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -39,6 +39,7 @@ from thalia.tasks.stimulus_utils import (
 
 class TaskType(Enum):
     """Types of executive function tasks."""
+
     # Stage 1 (Toddler)
     GO_NO_GO = "go_no_go"
     DELAYED_GRATIFICATION = "delayed_gratification"
@@ -55,7 +56,8 @@ class TaskType(Enum):
 
 class StimulusType(Enum):
     """Stimulus categories for Go/No-Go."""
-    TARGET = "target"        # Go signal
+
+    TARGET = "target"  # Go signal
     DISTRACTOR = "distractor"  # No-go signal
     NEUTRAL = "neutral"
 
@@ -63,6 +65,7 @@ class StimulusType(Enum):
 @dataclass
 class GoNoGoConfig:
     """Configuration for Go/No-Go task."""
+
     n_stimuli: int = 100  # Total trials
     target_probability: float = 0.7  # 70% go, 30% no-go
     stimulus_dim: int = 64  # Input dimension
@@ -73,6 +76,7 @@ class GoNoGoConfig:
 @dataclass
 class DelayedGratificationConfig:
     """Configuration for delayed gratification task."""
+
     immediate_reward: float = 1.0  # Small reward now
     delayed_reward: float = 3.0  # Large reward later
     delay_steps: int = 50  # Delay period (timesteps)
@@ -83,6 +87,7 @@ class DelayedGratificationConfig:
 @dataclass
 class DCCSConfig:
     """Configuration for Dimensional Change Card Sort."""
+
     n_trials: int = 24  # 12 pre-switch, 12 post-switch
     n_dimensions: int = 2  # Color and shape
     n_features_per_dim: int = 2  # 2 colors, 2 shapes
@@ -93,6 +98,7 @@ class DCCSConfig:
 @dataclass
 class TaskSwitchingConfig:
     """Configuration for task switching."""
+
     n_trials: int = 40  # Total trials
     n_tasks: int = 2  # Number of different tasks
     switch_probability: float = 0.3  # Probability of switching task
@@ -104,6 +110,7 @@ class TaskSwitchingConfig:
 @dataclass
 class TowerOfHanoiConfig:
     """Configuration for Tower of Hanoi task."""
+
     n_disks: int = 3  # Number of disks (2-5 typical)
     encode_dim: int = 64  # Encoding dimension per disk/peg
     max_moves: int = 100  # Maximum allowed moves
@@ -114,6 +121,7 @@ class TowerOfHanoiConfig:
 @dataclass
 class RavensMatricesConfig:
     """Configuration for Raven's Progressive Matrices."""
+
     grid_size: int = 3  # 3x3 matrix (standard)
     pattern_complexity: str = "simple"  # simple, medium, hard
     n_answer_choices: int = 8  # Number of answer options
@@ -129,6 +137,7 @@ class RavensMatricesConfig:
 @dataclass
 class TaskResult:
     """Result of an executive function task."""
+
     correct: bool
     response_time: float
     task_type: TaskType
@@ -214,14 +223,18 @@ class ExecutiveFunctionTasks:
         """Generate target stimulus (e.g., green circle)."""
         # Pattern: High values in first half of dimensions
         stimulus = create_zero_stimulus(dim, device)
-        stimulus[:dim//2] = STIMULUS_STRENGTH_HIGH + torch.randn(dim//2, device=device) * WEIGHT_INIT_SCALE_SMALL
+        stimulus[: dim // 2] = (
+            STIMULUS_STRENGTH_HIGH + torch.randn(dim // 2, device=device) * WEIGHT_INIT_SCALE_SMALL
+        )
         return torch.clamp(stimulus, 0, 1)
 
     def _generate_distractor_stimulus(self, dim: int, device: torch.device) -> torch.Tensor:
         """Generate distractor stimulus (e.g., red square)."""
         # Pattern: High values in second half of dimensions
         stimulus = create_zero_stimulus(dim, device)
-        stimulus[dim//2:] = STIMULUS_STRENGTH_HIGH + torch.randn(dim//2, device=device) * WEIGHT_INIT_SCALE_SMALL
+        stimulus[dim // 2 :] = (
+            STIMULUS_STRENGTH_HIGH + torch.randn(dim // 2, device=device) * WEIGHT_INIT_SCALE_SMALL
+        )
         return torch.clamp(stimulus, 0, 1)
 
     def evaluate_go_no_go(
@@ -253,7 +266,7 @@ class ExecutiveFunctionTasks:
         stimulus_types = np.array(stimulus_types)
 
         # Overall accuracy
-        correct = (responses == correct_responses)
+        correct = responses == correct_responses
         overall_accuracy = correct.mean()
 
         # Go trials (target)
@@ -274,6 +287,7 @@ class ExecutiveFunctionTasks:
 
         # d-prime (signal detection sensitivity)
         from scipy.stats import norm
+
         hit_rate_adj = np.clip(hit_rate, 0.01, 0.99)
         fa_rate_adj = np.clip(fa_rate, 0.01, 0.99)
         d_prime = norm.ppf(hit_rate_adj) - norm.ppf(fa_rate_adj)
@@ -319,10 +333,12 @@ class ExecutiveFunctionTasks:
 
         # Calculate present value of delayed reward (with discounting)
         # PV = future_value * discount^delay
-        present_value_delayed = config.delayed_reward * (config.discount_rate ** config.delay_steps)
+        present_value_delayed = config.delayed_reward * (config.discount_rate**config.delay_steps)
 
         # Optimal choice
-        optimal_choice = "delayed" if present_value_delayed > config.immediate_reward else "immediate"
+        optimal_choice = (
+            "delayed" if present_value_delayed > config.immediate_reward else "immediate"
+        )
 
         return {
             "immediate_reward": config.immediate_reward,
@@ -422,8 +438,7 @@ class ExecutiveFunctionTasks:
 
             # Encode as tensor (one-hot for color and shape)
             card = create_zero_stimulus(
-                config.n_dimensions * config.n_features_per_dim,
-                device=device
+                config.n_dimensions * config.n_features_per_dim, device=device
             )
             card[color] = 1.0  # Color dimension
             card[config.n_features_per_dim + shape] = 1.0  # Shape dimension
@@ -553,9 +568,9 @@ class ExecutiveFunctionTasks:
             # Task 0: Respond to first half of stimulus
             # Task 1: Respond to second half of stimulus
             if current_task == 0:
-                response = int(stimulus[:config.stimulus_dim // 2].sum() > 0)
+                response = int(stimulus[: config.stimulus_dim // 2].sum() > 0)
             else:
-                response = int(stimulus[config.stimulus_dim // 2:].sum() > 0)
+                response = int(stimulus[config.stimulus_dim // 2 :].sum() > 0)
 
             stimuli.append(stimulus)
             task_cues.append(current_task)
@@ -593,7 +608,7 @@ class ExecutiveFunctionTasks:
         is_switch = np.array(is_switch)
 
         # Overall accuracy
-        correct = (responses == correct_responses)
+        correct = responses == correct_responses
         overall_accuracy = correct.mean()
 
         # Switch trial accuracy
@@ -668,7 +683,7 @@ class ExecutiveFunctionTasks:
 
         n_disks = config.n_disks
         encode_dim = config.encode_dim
-        optimal_steps = config.optimal_moves or (2 ** n_disks - 1)
+        optimal_steps = config.optimal_moves or (2**n_disks - 1)
 
         # Initialize pegs: all disks on peg 0 (source)
         # Disks numbered 0 (smallest) to n-1 (largest)
@@ -924,9 +939,7 @@ class ExecutiveFunctionTasks:
                 answer_choices.append(correct_cell)
             else:
                 # Distractor (random or systematic perturbation)
-                distractor = self._generate_distractor(
-                    correct_cell, matrix, rule_type, device
-                )
+                distractor = self._generate_distractor(correct_cell, matrix, rule_type, device)
                 answer_choices.append(distractor)
 
         answer_choices = torch.stack(answer_choices, dim=0)
@@ -948,8 +961,10 @@ class ExecutiveFunctionTasks:
 
         Rule: Each row/column has a progression (e.g., increasing size, rotation).
         """
-        n_cells = grid_size ** 2
-        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(n_cells, stimulus_dim)
+        n_cells = grid_size**2
+        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(
+            n_cells, stimulus_dim
+        )
 
         # Base feature
         base_features = create_random_stimulus(stimulus_dim, device)
@@ -980,8 +995,12 @@ class ExecutiveFunctionTasks:
                 for j in range(grid_size):
                     cell_idx = i * grid_size + j
                     matrix[cell_idx] = (
-                        base_features + increment * (i + j) +
-                        create_random_stimulus(stimulus_dim, device) * FEATURE_INCREMENT_INTERACTION * i * j
+                        base_features
+                        + increment * (i + j)
+                        + create_random_stimulus(stimulus_dim, device)
+                        * FEATURE_INCREMENT_INTERACTION
+                        * i
+                        * j
                     )
 
         # Clip to [0, 1]
@@ -1004,8 +1023,10 @@ class ExecutiveFunctionTasks:
 
         Rule: Certain features remain constant across row/column.
         """
-        n_cells = grid_size ** 2
-        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(n_cells, stimulus_dim)
+        n_cells = grid_size**2
+        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(
+            n_cells, stimulus_dim
+        )
 
         # Constant features (same in all cells)
         constant_features = create_random_stimulus(stimulus_dim // 2, device)
@@ -1031,13 +1052,13 @@ class ExecutiveFunctionTasks:
 
         Rule: Each row/column contains each feature value exactly once.
         """
-        n_cells = grid_size ** 2
-        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(n_cells, stimulus_dim)
+        n_cells = grid_size**2
+        matrix = create_zero_stimulus(n_cells * stimulus_dim, device=device).reshape(
+            n_cells, stimulus_dim
+        )
 
         # Generate feature values for distribution
-        feature_values = [
-            torch.rand(stimulus_dim, device=device) for _ in range(grid_size)
-        ]
+        feature_values = [torch.rand(stimulus_dim, device=device) for _ in range(grid_size)]
 
         # Assign to cells following Latin square pattern
         for i in range(grid_size):
@@ -1084,7 +1105,7 @@ class ExecutiveFunctionTasks:
         Returns:
             Dictionary with evaluation metrics
         """
-        correct = (selected_answer == correct_answer)
+        correct = selected_answer == correct_answer
 
         # Update statistics
         self.statistics["n_trials"] += 1

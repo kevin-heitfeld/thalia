@@ -20,7 +20,8 @@ Date: December 17, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from typing import Any, Dict, Tuple
+
 import torch
 import torch.nn as nn
 
@@ -38,6 +39,7 @@ class PurkinjeCellState:
         last_complex_spike_time: Timestep of last complex spike (for refractory period)
         timestep: Current timestep counter
     """
+
     dendrite_voltage: torch.Tensor
     dendrite_calcium: torch.Tensor
     soma_neurons: Dict[str, Any]  # State from ConductanceLIF.get_state()
@@ -84,11 +86,11 @@ class EnhancedPurkinjeCell(nn.Module):
         # Soma (main cell body) - Purkinje cells are large, complex
         soma_config = ConductanceLIFConfig(
             v_threshold=-55.0,  # mV
-            v_reset=-70.0,      # mV
-            tau_mem=15.0,       # ms, slower integration for complex computation
-            tau_E=2.0,          # ms, excitatory conductance decay
-            tau_I=5.0,          # ms, inhibitory conductance decay (strong inhibition)
-            dt_ms=dt_ms,        # Timestep in milliseconds
+            v_reset=-70.0,  # mV
+            tau_mem=15.0,  # ms, slower integration for complex computation
+            tau_E=2.0,  # ms, excitatory conductance decay
+            tau_I=5.0,  # ms, inhibitory conductance decay (strong inhibition)
+            dt_ms=dt_ms,  # Timestep in milliseconds
         )
         self.soma_neurons = ConductanceLIF(
             n_neurons=1,
@@ -104,6 +106,7 @@ class EnhancedPurkinjeCell(nn.Module):
         # Dendritic weights (parallel fiber → dendrites)
         # EAGER INITIALIZATION: Weights created immediately
         from thalia.components.synapses.weight_init import WeightInitializer
+
         self.dendritic_weights = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=1,  # Single Purkinje cell
@@ -116,7 +119,7 @@ class EnhancedPurkinjeCell(nn.Module):
     def forward(
         self,
         parallel_fiber_input: torch.Tensor,  # [n_parallel_fibers]
-        climbing_fiber_active: bool,         # Binary: error detected or not
+        climbing_fiber_active: bool,  # Binary: error detected or not
     ) -> Tuple[torch.Tensor, bool]:
         """Process inputs and generate simple/complex spikes.
 
@@ -153,10 +156,7 @@ class EnhancedPurkinjeCell(nn.Module):
         # Simple spikes (regular output)
         # Calcium modulates excitability (high calcium = more excitable)
         calcium_modulation = 1.0 + 0.2 * self.dendrite_calcium.mean()
-        simple_spikes, _ = self.soma_neurons(
-            soma_input.unsqueeze(0) * calcium_modulation,
-            None
-        )
+        simple_spikes, _ = self.soma_neurons(soma_input.unsqueeze(0) * calcium_modulation, None)
 
         self.timestep += 1
 

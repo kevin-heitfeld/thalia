@@ -14,54 +14,55 @@ For other components, import from their actual locations:
 
 from __future__ import annotations
 
-# Core infrastructure only
-from thalia.core.errors import (
-    ThaliaError,
-    ComponentError,
-    ConfigurationError,
-    BiologicalPlausibilityError,
-    CheckpointError,
-    IntegrationError,
-    validate_spike_tensor,
-    validate_device_consistency,
-    validate_weight_matrix,
-    validate_positive,
-    validate_probability,
-    validate_temporal_causality,
-)
 from thalia.core.diagnostics import (
+    BrainSystemDiagnostics,
     DiagnosticLevel,
     DiagnosticsConfig,
     DiagnosticsManager,
-    StriatumDiagnostics,
     HippocampusDiagnostics,
-    BrainSystemDiagnostics,
+    StriatumDiagnostics,
 )
-from thalia.core.protocols.neural import (
-    Resettable,
-    Learnable,
-    Forwardable,
-    Diagnosable,
-    WeightContainer,
-    Configurable,
-    NeuralComponentProtocol,
+
+# Core infrastructure only
+from thalia.core.errors import (
+    BiologicalPlausibilityError,
+    CheckpointError,
+    ComponentError,
+    ConfigurationError,
+    IntegrationError,
+    ThaliaError,
+    validate_device_consistency,
+    validate_positive,
+    validate_probability,
+    validate_spike_tensor,
+    validate_temporal_causality,
+    validate_weight_matrix,
+)
+from thalia.core.pathway_state import (
+    AxonalProjectionState,
+    PathwayState,
 )
 from thalia.core.protocols.component import (
     BrainComponent,
     BrainComponentBase,
     BrainComponentMixin,
 )
-from thalia.core.pathway_state import (
-    PathwayState,
-    AxonalProjectionState,
+from thalia.core.protocols.neural import (
+    Configurable,
+    Diagnosable,
+    Forwardable,
+    Learnable,
+    NeuralComponentProtocol,
+    Resettable,
+    WeightContainer,
 )
 from thalia.core.region_state import (
-    RegionState,
     BaseRegionState,
-    save_region_state,
-    load_region_state,
-    transfer_state,
+    RegionState,
     get_state_version,
+    load_region_state,
+    save_region_state,
+    transfer_state,
     validate_state_protocol,
 )
 

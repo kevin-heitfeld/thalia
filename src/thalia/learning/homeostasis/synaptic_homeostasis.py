@@ -80,7 +80,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -101,24 +101,24 @@ class UnifiedHomeostasisConfig(BaseConfig):
     """
 
     # Weight constraints
-    weight_budget: float = 1.0          # Target sum of weights per row (neuron)
-    w_min: float = 0.0                  # Absolute minimum weight
-    w_max: float = 1.0                  # Absolute maximum weight
+    weight_budget: float = 1.0  # Target sum of weights per row (neuron)
+    w_min: float = 0.0  # Absolute minimum weight
+    w_max: float = 1.0  # Absolute maximum weight
 
     # Activity constraints
-    activity_target: float = 0.1        # Target fraction of neurons active
-    activity_min: float = 0.01          # Minimum activity (prevent dead neurons)
-    activity_max: float = 0.5           # Maximum activity (prevent seizure)
+    activity_target: float = 0.1  # Target fraction of neurons active
+    activity_min: float = 0.01  # Minimum activity (prevent dead neurons)
+    activity_max: float = 0.5  # Maximum activity (prevent seizure)
 
     # Normalization settings
-    normalize_rows: bool = True         # Normalize each neuron's input weights
-    normalize_cols: bool = False        # Normalize each input's output weights
-    soft_normalization: bool = True     # Use soft (multiplicative) vs hard normalization
-    normalization_rate: float = 0.1     # How fast to approach target (soft only)
+    normalize_rows: bool = True  # Normalize each neuron's input weights
+    normalize_cols: bool = False  # Normalize each input's output weights
+    soft_normalization: bool = True  # Use soft (multiplicative) vs hard normalization
+    normalization_rate: float = 0.1  # How fast to approach target (soft only)
 
     # Competition settings
-    enable_competition: bool = True     # Enable competitive weight adjustment
-    competition_strength: float = 0.1   # Strength of winner-take-all effect
+    enable_competition: bool = True  # Enable competitive weight adjustment
+    competition_strength: float = 0.1  # Strength of winner-take-all effect
 
 
 class UnifiedHomeostasis(nn.Module):
@@ -334,9 +334,8 @@ class UnifiedHomeostasis(nn.Module):
         # Losers: multiply by (1 - strength)
         losers = 1.0 - winners
 
-        scale = (
-            winners.unsqueeze(1) * (1.0 + cfg.competition_strength) +
-            losers.unsqueeze(1) * (1.0 - cfg.competition_strength)
+        scale = winners.unsqueeze(1) * (1.0 + cfg.competition_strength) + losers.unsqueeze(1) * (
+            1.0 - cfg.competition_strength
         )
 
         weights = weights * scale
@@ -359,17 +358,17 @@ class UnifiedHomeostasis(nn.Module):
             Dict with diagnostic metrics
         """
         diagnostics = {
-            'weight_mean': weights.mean().item(),
-            'weight_std': weights.std().item(),
-            'weight_min': weights.min().item(),
-            'weight_max': weights.max().item(),
-            'weight_sum_mean': weights.sum(dim=1).mean().item(),
-            'weight_sum_std': weights.sum(dim=1).std().item(),
+            "weight_mean": weights.mean().item(),
+            "weight_std": weights.std().item(),
+            "weight_min": weights.min().item(),
+            "weight_max": weights.max().item(),
+            "weight_sum_mean": weights.sum(dim=1).mean().item(),
+            "weight_sum_std": weights.sum(dim=1).std().item(),
         }
 
         if activity is not None:
-            diagnostics['activity_mean'] = activity.mean().item()
-            diagnostics['activity_std'] = activity.std().item()
+            diagnostics["activity_mean"] = activity.mean().item()
+            diagnostics["activity_std"] = activity.std().item()
 
         # Diversity metric: how different are the weight patterns?
         # High diversity = good specialization
@@ -383,7 +382,7 @@ class UnifiedHomeostasis(nn.Module):
             # Mean off-diagonal similarity (lower = more diverse)
             mask = 1.0 - torch.eye(weights.shape[0], device=weights.device)
             mean_similarity = (similarity * mask).sum() / mask.sum()
-            diagnostics['weight_diversity'] = 1.0 - mean_similarity.item()
+            diagnostics["weight_diversity"] = 1.0 - mean_similarity.item()
 
         return diagnostics
 
@@ -411,7 +410,9 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         self.n_actions = n_actions
         self.neurons_per_action = neurons_per_action  # D1 pathway
         self.d1_neurons_per_action = neurons_per_action
-        self.d2_neurons_per_action = d2_neurons_per_action if d2_neurons_per_action is not None else neurons_per_action
+        self.d2_neurons_per_action = (
+            d2_neurons_per_action if d2_neurons_per_action is not None else neurons_per_action
+        )
 
         self.d1_size = n_actions * self.d1_neurons_per_action
         self.d2_size = n_actions * self.d2_neurons_per_action
@@ -424,19 +425,20 @@ class StriatumHomeostasis(UnifiedHomeostasis):
 
         # Per-action budgets (can vary if some actions should be favored)
         self.register_buffer(
-            'action_budgets',
-            torch.ones(n_actions, device=device) * (config or UnifiedHomeostasisConfig()).weight_budget
+            "action_budgets",
+            torch.ones(n_actions, device=device)
+            * (config or UnifiedHomeostasisConfig()).weight_budget,
         )
 
         # Activity tracking for excitability modulation
         # Running average of firing rate per neuron (D1 and D2 separately)
-        self.register_buffer('d1_activity_avg', torch.zeros(self.d1_size, device=device))
-        self.register_buffer('d2_activity_avg', torch.zeros(self.d2_size, device=device))
+        self.register_buffer("d1_activity_avg", torch.zeros(self.d1_size, device=device))
+        self.register_buffer("d2_activity_avg", torch.zeros(self.d2_size, device=device))
 
         # Excitability modulation factors (multiply g_E by this)
         # > 1.0 means more excitable, < 1.0 means less excitable
-        self.register_buffer('d1_excitability', torch.ones(self.d1_size, device=device))
-        self.register_buffer('d2_excitability', torch.ones(self.d2_size, device=device))
+        self.register_buffer("d1_excitability", torch.ones(self.d1_size, device=device))
+        self.register_buffer("d2_excitability", torch.ones(self.d2_size, device=device))
 
     def update_activity(
         self,
@@ -601,12 +603,14 @@ class StriatumHomeostasis(UnifiedHomeostasis):
             Dictionary with current state
         """
         state = {
-            "weight_ema": self._weight_ema.detach().clone() if self._weight_ema is not None else None,
+            "weight_ema": (
+                self._weight_ema.detach().clone() if self._weight_ema is not None else None
+            ),
             "activity_ema": self._activity_ema,
         }
 
         # Add striatum-specific state if present
-        if hasattr(self, 'action_budgets'):
+        if hasattr(self, "action_budgets"):
             state["action_budgets"] = self.action_budgets.detach().clone()
 
         return state
@@ -625,7 +629,7 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         self._activity_ema = state["activity_ema"]
 
         # Restore striatum-specific state if present
-        if "action_budgets" in state and hasattr(self, 'action_budgets'):
+        if "action_budgets" in state and hasattr(self, "action_budgets"):
             self.action_budgets = state["action_budgets"].to(self.config.device)
 
     def grow(self, n_new_d1: int, n_new_d2: int) -> None:

@@ -12,9 +12,9 @@ Tests end-to-end functionality:
 import pytest
 import torch
 
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
+from thalia.core.dynamic_brain import DynamicBrain
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.cortex import LayeredCortex, calculate_layer_sizes
 from thalia.regions.cortex.config import LayeredCortexConfig
@@ -48,7 +48,9 @@ class TestDynamicBrainIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
-            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(32))  # n_input inferred!
+            .add_component(
+                "cortex", "layered_cortex", **calculate_layer_sizes(32)
+            )  # n_input inferred!
             .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
             .build()
         )
@@ -71,8 +73,12 @@ class TestDynamicBrainIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("region_a", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
-            .add_component("region_b", "layered_cortex", **calculate_layer_sizes(64))  # n_input inferred from region_a
-            .add_component("region_c", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred from region_b
+            .add_component(
+                "region_b", "layered_cortex", **calculate_layer_sizes(64)
+            )  # n_input inferred from region_a
+            .add_component(
+                "region_c", "layered_cortex", **calculate_layer_sizes(16)
+            )  # n_input inferred from region_b
             .connect("region_a", "region_b", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .connect("region_b", "region_c", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
@@ -94,9 +100,15 @@ class TestDynamicBrainIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("source", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
-            .add_component("branch1", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
-            .add_component("branch2", "layered_cortex", **calculate_layer_sizes(16))  # n_input=32 inferred
-            .add_component("sink", "layered_cortex", **calculate_layer_sizes(8))      # n_input=32 inferred (16+16)
+            .add_component(
+                "branch1", "layered_cortex", **calculate_layer_sizes(16)
+            )  # n_input=32 inferred
+            .add_component(
+                "branch2", "layered_cortex", **calculate_layer_sizes(16)
+            )  # n_input=32 inferred
+            .add_component(
+                "sink", "layered_cortex", **calculate_layer_sizes(8)
+            )  # n_input=32 inferred (16+16)
             .connect("source", "branch1", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .connect("source", "branch2", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .connect("branch1", "sink", pathway_type="axonal_projection", axonal_delay_ms=3.0)
@@ -208,8 +220,12 @@ class TestPresetArchitectures:
     def test_preset_with_modifications(self, device, global_config):
         """Test building from preset with custom modifications."""
         builder = BrainBuilder.preset_builder("default", global_config)
-        builder.add_component("custom_region", "prefrontal", input_size=256, n_neurons=64)  # Custom PFC region
-        builder.connect("cortex", "custom_region", pathway_type="axonal_projection", axonal_delay_ms=5.0)
+        builder.add_component(
+            "custom_region", "prefrontal", input_size=256, n_neurons=64
+        )  # Custom PFC region
+        builder.connect(
+            "cortex", "custom_region", pathway_type="axonal_projection", axonal_delay_ms=5.0
+        )
         brain = builder.build()
 
         # Should have original + new component
@@ -255,7 +271,9 @@ class TestSaveAndLoad:
         original_builder = (
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
-            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(16))  # n_input inferred
+            .add_component(
+                "cortex", "layered_cortex", **calculate_layer_sizes(16)
+            )  # n_input inferred
             .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         )
 
@@ -686,8 +704,7 @@ class TestStateManagement:
             # Save all nn.Parameters, not just 'weights' attribute
             # (hippocampus has multiple weight matrices, and .weights can point to different ones)
             original_weights[name] = {
-                param_name: param.data.clone()
-                for param_name, param in component.named_parameters()
+                param_name: param.data.clone() for param_name, param in component.named_parameters()
             }
 
         # Modify brain
@@ -706,8 +723,9 @@ class TestStateManagement:
                 # Get current parameter value
                 current_param = dict(component.named_parameters())[param_name]
                 try:
-                    assert torch.allclose(current_param, original_param, atol=1e-6), \
-                        f"Parameter {name}.{param_name} not restored correctly"
+                    assert torch.allclose(
+                        current_param, original_param, atol=1e-6
+                    ), f"Parameter {name}.{param_name} not restored correctly"
                 except RuntimeError as e:
                     raise RuntimeError(
                         f"Parameter {name}.{param_name} has incompatible shapes: "
@@ -744,8 +762,9 @@ class TestStateManagement:
         # Verify dopamine restored
         state3 = brain.get_full_state()
         restored_da = state3["neuromodulators"]["vta"]["global_dopamine"]
-        assert abs(restored_da - original_da) < 1e-6, \
-            f"Dopamine level not restored: {restored_da} != {original_da}"
+        assert (
+            abs(restored_da - original_da) < 1e-6
+        ), f"Dopamine level not restored: {restored_da} != {original_da}"
 
     def test_state_topology_preserved(self, device, global_config):
         """Test that topology information is preserved through save/load."""

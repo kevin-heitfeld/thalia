@@ -5,6 +5,10 @@ Protocol definitions for brain components and neural elements.
 
 from __future__ import annotations
 
+from thalia.core.protocols.checkpoint import (
+    Checkpointable,
+    CheckpointableWithNeuromorphic,
+)
 from thalia.core.protocols.component import (
     BrainComponent,
     BrainComponentBase,
@@ -13,17 +17,13 @@ from thalia.core.protocols.component import (
     RoutingComponent,
 )
 from thalia.core.protocols.neural import (
-    Resettable,
-    Learnable,
-    Forwardable,
-    Diagnosable,
-    WeightContainer,
     Configurable,
+    Diagnosable,
+    Forwardable,
+    Learnable,
     NeuralComponentProtocol,
-)
-from thalia.core.protocols.checkpoint import (
-    Checkpointable,
-    CheckpointableWithNeuromorphic,
+    Resettable,
+    WeightContainer,
 )
 
 __all__ = [

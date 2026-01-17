@@ -196,4 +196,3 @@ Comprehensive searchable index of all Thalia API components.
 - **Cerebellum**: `cerebellum`
 - **Thalamus**: `thalamus`
 - **Prefrontal**: `prefrontal`
-

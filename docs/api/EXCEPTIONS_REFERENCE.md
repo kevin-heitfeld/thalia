@@ -77,4 +77,3 @@ Total: 6 exception classes
 **Description**: Base exception for all Thalia-specific errors.
 
 ---
-

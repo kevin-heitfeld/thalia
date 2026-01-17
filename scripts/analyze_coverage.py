@@ -76,7 +76,7 @@ class CoverageAnalyzer:
         components = set()
 
         try:
-            with open(test_file, 'r', encoding='utf-8') as f:
+            with open(test_file, "r", encoding="utf-8") as f:
                 tree = ast.parse(f.read())
         except (SyntaxError, UnicodeDecodeError):
             return components
@@ -84,12 +84,12 @@ class CoverageAnalyzer:
         # Look for imports from thalia
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                if node.module and node.module.startswith('thalia'):
+                if node.module and node.module.startswith("thalia"):
                     # Extract module path
-                    parts = node.module.split('.')
+                    parts = node.module.split(".")
                     if len(parts) >= 2:
                         # e.g., "thalia.regions.cortex" -> "regions.cortex"
-                        component_key = '.'.join(parts[1:])
+                        component_key = ".".join(parts[1:])
                         components.add(component_key)
 
         return components
@@ -97,7 +97,7 @@ class CoverageAnalyzer:
     def analyze_test_quality(self, test_file: Path) -> Dict[str, Any]:
         """Analyze test file quality metrics."""
         try:
-            with open(test_file, 'r', encoding='utf-8') as f:
+            with open(test_file, "r", encoding="utf-8") as f:
                 content = f.read()
                 tree = ast.parse(content)
         except (SyntaxError, UnicodeDecodeError):
@@ -117,22 +117,37 @@ class CoverageAnalyzer:
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
                 # Check for test functions
-                if node.name.startswith('test_'):
+                if node.name.startswith("test_"):
                     test_count += 1
 
                     # Check for edge case tests
-                    if any(keyword in node.name.lower() for keyword in
-                          ['edge', 'zero', 'empty', 'invalid', 'error', 'silent', 'saturated']):
+                    if any(
+                        keyword in node.name.lower()
+                        for keyword in [
+                            "edge",
+                            "zero",
+                            "empty",
+                            "invalid",
+                            "error",
+                            "silent",
+                            "saturated",
+                        ]
+                    ):
                         has_edge_cases = True
 
                     # Check for integration tests
-                    if 'integration' in node.name.lower():
+                    if "integration" in node.name.lower():
                         has_integration = True
 
                 # Check for fixtures
-                if any(isinstance(dec, ast.Name) and dec.id == 'fixture' for dec in node.decorator_list):
+                if any(
+                    isinstance(dec, ast.Name) and dec.id == "fixture" for dec in node.decorator_list
+                ):
                     fixture_count += 1
-                elif any(isinstance(dec, ast.Attribute) and dec.attr == 'fixture' for dec in node.decorator_list):
+                elif any(
+                    isinstance(dec, ast.Attribute) and dec.attr == "fixture"
+                    for dec in node.decorator_list
+                ):
                     fixture_count += 1
 
         return {
@@ -144,9 +159,9 @@ class CoverageAnalyzer:
 
     def run_pytest_coverage(self) -> None:
         """Run pytest with coverage to get actual coverage metrics."""
-        print("="*60)
+        print("=" * 60)
         print("RUNNING PYTEST WITH COVERAGE")
-        print("="*60)
+        print("=" * 60)
         print()
         print("This may take a few minutes...")
         print()
@@ -155,12 +170,14 @@ class CoverageAnalyzer:
         json_report = self.root_dir / "coverage.json"
 
         cmd = [
-            sys.executable, "-m", "pytest",
+            sys.executable,
+            "-m",
+            "pytest",
             "--cov=thalia",
             "--cov-report=json",
             "--cov-report=term-missing",
             "-q",  # Quiet mode
-            str(self.tests_dir)
+            str(self.tests_dir),
         ]
 
         try:
@@ -170,7 +187,7 @@ class CoverageAnalyzer:
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout
-                check=False
+                check=False,
             )
 
             if result.returncode != 0 and result.returncode != 1:
@@ -180,24 +197,24 @@ class CoverageAnalyzer:
 
             # Parse coverage JSON report
             if json_report.exists():
-                with open(json_report, 'r', encoding='utf-8') as f:
+                with open(json_report, "r", encoding="utf-8") as f:
                     coverage_report = json.load(f)
 
                 # Extract per-file coverage
-                for file_path, file_data in coverage_report.get('files', {}).items():
+                for file_path, file_data in coverage_report.get("files", {}).items():
                     # Convert absolute path to relative module path
                     file_path_obj = Path(file_path)
-                    if 'thalia' in file_path:
+                    if "thalia" in file_path:
                         # Extract module name from path
                         parts = file_path_obj.parts
                         try:
-                            thalia_idx = parts.index('thalia')
-                            module_parts = parts[thalia_idx+1:]
-                            if module_parts and module_parts[-1].endswith('.py'):
+                            thalia_idx = parts.index("thalia")
+                            module_parts = parts[thalia_idx + 1 :]
+                            if module_parts and module_parts[-1].endswith(".py"):
                                 module_parts = list(module_parts[:-1]) + [module_parts[-1][:-3]]
-                            module_name = '.'.join(module_parts)
+                            module_name = ".".join(module_parts)
 
-                            coverage_pct = file_data['summary']['percent_covered']
+                            coverage_pct = file_data["summary"]["percent_covered"]
                             self.coverage_data[module_name] = coverage_pct
                         except (ValueError, IndexError):
                             continue
@@ -217,9 +234,9 @@ class CoverageAnalyzer:
 
     def analyze_component_coverage(self) -> None:
         """Analyze coverage for each component."""
-        print("="*60)
+        print("=" * 60)
         print("TEST COVERAGE ANALYSIS")
-        print("="*60)
+        print("=" * 60)
         print()
 
         for comp_name, comp_file in self.component_files.items():
@@ -240,13 +257,17 @@ class CoverageAnalyzer:
                 metrics = self.analyze_test_quality(test_file)
                 test_metrics["total_tests"] += metrics["test_count"]
                 test_metrics["total_fixtures"] += metrics["fixture_count"]
-                test_metrics["has_edge_cases"] = test_metrics["has_edge_cases"] or metrics["has_edge_cases"]
-                test_metrics["has_integration"] = test_metrics["has_integration"] or metrics["has_integration"]
+                test_metrics["has_edge_cases"] = (
+                    test_metrics["has_edge_cases"] or metrics["has_edge_cases"]
+                )
+                test_metrics["has_integration"] = (
+                    test_metrics["has_integration"] or metrics["has_integration"]
+                )
                 test_metrics["test_files"].append(str(test_file.relative_to(self.tests_dir)))
 
             # Count functions/classes in component
             try:
-                with open(comp_file, 'r', encoding='utf-8') as f:
+                with open(comp_file, "r", encoding="utf-8") as f:
                     tree = ast.parse(f.read())
 
                 functions = sum(1 for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
@@ -273,9 +294,9 @@ class CoverageAnalyzer:
     def generate_report(self) -> None:
         """Generate coverage report."""
         print()
-        print("="*60)
+        print("=" * 60)
         print("COVERAGE SUMMARY")
-        print("="*60)
+        print("=" * 60)
         print()
 
         # Separate by category
@@ -300,13 +321,19 @@ class CoverageAnalyzer:
             print("-" * 60)
 
             for comp_name, metrics in sorted(category_items.items()):
-                display_name = comp_name.split('.', 1)[1]  # Remove prefix
+                display_name = comp_name.split(".", 1)[1]  # Remove prefix
                 edge_mark = "✓" if metrics["has_edge_cases"] else "✗"
                 integ_mark = "✓" if metrics["has_integration"] else "✗"
-                coverage_str = f"{metrics['coverage_percent']:.1f}%" if metrics["coverage_percent"] > 0 else "0%"
+                coverage_str = (
+                    f"{metrics['coverage_percent']:.1f}%"
+                    if metrics["coverage_percent"] > 0
+                    else "0%"
+                )
 
-                print(f"{display_name:<30} {metrics['test_count']:>7} {edge_mark:>7} "
-                      f"{integ_mark:>7} {coverage_str:>7}")
+                print(
+                    f"{display_name:<30} {metrics['test_count']:>7} {edge_mark:>7} "
+                    f"{integ_mark:>7} {coverage_str:>7}"
+                )
             print()
 
         # Overall statistics
@@ -317,10 +344,16 @@ class CoverageAnalyzer:
         print("Overall Statistics:")
         print("-" * 60)
         print(f"Total components: {total_components}")
-        print(f"Components with tests: {tested_components} ({tested_components/total_components*100:.1f}%)")
+        print(
+            f"Components with tests: {tested_components} ({tested_components/total_components*100:.1f}%)"
+        )
         print(f"Total test functions: {total_tests}")
-        print(f"Components with edge cases: {sum(1 for m in self.results.values() if m['has_edge_cases'])}")
-        print(f"Components with integration tests: {sum(1 for m in self.results.values() if m['has_integration'])}")
+        print(
+            f"Components with edge cases: {sum(1 for m in self.results.values() if m['has_edge_cases'])}"
+        )
+        print(
+            f"Components with integration tests: {sum(1 for m in self.results.values() if m['has_integration'])}"
+        )
         print()
 
         # Untested components
@@ -334,7 +367,7 @@ class CoverageAnalyzer:
 
     def save_results(self, output_file: Path) -> None:
         """Save coverage results to JSON."""
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(self.results, f, indent=2)
         print(f"Results saved to: {output_file}")
 

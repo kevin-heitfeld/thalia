@@ -260,4 +260,3 @@ Total: 3 configuration classes
 - [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rules and parameters
 - [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Configuration examples
 - [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) - Enum types used in configs
-

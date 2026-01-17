@@ -22,9 +22,9 @@ Biology: Koós & Tepper (1999), Gittis et al. (2010)
 import pytest
 import torch
 
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.striatum.config import StriatumState
-from thalia.config.size_calculator import LayerSizeCalculator
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def striatum_sizes():
     """Standard striatum sizes for testing."""
     calc = LayerSizeCalculator()
     sizes = calc.striatum_from_actions(n_actions=50, neurons_per_action=1)
-    sizes['input_size'] = 64
+    sizes["input_size"] = 64
     return sizes
 
 
@@ -123,7 +123,9 @@ def test_gap_junction_creates_coupling(default_config, striatum_sizes, device):
 
         # With only 1 FSI, gap junctions have no neighbors to couple with
         # Just verify the mechanism works (returns a tensor of correct shape)
-        assert coupling_current.shape == (striatum.fsi_size,), "Gap junction output should match FSI count"
+        assert coupling_current.shape == (
+            striatum.fsi_size,
+        ), "Gap junction output should match FSI count"
         assert not torch.isnan(coupling_current).any(), "Gap junction current should not be NaN"
 
         # If we had more FSI, we could check for non-zero coupling

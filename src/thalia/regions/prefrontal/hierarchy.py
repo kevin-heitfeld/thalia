@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Callable, Any
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
@@ -38,11 +38,12 @@ from thalia.constants.regions import PREFRONTAL_PATIENCE_MIN
 
 class GoalStatus(Enum):
     """Status of a goal in the hierarchy."""
-    PENDING = "pending"      # Not started
-    ACTIVE = "active"        # Currently pursuing
+
+    PENDING = "pending"  # Not started
+    ACTIVE = "active"  # Currently pursuing
     COMPLETED = "completed"  # Successfully achieved
-    FAILED = "failed"        # Could not achieve
-    PAUSED = "paused"        # Temporarily suspended
+    FAILED = "failed"  # Could not achieve
+    PAUSED = "paused"  # Temporarily suspended
 
 
 @dataclass
@@ -192,11 +193,7 @@ class GoalHierarchyManager:
         self.root_goal = goal
         self.goal_registry[goal.goal_id] = goal
 
-    def select_active_goal(
-        self,
-        state: torch.Tensor,
-        available_goals: List[Goal]
-    ) -> Goal:
+    def select_active_goal(self, state: torch.Tensor, available_goals: List[Goal]) -> Goal:
         """
         Select which goal to actively pursue.
 
@@ -216,6 +213,7 @@ class GoalHierarchyManager:
         if not self.config.use_value_based_selection:
             # Random selection
             import random
+
             return random.choice(available_goals)
 
         # Compute selection scores
@@ -240,16 +238,13 @@ class GoalHierarchyManager:
         # Epsilon-greedy selection
         if torch.rand(1).item() < self.config.epsilon_exploration:
             import random
+
             return random.choice(available_goals)
         else:
             best_idx = torch.tensor(scores).argmax().item()
             return available_goals[best_idx]
 
-    def decompose_goal(
-        self,
-        goal: Goal,
-        state: torch.Tensor
-    ) -> List[Goal]:
+    def decompose_goal(self, goal: Goal, state: torch.Tensor) -> List[Goal]:
         """
         Decompose a goal into subgoals.
 
@@ -278,18 +273,17 @@ class GoalHierarchyManager:
         if self.config.enable_option_learning:
             for option_name, option in self.options.items():
                 # If option can help achieve this goal and is initiatable
-                if (option.initiation_set is not None and
-                    option.initiation_set(state) and
-                    option.level == goal.level - 1):  # Right hierarchical level
+                if (
+                    option.initiation_set is not None
+                    and option.initiation_set(state)
+                    and option.level == goal.level - 1
+                ):  # Right hierarchical level
                     # Check if not already in subgoals
                     if not any(sg.name == option_name for sg in subgoals):
                         subgoals.append(option)
 
         # Filter to achievable subgoals based on current state
-        achievable = [
-            sg for sg in subgoals
-            if sg.is_achievable(state)
-        ]
+        achievable = [sg for sg in subgoals if sg.is_achievable(state)]
 
         return achievable if len(achievable) > 0 else subgoals
 
@@ -310,10 +304,7 @@ class GoalHierarchyManager:
         else:
             # Estimate progress from subgoals
             if len(goal.subgoals) > 0:
-                completed = sum(
-                    1 for g in goal.subgoals
-                    if g.status == GoalStatus.COMPLETED
-                )
+                completed = sum(1 for g in goal.subgoals if g.status == GoalStatus.COMPLETED)
                 goal.progress = completed / len(goal.subgoals)
 
     def push_goal(self, goal: Goal):
@@ -349,12 +340,7 @@ class GoalHierarchyManager:
         """Get the goal currently being pursued (top of stack)."""
         return self.active_goals[-1] if len(self.active_goals) > 0 else None
 
-    def cache_option(
-        self,
-        goal: Goal,
-        policy: Callable,
-        success_rate: float
-    ):
+    def cache_option(self, goal: Goal, policy: Callable, success_rate: float):
         """
         Cache successful policy as reusable option.
 
@@ -380,7 +366,7 @@ class GoalHierarchyManager:
                 initiation_set=goal.initiation_set,
                 termination_condition=goal.termination_condition,
                 level=goal.level,
-                intrinsic_value=goal.intrinsic_value
+                intrinsic_value=goal.intrinsic_value,
             )
             self.next_goal_id += 1
             self.options[option.name] = option
@@ -505,7 +491,7 @@ class HyperbolicDiscounter:
         self,
         cognitive_load: Optional[float] = None,
         stress: Optional[float] = None,
-        fatigue: Optional[float] = None
+        fatigue: Optional[float] = None,
     ):
         """Update context variables that affect discounting."""
         if cognitive_load is not None:
@@ -521,7 +507,7 @@ class HyperbolicDiscounter:
         immediate_value: float,
         delayed_value: float,
         delay: int,
-        outcome_quality: float
+        outcome_quality: float,
     ):
         """
         Adapt k based on choice outcomes.

@@ -64,11 +64,14 @@ Follows centralized broadcast pattern:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Optional
 
-from thalia.neuromodulation.homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
+from thalia.neuromodulation.homeostasis import (
+    NeuromodulatorHomeostasis,
+    NeuromodulatorHomeostasisConfig,
+)
 
 
 @dataclass
@@ -77,6 +80,7 @@ class NucleusBasalisConfig:
 
     Parameters control ACh dynamics and encoding mode computation.
     """
+
     # Baseline ACh level (retrieval mode)
     # Low ACh → pattern completion, memory recall
     baseline_ach: float = 0.2
@@ -141,7 +145,9 @@ class NucleusBasalisSystem:
         self._prediction_error: float = 0.0  # Last PE for diagnostics
 
         # Homeostatic regulation
-        homeostatic_cfg = self.config.homeostatic_config or NeuromodulatorHomeostasisConfig(target_level=0.3)
+        homeostatic_cfg = self.config.homeostatic_config or NeuromodulatorHomeostasisConfig(
+            target_level=0.3
+        )
         self._homeostatic = NeuromodulatorHomeostasis(config=homeostatic_cfg)
 
     def update(self, dt_ms: float, prediction_error: float) -> None:
@@ -178,10 +184,7 @@ class NucleusBasalisSystem:
         self._global_ach = self._baseline_ach + self._phasic_ach
 
         # Clamp to valid range
-        self._global_ach = max(
-            self.config.min_ach,
-            min(self.config.max_ach, self._global_ach)
-        )
+        self._global_ach = max(self.config.min_ach, min(self.config.max_ach, self._global_ach))
 
         # Update homeostatic regulation
         self._homeostatic.update(self._global_ach)
@@ -205,10 +208,7 @@ class NucleusBasalisSystem:
         Returns:
             Global ACh level [0, 1]
         """
-        ach = max(
-            self.config.min_ach,
-            min(self.config.max_ach, self._global_ach)
-        )
+        ach = max(self.config.min_ach, min(self.config.max_ach, self._global_ach))
         if apply_homeostasis:
             return self._homeostatic.apply_sensitivity(ach)
         return ach
@@ -296,8 +296,8 @@ class NucleusBasalisSystem:
         self._global_ach = state["global_ach"]
         self._prediction_error = state.get("prediction_error", 0.0)
 
-        if 'homeostatic' in state:
-            self._homeostatic.set_state(state['homeostatic'])
+        if "homeostatic" in state:
+            self._homeostatic.set_state(state["homeostatic"])
 
         # Config is immutable after initialization, but validate compatibility
         config_state = state.get("config", {})
@@ -305,6 +305,7 @@ class NucleusBasalisSystem:
             # Warn if config doesn't match (but don't fail)
             if abs(self.config.baseline_ach - config_state["baseline_ach"]) > 1e-6:
                 import warnings
+
                 warnings.warn("Loaded NB config differs from current config")
 
     def reset_state(self) -> None:
@@ -343,16 +344,16 @@ class NucleusBasalisSystem:
             warnings.append("Baseline ACh very high (constant encoding mode?)")
 
         homeostatic_health = self._homeostatic.check_health()
-        is_healthy = len(issues) == 0 and homeostatic_health['is_healthy']
+        is_healthy = len(issues) == 0 and homeostatic_health["is_healthy"]
 
         return {
             "is_healthy": is_healthy,
-            "issues": issues + homeostatic_health['issues'],
-            "warnings": warnings + homeostatic_health['warnings'],
+            "issues": issues + homeostatic_health["issues"],
+            "warnings": warnings + homeostatic_health["warnings"],
             "global_ach": self._global_ach,
             "baseline_ach": self._baseline_ach,
             "phasic_ach": self._phasic_ach,
             "encoding_mode": self.is_encoding_mode(),
             "encoding_strength": self.get_encoding_strength(),
-            "receptor_sensitivity": homeostatic_health['sensitivity'],
+            "receptor_sensitivity": homeostatic_health["sensitivity"],
         }

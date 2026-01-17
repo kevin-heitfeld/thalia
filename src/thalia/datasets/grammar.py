@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple, Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -27,6 +27,7 @@ import torch
 
 class Language(Enum):
     """Supported languages for grammar tasks."""
+
     ENGLISH = "en"
     GERMAN = "de"
     SPANISH = "es"
@@ -34,6 +35,7 @@ class Language(Enum):
 
 class GrammarRule(Enum):
     """Types of grammar rules to test."""
+
     SUBJECT_VERB_AGREEMENT = "sv_agreement"
     NOUN_ADJECTIVE = "noun_adj"
     WORD_ORDER_SVO = "word_order_svo"
@@ -44,6 +46,7 @@ class GrammarRule(Enum):
 
 class AgreementType(Enum):
     """Subject-verb agreement types."""
+
     SINGULAR = "singular"
     PLURAL = "plural"
 
@@ -51,6 +54,7 @@ class AgreementType(Enum):
 @dataclass
 class GrammarConfig:
     """Configuration for grammar dataset."""
+
     vocab_size: int = 100  # Total vocabulary size
     max_phrase_length: int = 5  # Maximum words per phrase
     rules_to_test: Optional[List[GrammarRule]] = None
@@ -90,10 +94,13 @@ class GrammarVocabulary:
 
         idx = 0
         for word_list in [
-            self.nouns_singular, self.nouns_plural,
-            self.verbs_singular, self.verbs_plural,
+            self.nouns_singular,
+            self.nouns_plural,
+            self.verbs_singular,
+            self.verbs_plural,
             self.adjectives,
-            self.determiners_singular, self.determiners_plural,
+            self.determiners_singular,
+            self.determiners_plural,
         ]:
             for word in word_list:
                 if word not in self.word2idx:
@@ -102,8 +109,8 @@ class GrammarVocabulary:
                     idx += 1
 
         # Special tokens
-        self.word2idx['<PAD>'] = idx
-        self.idx2word[idx] = '<PAD>'
+        self.word2idx["<PAD>"] = idx
+        self.idx2word[idx] = "<PAD>"
         self.pad_idx = idx
 
         self.vocab_size = len(self.word2idx)
@@ -111,54 +118,99 @@ class GrammarVocabulary:
     def _init_english(self):
         """Initialize English vocabulary."""
         # Nouns (subjects/objects)
-        self.nouns_singular = ['cat', 'dog', 'bird', 'fish', 'mouse', 'ball', 'book', 'car']
-        self.nouns_plural = ['cats', 'dogs', 'birds', 'fish', 'mice', 'balls', 'books', 'cars']
+        self.nouns_singular = ["cat", "dog", "bird", "fish", "mouse", "ball", "book", "car"]
+        self.nouns_plural = ["cats", "dogs", "birds", "fish", "mice", "balls", "books", "cars"]
 
         # Verbs
-        self.verbs_singular = ['runs', 'jumps', 'flies', 'swims', 'eats']
-        self.verbs_plural = ['run', 'jump', 'fly', 'swim', 'eat']
+        self.verbs_singular = ["runs", "jumps", "flies", "swims", "eats"]
+        self.verbs_plural = ["run", "jump", "fly", "swim", "eat"]
 
         # Adjectives
-        self.adjectives = ['big', 'small', 'red', 'blue', 'fast', 'slow', 'happy', 'sad']
+        self.adjectives = ["big", "small", "red", "blue", "fast", "slow", "happy", "sad"]
 
         # Determiners
-        self.determiners_singular = ['the', 'a', 'this']
-        self.determiners_plural = ['the', 'these', 'some']
+        self.determiners_singular = ["the", "a", "this"]
+        self.determiners_plural = ["the", "these", "some"]
 
     def _init_german(self):
         """Initialize German vocabulary."""
         # Nouns (with grammatical gender markers)
         # Note: German nouns are capitalized
-        self.nouns_singular = ['Katze', 'Hund', 'Vogel', 'Fisch', 'Maus', 'Ball', 'Buch', 'Auto']
-        self.nouns_plural = ['Katzen', 'Hunde', 'Vögel', 'Fische', 'Mäuse', 'Bälle', 'Bücher', 'Autos']
+        self.nouns_singular = ["Katze", "Hund", "Vogel", "Fisch", "Maus", "Ball", "Buch", "Auto"]
+        self.nouns_plural = [
+            "Katzen",
+            "Hunde",
+            "Vögel",
+            "Fische",
+            "Mäuse",
+            "Bälle",
+            "Bücher",
+            "Autos",
+        ]
 
         # Verbs (3rd person singular vs plural)
-        self.verbs_singular = ['läuft', 'springt', 'fliegt', 'schwimmt', 'isst']
-        self.verbs_plural = ['laufen', 'springen', 'fliegen', 'schwimmen', 'essen']
+        self.verbs_singular = ["läuft", "springt", "fliegt", "schwimmt", "isst"]
+        self.verbs_plural = ["laufen", "springen", "fliegen", "schwimmen", "essen"]
 
         # Adjectives (uninflected predicative form)
-        self.adjectives = ['groß', 'klein', 'rot', 'blau', 'schnell', 'langsam', 'glücklich', 'traurig']
+        self.adjectives = [
+            "groß",
+            "klein",
+            "rot",
+            "blau",
+            "schnell",
+            "langsam",
+            "glücklich",
+            "traurig",
+        ]
 
         # Determiners (der/die/das for singular, die for plural)
-        self.determiners_singular = ['der', 'die', 'das', 'ein', 'eine']
-        self.determiners_plural = ['die', 'diese', 'einige']
+        self.determiners_singular = ["der", "die", "das", "ein", "eine"]
+        self.determiners_plural = ["die", "diese", "einige"]
 
     def _init_spanish(self):
         """Initialize Spanish vocabulary."""
         # Nouns (masculine/feminine)
-        self.nouns_singular = ['gato', 'perro', 'pájaro', 'pez', 'ratón', 'pelota', 'libro', 'coche']
-        self.nouns_plural = ['gatos', 'perros', 'pájaros', 'peces', 'ratones', 'pelotas', 'libros', 'coches']
+        self.nouns_singular = [
+            "gato",
+            "perro",
+            "pájaro",
+            "pez",
+            "ratón",
+            "pelota",
+            "libro",
+            "coche",
+        ]
+        self.nouns_plural = [
+            "gatos",
+            "perros",
+            "pájaros",
+            "peces",
+            "ratones",
+            "pelotas",
+            "libros",
+            "coches",
+        ]
 
         # Verbs (3rd person singular vs plural)
-        self.verbs_singular = ['corre', 'salta', 'vuela', 'nada', 'come']
-        self.verbs_plural = ['corren', 'saltan', 'vuelan', 'nadan', 'comen']
+        self.verbs_singular = ["corre", "salta", "vuela", "nada", "come"]
+        self.verbs_plural = ["corren", "saltan", "vuelan", "nadan", "comen"]
 
         # Adjectives (need gender agreement in attributive position, but we'll use masculine)
-        self.adjectives = ['grande', 'pequeño', 'rojo', 'azul', 'rápido', 'lento', 'feliz', 'triste']
+        self.adjectives = [
+            "grande",
+            "pequeño",
+            "rojo",
+            "azul",
+            "rápido",
+            "lento",
+            "feliz",
+            "triste",
+        ]
 
         # Determiners (el/la for singular, los/las for plural)
-        self.determiners_singular = ['el', 'la', 'un', 'una', 'este', 'esta']
-        self.determiners_plural = ['los', 'las', 'estos', 'estas', 'algunos']
+        self.determiners_singular = ["el", "la", "un", "una", "este", "esta"]
+        self.determiners_plural = ["los", "las", "estos", "estas", "algunos"]
 
         # Build word→index mapping
         self.word2idx = {}
@@ -166,10 +218,13 @@ class GrammarVocabulary:
 
         idx = 0
         for word_list in [
-            self.nouns_singular, self.nouns_plural,
-            self.verbs_singular, self.verbs_plural,
+            self.nouns_singular,
+            self.nouns_plural,
+            self.verbs_singular,
+            self.verbs_plural,
             self.adjectives,
-            self.determiners_singular, self.determiners_plural,
+            self.determiners_singular,
+            self.determiners_plural,
         ]:
             for word in word_list:
                 if word not in self.word2idx:
@@ -178,8 +233,8 @@ class GrammarVocabulary:
                     idx += 1
 
         # Special tokens
-        self.word2idx['<PAD>'] = idx
-        self.idx2word[idx] = '<PAD>'
+        self.word2idx["<PAD>"] = idx
+        self.idx2word[idx] = "<PAD>"
         self.pad_idx = idx
 
         self.vocab_size = len(self.word2idx)

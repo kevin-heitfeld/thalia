@@ -15,22 +15,22 @@ Date: December 11, 2025
 import pytest
 import torch
 
+from thalia.core.errors import ConfigurationError
 from thalia.learning import (
-    LearningStrategyRegistry,
-    HebbianStrategy,
-    STDPStrategy,
     BCMStrategy,
-    ThreeFactorStrategy,
-    ErrorCorrectiveStrategy,
-    CompositeStrategy,
-    HebbianConfig,
-    STDPConfig,
     BCMStrategyConfig,
-    ThreeFactorConfig,
+    CompositeStrategy,
     ErrorCorrectiveConfig,
+    ErrorCorrectiveStrategy,
+    HebbianConfig,
+    HebbianStrategy,
+    LearningStrategyRegistry,
+    STDPConfig,
+    STDPStrategy,
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
 )
 from thalia.regions import Prefrontal, PrefrontalConfig
-from thalia.core.errors import ConfigurationError
 
 
 class TestLearningStrategyBasics:
@@ -187,17 +187,13 @@ class TestLearningStrategyBasics:
         post = torch.tensor([1.0, 0.0, 1.0])
 
         # Build eligibility (no modulator)
-        new_weights, metrics = strategy.compute_update(
-            weights, pre, post, modulator=0.0
-        )
+        new_weights, metrics = strategy.compute_update(weights, pre, post, modulator=0.0)
         assert torch.allclose(new_weights, weights)  # No learning without modulator
         elig_1 = metrics["eligibility_mean"]
         assert elig_1 > 0  # But eligibility accumulated
 
         # Apply modulator
-        new_weights, metrics = strategy.compute_update(
-            new_weights, pre, post, modulator=0.5
-        )
+        new_weights, metrics = strategy.compute_update(new_weights, pre, post, modulator=0.5)
         assert not torch.allclose(new_weights, weights)  # Learning occurred
         assert metrics["modulator"] == 0.5
 
@@ -249,16 +245,12 @@ class TestStrategyRegistry:
     def test_registry_create_strategy(self):
         """Test creating strategies from registry."""
         # Create STDP
-        stdp = LearningStrategyRegistry.create(
-            "stdp",
-            STDPConfig(learning_rate=0.02)
-        )
+        stdp = LearningStrategyRegistry.create("stdp", STDPConfig(learning_rate=0.02))
         assert isinstance(stdp, STDPStrategy)
 
         # Create using alias
         rl_strategy = LearningStrategyRegistry.create(
-            "rl",  # Alias for three_factor
-            ThreeFactorConfig(learning_rate=0.01)
+            "rl", ThreeFactorConfig(learning_rate=0.01)  # Alias for three_factor
         )
         assert isinstance(rl_strategy, ThreeFactorStrategy)
 
@@ -275,20 +267,20 @@ class TestStrategyRegistry:
     def test_registry_unknown_strategy(self):
         """Test error handling for unknown strategies."""
         with pytest.raises(ConfigurationError, match="Unknown learning strategy"):
-            LearningStrategyRegistry.create(
-                "nonexistent",
-                HebbianConfig()
-            )
+            LearningStrategyRegistry.create("nonexistent", HebbianConfig())
 
 
 class TestStrategyComposition:
     """Test CompositeStrategy functionality."""
 
-    @pytest.mark.parametrize("strategy_names,expected_metric_patterns", [
-        (["hebbian", "bcm"], ["ltp", "ltd", "theta_mean"]),
-        (["stdp"], ["ltp", "ltd"]),
-        (["three_factor"], ["eligibility_mean", "ltp", "ltd"]),
-    ])
+    @pytest.mark.parametrize(
+        "strategy_names,expected_metric_patterns",
+        [
+            (["hebbian", "bcm"], ["ltp", "ltd", "theta_mean"]),
+            (["stdp"], ["ltp", "ltd"]),
+            (["three_factor"], ["eligibility_mean", "ltp", "ltd"]),
+        ],
+    )
     def test_composite_strategy_metrics(self, strategy_names, expected_metric_patterns):
         """Test CompositeStrategy collects metrics from all sub-strategies."""
         strategies = []
@@ -317,7 +309,9 @@ class TestStrategyComposition:
         for expected_pattern in expected_metric_patterns:
             # Look for metric with any prefix (s0_, s1_, etc.)
             found = any(expected_pattern in key for key in metrics.keys())
-            assert found, f"Missing metric pattern: {expected_pattern}, got keys: {list(metrics.keys())}"
+            assert (
+                found
+            ), f"Missing metric pattern: {expected_pattern}, got keys: {list(metrics.keys())}"
 
         # Verify weights were updated
         assert not torch.allclose(new_weights, weights)
@@ -338,7 +332,7 @@ class TestStrategyComposition:
 
         # Verify both strategies contributed
         assert "s0_mean_change" in metrics  # Hebbian
-        assert "s1_theta_mean" in metrics   # BCM
+        assert "s1_theta_mean" in metrics  # BCM
         assert not torch.allclose(new_weights, weights)
 
     def test_composite_strategy_reset_state(self):
@@ -360,10 +354,12 @@ class TestStrategyComposition:
 
         # Verify traces/thresholds reset by checking behavior
         # After reset, compute_update should show zero traces in metrics
-        _, metrics_after_reset = composite.compute_update(weights, torch.zeros_like(pre), torch.zeros_like(post))
+        _, metrics_after_reset = composite.compute_update(
+            weights, torch.zeros_like(pre), torch.zeros_like(post)
+        )
         # BEHAVIORAL CONTRACT: Traces should be zero after reset
-        if 'pre_trace_mean' in metrics_after_reset:
-            assert metrics_after_reset['pre_trace_mean'] == 0.0, "Traces should be reset"
+        if "pre_trace_mean" in metrics_after_reset:
+            assert metrics_after_reset["pre_trace_mean"] == 0.0, "Traces should be reset"
         # BCM theta resets to None (tested via behavior: no theta modulation)
 
 
@@ -378,7 +374,7 @@ class TestRegionIntegration:
         pfc = Prefrontal(config, sizes, device)
 
         # Verify strategy exists
-        assert hasattr(pfc, 'learning_strategy')
+        assert hasattr(pfc, "learning_strategy")
         assert isinstance(pfc.learning_strategy, STDPStrategy)
 
         # Forward pass
@@ -436,12 +432,15 @@ class TestRegionIntegration:
 class TestStrategyBoundsHandling:
     """Test weight bounds handling across strategies."""
 
-    @pytest.mark.parametrize("strategy_config", [
-        HebbianConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
-        STDPConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
-        BCMStrategyConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
-        ErrorCorrectiveConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
-    ])
+    @pytest.mark.parametrize(
+        "strategy_config",
+        [
+            HebbianConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
+            STDPConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
+            BCMStrategyConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
+            ErrorCorrectiveConfig(learning_rate=0.5, w_min=0.0, w_max=1.0),
+        ],
+    )
     def test_strategy_respects_bounds(self, strategy_config):
         """Test all strategies respect weight bounds."""
         # Create strategy based on config type
@@ -465,9 +464,7 @@ class TestStrategyBoundsHandling:
         for _ in range(10):
             if isinstance(strategy, ErrorCorrectiveStrategy):
                 # Error-corrective needs target
-                weights, _ = strategy.compute_update(
-                    weights, pre, post, target=torch.ones(3)
-                )
+                weights, _ = strategy.compute_update(weights, pre, post, target=torch.ones(3))
             else:
                 weights, _ = strategy.compute_update(weights, pre, post)
 
@@ -495,13 +492,9 @@ class TestStrategyMetrics:
 
         for strategy in strategies:
             if isinstance(strategy, ErrorCorrectiveStrategy):
-                _, metrics = strategy.compute_update(
-                    weights, pre, post, target=torch.ones(3)
-                )
+                _, metrics = strategy.compute_update(weights, pre, post, target=torch.ones(3))
             elif isinstance(strategy, ThreeFactorStrategy):
-                _, metrics = strategy.compute_update(
-                    weights, pre, post, modulator=0.5
-                )
+                _, metrics = strategy.compute_update(weights, pre, post, modulator=0.5)
             else:
                 _, metrics = strategy.compute_update(weights, pre, post)
 

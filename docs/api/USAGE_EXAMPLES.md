@@ -75,4 +75,3 @@ stdp_cfg = STDPConfig(learning_rate=0.002, a_plus=0.02)
 ```
 
 ---
-

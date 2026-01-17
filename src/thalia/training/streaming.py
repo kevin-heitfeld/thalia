@@ -103,11 +103,11 @@ Date: December 12, 2025 (Tier 3 Implementation)
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-import time
-from typing import Iterator, Optional, Dict, Any, Callable, Deque
+from typing import Any, Callable, Deque, Dict, Iterator, Optional
 
 import numpy as np
 import torch
@@ -134,6 +134,7 @@ class StreamConfig:
         drift_threshold: Performance drop threshold to trigger alert
         enable_profiling: Track performance metrics (throughput, memory)
     """
+
     eval_frequency: int = 1000
     checkpoint_frequency: int = 10000
     health_check_frequency: int = 5000
@@ -159,6 +160,7 @@ class StreamingStats:
         health_issues: List of detected health problems
         checkpoints_saved: List of checkpoint paths
     """
+
     samples_processed: int = 0
     duration_seconds: float = 0.0
     throughput_samples_per_sec: float = 0.0
@@ -201,8 +203,7 @@ class ExperienceBuffer:
         # Filter by age if specified
         if self.max_age is not None:
             valid_samples = [
-                s for s in self.buffer
-                if self.sample_counter - s["_timestamp"] <= self.max_age
+                s for s in self.buffer if self.sample_counter - s["_timestamp"] <= self.max_age
             ]
             if not valid_samples:
                 return None
@@ -263,7 +264,7 @@ class DriftDetector:
                 "previous_avg": float(recent_avg),
                 "current": float(performance),
                 "drop_fraction": float(drop),
-                "recommendation": "Increase replay frequency or enable consolidation"
+                "recommendation": "Increase replay frequency or enable consolidation",
             }
         return None
 
@@ -483,8 +484,7 @@ class StreamingTrainer:
 
             # Check for critical issues
             critical_issues = [
-                issue for issue in report.issues
-                if issue.severity in ["critical", "high"]
+                issue for issue in report.issues if issue.severity in ["critical", "high"]
             ]
 
             if critical_issues:

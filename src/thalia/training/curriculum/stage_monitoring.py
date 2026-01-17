@@ -9,10 +9,10 @@ Integration with stage_gates.py for comprehensive safety system.
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-import logging
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class InterventionType(Enum):
     """Types of interventions that can be triggered."""
+
     NONE = "none"
     REDUCE_LOAD = "reduce_load"
     CONSOLIDATE = "consolidate"
@@ -80,7 +81,7 @@ class ContinuousMonitor:
         self,
         check_interval: int = 1000,
         window_size: int = 10000,
-        enable_auto_intervention: bool = True
+        enable_auto_intervention: bool = True,
     ):
         """
         Args:
@@ -108,10 +109,7 @@ class ContinuousMonitor:
         self.active_alerts = set()
 
     def update(
-        self,
-        brain,
-        step: int,
-        task_result: Optional[Dict] = None
+        self, brain, step: int, task_result: Optional[Dict] = None
     ) -> Tuple[MonitoringMetrics, Optional[InterventionType]]:
         """
         Update monitoring with current step.
@@ -138,42 +136,36 @@ class ContinuousMonitor:
 
         return metrics, intervention
 
-    def _collect_metrics(
-        self,
-        brain,
-        task_result: Optional[Dict]
-    ) -> MonitoringMetrics:
+    def _collect_metrics(self, brain, task_result: Optional[Dict]) -> MonitoringMetrics:
         """Collect all monitoring metrics from brain."""
         metrics = MonitoringMetrics()
 
         # Oscillator metrics
-        if hasattr(brain, 'theta_oscillator'):
+        if hasattr(brain, "theta_oscillator"):
             metrics.theta_frequency = brain.theta_oscillator.get_frequency()
 
             # Calculate variance from recent history
             if len(self.metrics_history) > 100:
-                recent_freqs = [
-                    m.theta_frequency for m in list(self.metrics_history)[-100:]
-                ]
+                recent_freqs = [m.theta_frequency for m in list(self.metrics_history)[-100:]]
                 metrics.theta_variance = np.std(recent_freqs) / np.mean(recent_freqs)
 
-        if hasattr(brain, 'measure_phase_locking'):
+        if hasattr(brain, "measure_phase_locking"):
             metrics.gamma_theta_phase_locking = brain.measure_phase_locking()
 
         # Working memory metrics
-        if task_result and 'n_back_accuracy' in task_result:
-            metrics.n_back_accuracy = task_result['n_back_accuracy']
+        if task_result and "n_back_accuracy" in task_result:
+            metrics.n_back_accuracy = task_result["n_back_accuracy"]
 
-        if hasattr(brain, 'prefrontal') and hasattr(brain.prefrontal, 'capacity'):
+        if hasattr(brain, "prefrontal") and hasattr(brain.prefrontal, "capacity"):
             metrics.wm_capacity = brain.prefrontal.capacity
 
         # Task performance
-        if task_result and 'accuracy' in task_result:
-            metrics.task_accuracy = task_result['accuracy']
+        if task_result and "accuracy" in task_result:
+            metrics.task_accuracy = task_result["accuracy"]
 
         # Modality-specific performance
-        if hasattr(brain, 'get_modality_performance'):
-            for modality in ['phonology', 'vision', 'language']:
+        if hasattr(brain, "get_modality_performance"):
+            for modality in ["phonology", "vision", "language"]:
                 try:
                     perf = brain.get_modality_performance(modality)
                     metrics.modality_performances[modality] = perf
@@ -181,16 +173,15 @@ class ContinuousMonitor:
                     pass
 
         # Firing rates
-        if hasattr(brain, 'get_mean_firing_rate'):
+        if hasattr(brain, "get_mean_firing_rate"):
             metrics.mean_firing_rate = brain.get_mean_firing_rate()
 
-        if hasattr(brain, 'get_region_firing_rates'):
+        if hasattr(brain, "get_region_firing_rates"):
             metrics.region_firing_rates = brain.get_region_firing_rates()
 
             # Check for silent regions
             silent_regions = [
-                name for name, rate in metrics.region_firing_rates.items()
-                if rate < 0.01
+                name for name, rate in metrics.region_firing_rates.items() if rate < 0.01
             ]
             metrics.no_region_silence = len(silent_regions) == 0
 
@@ -198,26 +189,22 @@ class ContinuousMonitor:
                 logger.warning(f"Silent regions detected: {silent_regions}")
 
         # Neuromodulation
-        if hasattr(brain, 'neuromodulation'):
+        if hasattr(brain, "neuromodulation"):
             metrics.dopamine_level = brain.neuromodulation.get_dopamine()
 
         # Consolidation effectiveness
-        if task_result and 'replay_improvement' in task_result:
-            metrics.replay_improvement = task_result['replay_improvement']
+        if task_result and "replay_improvement" in task_result:
+            metrics.replay_improvement = task_result["replay_improvement"]
 
         # Stability
         if len(self.metrics_history) > 100:
-            recent_acc = [
-                m.task_accuracy for m in list(self.metrics_history)[-100:]
-            ]
+            recent_acc = [m.task_accuracy for m in list(self.metrics_history)[-100:]]
             metrics.performance_stability = 1.0 - np.std(recent_acc)
 
         return metrics
 
     def _check_health(
-        self,
-        brain,
-        current_metrics: MonitoringMetrics
+        self, brain, current_metrics: MonitoringMetrics
     ) -> Optional[InterventionType]:
         """
         Check system health and determine if intervention needed.
@@ -268,9 +255,7 @@ class ContinuousMonitor:
         self.active_alerts.clear()
         return None
 
-    def _check_oscillator_instability(
-        self, metrics: MonitoringMetrics
-    ) -> bool:
+    def _check_oscillator_instability(self, metrics: MonitoringMetrics) -> bool:
         """Check for oscillator instability."""
         # Theta frequency out of range
         if not (6.5 <= metrics.theta_frequency <= 8.5):
@@ -302,8 +287,8 @@ class ContinuousMonitor:
             # Filter out zeros (timesteps where n_back wasn't measured)
             recent = [acc for acc in recent if acc > 0.0]
             if len(recent) > 10:
-                early = np.mean(recent[:min(50, len(recent)//2)])
-                late = np.mean(recent[-min(50, len(recent)//2):])
+                early = np.mean(recent[: min(50, len(recent) // 2)])
+                late = np.mean(recent[-min(50, len(recent) // 2) :])
                 if early - late > 0.15:  # 15% rapid drop
                     return True
 
@@ -314,17 +299,14 @@ class ContinuousMonitor:
         # Simultaneous performance drops in multiple modalities
         if len(metrics.modality_performances) >= 2:
             poor_modalities = [
-                mod for mod, perf in metrics.modality_performances.items()
-                if perf < 0.70
+                mod for mod, perf in metrics.modality_performances.items() if perf < 0.70
             ]
             if len(poor_modalities) >= 2:
                 return True
 
         return False
 
-    def _check_performance_degradation(
-        self, metrics: MonitoringMetrics
-    ) -> bool:
+    def _check_performance_degradation(self, metrics: MonitoringMetrics) -> bool:
         """Check for general performance degradation."""
         if len(self.metrics_history) < 200:
             return False
@@ -343,9 +325,7 @@ class ContinuousMonitor:
 
         return False
 
-    def _check_cognitive_overload(
-        self, brain, metrics: MonitoringMetrics
-    ) -> bool:
+    def _check_cognitive_overload(self, brain, metrics: MonitoringMetrics) -> bool:
         """Check for cognitive overload."""
         # High firing rates indicate overload
         if metrics.mean_firing_rate > 0.20:
@@ -365,7 +345,7 @@ class ContinuousMonitor:
     def get_intervention_summary(self) -> Dict:
         """Get summary of interventions triggered."""
         if not self.intervention_history:
-            return {'total': 0, 'by_type': {}}
+            return {"total": 0, "by_type": {}}
 
         by_type = {}
         for intervention, step in self.intervention_history:
@@ -374,17 +354,15 @@ class ContinuousMonitor:
             by_type[intervention] += 1
 
         return {
-            'total': len(self.intervention_history),
-            'by_type': by_type,
-            'most_recent': self.intervention_history[-1] if self.intervention_history else None
+            "total": len(self.intervention_history),
+            "by_type": by_type,
+            "most_recent": self.intervention_history[-1] if self.intervention_history else None,
         }
 
     def record_intervention(self, intervention: InterventionType):
         """Record that an intervention was triggered."""
         self.intervention_history.append((intervention, self.steps))
-        logger.info(
-            f"Intervention triggered at step {self.steps}: {intervention.value}"
-        )
+        logger.info(f"Intervention triggered at step {self.steps}: {intervention.value}")
 
     def get_metrics_summary(self, window: int = 1000) -> Dict:
         """Get summary statistics over recent window."""
@@ -394,12 +372,12 @@ class ContinuousMonitor:
         recent = list(self.metrics_history)[-window:]
 
         return {
-            'mean_theta_frequency': np.mean([m.theta_frequency for m in recent]),
-            'mean_n_back_accuracy': np.mean([m.n_back_accuracy for m in recent]),
-            'mean_task_accuracy': np.mean([m.task_accuracy for m in recent]),
-            'mean_firing_rate': np.mean([m.mean_firing_rate for m in recent]),
-            'active_alerts': list(self.active_alerts),
-            'num_interventions': len(self.intervention_history),
+            "mean_theta_frequency": np.mean([m.theta_frequency for m in recent]),
+            "mean_n_back_accuracy": np.mean([m.n_back_accuracy for m in recent]),
+            "mean_task_accuracy": np.mean([m.task_accuracy for m in recent]),
+            "mean_firing_rate": np.mean([m.mean_firing_rate for m in recent]),
+            "active_alerts": list(self.active_alerts),
+            "num_interventions": len(self.intervention_history),
         }
 
 
@@ -412,7 +390,7 @@ class Stage1Monitor(ContinuousMonitor):
 
     def __init__(self, **kwargs):
         # More frequent checks for Stage 1
-        kwargs.setdefault('check_interval', 500)  # Check every 500 steps
+        kwargs.setdefault("check_interval", 500)  # Check every 500 steps
         super().__init__(**kwargs)
 
         # Stage 1 specific thresholds (more conservative)
@@ -436,9 +414,7 @@ class Stage1Monitor(ContinuousMonitor):
 
         return False
 
-    def _check_oscillator_instability(
-        self, metrics: MonitoringMetrics
-    ) -> bool:
+    def _check_oscillator_instability(self, metrics: MonitoringMetrics) -> bool:
         """Stage 1 version with stricter threshold."""
         # Tighter frequency range
         if not (7.0 <= metrics.theta_frequency <= 8.0):

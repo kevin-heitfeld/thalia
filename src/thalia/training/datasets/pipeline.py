@@ -16,10 +16,10 @@ Date: December 2025
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from pathlib import Path
-import random
-from typing import List, Dict, Iterator, Tuple, Union
+from typing import Dict, Iterator, List, Tuple, Union
 
 import torch
 
@@ -40,6 +40,7 @@ class DataConfig:
         shuffle: Whether to shuffle sequences
         seed: Random seed for reproducibility
     """
+
     tokenizer_type: str = "char"
     vocab_size: int = 10000
     context_length: int = 128
@@ -109,8 +110,7 @@ class SimpleTokenizer:
 
         # Filter by frequency and sort by count
         filtered_tokens = [
-            (token, count) for token, count in token_counts.items()
-            if count >= self.min_frequency
+            (token, count) for token, count in token_counts.items() if count >= self.min_frequency
         ]
         filtered_tokens.sort(key=lambda x: x[1], reverse=True)
 
@@ -122,7 +122,7 @@ class SimpleTokenizer:
             self.eos_token: 3,
         }
 
-        for token, _ in filtered_tokens[:self.vocab_size - 4]:
+        for token, _ in filtered_tokens[: self.vocab_size - 4]:
             self.token_to_id[token] = len(self.token_to_id)
 
         self.id_to_token = {v: k for k, v in self.token_to_id.items()}
@@ -143,10 +143,7 @@ class SimpleTokenizer:
         else:
             tokens = text.split()
 
-        return [
-            self.token_to_id.get(token, self.token_to_id[self.unk_token])
-            for token in tokens
-        ]
+        return [self.token_to_id.get(token, self.token_to_id[self.unk_token]) for token in tokens]
 
     def decode(self, token_ids: List[int]) -> str:
         """Decode token IDs to text."""
@@ -265,8 +262,8 @@ class TextDataPipeline:
 
         # Slide window over tokens
         for i in range(0, len(self.token_ids) - ctx_len, ctx_len // 2):
-            input_seq = self.token_ids[i:i + ctx_len]
-            target_seq = self.token_ids[i + 1:i + ctx_len + 1]
+            input_seq = self.token_ids[i : i + ctx_len]
+            target_seq = self.token_ids[i + 1 : i + ctx_len + 1]
 
             if len(input_seq) == ctx_len and len(target_seq) == ctx_len:
                 self.sequences.append((input_seq, target_seq))
@@ -284,7 +281,7 @@ class TextDataPipeline:
         batch_size = self.config.batch_size
 
         for i in range(0, len(self.sequences), batch_size):
-            batch_seqs = self.sequences[i:i + batch_size]
+            batch_seqs = self.sequences[i : i + batch_size]
 
             if len(batch_seqs) < batch_size:
                 continue  # Skip incomplete batch
@@ -301,7 +298,10 @@ class TextDataPipeline:
         """Get all sequences as tensors (for small datasets)."""
         if not self._sequences:
             from thalia.core.errors import ComponentError
-            raise ComponentError("SequenceGenerator", "No sequences loaded. Call load_text() first.")
+
+            raise ComponentError(
+                "SequenceGenerator", "No sequences loaded. Call load_text() first."
+            )
 
         inputs = torch.tensor([s[0] for s in self.sequences])
         targets = torch.tensor([s[1] for s in self.sequences])

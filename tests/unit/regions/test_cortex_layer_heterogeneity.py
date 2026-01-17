@@ -14,13 +14,12 @@ Biological validation:
 - Integration with forward pass and learning
 """
 
-import torch
 import pytest
+import torch
 
+from thalia.config import LayerSizeCalculator
 from thalia.regions.cortex import LayeredCortex
 from thalia.regions.cortex.config import LayeredCortexConfig
-from thalia.config import LayerSizeCalculator
-
 
 # =====================================================================
 # FIXTURES
@@ -478,7 +477,7 @@ def test_custom_layer_properties_override_defaults():
     custom_config = LayeredCortexConfig(
         use_layer_heterogeneity=True,
         layer_tau_mem={
-            "l4": 8.0,   # Custom: very fast
+            "l4": 8.0,  # Custom: very fast
             "l23": 25.0,  # Custom: slow integration
             "l5": 35.0,  # Custom: very slow
             "l6a": 12.0,
@@ -486,7 +485,7 @@ def test_custom_layer_properties_override_defaults():
         },
         layer_v_threshold={
             "l4": -48.0,  # Custom: very low threshold
-            "l23": -58.0, # Custom: high threshold
+            "l23": -58.0,  # Custom: high threshold
             "l5": -45.0,
             "l6a": -52.0,
             "l6b": -50.0,

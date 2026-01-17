@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
 from thalia.learning.critical_periods import CriticalPeriodGating
 
@@ -46,11 +46,11 @@ def plot_critical_period_windows(
 
     # Colors for domains
     colors = {
-        'motor': '#FF6B6B',
-        'face_recognition': '#4ECDC4',
-        'phonology': '#45B7D1',
-        'grammar': '#96CEB4',
-        'semantics': '#FFEAA7',
+        "motor": "#FF6B6B",
+        "face_recognition": "#4ECDC4",
+        "phonology": "#45B7D1",
+        "grammar": "#96CEB4",
+        "semantics": "#FFEAA7",
     }
 
     # Plot multiplier curves
@@ -60,53 +60,53 @@ def plot_critical_period_windows(
         multipliers = []
         for step in steps:
             status = gating.get_window_status(domain, int(step))
-            multipliers.append(status['multiplier'])
+            multipliers.append(status["multiplier"])
 
-        color = colors.get(domain, '#95A5A6')
+        color = colors.get(domain, "#95A5A6")
         ax.plot(
             steps / 1000,  # Convert to thousands
             multipliers,
-            label=domain.replace('_', ' ').title(),
+            label=domain.replace("_", " ").title(),
             linewidth=2.5,
             color=color,
             alpha=0.9,
         )
 
     # Add reference lines
-    ax.axhline(y=1.0, color='gray', linestyle='--', linewidth=1, alpha=0.5, label='Baseline (1.0x)')
-    ax.axhline(y=1.2, color='green', linestyle=':', linewidth=1, alpha=0.3)
-    ax.axhline(y=0.5, color='red', linestyle=':', linewidth=1, alpha=0.3)
+    ax.axhline(y=1.0, color="gray", linestyle="--", linewidth=1, alpha=0.5, label="Baseline (1.0x)")
+    ax.axhline(y=1.2, color="green", linestyle=":", linewidth=1, alpha=0.3)
+    ax.axhline(y=0.5, color="red", linestyle=":", linewidth=1, alpha=0.3)
 
     # Styling
-    ax.set_xlabel('Training Step (thousands)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Learning Rate Multiplier', fontsize=12, fontweight='bold')
-    ax.set_title('Critical Period Windows Across Development', fontsize=14, fontweight='bold')
-    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
-    ax.grid(True, alpha=0.2, linestyle='--')
+    ax.set_xlabel("Training Step (thousands)", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Learning Rate Multiplier", fontsize=12, fontweight="bold")
+    ax.set_title("Critical Period Windows Across Development", fontsize=14, fontweight="bold")
+    ax.legend(loc="upper right", fontsize=10, framealpha=0.9)
+    ax.grid(True, alpha=0.2, linestyle="--")
     ax.set_xlim(0, max_steps / 1000)
     ax.set_ylim(0, 1.4)
 
     # Add stage markers
     stages = [
-        (0, 50, 'Stage -0.5\nSensorimotor'),
-        (50, 100, 'Stage 0\nPhonology'),
-        (100, 200, 'Stage 1\nToddler'),
-        (200, 350, 'Stage 2\nGrammar'),
-        (350, 500, 'Stage 3\nReading'),
+        (0, 50, "Stage -0.5\nSensorimotor"),
+        (50, 100, "Stage 0\nPhonology"),
+        (100, 200, "Stage 1\nToddler"),
+        (200, 350, "Stage 2\nGrammar"),
+        (350, 500, "Stage 3\nReading"),
     ]
 
     for start, end, label in stages:
         if end <= max_steps / 1000:
-            ax.axvspan(start, end, alpha=0.05, color='gray')
+            ax.axvspan(start, end, alpha=0.05, color="gray")
             ax.text(
                 (start + end) / 2,
                 1.35,
                 label,
-                ha='center',
-                va='center',
+                ha="center",
+                va="center",
                 fontsize=8,
-                style='italic',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7, edgecolor='none')
+                style="italic",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7, edgecolor="none"),
             )
 
     plt.tight_layout()
@@ -141,9 +141,9 @@ def plot_critical_period_timeline(
 
     # Colors for phases
     phase_colors = {
-        'early': '#FFCCCB',  # Light red
-        'peak': '#90EE90',   # Light green
-        'late': '#FFE4B5',   # Light yellow/beige
+        "early": "#FFCCCB",  # Light red
+        "peak": "#90EE90",  # Light green
+        "late": "#FFE4B5",  # Light yellow/beige
     }
 
     max_step = 500000
@@ -159,8 +159,8 @@ def plot_critical_period_timeline(
                 start / 1000,
                 left=0,
                 height=0.8,
-                color=phase_colors['early'],
-                edgecolor='black',
+                color=phase_colors["early"],
+                edgecolor="black",
                 linewidth=0.5,
             )
 
@@ -170,8 +170,8 @@ def plot_critical_period_timeline(
             (end - start) / 1000,
             left=start / 1000,
             height=0.8,
-            color=phase_colors['peak'],
-            edgecolor='black',
+            color=phase_colors["peak"],
+            edgecolor="black",
             linewidth=0.5,
         )
 
@@ -182,8 +182,8 @@ def plot_critical_period_timeline(
                 (max_step - end) / 1000,
                 left=end / 1000,
                 height=0.8,
-                color=phase_colors['late'],
-                edgecolor='black',
+                color=phase_colors["late"],
+                edgecolor="black",
                 linewidth=0.5,
             )
 
@@ -191,47 +191,49 @@ def plot_critical_period_timeline(
         ax.text(
             -10,
             y,
-            domain.replace('_', ' ').title(),
-            ha='right',
-            va='center',
+            domain.replace("_", " ").title(),
+            ha="right",
+            va="center",
             fontsize=10,
-            fontweight='bold',
+            fontweight="bold",
         )
 
         # Add window markers
         ax.text(
             start / 1000,
             y,
-            f' {start//1000}k',
-            ha='left',
-            va='center',
+            f" {start//1000}k",
+            ha="left",
+            va="center",
             fontsize=8,
-            color='darkgreen',
+            color="darkgreen",
         )
         ax.text(
             end / 1000,
             y,
-            f'{end//1000}k ',
-            ha='right',
-            va='center',
+            f"{end//1000}k ",
+            ha="right",
+            va="center",
             fontsize=8,
-            color='darkgreen',
+            color="darkgreen",
         )
 
     # Styling
-    ax.set_xlabel('Training Step (thousands)', fontsize=12, fontweight='bold')
-    ax.set_title('Critical Period Timeline: Early → Peak → Late Phases', fontsize=14, fontweight='bold')
+    ax.set_xlabel("Training Step (thousands)", fontsize=12, fontweight="bold")
+    ax.set_title(
+        "Critical Period Timeline: Early → Peak → Late Phases", fontsize=14, fontweight="bold"
+    )
     ax.set_yticks([])
     ax.set_xlim(-50, max_step / 1000)
     ax.set_ylim(-0.5, len(domains) - 0.5)
 
     # Legend
     legend_elements = [
-        mpatches.Patch(color=phase_colors['early'], label='Early Phase (0.5x)'),
-        mpatches.Patch(color=phase_colors['peak'], label='Peak Phase (1.2-1.25x)'),
-        mpatches.Patch(color=phase_colors['late'], label='Late Phase (declining to 0.2-0.3x)'),
+        mpatches.Patch(color=phase_colors["early"], label="Early Phase (0.5x)"),
+        mpatches.Patch(color=phase_colors["peak"], label="Peak Phase (1.2-1.25x)"),
+        mpatches.Patch(color=phase_colors["late"], label="Late Phase (declining to 0.2-0.3x)"),
     ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=10)
+    ax.legend(handles=legend_elements, loc="upper right", fontsize=10)
 
     plt.tight_layout()
     return fig
@@ -260,37 +262,41 @@ def plot_domain_status(
         gating = CriticalPeriodGating()
 
     # Extract data
-    steps = [m.get('global_step', 0) for m in training_history]
-    multipliers = [m.get(f'critical_period/{domain}_multiplier', 1.0) for m in training_history]
-    progress = [m.get(f'critical_period/{domain}_progress', 0.0) for m in training_history]
+    steps = [m.get("global_step", 0) for m in training_history]
+    multipliers = [m.get(f"critical_period/{domain}_multiplier", 1.0) for m in training_history]
+    progress = [m.get(f"critical_period/{domain}_progress", 0.0) for m in training_history]
 
     # Create figure with subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=figsize, sharex=True)
 
     # Plot 1: Multiplier over time
-    ax1.plot(steps, multipliers, linewidth=2, color='#45B7D1', label='Multiplier')
-    ax1.axhline(y=1.0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
-    ax1.fill_between(steps, 1.0, multipliers, alpha=0.2, color='#45B7D1')
-    ax1.set_ylabel('Learning Rate Multiplier', fontsize=11, fontweight='bold')
-    ax1.set_title(f'Critical Period Status: {domain.replace("_", " ").title()}', fontsize=13, fontweight='bold')
+    ax1.plot(steps, multipliers, linewidth=2, color="#45B7D1", label="Multiplier")
+    ax1.axhline(y=1.0, color="gray", linestyle="--", linewidth=1, alpha=0.5)
+    ax1.fill_between(steps, 1.0, multipliers, alpha=0.2, color="#45B7D1")
+    ax1.set_ylabel("Learning Rate Multiplier", fontsize=11, fontweight="bold")
+    ax1.set_title(
+        f'Critical Period Status: {domain.replace("_", " ").title()}',
+        fontsize=13,
+        fontweight="bold",
+    )
     ax1.grid(True, alpha=0.2)
-    ax1.legend(loc='upper right')
+    ax1.legend(loc="upper right")
 
     # Mark phases
     start, end = gating.get_optimal_age(domain)
-    ax1.axvspan(0, start, alpha=0.1, color='red', label='Early')
-    ax1.axvspan(start, end, alpha=0.1, color='green', label='Peak')
+    ax1.axvspan(0, start, alpha=0.1, color="red", label="Early")
+    ax1.axvspan(start, end, alpha=0.1, color="green", label="Peak")
     if max(steps) > end:
-        ax1.axvspan(end, max(steps), alpha=0.1, color='orange', label='Late')
+        ax1.axvspan(end, max(steps), alpha=0.1, color="orange", label="Late")
 
     # Plot 2: Progress through window
-    ax2.plot(steps, progress, linewidth=2, color='#96CEB4', label='Progress')
-    ax2.fill_between(steps, 0, progress, alpha=0.2, color='#96CEB4')
-    ax2.set_xlabel('Training Step', fontsize=11, fontweight='bold')
-    ax2.set_ylabel('Window Progress', fontsize=11, fontweight='bold')
+    ax2.plot(steps, progress, linewidth=2, color="#96CEB4", label="Progress")
+    ax2.fill_between(steps, 0, progress, alpha=0.2, color="#96CEB4")
+    ax2.set_xlabel("Training Step", fontsize=11, fontweight="bold")
+    ax2.set_ylabel("Window Progress", fontsize=11, fontweight="bold")
     ax2.set_ylim(0, 1)
     ax2.grid(True, alpha=0.2)
-    ax2.legend(loc='upper left')
+    ax2.legend(loc="upper left")
 
     plt.tight_layout()
     return fig
@@ -319,7 +325,7 @@ def plot_training_metrics_with_critical_periods(
         gating = CriticalPeriodGating()
 
     # Extract steps
-    steps = [m.get('global_step', 0) for m in training_history]
+    steps = [m.get("global_step", 0) for m in training_history]
 
     # Create figure with subplots
     n_metrics = len(metrics_to_plot)
@@ -334,27 +340,26 @@ def plot_training_metrics_with_critical_periods(
         ax = axes[i]
         values = [m.get(metric_name, 0.0) for m in training_history]
         ax.plot(steps, values, linewidth=2, label=metric_name)
-        ax.set_ylabel(metric_name.replace('_', ' ').title(), fontsize=10, fontweight='bold')
+        ax.set_ylabel(metric_name.replace("_", " ").title(), fontsize=10, fontweight="bold")
         ax.grid(True, alpha=0.2)
-        ax.legend(loc='upper right')
+        ax.legend(loc="upper right")
 
     # Plot critical period multipliers
     ax = axes[-1]
     for domain in gating.get_all_domains():
-        multipliers = [
-            m.get(f'critical_period/{domain}_multiplier', 1.0)
-            for m in training_history
-        ]
-        ax.plot(steps, multipliers, linewidth=1.5, label=domain.replace('_', ' ').title(), alpha=0.8)
+        multipliers = [m.get(f"critical_period/{domain}_multiplier", 1.0) for m in training_history]
+        ax.plot(
+            steps, multipliers, linewidth=1.5, label=domain.replace("_", " ").title(), alpha=0.8
+        )
 
-    ax.axhline(y=1.0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
-    ax.set_xlabel('Training Step', fontsize=11, fontweight='bold')
-    ax.set_ylabel('CP Multiplier', fontsize=10, fontweight='bold')
+    ax.axhline(y=1.0, color="gray", linestyle="--", linewidth=1, alpha=0.5)
+    ax.set_xlabel("Training Step", fontsize=11, fontweight="bold")
+    ax.set_ylabel("CP Multiplier", fontsize=10, fontweight="bold")
     ax.set_ylim(0, 1.4)
     ax.grid(True, alpha=0.2)
-    ax.legend(loc='upper right', fontsize=8, ncol=2)
+    ax.legend(loc="upper right", fontsize=8, ncol=2)
 
-    fig.suptitle('Training Metrics with Critical Period Windows', fontsize=14, fontweight='bold')
+    fig.suptitle("Training Metrics with Critical Period Windows", fontsize=14, fontweight="bold")
     plt.tight_layout()
     return fig
 
@@ -381,13 +386,13 @@ def save_critical_period_plots(
 
     # Plot 1: Critical period windows
     fig = plot_critical_period_windows(gating=gating)
-    fig.savefig(output_path / 'critical_period_windows.png', dpi=150, bbox_inches='tight')
+    fig.savefig(output_path / "critical_period_windows.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {output_path / 'critical_period_windows.png'}")
 
     # Plot 2: Timeline
     fig = plot_critical_period_timeline(gating=gating)
-    fig.savefig(output_path / 'critical_period_timeline.png', dpi=150, bbox_inches='tight')
+    fig.savefig(output_path / "critical_period_timeline.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {output_path / 'critical_period_timeline.png'}")
 
@@ -395,19 +400,15 @@ def save_critical_period_plots(
     if training_history:
         for domain in gating.get_all_domains():
             fig = plot_domain_status(domain, training_history, gating)
-            fig.savefig(
-                output_path / f'critical_period_{domain}.png',
-                dpi=150,
-                bbox_inches='tight'
-            )
+            fig.savefig(output_path / f"critical_period_{domain}.png", dpi=150, bbox_inches="tight")
             plt.close(fig)
             print(f"Saved: {output_path / f'critical_period_{domain}.png'}")
 
 
 __all__ = [
-    'plot_critical_period_windows',
-    'plot_critical_period_timeline',
-    'plot_domain_status',
-    'plot_training_metrics_with_critical_periods',
-    'save_critical_period_plots',
+    "plot_critical_period_windows",
+    "plot_critical_period_timeline",
+    "plot_domain_status",
+    "plot_training_metrics_with_critical_periods",
+    "save_critical_period_plots",
 ]

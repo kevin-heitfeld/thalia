@@ -15,7 +15,9 @@ from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
-def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu", **kwargs) -> ThalamicRelay:
+def create_test_thalamus(
+    input_size: int, relay_size: int, device: str = "cpu", **kwargs
+) -> ThalamicRelay:
     """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
     config = ThalamicRelayConfig(device=device, **kwargs)
     calc = LayerSizeCalculator()
@@ -40,7 +42,9 @@ def thalamus_config(device):
 @pytest.fixture
 def region(device):
     """Create a test region with GrowthMixin (using Thalamus as representative)."""
-    return create_test_thalamus(input_size=50, relay_size=100, device=str(device), w_min=0.0, w_max=1.0)
+    return create_test_thalamus(
+        input_size=50, relay_size=100, device=str(device), w_min=0.0, w_max=1.0
+    )
 
 
 class TestGrowthMixinCreateNewWeights:
@@ -52,7 +56,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=n_output,
             n_input=n_input,
-            initialization='xavier',
+            initialization="xavier",
         )
 
         # Check shape
@@ -77,7 +81,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=n_output,
             n_input=n_input,
-            initialization='sparse_random',
+            initialization="sparse_random",
             sparsity=sparsity,
         )
 
@@ -108,7 +112,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=n_output,
             n_input=n_input,
-            initialization='uniform',
+            initialization="uniform",
         )
 
         # Check shape
@@ -130,7 +134,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=n_output,
             n_input=n_input,
-            initialization='unknown_strategy',  # Invalid strategy
+            initialization="unknown_strategy",  # Invalid strategy
         )
 
         # Should still work and return uniform initialization
@@ -143,7 +147,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=1,
             n_input=50,
-            initialization='xavier',
+            initialization="xavier",
         )
 
         assert weights.shape == (1, 50)
@@ -155,7 +159,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=50,
             n_input=1,
-            initialization='xavier',
+            initialization="xavier",
         )
 
         assert weights.shape == (50, 1)
@@ -168,7 +172,7 @@ class TestGrowthMixinCreateNewWeights:
         weights = region._create_new_weights(
             n_output=n_output,
             n_input=n_input,
-            initialization='sparse_random',
+            initialization="sparse_random",
             sparsity=0.3,
         )
 
@@ -184,13 +188,13 @@ class TestGrowthMixinCreateNewWeights:
         weights1 = region._create_new_weights(
             n_output=50,
             n_input=40,
-            initialization='xavier',
+            initialization="xavier",
         )
 
         weights2 = region._create_new_weights(
             n_output=50,
             n_input=40,
-            initialization='xavier',
+            initialization="xavier",
         )
 
         # Should be different (random initialization)
@@ -204,7 +208,7 @@ class TestGrowthMixinCreateNewWeights:
         cpu_weights = cpu_region._create_new_weights(
             n_output=30,
             n_input=20,
-            initialization='xavier',
+            initialization="xavier",
         )
         assert cpu_weights.device.type == "cpu"
 
@@ -215,7 +219,7 @@ class TestGrowthMixinCreateNewWeights:
             cuda_weights = cuda_region._create_new_weights(
                 n_output=30,
                 n_input=20,
-                initialization='xavier',
+                initialization="xavier",
             )
             assert cuda_weights.device.type == "cuda"
 
@@ -227,7 +231,7 @@ class TestGrowthMixinCreateNewWeights:
         new_cols = region._create_new_weights(
             n_output=region.n_output,
             n_input=n_new,
-            initialization='xavier',
+            initialization="xavier",
         )
 
         # Verify dimensions are correct for concatenation
@@ -243,7 +247,7 @@ class TestGrowthMixinCreateNewWeights:
         new_rows = region._create_new_weights(
             n_output=n_new,
             n_input=region.input_size,
-            initialization='sparse_random',
+            initialization="sparse_random",
             sparsity=0.15,
         )
 
@@ -259,7 +263,7 @@ class TestGrowthMixinCreateNewWeights:
             weights = region._create_new_weights(
                 n_output=50,
                 n_input=40,
-                initialization='sparse_random',
+                initialization="sparse_random",
                 sparsity=sparsity,
             )
             assert weights.shape == (50, 40)
@@ -270,7 +274,7 @@ class TestGrowthMixinCreateNewWeights:
             weights = region._create_new_weights(
                 n_output=50,
                 n_input=40,
-                initialization='sparse_random',
+                initialization="sparse_random",
                 sparsity=-0.1,  # Invalid
             )
             # If it doesn't raise, just ensure it returns valid tensor
@@ -302,12 +306,10 @@ class TestRegressionAgainstOldPattern:
 
         # Generate samples using both methods
         new_method_samples = [
-            region._create_new_weights(n_out, n_in, 'xavier')
-            for _ in range(n_samples)
+            region._create_new_weights(n_out, n_in, "xavier") for _ in range(n_samples)
         ]
         old_method_samples = [
-            self.old_new_weights_for_xavier(n_out, n_in, region.device)
-            for _ in range(n_samples)
+            self.old_new_weights_for_xavier(n_out, n_in, region.device) for _ in range(n_samples)
         ]
 
         # Compare statistical properties
@@ -328,9 +330,7 @@ class TestRegressionAgainstOldPattern:
         n_out, n_in = 100, 80
         sparsity = 0.25  # Keep 25% of connections
 
-        new_weights = region._create_new_weights(
-            n_out, n_in, 'sparse_random', sparsity
-        )
+        new_weights = region._create_new_weights(n_out, n_in, "sparse_random", sparsity)
         old_weights = self.old_new_weights_for_sparse(
             n_out, n_in, sparsity, torch.device(region.device)
         )

@@ -11,7 +11,7 @@ Date: December 22, 2025 (Tier 2.2 - Diagnostics standardization)
 
 from __future__ import annotations
 
-from typing import TypedDict, Any
+from typing import Any, TypedDict
 
 import torch
 

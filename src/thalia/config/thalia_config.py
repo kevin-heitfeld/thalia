@@ -14,13 +14,13 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from .global_config import GlobalConfig
 from .brain_config import BrainConfig, RegionSizes
+from .global_config import GlobalConfig
 from .language_config import LanguageConfig
 from .training_config import TrainingConfig
 
@@ -130,7 +130,7 @@ def print_config(
     print(f"  STDP tau+: {cortex_cfg.tau_plus_ms} ms")
     print(f"  STDP tau-: {cortex_cfg.tau_minus_ms} ms")
     # BCM config if available
-    if hasattr(cortex_cfg, 'bcm_config') and cortex_cfg.bcm_config is not None:
+    if hasattr(cortex_cfg, "bcm_config") and cortex_cfg.bcm_config is not None:
         bcm = cortex_cfg.bcm_config
         print(f"  BCM tau theta: {bcm.tau_theta} ms")
         print(f"  BCM theta init: {bcm.theta_init}")
@@ -237,9 +237,7 @@ class ThaliaConfig:
         # Check position encoding size ratio
         pos_neurons = int(self.brain.sizes.input_size * self.language.position.size_ratio)
         if pos_neurons < 16:
-            issues.append(
-                f"Position encoding only has {pos_neurons} neurons - may be too few"
-            )
+            issues.append(f"Position encoding only has {pos_neurons} neurons - may be too few")
 
         # Check that sparsity is reasonable for network size
         if self.global_.default_sparsity * self.brain.sizes.cortex_size < 1:
@@ -309,9 +307,7 @@ class ThaliaConfig:
                 f"dt_ms={self.global_.dt_ms} is very small - may be computationally expensive"
             )
         elif self.global_.dt_ms > 10.0:
-            issues.append(
-                f"dt_ms={self.global_.dt_ms} is large - may miss important dynamics"
-            )
+            issues.append(f"dt_ms={self.global_.dt_ms} is large - may miss important dynamics")
 
         # Theta frequency should be biological (4-12 Hz)
         if not (4.0 <= self.global_.theta_frequency_hz <= 12.0):
@@ -363,9 +359,21 @@ class ThaliaConfig:
 
         # Check active neurons for each region
         regions = [
-            ("cortex", self.brain.sizes.cortex_size, getattr(self.brain.cortex, 'l4_sparsity', self.global_.default_sparsity)),
-            ("hippocampus", self.brain.sizes.hippocampus_size, getattr(self.brain.hippocampus, 'ca1_sparsity', self.global_.default_sparsity)),
-            ("pfc", self.brain.sizes.pfc_size, getattr(self.brain.pfc, 'sparsity', self.global_.default_sparsity)),
+            (
+                "cortex",
+                self.brain.sizes.cortex_size,
+                getattr(self.brain.cortex, "l4_sparsity", self.global_.default_sparsity),
+            ),
+            (
+                "hippocampus",
+                self.brain.sizes.hippocampus_size,
+                getattr(self.brain.hippocampus, "ca1_sparsity", self.global_.default_sparsity),
+            ),
+            (
+                "pfc",
+                self.brain.sizes.pfc_size,
+                getattr(self.brain.pfc, "sparsity", self.global_.default_sparsity),
+            ),
         ]
 
         for name, size, sparsity in regions:
@@ -528,10 +536,12 @@ class ThaliaConfig:
         # Add validation warnings
         issues = self.validate()
         if issues:
-            lines.extend([
-                "",
-                "⚠️  Validation Warnings:",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "⚠️  Validation Warnings:",
+                ]
+            )
             for issue in issues:
                 lines.append(f"   - {issue}")
 
@@ -631,6 +641,7 @@ class ThaliaConfig:
         to use ThaliaConfig for all configuration.
         """
         from thalia.language.model import LanguageInterfaceConfig
+
         return LanguageInterfaceConfig(
             vocab_size=self.global_.vocab_size,
             n_timesteps=self.language.encoding.n_timesteps,

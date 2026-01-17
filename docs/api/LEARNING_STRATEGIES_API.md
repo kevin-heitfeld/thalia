@@ -200,4 +200,3 @@ strategy = create_strategy('stdp', a_plus=0.02, a_minus=0.02)
 - **Time constants**: Match biological ranges (10-100ms for STDP)
 - **Modulator sensitivity**: Tune based on task reward structure
 - **Testing**: Always validate with curriculum training stages
-

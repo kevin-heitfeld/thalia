@@ -9,7 +9,7 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Dict, Any
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -70,7 +70,7 @@ class StriatumLearningComponent(LearningComponent):
                     std=WEIGHT_INIT_SCALE_SMALL,
                     device=self.context.device,
                 ),
-                requires_grad=False
+                requires_grad=False,
             )
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.gaussian(
@@ -80,7 +80,7 @@ class StriatumLearningComponent(LearningComponent):
                     std=WEIGHT_INIT_SCALE_SMALL,
                     device=self.context.device,
                 ),
-                requires_grad=False
+                requires_grad=False,
             )
         else:
             self.pfc_modulation_d1 = None
@@ -110,10 +110,7 @@ class StriatumLearningComponent(LearningComponent):
         pass
 
     def apply_learning(
-        self,
-        dopamine: float,
-        goal_context: Optional[torch.Tensor] = None,
-        **kwargs
+        self, dopamine: float, goal_context: Optional[torch.Tensor] = None, **kwargs
     ) -> Dict[str, Any]:
         """Apply dopamine-modulated learning to D1/D2 pathways.
 
@@ -152,10 +149,10 @@ class StriatumLearningComponent(LearningComponent):
             "d2_ltp": d2_metrics.get("ltp", 0.0),
             "d2_ltd": d2_metrics.get("ltd", 0.0),
             "net_change": (
-                d1_metrics.get("ltp", 0.0) +
-                d1_metrics.get("ltd", 0.0) +
-                d2_metrics.get("ltp", 0.0) +
-                d2_metrics.get("ltd", 0.0)
+                d1_metrics.get("ltp", 0.0)
+                + d1_metrics.get("ltd", 0.0)
+                + d2_metrics.get("ltp", 0.0)
+                + d2_metrics.get("ltd", 0.0)
             ),
         }
 
@@ -175,12 +172,8 @@ class StriatumLearningComponent(LearningComponent):
         """
         # Compute goal-relevance weights for D1/D2
         # High values mean this neuron participates in current goal
-        goal_weight_d1 = torch.sigmoid(
-            torch.matmul(self.pfc_modulation_d1, goal_context)
-        )
-        goal_weight_d2 = torch.sigmoid(
-            torch.matmul(self.pfc_modulation_d2, goal_context)
-        )
+        goal_weight_d1 = torch.sigmoid(torch.matmul(self.pfc_modulation_d1, goal_context))
+        goal_weight_d2 = torch.sigmoid(torch.matmul(self.pfc_modulation_d2, goal_context))
 
         # Modulate recently applied weight updates (already applied by apply_dopamine_modulation)
         # In practice, goal modulation happens implicitly via forward pass gating
@@ -260,11 +253,13 @@ class StriatumLearningComponent(LearningComponent):
             Dict with learning metrics
         """
         diag = super().get_learning_diagnostics()
-        diag.update({
-            "d1_eligibility_mean": self.d1_pathway.eligibility.mean().item(),
-            "d2_eligibility_mean": self.d2_pathway.eligibility.mean().item(),
-            "d1_weight_mean": self.d1_pathway.weights.mean().item(),
-            "d2_weight_mean": self.d2_pathway.weights.mean().item(),
-            "goal_conditioning_enabled": self.config.use_goal_conditioning,
-        })
+        diag.update(
+            {
+                "d1_eligibility_mean": self.d1_pathway.eligibility.mean().item(),
+                "d2_eligibility_mean": self.d2_pathway.eligibility.mean().item(),
+                "d1_weight_mean": self.d1_pathway.weights.mean().item(),
+                "d2_weight_mean": self.d2_pathway.weights.mean().item(),
+                "goal_conditioning_enabled": self.config.use_goal_conditioning,
+            }
+        )
         return diag

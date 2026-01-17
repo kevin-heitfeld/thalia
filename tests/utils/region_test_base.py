@@ -221,7 +221,7 @@ class RegionTestBase(ABC):
         Returns:
             Input size value from region.input_size
         """
-        return getattr(region, 'input_size', None)
+        return getattr(region, "input_size", None)
 
     def _get_region_output_size(self, region: NeuralRegion) -> int:
         """Get output size from region (new pattern).
@@ -232,7 +232,7 @@ class RegionTestBase(ABC):
         Returns:
             Output size value from region.n_output
         """
-        return getattr(region, 'n_output', None)
+        return getattr(region, "n_output", None)
 
     def _get_config_input_size(self, config: Any) -> int:
         """Get input size from config using semantic field name.
@@ -460,9 +460,19 @@ class RegionTestBase(ABC):
                     assert torch.allclose(state_dict1[key], state_dict2[key], atol=1e-5)
                 except (RuntimeError, AssertionError) as e:
                     # Add context about which key failed
-                    shape1 = state_dict1[key].shape if isinstance(state_dict1[key], torch.Tensor) else "N/A"
-                    shape2 = state_dict2[key].shape if isinstance(state_dict2[key], torch.Tensor) else "N/A"
-                    raise AssertionError(f"State mismatch for key '{key}': shape1={shape1}, shape2={shape2}") from e
+                    shape1 = (
+                        state_dict1[key].shape
+                        if isinstance(state_dict1[key], torch.Tensor)
+                        else "N/A"
+                    )
+                    shape2 = (
+                        state_dict2[key].shape
+                        if isinstance(state_dict2[key], torch.Tensor)
+                        else "N/A"
+                    )
+                    raise AssertionError(
+                        f"State mismatch for key '{key}': shape1={shape1}, shape2={shape2}"
+                    ) from e
             elif isinstance(state_dict1[key], (int, float)):
                 assert state_dict1[key] == state_dict2[key]
 
@@ -486,7 +496,9 @@ class RegionTestBase(ABC):
             # Skip if membrane values are near 0 (some regions don't normalize to mV)
             mean_membrane = state.membrane.mean().item()
             if abs(mean_membrane) > 1.0:  # Only check if values are in mV range
-                assert -75.0 <= mean_membrane <= -65.0, f"Expected resting potential, got {mean_membrane}mV"
+                assert (
+                    -75.0 <= mean_membrane <= -65.0
+                ), f"Expected resting potential, got {mean_membrane}mV"
 
     def test_device_cpu(self):
         """Test region works on CPU device."""
@@ -563,7 +575,7 @@ class RegionTestBase(ABC):
 
         Uses save_region_state() and load_region_state() utilities.
         """
-        from thalia.core.region_state import save_region_state, load_region_state
+        from thalia.core.region_state import load_region_state, save_region_state
 
         params = self.get_default_params()
         region = self.create_region(**params)
@@ -591,8 +603,9 @@ class RegionTestBase(ABC):
 
         for key in dict1:
             if isinstance(dict1[key], torch.Tensor) and dict1[key] is not None:
-                assert torch.allclose(dict1[key], dict2[key], atol=1e-6), \
-                    f"Mismatch in tensor field: {key}"
+                assert torch.allclose(
+                    dict1[key], dict2[key], atol=1e-6
+                ), f"Mismatch in tensor field: {key}"
             elif isinstance(dict1[key], (int, float)) and dict1[key] is not None:
                 assert dict1[key] == dict2[key], f"Mismatch in scalar field: {key}"
 
@@ -630,8 +643,9 @@ class RegionTestBase(ABC):
                     state_field = f"{attr_name}_state"
 
                     # Check for either pattern
-                    assert (u_field in state_dict or x_field in state_dict or state_field in state_dict), \
-                        f"STP component {attr_name} should have state fields {u_field}/{x_field} (flat) or {state_field} (nested)"
+                    assert (
+                        u_field in state_dict or x_field in state_dict or state_field in state_dict
+                    ), f"STP component {attr_name} should have state fields {u_field}/{x_field} (flat) or {state_field} (nested)"
 
         # If no STP found, test passes (not all regions use STP)
         if not has_stp:
@@ -668,23 +682,27 @@ class RegionTestBase(ABC):
             val2 = dict2[key]
 
             if isinstance(val1, torch.Tensor) and val1 is not None:
-                assert torch.allclose(val1, val2, atol=1e-6), \
-                    f"Roundtrip mismatch in tensor field: {key}"
+                assert torch.allclose(
+                    val1, val2, atol=1e-6
+                ), f"Roundtrip mismatch in tensor field: {key}"
             elif isinstance(val1, (int, float)) and val1 is not None:
                 assert val1 == val2, f"Roundtrip mismatch in scalar field: {key}"
             elif isinstance(val1, dict) and val1 is not None:
                 # Handle nested dicts (e.g., STP state)
                 for subkey in val1:
                     if isinstance(val1[subkey], torch.Tensor):
-                        assert torch.allclose(val1[subkey], val2[subkey], atol=1e-6), \
-                            f"Roundtrip mismatch in nested field: {key}.{subkey}"
+                        assert torch.allclose(
+                            val1[subkey], val2[subkey], atol=1e-6
+                        ), f"Roundtrip mismatch in nested field: {key}.{subkey}"
 
     def test_state_handles_none_fields(self):
         """Test state serialization handles None/missing fields gracefully.
 
         Verifies edge case where some optional state fields are None.
         """
-        params = self.get_min_params() if hasattr(self, 'get_min_params') else self.get_default_params()
+        params = (
+            self.get_min_params() if hasattr(self, "get_min_params") else self.get_default_params()
+        )
         region = self.create_region(**params)
 
         # Get state immediately (minimal initialization)

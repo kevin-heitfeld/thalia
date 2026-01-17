@@ -10,8 +10,8 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 class TestThalamus(RegionTestBase):
@@ -182,8 +182,9 @@ class TestThalamus(RegionTestBase):
         output_weak = region.forward(weak_input)
 
         # Strong input should produce more relay activity
-        assert output_strong.sum() > output_weak.sum(), \
-            "Expected stronger relay with stronger sensory input"
+        assert (
+            output_strong.sum() > output_weak.sum()
+        ), "Expected stronger relay with stronger sensory input"
 
     def test_lateral_inhibition_in_trn(self):
         """Test TRN has lateral inhibition for competitive selection."""

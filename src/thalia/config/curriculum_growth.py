@@ -46,19 +46,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
 from thalia.constants.training import AttentionStage
 
 
 class CurriculumStage(IntEnum):
     """Curriculum stages matching main training plan."""
+
     SENSORIMOTOR = -1  # Stage -0.5 (motor control)
-    PHONOLOGY = 0      # Stage 0 (phonological learning)
-    TODDLER = 1        # Stage 1 (first words, joint attention)
-    GRAMMAR = 2        # Stage 2 (grammar, composition)
-    READING = 3        # Stage 3 (reading, planning)
-    ABSTRACT = 4       # Stage 4 (abstract reasoning)
+    PHONOLOGY = 0  # Stage 0 (phonological learning)
+    TODDLER = 1  # Stage 1 (first words, joint attention)
+    GRAMMAR = 2  # Stage 2 (grammar, composition)
+    READING = 3  # Stage 3 (reading, planning)
+    ABSTRACT = 4  # Stage 4 (abstract reasoning)
 
 
 def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> AttentionStage:
@@ -74,12 +75,12 @@ def get_attention_stage_for_curriculum(curriculum_stage: CurriculumStage) -> Att
         Corresponding AttentionStage enum
     """
     mapping = {
-        CurriculumStage.SENSORIMOTOR: AttentionStage.INFANT,    # Pure bottom-up
-        CurriculumStage.PHONOLOGY: AttentionStage.INFANT,       # Pure bottom-up
-        CurriculumStage.TODDLER: AttentionStage.TODDLER,        # 70% bottom-up
-        CurriculumStage.GRAMMAR: AttentionStage.PRESCHOOL,      # 50/50 balanced
-        CurriculumStage.READING: AttentionStage.SCHOOL_AGE,     # 70% top-down
-        CurriculumStage.ABSTRACT: AttentionStage.SCHOOL_AGE,    # 70% top-down
+        CurriculumStage.SENSORIMOTOR: AttentionStage.INFANT,  # Pure bottom-up
+        CurriculumStage.PHONOLOGY: AttentionStage.INFANT,  # Pure bottom-up
+        CurriculumStage.TODDLER: AttentionStage.TODDLER,  # 70% bottom-up
+        CurriculumStage.GRAMMAR: AttentionStage.PRESCHOOL,  # 50/50 balanced
+        CurriculumStage.READING: AttentionStage.SCHOOL_AGE,  # 70% top-down
+        CurriculumStage.ABSTRACT: AttentionStage.SCHOOL_AGE,  # 70% top-down
     }
     return mapping[curriculum_stage]
 
@@ -96,6 +97,7 @@ class GrowthTriggerConfig:
         consolidate_after: Whether to consolidate after growth
         enabled: Whether this trigger is active
     """
+
     capacity_threshold: float = 0.80
     expansion_rate: float = 0.20
     min_steps_between: int = 10000
@@ -164,7 +166,7 @@ class CurriculumGrowthConfig:
         # =====================================================================
         # PREFRONTAL CORTEX: Aggressive growth (complex rules, large WM)
         # =====================================================================
-        configs['prefrontal'] = ComponentGrowthConfig(
+        configs["prefrontal"] = ComponentGrowthConfig(
             stage_triggers={
                 -1: GrowthTriggerConfig(  # Sensorimotor
                     capacity_threshold=0.80,
@@ -204,7 +206,7 @@ class CurriculumGrowthConfig:
         # =====================================================================
         # HIPPOCAMPUS: Moderate growth (episodic memory capacity)
         # =====================================================================
-        configs['hippocampus'] = ComponentGrowthConfig(
+        configs["hippocampus"] = ComponentGrowthConfig(
             stage_triggers={
                 -1: GrowthTriggerConfig(
                     capacity_threshold=0.80,
@@ -244,7 +246,7 @@ class CurriculumGrowthConfig:
         # =====================================================================
         # CORTEX: Conservative growth (feature detectors)
         # =====================================================================
-        configs['cortex'] = ComponentGrowthConfig(
+        configs["cortex"] = ComponentGrowthConfig(
             stage_triggers={
                 -1: GrowthTriggerConfig(
                     capacity_threshold=0.85,
@@ -284,7 +286,7 @@ class CurriculumGrowthConfig:
         # =====================================================================
         # STRIATUM: Conservative growth (action repertoire)
         # =====================================================================
-        configs['striatum'] = ComponentGrowthConfig(
+        configs["striatum"] = ComponentGrowthConfig(
             stage_triggers={
                 -1: GrowthTriggerConfig(
                     capacity_threshold=0.80,
@@ -324,7 +326,7 @@ class CurriculumGrowthConfig:
         # =====================================================================
         # DEFAULT: For any unspecified component
         # =====================================================================
-        configs['default'] = ComponentGrowthConfig(
+        configs["default"] = ComponentGrowthConfig(
             stage_triggers={
                 -1: GrowthTriggerConfig(capacity_threshold=0.80, expansion_rate=0.30),
                 0: GrowthTriggerConfig(capacity_threshold=0.80, expansion_rate=0.15),
@@ -338,10 +340,7 @@ class CurriculumGrowthConfig:
 
         return configs
 
-    def get_config_for_component(
-        self,
-        component_name: str
-    ) -> ComponentGrowthConfig:
+    def get_config_for_component(self, component_name: str) -> ComponentGrowthConfig:
         """Get growth configuration for a specific component.
 
         Args:
@@ -360,7 +359,7 @@ class CurriculumGrowthConfig:
                 return config
 
         # Fall back to default
-        return self.component_configs['default']
+        return self.component_configs["default"]
 
     def should_trigger_growth(
         self,
@@ -404,12 +403,14 @@ class CurriculumGrowthConfig:
 
         # Check capacity threshold
         capacity = max(
-            capacity_metrics.get('weight_saturation', 0.0),
-            capacity_metrics.get('firing_rate', 0.0)
+            capacity_metrics.get("weight_saturation", 0.0), capacity_metrics.get("firing_rate", 0.0)
         )
 
         if capacity < trigger.capacity_threshold:
-            return False, f"Capacity ({capacity:.2f}) below threshold ({trigger.capacity_threshold})"
+            return (
+                False,
+                f"Capacity ({capacity:.2f}) below threshold ({trigger.capacity_threshold})",
+            )
 
         # All checks passed - grow!
         return True, f"Capacity {capacity:.2f} > threshold {trigger.capacity_threshold}"
@@ -443,44 +444,43 @@ class CurriculumGrowthConfig:
         n_new = min(n_new, config.max_neurons_per_growth)
 
         return {
-            'n_neurons': n_new,
-            'expansion_rate': trigger.expansion_rate,
-            'consolidate_before': trigger.consolidate_before,
-            'consolidate_after': trigger.consolidate_after,
+            "n_neurons": n_new,
+            "expansion_rate": trigger.expansion_rate,
+            "consolidate_before": trigger.consolidate_before,
+            "consolidate_after": trigger.consolidate_after,
         }
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize configuration to dictionary."""
         return {
-            'enable_growth': self.enable_growth,
-            'performance_plateau_threshold': self.performance_plateau_threshold,
-            'performance_window_steps': self.performance_window_steps,
-            'component_configs': {
+            "enable_growth": self.enable_growth,
+            "performance_plateau_threshold": self.performance_plateau_threshold,
+            "performance_window_steps": self.performance_window_steps,
+            "component_configs": {
                 name: {
-                    'stage_triggers': {
+                    "stage_triggers": {
                         stage: {
-                            'capacity_threshold': trigger.capacity_threshold,
-                            'expansion_rate': trigger.expansion_rate,
-                            'min_steps_between': trigger.min_steps_between,
-                            'consolidate_before': trigger.consolidate_before,
-                            'consolidate_after': trigger.consolidate_after,
-                            'enabled': trigger.enabled,
+                            "capacity_threshold": trigger.capacity_threshold,
+                            "expansion_rate": trigger.expansion_rate,
+                            "min_steps_between": trigger.min_steps_between,
+                            "consolidate_before": trigger.consolidate_before,
+                            "consolidate_after": trigger.consolidate_after,
+                            "enabled": trigger.enabled,
                         }
                         for stage, trigger in config.stage_triggers.items()
                     },
-                    'max_total_growth': config.max_total_growth,
-                    'min_neurons_per_growth': config.min_neurons_per_growth,
-                    'max_neurons_per_growth': config.max_neurons_per_growth,
+                    "max_total_growth": config.max_total_growth,
+                    "min_neurons_per_growth": config.min_neurons_per_growth,
+                    "max_neurons_per_growth": config.max_neurons_per_growth,
                 }
                 for name, config in self.component_configs.items()
-            }
+            },
         }
 
 
 # Convenience function for getting standard config
 def get_curriculum_growth_config(
-    enable_growth: bool = True,
-    conservative: bool = False
+    enable_growth: bool = True, conservative: bool = False
 ) -> CurriculumGrowthConfig:
     """Get standard curriculum growth configuration.
 

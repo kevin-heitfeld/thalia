@@ -8,8 +8,8 @@ Author: Thalia Project
 Date: December 15, 2025
 """
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 import pytest
 import torch
@@ -85,6 +85,7 @@ class TestCheckpointManagerIntegration:
 
             # Save with custom metadata (use PyTorch format for simplicity)
             import torch
+
             state = brain.get_full_state()
             state["metadata"] = {"epoch": 42, "loss": 0.123}
             torch.save(state, checkpoint_path)
@@ -132,7 +133,7 @@ class TestCheckpointManagerIntegration:
             # Save with compression
             info_compressed = brain.checkpoint_manager.save(
                 path=str(compressed_path),
-                compression='zstd',
+                compression="zstd",
             )
 
             # Compressed should be smaller (or similar size for small brains)

@@ -22,27 +22,27 @@ Date: December 2025
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional
-import tempfile
+from typing import Any, Dict, Optional
 
 import pytest
 import torch
 
 from thalia.core.region_state import (
     BaseRegionState,
-    save_region_state,
-    load_region_state,
-    transfer_state,
     get_state_version,
+    load_region_state,
+    save_region_state,
+    transfer_state,
     validate_state_protocol,
 )
-
 
 # =====================================================================
 # FIXTURES
 # =====================================================================
+
 
 @pytest.fixture
 def device():
@@ -61,6 +61,7 @@ def temp_checkpoint_dir():
 # CUSTOM STATE IMPLEMENTATIONS (for testing protocol compliance)
 # =====================================================================
 
+
 @dataclass
 class MinimalRegionState:
     """Minimal state implementation for protocol testing.
@@ -73,13 +74,13 @@ class MinimalRegionState:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'state_version': self.STATE_VERSION,
-            'value': self.value,
+            "state_version": self.STATE_VERSION,
+            "value": self.value,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], device: str) -> "MinimalRegionState":
-        value = data.get('value')
+        value = data.get("value")
         if value is not None and isinstance(value, torch.Tensor):
             value = value.to(device)
         return cls(value=value)
@@ -106,40 +107,38 @@ class ComplexRegionState:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'state_version': self.STATE_VERSION,
-            'spikes': self.spikes,
-            'membrane': self.membrane,
-            'traces': self.traces,
-            'stp_state': self.stp_state,
+            "state_version": self.STATE_VERSION,
+            "spikes": self.spikes,
+            "membrane": self.membrane,
+            "traces": self.traces,
+            "stp_state": self.stp_state,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], device: str) -> "ComplexRegionState":
-        version = data.get('state_version', 1)
+        version = data.get("state_version", 1)
 
         # Transfer tensors to device
-        spikes = data.get('spikes')
+        spikes = data.get("spikes")
         if spikes is not None and isinstance(spikes, torch.Tensor):
             spikes = spikes.to(device)
 
-        membrane = data.get('membrane')
+        membrane = data.get("membrane")
         if membrane is not None and isinstance(membrane, torch.Tensor):
             membrane = membrane.to(device)
 
         # Transfer nested tensors in traces
-        traces = data.get('traces')
+        traces = data.get("traces")
         if traces is not None:
             traces = {
-                k: v.to(device) if isinstance(v, torch.Tensor) else v
-                for k, v in traces.items()
+                k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in traces.items()
             }
 
         # Transfer nested tensors in STP state
-        stp_state = data.get('stp_state')
+        stp_state = data.get("stp_state")
         if stp_state is not None:
             stp_state = {
-                k: v.to(device) if isinstance(v, torch.Tensor) else v
-                for k, v in stp_state.items()
+                k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in stp_state.items()
             }
 
         return cls(
@@ -159,6 +158,7 @@ class ComplexRegionState:
 # =====================================================================
 # TEST: BaseRegionState
 # =====================================================================
+
 
 def test_base_region_state_init(device):
     """BaseRegionState: Initialize with default None values."""
@@ -188,9 +188,9 @@ def test_base_region_state_to_dict(device):
 
     state_dict = state.to_dict()
 
-    assert state_dict['state_version'] == 1
-    assert torch.equal(state_dict['spikes'], spikes)
-    assert torch.equal(state_dict['membrane'], membrane)
+    assert state_dict["state_version"] == 1
+    assert torch.equal(state_dict["spikes"], spikes)
+    assert torch.equal(state_dict["membrane"], membrane)
 
 
 def test_base_region_state_from_dict(device):
@@ -198,9 +198,9 @@ def test_base_region_state_from_dict(device):
     spikes = torch.rand(100, device=device)
     membrane = torch.rand(100, device=device)
     data = {
-        'state_version': 1,
-        'spikes': spikes,
-        'membrane': membrane,
+        "state_version": 1,
+        "spikes": spikes,
+        "membrane": membrane,
     }
 
     state = BaseRegionState.from_dict(data, device=device)
@@ -225,6 +225,7 @@ def test_base_region_state_reset(device):
 # =====================================================================
 # TEST: Device Transfer
 # =====================================================================
+
 
 def test_base_region_state_device_transfer_cpu_to_cpu(device):
     """BaseRegionState: Transfer from CPU to CPU (no-op)."""
@@ -265,6 +266,7 @@ def test_base_region_state_device_transfer_cuda_to_cpu():
 # TEST: File I/O
 # =====================================================================
 
+
 def test_save_and_load_region_state(device, temp_checkpoint_dir):
     """save_region_state + load_region_state: Round-trip serialization."""
     spikes = torch.rand(100, device=device)
@@ -304,9 +306,10 @@ def test_load_region_state_missing_file(device, temp_checkpoint_dir):
 # TEST: Version Management
 # =====================================================================
 
+
 def test_get_state_version_present():
     """get_state_version: Extract version from state dict."""
-    state_dict = {'state_version': 2, 'data': 'test'}
+    state_dict = {"state_version": 2, "data": "test"}
 
     version = get_state_version(state_dict)
 
@@ -315,7 +318,7 @@ def test_get_state_version_present():
 
 def test_get_state_version_missing():
     """get_state_version: Default to version 1 if not present."""
-    state_dict = {'data': 'test'}
+    state_dict = {"data": "test"}
 
     version = get_state_version(state_dict)
 
@@ -325,6 +328,7 @@ def test_get_state_version_missing():
 # =====================================================================
 # TEST: Protocol Validation
 # =====================================================================
+
 
 def test_validate_state_protocol_base_region_state():
     """validate_state_protocol: BaseRegionState implements protocol."""
@@ -347,6 +351,7 @@ def test_validate_state_protocol_missing_methods():
     class IncompleteState:
         def to_dict(self):
             return {}
+
         # Missing from_dict and reset
 
     assert not validate_state_protocol(IncompleteState)
@@ -356,6 +361,7 @@ def test_validate_state_protocol_missing_methods():
 # TEST: Custom State Implementations
 # =====================================================================
 
+
 def test_minimal_region_state_protocol_compliance(device):
     """MinimalRegionState: Full protocol compliance check."""
     value = torch.tensor([1.0, 2.0, 3.0], device=device)
@@ -363,8 +369,8 @@ def test_minimal_region_state_protocol_compliance(device):
 
     # to_dict
     state_dict = state.to_dict()
-    assert state_dict['state_version'] == 1
-    assert torch.equal(state_dict['value'], value)
+    assert state_dict["state_version"] == 1
+    assert torch.equal(state_dict["value"], value)
 
     # from_dict
     loaded = MinimalRegionState.from_dict(state_dict, device=device)
@@ -380,12 +386,12 @@ def test_complex_region_state_protocol_compliance(device):
     spikes = torch.rand(100, device=device)
     membrane = torch.rand(100, device=device)
     traces = {
-        'eligibility': torch.rand(50, device=device),
-        'stdp': torch.rand(50, device=device),
+        "eligibility": torch.rand(50, device=device),
+        "stdp": torch.rand(50, device=device),
     }
     stp_state = {
-        'u': torch.tensor(0.5, device=device),
-        'x': torch.tensor(1.0, device=device),
+        "u": torch.tensor(0.5, device=device),
+        "x": torch.tensor(1.0, device=device),
     }
 
     state = ComplexRegionState(
@@ -397,18 +403,18 @@ def test_complex_region_state_protocol_compliance(device):
 
     # to_dict
     state_dict = state.to_dict()
-    assert state_dict['state_version'] == 1
-    assert torch.equal(state_dict['spikes'], spikes)
-    assert torch.equal(state_dict['membrane'], membrane)
-    assert torch.equal(state_dict['traces']['eligibility'], traces['eligibility'])
-    assert torch.equal(state_dict['stp_state']['u'], stp_state['u'])
+    assert state_dict["state_version"] == 1
+    assert torch.equal(state_dict["spikes"], spikes)
+    assert torch.equal(state_dict["membrane"], membrane)
+    assert torch.equal(state_dict["traces"]["eligibility"], traces["eligibility"])
+    assert torch.equal(state_dict["stp_state"]["u"], stp_state["u"])
 
     # from_dict
     loaded = ComplexRegionState.from_dict(state_dict, device=device)
     assert torch.equal(loaded.spikes, spikes)
     assert torch.equal(loaded.membrane, membrane)
-    assert torch.equal(loaded.traces['eligibility'], traces['eligibility'])
-    assert torch.equal(loaded.stp_state['u'], stp_state['u'])
+    assert torch.equal(loaded.traces["eligibility"], traces["eligibility"])
+    assert torch.equal(loaded.stp_state["u"], stp_state["u"])
 
     # reset
     state.reset()
@@ -441,6 +447,7 @@ def test_complex_region_state_partial_fields(device):
 # TEST: Edge Cases
 # =====================================================================
 
+
 def test_base_region_state_empty_state(device):
     """BaseRegionState: Serialize/deserialize with all None fields."""
     state = BaseRegionState()
@@ -465,12 +472,12 @@ def test_transfer_state_with_none_fields(device):
 def test_save_load_with_nested_dicts(device, temp_checkpoint_dir):
     """save/load: Preserve nested dictionary structures."""
     traces = {
-        'eligibility': torch.rand(50, device=device),
-        'stdp': torch.rand(50, device=device),
+        "eligibility": torch.rand(50, device=device),
+        "stdp": torch.rand(50, device=device),
     }
     stp_state = {
-        'u': torch.tensor(0.5, device=device),
-        'x': torch.tensor(1.0, device=device),
+        "u": torch.tensor(0.5, device=device),
+        "x": torch.tensor(1.0, device=device),
     }
     state = ComplexRegionState(traces=traces, stp_state=stp_state)
 
@@ -478,13 +485,14 @@ def test_save_load_with_nested_dicts(device, temp_checkpoint_dir):
     save_region_state(state, checkpoint_path)
     loaded = load_region_state(ComplexRegionState, checkpoint_path, device=device)
 
-    assert torch.equal(loaded.traces['eligibility'], traces['eligibility'])
-    assert torch.equal(loaded.stp_state['u'], stp_state['u'])
+    assert torch.equal(loaded.traces["eligibility"], traces["eligibility"])
+    assert torch.equal(loaded.stp_state["u"], stp_state["u"])
 
 
 # =====================================================================
 # SUMMARY
 # =====================================================================
+
 
 def test_summary():
     """Test suite summary and coverage report."""

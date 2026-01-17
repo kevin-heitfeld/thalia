@@ -30,7 +30,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from typing import Any, Dict, Tuple
 
 import torch
 
@@ -40,13 +40,13 @@ class STDPConfig:
     """Configuration for STDP eligibility computation."""
 
     # Time constants (ms)
-    stdp_tau_ms: float = 20.0          # Spike trace decay time
-    eligibility_tau_ms: float = 1000.0 # Eligibility decay time
+    stdp_tau_ms: float = 20.0  # Spike trace decay time
+    eligibility_tau_ms: float = 1000.0  # Eligibility decay time
 
     # Learning rates
-    stdp_lr: float = 0.01              # Base STDP learning rate
-    a_plus: float = 1.0                # LTP amplitude
-    a_minus: float = 0.012             # LTD amplitude (default ~1.2%)
+    stdp_lr: float = 0.01  # Base STDP learning rate
+    a_plus: float = 1.0  # LTP amplitude
+    a_minus: float = 0.012  # LTD amplitude (default ~1.2%)
 
     # Weight bounds
     w_min: float = 0.0
@@ -183,8 +183,8 @@ class EligibilityTraceManager:
         soft_ltd = ltd * ltd_factor * cfg.a_minus
 
         # Combine LTP and LTD
-        eligibility_update = cfg.stdp_lr * lr_scale * (
-            soft_ltp - cfg.heterosynaptic_ratio * soft_ltd
+        eligibility_update = (
+            cfg.stdp_lr * lr_scale * (soft_ltp - cfg.heterosynaptic_ratio * soft_ltd)
         )
 
         return eligibility_update
@@ -234,11 +234,19 @@ class EligibilityTraceManager:
 
         # LTP: post spike when pre trace is high → post fires AFTER pre
         # If post fires now and pre_trace is high, pre fired recently → strengthen
-        ltp = torch.outer(output_float, self.input_trace) * cfg.a_plus if output_float.sum() > 0 else 0
+        ltp = (
+            torch.outer(output_float, self.input_trace) * cfg.a_plus
+            if output_float.sum() > 0
+            else 0
+        )
 
         # LTD: pre spike when post trace is high → pre fires AFTER post
         # If pre fires now and post_trace is high, post fired recently → weaken
-        ltd = torch.outer(self.output_trace, input_float) * cfg.a_minus if input_float.sum() > 0 else 0
+        ltd = (
+            torch.outer(self.output_trace, input_float) * cfg.a_minus
+            if input_float.sum() > 0
+            else 0
+        )
 
         return ltp, ltd
 
@@ -289,8 +297,8 @@ class EligibilityTraceManager:
         soft_ltd = ltd * ltd_factor * cfg.a_minus
 
         # Combine
-        eligibility_update = cfg.stdp_lr * lr_scale * (
-            soft_ltp - cfg.heterosynaptic_ratio * soft_ltd
+        eligibility_update = (
+            cfg.stdp_lr * lr_scale * (soft_ltp - cfg.heterosynaptic_ratio * soft_ltd)
         )
 
         return eligibility_update
@@ -351,7 +359,7 @@ class EligibilityTraceManager:
         self.eligibility = self.eligibility.to(device)
         return self
 
-    def grow_dimension(self, n_new: int, dimension: str = 'output') -> EligibilityTraceManager:
+    def grow_dimension(self, n_new: int, dimension: str = "output") -> EligibilityTraceManager:
         """
         Grow traces to accommodate new neurons.
 
@@ -362,7 +370,7 @@ class EligibilityTraceManager:
         Returns:
             New EligibilityTraceManager with expanded traces
         """
-        if dimension == 'output':
+        if dimension == "output":
             # Expand output dimension
             new_n_output = self.n_output + n_new
             new_output_trace = torch.zeros(n_new, device=self.device)
@@ -384,7 +392,7 @@ class EligibilityTraceManager:
             new_manager.input_trace = self.input_trace  # Keep existing
             return new_manager
 
-        elif dimension == 'input':
+        elif dimension == "input":
             # Expand input dimension
             new_n_input = self.n_input + n_new
             new_input_trace = torch.zeros(n_new, device=self.device)

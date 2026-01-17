@@ -11,7 +11,7 @@ Used for validating emergent oscillations (gamma, theta, etc.) in neural circuit
 
 from __future__ import annotations
 
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import numpy as np
 from scipy.fft import fft, fftfreq
@@ -49,8 +49,8 @@ def measure_oscillation(
     xf = fftfreq(N, dt_ms / 1000.0)  # Convert ms to seconds for Hz
 
     # Take positive frequencies only
-    xf = xf[:N//2]
-    power = 2.0/N * np.abs(yf[:N//2])
+    xf = xf[: N // 2]
+    power = 2.0 / N * np.abs(yf[: N // 2])
 
     # Apply frequency range filter if specified
     if freq_range is not None:
@@ -104,8 +104,8 @@ def measure_periodicity(
         return 0.0, 0.0
 
     # Compute autocorrelation
-    acorr = correlate(spike_history, spike_history, mode='full')
-    acorr = acorr[len(acorr)//2:]  # Take positive lags only
+    acorr = correlate(spike_history, spike_history, mode="full")
+    acorr = acorr[len(acorr) // 2 :]  # Take positive lags only
 
     # Normalize by zero-lag value
     if acorr[0] > 0:
@@ -164,8 +164,8 @@ def power_spectrum(
     xf = fftfreq(N, dt_ms / 1000.0)  # Hz
 
     # Positive frequencies only
-    xf = xf[:N//2]
-    power = 2.0/N * np.abs(yf[:N//2])
+    xf = xf[: N // 2]
+    power = 2.0 / N * np.abs(yf[: N // 2])
 
     return xf, power
 

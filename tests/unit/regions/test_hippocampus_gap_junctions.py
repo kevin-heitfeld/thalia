@@ -36,7 +36,7 @@ def test_gap_junctions_enabled_by_default():
 
     # Should have gap junction module
     assert hippo.gap_junctions_ca1 is not None
-    assert hasattr(hippo, 'gap_junctions_ca1')
+    assert hasattr(hippo, "gap_junctions_ca1")
 
 
 def test_gap_junction_creates_coupling():
@@ -54,7 +54,8 @@ def test_gap_junction_creates_coupling():
     cfg = HippocampusConfig(
         gap_junction_strength=0.15,  # Strong coupling for clear effect
         gap_junction_max_neighbors=8,
-        gap_junctions_enabled=True)
+        gap_junctions_enabled=True,
+    )
     hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device=device)
 
     # Stimulate with input pattern
@@ -85,9 +86,7 @@ def test_gap_junction_creates_coupling():
     # Test 1: Gap currents should be non-zero (coupling is active)
     gap_current_magnitude = gap_currents.abs().mean().item()
     print(f"Mean gap current magnitude: {gap_current_magnitude:.4f}")
-    assert gap_current_magnitude > 0.001, (
-        f"Gap currents are too small: {gap_current_magnitude:.4f}"
-    )
+    assert gap_current_magnitude > 0.001, f"Gap currents are too small: {gap_current_magnitude:.4f}"
 
     # Test 2: Gap currents should correlate with membrane voltage differences
     membrane_std = membrane_voltages.std(dim=1).mean().item()  # Variance across neurons
@@ -167,14 +166,14 @@ def test_gap_junction_integration_with_theta():
     calc = LayerSizeCalculator()
     sizes = calc.hippocampus_from_input(32)
     cfg = HippocampusConfig(
-        gap_junctions_enabled=True,
-        theta_gamma_enabled=True)  # Enable theta-gamma coupling
+        gap_junctions_enabled=True, theta_gamma_enabled=True
+    )  # Enable theta-gamma coupling
     hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device=device)
 
     # Set oscillator phases (simulate theta cycle)
     hippo.set_oscillator_phases(
-        phases={'theta': 0.0, 'gamma': 0.0},
-        signals={'theta': 0.8, 'gamma': 0.6},
+        phases={"theta": 0.0, "gamma": 0.0},
+        signals={"theta": 0.8, "gamma": 0.6},
         theta_slot=0,
     )
 

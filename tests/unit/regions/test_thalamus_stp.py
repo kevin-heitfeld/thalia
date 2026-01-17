@@ -9,12 +9,12 @@ Author: Thalia Project
 Date: December 2025
 """
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 @pytest.fixture
@@ -55,13 +55,16 @@ class TestThalamusSTPConfiguration:
     def test_stp_types_correct(self, thalamus_config):
         """Test that STP types are set correctly."""
         from thalia.components.synapses.stp import STPType
+
         config, sizes, device = thalamus_config
 
         # Check config values - biologically accurate defaults
-        assert config.stp_sensory_relay_type == STPType.DEPRESSING_MODERATE, \
-            "Sensory relay STP should be moderate depression (U=0.4)"
-        assert config.stp_l6_feedback_type == STPType.DEPRESSING_STRONG, \
-            "L6 feedback STP should be strong depression (U=0.7)"
+        assert (
+            config.stp_sensory_relay_type == STPType.DEPRESSING_MODERATE
+        ), "Sensory relay STP should be moderate depression (U=0.4)"
+        assert (
+            config.stp_l6_feedback_type == STPType.DEPRESSING_STRONG
+        ), "L6 feedback STP should be strong depression (U=0.7)"
 
     def test_stp_dimensions_correct(self, thalamus_config):
         """Test that STP modules have correct dimensions."""
@@ -69,12 +72,20 @@ class TestThalamusSTPConfiguration:
         thalamus = ThalamicRelay(config=config, sizes=sizes, device=device)
 
         # Sensory relay dimensions
-        assert thalamus.stp_sensory_relay.n_pre == thalamus.input_size, "Input dimension should match"
-        assert thalamus.stp_sensory_relay.n_post == thalamus.relay_size, "Output dimension should match"
+        assert (
+            thalamus.stp_sensory_relay.n_pre == thalamus.input_size
+        ), "Input dimension should match"
+        assert (
+            thalamus.stp_sensory_relay.n_post == thalamus.relay_size
+        ), "Output dimension should match"
 
         # L6 feedback dimensions (L6 size must match relay size)
-        assert thalamus.stp_l6_feedback.n_pre == thalamus.relay_size, "L6 size must match relay size"
-        assert thalamus.stp_l6_feedback.n_post == thalamus.relay_size, "L6 size must match relay size"
+        assert (
+            thalamus.stp_l6_feedback.n_pre == thalamus.relay_size
+        ), "L6 size must match relay size"
+        assert (
+            thalamus.stp_l6_feedback.n_post == thalamus.relay_size
+        ), "L6 size must match relay size"
 
 
 class TestSensoryRelayDepression:
@@ -100,8 +111,9 @@ class TestSensoryRelayDepression:
 
         # Allow for variability in neuron spiking
         if early_activity > 0:
-            assert late_activity <= early_activity, \
-                f"Depression should reduce or maintain activity (early={early_activity:.2f}, late={late_activity:.2f})"
+            assert (
+                late_activity <= early_activity
+            ), f"Depression should reduce or maintain activity (early={early_activity:.2f}, late={late_activity:.2f})"
 
     def test_novel_input_stronger_than_sustained(self, thalamus_config):
         """Test that novel inputs get stronger transmission than sustained inputs."""
@@ -114,7 +126,7 @@ class TestSensoryRelayDepression:
 
         # Pattern B (will be novel)
         pattern_b = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        pattern_b[thalamus.input_size//2:] = True
+        pattern_b[thalamus.input_size // 2 :] = True
 
         # Present pattern A repeatedly (depresses)
         for _ in range(15):
@@ -133,8 +145,9 @@ class TestSensoryRelayDepression:
         efficacy_b = thalamus.stp_sensory_relay(pattern_b.float()).mean().item()
 
         # Novel pattern should get stronger transmission
-        assert efficacy_b > efficacy_a, \
-            f"Novel input should be stronger (novel={efficacy_b:.3f}, sustained={efficacy_a:.3f})"
+        assert (
+            efficacy_b > efficacy_a
+        ), f"Novel input should be stronger (novel={efficacy_b:.3f}, sustained={efficacy_a:.3f})"
 
     def test_sensory_adaptation(self, thalamus_config):
         """Test that thalamus adapts to sustained sensory input (habituation)."""
@@ -155,8 +168,9 @@ class TestSensoryRelayDepression:
         early_efficacy = np.mean(efficacies[0:5])
         late_efficacy = np.mean(efficacies[25:30])
 
-        assert late_efficacy < early_efficacy * 0.9, \
-            f"Adaptation should reduce efficacy (early={early_efficacy:.3f}, late={late_efficacy:.3f})"
+        assert (
+            late_efficacy < early_efficacy * 0.9
+        ), f"Adaptation should reduce efficacy (early={early_efficacy:.3f}, late={late_efficacy:.3f})"
 
     def test_stp_enables_adaptation(self):
         """Test that STP enables adaptation compared to no STP."""
@@ -188,7 +202,10 @@ class TestSensoryRelayDepression:
             no_stp_outputs.append(no_stp_out.sum().item())
 
         # STP should show more adaptation than no STP
-        if len([x for x in stp_outputs if x > 0]) > 0 and len([x for x in no_stp_outputs if x > 0]) > 0:
+        if (
+            len([x for x in stp_outputs if x > 0]) > 0
+            and len([x for x in no_stp_outputs if x > 0]) > 0
+        ):
             stp_early = np.mean([x for x in stp_outputs[0:5] if x > 0] or [0])
             stp_late = np.mean([x for x in stp_outputs[10:15] if x > 0] or [0])
             no_stp_early = np.mean([x for x in no_stp_outputs[0:5] if x > 0] or [0])
@@ -199,8 +216,9 @@ class TestSensoryRelayDepression:
                 no_stp_ratio = no_stp_late / (no_stp_early + 1e-6)
 
                 # STP should show more depression (lower ratio)
-                assert stp_ratio <= no_stp_ratio + 0.1, \
-                    f"STP should show more adaptation (STP={stp_ratio:.2f}, no STP={no_stp_ratio:.2f})"
+                assert (
+                    stp_ratio <= no_stp_ratio + 0.1
+                ), f"STP should show more adaptation (STP={stp_ratio:.2f}, no STP={no_stp_ratio:.2f})"
 
 
 class TestSensoryRelayRecovery:
@@ -213,7 +231,7 @@ class TestSensoryRelayRecovery:
 
         # Active pattern
         pattern = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        pattern[0:thalamus.input_size//2] = True
+        pattern[0 : thalamus.input_size // 2] = True
 
         # Silent pattern
         silence = torch.zeros(thalamus.input_size, dtype=torch.bool)
@@ -233,8 +251,9 @@ class TestSensoryRelayRecovery:
         efficacy_recovered = thalamus.stp_sensory_relay.get_efficacy().mean().item()
 
         # Efficacy should recover (at least 5% improvement)
-        assert efficacy_recovered > efficacy_depressed * 1.05, \
-            f"Depression should recover (depressed={efficacy_depressed:.3f}, recovered={efficacy_recovered:.3f})"
+        assert (
+            efficacy_recovered > efficacy_depressed * 1.05
+        ), f"Depression should recover (depressed={efficacy_depressed:.3f}, recovered={efficacy_recovered:.3f})"
 
 
 class TestL6FeedbackDepression:
@@ -263,8 +282,9 @@ class TestL6FeedbackDepression:
         early = np.mean(efficacies[0:5])
         late = np.mean(efficacies[15:20])
 
-        assert late < early * 0.8, \
-            f"L6 feedback should show strong depression (early={early:.3f}, late={late:.3f})"
+        assert (
+            late < early * 0.8
+        ), f"L6 feedback should show strong depression (early={early:.3f}, late={late:.3f})"
 
     def test_l6_feedback_stronger_depression_than_sensory(self, thalamus_config):
         """Test that L6 feedback has stronger depression than sensory input (U=0.7 vs U=0.4)."""
@@ -273,7 +293,7 @@ class TestL6FeedbackDepression:
 
         # Sensory pattern
         sensory = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        sensory[0:thalamus.input_size//2] = True
+        sensory[0 : thalamus.input_size // 2] = True
 
         # L6 feedback pattern
         l6_feedback = torch.zeros(thalamus.relay_size, dtype=torch.bool)
@@ -295,8 +315,9 @@ class TestL6FeedbackDepression:
 
         # L6 should show stronger depression (lower ratio)
         # Config: sensory U=0.4, L6 U=0.7 → L6 should depress more
-        assert l6_ratio <= sensory_ratio, \
-            f"L6 feedback should depress at least as much as sensory (L6={l6_ratio:.3f}, sensory={sensory_ratio:.3f})"
+        assert (
+            l6_ratio <= sensory_ratio
+        ), f"L6 feedback should depress at least as much as sensory (L6={l6_ratio:.3f}, sensory={sensory_ratio:.3f})"
 
 
 class TestSTPStateManagement:
@@ -309,7 +330,7 @@ class TestSTPStateManagement:
 
         # Active pattern
         pattern = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        pattern[0:thalamus.input_size//2] = True
+        pattern[0 : thalamus.input_size // 2] = True
 
         # Depress the synapses
         for _ in range(15):
@@ -325,8 +346,9 @@ class TestSTPStateManagement:
         efficacy_after = thalamus.stp_sensory_relay.get_efficacy().mean().item()
 
         # Efficacy should be higher after reset (depression cleared)
-        assert efficacy_after > efficacy_before * 1.1, \
-            f"Reset should clear depression (before={efficacy_before:.3f}, after={efficacy_after:.3f})"
+        assert (
+            efficacy_after > efficacy_before * 1.1
+        ), f"Reset should clear depression (before={efficacy_before:.3f}, after={efficacy_after:.3f})"
 
     def test_stp_modules_in_reset(self):
         """Test that STP modules are included in reset_state call."""
@@ -338,10 +360,12 @@ class TestSTPStateManagement:
         thalamus = ThalamicRelay(config=config, sizes=sizes, device=device)
 
         # STP modules should have reset_state method
-        assert hasattr(thalamus.stp_sensory_relay, 'reset_state'), \
-            "Sensory STP module should have reset_state method"
-        assert hasattr(thalamus.stp_l6_feedback, 'reset_state'), \
-            "L6 feedback STP module should have reset_state method"
+        assert hasattr(
+            thalamus.stp_sensory_relay, "reset_state"
+        ), "Sensory STP module should have reset_state method"
+        assert hasattr(
+            thalamus.stp_l6_feedback, "reset_state"
+        ), "L6 feedback STP module should have reset_state method"
 
         # Reset should not raise error
         thalamus.reset_state()
@@ -357,7 +381,7 @@ class TestBiologicalPlausibility:
 
         # Active pattern
         pattern = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        pattern[0:thalamus.input_size//2] = True
+        pattern[0 : thalamus.input_size // 2] = True
 
         # Measure efficacy directly
         efficacy_first = thalamus.stp_sensory_relay(pattern.float()).mean().item()
@@ -373,8 +397,9 @@ class TestBiologicalPlausibility:
             depression_ratio = efficacy_depressed / efficacy_first
 
             # Biological data: U=0.4 should give moderate depression (40-80% of initial)
-            assert 0.3 < depression_ratio < 0.9, \
-                f"Depression should be in biological range (got {depression_ratio:.2f})"
+            assert (
+                0.3 < depression_ratio < 0.9
+            ), f"Depression should be in biological range (got {depression_ratio:.2f})"
 
     def test_l6_depression_magnitude_realistic(self, thalamus_config):
         """Test that L6 feedback depression magnitude is in biological range (U=0.7, strong)."""
@@ -399,8 +424,9 @@ class TestBiologicalPlausibility:
             depression_ratio = efficacy_depressed / efficacy_first
 
             # Biological data: U=0.7 should give strong depression (20-60% of initial)
-            assert 0.15 < depression_ratio < 0.7, \
-                f"Strong depression should be in biological range (got {depression_ratio:.2f})"
+            assert (
+                0.15 < depression_ratio < 0.7
+            ), f"Strong depression should be in biological range (got {depression_ratio:.2f})"
 
     def test_novelty_detection_functional(self, thalamus_config):
         """Test that STP enables functional novelty detection in sensory relay."""
@@ -409,11 +435,11 @@ class TestBiologicalPlausibility:
 
         # Pattern A (background)
         pattern_a = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        pattern_a[0:thalamus.input_size//2] = True
+        pattern_a[0 : thalamus.input_size // 2] = True
 
         # Pattern B (novel stimulus)
         pattern_b = torch.zeros(thalamus.input_size, dtype=torch.bool)
-        pattern_b[thalamus.input_size//2:] = True
+        pattern_b[thalamus.input_size // 2 :] = True
 
         # Present A repeatedly (background habituation)
         for _ in range(10):
@@ -427,8 +453,9 @@ class TestBiologicalPlausibility:
         efficacy_novel = thalamus.stp_sensory_relay(pattern_b.float()).mean().item()
 
         # Novel stimulus should have higher efficacy
-        assert efficacy_novel > efficacy_background, \
-            f"Novel stimulus should have higher efficacy (novel={efficacy_novel:.3f}, background={efficacy_background:.3f})"
+        assert (
+            efficacy_novel > efficacy_background
+        ), f"Novel stimulus should have higher efficacy (novel={efficacy_novel:.3f}, background={efficacy_background:.3f})"
 
 
 if __name__ == "__main__":

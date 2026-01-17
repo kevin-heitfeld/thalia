@@ -1329,4 +1329,3 @@ from thalia.visualization import visualize_brain_topology
 ```
 
 ---
-

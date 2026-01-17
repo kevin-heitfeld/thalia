@@ -20,13 +20,13 @@ Date: December 17, 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.synapses.weight_init import WeightInitializer
 
 
 @dataclass
@@ -37,6 +37,7 @@ class GranuleLayerState:
         mossy_to_granule: Synaptic weights from mossy fibers to granule cells
         granule_neurons: State dict from granule neuron model (ConductanceLIF)
     """
+
     mossy_to_granule: torch.Tensor
     granule_neurons: Dict[str, Any]  # State from ConductanceLIF.get_state()
 
@@ -95,11 +96,11 @@ class GranuleCellLayer(nn.Module):
         # Granule cells are small, fast-spiking neurons
         granule_config = ConductanceLIFConfig(
             v_threshold=-50.0,  # mV, more excitable than pyramidal
-            v_reset=-65.0,      # mV
-            tau_mem=5.0,        # ms, faster than pyramidal (5ms vs 10-30ms)
-            tau_E=1.0,          # ms, fast excitatory conductance decay
-            tau_I=2.0,          # ms, fast inhibitory conductance decay
-            dt_ms=dt_ms,        # Timestep in milliseconds
+            v_reset=-65.0,  # mV
+            tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
+            tau_E=1.0,  # ms, fast excitatory conductance decay
+            tau_I=2.0,  # ms, fast inhibitory conductance decay
+            dt_ms=dt_ms,  # Timestep in milliseconds
         )
         self.granule_neurons = ConductanceLIF(
             n_neurons=self.n_granule,
@@ -155,7 +156,7 @@ class GranuleCellLayer(nn.Module):
             # Only consider neurons that actually spiked
             spiking_mask = parallel_fiber_spikes.bool()
             g_exc_spiking = g_exc.clone()
-            g_exc_spiking[~spiking_mask] = -float('inf')  # Exclude non-spiking
+            g_exc_spiking[~spiking_mask] = -float("inf")  # Exclude non-spiking
             _, top_k_idx = torch.topk(g_exc_spiking, k)
             sparse_spikes = torch.zeros_like(parallel_fiber_spikes, dtype=torch.bool)
             sparse_spikes[top_k_idx] = True
@@ -178,7 +179,7 @@ class GranuleCellLayer(nn.Module):
     def load_state(self, state: GranuleLayerState) -> None:
         """Load granule layer state from checkpoint."""
         # Detect target device - prefer self.device if it's set, else infer from state
-        if hasattr(self, 'mossy_to_granule') and self.mossy_to_granule is not None:
+        if hasattr(self, "mossy_to_granule") and self.mossy_to_granule is not None:
             # Module already exists, use its current device
             target_device = self.mossy_to_granule.device
         else:

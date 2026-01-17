@@ -39,9 +39,9 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
 from collections import deque
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -60,6 +60,7 @@ class ContextBufferConfig:
 
         device: Computation device
     """
+
     max_length: int = 512
     n_neurons: int = 256
 
@@ -123,7 +124,7 @@ class ContextBuffer(nn.Module):
         weights = torch.zeros(self.config.max_length, device=self.device)
         for i in range(self.config.max_length):
             # More recent = higher weight
-            weights[-(i+1)] = self.config.recency_decay ** i
+            weights[-(i + 1)] = self.config.recency_decay**i
         return weights
 
     def push(
@@ -144,9 +145,7 @@ class ContextBuffer(nn.Module):
             self.activation_buffer.append(activation.to(self.device))
         else:
             # Create placeholder
-            self.activation_buffer.append(
-                torch.zeros(self.config.n_neurons, device=self.device)
-            )
+            self.activation_buffer.append(torch.zeros(self.config.n_neurons, device=self.device))
 
     def push_sequence(
         self,
@@ -221,8 +220,10 @@ class ContextBuffer(nn.Module):
         activations = self.get_activations()
 
         if len(activations) < 2:
-            return activations.mean(dim=0) if len(activations) > 0 else torch.zeros(
-                self.config.n_neurons, device=self.device
+            return (
+                activations.mean(dim=0)
+                if len(activations) > 0
+                else torch.zeros(self.config.n_neurons, device=self.device)
             )
 
         # Compress pairs of activations
@@ -259,8 +260,12 @@ class ContextBuffer(nn.Module):
             "length": len(self.token_buffer),
             "max_length": self.config.max_length,
             "is_full": self.is_full(),
-            "activation_stats": {
-                "mean": activations.mean().item() if len(activations) > 0 else 0,
-                "std": activations.std().item() if len(activations) > 0 else 0,
-            } if len(activations) > 0 else {},
+            "activation_stats": (
+                {
+                    "mean": activations.mean().item() if len(activations) > 0 else 0,
+                    "std": activations.std().item() if len(activations) > 0 else 0,
+                }
+                if len(activations) > 0
+                else {}
+            ),
         }

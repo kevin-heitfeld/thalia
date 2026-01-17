@@ -13,15 +13,16 @@ Author: Thalia Project
 Date: December 2025
 """
 
-from hypothesis import given, strategies as st, assume, settings
 import pytest
 import torch
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
-from thalia.core.region_state import BaseRegionState
 from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.core.region_state import BaseRegionState
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
+from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
+from thalia.regions.striatum import Striatum, StriatumConfig
 
 
 def create_test_hippocampus(input_size: int, device: str, **kwargs) -> TrisynapticHippocampus:
@@ -35,17 +36,17 @@ def create_test_hippocampus(input_size: int, device: str, **kwargs) -> Trisynapt
 def create_test_striatum(input_sources: dict, n_actions: int, device: str, **kwargs) -> Striatum:
     """Create Striatum for testing with Phase 2 pattern."""
     # Extract neurons_per_action (default to 1 for minimal testing)
-    neurons_per_action = kwargs.pop('neurons_per_action', 1)
+    neurons_per_action = kwargs.pop("neurons_per_action", 1)
 
     # Compute d1_size and d2_size using calculator
     calc = LayerSizeCalculator()
     sizes = calc.striatum_from_actions(n_actions, neurons_per_action)
 
     # Add input_sources (required by Striatum)
-    sizes['input_sources'] = input_sources
+    sizes["input_sources"] = input_sources
 
     # Add input_size for convenience
-    sizes['input_size'] = sum(input_sources.values())
+    sizes["input_size"] = sum(input_sources.values())
 
     config = StriatumConfig(**kwargs)
     striatum = Striatum(config=config, sizes=sizes, device=device)
@@ -57,16 +58,18 @@ def create_test_striatum(input_sources: dict, n_actions: int, device: str, **kwa
     return striatum
 
 
-def create_test_cortex(l4_size: int, l23_size: int, l5_size: int, device: str, **kwargs) -> LayeredCortex:
+def create_test_cortex(
+    l4_size: int, l23_size: int, l5_size: int, device: str, **kwargs
+) -> LayeredCortex:
     """Create LayeredCortex for testing with Phase 2 pattern."""
     # Manually construct sizes dict with all required fields
     sizes = {
-        'input_size': l4_size,
-        'l4_size': l4_size,
-        'l23_size': l23_size,
-        'l5_size': l5_size,
-        'l6a_size': l4_size // 2,
-        'l6b_size': l4_size // 2,
+        "input_size": l4_size,
+        "l4_size": l4_size,
+        "l23_size": l23_size,
+        "l5_size": l5_size,
+        "l6a_size": l4_size // 2,
+        "l6b_size": l4_size // 2,
     }
     config = LayeredCortexConfig(**kwargs)
     return LayeredCortex(config=config, sizes=sizes, device=device)
@@ -203,8 +206,12 @@ class TestBiologicalBounds:
 
         # Check bounds
         assert loaded.membrane is not None, "Membrane should not be None"
-        assert (loaded.membrane >= -85).all(), f"Membrane below K+ reversal: {loaded.membrane.min():.1f}mV"
-        assert (loaded.membrane <= 60).all(), f"Membrane above Na+ reversal: {loaded.membrane.max():.1f}mV"
+        assert (
+            loaded.membrane >= -85
+        ).all(), f"Membrane below K+ reversal: {loaded.membrane.min():.1f}mV"
+        assert (
+            loaded.membrane <= 60
+        ).all(), f"Membrane above Na+ reversal: {loaded.membrane.max():.1f}mV"
 
     @given(spike_prob=st.floats(min_value=0.0, max_value=1.0))
     @settings(max_examples=50, deadline=None)
@@ -259,7 +266,9 @@ class TestMultiRegionIndependence:
             original_spikes = BaseRegionState.from_dict(saved_states[name], device="cpu").spikes
             current_spikes = states[name].spikes
 
-            assert torch.equal(original_spikes, current_spikes), f"{name} was affected by region_0 modification"
+            assert torch.equal(
+                original_spikes, current_spikes
+            ), f"{name} was affected by region_0 modification"
 
     @given(seed=st.integers(min_value=0, max_value=10000))
     @settings(max_examples=20, deadline=None)
@@ -332,7 +341,7 @@ class TestStateSizeInvariance:
         # Compute n_actions from n_output
         n_actions = n_output // 4 if n_output >= 4 else n_output
         striatum = create_test_striatum(
-            input_sources={'default': n_input},
+            input_sources={"default": n_input},
             n_actions=n_actions,
             device="cpu",
             dt_ms=1.0,
@@ -345,7 +354,7 @@ class TestStateSizeInvariance:
         # Save and load
         state = striatum.get_state()
         striatum2 = create_test_striatum(
-            input_sources={'default': n_input},
+            input_sources={"default": n_input},
             n_actions=n_actions,
             device="cpu",
             dt_ms=1.0,
@@ -407,11 +416,11 @@ class TestStateConsistency:
         torch.manual_seed(seed)
 
         striatum = create_test_striatum(
-            input_sources={'default': 40},
+            input_sources={"default": 40},
             n_actions=8,
             neurons_per_action=1,
             device="cpu",
-            dt_ms=1.0
+            dt_ms=1.0,
         )
 
         # Initial state
@@ -425,11 +434,11 @@ class TestStateConsistency:
         for _ in range(n_checkpoints):
             # Load state
             striatum_temp = create_test_striatum(
-                input_sources={'default': 40},
+                input_sources={"default": 40},
                 n_actions=8,
                 neurons_per_action=1,
                 device="cpu",
-                dt_ms=1.0
+                dt_ms=1.0,
             )
             striatum_temp.load_state(current_state)
 
@@ -442,11 +451,11 @@ class TestStateConsistency:
 
         # Final load should work without errors
         striatum_final = create_test_striatum(
-            input_sources={'default': 40},
+            input_sources={"default": 40},
             n_actions=8,
             neurons_per_action=1,
             device="cpu",
-            dt_ms=1.0
+            dt_ms=1.0,
         )
         striatum_final.load_state(current_state)
 
@@ -454,7 +463,9 @@ class TestStateConsistency:
         output = striatum_final.forward({"default": torch.rand(40) > 0.7})
         # Striatum output is n_actions * neurons_per_action (8 * 1 = 8 action neurons total for D1+D2)
         expected_output = striatum_final.n_output
-        assert output.shape == (expected_output,), f"Output shape incorrect after multiple cycles: expected {expected_output}, got {output.shape[0]}"
+        assert output.shape == (
+            expected_output,
+        ), f"Output shape incorrect after multiple cycles: expected {expected_output}, got {output.shape[0]}"
 
     @given(seed=st.integers(min_value=0, max_value=10000))
     @settings(max_examples=15, deadline=None)
@@ -462,11 +473,7 @@ class TestStateConsistency:
         """Property: Hippocampus state remains consistent through checkpoints."""
         torch.manual_seed(seed)
 
-        hippocampus = create_test_hippocampus(
-            input_size=20,
-            device="cpu",
-            dt_ms=1.0
-        )
+        hippocampus = create_test_hippocampus(input_size=20, device="cpu", dt_ms=1.0)
 
         # Build up some patterns
         for _ in range(15):
@@ -474,11 +481,7 @@ class TestStateConsistency:
 
         # Save and load
         state = hippocampus.get_state()
-        hippocampus2 = create_test_hippocampus(
-            input_size=20,
-            device="cpu",
-            dt_ms=1.0
-        )
+        hippocampus2 = create_test_hippocampus(input_size=20, device="cpu", dt_ms=1.0)
         hippocampus2.load_state(state)
 
         # Continue processing - should work smoothly
@@ -486,7 +489,9 @@ class TestStateConsistency:
             output = hippocampus2.forward(torch.rand(20) > 0.6)
             # Hippocampus output is CA1 size (2x input per ratios)
             expected_output = hippocampus2.n_output
-            assert output.shape == (expected_output,), f"Output shape incorrect: expected {expected_output}, got {output.shape[0]}"
+            assert output.shape == (
+                expected_output,
+            ), f"Output shape incorrect: expected {expected_output}, got {output.shape[0]}"
             assert torch.isfinite(output).all(), "Output has NaN/Inf"
 
 

@@ -11,8 +11,8 @@ Implements various types of lesions:
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional, Dict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, Optional
 
 import torch
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 @dataclass
 class LesionState:
     """Saved state for lesion reversal."""
+
     region_name: str
     original_weights: SynapticWeights
     original_plasticity: bool
@@ -167,10 +168,7 @@ def restore_region(
         ValueError: If no lesion state was saved for this region
     """
     if region_name not in _lesion_cache:
-        raise ValueError(
-            f"No saved state for region '{region_name}'. "
-            f"Cannot restore."
-        )
+        raise ValueError(f"No saved state for region '{region_name}'. " f"Cannot restore.")
 
     state = _lesion_cache[region_name]
     region_impl = _get_region(brain, region_name)
@@ -189,6 +187,7 @@ def restore_region(
 
 
 # Helper functions
+
 
 def _get_region(brain: "DynamicBrain", region_name: str):
     """Get region component by name.
@@ -211,10 +210,7 @@ def _get_region(brain: "DynamicBrain", region_name: str):
     }
 
     if region_name not in name_map:
-        raise ValueError(
-            f"Unknown region: {region_name}. "
-            f"Options: {list(name_map.keys())}"
-        )
+        raise ValueError(f"Unknown region: {region_name}. " f"Options: {list(name_map.keys())}")
 
     attr_name = name_map[region_name]
 

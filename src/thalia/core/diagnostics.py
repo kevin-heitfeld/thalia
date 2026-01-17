@@ -36,24 +36,26 @@ Usage:
 
 from __future__ import annotations
 
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Optional
-from collections import deque
-import time
 
 
 class DiagnosticLevel(Enum):
     """Verbosity levels for diagnostics."""
-    OFF = auto()       # No diagnostics
-    SUMMARY = auto()   # Epoch-level summaries only
+
+    OFF = auto()  # No diagnostics
+    SUMMARY = auto()  # Epoch-level summaries only
     DETAILED = auto()  # Per-trial key metrics
-    TRACE = auto()     # Full per-timestep traces (expensive!)
+    TRACE = auto()  # Full per-timestep traces (expensive!)
 
 
 @dataclass
 class ComponentConfig:
     """Configuration for a single component's diagnostics."""
+
     enabled: bool = True
     level: Optional[DiagnosticLevel] = None  # None = use global level
     history_size: int = 100  # Rolling history buffer size
@@ -62,6 +64,7 @@ class ComponentConfig:
 @dataclass
 class DiagnosticsConfig:
     """Global diagnostics configuration."""
+
     level: DiagnosticLevel = DiagnosticLevel.SUMMARY
     print_to_console: bool = True
     collect_history: bool = False
@@ -135,7 +138,9 @@ class DiagnosticsManager:
                 return comp_config.level
         return self.config.level
 
-    def is_enabled(self, component: str, min_level: DiagnosticLevel = DiagnosticLevel.SUMMARY) -> bool:
+    def is_enabled(
+        self, component: str, min_level: DiagnosticLevel = DiagnosticLevel.SUMMARY
+    ) -> bool:
         """Check if diagnostics are enabled for a component at given level."""
         level = self.get_level(component)
         return level.value >= min_level.value
@@ -311,7 +316,9 @@ class DiagnosticsManager:
             return
         if self.get_level().value < DiagnosticLevel.SUMMARY.value:
             return
-        line = self.format_weights_summary(d1_per_action, d2_per_action, net_per_action, val_per_action)
+        line = self.format_weights_summary(
+            d1_per_action, d2_per_action, net_per_action, val_per_action
+        )
         print(f"{prefix}{line}")
 
 
@@ -319,9 +326,11 @@ class DiagnosticsManager:
 # COMPONENT DIAGNOSTIC INTERFACES
 # =========================================================================
 
+
 @dataclass
 class StriatumDiagnostics:
     """Structured diagnostics for Striatum."""
+
     # Per-action weights
     d1_per_action: List[float] = field(default_factory=list)
     d2_per_action: List[float] = field(default_factory=list)
@@ -371,6 +380,7 @@ class StriatumDiagnostics:
 @dataclass
 class HippocampusDiagnostics:
     """Structured diagnostics for Hippocampus."""
+
     # CA1 activity (implicit comparison via NMDA coincidence detection)
     ca1_total_spikes: float = 0.0
     ca1_normalized: float = 0.0  # Normalized activity [0, 1]
@@ -404,6 +414,7 @@ class HippocampusDiagnostics:
 @dataclass
 class BrainSystemDiagnostics:
     """Aggregated diagnostics for entire brain system."""
+
     # Trial info
     trial_num: int = 0
     is_match: bool = False

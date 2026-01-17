@@ -11,9 +11,10 @@ Author: Thalia Project
 Date: December 15, 2025
 """
 
+import math
+
 import pytest
 import torch
-import math
 
 from thalia.config import GlobalConfig
 from thalia.core.brain_builder import BrainBuilder
@@ -42,20 +43,20 @@ class TestOscillatorManagerIntegration:
 
     def test_oscillator_manager_exists(self, simple_brain):
         """Test that OscillatorManager is initialized."""
-        assert hasattr(simple_brain, 'oscillators')
+        assert hasattr(simple_brain, "oscillators")
         assert simple_brain.oscillators is not None
 
     def test_oscillators_initialized(self, simple_brain):
         """Test that all 6 oscillators are initialized."""
-        assert hasattr(simple_brain.oscillators, 'delta')
-        assert hasattr(simple_brain.oscillators, 'theta')
-        assert hasattr(simple_brain.oscillators, 'alpha')
-        assert hasattr(simple_brain.oscillators, 'beta')
-        assert hasattr(simple_brain.oscillators, 'gamma')
-        assert hasattr(simple_brain.oscillators, 'ripple')
+        assert hasattr(simple_brain.oscillators, "delta")
+        assert hasattr(simple_brain.oscillators, "theta")
+        assert hasattr(simple_brain.oscillators, "alpha")
+        assert hasattr(simple_brain.oscillators, "beta")
+        assert hasattr(simple_brain.oscillators, "gamma")
+        assert hasattr(simple_brain.oscillators, "ripple")
 
         # Check initial phases for all oscillators
-        for osc_name in ['delta', 'theta', 'alpha', 'beta', 'gamma', 'ripple']:
+        for osc_name in ["delta", "theta", "alpha", "beta", "gamma", "ripple"]:
             osc = getattr(simple_brain.oscillators, osc_name)
             assert osc.phase >= 0.0
 
@@ -84,7 +85,7 @@ class TestOscillatorManagerIntegration:
         simple_brain.forward(input_data, n_timesteps=500)
 
         # All phases should be in [0, 2π)
-        for osc_name in ['delta', 'theta', 'alpha', 'beta', 'gamma', 'ripple']:
+        for osc_name in ["delta", "theta", "alpha", "beta", "gamma", "ripple"]:
             osc = getattr(simple_brain.oscillators, osc_name)
             assert 0.0 <= osc.phase < 2.0 * math.pi
 
@@ -98,23 +99,23 @@ class TestOscillatorManagerIntegration:
         diag = simple_brain.get_diagnostics()
 
         # Should include oscillators
-        assert 'oscillators' in diag
-        osc_diag = diag['oscillators']
+        assert "oscillators" in diag
+        osc_diag = diag["oscillators"]
 
         # Should have all oscillators
-        assert 'delta' in osc_diag
-        assert 'theta' in osc_diag
-        assert 'alpha' in osc_diag
-        assert 'beta' in osc_diag
-        assert 'gamma' in osc_diag
-        assert 'ripple' in osc_diag
+        assert "delta" in osc_diag
+        assert "theta" in osc_diag
+        assert "alpha" in osc_diag
+        assert "beta" in osc_diag
+        assert "gamma" in osc_diag
+        assert "ripple" in osc_diag
 
         # Each should have phase and frequency
-        for osc_name in ['delta', 'theta', 'alpha', 'beta', 'gamma', 'ripple']:
-            assert 'phase' in osc_diag[osc_name]
-            assert 'frequency_hz' in osc_diag[osc_name]
-            assert isinstance(osc_diag[osc_name]['phase'], float)
-            assert isinstance(osc_diag[osc_name]['frequency_hz'], float)
+        for osc_name in ["delta", "theta", "alpha", "beta", "gamma", "ripple"]:
+            assert "phase" in osc_diag[osc_name]
+            assert "frequency_hz" in osc_diag[osc_name]
+            assert isinstance(osc_diag[osc_name]["phase"], float)
+            assert isinstance(osc_diag[osc_name]["frequency_hz"], float)
 
     def test_oscillator_state_save_load(self, simple_brain):
         """Test that oscillator states are saved and loaded correctly."""
@@ -126,13 +127,13 @@ class TestOscillatorManagerIntegration:
         state = simple_brain.get_full_state()
 
         # Verify oscillator state is saved
-        assert 'oscillators' in state
-        assert 'delta' in state['oscillators']
-        assert 'theta' in state['oscillators']
-        assert 'alpha' in state['oscillators']
-        assert 'beta' in state['oscillators']
-        assert 'gamma' in state['oscillators']
-        assert 'ripple' in state['oscillators']
+        assert "oscillators" in state
+        assert "delta" in state["oscillators"]
+        assert "theta" in state["oscillators"]
+        assert "alpha" in state["oscillators"]
+        assert "beta" in state["oscillators"]
+        assert "gamma" in state["oscillators"]
+        assert "ripple" in state["oscillators"]
 
         # Save current phases
         saved_delta_phase = simple_brain.oscillators.delta.phase
@@ -173,26 +174,26 @@ class TestOscillatorManagerIntegration:
     def test_theta_frequency_from_config(self, global_config):
         """Test that theta frequency comes from config."""
         # Config has theta_frequency_hz=8.0
-        brain = BrainBuilder(global_config).add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0).build()
+        brain = (
+            BrainBuilder(global_config)
+            .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
+            .build()
+        )
 
         # Theta should have frequency from config
         assert brain.oscillators.theta.frequency_hz == 8.0
 
     def test_broadcast_oscillator_phases_called(self, simple_brain, monkeypatch):
         """Test that _broadcast_oscillator_phases is called during forward."""
-        broadcast_called = {'count': 0}
+        broadcast_called = {"count": 0}
 
         original_broadcast = simple_brain._broadcast_oscillator_phases
 
         def tracked_broadcast():
-            broadcast_called['count'] += 1
+            broadcast_called["count"] += 1
             return original_broadcast()
 
-        monkeypatch.setattr(
-            simple_brain,
-            '_broadcast_oscillator_phases',
-            tracked_broadcast
-        )
+        monkeypatch.setattr(simple_brain, "_broadcast_oscillator_phases", tracked_broadcast)
 
         # Run forward pass
         input_data = {"input": torch.randn(64)}
@@ -200,7 +201,7 @@ class TestOscillatorManagerIntegration:
 
         # Should have been called at least once during execution
         # (Event-driven mode calls it differently than synchronous mode)
-        assert broadcast_called['count'] >= 1
+        assert broadcast_called["count"] >= 1
 
     def test_oscillators_in_event_driven_mode(self, simple_brain):
         """Test that oscillators work in event-driven execution mode."""

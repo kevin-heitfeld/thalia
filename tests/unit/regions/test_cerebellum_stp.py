@@ -12,16 +12,13 @@ import numpy as np
 import pytest
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.components.synapses.stp import STPType
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 def create_test_cerebellum(
-    input_size: int,
-    purkinje_size: int,
-    device: str = "cpu",
-    **kwargs
+    input_size: int, purkinje_size: int, device: str = "cpu", **kwargs
 ) -> Cerebellum:
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
     # Always compute granule_size (Cerebellum.__init__ requires it)
@@ -71,10 +68,12 @@ class TestCerebellumSTPConfiguration:
         )
 
         # Check config values
-        assert cerebellum.config.stp_pf_purkinje_type == STPType.DEPRESSING, \
-            "Parallel fiber STP should be depressing"
-        assert cerebellum.config.stp_mf_granule_type == STPType.FACILITATING, \
-            "Mossy fiber STP should be facilitating"
+        assert (
+            cerebellum.config.stp_pf_purkinje_type == STPType.DEPRESSING
+        ), "Parallel fiber STP should be depressing"
+        assert (
+            cerebellum.config.stp_mf_granule_type == STPType.FACILITATING
+        ), "Mossy fiber STP should be facilitating"
 
     def test_stp_dimensions_correct(self):
         """Test that STP modules have correct dimensions."""
@@ -116,8 +115,9 @@ class TestParallelFiberDepression:
         early_activity = np.mean(outputs[0:5])
         late_activity = np.mean(outputs[15:20])
 
-        assert late_activity < early_activity * 0.8, \
-            f"Depression should reduce activity (early={early_activity:.2f}, late={late_activity:.2f})"
+        assert (
+            late_activity < early_activity * 0.8
+        ), f"Depression should reduce activity (early={early_activity:.2f}, late={late_activity:.2f})"
 
     def test_novel_input_stronger_than_sustained(self):
         """Test that novel inputs get stronger transmission than sustained inputs."""
@@ -150,8 +150,9 @@ class TestParallelFiberDepression:
         activity_b = output_b.sum().item()
 
         # Novel pattern should get stronger transmission
-        assert activity_b > activity_a, \
-            f"Novel input should be stronger (novel={activity_b}, sustained={activity_a})"
+        assert (
+            activity_b > activity_a
+        ), f"Novel input should be stronger (novel={activity_b}, sustained={activity_a})"
 
     def test_change_detection(self):
         """Test that cerebellum responds more to changes than steady state."""
@@ -187,8 +188,9 @@ class TestParallelFiberDepression:
         sustained_activity = np.mean(sustained_outputs[-5:])  # Last 5 of sustained
         change_activity = np.mean(change_outputs[0:3])  # First 3 after change
 
-        assert change_activity > sustained_activity, \
-            f"Change should trigger stronger response (change={change_activity:.2f}, sustained={sustained_activity:.2f})"
+        assert (
+            change_activity > sustained_activity
+        ), f"Change should trigger stronger response (change={change_activity:.2f}, sustained={sustained_activity:.2f})"
 
     def test_stp_vs_no_stp_timing(self):
         """Test that STP improves change detection compared to no STP."""
@@ -233,8 +235,9 @@ class TestParallelFiberDepression:
         stp_depression_ratio = stp_late / (stp_early + 1e-6)
         no_stp_depression_ratio = no_stp_late / (no_stp_early + 1e-6)
 
-        assert stp_depression_ratio < no_stp_depression_ratio, \
-            f"STP should show more depression (STP ratio={stp_depression_ratio:.2f}, no STP ratio={no_stp_depression_ratio:.2f})"
+        assert (
+            stp_depression_ratio < no_stp_depression_ratio
+        ), f"STP should show more depression (STP ratio={stp_depression_ratio:.2f}, no STP ratio={no_stp_depression_ratio:.2f})"
 
 
 class TestParallelFiberRecovery:
@@ -275,8 +278,9 @@ class TestParallelFiberRecovery:
         efficacy_recovered = cerebellum.stp_pf_purkinje.get_efficacy().mean().item()
 
         # Efficacy should recover (at least 10% improvement)
-        assert efficacy_recovered > efficacy_depressed * 1.1, \
-            f"Depression should recover (depressed={efficacy_depressed:.3f}, recovered={efficacy_recovered:.3f})"
+        assert (
+            efficacy_recovered > efficacy_depressed * 1.1
+        ), f"Depression should recover (depressed={efficacy_depressed:.3f}, recovered={efficacy_recovered:.3f})"
 
 
 class TestSTPStateManagement:
@@ -312,8 +316,9 @@ class TestSTPStateManagement:
         activity_after = output_after_reset.sum().item()
 
         # Activity should be higher after reset (depression cleared)
-        assert activity_after > activity_before, \
-            f"Reset should clear depression (before={activity_before}, after={activity_after})"
+        assert (
+            activity_after > activity_before
+        ), f"Reset should clear depression (before={activity_before}, after={activity_after})"
 
     def test_stp_state_in_reset_subsystems(self):
         """Test that STP modules are included in reset_subsystems call."""
@@ -326,8 +331,9 @@ class TestSTPStateManagement:
         )
 
         # STP module should have reset_state method
-        assert hasattr(cerebellum.stp_pf_purkinje, 'reset_state'), \
-            "STP module should have reset_state method"
+        assert hasattr(
+            cerebellum.stp_pf_purkinje, "reset_state"
+        ), "STP module should have reset_state method"
 
         # Reset should not raise error
         cerebellum.reset_state()
@@ -366,8 +372,9 @@ class TestBiologicalPlausibility:
 
             # Biological data: 30-70% of initial (Dittman et al. 2000)
             # Our config uses DEPRESSING type with U=0.5, tau_d=800ms
-            assert 0.2 < depression_ratio < 0.9, \
-                f"Depression should be in biological range (got {depression_ratio:.2f})"
+            assert (
+                0.2 < depression_ratio < 0.9
+            ), f"Depression should be in biological range (got {depression_ratio:.2f})"
         else:
             # If first efficacy is 0, check that both are reasonable
             assert efficacy_first > 0.1, "Initial efficacy should be non-zero"
@@ -405,8 +412,9 @@ class TestBiologicalPlausibility:
 
         # Different temporal contexts should produce different responses
         # This tests temporal precision at ~5ms scale
-        assert not torch.equal(output_a_sustained, output_b_after_gap), \
-            "Different temporal contexts should produce different outputs"
+        assert not torch.equal(
+            output_a_sustained, output_b_after_gap
+        ), "Different temporal contexts should produce different outputs"
 
 
 if __name__ == "__main__":

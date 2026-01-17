@@ -63,7 +63,7 @@ When to Use:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -82,20 +82,26 @@ from thalia.core.errors import ConfigurationError
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.learning import LearningStrategyRegistry, STDPConfig
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import (
+    UnifiedHomeostasis,
+    UnifiedHomeostasisConfig,
+)
 from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import compute_ne_gain, DA_BASELINE_STANDARD
+from thalia.neuromodulation import DA_BASELINE_STANDARD, compute_ne_gain
 from thalia.regions.prefrontal.checkpoint_manager import PrefrontalCheckpointManager
 from thalia.regions.prefrontal.hierarchy import (
     Goal,
-    GoalHierarchyManager,
     GoalHierarchyConfig,
+    GoalHierarchyManager,
     HyperbolicDiscounter,
     HyperbolicDiscountingConfig,
 )
 from thalia.typing import PrefrontalDiagnostics, StateDict
 from thalia.utils.input_routing import InputRouter
-from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval, compute_oscillator_modulated_gain
+from thalia.utils.oscillator_utils import (
+    compute_oscillator_modulated_gain,
+    compute_theta_encoding_retrieval,
+)
 
 
 @dataclass
@@ -143,7 +149,7 @@ class PrefrontalConfig(NeuralComponentConfig):
     # activity during sustained working memory maintenance.
     # Inherited from base, with PFC-specific overrides:
     adapt_increment: float = 0.2  # Moderate (maintains WM while adapting)
-    adapt_tau: float = 150.0      # Slower decay (longer timescale for WM)
+    adapt_tau: float = 150.0  # Slower decay (longer timescale for WM)
 
     # =========================================================================
     # SHORT-TERM PLASTICITY (STP)
@@ -276,16 +282,18 @@ class PrefrontalState(BaseRegionState):
     def to_dict(self) -> Dict[str, Any]:
         """Serialize state to dictionary for checkpointing."""
         base_dict = super().to_dict()
-        base_dict.update({
-            'working_memory': self.working_memory,
-            'update_gate': self.update_gate,
-            'active_rule': self.active_rule,
-            'dopamine': self.dopamine,
-            'acetylcholine': self.acetylcholine,
-            'norepinephrine': self.norepinephrine,
-            'stp_recurrent_state': self.stp_recurrent_state,
-            'stp_feedforward_state': self.stp_feedforward_state,
-        })
+        base_dict.update(
+            {
+                "working_memory": self.working_memory,
+                "update_gate": self.update_gate,
+                "active_rule": self.active_rule,
+                "dopamine": self.dopamine,
+                "acetylcholine": self.acetylcholine,
+                "norepinephrine": self.norepinephrine,
+                "stp_recurrent_state": self.stp_recurrent_state,
+                "stp_feedforward_state": self.stp_feedforward_state,
+            }
+        )
         return base_dict
 
     @classmethod
@@ -297,27 +305,27 @@ class PrefrontalState(BaseRegionState):
         base_state = BaseRegionState.from_dict(data, device)
 
         # Transfer PFC-specific tensors
-        wm = data.get('working_memory')
+        wm = data.get("working_memory")
         if wm is not None and isinstance(wm, torch.Tensor):
             wm = wm.to(device)
 
-        gate = data.get('update_gate')
+        gate = data.get("update_gate")
         if gate is not None and isinstance(gate, torch.Tensor):
             gate = gate.to(device)
 
-        rule = data.get('active_rule')
+        rule = data.get("active_rule")
         if rule is not None and isinstance(rule, torch.Tensor):
             rule = rule.to(device)
 
         # Transfer nested STP state tensors
-        stp_recurrent = data.get('stp_recurrent_state')
+        stp_recurrent = data.get("stp_recurrent_state")
         if stp_recurrent is not None:
             stp_recurrent = {
                 k: v.to(device) if isinstance(v, torch.Tensor) else v
                 for k, v in stp_recurrent.items()
             }
 
-        stp_feedforward = data.get('stp_feedforward_state')
+        stp_feedforward = data.get("stp_feedforward_state")
         if stp_feedforward is not None:
             stp_feedforward = {
                 k: v.to(device) if isinstance(v, torch.Tensor) else v
@@ -330,9 +338,9 @@ class PrefrontalState(BaseRegionState):
             working_memory=wm,
             update_gate=gate,
             active_rule=rule,
-            dopamine=data.get('dopamine', 0.2),
-            acetylcholine=data.get('acetylcholine', 0.0),
-            norepinephrine=data.get('norepinephrine', 0.0),
+            dopamine=data.get("dopamine", 0.2),
+            acetylcholine=data.get("acetylcholine", 0.0),
+            norepinephrine=data.get("norepinephrine", 0.0),
             stp_recurrent_state=stp_recurrent,
             stp_feedforward_state=stp_feedforward,
         )
@@ -510,9 +518,7 @@ class DopamineGatingSystem:
         Returns smooth gate value based on dopamine level.
         """
         # Sigmoid around threshold
-        return 1.0 / (1.0 + torch.exp(torch.tensor(
-            -10 * (self.level - self.threshold)
-        )).item())
+        return 1.0 / (1.0 + torch.exp(torch.tensor(-10 * (self.level - self.threshold))).item())
 
     def get_state(self) -> Dict[str, Any]:
         """Get state for checkpointing."""
@@ -576,8 +582,8 @@ class Prefrontal(NeuralRegion):
         self.device = torch.device(device)
 
         # Extract sizes
-        self.input_size = sizes['input_size']
-        self.n_neurons = sizes['n_neurons']
+        self.input_size = sizes["input_size"]
+        self.n_neurons = sizes["n_neurons"]
         self.n_output = self.n_neurons  # PFC output = neuron count
         self.total_neurons = self.n_neurons
 
@@ -641,10 +647,7 @@ class Prefrontal(NeuralRegion):
         self.add_input_source("default", n_input=self.input_size)
         # Initialize with Xavier (better than NeuralRegion's default)
         self.synaptic_weights["default"].data = WeightInitializer.xavier(
-            n_output=self.n_neurons,
-            n_input=self.input_size,
-            gain=1.0,
-            device=self.device
+            n_output=self.n_neurons, n_input=self.input_size, gain=1.0, device=self.device
         )
 
         # Recurrent weights for WM maintenance
@@ -654,9 +657,9 @@ class Prefrontal(NeuralRegion):
                 n_input=self.n_neurons,
                 mean=0.0,
                 std=0.1,
-                device=self.device
+                device=self.device,
             ),
-            requires_grad=False
+            requires_grad=False,
         )
         # Initialize with self-excitation (heterogeneous if enabled)
         if config.use_heterogeneous_wm:
@@ -665,9 +668,9 @@ class Prefrontal(NeuralRegion):
             self.rec_weights.data += diag_strength
         else:
             # Uniform self-excitation
-            self.rec_weights.data += torch.eye(
-                self.n_neurons, device=self.device
-            ) * config.recurrent_strength
+            self.rec_weights.data += (
+                torch.eye(self.n_neurons, device=self.device) * config.recurrent_strength
+            )
 
         # Lateral inhibition weights
         self.inhib_weights = nn.Parameter(
@@ -701,7 +704,7 @@ class Prefrontal(NeuralRegion):
                 dt_ms=config.dt_ms,
                 w_min=config.w_min,
                 w_max=config.w_max,
-            )
+            ),
         )
 
         # Homeostasis for synaptic scaling
@@ -805,12 +808,12 @@ class Prefrontal(NeuralRegion):
         # Phase 2 Registration: Opt-in auto-growth for STP modules
         if self.stp_feedforward is not None:
             # Feedforward STP (input -> n_output): grows during grow_input (pre) and grow_output (post)
-            self._register_stp('stp_feedforward', direction='both', recurrent=False)
+            self._register_stp("stp_feedforward", direction="both", recurrent=False)
 
         if self.stp_recurrent is not None:
             # Recurrent STP (n_output -> n_output): ONLY grows during grow_output (both pre and post)
             # NOT during grow_input - recurrent connections track n_output, not n_input
-            self._register_stp('stp_recurrent', direction='post', recurrent=True)
+            self._register_stp("stp_recurrent", direction="post", recurrent=True)
 
         return neurons
 
@@ -822,7 +825,7 @@ class Prefrontal(NeuralRegion):
         for name in names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)
-                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                if subsystem is not None and hasattr(subsystem, "reset_state"):
                     subsystem.reset_state()
 
     def reset_state(self) -> None:
@@ -837,7 +840,7 @@ class Prefrontal(NeuralRegion):
         )
 
         # Reset subsystems using helper
-        self._reset_subsystems('neurons', 'dopamine_system', 'stp_recurrent', 'stp_feedforward')
+        self._reset_subsystems("neurons", "dopamine_system", "stp_recurrent", "stp_feedforward")
 
     def forward(
         self,
@@ -906,12 +909,16 @@ class Prefrontal(NeuralRegion):
 
         # Encoding phase (theta trough): gate new info into WM
         # Retrieval phase (theta peak): maintain WM and boost recurrence
-        ff_gain = compute_oscillator_modulated_gain(PFC_FEEDFORWARD_GAIN_MIN, PFC_FEEDFORWARD_GAIN_RANGE, encoding_mod)
-        rec_gain = compute_oscillator_modulated_gain(PFC_RECURRENT_GAIN_MIN, PFC_RECURRENT_GAIN_RANGE, retrieval_mod)
+        ff_gain = compute_oscillator_modulated_gain(
+            PFC_FEEDFORWARD_GAIN_MIN, PFC_FEEDFORWARD_GAIN_RANGE, encoding_mod
+        )
+        rec_gain = compute_oscillator_modulated_gain(
+            PFC_RECURRENT_GAIN_MIN, PFC_RECURRENT_GAIN_RANGE, retrieval_mod
+        )
 
         # Feedforward input - modulated by encoding phase
         # Apply STP if enabled (temporal filtering and gain control)
-        if hasattr(self, 'stp_feedforward') and self.stp_feedforward is not None:
+        if hasattr(self, "stp_feedforward") and self.stp_feedforward is not None:
             # Apply STP to feedforward connections (1D → 2D per-synapse efficacy)
             # stp_efficacy has shape [n_output, n_input] - per-synapse modulation
             stp_efficacy = self.stp_feedforward(input_spikes.float())
@@ -942,13 +949,14 @@ class Prefrontal(NeuralRegion):
         # Without STP, the same WM pattern is reinforced forever.
         # With DEPRESSING STP, frequently-used synapses get temporarily weaker,
         # allowing WM to be updated with new information.
-        if (hasattr(self, 'stp_recurrent') and self.stp_recurrent is not None
-            and self.state.working_memory is not None):
+        if (
+            hasattr(self, "stp_recurrent")
+            and self.stp_recurrent is not None
+            and self.state.working_memory is not None
+        ):
             # Apply STP to recurrent connections (1D → 2D per-synapse efficacy)
             # stp_efficacy has shape [n_output, n_output] - per-synapse modulation
-            stp_efficacy = self.stp_recurrent(
-                self.state.working_memory.float()
-            )
+            stp_efficacy = self.stp_recurrent(self.state.working_memory.float())
             # Effective weights: element-wise multiply rec_weights with STP efficacy
             # rec_weights is [n_output, n_output], stp_efficacy is [n_output, n_output]
             effective_rec_weights = self.rec_weights * stp_efficacy.t()
@@ -957,11 +965,19 @@ class Prefrontal(NeuralRegion):
         else:
             # Recurrent input from working memory - modulated by retrieval phase
             # rec_weights[n_output, n_output] @ wm[n_output] → [n_output]
-            wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.n_neurons, device=input_spikes.device)
+            wm = (
+                self.state.working_memory.float()
+                if self.state.working_memory is not None
+                else torch.zeros(self.n_neurons, device=input_spikes.device)
+            )
             rec_input = (self.rec_weights @ wm) * rec_gain
 
         # Lateral inhibition: inhib_weights[n_output, n_output] @ wm[n_output] → [n_output]
-        wm = self.state.working_memory.float() if self.state.working_memory is not None else torch.zeros(self.n_neurons, device=input_spikes.device)
+        wm = (
+            self.state.working_memory.float()
+            if self.state.working_memory is not None
+            else torch.zeros(self.n_neurons, device=input_spikes.device)
+        )
         inhib = self.inhib_weights @ wm
 
         # Total excitation and inhibition
@@ -1006,12 +1022,12 @@ class Prefrontal(NeuralRegion):
 
         # Gated update: WM = gate * new_input + (1-gate) * decayed_old
         new_wm = (
-            gate_tensor * output_spikes.float() +
-            (1 - gate_tensor) * self.state.working_memory * decay
+            gate_tensor * output_spikes.float()
+            + (1 - gate_tensor) * self.state.working_memory * decay
         )
 
         # Add noise for stochasticity
-        wm_noise_std = getattr(self.pfc_config, 'wm_noise_std', WM_NOISE_STD_DEFAULT)
+        wm_noise_std = getattr(self.pfc_config, "wm_noise_std", WM_NOISE_STD_DEFAULT)
         noise = torch.randn_like(new_wm) * wm_noise_std
         self.state.working_memory = (new_wm + noise).clamp(min=0, max=1)
 
@@ -1077,15 +1093,13 @@ class Prefrontal(NeuralRegion):
             wm = self.state.working_memory  # [n_output]
             dW_rec = cfg.rule_lr * torch.outer(wm, wm)  # [n_output, n_output]
             self.rec_weights.data += dW_rec
-            self.rec_weights.data.fill_diagonal_(
-                cfg.recurrent_strength
-            )  # Maintain self-excitation
+            self.rec_weights.data.fill_diagonal_(cfg.recurrent_strength)  # Maintain self-excitation
             self.rec_weights.data.clamp_(0.0, 1.0)
 
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow prefrontal input dimension when upstream region grows.
@@ -1104,7 +1118,7 @@ class Prefrontal(NeuralRegion):
             self.synaptic_weights["default"].data,
             n_new,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
 
         # NOTE: STP auto-growth via Phase 2 registration system:
@@ -1115,7 +1129,7 @@ class Prefrontal(NeuralRegion):
         self.input_size += n_new
 
         # Auto-grow registered STP modules (Phase 2)
-        self._auto_grow_registered_components('input', n_new)
+        self._auto_grow_registered_components("input", n_new)
 
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
@@ -1123,7 +1137,7 @@ class Prefrontal(NeuralRegion):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow prefrontal output dimension (working memory capacity).
@@ -1144,31 +1158,33 @@ class Prefrontal(NeuralRegion):
             self.synaptic_weights["default"].data,
             n_new,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
 
         # 2. Expand rec_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
         # First add rows, then add columns
         expanded_rec = self._grow_weight_matrix_rows(
-            self.rec_weights.data,
-            n_new,
-            initializer=initialization,
-            sparsity=sparsity
+            self.rec_weights.data, n_new, initializer=initialization, sparsity=sparsity
         )
         self.rec_weights.data = self._grow_weight_matrix_cols(
-            expanded_rec,
-            n_new,
-            initializer=initialization,
-            sparsity=sparsity
+            expanded_rec, n_new, initializer=initialization, sparsity=sparsity
         )
         # Add self-excitation for new neurons
         for i in range(n_new):
-            self.rec_weights.data[old_n_output + i, old_n_output + i] = self.pfc_config.recurrent_strength
+            self.rec_weights.data[old_n_output + i, old_n_output + i] = (
+                self.pfc_config.recurrent_strength
+            )
 
         # 3. Expand inhib_weights [n_output, n_output] → [n_output+n_new, n_output+n_new]
-        new_inhib_rows = torch.ones(n_new, old_n_output, device=self.device) * self.pfc_config.recurrent_inhibition
+        new_inhib_rows = (
+            torch.ones(n_new, old_n_output, device=self.device)
+            * self.pfc_config.recurrent_inhibition
+        )
         expanded_inhib = torch.cat([self.inhib_weights.data, new_inhib_rows], dim=0)
-        new_inhib_cols = torch.ones(new_n_output, n_new, device=self.device) * self.pfc_config.recurrent_inhibition
+        new_inhib_cols = (
+            torch.ones(new_n_output, n_new, device=self.device)
+            * self.pfc_config.recurrent_inhibition
+        )
         self.inhib_weights.data = torch.cat([expanded_inhib, new_inhib_cols], dim=1)
         # Zero diagonal (no self-inhibition)
         self.inhib_weights.data.fill_diagonal_(0.0)
@@ -1178,7 +1194,9 @@ class Prefrontal(NeuralRegion):
 
         # 4.5. Track neurogenesis history for new neurons
         # Record creation timestep for checkpoint analysis
-        new_birth_steps = torch.full((n_new,), self._current_training_step, dtype=torch.long, device=self.device)
+        new_birth_steps = torch.full(
+            (n_new,), self._current_training_step, dtype=torch.long, device=self.device
+        )
         self._neuron_birth_steps = torch.cat([self._neuron_birth_steps, new_birth_steps])
 
         # 5. Update dopamine gating system
@@ -1204,7 +1222,7 @@ class Prefrontal(NeuralRegion):
             self.state.active_rule = torch.cat([self.state.active_rule, new_rule])
 
         # 5.6. Phase 2: Auto-grow registered STP modules
-        self._auto_grow_registered_components('output', n_new)
+        self._auto_grow_registered_components("output", n_new)
 
         # 6. Update instance variables
         self.n_neurons = new_n_output
@@ -1217,7 +1235,7 @@ class Prefrontal(NeuralRegion):
     def grow_neurons(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow PFC neuron population (SEMANTIC API).
@@ -1253,11 +1271,27 @@ class Prefrontal(NeuralRegion):
         # Custom metrics specific to PFC
         custom = {
             "n_output": self.n_neurons,
-            "gate_mean": self.state.update_gate.mean().item() if self.state.update_gate is not None else 0.0,
-            "gate_std": self.state.update_gate.std().item() if self.state.update_gate is not None else 0.0,
-            "wm_mean": self.state.working_memory.mean().item() if self.state.working_memory is not None else 0.0,
-            "wm_std": self.state.working_memory.std().item() if self.state.working_memory is not None else 0.0,
-            "wm_active": (self.state.working_memory > 0.1).sum().item() if self.state.working_memory is not None else 0,
+            "gate_mean": (
+                self.state.update_gate.mean().item() if self.state.update_gate is not None else 0.0
+            ),
+            "gate_std": (
+                self.state.update_gate.std().item() if self.state.update_gate is not None else 0.0
+            ),
+            "wm_mean": (
+                self.state.working_memory.mean().item()
+                if self.state.working_memory is not None
+                else 0.0
+            ),
+            "wm_std": (
+                self.state.working_memory.std().item()
+                if self.state.working_memory is not None
+                else 0.0
+            ),
+            "wm_active": (
+                (self.state.working_memory > 0.1).sum().item()
+                if self.state.working_memory is not None
+                else 0
+            ),
             "dopamine_level": self.state.dopamine,
             "config_w_min": cfg.w_min,
             "config_w_max": cfg.w_max,
@@ -1278,10 +1312,7 @@ class Prefrontal(NeuralRegion):
         )
 
     def predict_next_state(
-        self,
-        current_state: torch.Tensor,
-        action: int,
-        n_actions: Optional[int] = None
+        self, current_state: torch.Tensor, action: int, n_actions: Optional[int] = None
     ) -> torch.Tensor:
         """
         Predict next state using working memory dynamics.
@@ -1331,7 +1362,7 @@ class Prefrontal(NeuralRegion):
         else:
             # If dimensions don't match, project to appropriate size first
             # Use feedforward weights to project to output space, then recurrent
-            if hasattr(self, 'weights'):
+            if hasattr(self, "weights"):
                 # First project state to output space
                 state_projection = self.rec_weights @ current_state
 
@@ -1348,7 +1379,7 @@ class Prefrontal(NeuralRegion):
 
         # Add small amount of noise (stochastic prediction)
         if self.training:
-            wm_noise_std = getattr(self.pfc_config, 'wm_noise_std', WM_NOISE_STD_DEFAULT)
+            wm_noise_std = getattr(self.pfc_config, "wm_noise_std", WM_NOISE_STD_DEFAULT)
             noise = torch.randn_like(prediction) * wm_noise_std
             prediction = prediction + noise
 
@@ -1375,7 +1406,9 @@ class Prefrontal(NeuralRegion):
             pfc.set_goal_hierarchy(essay_goal)
         """
         if self.goal_manager is None:
-            raise ConfigurationError("Hierarchical goals not enabled. Set use_hierarchical_goals=True in config.")
+            raise ConfigurationError(
+                "Hierarchical goals not enabled. Set use_hierarchical_goals=True in config."
+            )
         self.goal_manager.set_root_goal(root_goal)
 
     def push_goal(self, goal: Goal) -> None:
@@ -1459,11 +1492,7 @@ class Prefrontal(NeuralRegion):
         if self.discounter is not None:
             self.discounter.update_context(cognitive_load=load)
 
-    def evaluate_delayed_reward(
-        self,
-        reward: float,
-        delay: int
-    ) -> float:
+    def evaluate_delayed_reward(self, reward: float, delay: int) -> float:
         """
         Discount delayed reward (hyperbolic or exponential).
 
@@ -1494,7 +1523,7 @@ class Prefrontal(NeuralRegion):
         else:
             # Fallback: Exponential discounting
             gamma = 0.99
-            return reward * (gamma ** delay)
+            return reward * (gamma**delay)
 
     def get_state(self) -> PrefrontalState:
         """Get current state for checkpointing.
@@ -1511,15 +1540,21 @@ class Prefrontal(NeuralRegion):
             stp_recurrent_state = self.stp_recurrent.get_state()
 
         stp_feedforward_state = None
-        if hasattr(self, 'stp_feedforward') and self.stp_feedforward is not None:
+        if hasattr(self, "stp_feedforward") and self.stp_feedforward is not None:
             stp_feedforward_state = self.stp_feedforward.get_state()
 
         return PrefrontalState(
             spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
-            membrane=self.neurons.v.clone() if hasattr(self.neurons, 'v') else None,
-            working_memory=self.state.working_memory.clone() if self.state.working_memory is not None else None,
-            update_gate=self.state.update_gate.clone() if self.state.update_gate is not None else None,
-            active_rule=self.state.active_rule.clone() if self.state.active_rule is not None else None,
+            membrane=self.neurons.v.clone() if hasattr(self.neurons, "v") else None,
+            working_memory=(
+                self.state.working_memory.clone() if self.state.working_memory is not None else None
+            ),
+            update_gate=(
+                self.state.update_gate.clone() if self.state.update_gate is not None else None
+            ),
+            active_rule=(
+                self.state.active_rule.clone() if self.state.active_rule is not None else None
+            ),
             dopamine=self.state.dopamine,
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
@@ -1551,7 +1586,7 @@ class Prefrontal(NeuralRegion):
         # Restore basic state
         if state.spikes is not None:
             self.state.spikes = state.spikes.to(self.device).clone()
-        if state.membrane is not None and hasattr(self.neurons, 'v'):
+        if state.membrane is not None and hasattr(self.neurons, "v"):
             self.neurons.v = state.membrane.to(self.device).clone()
 
         # Restore PFC-specific state
@@ -1568,7 +1603,11 @@ class Prefrontal(NeuralRegion):
         if state.stp_recurrent_state is not None and self.stp_recurrent is not None:
             self.stp_recurrent.load_state(state.stp_recurrent_state)
 
-        if state.stp_feedforward_state is not None and hasattr(self, 'stp_feedforward') and self.stp_feedforward is not None:
+        if (
+            state.stp_feedforward_state is not None
+            and hasattr(self, "stp_feedforward")
+            and self.stp_feedforward is not None
+        ):
             self.stp_feedforward.load_state(state.stp_feedforward_state)
 
     def get_full_state(self) -> Dict[str, Any]:
@@ -1586,12 +1625,11 @@ class Prefrontal(NeuralRegion):
 
         # Add all weights (required for checkpointing)
         # PFC has both synaptic_weights dict (feedforward) and rec_weights (recurrent)
-        state['synaptic_weights'] = {
-            name: weights.detach().clone()
-            for name, weights in self.synaptic_weights.items()
+        state["synaptic_weights"] = {
+            name: weights.detach().clone() for name, weights in self.synaptic_weights.items()
         }
-        if hasattr(self, 'rec_weights'):
-            state['rec_weights'] = self.rec_weights.detach().clone()
+        if hasattr(self, "rec_weights"):
+            state["rec_weights"] = self.rec_weights.detach().clone()
 
         return state
 
@@ -1605,11 +1643,11 @@ class Prefrontal(NeuralRegion):
         self.load_state(state_obj)
 
         # Restore synaptic weights
-        if 'synaptic_weights' in state:
-            for name, weights in state['synaptic_weights'].items():
+        if "synaptic_weights" in state:
+            for name, weights in state["synaptic_weights"].items():
                 if name in self.synaptic_weights:
                     self.synaptic_weights[name].data = weights.to(self.device)
 
         # Restore recurrent weights
-        if 'rec_weights' in state and hasattr(self, 'rec_weights'):
-            self.rec_weights.data = state['rec_weights'].to(self.device)
+        if "rec_weights" in state and hasattr(self, "rec_weights"):
+            self.rec_weights.data = state["rec_weights"].to(self.device)

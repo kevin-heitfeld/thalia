@@ -42,15 +42,15 @@ import torch
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.constants.neuron import (
-    G_LEAK_STANDARD,
     E_EXCITATORY,
     E_INHIBITORY,
     E_LEAK,
     FAST_SPIKING_INTERNEURON,
+    G_LEAK_STANDARD,
     TAU_EXCITATORY_CONDUCTANCE,
     TAU_INHIBITORY_CONDUCTANCE,
-    TAU_MEM_STANDARD,
     TAU_MEM_FAST,
+    TAU_MEM_STANDARD,
     TAU_REF_FAST,
     TAU_SYN_EXCITATORY,
     TAU_SYN_INHIBITORY,
@@ -96,18 +96,16 @@ class NeuronFactory:
             ...     config = ConductanceLIFConfig(...)
             ...     return ConductanceLIF(n_neurons, config)
         """
+
         def decorator(func: Callable) -> Callable:
             cls._registry[neuron_type] = func
             return func
+
         return decorator
 
     @classmethod
     def create(
-        cls,
-        neuron_type: str,
-        n_neurons: int,
-        device: torch.device,
-        **overrides
+        cls, neuron_type: str, n_neurons: int, device: torch.device, **overrides
     ) -> ConductanceLIF:
         """Create neurons by type name.
 
@@ -400,15 +398,15 @@ def create_cortical_layer_neurons(
             layer_config = {
                 **base_config,
                 "v_threshold": 1.0,
-                "tau_mem": 15.0,      # Slower dynamics
-                "tau_ref": 10.0,      # Long refractory for low-frequency firing
+                "tau_mem": 15.0,  # Slower dynamics
+                "tau_ref": 10.0,  # Long refractory for low-frequency firing
             }
         else:
             # L6b/L6: Standard configuration for higher frequency firing
             layer_config = {
                 **base_config,
                 "v_threshold": 1.0,
-                "tau_mem": 15.0,      # Slower dynamics for feedback control
+                "tau_mem": 15.0,  # Slower dynamics for feedback control
             }
     else:
         raise ValueError(
@@ -427,9 +425,7 @@ def create_cortical_layer_neurons(
 
 @NeuronFactory.register("fast_spiking")
 def create_fast_spiking_neurons(
-    n_neurons: int,
-    device: torch.device,
-    **overrides
+    n_neurons: int, device: torch.device, **overrides
 ) -> ConductanceLIF:
     """Create fast-spiking interneuron population (parvalbumin+).
 

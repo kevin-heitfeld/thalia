@@ -75,8 +75,8 @@ Biological References:
 from __future__ import annotations
 
 from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.learning_rules import LearningRule
 from thalia.core.component_state import NeuralComponentState
+from thalia.core.learning_rules import LearningRule
 from thalia.managers.component_registry import register_region
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
@@ -87,9 +87,9 @@ from thalia.regions.hippocampus import (
     HippocampusState,
 )
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
+from thalia.regions.stimulus_gating import StimulusGating
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
-from thalia.regions.stimulus_gating import StimulusGating
 
 __all__ = [
     # Base classes (from core modules)

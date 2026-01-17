@@ -11,6 +11,7 @@ Date: December 2025
 from __future__ import annotations
 
 from typing import Union
+
 import torch
 
 
@@ -211,6 +212,7 @@ def initialize_phase_preferences(
         - Used in: LayeredCortex (L2/3 phase preferences), ThalamicRelay
     """
     import math
+
     device = torch.device(device) if isinstance(device, str) else device
     return torch.rand(n_neurons, device=device) * (2 * math.pi)
 

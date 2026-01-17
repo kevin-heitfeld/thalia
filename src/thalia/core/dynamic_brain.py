@@ -28,39 +28,39 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Dict, List, Optional, Any, Tuple, Union, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.nn as nn
 
+from thalia.components.coding import compute_firing_rate
+from thalia.coordination.growth import GrowthEvent, GrowthManager
+from thalia.coordination.oscillator import OSCILLATOR_DEFAULTS, OscillatorManager
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.diagnostics import (
-    StriatumDiagnostics,
-    HippocampusDiagnostics,
     BrainSystemDiagnostics,
+    HippocampusDiagnostics,
+    StriatumDiagnostics,
 )
 from thalia.core.protocols.component import LearnableComponent
-from thalia.components.coding import compute_firing_rate
-from thalia.coordination.oscillator import OscillatorManager, OSCILLATOR_DEFAULTS
-from thalia.coordination.growth import GrowthEvent, GrowthManager
-from thalia.diagnostics import HealthMonitor, CriticalityMonitor
+from thalia.diagnostics import CriticalityMonitor, HealthMonitor
 from thalia.io.checkpoint_manager import CheckpointManager
 from thalia.memory.consolidation.manager import ConsolidationManager
 from thalia.neuromodulation.manager import NeuromodulatorManager
 from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
 from thalia.planning import (
+    DynaConfig,
+    DynaPlanner,
     MentalSimulationCoordinator,
     SimulationConfig,
-    DynaPlanner,
-    DynaConfig,
 )
 from thalia.stimuli.base import StimulusPattern
 from thalia.typing import (
+    CheckpointMetadata,
     ComponentGraph,
-    TopologyGraph,
     SourceOutputs,
     StateDict,
-    CheckpointMetadata,
+    TopologyGraph,
 )
 
 if TYPE_CHECKING:
@@ -154,10 +154,9 @@ class DynamicBrain(nn.Module):
         # Store connections with tuple keys for easy lookup
         # Also register in ModuleDict for parameter tracking
         self.connections: Dict[Tuple[str, str], LearnableComponent] = connections
-        self._connection_modules = nn.ModuleDict({
-            f"{src}_to_{tgt}": pathway
-            for (src, tgt), pathway in connections.items()
-        })
+        self._connection_modules = nn.ModuleDict(
+            {f"{src}_to_{tgt}": pathway for (src, tgt), pathway in connections.items()}
+        )
 
         # Store connection specs (for port-based routing)
         self._connection_specs = connection_specs or {}
@@ -188,12 +187,12 @@ class DynamicBrain(nn.Module):
         # Provides theta-driven encoding/retrieval, gamma feature binding, cross-frequency coupling
 
         # Get frequencies from config if available, otherwise use defaults
-        delta_freq = getattr(global_config, 'delta_frequency_hz', OSCILLATOR_DEFAULTS['delta'])
-        theta_freq = getattr(global_config, 'theta_frequency_hz', OSCILLATOR_DEFAULTS['theta'])
-        alpha_freq = getattr(global_config, 'alpha_frequency_hz', OSCILLATOR_DEFAULTS['alpha'])
-        beta_freq = getattr(global_config, 'beta_frequency_hz', OSCILLATOR_DEFAULTS['beta'])
-        gamma_freq = getattr(global_config, 'gamma_frequency_hz', OSCILLATOR_DEFAULTS['gamma'])
-        ripple_freq = getattr(global_config, 'ripple_frequency_hz', OSCILLATOR_DEFAULTS['ripple'])
+        delta_freq = getattr(global_config, "delta_frequency_hz", OSCILLATOR_DEFAULTS["delta"])
+        theta_freq = getattr(global_config, "theta_frequency_hz", OSCILLATOR_DEFAULTS["theta"])
+        alpha_freq = getattr(global_config, "alpha_frequency_hz", OSCILLATOR_DEFAULTS["alpha"])
+        beta_freq = getattr(global_config, "beta_frequency_hz", OSCILLATOR_DEFAULTS["beta"])
+        gamma_freq = getattr(global_config, "gamma_frequency_hz", OSCILLATOR_DEFAULTS["gamma"])
+        ripple_freq = getattr(global_config, "ripple_frequency_hz", OSCILLATOR_DEFAULTS["ripple"])
 
         self.oscillators = OscillatorManager(
             dt_ms=self.global_config.dt_ms,
@@ -266,32 +265,32 @@ class DynamicBrain(nn.Module):
         # Initialize if brain has required components (hippocampus, striatum, cortex, pfc)
         self.consolidation_manager = None
 
-        if all(comp in self.components for comp in ['hippocampus', 'striatum', 'cortex', 'pfc']):
+        if all(comp in self.components for comp in ["hippocampus", "striatum", "cortex", "pfc"]):
             self.consolidation_manager = ConsolidationManager(
-                hippocampus=self.components['hippocampus'],
-                striatum=self.components['striatum'],
-                cortex=self.components['cortex'],
-                pfc=self.components['pfc'],
+                hippocampus=self.components["hippocampus"],
+                striatum=self.components["striatum"],
+                cortex=self.components["cortex"],
+                pfc=self.components["pfc"],
                 config=self.config,
                 deliver_reward_fn=self.deliver_reward,
             )
 
             # Set cortex output size (L23+L5) for state reconstruction
-            cortex = self.components['cortex']
+            cortex = self.components["cortex"]
             output_size = None
 
             # Try getting from config first
-            if hasattr(cortex, 'config'):
+            if hasattr(cortex, "config"):
                 config = cortex.config
-                if hasattr(config, 'l23_size') and hasattr(config, 'l5_size'):
+                if hasattr(config, "l23_size") and hasattr(config, "l5_size"):
                     output_size = config.l23_size + config.l5_size
 
             # Try getting from instance attributes
-            if output_size is None and hasattr(cortex, 'l23_size') and hasattr(cortex, 'l5_size'):
+            if output_size is None and hasattr(cortex, "l23_size") and hasattr(cortex, "l5_size"):
                 output_size = cortex.l23_size + cortex.l5_size
 
             # Fallback to n_output
-            if output_size is None and hasattr(cortex, 'n_output'):
+            if output_size is None and hasattr(cortex, "n_output"):
                 output_size = cortex.n_output
 
             # Apply if we found a size
@@ -304,7 +303,7 @@ class DynamicBrain(nn.Module):
         # Centralized checkpoint save/load with compression and validation
         self.checkpoint_manager = CheckpointManager(
             brain=self,
-            default_compression='zstd',  # Default compression format
+            default_compression="zstd",  # Default compression format
         )
 
         # =================================================================
@@ -315,28 +314,30 @@ class DynamicBrain(nn.Module):
         self.dyna_planner: Optional[DynaPlanner] = None
 
         # Check if planning is enabled (either direct flag or via brain config)
-        planning_enabled = (
-            getattr(global_config, 'use_model_based_planning', False) or
-            (hasattr(global_config, 'brain') and getattr(global_config.brain, 'use_model_based_planning', False))
+        planning_enabled = getattr(global_config, "use_model_based_planning", False) or (
+            hasattr(global_config, "brain")
+            and getattr(global_config.brain, "use_model_based_planning", False)
         )
 
         if planning_enabled:
             # Check that required components exist
-            if all(name in self.components for name in ['pfc', 'hippocampus', 'striatum', 'cortex']):
+            if all(
+                name in self.components for name in ["pfc", "hippocampus", "striatum", "cortex"]
+            ):
                 # Create mental simulation coordinator
                 self.mental_simulation = MentalSimulationCoordinator(
-                    pfc=self.components['pfc'],
-                    hippocampus=self.components['hippocampus'],
-                    striatum=self.components['striatum'],
-                    cortex=self.components['cortex'],
+                    pfc=self.components["pfc"],
+                    hippocampus=self.components["hippocampus"],
+                    striatum=self.components["striatum"],
+                    cortex=self.components["cortex"],
                     config=SimulationConfig(),
                 )
 
                 # Create Dyna planner for background planning
                 self.dyna_planner = DynaPlanner(
                     coordinator=self.mental_simulation,
-                    striatum=self.components['striatum'],
-                    hippocampus=self.components['hippocampus'],
+                    striatum=self.components["striatum"],
+                    hippocampus=self.components["hippocampus"],
                     config=DynaConfig(),
                 )
 
@@ -353,7 +354,7 @@ class DynamicBrain(nn.Module):
 
         # Initialize criticality monitor (optional, enabled by config)
         self.criticality_monitor: Optional[CriticalityMonitor] = None
-        criticality_enabled = getattr(global_config, 'monitor_criticality', False)
+        criticality_enabled = getattr(global_config, "monitor_criticality", False)
 
         if criticality_enabled:
             # CriticalityMonitor doesn't need component sizes - it tracks spike counts directly
@@ -401,15 +402,17 @@ class DynamicBrain(nn.Module):
             self.config.input_size = None
         if not hasattr(self.config, "n_actions"):
             self.config.n_actions = None
-        if not hasattr(self.config, 'hippocampus_size'):
-            self.config.hippocampus_size = getattr(
-                self.components['hippocampus'], 'n_output', 128
-            ) if 'hippocampus' in self.components else 128
-        if not hasattr(self.config, 'pfc_size'):
-            self.config.pfc_size = getattr(
-                self.components['pfc'], 'n_output', 64
-            ) if 'pfc' in self.components else 64
-        if not hasattr(self.config, 'device'):
+        if not hasattr(self.config, "hippocampus_size"):
+            self.config.hippocampus_size = (
+                getattr(self.components["hippocampus"], "n_output", 128)
+                if "hippocampus" in self.components
+                else 128
+            )
+        if not hasattr(self.config, "pfc_size"):
+            self.config.pfc_size = (
+                getattr(self.components["pfc"], "n_output", 64) if "pfc" in self.components else 64
+            )
+        if not hasattr(self.config, "device"):
             self.config.device = str(self.device)
 
     @property
@@ -427,6 +430,7 @@ class DynamicBrain(nn.Module):
 
         Returns wrapper object with get_frequency() method.
         """
+
         class ThetaWrapper:
             def __init__(self, theta_osc):
                 self._theta = theta_osc
@@ -447,10 +451,10 @@ class DynamicBrain(nn.Module):
         """
         # Get coupling amplitude if available
         coupled_amps = self.oscillators.get_coupled_amplitudes()
-        if 'gamma' in coupled_amps:
+        if "gamma" in coupled_amps:
             # Use coupling amplitude as proxy for phase locking
             # (higher coupling = better phase locking)
-            return coupled_amps['gamma']
+            return coupled_amps["gamma"]
 
         # Fallback: compute simple phase coherence
         # Gamma should be at ~40 Hz, theta at ~8 Hz
@@ -476,7 +480,7 @@ class DynamicBrain(nn.Module):
         graph = {name: [] for name in self.components.keys()}
 
         # Extract connections from tuple keys
-        for (src, tgt) in self.connections.keys():
+        for src, tgt in self.connections.keys():
             if src in graph:
                 graph[src].append(tgt)
 
@@ -505,7 +509,7 @@ class DynamicBrain(nn.Module):
         # Build dependency graph: component -> list of components it depends on
         dependencies: Dict[str, Set[str]] = {name: set() for name in self.components.keys()}
 
-        for (src, tgt) in self.connections.keys():
+        for src, tgt in self.connections.keys():
             # tgt depends on src (needs src's output)
             if tgt in dependencies:  # tgt might not exist if connection is to port
                 dependencies[tgt].add(src)
@@ -541,7 +545,9 @@ class DynamicBrain(nn.Module):
 
     def forward(
         self,
-        sensory_input: Optional[Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], StimulusPattern]]]] = None,
+        sensory_input: Optional[
+            Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], StimulusPattern]]]
+        ] = None,
         n_timesteps: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Execute brain for n_timesteps.
@@ -641,7 +647,9 @@ class DynamicBrain(nn.Module):
                             frame = value.get_input(t, dt_ms)
                             if frame is None:
                                 # Pattern returns None (silence) - use zeros
-                                frame = torch.zeros(value.shape, dtype=torch.bool, device=value.device)
+                                frame = torch.zeros(
+                                    value.shape, dtype=torch.bool, device=value.device
+                                )
                             frames.append(frame)
                         input_sequences[key] = frames
                     elif isinstance(value, list):
@@ -714,7 +722,9 @@ class DynamicBrain(nn.Module):
                 # Also check if this component received direct sensory input
                 if comp_name in sensory_inputs_this_timestep:
                     # Direct sensory input (no pathway), use "input" key
-                    self._reusable_component_inputs["input"] = sensory_inputs_this_timestep[comp_name]
+                    self._reusable_component_inputs["input"] = sensory_inputs_this_timestep[
+                        comp_name
+                    ]
 
                 # Execute component
                 # Empty dict is valid (zero-input execution for recurrent/spontaneous activity)
@@ -742,7 +752,7 @@ class DynamicBrain(nn.Module):
             self._broadcast_oscillator_phases()
 
         # Update final time
-        self._current_time += (n_timesteps * self.global_config.dt_ms)
+        self._current_time += n_timesteps * self.global_config.dt_ms
 
         # OPTIMIZATION: Sync spike counts from GPU only once at end
         for comp_name, spike_tensor in self._spike_tensors.items():
@@ -784,7 +794,7 @@ class DynamicBrain(nn.Module):
 
         # Broadcast directly to components that support it
         for component in self.components.values():
-            if hasattr(component, 'set_oscillator_phases'):
+            if hasattr(component, "set_oscillator_phases"):
                 component.set_oscillator_phases(phases, signals)
 
     # =========================================================================
@@ -837,9 +847,9 @@ class DynamicBrain(nn.Module):
         if use_planning and self.mental_simulation is not None:
             # Get current state from PFC
             current_state = None
-            if 'pfc' in self.components:
-                pfc = self.components['pfc']
-                if hasattr(pfc, 'state') and pfc.state is not None:
+            if "pfc" in self.components:
+                pfc = self.components["pfc"]
+                if hasattr(pfc, "state") and pfc.state is not None:
                     current_state = pfc.state.spikes
 
             if current_state is not None:
@@ -948,7 +958,11 @@ class DynamicBrain(nn.Module):
                 )
 
         # Store experience automatically (for replay) via consolidation manager
-        if self.consolidation_manager is not None and hasattr(self, "_last_action") and self._last_action is not None:
+        if (
+            self.consolidation_manager is not None
+            and hasattr(self, "_last_action")
+            and self._last_action is not None
+        ):
             # Sync last_action to container for consolidation manager
             self._last_action_container[0] = self._last_action
 
@@ -964,15 +978,19 @@ class DynamicBrain(nn.Module):
             next_state = None
 
             # Get current and next states from PFC
-            if 'pfc' in self.components:
-                pfc = self.components['pfc']
-                if hasattr(pfc, 'state') and pfc.state is not None:
+            if "pfc" in self.components:
+                pfc = self.components["pfc"]
+                if hasattr(pfc, "state") and pfc.state is not None:
                     next_state = pfc.state.spikes
                     # Current state would need to be saved from before action
                     # For now, use same state (limitation: need state history)
                     current_state = next_state
 
-            if current_state is not None and next_state is not None and self._last_action is not None:
+            if (
+                current_state is not None
+                and next_state is not None
+                and self._last_action is not None
+            ):
                 goal_context = current_state
 
                 self.dyna_planner.process_real_experience(
@@ -981,7 +999,7 @@ class DynamicBrain(nn.Module):
                     reward=total_reward,
                     next_state=next_state,
                     done=False,
-                    goal_context=goal_context
+                    goal_context=goal_context,
                 )
 
         # Sync last_action to container for consolidation manager
@@ -1027,17 +1045,17 @@ class DynamicBrain(nn.Module):
 
         # Apply counterfactual learning to striatum if available
         counterfactual_metrics = {}
-        if 'striatum' in self.components:
-            striatum = self.components['striatum']
+        if "striatum" in self.components:
+            striatum = self.components["striatum"]
             # Simulate counterfactual action selection
-            if hasattr(striatum, 'deliver_reward'):
+            if hasattr(striatum, "deliver_reward"):
                 # Create temporary action state for counterfactual
                 saved_action = self._last_action
                 self._last_action = other_action
 
                 # Deliver scaled counterfactual reward
                 striatum.deliver_reward(reward=modulated_reward)
-                counterfactual_metrics['counterfactual_applied'] = True
+                counterfactual_metrics["counterfactual_applied"] = True
 
                 # Restore real action
                 self._last_action = saved_action
@@ -1061,7 +1079,7 @@ class DynamicBrain(nn.Module):
         Returns:
             Multiplier >= 1.0 based on detected novelty
         """
-        if not hasattr(self, '_novelty_signal'):
+        if not hasattr(self, "_novelty_signal"):
             self._novelty_signal = 1.0
         return max(1.0, self._novelty_signal)
 
@@ -1096,16 +1114,22 @@ class DynamicBrain(nn.Module):
         cognitive_load = self._compute_cognitive_load()
 
         # Update neuromodulator systems
-        self.neuromodulator_manager.vta.update(dt_ms=self.global_config.dt_ms, intrinsic_reward=intrinsic_reward)
-        self.neuromodulator_manager.locus_coeruleus.update(dt_ms=self.global_config.dt_ms, uncertainty=uncertainty)
-        self.neuromodulator_manager.nucleus_basalis.update(dt_ms=self.global_config.dt_ms, prediction_error=prediction_error)
+        self.neuromodulator_manager.vta.update(
+            dt_ms=self.global_config.dt_ms, intrinsic_reward=intrinsic_reward
+        )
+        self.neuromodulator_manager.locus_coeruleus.update(
+            dt_ms=self.global_config.dt_ms, uncertainty=uncertainty
+        )
+        self.neuromodulator_manager.nucleus_basalis.update(
+            dt_ms=self.global_config.dt_ms, prediction_error=prediction_error
+        )
 
         # Update PFC cognitive load for temporal discounting (Phase 3)
-        if 'pfc' in self.components:
-            pfc = self.components['pfc']
-            if hasattr(pfc, 'discounter') and pfc.discounter is not None:
+        if "pfc" in self.components:
+            pfc = self.components["pfc"]
+            if hasattr(pfc, "discounter") and pfc.discounter is not None:
                 pfc.update_cognitive_load(cognitive_load)
-            elif hasattr(pfc, 'update_cognitive_load'):
+            elif hasattr(pfc, "update_cognitive_load"):
                 # Direct method on PFC component
                 pfc.update_cognitive_load(cognitive_load)
 
@@ -1156,11 +1180,11 @@ class DynamicBrain(nn.Module):
         # 1. CORTEX PREDICTIVE CODING (free energy minimization)
         # =====================================================================
         # Low prediction error = good model of the world = reward
-        if 'cortex' in self.components:
-            cortex = self.components['cortex']
+        if "cortex" in self.components:
+            cortex = self.components["cortex"]
 
             # Try PredictiveCortex first (has explicit free_energy)
-            if hasattr(cortex, 'state') and hasattr(cortex.state, 'free_energy'):
+            if hasattr(cortex, "state") and hasattr(cortex.state, "free_energy"):
                 free_energy = cortex.state.free_energy
 
                 # Free energy is typically 0-10, lower is better
@@ -1171,7 +1195,7 @@ class DynamicBrain(nn.Module):
                 n_sources += 1
 
             # Fallback: check for accumulated free energy in PredictiveCortex
-            elif hasattr(cortex, '_total_free_energy'):
+            elif hasattr(cortex, "_total_free_energy"):
                 total_fe = cortex._total_free_energy
                 cortex_reward = 1.0 - 0.1 * min(total_fe, 20.0)
                 cortex_reward = max(-1.0, min(1.0, cortex_reward))
@@ -1180,9 +1204,11 @@ class DynamicBrain(nn.Module):
 
             # LayeredCortex: Use L2/3 firing rate as proxy for processing quality
             # High activity = engaged processing, low = unresponsive
-            elif (hasattr(cortex, 'state') and
-                  hasattr(cortex.state, 'l23_spikes') and
-                  cortex.state.l23_spikes is not None):
+            elif (
+                hasattr(cortex, "state")
+                and hasattr(cortex.state, "l23_spikes")
+                and cortex.state.l23_spikes is not None
+            ):
                 l23_activity = compute_firing_rate(cortex.state.l23_spikes)
                 # Map [0, 1] to [-0.5, 0.5] - less weight than free energy
                 cortex_reward = l23_activity - 0.5
@@ -1195,11 +1221,13 @@ class DynamicBrain(nn.Module):
         # High pattern similarity = successful memory retrieval = reward
         # Biology: VTA observes CA1 output activity. Strong coherent firing = successful recall.
         # We infer similarity from CA1 spike rate (observable signal).
-        if 'hippocampus' in self.components:
-            hippocampus = self.components['hippocampus']
-            if (hasattr(hippocampus, 'state') and
-                hasattr(hippocampus.state, 'ca1_spikes') and
-                hippocampus.state.ca1_spikes is not None):
+        if "hippocampus" in self.components:
+            hippocampus = self.components["hippocampus"]
+            if (
+                hasattr(hippocampus, "state")
+                and hasattr(hippocampus.state, "ca1_spikes")
+                and hippocampus.state.ca1_spikes is not None
+            ):
 
                 # CA1 firing rate as proxy for retrieval quality
                 # High rate = strong recall, low rate = weak/no recall
@@ -1241,11 +1269,13 @@ class DynamicBrain(nn.Module):
         n_sources = 0
 
         # Cortex prediction error as uncertainty proxy
-        if 'cortex' in self.components:
-            cortex = self.components['cortex']
-            if (hasattr(cortex, 'state') and
-                hasattr(cortex.state, 'free_energy') and
-                cortex.state.free_energy is not None):
+        if "cortex" in self.components:
+            cortex = self.components["cortex"]
+            if (
+                hasattr(cortex, "state")
+                and hasattr(cortex.state, "free_energy")
+                and cortex.state.free_energy is not None
+            ):
                 free_energy = cortex.state.free_energy
                 # High FE → high uncertainty
                 cortex_uncertainty = min(1.0, free_energy / 10.0)
@@ -1270,13 +1300,13 @@ class DynamicBrain(nn.Module):
         Returns:
             Cognitive load (0-1), where 1 = maximum capacity
         """
-        if 'pfc' not in self.components:
+        if "pfc" not in self.components:
             return 0.0
 
-        pfc = self.components['pfc']
+        pfc = self.components["pfc"]
 
         # Measure PFC activity from spike output, not internal WM state
-        if not hasattr(pfc, 'state') or pfc.state is None or not hasattr(pfc.state, 'spikes'):
+        if not hasattr(pfc, "state") or pfc.state is None or not hasattr(pfc.state, "spikes"):
             return 0.0
 
         if pfc.state.spikes is None:
@@ -1287,7 +1317,7 @@ class DynamicBrain(nn.Module):
 
         # Also consider number of active goals (if hierarchical goals enabled)
         goal_load = 0.0
-        if hasattr(pfc, 'goal_manager') and pfc.goal_manager is not None:
+        if hasattr(pfc, "goal_manager") and pfc.goal_manager is not None:
             n_active = len(pfc.goal_manager.active_goals)
             max_goals = pfc.goal_manager.config.max_active_goals
             goal_load = n_active / max(max_goals, 1)
@@ -1315,9 +1345,9 @@ class DynamicBrain(nn.Module):
         n_sources = 0
 
         # Cortex predictive coding error
-        if 'cortex' in self.components:
-            cortex = self.components['cortex']
-            if hasattr(cortex, 'state') and hasattr(cortex.state, 'free_energy'):
+        if "cortex" in self.components:
+            cortex = self.components["cortex"]
+            if hasattr(cortex, "state") and hasattr(cortex.state, "free_energy"):
                 free_energy = cortex.state.free_energy
                 # Map FE to [0, 1]: 0 → 0, 5 → 0.5, 10+ → 1.0
                 cortex_pe = min(1.0, free_energy / 10.0)
@@ -1409,7 +1439,9 @@ class DynamicBrain(nn.Module):
             hippocampus.enter_consolidation_mode()
             if verbose:
                 her_diag = hippocampus.get_her_diagnostics()
-                print(f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions")
+                print(
+                    f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions"
+                )
 
         # Run replay cycles
         for cycle in range(n_cycles):
@@ -1444,7 +1476,9 @@ class DynamicBrain(nn.Module):
                         stats["experiences_learned"] += 1
 
                 if verbose:
-                    print(f"  Cycle {cycle + 1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned")
+                    print(
+                        f"  Cycle {cycle + 1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned"
+                    )
 
             # Increment cycle count regardless of batch size
             stats["cycles_completed"] += 1
@@ -1524,7 +1558,11 @@ class DynamicBrain(nn.Module):
 
                 growth_report[name] = {
                     "firing_rate": metrics.firing_rate,
-                    "weight_saturation": metrics.saturation_fraction if metrics.saturation_fraction is not None else 0.0,
+                    "weight_saturation": (
+                        metrics.saturation_fraction
+                        if metrics.saturation_fraction is not None
+                        else 0.0
+                    ),
                     "synapse_usage": metrics.synapse_usage,
                     "neuron_count": metrics.total_neurons,
                     "growth_recommended": metrics.growth_recommended,
@@ -1685,9 +1723,7 @@ class DynamicBrain(nn.Module):
         """
         if name not in self.components:
             available = list(self.components.keys())
-            raise KeyError(
-                f"Component '{name}' not found. Available: {available}"
-            )
+            raise KeyError(f"Component '{name}' not found. Available: {available}")
         # Cast from Module to LearnableComponent (all our components are LearnableComponent)
         return self.components[name]  # type: ignore[return-value]
 
@@ -1801,7 +1837,7 @@ class DynamicBrain(nn.Module):
         Returns:
             StriatumDiagnostics dataclass with per-action weights and metrics
         """
-        if 'striatum' not in self.components:
+        if "striatum" not in self.components:
             # Return empty diagnostics if striatum not present
             return StriatumDiagnostics(
                 d1_per_action=[],
@@ -1816,11 +1852,11 @@ class DynamicBrain(nn.Module):
                 total_trials=0,
             )
 
-        striatum = self.components['striatum']
+        striatum = self.components["striatum"]
 
         # Get n_actions from striatum
-        n_actions = getattr(striatum, 'n_actions', 2)
-        neurons_per = getattr(striatum, 'neurons_per_action', 10)
+        n_actions = getattr(striatum, "n_actions", 2)
+        neurons_per = getattr(striatum, "neurons_per_action", 10)
 
         # Per-action weight means
         d1_per_action = []
@@ -1832,12 +1868,20 @@ class DynamicBrain(nn.Module):
             end = start + neurons_per
 
             # Safe access to weights (might be None)
-            if hasattr(striatum, 'd1_pathway') and hasattr(striatum.d1_pathway, 'weights') and striatum.d1_pathway.weights is not None:
+            if (
+                hasattr(striatum, "d1_pathway")
+                and hasattr(striatum.d1_pathway, "weights")
+                and striatum.d1_pathway.weights is not None
+            ):
                 d1_mean = striatum.d1_pathway.weights[start:end].mean().item()
             else:
                 d1_mean = 0.0
 
-            if hasattr(striatum, 'd2_pathway') and hasattr(striatum.d2_pathway, 'weights') and striatum.d2_pathway.weights is not None:
+            if (
+                hasattr(striatum, "d2_pathway")
+                and hasattr(striatum.d2_pathway, "weights")
+                and striatum.d2_pathway.weights is not None
+            ):
                 d2_mean = striatum.d2_pathway.weights[start:end].mean().item()
             else:
                 d2_mean = 0.0
@@ -1853,23 +1897,35 @@ class DynamicBrain(nn.Module):
             start = a * neurons_per
             end = start + neurons_per
             # Safe access to eligibility traces (might be None)
-            if hasattr(striatum, 'd1_pathway') and hasattr(striatum.d1_pathway, 'eligibility') and striatum.d1_pathway.eligibility is not None:
-                d1_elig_per_action.append(striatum.d1_pathway.eligibility[start:end].abs().mean().item())
+            if (
+                hasattr(striatum, "d1_pathway")
+                and hasattr(striatum.d1_pathway, "eligibility")
+                and striatum.d1_pathway.eligibility is not None
+            ):
+                d1_elig_per_action.append(
+                    striatum.d1_pathway.eligibility[start:end].abs().mean().item()
+                )
             else:
                 d1_elig_per_action.append(0.0)
-            if hasattr(striatum, 'd2_pathway') and hasattr(striatum.d2_pathway, 'eligibility') and striatum.d2_pathway.eligibility is not None:
-                d2_elig_per_action.append(striatum.d2_pathway.eligibility[start:end].abs().mean().item())
+            if (
+                hasattr(striatum, "d2_pathway")
+                and hasattr(striatum.d2_pathway, "eligibility")
+                and striatum.d2_pathway.eligibility is not None
+            ):
+                d2_elig_per_action.append(
+                    striatum.d2_pathway.eligibility[start:end].abs().mean().item()
+                )
             else:
                 d2_elig_per_action.append(0.0)
 
         # UCB and exploration - safe access to potentially missing attributes
         action_counts = []
         total_trials = 0
-        if hasattr(striatum, '_action_counts') and striatum._action_counts is not None:
+        if hasattr(striatum, "_action_counts") and striatum._action_counts is not None:
             action_counts = [int(c) for c in striatum._action_counts.tolist()]
-        if hasattr(striatum, '_total_trials'):
-            total_trials = int(getattr(striatum, '_total_trials', 0))
-        exploration_prob = getattr(striatum, '_last_exploration_prob', 0.0)
+        if hasattr(striatum, "_total_trials"):
+            total_trials = int(getattr(striatum, "_total_trials", 0))
+        exploration_prob = getattr(striatum, "_last_exploration_prob", 0.0)
 
         return StriatumDiagnostics(
             d1_per_action=d1_per_action,
@@ -1878,7 +1934,7 @@ class DynamicBrain(nn.Module):
             d1_elig_per_action=d1_elig_per_action,
             d2_elig_per_action=d2_elig_per_action,
             last_action=self._last_action,
-            exploring=getattr(striatum, '_last_exploring', False),
+            exploring=getattr(striatum, "_last_exploring", False),
             exploration_prob=exploration_prob,
             action_counts=action_counts,
             total_trials=total_trials,
@@ -1890,7 +1946,7 @@ class DynamicBrain(nn.Module):
         Returns:
             HippocampusDiagnostics dataclass with layer activity and memory metrics
         """
-        if 'hippocampus' not in self.components:
+        if "hippocampus" not in self.components:
             # Return empty diagnostics if hippocampus not present
             return HippocampusDiagnostics(
                 ca1_total_spikes=0.0,
@@ -1901,30 +1957,30 @@ class DynamicBrain(nn.Module):
                 n_stored_episodes=0,
             )
 
-        hippo = self.components['hippocampus']
+        hippo = self.components["hippocampus"]
 
         # CA1 activity (key for match/mismatch)
         ca1_spikes = 0.0
-        if hasattr(hippo, 'state') and hippo.state is not None:
-            if hasattr(hippo.state, 'ca1_spikes') and hippo.state.ca1_spikes is not None:
+        if hasattr(hippo, "state") and hippo.state is not None:
+            if hasattr(hippo.state, "ca1_spikes") and hippo.state.ca1_spikes is not None:
                 ca1_spikes = hippo.state.ca1_spikes.sum().item()
 
         # Normalize by hippocampus size
-        hippo_size = getattr(hippo.config, 'n_output', 128) if hasattr(hippo, 'config') else 128
+        hippo_size = getattr(hippo.config, "n_output", 128) if hasattr(hippo, "config") else 128
         ca1_normalized = ca1_spikes / max(1, hippo_size)
 
         # Layer activity
         dg_spikes = 0.0
         ca3_spikes = 0.0
-        if hasattr(hippo, 'state') and hippo.state is not None:
-            if hasattr(hippo.state, 'dg_spikes') and hippo.state.dg_spikes is not None:
+        if hasattr(hippo, "state") and hippo.state is not None:
+            if hasattr(hippo.state, "dg_spikes") and hippo.state.dg_spikes is not None:
                 dg_spikes = hippo.state.dg_spikes.sum().item()
-            if hasattr(hippo.state, 'ca3_spikes') and hippo.state.ca3_spikes is not None:
+            if hasattr(hippo.state, "ca3_spikes") and hippo.state.ca3_spikes is not None:
                 ca3_spikes = hippo.state.ca3_spikes.sum().item()
 
         # Memory metrics
         n_stored = 0
-        if hasattr(hippo, 'episode_buffer'):
+        if hasattr(hippo, "episode_buffer"):
             n_stored = len(hippo.episode_buffer)
 
         return HippocampusDiagnostics(
@@ -1979,35 +2035,35 @@ class DynamicBrain(nn.Module):
 
         # Oscillator diagnostics
         diagnostics["oscillators"] = {
-            'delta': {
-                'phase': self.oscillators.delta.phase,
-                'frequency_hz': self.oscillators.delta.frequency_hz,
-                'signal': self.oscillators.delta.signal,
+            "delta": {
+                "phase": self.oscillators.delta.phase,
+                "frequency_hz": self.oscillators.delta.frequency_hz,
+                "signal": self.oscillators.delta.signal,
             },
-            'theta': {
-                'phase': self.oscillators.theta.phase,
-                'frequency_hz': self.oscillators.theta.frequency_hz,
-                'signal': self.oscillators.theta.signal,
+            "theta": {
+                "phase": self.oscillators.theta.phase,
+                "frequency_hz": self.oscillators.theta.frequency_hz,
+                "signal": self.oscillators.theta.signal,
             },
-            'alpha': {
-                'phase': self.oscillators.alpha.phase,
-                'frequency_hz': self.oscillators.alpha.frequency_hz,
-                'signal': self.oscillators.alpha.signal,
+            "alpha": {
+                "phase": self.oscillators.alpha.phase,
+                "frequency_hz": self.oscillators.alpha.frequency_hz,
+                "signal": self.oscillators.alpha.signal,
             },
-            'beta': {
-                'phase': self.oscillators.beta.phase,
-                'frequency_hz': self.oscillators.beta.frequency_hz,
-                'signal': self.oscillators.beta.signal,
+            "beta": {
+                "phase": self.oscillators.beta.phase,
+                "frequency_hz": self.oscillators.beta.frequency_hz,
+                "signal": self.oscillators.beta.signal,
             },
-            'gamma': {
-                'phase': self.oscillators.gamma.phase,
-                'frequency_hz': self.oscillators.gamma.frequency_hz,
-                'signal': self.oscillators.gamma.signal,
+            "gamma": {
+                "phase": self.oscillators.gamma.phase,
+                "frequency_hz": self.oscillators.gamma.frequency_hz,
+                "signal": self.oscillators.gamma.signal,
             },
-            'ripple': {
-                'phase': self.oscillators.ripple.phase,
-                'frequency_hz': self.oscillators.ripple.frequency_hz,
-                'signal': self.oscillators.ripple.signal,
+            "ripple": {
+                "phase": self.oscillators.ripple.phase,
+                "frequency_hz": self.oscillators.ripple.frequency_hz,
+                "signal": self.oscillators.ripple.signal,
             },
         }
 
@@ -2040,8 +2096,8 @@ class DynamicBrain(nn.Module):
         """
         # Get trial metadata if available
         trial_num = 0
-        is_match = getattr(self, '_last_is_match', False)
-        correct = getattr(self, '_last_correct', False)
+        is_match = getattr(self, "_last_is_match", False)
+        correct = getattr(self, "_last_correct", False)
 
         return BrainSystemDiagnostics(
             trial_num=trial_num,
@@ -2088,17 +2144,17 @@ class DynamicBrain(nn.Module):
 
         # Get oscillator states
         state["oscillators"] = {
-            'delta': self.oscillators.delta.get_state(),
-            'theta': self.oscillators.theta.get_state(),
-            'alpha': self.oscillators.alpha.get_state(),
-            'beta': self.oscillators.beta.get_state(),
-            'gamma': self.oscillators.gamma.get_state(),
-            'ripple': self.oscillators.ripple.get_state(),
+            "delta": self.oscillators.delta.get_state(),
+            "theta": self.oscillators.theta.get_state(),
+            "alpha": self.oscillators.alpha.get_state(),
+            "beta": self.oscillators.beta.get_state(),
+            "gamma": self.oscillators.gamma.get_state(),
+            "ripple": self.oscillators.ripple.get_state(),
         }
 
         # Get neuromodulator states using proper get_state() methods
         if self.neuromodulator_manager.vta is not None:
-            if hasattr(self.neuromodulator_manager.vta, 'get_state'):
+            if hasattr(self.neuromodulator_manager.vta, "get_state"):
                 state["neuromodulators"]["vta"] = self.neuromodulator_manager.vta.get_state()
             else:
                 # Fallback for VTA without get_state()
@@ -2108,20 +2164,28 @@ class DynamicBrain(nn.Module):
                     "phasic_dopamine": self.neuromodulator_manager.vta._phasic_dopamine,
                 }
         if self.neuromodulator_manager.locus_coeruleus is not None:
-            if hasattr(self.neuromodulator_manager.locus_coeruleus, 'get_state'):
-                state["neuromodulators"]["locus_coeruleus"] = self.neuromodulator_manager.locus_coeruleus.get_state()
+            if hasattr(self.neuromodulator_manager.locus_coeruleus, "get_state"):
+                state["neuromodulators"][
+                    "locus_coeruleus"
+                ] = self.neuromodulator_manager.locus_coeruleus.get_state()
             else:
                 # Fallback for LC without get_state()
                 state["neuromodulators"]["locus_coeruleus"] = {
-                    "norepinephrine": self.neuromodulator_manager.locus_coeruleus.get_norepinephrine(apply_homeostasis=False),
+                    "norepinephrine": self.neuromodulator_manager.locus_coeruleus.get_norepinephrine(
+                        apply_homeostasis=False
+                    ),
                 }
         if self.neuromodulator_manager.nucleus_basalis is not None:
-            if hasattr(self.neuromodulator_manager.nucleus_basalis, 'get_state'):
-                state["neuromodulators"]["nucleus_basalis"] = self.neuromodulator_manager.nucleus_basalis.get_state()
+            if hasattr(self.neuromodulator_manager.nucleus_basalis, "get_state"):
+                state["neuromodulators"][
+                    "nucleus_basalis"
+                ] = self.neuromodulator_manager.nucleus_basalis.get_state()
             else:
                 # Fallback for NB without get_state()
                 state["neuromodulators"]["nucleus_basalis"] = {
-                    "acetylcholine": self.neuromodulator_manager.nucleus_basalis.get_acetylcholine(apply_homeostasis=False),
+                    "acetylcholine": self.neuromodulator_manager.nucleus_basalis.get_acetylcholine(
+                        apply_homeostasis=False
+                    ),
                 }
 
         return state
@@ -2239,26 +2303,41 @@ class DynamicBrain(nn.Module):
         if "neuromodulators" in state:
             neuromod_state = state["neuromodulators"]
             if "vta" in neuromod_state and self.neuromodulator_manager.vta is not None:
-                if hasattr(self.neuromodulator_manager.vta, 'set_state'):
+                if hasattr(self.neuromodulator_manager.vta, "set_state"):
                     self.neuromodulator_manager.vta.set_state(neuromod_state["vta"])
                 else:
                     # Fallback for VTA without set_state()
                     vta_state = neuromod_state["vta"]
-                    self.neuromodulator_manager.vta._tonic_dopamine = vta_state.get("tonic_dopamine", 0.0)
-                    self.neuromodulator_manager.vta._phasic_dopamine = vta_state.get("phasic_dopamine", 0.0)
-                    self.neuromodulator_manager.vta._global_dopamine = vta_state.get("global_dopamine", 0.0)
-            if "locus_coeruleus" in neuromod_state and self.neuromodulator_manager.locus_coeruleus is not None:
-                if hasattr(self.neuromodulator_manager.locus_coeruleus, 'set_state'):
-                    self.neuromodulator_manager.locus_coeruleus.set_state(neuromod_state["locus_coeruleus"])
-            if "nucleus_basalis" in neuromod_state and self.neuromodulator_manager.nucleus_basalis is not None:
-                if hasattr(self.neuromodulator_manager.nucleus_basalis, 'set_state'):
-                    self.neuromodulator_manager.nucleus_basalis.set_state(neuromod_state["nucleus_basalis"])
+                    self.neuromodulator_manager.vta._tonic_dopamine = vta_state.get(
+                        "tonic_dopamine", 0.0
+                    )
+                    self.neuromodulator_manager.vta._phasic_dopamine = vta_state.get(
+                        "phasic_dopamine", 0.0
+                    )
+                    self.neuromodulator_manager.vta._global_dopamine = vta_state.get(
+                        "global_dopamine", 0.0
+                    )
+            if (
+                "locus_coeruleus" in neuromod_state
+                and self.neuromodulator_manager.locus_coeruleus is not None
+            ):
+                if hasattr(self.neuromodulator_manager.locus_coeruleus, "set_state"):
+                    self.neuromodulator_manager.locus_coeruleus.set_state(
+                        neuromod_state["locus_coeruleus"]
+                    )
+            if (
+                "nucleus_basalis" in neuromod_state
+                and self.neuromodulator_manager.nucleus_basalis is not None
+            ):
+                if hasattr(self.neuromodulator_manager.nucleus_basalis, "set_state"):
+                    self.neuromodulator_manager.nucleus_basalis.set_state(
+                        neuromod_state["nucleus_basalis"]
+                    )
 
         # Load growth history (if present)
         if "growth_history" in state:
             self._growth_history = [
-                GrowthEvent.from_dict(event_dict)
-                for event_dict in state["growth_history"]
+                GrowthEvent.from_dict(event_dict) for event_dict in state["growth_history"]
             ]
         else:
             self._growth_history = []  # Initialize empty if not in checkpoint

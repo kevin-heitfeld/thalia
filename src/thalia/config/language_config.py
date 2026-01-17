@@ -11,8 +11,8 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
 from enum import Enum
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .global_config import GlobalConfig
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 class EncodingType(Enum):
     """Types of spike encoding strategies."""
+
     RATE = "rate"
     TEMPORAL = "temporal"
     PHASE = "phase"
@@ -29,6 +30,7 @@ class EncodingType(Enum):
 
 class DecodingType(Enum):
     """Types of spike decoding strategies."""
+
     RATE = "rate"
     TEMPORAL = "temporal"
     POPULATION = "population"

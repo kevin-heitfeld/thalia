@@ -13,8 +13,8 @@ import torch
 
 from thalia.core.pathway_state import (
     AxonalProjectionState,
-    save_pathway_state,
     load_pathway_state,
+    save_pathway_state,
 )
 from thalia.pathways.axonal_projection import AxonalProjection
 
@@ -28,9 +28,7 @@ class TestAxonalProjectionState:
         buffer = torch.zeros(6, 128, dtype=torch.bool)  # 5ms delay + 1
         buffer[2, 10:20] = True  # Some spikes in flight
 
-        state = AxonalProjectionState(delay_buffers={
-            "cortex:l5": (buffer, 2, 5, 128)
-        })
+        state = AxonalProjectionState(delay_buffers={"cortex:l5": (buffer, 2, 5, 128)})
 
         assert "cortex:l5" in state.delay_buffers
         buf, ptr, max_delay, size = state.delay_buffers["cortex:l5"]
@@ -46,9 +44,7 @@ class TestAxonalProjectionState:
         buffer[2, 10:20] = True
         buffer[3, 50:60] = True
 
-        state1 = AxonalProjectionState(delay_buffers={
-            "cortex:l5": (buffer, 2, 5, 128)
-        })
+        state1 = AxonalProjectionState(delay_buffers={"cortex:l5": (buffer, 2, 5, 128)})
 
         # Serialize
         data = state1.to_dict()
@@ -75,9 +71,7 @@ class TestAxonalProjectionState:
         """Test reset clears delay buffers."""
         # Create state with spikes
         buffer = torch.ones(6, 128, dtype=torch.bool)
-        state = AxonalProjectionState(delay_buffers={
-            "cortex:l5": (buffer, 2, 5, 128)
-        })
+        state = AxonalProjectionState(delay_buffers={"cortex:l5": (buffer, 2, 5, 128)})
 
         # Reset
         state.reset()
@@ -94,10 +88,12 @@ class TestAxonalProjectionState:
         buffer2 = torch.zeros(4, 64, dtype=torch.bool)
         buffer2[1, 5:10] = True
 
-        state = AxonalProjectionState(delay_buffers={
-            "cortex:l5": (buffer1, 2, 5, 128),
-            "hippocampus": (buffer2, 1, 3, 64),
-        })
+        state = AxonalProjectionState(
+            delay_buffers={
+                "cortex:l5": (buffer1, 2, 5, 128),
+                "hippocampus": (buffer2, 1, 3, 64),
+            }
+        )
 
         # Serialize and deserialize
         data = state.to_dict()
@@ -127,9 +123,7 @@ class TestAxonalProjectionState:
         buffer = torch.zeros(6, 128, dtype=torch.bool)
         buffer[2, 10:20] = True
 
-        state = AxonalProjectionState(delay_buffers={
-            "cortex:l5": (buffer, 2, 5, 128)
-        })
+        state = AxonalProjectionState(delay_buffers={"cortex:l5": (buffer, 2, 5, 128)})
 
         # Serialize
         data = state.to_dict()
@@ -215,11 +209,13 @@ class TestAxonalProjectionIntegration:
 
         # Run for a few steps
         for _ in range(4):
-            projection.forward({
-                "cortex:l5": cortex_spikes,
-                "hippocampus": hipp_spikes,
-                "pfc": pfc_spikes,
-            })
+            projection.forward(
+                {
+                    "cortex:l5": cortex_spikes,
+                    "hippocampus": hipp_spikes,
+                    "pfc": pfc_spikes,
+                }
+            )
 
         # Save state
         state = projection.get_state()
@@ -244,11 +240,13 @@ class TestAxonalProjectionIntegration:
 
         # Continue with zeros - should see delayed spikes emerge
         for t in range(6):
-            output = projection2.forward({
-                "cortex:l5": torch.zeros(128, dtype=torch.bool),
-                "hippocampus": torch.zeros(64, dtype=torch.bool),
-                "pfc": torch.zeros(32, dtype=torch.bool),
-            })
+            output = projection2.forward(
+                {
+                    "cortex:l5": torch.zeros(128, dtype=torch.bool),
+                    "hippocampus": torch.zeros(64, dtype=torch.bool),
+                    "pfc": torch.zeros(32, dtype=torch.bool),
+                }
+            )
 
             # Check each source's delayed spikes appear at correct times
             if t == 1:  # pfc delay=2ms
@@ -305,7 +303,7 @@ class TestDelayPreservation:
         patterns = []
         for t in range(5):
             spikes = torch.zeros(10, dtype=torch.bool)
-            spikes[t:t+2] = True  # 2 spikes per timestep
+            spikes[t : t + 2] = True  # 2 spikes per timestep
             patterns.append(spikes.clone())
             projection.forward({"source": spikes})
 
@@ -327,8 +325,9 @@ class TestDelayPreservation:
             # After 5 steps, should see the original patterns
             if t < 5:
                 expected = patterns[t]
-                assert torch.equal(output, expected), \
-                    f"At t={t}, expected pattern {expected} but got {output}"
+                assert torch.equal(
+                    output, expected
+                ), f"At t={t}, expected pattern {expected} but got {output}"
 
     def test_pointer_position_preserved(self):
         """Test that buffer pointer position is correctly preserved."""

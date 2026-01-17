@@ -56,7 +56,7 @@ Date: December 21, 2025 (Tier 3 architectural improvements)
 
 from __future__ import annotations
 
-from typing import Protocol, Dict, Any, runtime_checkable
+from typing import Any, Dict, Protocol, runtime_checkable
 
 
 @runtime_checkable

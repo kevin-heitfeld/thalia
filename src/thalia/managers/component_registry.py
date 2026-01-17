@@ -58,11 +58,11 @@ Last Updated: January 16, 2026 (RegionFactory migration complete)
 
 from __future__ import annotations
 
-from typing import Dict, Type, Optional, List, Callable, Any, Tuple
 import inspect
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from thalia.core.protocols.component import BrainComponent
 from thalia.core.errors import ConfigurationError
+from thalia.core.protocols.component import BrainComponent
 from thalia.typing import TopologyGraph
 
 
@@ -174,9 +174,7 @@ class ComponentRegistry:
         def decorator(component_class: Type[BrainComponent]) -> Type[BrainComponent]:
             # Validate component class
             if not inspect.isclass(component_class):
-                raise ConfigurationError(
-                    f"Component must be a class, got {component_class}"
-                )
+                raise ConfigurationError(f"Component must be a class, got {component_class}")
 
             # Check if already registered
             type_registry = cls._registry[component_type]
@@ -301,16 +299,17 @@ class ComponentRegistry:
         # Check if component expects (config, sizes, device) signature (new pattern)
         # by inspecting __init__ parameters
         import inspect
+
         sig = inspect.signature(component_class.__init__)
         params = list(sig.parameters.keys())
 
         try:
             # New pattern: (config, sizes, device) for regions like LayeredCortex
-            if 'sizes' in params and 'device' in params:
-                sizes = kwargs.pop('sizes', {})
-                device = kwargs.pop('device', None)
+            if "sizes" in params and "device" in params:
+                sizes = kwargs.pop("sizes", {})
+                device = kwargs.pop("device", None)
                 if device is None:
-                    device = getattr(config, 'device', 'cpu')
+                    device = getattr(config, "device", "cpu")
                 return component_class(config=config, sizes=sizes, device=device, **kwargs)
 
             # Old pattern: (config) or (config, **kwargs)
@@ -605,7 +604,7 @@ class ComponentRegistry:
             sig = inspect.signature(component_class.__init__)
             params = list(sig.parameters.keys())
 
-            if 'config' not in params and len(params) < 2:
+            if "config" not in params and len(params) < 2:
                 return False, f"{component_class.__name__} doesn't accept config"
 
             # Validation passed
@@ -676,7 +675,8 @@ def register_region(
             ...
     """
     return ComponentRegistry.register(
-        name, "region",
+        name,
+        "region",
         aliases=aliases,
         description=description,
         version=version,
@@ -713,7 +713,8 @@ def register_pathway(
             ...
     """
     return ComponentRegistry.register(
-        name, "pathway",
+        name,
+        "pathway",
         aliases=aliases,
         description=description,
         version=version,
@@ -750,7 +751,8 @@ def register_module(
             ...
     """
     return ComponentRegistry.register(
-        name, "module",
+        name,
+        "module",
         aliases=aliases,
         description=description,
         version=version,

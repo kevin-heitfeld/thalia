@@ -63,12 +63,12 @@ Date: December 8, 2025
 
 from __future__ import annotations
 
-from typing import Dict, Tuple, Optional, Any
-
+from typing import Any, Dict, Optional, Tuple
 
 # ============================================================================
 # Common Health Checks (All Stages)
 # ============================================================================
+
 
 def check_firing_rates(
     brain: Any,
@@ -179,17 +179,18 @@ def check_system_health(brain: Any) -> Dict[str, bool]:
         Dict of health check results
     """
     return {
-        'firing_stability': check_firing_rates(brain),
-        'no_runaway': check_no_runaway_excitation(brain),
-        'bcm_convergence': check_bcm_convergence(brain),
-        'weight_health': check_weight_saturation(brain),
-        'no_silence': check_no_silent_regions(brain),
+        "firing_stability": check_firing_rates(brain),
+        "no_runaway": check_no_runaway_excitation(brain),
+        "bcm_convergence": check_bcm_convergence(brain),
+        "weight_health": check_weight_saturation(brain),
+        "no_silence": check_no_silent_regions(brain),
     }
 
 
 # ============================================================================
 # Stage -0.5: Sensorimotor Grounding
 # ============================================================================
+
 
 def test_basic_movements(
     brain: Any,
@@ -230,9 +231,9 @@ def test_reaching_accuracy(
     Returns:
         True if accuracy > threshold
     """
-    if hasattr(wrapper, 'reaching_task'):
+    if hasattr(wrapper, "reaching_task"):
         stats = wrapper.reaching_task(brain, n_trials=n_trials)
-        return stats.get('success_rate', 0.0) > threshold
+        return stats.get("success_rate", 0.0) > threshold
     return True
 
 
@@ -322,17 +323,17 @@ def evaluate_stage_sensorimotor(
     results = {}
 
     # Task performance
-    results['basic_movements'] = test_basic_movements(brain, wrapper)
-    results['reaching_accuracy'] = test_reaching_accuracy(brain, wrapper)
-    results['manipulation_success'] = test_manipulation_success(brain, wrapper)
-    results['prediction_error'] = test_prediction_error(brain, wrapper)
+    results["basic_movements"] = test_basic_movements(brain, wrapper)
+    results["reaching_accuracy"] = test_reaching_accuracy(brain, wrapper)
+    results["manipulation_success"] = test_manipulation_success(brain, wrapper)
+    results["prediction_error"] = test_prediction_error(brain, wrapper)
 
     # System health
     health = check_system_health(brain)
     results.update(health)
 
     # Component-specific
-    results['cerebellum_functional'] = test_cerebellum_functional(brain, wrapper)
+    results["cerebellum_functional"] = test_cerebellum_functional(brain, wrapper)
 
     return results
 
@@ -340,6 +341,7 @@ def evaluate_stage_sensorimotor(
 # ============================================================================
 # Stage 0: Sensory Foundations (Phonology)
 # ============================================================================
+
 
 def test_mnist_accuracy(
     brain: Any,
@@ -472,23 +474,23 @@ def evaluate_stage_phonology(
     results = {}
 
     # Handle both dict and TaskLoader interfaces
-    if hasattr(datasets, 'get'):
+    if hasattr(datasets, "get"):
         # Dict interface
-        mnist_data = datasets.get('mnist')
-        temporal_data = datasets.get('temporal')
-        phonology_data = datasets.get('phonology')
+        mnist_data = datasets.get("mnist")
+        temporal_data = datasets.get("temporal")
+        phonology_data = datasets.get("phonology")
     else:
         # TaskLoader interface
-        mnist_data = getattr(datasets, 'mnist_dataset', None)
-        temporal_data = getattr(datasets, 'temporal_dataset', None)
-        phonology_data = getattr(datasets, 'phonology_dataset', None)
+        mnist_data = getattr(datasets, "mnist_dataset", None)
+        temporal_data = getattr(datasets, "temporal_dataset", None)
+        phonology_data = getattr(datasets, "phonology_dataset", None)
 
     # Task performance
-    results['mnist_accuracy'] = test_mnist_accuracy(brain, mnist_data)
-    results['sequence_prediction'] = test_sequence_prediction(brain, temporal_data)
-    results['phoneme_discrimination'] = test_phoneme_discrimination(brain, phonology_data)
-    results['categorical_perception'] = test_categorical_perception(brain, phonology_data)
-    results['gaze_following'] = test_gaze_following(brain)
+    results["mnist_accuracy"] = test_mnist_accuracy(brain, mnist_data)
+    results["sequence_prediction"] = test_sequence_prediction(brain, temporal_data)
+    results["phoneme_discrimination"] = test_phoneme_discrimination(brain, phonology_data)
+    results["categorical_perception"] = test_categorical_perception(brain, phonology_data)
+    results["gaze_following"] = test_gaze_following(brain)
 
     # System health
     health = check_system_health(brain)
@@ -496,7 +498,7 @@ def evaluate_stage_phonology(
 
     # Backward compatibility (Stage -0.5)
     if sensorimotor_wrapper is not None:
-        results['sensorimotor_maintained'] = test_reaching_accuracy(
+        results["sensorimotor_maintained"] = test_reaching_accuracy(
             brain, sensorimotor_wrapper, threshold=0.85
         )
 
@@ -506,6 +508,7 @@ def evaluate_stage_phonology(
 # ============================================================================
 # Stage 1: Object Permanence & Working Memory (Toddler)
 # ============================================================================
+
 
 def test_cifar10_accuracy(
     brain: Any,
@@ -617,12 +620,10 @@ def evaluate_stage_toddler(
     results = {}
 
     # Task performance
-    results['cifar10_accuracy'] = test_cifar10_accuracy(
-        brain, datasets.get('cifar10')
-    )
-    results['n_back_2'] = test_n_back_task(brain, n=2)
-    results['object_permanence'] = test_object_permanence(brain)
-    results['binary_confidence'] = test_binary_confidence(brain)
+    results["cifar10_accuracy"] = test_cifar10_accuracy(brain, datasets.get("cifar10"))
+    results["n_back_2"] = test_n_back_task(brain, n=2)
+    results["object_permanence"] = test_object_permanence(brain)
+    results["binary_confidence"] = test_binary_confidence(brain)
 
     # System health
     health = check_system_health(brain)
@@ -630,11 +631,11 @@ def evaluate_stage_toddler(
 
     # Backward compatibility (Stage 0)
     if stage0_datasets is not None:
-        results['mnist_maintained'] = test_mnist_accuracy(
-            brain, stage0_datasets.get('mnist'), threshold=0.90
+        results["mnist_maintained"] = test_mnist_accuracy(
+            brain, stage0_datasets.get("mnist"), threshold=0.90
         )
-        results['phoneme_maintained'] = test_phoneme_discrimination(
-            brain, stage0_datasets.get('phonology'), threshold=0.85
+        results["phoneme_maintained"] = test_phoneme_discrimination(
+            brain, stage0_datasets.get("phonology"), threshold=0.85
         )
 
     return results
@@ -643,6 +644,7 @@ def evaluate_stage_toddler(
 # ============================================================================
 # Stage 2: Grammar & Composition
 # ============================================================================
+
 
 def test_grammar_accuracy(
     brain: Any,
@@ -757,16 +759,16 @@ def evaluate_stage_grammar(
     results = {}
 
     # Handle both dict and TaskLoader interfaces
-    if hasattr(datasets, 'get'):
-        grammar_data = datasets.get('grammar')
+    if hasattr(datasets, "get"):
+        grammar_data = datasets.get("grammar")
     else:
-        grammar_data = getattr(datasets, 'grammar_dataset', None)
+        grammar_data = getattr(datasets, "grammar_dataset", None)
 
     # Task performance
-    results['grammar_generation'] = test_grammar_accuracy(brain, grammar_data)
-    results['cross_lingual_reasoning'] = test_cross_lingual_reasoning(brain)
-    results['set_shifting_dccs'] = test_set_shifting(brain)
-    results['coarse_confidence'] = test_coarse_confidence(brain)
+    results["grammar_generation"] = test_grammar_accuracy(brain, grammar_data)
+    results["cross_lingual_reasoning"] = test_cross_lingual_reasoning(brain)
+    results["set_shifting_dccs"] = test_set_shifting(brain)
+    results["coarse_confidence"] = test_coarse_confidence(brain)
 
     # System health
     health = check_system_health(brain)
@@ -774,11 +776,13 @@ def evaluate_stage_grammar(
 
     # Backward compatibility (Stage 1)
     if stage1_datasets is not None:
-        cifar_data = stage1_datasets.get('cifar10') if hasattr(stage1_datasets, 'get') else getattr(stage1_datasets, 'cifar10_dataset', None)
-        results['cifar10_maintained'] = test_cifar10_accuracy(
-            brain, cifar_data, threshold=0.65
+        cifar_data = (
+            stage1_datasets.get("cifar10")
+            if hasattr(stage1_datasets, "get")
+            else getattr(stage1_datasets, "cifar10_dataset", None)
         )
-        results['n_back_maintained'] = test_n_back_task(brain, n=2, threshold=0.75)
+        results["cifar10_maintained"] = test_cifar10_accuracy(brain, cifar_data, threshold=0.65)
+        results["n_back_maintained"] = test_n_back_task(brain, n=2, threshold=0.75)
 
     return results
 
@@ -786,6 +790,7 @@ def evaluate_stage_grammar(
 # ============================================================================
 # Stage 3: Reading & Writing
 # ============================================================================
+
 
 def test_reading_comprehension(
     brain: Any,
@@ -906,16 +911,16 @@ def evaluate_stage_reading(
     results = {}
 
     # Handle both dict and TaskLoader interfaces
-    if hasattr(datasets, 'get'):
-        reading_data = datasets.get('reading')
+    if hasattr(datasets, "get"):
+        reading_data = datasets.get("reading")
     else:
-        reading_data = getattr(datasets, 'reading_dataset', None)
+        reading_data = getattr(datasets, "reading_dataset", None)
 
     # Task performance
-    results['reading_comprehension'] = test_reading_comprehension(brain, reading_data)
-    results['text_generation'] = test_text_generation(brain, reading_data)
-    results['planning_tasks'] = test_planning_tasks(brain)
-    results['continuous_confidence'] = test_continuous_confidence(brain)
+    results["reading_comprehension"] = test_reading_comprehension(brain, reading_data)
+    results["text_generation"] = test_text_generation(brain, reading_data)
+    results["planning_tasks"] = test_planning_tasks(brain)
+    results["continuous_confidence"] = test_continuous_confidence(brain)
 
     # System health
     health = check_system_health(brain)
@@ -923,11 +928,13 @@ def evaluate_stage_reading(
 
     # Backward compatibility (Stage 2)
     if stage2_datasets is not None:
-        grammar_data = stage2_datasets.get('grammar') if hasattr(stage2_datasets, 'get') else getattr(stage2_datasets, 'grammar_dataset', None)
-        results['grammar_maintained'] = test_grammar_accuracy(
-            brain, grammar_data, threshold=0.75
+        grammar_data = (
+            stage2_datasets.get("grammar")
+            if hasattr(stage2_datasets, "get")
+            else getattr(stage2_datasets, "grammar_dataset", None)
         )
-        results['set_shifting_maintained'] = test_set_shifting(brain, threshold=0.65)
+        results["grammar_maintained"] = test_grammar_accuracy(brain, grammar_data, threshold=0.75)
+        results["set_shifting_maintained"] = test_set_shifting(brain, threshold=0.65)
 
     return results
 
@@ -935,6 +942,7 @@ def evaluate_stage_reading(
 # ============================================================================
 # Stage 4: Abstract Reasoning
 # ============================================================================
+
 
 def test_analogical_reasoning(
     brain: Any,
@@ -1102,12 +1110,12 @@ def evaluate_stage_abstract(
     results = {}
 
     # Task performance
-    results['analogical_reasoning'] = test_analogical_reasoning(brain)
-    results['mathematical_reasoning'] = test_mathematical_reasoning(brain)
-    results['commonsense_reasoning'] = test_commonsense_reasoning(brain)
-    results['complex_theory_of_mind'] = test_complex_theory_of_mind(brain)
-    results['calibrated_confidence'] = test_calibrated_confidence(brain)
-    results['fluid_reasoning'] = test_fluid_reasoning(brain)
+    results["analogical_reasoning"] = test_analogical_reasoning(brain)
+    results["mathematical_reasoning"] = test_mathematical_reasoning(brain)
+    results["commonsense_reasoning"] = test_commonsense_reasoning(brain)
+    results["complex_theory_of_mind"] = test_complex_theory_of_mind(brain)
+    results["calibrated_confidence"] = test_calibrated_confidence(brain)
+    results["fluid_reasoning"] = test_fluid_reasoning(brain)
 
     # System health
     health = check_system_health(brain)
@@ -1115,11 +1123,15 @@ def evaluate_stage_abstract(
 
     # Backward compatibility (Stage 3)
     if stage3_datasets is not None:
-        reading_data = stage3_datasets.get('reading') if hasattr(stage3_datasets, 'get') else getattr(stage3_datasets, 'reading_dataset', None)
-        results['reading_maintained'] = test_reading_comprehension(
+        reading_data = (
+            stage3_datasets.get("reading")
+            if hasattr(stage3_datasets, "get")
+            else getattr(stage3_datasets, "reading_dataset", None)
+        )
+        results["reading_maintained"] = test_reading_comprehension(
             brain, reading_data, threshold=0.65
         )
-        results['planning_maintained'] = test_planning_tasks(brain, threshold=0.55)
+        results["planning_maintained"] = test_planning_tasks(brain, threshold=0.55)
 
     return results
 
@@ -1127,6 +1139,7 @@ def evaluate_stage_abstract(
 # ============================================================================
 # Evaluation Report Generation
 # ============================================================================
+
 
 def generate_evaluation_report(
     stage: str,

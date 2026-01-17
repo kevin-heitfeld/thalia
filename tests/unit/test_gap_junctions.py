@@ -12,8 +12,8 @@ import pytest
 import torch
 
 from thalia.components.gap_junctions import (
-    GapJunctionCoupling,
     GapJunctionConfig,
+    GapJunctionCoupling,
     create_gap_junction_coupling,
 )
 

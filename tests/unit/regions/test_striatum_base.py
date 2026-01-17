@@ -8,14 +8,14 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 Updated: December 2025 (Phase 1 migration to (config, sizes, device) pattern)
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.striatum import Striatum
 from thalia.regions.striatum.config import StriatumConfig
-from thalia.config.size_calculator import LayerSizeCalculator
 
 
 class TestStriatum(RegionTestBase):
@@ -40,8 +40,7 @@ class TestStriatum(RegionTestBase):
         # Compute sizes using calculator
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(
-            n_actions=n_actions,
-            neurons_per_action=neurons_per_action
+            n_actions=n_actions, neurons_per_action=neurons_per_action
         )
 
         # Add input_size to sizes dict (striatum needs this)
@@ -115,8 +114,9 @@ class TestStriatum(RegionTestBase):
         output = region.forward({"default": input_spikes})
 
         # Output is per-neuron (d1_spikes), same as n_output
-        assert output.shape[0] == expected_total_neurons, \
-            f"Expected {expected_total_neurons} neurons, got {output.shape[0]}"
+        assert (
+            output.shape[0] == expected_total_neurons
+        ), f"Expected {expected_total_neurons} neurons, got {output.shape[0]}"
 
     def test_grow_input(self):
         """Test striatum can grow input dimension via grow_source (accounts for population coding)."""
@@ -135,8 +135,9 @@ class TestStriatum(RegionTestBase):
 
         # Output size should NOT change (still same number of actions/neurons)
         expected_neurons = region.n_output
-        assert output.shape[0] == expected_neurons, \
-            f"Expected {expected_neurons} neurons, got {output.shape[0]}"
+        assert (
+            output.shape[0] == expected_neurons
+        ), f"Expected {expected_neurons} neurons, got {output.shape[0]}"
 
     def test_growth_preserves_state(self):
         """Test growth preserves existing neuron state (striatum-specific).
@@ -167,12 +168,14 @@ class TestStriatum(RegionTestBase):
         d2_membrane_after = region.d2_pathway.neurons.membrane
 
         # Verify original D1 neurons preserved
-        assert torch.allclose(d1_membrane_before, d1_membrane_after[:n_d1_before], atol=1e-5), \
-            "D1 pathway state not preserved after growth"
+        assert torch.allclose(
+            d1_membrane_before, d1_membrane_after[:n_d1_before], atol=1e-5
+        ), "D1 pathway state not preserved after growth"
 
         # Verify original D2 neurons preserved
-        assert torch.allclose(d2_membrane_before, d2_membrane_after[:n_d2_before], atol=1e-5), \
-            "D2 pathway state not preserved after growth"
+        assert torch.allclose(
+            d2_membrane_before, d2_membrane_after[:n_d2_before], atol=1e-5
+        ), "D2 pathway state not preserved after growth"
 
     # =========================================================================
     # STRIATUM-SPECIFIC TESTS

@@ -18,7 +18,7 @@ from tests.utils import create_test_brain
 @pytest.fixture
 def device():
     """Use CPU for tests."""
-    return torch.device('cpu')
+    return torch.device("cpu")
 
 
 @pytest.fixture
@@ -52,7 +52,9 @@ class TestSilentInput:
         assert "spike_counts" in result, "Result should contain spike_counts"
         # Check that no NaN in the spike counts
         for region, count in result["spike_counts"].items():
-            assert not (isinstance(count, torch.Tensor) and torch.isnan(count).any()), f"{region} count contains NaN"
+            assert not (
+                isinstance(count, torch.Tensor) and torch.isnan(count).any()
+            ), f"{region} count contains NaN"
 
     def test_brain_survives_extended_silence(self, test_brain, device):
         """Brain should remain stable with prolonged silent input."""
@@ -92,9 +94,10 @@ class TestSaturatedInput:
             # Check region states periodically
             if step % 25 == 0:
                 for region_name, region in test_brain.regions.items():
-                    if hasattr(region, 'membrane'):
-                        assert not torch.isnan(region.membrane).any(), \
-                            f"Region {region_name} membrane contains NaN at step {step}"
+                    if hasattr(region, "membrane"):
+                        assert not torch.isnan(
+                            region.membrane
+                        ).any(), f"Region {region_name} membrane contains NaN at step {step}"
 
 
 class TestDimensionMismatches:
@@ -107,7 +110,7 @@ class TestDimensionMismatches:
 
         with pytest.raises(
             (RuntimeError, ValueError, AssertionError),
-            match="(?i)(dimension|size|shape|expected|input)"
+            match="(?i)(dimension|size|shape|expected|input)",
         ):
             test_brain.forward(wrong_input, n_timesteps=1)
 
@@ -118,7 +121,7 @@ class TestDimensionMismatches:
 
         with pytest.raises(
             (RuntimeError, ValueError, AssertionError),
-            match="(?i)(dimension|size|shape|expected|input)"
+            match="(?i)(dimension|size|shape|expected|input)",
         ):
             test_brain.forward(wrong_input, n_timesteps=1)
 
@@ -140,19 +143,23 @@ class TestNumericalStability:
             if step % 100 == 0:
                 # Check all region membranes
                 for region_name, region in test_brain.regions.items():
-                    if hasattr(region, 'membrane'):
-                        assert not torch.isnan(region.membrane).any(), \
-                            f"Region {region_name} membrane contains NaN at step {step}"
-                        assert not torch.isinf(region.membrane).any(), \
-                            f"Region {region_name} membrane contains Inf at step {step}"
+                    if hasattr(region, "membrane"):
+                        assert not torch.isnan(
+                            region.membrane
+                        ).any(), f"Region {region_name} membrane contains NaN at step {step}"
+                        assert not torch.isinf(
+                            region.membrane
+                        ).any(), f"Region {region_name} membrane contains Inf at step {step}"
 
                 # Check all pathway weights
                 for pathway_name, pathway in test_brain.pathway_manager.get_all_pathways().items():
-                    if hasattr(pathway, 'weights'):
-                        assert not torch.isnan(pathway.weights).any(), \
-                            f"Pathway {pathway_name} weights contain NaN at step {step}"
-                        assert not torch.isinf(pathway.weights).any(), \
-                            f"Pathway {pathway_name} weights contain Inf at step {step}"
+                    if hasattr(pathway, "weights"):
+                        assert not torch.isnan(
+                            pathway.weights
+                        ).any(), f"Pathway {pathway_name} weights contain NaN at step {step}"
+                        assert not torch.isinf(
+                            pathway.weights
+                        ).any(), f"Pathway {pathway_name} weights contain Inf at step {step}"
 
     def test_brain_handles_random_input_patterns(self, test_brain, device):
         """Brain should remain stable with random input patterns."""
@@ -200,5 +207,5 @@ class TestResetBehavior:
         assert "spike_counts" in final_result, "Result should contain spike_counts"
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

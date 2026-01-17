@@ -1,9 +1,11 @@
 """Simple timing test to check if optimizations helped or hurt."""
 
 import time
+
 import torch
-from thalia.core.brain_builder import BrainBuilder
+
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 def measure_throughput(n_timesteps=100, n_trials=5):
@@ -40,9 +42,9 @@ def measure_throughput(n_timesteps=100, n_trials=5):
 
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("CLOCK-DRIVEN THROUGHPUT TEST")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     throughput = measure_throughput(n_timesteps=100, n_trials=5)
 

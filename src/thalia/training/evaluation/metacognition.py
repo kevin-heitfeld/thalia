@@ -67,22 +67,21 @@ Date: December 8, 2025
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-import time
-from typing import Dict, List, Optional, Tuple, Callable, Any
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 
 from thalia.constants.training import (
+    CALIBRATION_ACCEPTABLE_ECE,
     CALIBRATION_EXCELLENT_ECE,
     CALIBRATION_GOOD_ECE,
-    CALIBRATION_ACCEPTABLE_ECE,
-    CURRICULUM_DIFFICULTY_MIN,
     CURRICULUM_DIFFICULTY_MAX,
+    CURRICULUM_DIFFICULTY_MIN,
 )
-
 
 # ============================================================================
 # Data Structures
@@ -111,6 +110,7 @@ class CalibrationSample:
         """Validate sample parameters."""
         if not 0 <= self.difficulty <= 1:
             from thalia.core.errors import ConfigurationError
+
             raise ConfigurationError(f"Difficulty must be in [0, 1], got {self.difficulty}")
 
 
@@ -138,6 +138,7 @@ class CalibrationPrediction:
         """Validate prediction parameters."""
         if not 0 <= self.confidence <= 1:
             from thalia.core.errors import ConfigurationError
+
             raise ConfigurationError(f"Confidence must be in [0, 1], got {self.confidence}")
 
 
@@ -206,7 +207,7 @@ class MetacognitiveCalibrator:
     def __init__(
         self,
         brain: Any,  # DynamicBrain, but use Any to avoid import
-        confidence_region: str = 'prefrontal',
+        confidence_region: str = "prefrontal",
         n_bins: int = 10,
         device: Optional[torch.device] = None,
     ):
@@ -236,9 +237,12 @@ class MetacognitiveCalibrator:
     def generate_calibration_dataset(
         self,
         task_generator: Callable[[float], Tuple[torch.Tensor, torch.Tensor]],
-        difficulty_range: Tuple[float, float] = (CURRICULUM_DIFFICULTY_MIN, CURRICULUM_DIFFICULTY_MAX),
+        difficulty_range: Tuple[float, float] = (
+            CURRICULUM_DIFFICULTY_MIN,
+            CURRICULUM_DIFFICULTY_MAX,
+        ),
         n_samples: int = 1000,
-        task_type: str = 'mixed',
+        task_type: str = "mixed",
         stratified: bool = True,
     ) -> List[CalibrationSample]:
         """Generate calibration dataset spanning difficulty spectrum.
@@ -441,12 +445,12 @@ class MetacognitiveCalibrator:
         train_dataset = dataset[n_val:]
 
         history = {
-            'train_ece': [],
-            'val_ece': [],
-            'train_accuracy': [],
-            'val_accuracy': [],
-            'train_confidence': [],
-            'val_confidence': [],
+            "train_ece": [],
+            "val_ece": [],
+            "train_accuracy": [],
+            "val_accuracy": [],
+            "train_confidence": [],
+            "val_confidence": [],
         }
 
         print(f"\nTraining confidence estimation for {n_epochs} epochs...")
@@ -480,17 +484,19 @@ class MetacognitiveCalibrator:
             val_metrics = self.compute_calibration_metrics(val_predictions)
 
             # Record history
-            history['train_ece'].append(train_metrics.ece)
-            history['val_ece'].append(val_metrics.ece)
-            history['train_accuracy'].append(train_metrics.accuracy)
-            history['val_accuracy'].append(val_metrics.accuracy)
-            history['train_confidence'].append(train_metrics.avg_confidence)
-            history['val_confidence'].append(val_metrics.avg_confidence)
+            history["train_ece"].append(train_metrics.ece)
+            history["val_ece"].append(val_metrics.ece)
+            history["train_accuracy"].append(train_metrics.accuracy)
+            history["val_accuracy"].append(val_metrics.accuracy)
+            history["train_confidence"].append(train_metrics.avg_confidence)
+            history["val_confidence"].append(val_metrics.avg_confidence)
 
             # Log progress
             if (epoch + 1) % log_interval == 0:
                 print(f"\nEpoch {epoch + 1}/{n_epochs}")
-                print(f"  Train ECE: {train_metrics.ece:.4f}, Accuracy: {train_metrics.accuracy:.4f}")
+                print(
+                    f"  Train ECE: {train_metrics.ece:.4f}, Accuracy: {train_metrics.accuracy:.4f}"
+                )
                 print(f"  Val ECE: {val_metrics.ece:.4f}, Accuracy: {val_metrics.accuracy:.4f}")
 
             # Store in history
@@ -566,7 +572,9 @@ class MetacognitiveCalibrator:
         # Per-bin breakdown
         report.append("")
         report.append("Per-Bin Breakdown:")
-        report.append(f"{'Bin':>5} {'Range':>15} {'Count':>8} {'Confidence':>12} {'Accuracy':>10} {'Gap':>8}")
+        report.append(
+            f"{'Bin':>5} {'Range':>15} {'Count':>8} {'Confidence':>12} {'Accuracy':>10} {'Gap':>8}"
+        )
         report.append("-" * 70)
 
         for i in range(metrics.n_bins):
@@ -623,7 +631,7 @@ class MetacognitiveCalibrator:
         fig, ax = plt.subplots(figsize=(8, 8))
 
         # Plot perfect calibration line
-        ax.plot([0, 1], [0, 1], 'k--', label='Perfect Calibration', linewidth=2)
+        ax.plot([0, 1], [0, 1], "k--", label="Perfect Calibration", linewidth=2)
 
         # Plot actual calibration
         bin_centers = [(i + 0.5) / metrics.n_bins for i in range(metrics.n_bins)]
@@ -634,19 +642,19 @@ class MetacognitiveCalibrator:
             y = [metrics.bin_accuracies[i] for i in valid_bins]
             sizes = [metrics.bin_counts[i] * 10 for i in valid_bins]
 
-            ax.scatter(x, y, s=sizes, alpha=0.6, label='Actual Calibration')
+            ax.scatter(x, y, s=sizes, alpha=0.6, label="Actual Calibration")
 
         # Formatting
-        ax.set_xlabel('Confidence', fontsize=12)
-        ax.set_ylabel('Accuracy', fontsize=12)
-        ax.set_title(f'Reliability Diagram (ECE: {metrics.ece:.4f})', fontsize=14)
+        ax.set_xlabel("Confidence", fontsize=12)
+        ax.set_ylabel("Accuracy", fontsize=12)
+        ax.set_title(f"Reliability Diagram (ECE: {metrics.ece:.4f})", fontsize=14)
         ax.legend()
         ax.grid(True, alpha=0.3)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
 
         if save_path:
-            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.savefig(save_path, dpi=150, bbox_inches="tight")
             print(f"Reliability diagram saved to {save_path}")
         else:
             plt.show()
@@ -672,7 +680,7 @@ def create_simple_task_generator(
     **Returns**:
         Task generator function
     """
-    device = device or torch.device('cpu')
+    device = device or torch.device("cpu")
 
     def generate_task(difficulty: float) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate task with specified difficulty.
@@ -699,9 +707,9 @@ def create_simple_task_generator(
 
 
 __all__ = [
-    'CalibrationSample',
-    'CalibrationPrediction',
-    'CalibrationMetrics',
-    'MetacognitiveCalibrator',
-    'create_simple_task_generator',
+    "CalibrationSample",
+    "CalibrationPrediction",
+    "CalibrationMetrics",
+    "MetacognitiveCalibrator",
+    "create_simple_task_generator",
 ]

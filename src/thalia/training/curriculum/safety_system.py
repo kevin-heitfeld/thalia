@@ -25,22 +25,12 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
-from typing import Dict, Optional, Tuple, List
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
-from .stage_gates import (
-    Stage1SurvivalGate,
-    GracefulDegradationManager,
-    GateResult,
-    GateDecision
-)
-from .stage_monitoring import (
-    ContinuousMonitor,
-    Stage1Monitor,
-    InterventionType,
-    MonitoringMetrics
-)
+from .stage_gates import GateDecision, GateResult, GracefulDegradationManager, Stage1SurvivalGate
+from .stage_monitoring import ContinuousMonitor, InterventionType, MonitoringMetrics, Stage1Monitor
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +38,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SafetyStatus:
     """Current safety system status."""
+
     stage: int
     can_advance: bool
     degraded_modules: List[str]
@@ -76,7 +67,7 @@ class CurriculumSafetySystem:
         brain,
         current_stage: int = 0,
         enable_auto_intervention: bool = True,
-        checkpoint_callback=None
+        checkpoint_callback=None,
     ):
         """
         Args:
@@ -103,9 +94,7 @@ class CurriculumSafetySystem:
         # Performance baselines
         self.baselines = {}
 
-        logger.info(
-            f"Safety system initialized for stage {current_stage}"
-        )
+        logger.info(f"Safety system initialized for stage {current_stage}")
 
     def _create_stage_gates(self) -> Dict[int, any]:
         """Create stage-specific gates."""
@@ -130,10 +119,7 @@ class CurriculumSafetySystem:
             return ContinuousMonitor(enable_auto_intervention=self.enable_auto_intervention)
 
     def update(
-        self,
-        brain,
-        step: int,
-        task_result: Optional[Dict] = None
+        self, brain, step: int, task_result: Optional[Dict] = None
     ) -> Optional[InterventionType]:
         """
         Update safety monitoring with current step.
@@ -155,8 +141,8 @@ class CurriculumSafetySystem:
             gate.update(brain, self._metrics_to_dict(metrics))
 
         # Check for module failures
-        if task_result and 'module_performances' in task_result:
-            self._check_module_health(task_result['module_performances'])
+        if task_result and "module_performances" in task_result:
+            self._check_module_health(task_result["module_performances"])
 
         # Periodic gate check
         if step - self.last_gate_check_step >= self.gate_check_interval:
@@ -166,9 +152,7 @@ class CurriculumSafetySystem:
         # Handle intervention if needed
         if intervention and self.enable_auto_intervention:
             self.monitor.record_intervention(intervention)
-            logger.warning(
-                f"Auto-intervention triggered at step {step}: {intervention.value}"
-            )
+            logger.warning(f"Auto-intervention triggered at step {step}: {intervention.value}")
             return intervention
 
         return None
@@ -176,11 +160,11 @@ class CurriculumSafetySystem:
     def _metrics_to_dict(self, metrics: MonitoringMetrics) -> Dict:
         """Convert MonitoringMetrics to dict for gate update."""
         return {
-            'theta_frequency': metrics.theta_frequency,
-            'gamma_theta_phase_locking': metrics.gamma_theta_phase_locking,
-            'n_back_accuracy': metrics.n_back_accuracy,
-            'mean_firing_rate': metrics.mean_firing_rate,
-            'replay_improvement': metrics.replay_improvement,
+            "theta_frequency": metrics.theta_frequency,
+            "gamma_theta_phase_locking": metrics.gamma_theta_phase_locking,
+            "n_back_accuracy": metrics.n_back_accuracy,
+            "mean_firing_rate": metrics.mean_firing_rate,
+            "replay_improvement": metrics.replay_improvement,
         }
 
     def _check_module_health(self, module_performances: Dict[str, float]):
@@ -199,13 +183,13 @@ class CurriculumSafetySystem:
                     module_name, baseline, current_perf
                 )
 
-                if response['severity'] == 'CRITICAL':
+                if response["severity"] == "CRITICAL":
                     logger.error(
                         f"Critical failure in {module_name}: "
                         f"{baseline:.3f} → {current_perf:.3f}"
                     )
                     logger.error(f"Response: {response}")
-                elif response['severity'] == 'MEDIUM':
+                elif response["severity"] == "MEDIUM":
                     logger.warning(
                         f"Module degradation in {module_name}: "
                         f"{baseline:.3f} → {current_perf:.3f}"
@@ -221,8 +205,7 @@ class CurriculumSafetySystem:
 
         if not result.passed:
             logger.warning(
-                f"Stage {self.current_stage} gate check FAILED at step "
-                f"{self.monitor.steps}"
+                f"Stage {self.current_stage} gate check FAILED at step " f"{self.monitor.steps}"
             )
             logger.warning(f"Failures: {result.failures}")
             logger.warning(f"Recommendations: {result.recommendations}")
@@ -236,8 +219,7 @@ class CurriculumSafetySystem:
         """
         if self.current_stage not in self.stage_gates:
             logger.warning(
-                f"No gate defined for stage {self.current_stage}, "
-                f"allowing advancement"
+                f"No gate defined for stage {self.current_stage}, " f"allowing advancement"
             )
             return True, None
 
@@ -251,10 +233,7 @@ class CurriculumSafetySystem:
             )
             logger.info(f"Metrics: {result.metrics}")
         else:
-            logger.warning(
-                f"❌ Stage {self.current_stage} gate FAILED - "
-                f"cannot advance yet"
-            )
+            logger.warning(f"❌ Stage {self.current_stage} gate FAILED - " f"cannot advance yet")
             logger.warning(f"Failures: {result.failures}")
             logger.warning(f"Recommendations: {result.recommendations}")
 
@@ -278,17 +257,13 @@ class CurriculumSafetySystem:
 
         if not can_advance:
             raise ValueError(
-                f"Cannot advance from stage {self.current_stage}: "
-                f"gate criteria not met"
+                f"Cannot advance from stage {self.current_stage}: " f"gate criteria not met"
             )
 
         # Save checkpoint before advancing
         if self.checkpoint_callback:
             logger.info(f"Saving checkpoint before advancing to stage {self.current_stage + 1}")
-            self.checkpoint_callback(
-                stage=self.current_stage,
-                reason='stage_transition'
-            )
+            self.checkpoint_callback(stage=self.current_stage, reason="stage_transition")
 
         # Advance
         old_stage = self.current_stage
@@ -298,9 +273,7 @@ class CurriculumSafetySystem:
         # Reset monitor for new stage
         self.monitor = self._create_monitor(self.current_stage)
 
-        logger.info(
-            f"✅ Advanced from stage {old_stage} to stage {self.current_stage}"
-        )
+        logger.info(f"✅ Advanced from stage {old_stage} to stage {self.current_stage}")
 
     def get_status(self) -> SafetyStatus:
         """Get current safety system status."""
@@ -321,10 +294,10 @@ class CurriculumSafetySystem:
         return SafetyStatus(
             stage=self.current_stage,
             can_advance=can_advance,
-            degraded_modules=degradation_status['degraded_modules'],
+            degraded_modules=degradation_status["degraded_modules"],
             active_alerts=active_alerts,
             interventions_triggered=len(self.monitor.intervention_history),
-            health_score=health_score
+            health_score=health_score,
         )
 
     def _calculate_health_score(self) -> float:
@@ -340,17 +313,18 @@ class CurriculumSafetySystem:
 
         # Penalize degraded modules
         degradation_status = self.degradation_manager.get_system_status()
-        score -= len(degradation_status['degraded_modules']) * 0.15
+        score -= len(degradation_status["degraded_modules"]) * 0.15
 
         # Penalize critical system degradation heavily
-        critical_degraded = degradation_status['degraded_modules']
-        if any(m in critical_degraded for m in ['working_memory', 'oscillators', 'replay']):
+        critical_degraded = degradation_status["degraded_modules"]
+        if any(m in critical_degraded for m in ["working_memory", "oscillators", "replay"]):
             score -= 0.5
 
         # Penalize recent interventions
         if len(self.monitor.intervention_history) > 0:
             recent_interventions = [
-                i for i, step in self.monitor.intervention_history
+                i
+                for i, step in self.monitor.intervention_history
                 if self.monitor.steps - step < 5000
             ]
             score -= len(recent_interventions) * 0.05
@@ -364,15 +338,15 @@ class CurriculumSafetySystem:
         intervention_summary = self.monitor.get_intervention_summary()
 
         return {
-            'stage': status.stage,
-            'health_score': status.health_score,
-            'can_advance': status.can_advance,
-            'degraded_modules': status.degraded_modules,
-            'active_alerts': status.active_alerts,
-            'total_interventions': status.interventions_triggered,
-            'interventions_by_type': intervention_summary.get('by_type', {}),
-            'recent_metrics': metrics_summary,
-            'steps_in_stage': self.monitor.steps - self.stage_start_step,
+            "stage": status.stage,
+            "health_score": status.health_score,
+            "can_advance": status.can_advance,
+            "degraded_modules": status.degraded_modules,
+            "active_alerts": status.active_alerts,
+            "total_interventions": status.interventions_triggered,
+            "interventions_by_type": intervention_summary.get("by_type", {}),
+            "recent_metrics": metrics_summary,
+            "steps_in_stage": self.monitor.steps - self.stage_start_step,
         }
 
     def force_emergency_stop(self, reason: str):
@@ -386,16 +360,9 @@ class CurriculumSafetySystem:
         self.monitor.record_intervention(InterventionType.EMERGENCY_STOP)
 
         if self.checkpoint_callback:
-            self.checkpoint_callback(
-                stage=self.current_stage,
-                reason=f'emergency_stop_{reason}'
-            )
+            self.checkpoint_callback(stage=self.current_stage, reason=f"emergency_stop_{reason}")
 
-    def handle_intervention(
-        self,
-        intervention: InterventionType,
-        brain
-    ) -> Dict:
+    def handle_intervention(self, intervention: InterventionType, brain) -> Dict:
         """
         Execute intervention response.
 
@@ -406,36 +373,30 @@ class CurriculumSafetySystem:
         Returns:
             Dict with actions taken
         """
-        actions = {'intervention': intervention.value, 'actions': []}
+        actions = {"intervention": intervention.value, "actions": []}
 
         if intervention == InterventionType.EMERGENCY_STOP:
-            actions['actions'].append('freeze_learning')
-            actions['actions'].append('rollback_to_checkpoint')
+            actions["actions"].append("freeze_learning")
+            actions["actions"].append("rollback_to_checkpoint")
             if self.checkpoint_callback:
-                self.checkpoint_callback(
-                    stage=self.current_stage,
-                    reason='emergency_stop'
-                )
+                self.checkpoint_callback(stage=self.current_stage, reason="emergency_stop")
 
         elif intervention == InterventionType.CONSOLIDATE:
-            actions['actions'].append('trigger_consolidation')
+            actions["actions"].append("trigger_consolidation")
             logger.info("Triggering emergency consolidation")
 
         elif intervention == InterventionType.REDUCE_LOAD:
-            actions['actions'].append('reduce_task_complexity')
-            actions['actions'].append('lower_learning_rates')
+            actions["actions"].append("reduce_task_complexity")
+            actions["actions"].append("lower_learning_rates")
             logger.info("Reducing cognitive load")
 
         elif intervention == InterventionType.TEMPORAL_SEPARATION:
-            actions['actions'].append('enable_temporal_separation')
+            actions["actions"].append("enable_temporal_separation")
             logger.info("Enabling temporal separation of modalities")
 
         elif intervention == InterventionType.ROLLBACK:
-            actions['actions'].append('rollback_to_checkpoint')
+            actions["actions"].append("rollback_to_checkpoint")
             if self.checkpoint_callback:
-                self.checkpoint_callback(
-                    stage=self.current_stage,
-                    reason='rollback'
-                )
+                self.checkpoint_callback(stage=self.current_stage, reason="rollback")
 
         return actions

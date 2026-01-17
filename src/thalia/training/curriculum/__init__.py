@@ -15,24 +15,23 @@ Date: December 12, 2025
 
 from __future__ import annotations
 
-
 from thalia.constants.training import (
     AttentionStage,
     get_attention_weights,
 )
 from thalia.training.curriculum.curriculum import (
-    InterleavedCurriculumSampler,
-    InterleavedCurriculumSamplerConfig,
-    SpacedRepetitionScheduler,
-    SpacedRepetitionSchedulerConfig,
-    TestingPhaseProtocol,
-    TestingPhaseConfig,
-    ProductiveFailurePhase,
-    ProductiveFailureConfig,
     CurriculumDifficultyCalibrator,
     DifficultyCalibratorConfig,
-    StageTransitionProtocol,
+    InterleavedCurriculumSampler,
+    InterleavedCurriculumSamplerConfig,
+    ProductiveFailureConfig,
+    ProductiveFailurePhase,
+    SpacedRepetitionScheduler,
+    SpacedRepetitionSchedulerConfig,
     StageTransitionConfig,
+    StageTransitionProtocol,
+    TestingPhaseConfig,
+    TestingPhaseProtocol,
     TransitionWeekConfig,
 )
 from thalia.training.curriculum.logger import (
@@ -41,9 +40,9 @@ from thalia.training.curriculum.logger import (
     StageLog,
 )
 from thalia.training.curriculum.noise_scheduler import (
+    NoiseProfile,
     NoiseScheduler,
     NoiseSchedulerConfig,
-    NoiseProfile,
     NoiseType,
 )
 from thalia.training.curriculum.safety_system import (
@@ -51,32 +50,32 @@ from thalia.training.curriculum.safety_system import (
     SafetyStatus,
 )
 from thalia.training.curriculum.stage_evaluation import (
-    evaluate_stage_sensorimotor,
-    evaluate_stage_phonology,
-    evaluate_stage_toddler,
     check_system_health,
+    evaluate_stage_phonology,
+    evaluate_stage_sensorimotor,
+    evaluate_stage_toddler,
     generate_evaluation_report,
 )
 from thalia.training.curriculum.stage_gates import (
-    Stage1SurvivalGate,
-    GracefulDegradationManager,
-    GateResult,
     GateDecision,
+    GateResult,
+    GracefulDegradationManager,
+    Stage1SurvivalGate,
 )
 from thalia.training.curriculum.stage_manager import (
+    ActiveMechanism,
+    CognitiveLoadMonitor,
     CurriculumTrainer,
+    MechanismPriority,
     StageConfig,
     TaskConfig,
     TrainingResult,
-    MechanismPriority,
-    ActiveMechanism,
-    CognitiveLoadMonitor,
 )
 from thalia.training.curriculum.stage_monitoring import (
     ContinuousMonitor,
-    Stage1Monitor,
     InterventionType,
     MonitoringMetrics,
+    Stage1Monitor,
 )
 
 __all__ = [

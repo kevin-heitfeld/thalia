@@ -16,8 +16,8 @@ Encoding format for each tensor:
 
 from __future__ import annotations
 
-from enum import IntEnum
 import struct
+from enum import IntEnum
 from typing import BinaryIO, Tuple
 
 import torch
@@ -25,12 +25,14 @@ import torch
 
 class EncodingType(IntEnum):
     """Tensor encoding types."""
+
     DENSE = 0
     SPARSE_COO = 1
 
 
 class DType(IntEnum):
     """Supported data types."""
+
     FLOAT32 = 0
     FLOAT64 = 1
     INT32 = 2
@@ -74,23 +76,23 @@ def encode_tensor(tensor: torch.Tensor, file: BinaryIO, sparsity_threshold: floa
 
     # Write encoding type
     encoding_type = EncodingType.SPARSE_COO if is_sparse else EncodingType.DENSE
-    file.write(struct.pack('<I', encoding_type))
+    file.write(struct.pack("<I", encoding_type))
     bytes_written += 4
 
     # Write dtype
     dtype_code = DTYPE_TO_CODE.get(tensor.dtype)
     if dtype_code is None:
         raise ValueError(f"Unsupported dtype: {tensor.dtype}")
-    file.write(struct.pack('<I', dtype_code))
+    file.write(struct.pack("<I", dtype_code))
     bytes_written += 4
 
     # Write shape
     ndim = len(tensor.shape)
-    file.write(struct.pack('<I', ndim))
+    file.write(struct.pack("<I", ndim))
     bytes_written += 4
 
     for dim_size in tensor.shape:
-        file.write(struct.pack('<I', dim_size))
+        file.write(struct.pack("<I", dim_size))
         bytes_written += 4
 
     # Write data based on encoding
@@ -136,7 +138,7 @@ def _encode_sparse_coo(tensor: torch.Tensor, file: BinaryIO) -> int:
     nnz = values.numel()
 
     # Write nnz (number of nonzero elements)
-    file.write(struct.pack('<Q', nnz))
+    file.write(struct.pack("<Q", nnz))
     bytes_written += 8
 
     # Write indices [ndim, nnz]
@@ -152,7 +154,7 @@ def _encode_sparse_coo(tensor: torch.Tensor, file: BinaryIO) -> int:
     return bytes_written
 
 
-def decode_tensor(file: BinaryIO, device: str = 'cpu') -> torch.Tensor:
+def decode_tensor(file: BinaryIO, device: str = "cpu") -> torch.Tensor:
     """Decode tensor from binary format.
 
     Args:
@@ -163,15 +165,15 @@ def decode_tensor(file: BinaryIO, device: str = 'cpu') -> torch.Tensor:
         Decoded PyTorch tensor
     """
     # Read encoding type
-    encoding_type = struct.unpack('<I', file.read(4))[0]
+    encoding_type = struct.unpack("<I", file.read(4))[0]
 
     # Read dtype
-    dtype_code = struct.unpack('<I', file.read(4))[0]
+    dtype_code = struct.unpack("<I", file.read(4))[0]
     dtype = CODE_TO_DTYPE[dtype_code]
 
     # Read shape
-    ndim = struct.unpack('<I', file.read(4))[0]
-    shape = tuple(struct.unpack('<I', file.read(4))[0] for _ in range(ndim))
+    ndim = struct.unpack("<I", file.read(4))[0]
+    shape = tuple(struct.unpack("<I", file.read(4))[0] for _ in range(ndim))
 
     # Decode data based on encoding type
     if encoding_type == EncodingType.SPARSE_COO:
@@ -184,7 +186,9 @@ def decode_tensor(file: BinaryIO, device: str = 'cpu') -> torch.Tensor:
     return tensor
 
 
-def _decode_dense(file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtype, device: str) -> torch.Tensor:
+def _decode_dense(
+    file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtype, device: str
+) -> torch.Tensor:
     """Decode dense tensor data."""
     import numpy as np
 
@@ -227,12 +231,14 @@ def _decode_dense(file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtype, de
     return tensor
 
 
-def _decode_sparse_coo(file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtype, device: str) -> torch.Tensor:
+def _decode_sparse_coo(
+    file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtype, device: str
+) -> torch.Tensor:
     """Decode sparse COO tensor data."""
     import numpy as np
 
     # Read nnz
-    nnz = struct.unpack('<Q', file.read(8))[0]
+    nnz = struct.unpack("<Q", file.read(8))[0]
 
     if nnz == 0:
         # Empty sparse tensor
@@ -240,7 +246,7 @@ def _decode_sparse_coo(file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtyp
             torch.zeros((len(shape), 0), dtype=torch.int64),
             torch.zeros(0, dtype=dtype),
             shape,
-            device=device
+            device=device,
         )
 
     # Read indices [ndim, nnz]
@@ -273,9 +279,7 @@ def _decode_sparse_coo(file: BinaryIO, shape: Tuple[int, ...], dtype: torch.dtyp
     values = torch.from_numpy(values_np.copy())
 
     # Create sparse tensor
-    sparse_tensor = torch.sparse_coo_tensor(
-        indices, values, shape, dtype=dtype, device=device
-    )
+    sparse_tensor = torch.sparse_coo_tensor(indices, values, shape, dtype=dtype, device=device)
 
     return sparse_tensor.coalesce()
 

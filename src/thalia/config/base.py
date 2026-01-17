@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
 import torch
 
 
@@ -53,8 +54,7 @@ class BaseConfig:
         }
         if self.dtype not in dtype_map:
             raise ValueError(
-                f"Unknown dtype '{self.dtype}'. "
-                f"Choose from: {list(dtype_map.keys())}"
+                f"Unknown dtype '{self.dtype}'. " f"Choose from: {list(dtype_map.keys())}"
             )
         return dtype_map[self.dtype]
 

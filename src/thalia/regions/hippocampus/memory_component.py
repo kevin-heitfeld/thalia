@@ -7,7 +7,7 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import torch
 
@@ -104,7 +104,7 @@ class HippocampusMemoryComponent(MemoryComponent):
         metadata: Optional[Dict[str, Any]] = None,
         priority_boost: float = 0.0,
         sequence: Optional[List[torch.Tensor]] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Store an episode in memory buffer.
 
@@ -147,10 +147,11 @@ class HippocampusMemoryComponent(MemoryComponent):
         )
 
         # Buffer management
-        max_episodes = getattr(cfg, 'max_episodes', 100)
+        max_episodes = getattr(cfg, "max_episodes", 100)
         if len(self.episode_buffer) >= max_episodes:
-            min_idx = min(range(len(self.episode_buffer)),
-                         key=lambda i: self.episode_buffer[i].priority)
+            min_idx = min(
+                range(len(self.episode_buffer)), key=lambda i: self.episode_buffer[i].priority
+            )
             self.episode_buffer.pop(min_idx)
 
         self.episode_buffer.append(episode)
@@ -161,7 +162,7 @@ class HippocampusMemoryComponent(MemoryComponent):
         k: int = 5,
         similarity_threshold: float = 0.0,
         query_action: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         """Retrieve K most similar episodes from memory.
 
@@ -188,19 +189,21 @@ class HippocampusMemoryComponent(MemoryComponent):
                 sim = min(1.0, sim * 1.2)
 
             if sim >= similarity_threshold:
-                similarities.append({
-                    'state': episode.state,
-                    'action': episode.action,
-                    'reward': episode.reward,
-                    'correct': episode.correct,
-                    'similarity': sim,
-                    'context': episode.context,
-                    'metadata': episode.metadata,
-                    'sequence': episode.sequence,
-                })
+                similarities.append(
+                    {
+                        "state": episode.state,
+                        "action": episode.action,
+                        "reward": episode.reward,
+                        "correct": episode.correct,
+                        "similarity": sim,
+                        "context": episode.context,
+                        "metadata": episode.metadata,
+                        "sequence": episode.sequence,
+                    }
+                )
 
         # Sort by similarity and return top k
-        similarities.sort(key=lambda x: x['similarity'], reverse=True)
+        similarities.sort(key=lambda x: x["similarity"], reverse=True)
         return similarities[:k]
 
     def sample_prioritized(self, n: int) -> List[Episode]:
@@ -225,9 +228,11 @@ class HippocampusMemoryComponent(MemoryComponent):
     def get_memory_diagnostics(self) -> Dict[str, Any]:
         """Get memory-specific diagnostics."""
         diag = super().get_memory_diagnostics()
-        diag.update({
-            "buffer_size": len(self.episode_buffer),
-            "max_episodes": getattr(self.config, 'max_episodes', 100),
-            "total_priority": sum(ep.priority for ep in self.episode_buffer),
-        })
+        diag.update(
+            {
+                "buffer_size": len(self.episode_buffer),
+                "max_episodes": getattr(self.config, "max_episodes", 100),
+                "total_priority": sum(ep.priority for ep in self.episode_buffer),
+            }
+        )
         return diag

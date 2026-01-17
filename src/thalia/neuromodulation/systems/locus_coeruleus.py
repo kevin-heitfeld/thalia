@@ -56,7 +56,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from thalia.neuromodulation.homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
+from thalia.neuromodulation.homeostasis import (
+    NeuromodulatorHomeostasis,
+    NeuromodulatorHomeostasisConfig,
+)
 
 
 @dataclass
@@ -65,6 +68,7 @@ class LocusCoeruleusConfig:
 
     Parameters control NE dynamics and arousal computation.
     """
+
     # Baseline arousal (resting state)
     baseline_arousal: float = 0.3  # Low but non-zero
 
@@ -79,8 +83,8 @@ class LocusCoeruleusConfig:
     uncertainty_gain: float = 1.0  # How much uncertainty drives arousal
 
     # Phasic NE burst parameters
-    burst_threshold: float = 0.5   # Uncertainty > this triggers burst
-    burst_magnitude: float = 0.5   # Size of phasic burst
+    burst_threshold: float = 0.5  # Uncertainty > this triggers burst
+    burst_magnitude: float = 0.5  # Size of phasic burst
 
     # NE physiological limits
     min_norepinephrine: float = 0.0
@@ -132,15 +136,17 @@ class LocusCoeruleusSystem:
 
         # Norepinephrine components
         self._tonic_ne: float = self.config.baseline_arousal  # Slow arousal
-        self._phasic_ne: float = 0.0                          # Fast bursts
-        self._global_ne: float = self.config.baseline_arousal # Combined signal
+        self._phasic_ne: float = 0.0  # Fast bursts
+        self._global_ne: float = self.config.baseline_arousal  # Combined signal
 
         # Arousal tracking
         self._arousal: float = self.config.baseline_arousal
         self._uncertainty: float = 0.0  # Current uncertainty estimate
 
         # Homeostatic regulation
-        homeostatic_cfg = self.config.homeostatic_config or NeuromodulatorHomeostasisConfig(target_level=0.5)
+        homeostatic_cfg = self.config.homeostatic_config or NeuromodulatorHomeostasisConfig(
+            target_level=0.5
+        )
         self._homeostatic = NeuromodulatorHomeostasis(config=homeostatic_cfg)
 
     def update(self, dt_ms: float, uncertainty: float) -> None:
@@ -162,10 +168,7 @@ class LocusCoeruleusSystem:
 
         # Update arousal from uncertainty (smoothed)
         alpha = self.config.arousal_alpha
-        target_arousal = (
-            self.config.baseline_arousal +
-            self.config.uncertainty_gain * uncertainty
-        )
+        target_arousal = self.config.baseline_arousal + self.config.uncertainty_gain * uncertainty
         self._arousal = (1 - alpha) * self._arousal + alpha * target_arousal
 
         # Tonic NE tracks arousal
@@ -174,11 +177,13 @@ class LocusCoeruleusSystem:
         # Check for phasic burst trigger (high uncertainty)
         if uncertainty > self.config.burst_threshold:
             # Automatic burst for high uncertainty
-            burst_strength = (uncertainty - self.config.burst_threshold) / (1.0 - self.config.burst_threshold)
+            burst_strength = (uncertainty - self.config.burst_threshold) / (
+                1.0 - self.config.burst_threshold
+            )
             self._phasic_ne += self.config.burst_magnitude * burst_strength
 
         # Decay phasic NE (fast, exponential)
-        decay = self.config.ne_decay_per_ms ** dt_ms
+        decay = self.config.ne_decay_per_ms**dt_ms
         self._phasic_ne *= decay
 
         # Compute global NE
@@ -186,8 +191,7 @@ class LocusCoeruleusSystem:
 
         # Clip to physiological range
         self._global_ne = max(
-            self.config.min_norepinephrine,
-            min(self.config.max_norepinephrine, self._global_ne)
+            self.config.min_norepinephrine, min(self.config.max_norepinephrine, self._global_ne)
         )
 
         # Update homeostatic regulation
@@ -211,8 +215,7 @@ class LocusCoeruleusSystem:
         # Update global immediately
         self._global_ne = self._tonic_ne + self._phasic_ne
         self._global_ne = max(
-            self.config.min_norepinephrine,
-            min(self.config.max_norepinephrine, self._global_ne)
+            self.config.min_norepinephrine, min(self.config.max_norepinephrine, self._global_ne)
         )
 
     def get_norepinephrine(self, apply_homeostasis: bool = True) -> float:
@@ -267,12 +270,12 @@ class LocusCoeruleusSystem:
             Dictionary with all LC state
         """
         return {
-            'tonic_ne': self._tonic_ne,
-            'phasic_ne': self._phasic_ne,
-            'global_ne': self._global_ne,
-            'arousal': self._arousal,
-            'uncertainty': self._uncertainty,
-            'homeostatic': self._homeostatic.get_state(),
+            "tonic_ne": self._tonic_ne,
+            "phasic_ne": self._phasic_ne,
+            "global_ne": self._global_ne,
+            "arousal": self._arousal,
+            "uncertainty": self._uncertainty,
+            "homeostatic": self._homeostatic.get_state(),
         }
 
     def set_state(self, state: dict) -> None:
@@ -281,13 +284,13 @@ class LocusCoeruleusSystem:
         Args:
             state: Dictionary from get_state()
         """
-        self._tonic_ne = state['tonic_ne']
-        self._phasic_ne = state['phasic_ne']
-        self._global_ne = state['global_ne']
-        self._arousal = state['arousal']
-        self._uncertainty = state['uncertainty']
-        if 'homeostatic' in state:
-            self._homeostatic.set_state(state['homeostatic'])
+        self._tonic_ne = state["tonic_ne"]
+        self._phasic_ne = state["phasic_ne"]
+        self._global_ne = state["global_ne"]
+        self._arousal = state["arousal"]
+        self._uncertainty = state["uncertainty"]
+        if "homeostatic" in state:
+            self._homeostatic.set_state(state["homeostatic"])
 
     def reset_state(self) -> None:
         """Reset LC to initial state."""
@@ -321,13 +324,13 @@ class LocusCoeruleusSystem:
         homeostatic_health = self._homeostatic.check_health()
 
         return {
-            'is_healthy': len(issues) == 0 and homeostatic_health['is_healthy'],
-            'issues': issues + homeostatic_health['issues'],
-            'warnings': homeostatic_health['warnings'],
-            'tonic_ne': self._tonic_ne,
-            'phasic_ne': self._phasic_ne,
-            'global_ne': self._global_ne,
-            'arousal': self._arousal,
-            'uncertainty': self._uncertainty,
-            'receptor_sensitivity': homeostatic_health['sensitivity'],
+            "is_healthy": len(issues) == 0 and homeostatic_health["is_healthy"],
+            "issues": issues + homeostatic_health["issues"],
+            "warnings": homeostatic_health["warnings"],
+            "tonic_ne": self._tonic_ne,
+            "phasic_ne": self._phasic_ne,
+            "global_ne": self._global_ne,
+            "arousal": self._arousal,
+            "uncertainty": self._uncertainty,
+            "receptor_sensitivity": homeostatic_health["sensitivity"],
         }

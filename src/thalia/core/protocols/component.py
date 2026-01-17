@@ -27,17 +27,17 @@ Date: December 2025
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Protocol, runtime_checkable, Optional
+from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 import torch
 import torch.nn as nn
 
 from thalia.core.component_state import NeuralComponentState
-from thalia.neuromodulation.mixin import NeuromodulatorMixin
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
 from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
+from thalia.neuromodulation.mixin import NeuromodulatorMixin
 
 
 @runtime_checkable
@@ -238,7 +238,7 @@ class BrainComponent(Protocol):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """
@@ -278,7 +278,7 @@ class BrainComponent(Protocol):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow output dimension by adding neurons.
@@ -437,6 +437,7 @@ class BrainComponent(Protocol):
 # Abstract Base Class (Enforces Protocol)
 # =============================================================================
 
+
 class BrainComponentBase(ABC):
     """
     Abstract base class enforcing the BrainComponent protocol.
@@ -518,7 +519,7 @@ class BrainComponentBase(ABC):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """
@@ -532,7 +533,7 @@ class BrainComponentBase(ABC):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """
@@ -614,6 +615,7 @@ class BrainComponentBase(ABC):
 # Mixin with Default Implementations
 # =============================================================================
 
+
 class BrainComponentMixin:
     """
     Mixin providing default implementations of BrainComponent methods.
@@ -636,7 +638,7 @@ class BrainComponentMixin:
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Default: raise NotImplementedError with helpful message."""
@@ -649,7 +651,7 @@ class BrainComponentMixin:
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Default: raise NotImplementedError with helpful message."""
@@ -664,13 +666,14 @@ class BrainComponentMixin:
         from thalia.coordination.growth import GrowthManager
 
         # Use component name if available, otherwise class name
-        name = getattr(self, 'name', self.__class__.__name__)
+        name = getattr(self, "name", self.__class__.__name__)
         manager = GrowthManager(region_name=name)
         return manager.get_capacity_metrics(self)
 
     def check_health(self) -> Any:
         """Default: return healthy status with no issues."""
         from thalia.diagnostics.health_monitor import HealthReport
+
         return HealthReport(
             is_healthy=True,
             overall_severity=0.0,
@@ -688,7 +691,7 @@ class BrainComponentMixin:
     ) -> None:
         """Default: store oscillator info but don't require usage."""
         # Store in a standard location that subclasses can access
-        if not hasattr(self, '_oscillator_phases'):
+        if not hasattr(self, "_oscillator_phases"):
             self._oscillator_phases: Dict[str, float] = {}
             self._oscillator_signals: Dict[str, float] = {}
             self._oscillator_theta_slot: int = 0
@@ -707,79 +710,88 @@ class BrainComponentMixin:
     @property
     def _theta_phase(self) -> float:
         """Current theta phase in radians [0, 2π)."""
-        return getattr(self, '_oscillator_phases', {}).get('theta', 0.0)
+        return getattr(self, "_oscillator_phases", {}).get("theta", 0.0)
 
     @_theta_phase.setter
     def _theta_phase(self, value: float) -> None:
         """Allow regions to set theta phase directly (backward compatibility)."""
-        if not hasattr(self, '_oscillator_phases'):
+        if not hasattr(self, "_oscillator_phases"):
             self._oscillator_phases = {}
-        self._oscillator_phases['theta'] = value
+        self._oscillator_phases["theta"] = value
 
     @property
     def _gamma_phase(self) -> float:
         """Current gamma phase in radians [0, 2π)."""
-        return getattr(self, '_oscillator_phases', {}).get('gamma', 0.0)
+        return getattr(self, "_oscillator_phases", {}).get("gamma", 0.0)
 
     @_gamma_phase.setter
     def _gamma_phase(self, value: float) -> None:
         """Allow regions to set gamma phase directly (backward compatibility)."""
-        if not hasattr(self, '_oscillator_phases'):
+        if not hasattr(self, "_oscillator_phases"):
             self._oscillator_phases = {}
-        self._oscillator_phases['gamma'] = value
+        self._oscillator_phases["gamma"] = value
 
     @property
     def _alpha_phase(self) -> float:
         """Current alpha phase in radians [0, 2π)."""
-        return getattr(self, '_oscillator_phases', {}).get('alpha', 0.0)
+        return getattr(self, "_oscillator_phases", {}).get("alpha", 0.0)
 
     @_alpha_phase.setter
     def _alpha_phase(self, value: float) -> None:
         """Allow regions to set alpha phase directly (backward compatibility)."""
-        if not hasattr(self, '_oscillator_phases'):
+        if not hasattr(self, "_oscillator_phases"):
             self._oscillator_phases = {}
-        self._oscillator_phases['alpha'] = value
+        self._oscillator_phases["alpha"] = value
 
     @property
     def _beta_phase(self) -> float:
         """Current beta phase in radians [0, 2π)."""
-        return getattr(self, '_oscillator_phases', {}).get('beta', 0.0)
+        return getattr(self, "_oscillator_phases", {}).get("beta", 0.0)
 
     @_beta_phase.setter
     def _beta_phase(self, value: float) -> None:
         """Allow regions to set beta phase directly (backward compatibility)."""
-        if not hasattr(self, '_oscillator_phases'):
+        if not hasattr(self, "_oscillator_phases"):
             self._oscillator_phases = {}
-        self._oscillator_phases['beta'] = value
+        self._oscillator_phases["beta"] = value
 
     @property
     def _delta_phase(self) -> float:
         """Current delta phase in radians [0, 2π)."""
-        return getattr(self, '_oscillator_phases', {}).get('delta', 0.0)
+        return getattr(self, "_oscillator_phases", {}).get("delta", 0.0)
 
     @_delta_phase.setter
     def _delta_phase(self, value: float) -> None:
         """Allow regions to set delta phase directly (backward compatibility)."""
-        if not hasattr(self, '_oscillator_phases'):
+        if not hasattr(self, "_oscillator_phases"):
             self._oscillator_phases = {}
-        self._oscillator_phases['delta'] = value
+        self._oscillator_phases["delta"] = value
 
     @property
     def _gamma_amplitude_effective(self) -> float:
         """Effective gamma amplitude (with cross-frequency coupling)."""
-        return getattr(self, '_coupled_amplitudes', {}).get('gamma', 1.0)
+        return getattr(self, "_coupled_amplitudes", {}).get("gamma", 1.0)
 
     @property
     def _beta_amplitude_effective(self) -> float:
         """Effective beta amplitude (with cross-frequency coupling)."""
-        return getattr(self, '_coupled_amplitudes', {}).get('beta', 1.0)
+        return getattr(self, "_coupled_amplitudes", {}).get("beta", 1.0)
 
 
 # =============================================================================
 # Component Type Hierarchy (v2.0 Architecture)
 # =============================================================================
 
-class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, LearningStrategyMixin, DiagnosticsMixin, GrowthMixin, ResettableMixin):
+
+class LearnableComponent(
+    BrainComponentBase,
+    nn.Module,
+    NeuromodulatorMixin,
+    LearningStrategyMixin,
+    DiagnosticsMixin,
+    GrowthMixin,
+    ResettableMixin,
+):
     """
     Complete base class for all learnable neural components (regions and weighted pathways).
 
@@ -857,16 +869,16 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
             # Apply spillover if enabled - augments weights with volume transmission
             # W_effective = W_direct + W_spillover
             # Computed once at init, zero cost during forward pass
-            if getattr(config, 'enable_spillover', False):
-                from thalia.synapses.spillover import SpilloverTransmission, SpilloverConfig
+            if getattr(config, "enable_spillover", False):
+                from thalia.synapses.spillover import SpilloverConfig, SpilloverTransmission
 
                 spillover_config = SpilloverConfig(
                     enabled=True,
-                    strength=getattr(config, 'spillover_strength', 0.15),
-                    mode=getattr(config, 'spillover_mode', 'connectivity'),
-                    lateral_radius=getattr(config, 'spillover_lateral_radius', 3),
-                    similarity_threshold=getattr(config, 'spillover_similarity_threshold', 0.5),
-                    normalize=getattr(config, 'spillover_normalize', True),
+                    strength=getattr(config, "spillover_strength", 0.15),
+                    mode=getattr(config, "spillover_mode", "connectivity"),
+                    lateral_radius=getattr(config, "spillover_lateral_radius", 3),
+                    similarity_threshold=getattr(config, "spillover_similarity_threshold", 0.5),
+                    normalize=getattr(config, "spillover_normalize", True),
                 )
 
                 self.spillover = SpilloverTransmission(
@@ -896,13 +908,13 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         # In v2.0 architecture, regions can own their afferent synapses
         # (weights + learning) instead of having pathways with weights.
         self.afferent_synapses: Optional[Any] = None
-        if getattr(config, 'use_afferent_synapses', False):
+        if getattr(config, "use_afferent_synapses", False):
             self._init_afferent_synapses()
 
         # =================================================================
         # CONTINUOUS PLASTICITY SETTINGS
         # =================================================================
-        self.plasticity_enabled: bool = True       # Can be disabled for eval
+        self.plasticity_enabled: bool = True  # Can be disabled for eval
         self.base_learning_rate: float = config.learning_rate
 
         # =================================================================
@@ -940,7 +952,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         synapses_config = AfferentSynapsesConfig(
             n_neurons=self.config.n_neurons,
             n_inputs=self.config.n_input,
-            learning_rule=getattr(self.config, 'learning_rule', 'hebbian'),
+            learning_rule=getattr(self.config, "learning_rule", "hebbian"),
             learning_rate=self.config.learning_rate,
             device=self.config.device,
         )
@@ -959,7 +971,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
     @property
     def n_input(self) -> int:
         """Number of input connections (convenience accessor)."""
-        if hasattr(self.config, 'n_input'):
+        if hasattr(self.config, "n_input"):
             return self.config.n_input
         else:
             raise AttributeError(f"{self.__class__.__name__} config has no n_input attribute")
@@ -967,12 +979,14 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
     @property
     def n_output(self) -> int:
         """Number of output neurons (convenience accessor)."""
-        if hasattr(self.config, 'n_output'):
+        if hasattr(self.config, "n_output"):
             return self.config.n_output
-        elif hasattr(self.config, 'n_neurons'):
+        elif hasattr(self.config, "n_neurons"):
             return self.config.n_neurons
         else:
-            raise AttributeError(f"{self.__class__.__name__} config has no n_output or n_neurons attribute")
+            raise AttributeError(
+                f"{self.__class__.__name__} config has no n_output or n_neurons attribute"
+            )
 
     # =========================================================================
     # CONCRETE IMPLEMENTATIONS (shared by all components)
@@ -990,10 +1004,13 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         Returns:
             HealthReport with detected issues
         """
-        from thalia.diagnostics.health_monitor import (
-            HealthReport, IssueReport, HealthIssue, IssueSeverity
-        )
         from thalia.components.coding.spike_utils import compute_firing_rate
+        from thalia.diagnostics.health_monitor import (
+            HealthIssue,
+            HealthReport,
+            IssueReport,
+            IssueSeverity,
+        )
 
         issues = []
 
@@ -1002,42 +1019,50 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
             firing_rate = compute_firing_rate(self.state.spikes)
 
             if firing_rate < 0.01:  # Less than 1%
-                issues.append(IssueReport(
-                    issue_type=HealthIssue.ACTIVITY_COLLAPSE,
-                    severity=IssueSeverity.HIGH.value,
-                    description=f'Firing rate too low: {firing_rate:.1%}',
-                    recommendation='Check input strength, reduce thresholds, or increase excitation'
-                ))
+                issues.append(
+                    IssueReport(
+                        issue_type=HealthIssue.ACTIVITY_COLLAPSE,
+                        severity=IssueSeverity.HIGH.value,
+                        description=f"Firing rate too low: {firing_rate:.1%}",
+                        recommendation="Check input strength, reduce thresholds, or increase excitation",
+                    )
+                )
             elif firing_rate > 0.90:  # More than 90%
-                issues.append(IssueReport(
-                    issue_type=HealthIssue.SEIZURE_RISK,
-                    severity=IssueSeverity.HIGH.value,
-                    description=f'Firing rate too high: {firing_rate:.1%}',
-                    recommendation='Increase inhibition, increase thresholds, or reduce input strength'
-                ))
+                issues.append(
+                    IssueReport(
+                        issue_type=HealthIssue.SEIZURE_RISK,
+                        severity=IssueSeverity.HIGH.value,
+                        description=f"Firing rate too high: {firing_rate:.1%}",
+                        recommendation="Increase inhibition, increase thresholds, or reduce input strength",
+                    )
+                )
 
         # Check weight saturation
-        if hasattr(self, 'weights') and self.weights is not None:
+        if hasattr(self, "weights") and self.weights is not None:
             w = self.weights.detach()
-            w_max = getattr(self.config, 'w_max', 1.0)
-            w_min = getattr(self.config, 'w_min', 0.0)
+            w_max = getattr(self.config, "w_max", 1.0)
+            w_min = getattr(self.config, "w_min", 0.0)
             near_max = (w > w_max * 0.95).float().mean().item()
             near_min = (w < w_min + 0.05).float().mean().item()
 
             if near_max > 0.5:
-                issues.append(IssueReport(
-                    issue_type=HealthIssue.WEIGHT_EXPLOSION,
-                    severity=IssueSeverity.MEDIUM.value,
-                    description=f'Weight saturation at maximum: {near_max:.1%} near max',
-                    recommendation='Consider synaptic scaling or weight normalization'
-                ))
+                issues.append(
+                    IssueReport(
+                        issue_type=HealthIssue.WEIGHT_EXPLOSION,
+                        severity=IssueSeverity.MEDIUM.value,
+                        description=f"Weight saturation at maximum: {near_max:.1%} near max",
+                        recommendation="Consider synaptic scaling or weight normalization",
+                    )
+                )
             elif near_min > 0.5:
-                issues.append(IssueReport(
-                    issue_type=HealthIssue.WEIGHT_COLLAPSE,
-                    severity=IssueSeverity.MEDIUM.value,
-                    description=f'Weight saturation at minimum: {near_min:.1%} near min',
-                    recommendation='Consider increasing learning rate or input strength'
-                ))
+                issues.append(
+                    IssueReport(
+                        issue_type=HealthIssue.WEIGHT_COLLAPSE,
+                        severity=IssueSeverity.MEDIUM.value,
+                        description=f"Weight saturation at minimum: {near_min:.1%} near min",
+                        recommendation="Consider increasing learning rate or input strength",
+                    )
+                )
 
         # Create report
         is_healthy = len(issues) == 0
@@ -1053,7 +1078,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
             overall_severity=overall_severity,
             issues=issues,
             summary=summary,
-            metrics=self.get_diagnostics()
+            metrics=self.get_diagnostics(),
         )
 
     def get_capacity_metrics(self) -> Any:  # Returns CapacityMetrics
@@ -1092,9 +1117,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
             n_neurons: Number of neurons (output dimension)
         """
         self.delay_buffer = torch.zeros(
-            (self.max_delay_steps, n_neurons),
-            dtype=torch.bool,
-            device=self._device
+            (self.max_delay_steps, n_neurons), dtype=torch.bool, device=self._device
         )
         self.delay_buffer_idx = 0
 
@@ -1112,7 +1135,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         Returns:
             Delayed spikes from avg_delay_steps ago
         """
-        if not hasattr(self, 'delay_buffer') or self.delay_buffer is None:
+        if not hasattr(self, "delay_buffer") or self.delay_buffer is None:
             self._initialize_delay_buffer(output_spikes.shape[0])
 
         self.delay_buffer[self.delay_buffer_idx] = output_spikes
@@ -1160,7 +1183,7 @@ class LearnableComponent(BrainComponentBase, nn.Module, NeuromodulatorMixin, Lea
         for name in subsystem_names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)
-                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                if subsystem is not None and hasattr(subsystem, "reset_state"):
                     subsystem.reset_state()
 
     def _reset_scalars(self, **scalar_values: Any) -> None:

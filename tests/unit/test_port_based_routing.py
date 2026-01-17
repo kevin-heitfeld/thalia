@@ -11,8 +11,8 @@ Date: December 15, 2025
 import pytest
 import torch
 
-from thalia.core.brain_builder import BrainBuilder, ConnectionSpec
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder, ConnectionSpec
 
 
 @pytest.fixture
@@ -90,14 +90,29 @@ class TestBrainBuilderPortBasedConnections:
         builder = BrainBuilder(global_config)
 
         # Add components (cortex needs all layer sizes and input_size specified)
-        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", input_size=64, dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex",
+            "cortex",
+            input_size=64,
+            l4_size=64,
+            l23_size=96,
+            l5_size=32,
+            l6a_size=0,
+            l6b_size=0,
+        )
+        builder.add_component(
+            "hippocampus",
+            "hippocampus",
+            input_size=64,
+            dg_size=128,
+            ca3_size=96,
+            ca2_size=32,
+            ca1_size=64,
+        )
 
         # Connect using L2/3 output specifically
         builder.connect(
-            "cortex", "hippocampus",
-            source_port="l23",
-            pathway_type="axonal_projection"
+            "cortex", "hippocampus", source_port="l23", pathway_type="axonal_projection"
         )
 
         # Build and verify connection exists with correct routing
@@ -107,21 +122,26 @@ class TestBrainBuilderPortBasedConnections:
 
         # Verify hippocampus receives input from cortex
         pathway = brain.connections[("cortex", "hippocampus")]
-        assert hasattr(pathway, 'forward')  # Valid pathway exists
+        assert hasattr(pathway, "forward")  # Valid pathway exists
 
     def test_connect_with_target_port(self, global_config):
         """Test connecting with target port specification."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("pfc", "prefrontal", input_size=64, wm_size=32)
-        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component(
+            "cortex",
+            "cortex",
+            input_size=64,
+            l4_size=64,
+            l23_size=96,
+            l5_size=32,
+            l6a_size=0,
+            l6b_size=0,
+        )
 
         # Connect to top_down input specifically
-        builder.connect(
-            "pfc", "cortex",
-            target_port="top_down",
-            pathway_type="axonal_projection"
-        )
+        builder.connect("pfc", "cortex", target_port="top_down", pathway_type="axonal_projection")
 
         conn = builder._connections[0]
         assert conn.target_port == "top_down"
@@ -130,14 +150,26 @@ class TestBrainBuilderPortBasedConnections:
         """Test connecting with both source and target ports."""
         builder = BrainBuilder(global_config)
 
-        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32})
+        builder.add_component(
+            "cortex",
+            "cortex",
+            input_size=64,
+            l4_size=64,
+            l23_size=96,
+            l5_size=32,
+            l6a_size=0,
+            l6b_size=0,
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32}
+        )
 
         builder.connect(
-            "cortex", "striatum",
+            "cortex",
+            "striatum",
             source_port="l5",
             target_port="cortical_input",
-            pathway_type="axonal_projection"
+            pathway_type="axonal_projection",
         )
 
         conn = builder._connections[0]
@@ -150,21 +182,17 @@ class TestBrainBuilderPortBasedConnections:
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=32)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
 
         # Feedforward path
         builder.connect(
-            "thalamus", "cortex",
-            target_port="feedforward",
-            pathway_type="axonal_projection"
+            "thalamus", "cortex", target_port="feedforward", pathway_type="axonal_projection"
         )
 
         # Top-down path
-        builder.connect(
-            "pfc", "cortex",
-            target_port="top_down",
-            pathway_type="axonal_projection"
-        )
+        builder.connect("pfc", "cortex", target_port="top_down", pathway_type="axonal_projection")
 
         # Build and verify connections exist
         brain = builder.build()
@@ -177,12 +205,10 @@ class TestBrainBuilderPortBasedConnections:
 
         # Verify connections exist (with or without port suffix)
         thalamus_cortex_exists = any(
-            'thalamus' in str(k[0]) and 'cortex' in str(k[1])
-            for k in connection_keys
+            "thalamus" in str(k[0]) and "cortex" in str(k[1]) for k in connection_keys
         )
         pfc_cortex_exists = any(
-            'pfc' in str(k[0]) and 'cortex' in str(k[1])
-            for k in connection_keys
+            "pfc" in str(k[0]) and "cortex" in str(k[1]) for k in connection_keys
         )
         assert thalamus_cortex_exists, f"Thalamus->Cortex connection not found in {connection_keys}"
         assert pfc_cortex_exists, f"PFC->Cortex connection not found in {connection_keys}"
@@ -196,32 +222,51 @@ class TestLayerSpecificCorticalRouting:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
 
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
-        builder.connect("cortex", "hippocampus", source_port="l23", pathway_type="axonal_projection")
+        builder.connect(
+            "cortex", "hippocampus", source_port="l23", pathway_type="axonal_projection"
+        )
 
         brain = builder.build()
 
         # Verify cortex component exists and has layer structure
         cortex = brain.components["cortex"]
-        assert hasattr(cortex, 'l23_size')
-        assert hasattr(cortex, 'l5_size')
+        assert hasattr(cortex, "l23_size")
+        assert hasattr(cortex, "l5_size")
 
         # Verify hippocampus receives only L2/3 size
         hippo = brain.components["hippocampus"]
         # Should infer input_size from cortex L2/3 output, not full output
         assert hippo.input_size == cortex.l23_size
 
-    @pytest.mark.skip(reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md")
+    @pytest.mark.skip(
+        reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
+    )
     def test_cortex_l5_to_striatum(self, global_config):
         """Test that cortex L5 output routes to striatum with D1/D2 separation."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=0)
-        builder.add_component("cortex", "cortex", input_size=64, l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32})
+        builder.add_component(
+            "cortex",
+            "cortex",
+            input_size=64,
+            l4_size=64,
+            l23_size=96,
+            l5_size=32,
+            l6a_size=0,
+            l6b_size=0,
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32}
+        )
 
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
         builder.connect("cortex", "striatum", source_port="l5", pathway_type="axonal_projection")
@@ -248,13 +293,19 @@ class TestLayerSpecificCorticalRouting:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={'cortex': 32})
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"cortex": 32}
+        )
 
         builder.connect("thalamus", "cortex")
         builder.connect("cortex", "hippocampus", source_port="l23")  # Cortico-cortical
-        builder.connect("cortex", "striatum", source_port="l5")      # Cortico-subcortical
+        builder.connect("cortex", "striatum", source_port="l5")  # Cortico-subcortical
 
         brain = builder.build()
 
@@ -281,7 +332,9 @@ class TestMultipleInputPorts:
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=32)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
 
         # Feedforward from thalamus
         builder.connect("thalamus", "cortex", target_port="feedforward")
@@ -303,8 +356,12 @@ class TestMultipleInputPorts:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
 
         # Main cortical input (L2/3)
         builder.connect("thalamus", "cortex")
@@ -328,16 +385,28 @@ class TestMultipleInputPorts:
         assert "thalamus" in hippo.input_sources
         assert hippo.input_sources["thalamus"] == 64  # entorhinal from thalamus
 
-    @pytest.mark.skip(reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md")
+    @pytest.mark.skip(
+        reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
+    )
     def test_striatum_multiple_input_sources(self, global_config):
         """Test striatum receiving inputs from cortex, hippocampus, and PFC with D1/D2 separation."""
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
         builder.add_component("pfc", "prefrontal", input_size=96, n_neurons=32)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={'cortex': 32, 'hippocampus': 64})
+        builder.add_component(
+            "striatum",
+            "striatum",
+            n_actions=4,
+            neurons_per_action=1,
+            input_sources={"cortex": 32, "hippocampus": 64},
+        )
 
         # Standard connections
         builder.connect("thalamus", "cortex")
@@ -384,9 +453,15 @@ class TestPortBasedForwardPass:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={'cortex': 32})
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"cortex": 32}
+        )
 
         builder.connect("thalamus", "cortex")
         builder.connect("cortex", "hippocampus", source_port="l23")
@@ -395,9 +470,7 @@ class TestPortBasedForwardPass:
         brain = builder.build()
 
         # Create input
-        input_data = {
-            "thalamus": torch.randn(64, device=brain.device)
-        }
+        input_data = {"thalamus": torch.randn(64, device=brain.device)}
 
         # Run forward pass
         result = brain.forward(input_data, n_timesteps=5)
@@ -424,7 +497,9 @@ class TestBackwardCompatibility:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
 
         # Old-style connection without ports
         builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
@@ -445,9 +520,15 @@ class TestBackwardCompatibility:
         builder = BrainBuilder(global_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component("cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0)
-        builder.add_component("hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64)
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={'cortex': 32})
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"cortex": 32}
+        )
 
         # Mix of old and new style
         builder.connect("thalamus", "cortex")  # Old style

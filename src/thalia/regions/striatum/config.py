@@ -8,7 +8,7 @@ reinforcement learning system, and StriatumState for state management.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -166,7 +166,7 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
         n_actions: int,
         neurons_per_action: int = 10,
         input_sources: Optional[Dict[str, int]] = None,
-        **kwargs
+        **kwargs,
     ) -> StriatumConfig:
         """Create config with pathway sizes computed from number of actions.
 
@@ -202,7 +202,7 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
             n_actions=n_actions,
             neurons_per_action=neurons_per_action,
             input_sources=input_sources,
-            **kwargs
+            **kwargs,
         )
 
     # =========================================================================
@@ -231,7 +231,9 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     use_goal_conditioning: bool = True  # Enable goal-conditioned value learning
     pfc_size: int = 128  # Size of PFC goal context input (must match PFC n_output)
     goal_modulation_strength: float = 0.5  # How strongly goals modulate values
-    goal_modulation_lr: float = LEARNING_RATE_HEBBIAN_SLOW  # Learning rate for PFC → striatum weights
+    goal_modulation_lr: float = (
+        LEARNING_RATE_HEBBIAN_SLOW  # Learning rate for PFC → striatum weights
+    )
 
     # =========================================================================
     # D1/D2 PATHWAY DELAYS (Temporal Competition)
@@ -282,7 +284,9 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
     use_multiscale_eligibility: bool = False  # Enable fast + slow eligibility traces
     fast_eligibility_tau_ms: float = 500.0  # Fast trace decay (~500ms)
     slow_eligibility_tau_ms: float = 60000.0  # Slow trace decay (~60s)
-    eligibility_consolidation_rate: float = 0.01  # Transfer rate from fast to slow (1% per timestep)
+    eligibility_consolidation_rate: float = (
+        0.01  # Transfer rate from fast to slow (1% per timestep)
+    )
     slow_trace_weight: float = 0.3  # Weight of slow trace in combined eligibility
 
     # =========================================================================
@@ -301,6 +305,7 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
 # =====================================================================
 # STRIATUM STATE (State Management Refactoring - Phase 3.2)
 # =====================================================================
+
 
 @dataclass
 class StriatumState(BaseRegionState):
@@ -448,51 +453,41 @@ class StriatumState(BaseRegionState):
         """
         return {
             "state_version": self.STATE_VERSION,
-
             # Base state (spikes, membrane from BaseRegionState)
             "spikes": self.spikes,
             "membrane": self.membrane,
-
             # D1/D2 pathways
             "d1_pathway_state": self.d1_pathway_state,
             "d2_pathway_state": self.d2_pathway_state,
-
             # Vote accumulation
             "d1_votes_accumulated": self.d1_votes_accumulated,
             "d2_votes_accumulated": self.d2_votes_accumulated,
-
             # Action selection
             "last_action": self.last_action,
             "recent_spikes": self.recent_spikes,
-
             # Exploration
             "exploring": self.exploring,
             "last_uncertainty": self.last_uncertainty,
             "last_exploration_prob": self.last_exploration_prob,
             "exploration_manager_state": self.exploration_manager_state,
-
             # Value/RPE
             "value_estimates": self.value_estimates,
             "last_rpe": self.last_rpe,
             "last_expected": self.last_expected,
-
             # Goal modulation
             "pfc_modulation_d1": self.pfc_modulation_d1,
             "pfc_modulation_d2": self.pfc_modulation_d2,
-
             # Delay buffers
             "d1_delay_buffer": self.d1_delay_buffer,
             "d2_delay_buffer": self.d2_delay_buffer,
             "d1_delay_ptr": self.d1_delay_ptr,
             "d2_delay_ptr": self.d2_delay_ptr,
-
             # Homeostasis
             "activity_ema": self.activity_ema,
             "trial_spike_count": self.trial_spike_count,
             "trial_timesteps": self.trial_timesteps,
             "homeostatic_scaling_applied": self.homeostatic_scaling_applied,
             "homeostasis_manager_state": self.homeostasis_manager_state,
-
             # Neuromodulators inherited from BaseRegionState
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
@@ -510,6 +505,7 @@ class StriatumState(BaseRegionState):
         Returns:
             New StriatumState instance with data on specified device
         """
+
         # Helper function to transfer tensors
         def to_device(x):
             if x is not None and isinstance(x, torch.Tensor):
@@ -520,56 +516,45 @@ class StriatumState(BaseRegionState):
             # Base state
             spikes=to_device(data.get("spikes")),
             membrane=to_device(data.get("membrane")),
-
             # FSI state (backward compatible)
             fsi_membrane=to_device(data.get("fsi_membrane")),
-
             # D1/D2 pathways
             d1_pathway_state=data.get("d1_pathway_state"),
             d2_pathway_state=data.get("d2_pathway_state"),
-
             # Vote accumulation
             d1_votes_accumulated=to_device(data.get("d1_votes_accumulated")),
             d2_votes_accumulated=to_device(data.get("d2_votes_accumulated")),
-
             # Action selection
             last_action=data.get("last_action"),
             recent_spikes=to_device(data.get("recent_spikes")),
-
             # Exploration
             exploring=data.get("exploring", False),
             last_uncertainty=data.get("last_uncertainty"),
             last_exploration_prob=data.get("last_exploration_prob"),
             exploration_manager_state=data.get("exploration_manager_state"),
-
             # Value/RPE
             value_estimates=to_device(data.get("value_estimates")),
             last_rpe=data.get("last_rpe"),
             last_expected=data.get("last_expected"),
-
             # Goal modulation
             pfc_modulation_d1=to_device(data.get("pfc_modulation_d1")),
             pfc_modulation_d2=to_device(data.get("pfc_modulation_d2")),
-
             # Delay buffers
             d1_delay_buffer=to_device(data.get("d1_delay_buffer")),
             d2_delay_buffer=to_device(data.get("d2_delay_buffer")),
             d1_delay_ptr=data.get("d1_delay_ptr", 0),
             d2_delay_ptr=data.get("d2_delay_ptr", 0),
-
             # Homeostasis
             activity_ema=data.get("activity_ema", 0.0),
             trial_spike_count=data.get("trial_spike_count", 0),
             trial_timesteps=data.get("trial_timesteps", 0),
             homeostatic_scaling_applied=data.get("homeostatic_scaling_applied", False),
             homeostasis_manager_state=data.get("homeostasis_manager_state"),
-
             # STP
             stp_corticostriatal_u=to_device(data.get("stp_corticostriatal_u")),
             stp_corticostriatal_x=to_device(data.get("stp_corticostriatal_x")),
             stp_thalamostriatal_u=to_device(data.get("stp_thalamostriatal_u")),
             stp_thalamostriatal_x=to_device(data.get("stp_thalamostriatal_x")),
-
             # Neuromodulators inherited from BaseRegionState
             # Striatum uses higher baseline for RL
             dopamine=data.get("dopamine", DA_BASELINE_STRIATUM),

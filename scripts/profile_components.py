@@ -14,6 +14,9 @@ Output:
 
 import ast
 import json
+
+# Add src to path
+import sys
 import time
 import tracemalloc
 from pathlib import Path
@@ -21,13 +24,11 @@ from typing import Any, Dict
 
 import torch
 
-# Add src to path
-import sys
 script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir.parent / "src"))
 
-from thalia.core.brain_builder import BrainBuilder
 from thalia.config import GlobalConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 class ComponentProfiler:
@@ -37,8 +38,9 @@ class ComponentProfiler:
         self.src_dir = src_dir
         self.results: Dict[str, Dict[str, Any]] = {}
 
-    def profile_execution(self, component_name: str, component_fn: Any,
-                         n_iterations: int = 100) -> Dict[str, float]:
+    def profile_execution(
+        self, component_name: str, component_fn: Any, n_iterations: int = 100
+    ) -> Dict[str, float]:
         """Profile execution time and memory usage.
 
         Args:
@@ -79,13 +81,13 @@ class ComponentProfiler:
 
     def analyze_code_complexity(self, file_path: Path) -> Dict[str, int]:
         """Analyze code complexity metrics."""
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             try:
                 tree = ast.parse(f.read())
             except SyntaxError:
                 return {"lines": 0, "functions": 0, "classes": 0, "complexity": 0}
 
-        lines = sum(1 for _ in open(file_path, 'r', encoding='utf-8'))
+        lines = sum(1 for _ in open(file_path, "r", encoding="utf-8"))
         functions = sum(1 for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
         classes = sum(1 for node in ast.walk(tree) if isinstance(node, ast.ClassDef))
 
@@ -106,9 +108,9 @@ class ComponentProfiler:
 
     def profile_brain_components(self) -> None:
         """Profile all components in a default brain."""
-        print("="*60)
+        print("=" * 60)
         print("COMPONENT PERFORMANCE PROFILING")
-        print("="*60)
+        print("=" * 60)
         print()
 
         # Create test brain
@@ -151,7 +153,7 @@ class ComponentProfiler:
         # Store results for each component
         for comp_name, component in brain.components.items():
             component_type = type(component).__name__
-            module_path = Path(component.__class__.__module__.replace('.', '/') + '.py')
+            module_path = Path(component.__class__.__module__.replace(".", "/") + ".py")
             file_path = self.src_dir.parent / "src" / module_path
 
             if file_path.exists():
@@ -179,9 +181,9 @@ class ComponentProfiler:
     def profile_region_implementations(self) -> None:
         """Profile all region implementations."""
         print()
-        print("="*60)
+        print("=" * 60)
         print("REGION IMPLEMENTATION ANALYSIS")
-        print("="*60)
+        print("=" * 60)
         print()
 
         regions_dir = self.src_dir / "regions"
@@ -211,9 +213,9 @@ class ComponentProfiler:
     def profile_pathway_implementations(self) -> None:
         """Profile all pathway implementations."""
         print()
-        print("="*60)
+        print("=" * 60)
         print("PATHWAY IMPLEMENTATION ANALYSIS")
-        print("="*60)
+        print("=" * 60)
         print()
 
         pathways_dir = self.src_dir / "pathways"
@@ -243,9 +245,9 @@ class ComponentProfiler:
     def generate_report(self) -> None:
         """Generate performance report."""
         print()
-        print("="*60)
+        print("=" * 60)
         print("PERFORMANCE SUMMARY")
-        print("="*60)
+        print("=" * 60)
         print()
 
         # Full forward pass timing
@@ -264,9 +266,13 @@ class ComponentProfiler:
             print()
 
         # Code complexity
-        brain_components = {k: v for k, v in self.results.items()
-                          if not k.startswith("region_") and not k.startswith("pathway_")
-                          and k != "_full_forward_pass"}
+        brain_components = {
+            k: v
+            for k, v in self.results.items()
+            if not k.startswith("region_")
+            and not k.startswith("pathway_")
+            and k != "_full_forward_pass"
+        }
 
         if brain_components:
             print("Brain Components - Code Complexity:")
@@ -277,8 +283,10 @@ class ComponentProfiler:
             for comp_name, metrics in sorted(brain_components.items()):
                 if metrics["code"]["lines"] > 0:
                     code_m = metrics["code"]
-                    print(f"{comp_name:<30} {code_m['lines']:>7} {code_m['functions']:>7} "
-                          f"{code_m['classes']:>7} {code_m['complexity']:>7}")
+                    print(
+                        f"{comp_name:<30} {code_m['lines']:>7} {code_m['functions']:>7} "
+                        f"{code_m['classes']:>7} {code_m['complexity']:>7}"
+                    )
             print()
 
         # Implementation complexity
@@ -288,16 +296,20 @@ class ComponentProfiler:
         print("-" * 60)
 
         for comp_name, metrics in sorted(self.results.items()):
-            if (comp_name.startswith("region_") or comp_name.startswith("pathway_")) and metrics["code"]["lines"] > 0:
+            if (comp_name.startswith("region_") or comp_name.startswith("pathway_")) and metrics[
+                "code"
+            ]["lines"] > 0:
                 code_m = metrics["code"]
                 display_name = comp_name.replace("region_", "").replace("pathway_", "")
-                print(f"{display_name:<30} {code_m['lines']:>7} {code_m['functions']:>7} "
-                      f"{code_m['classes']:>7} {code_m['complexity']:>7}")
+                print(
+                    f"{display_name:<30} {code_m['lines']:>7} {code_m['functions']:>7} "
+                    f"{code_m['classes']:>7} {code_m['complexity']:>7}"
+                )
         print()
 
     def save_results(self, output_file: Path) -> None:
         """Save profiling results to JSON."""
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(self.results, f, indent=2)
         print(f"Results saved to: {output_file}")
 

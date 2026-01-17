@@ -17,7 +17,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
@@ -45,6 +45,7 @@ class SourceSpec:
             Example: {"striatum": 5.0, "thalamus": 10.0}
             If not specified, uses delay_ms for all targets
     """
+
     region_name: str
     port: Optional[str] = None
     size: int = 0
@@ -122,7 +123,12 @@ class AxonalProjection(RoutingComponent):
 
     def __init__(
         self,
-        sources: List[Union[Tuple[str, Optional[str], int, float], Tuple[str, Optional[str], int, float, Dict[str, float]]]],
+        sources: List[
+            Union[
+                Tuple[str, Optional[str], int, float],
+                Tuple[str, Optional[str], int, float, Dict[str, float]],
+            ]
+        ],
         device: str = "cpu",
         dt_ms: float = 1.0,
         config: Optional[Union[NeuralComponentConfig, Dict[str, Any]]] = None,
@@ -142,6 +148,7 @@ class AxonalProjection(RoutingComponent):
         """
         # Create minimal config for RoutingComponent
         from types import SimpleNamespace
+
         if config is None:
             config = SimpleNamespace(device=device)
 
@@ -194,7 +201,9 @@ class AxonalProjection(RoutingComponent):
         self._delay_buffers: Dict[str, CircularDelayBuffer] = {}
         for spec in self.sources:
             # Get appropriate delay for this target
-            effective_delay = spec.get_delay_for_target(target_name) if target_name else spec.delay_ms
+            effective_delay = (
+                spec.get_delay_for_target(target_name) if target_name else spec.delay_ms
+            )
             delay_steps = int(effective_delay / self.dt_ms)
             source_key = spec.compound_key()
             self._delay_buffers[source_key] = CircularDelayBuffer(
@@ -203,8 +212,6 @@ class AxonalProjection(RoutingComponent):
                 device=device,
                 dtype=torch.bool,  # Spikes are binary
             )
-
-
 
     def forward(self, source_outputs: SourceOutputs) -> SourceOutputs:
         """Route spikes from sources with axonal delays.
@@ -250,7 +257,11 @@ class AxonalProjection(RoutingComponent):
             source_key = source_spec.compound_key()
             buffer = self._delay_buffers[source_key]
             # Use target-specific delay if available
-            effective_delay = source_spec.get_delay_for_target(self.target_name) if self.target_name else source_spec.delay_ms
+            effective_delay = (
+                source_spec.get_delay_for_target(self.target_name)
+                if self.target_name
+                else source_spec.delay_ms
+            )
             delay_steps = int(effective_delay / self.dt_ms)
 
             # Get current spikes from source
@@ -338,7 +349,7 @@ class AxonalProjection(RoutingComponent):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Routing components don't have input dimension.
@@ -349,7 +360,7 @@ class AxonalProjection(RoutingComponent):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Axons don't grow output independently - use grow_source().
@@ -389,6 +400,7 @@ class AxonalProjection(RoutingComponent):
     def check_health(self) -> Any:
         """Routing components are always healthy (no learning to fail)."""
         from thalia.diagnostics.health_monitor import HealthReport
+
         return HealthReport(
             is_healthy=True,
             overall_severity=0.0,
@@ -451,10 +463,12 @@ class AxonalProjection(RoutingComponent):
                 self._delay_buffers[key].buffer = buf.to(self.device)
                 self._delay_buffers[key].ptr = ptr
                 # Verify consistency
-                assert self._delay_buffers[key].max_delay == max_delay, \
-                    f"Delay mismatch for {key}: {self._delay_buffers[key].max_delay} != {max_delay}"
-                assert self._delay_buffers[key].size == size, \
-                    f"Size mismatch for {key}: {self._delay_buffers[key].size} != {size}"
+                assert (
+                    self._delay_buffers[key].max_delay == max_delay
+                ), f"Delay mismatch for {key}: {self._delay_buffers[key].max_delay} != {max_delay}"
+                assert (
+                    self._delay_buffers[key].size == size
+                ), f"Size mismatch for {key}: {self._delay_buffers[key].size} != {size}"
 
     def __repr__(self) -> str:
         """Human-readable representation."""
@@ -464,7 +478,9 @@ class AxonalProjection(RoutingComponent):
             if spec.target_delays and self.target_name:
                 # Show target-specific delay
                 delay = spec.get_delay_for_target(self.target_name)
-                source_strs.append(f"{spec.region_name}{port_str}({spec.size}, {delay}ms→{self.target_name})")
+                source_strs.append(
+                    f"{spec.region_name}{port_str}({spec.size}, {delay}ms→{self.target_name})"
+                )
             else:
                 source_strs.append(f"{spec.region_name}{port_str}({spec.size}, {spec.delay_ms}ms)")
 

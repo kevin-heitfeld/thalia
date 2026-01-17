@@ -9,8 +9,9 @@ Tests verify:
 
 import pytest
 import torch
-from thalia.regions.cortex.layered_cortex import LayeredCortex
+
 from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions.cortex.layered_cortex import LayeredCortex
 
 
 def test_gap_junctions_can_be_disabled():
@@ -45,7 +46,7 @@ def test_gap_junctions_enabled_by_default():
 
     # Should have gap junction module
     assert cortex.gap_junctions_l23 is not None
-    assert hasattr(cortex, 'gap_junctions_l23')
+    assert hasattr(cortex, "gap_junctions_l23")
 
 
 def test_gap_junction_improves_synchrony():
@@ -101,9 +102,7 @@ def test_gap_junction_improves_synchrony():
     # Test 1: Gap currents should be non-zero (coupling is active)
     gap_current_magnitude = gap_currents.abs().mean().item()
     print(f"Mean gap current magnitude: {gap_current_magnitude:.4f}")
-    assert gap_current_magnitude > 0.001, (
-        f"Gap currents are too small: {gap_current_magnitude:.4f}"
-    )
+    assert gap_current_magnitude > 0.001, f"Gap currents are too small: {gap_current_magnitude:.4f}"
 
     # Test 2: Gap currents should correlate with membrane voltage differences
     # (when neurons have different voltages, gap currents flow)
@@ -174,6 +173,7 @@ def test_gap_junction_state_serialization():
 
     # Create new state from dict
     from thalia.regions.cortex.config import LayeredCortexState
+
     restored_state = LayeredCortexState.from_dict(state_dict, device=cortex.device)
     assert restored_state.l23_membrane is not None
     assert torch.allclose(restored_state.l23_membrane, state.l23_membrane)

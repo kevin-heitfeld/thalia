@@ -854,4 +854,3 @@ Task types for sensorimotor stage.
 - `PREDICTION` — 'prediction'
 
 ---
-

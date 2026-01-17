@@ -131,18 +131,19 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple, List
 import random
-
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 # ============================================================================
 # 1. Interleaved Curriculum Sampler
 # ============================================================================
 
+
 @dataclass
 class InterleavedCurriculumSamplerConfig:
     """Configuration for interleaved curriculum sampling."""
+
     seed: Optional[int] = None  # Random seed for reproducibility
 
 
@@ -196,8 +197,7 @@ class InterleavedCurriculumSampler:
         total = sum(stage_weights.values())
         if not (0.99 <= total <= 1.01):
             raise ValueError(
-                f"Weights should sum to ~1.0, got {total}. "
-                f"Weights: {stage_weights}"
+                f"Weights should sum to ~1.0, got {total}. " f"Weights: {stage_weights}"
             )
 
         # Sample from multinomial
@@ -211,16 +211,20 @@ class InterleavedCurriculumSampler:
 # 2. Spaced Repetition Scheduler
 # ============================================================================
 
+
 @dataclass
 class SpacedRepetitionSchedulerConfig:
     """Configuration for spaced repetition scheduler."""
+
     # Base intervals by stage (conservative)
-    base_intervals: Dict[int, int] = field(default_factory=lambda: {
-        0: 50000,   # Stage 0: Very long (foundation preservation)
-        1: 25000,   # Stage 1: Moderate
-        2: 15000,   # Stage 2: Shorter (more review)
-        3: 25000,   # Stage 3+: Moderate
-    })
+    base_intervals: Dict[int, int] = field(
+        default_factory=lambda: {
+            0: 50000,  # Stage 0: Very long (foundation preservation)
+            1: 25000,  # Stage 1: Moderate
+            2: 15000,  # Stage 2: Shorter (more review)
+            3: 25000,  # Stage 3+: Moderate
+        }
+    )
 
     # Expansion factor for well-retained knowledge
     expansion_factor: float = 1.5
@@ -296,7 +300,7 @@ class SpacedRepetitionScheduler:
 
         if performance > cfg.high_performance_threshold:
             # Well-retained: expand interval exponentially
-            interval = int(base_interval * (cfg.expansion_factor ** review_count))
+            interval = int(base_interval * (cfg.expansion_factor**review_count))
         elif performance < cfg.low_performance_threshold:
             # Forgotten: reset to short interval
             interval = cfg.reset_interval
@@ -392,9 +396,11 @@ class SpacedRepetitionScheduler:
 # 3. Testing Phase Protocol
 # ============================================================================
 
+
 @dataclass
 class TestingPhaseConfig:
     """Configuration for testing protocol."""
+
     test_frequency: float = 0.15  # 15% of steps are tests
     feedback_delay_steps: int = 100  # Delay before feedback
 
@@ -482,9 +488,11 @@ class TestingPhaseProtocol:
 # 4. Productive Failure Phase
 # ============================================================================
 
+
 @dataclass
 class ProductiveFailureConfig:
     """Configuration for productive failure phases."""
+
     target_success_rate: float = 0.20  # Intentionally low (struggle)
     duration_steps: int = 5000  # Duration of failure phase
     min_attempts: int = 100  # Minimum attempts before ending early
@@ -559,9 +567,11 @@ class ProductiveFailurePhase:
 # 5. Curriculum Difficulty Calibrator
 # ============================================================================
 
+
 @dataclass
 class DifficultyCalibratorConfig:
     """Configuration for difficulty calibration."""
+
     target_success_rate: float = 0.75  # Optimal challenge (ZPD)
     adjustment_rate: float = 0.05  # How much to adjust per step
     # Performance bands
@@ -633,9 +643,11 @@ class CurriculumDifficultyCalibrator:
 # 6. Stage Transition Protocol
 # ============================================================================
 
+
 @dataclass
 class TransitionWeekConfig:
     """Configuration for a week during stage transition."""
+
     difficulty: float  # Task difficulty (0-1)
     old_stage_ratio: float  # Fraction of old stage review (0-1)
 
@@ -643,6 +655,7 @@ class TransitionWeekConfig:
 @dataclass
 class StageTransitionConfig:
     """Configuration for stage transitions."""
+
     # 4-week difficulty ramp
     week_1_difficulty: float = 0.3  # Very easy intro
     week_2_difficulty: float = 0.5  # Easy

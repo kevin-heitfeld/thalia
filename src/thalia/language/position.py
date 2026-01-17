@@ -40,10 +40,10 @@ Date: December 2025
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
-import math
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 import torch.nn as nn
@@ -55,10 +55,11 @@ from thalia.constants.time import MS_PER_SECOND
 
 class PositionEncodingType(Enum):
     """Types of position encoding."""
-    SINUSOIDAL = "sinusoidal"       # Classic transformer-style
-    OSCILLATORY = "oscillatory"     # Neural oscillation-based
+
+    SINUSOIDAL = "sinusoidal"  # Classic transformer-style
+    OSCILLATORY = "oscillatory"  # Neural oscillation-based
     PHASE_PRECESSION = "phase_precession"  # Hippocampal-style
-    NESTED_GAMMA = "nested_gamma"   # Theta-nested gamma
+    NESTED_GAMMA = "nested_gamma"  # Theta-nested gamma
 
 
 @dataclass
@@ -87,6 +88,7 @@ class PositionEncoderConfig:
 
         device: Computation device
     """
+
     n_neurons: int = 256
     max_positions: int = 2048
     encoding_type: PositionEncodingType = PositionEncodingType.NESTED_GAMMA
@@ -176,12 +178,12 @@ class OscillatoryPositionEncoder(nn.Module):
 
         # Different frequencies for each dimension
         div_term = torch.exp(
-            torch.arange(0, config.n_neurons, 2).float() *
-            (-math.log(config.base_frequency) / config.n_neurons)
+            torch.arange(0, config.n_neurons, 2).float()
+            * (-math.log(config.base_frequency) / config.n_neurons)
         )
 
         pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term[:config.n_neurons // 2])
+        pe[:, 1::2] = torch.cos(position * div_term[: config.n_neurons // 2])
 
         self.register_buffer("sinusoidal_pe", pe)
 
@@ -301,7 +303,10 @@ class OscillatoryPositionEncoder(nn.Module):
         if as_spikes:
             # Generate spike patterns over time
             spikes = torch.zeros(
-                batch, seq_len, config.n_timesteps, config.n_neurons,
+                batch,
+                seq_len,
+                config.n_timesteps,
+                config.n_neurons,
                 device=self.device,
             )
 
@@ -311,9 +316,9 @@ class OscillatoryPositionEncoder(nn.Module):
 
                 # Each neuron's phase
                 neuron_phase = (
-                    position_phase +  # Position-dependent
-                    self.preferred_phases +  # Neuron's preferred phase
-                    time_phase * self.frequency_scale  # Time evolution
+                    position_phase  # Position-dependent
+                    + self.preferred_phases  # Neuron's preferred phase
+                    + time_phase * self.frequency_scale  # Time evolution
                 )
 
                 # Spike probability: maximum at phase = 0
@@ -353,7 +358,10 @@ class OscillatoryPositionEncoder(nn.Module):
 
         if as_spikes:
             spikes = torch.zeros(
-                batch, seq_len, config.n_timesteps, config.n_neurons,
+                batch,
+                seq_len,
+                config.n_timesteps,
+                config.n_neurons,
                 device=self.device,
             )
 
@@ -366,14 +374,14 @@ class OscillatoryPositionEncoder(nn.Module):
                 phase_diff = torch.min(phase_diff, 2 * math.pi - phase_diff)
 
                 # Spike probability: high when phase matches, neuron in field
-                spike_prob = torch.exp(-4 * phase_diff ** 2) * in_field.float()
+                spike_prob = torch.exp(-4 * phase_diff**2) * in_field.float()
 
                 spikes[:, :, t, :] = (torch.rand_like(spike_prob) < spike_prob * 0.5).float()
 
             return spikes
         else:
             # Return place field activation with phase
-            activation = torch.exp(-2 * normalized_pos ** 2) * in_field.float()
+            activation = torch.exp(-2 * normalized_pos**2) * in_field.float()
             return activation
 
     def _encode_nested_gamma(
@@ -405,7 +413,10 @@ class OscillatoryPositionEncoder(nn.Module):
 
         if as_spikes:
             spikes = torch.zeros(
-                batch, seq_len, config.n_timesteps, config.n_neurons,
+                batch,
+                seq_len,
+                config.n_timesteps,
+                config.n_neurons,
                 device=self.device,
             )
 
@@ -419,13 +430,15 @@ class OscillatoryPositionEncoder(nn.Module):
                 theta_target = chunk_idx.unsqueeze(-1) * 0.5  # Chunk-dependent phase
                 theta_diff = (theta_phase + theta_target - self.theta_phases) % (2 * math.pi)
                 theta_diff = torch.min(theta_diff, 2 * math.pi - theta_diff)
-                theta_prob = torch.exp(-4 * theta_diff ** 2)
+                theta_prob = torch.exp(-4 * theta_diff**2)
 
                 # Gamma neurons: encode within-chunk position
-                gamma_target = within_chunk_pos.unsqueeze(-1) * (2 * math.pi / self.gammas_per_theta)
+                gamma_target = within_chunk_pos.unsqueeze(-1) * (
+                    2 * math.pi / self.gammas_per_theta
+                )
                 gamma_diff = (gamma_phase + gamma_target - self.gamma_phases) % (2 * math.pi)
                 gamma_diff = torch.min(gamma_diff, 2 * math.pi - gamma_diff)
-                gamma_prob = torch.exp(-4 * gamma_diff ** 2)
+                gamma_prob = torch.exp(-4 * gamma_diff**2)
 
                 # Generate spikes
                 theta_spikes = (torch.rand_like(theta_prob) < theta_prob * 0.3).float()
@@ -470,16 +483,19 @@ class OscillatoryPositionEncoder(nn.Module):
 
         # Generate spikes probabilistically
         spikes = torch.zeros(
-            batch, seq_len, n_timesteps, n_neurons,
+            batch,
+            seq_len,
+            n_timesteps,
+            n_neurons,
             device=self.device,
         )
 
         for t in range(n_timesteps):
             # Time-varying modulation
             phase = 2 * math.pi * t / n_timesteps
-            modulation = (1 + torch.sin(
-                torch.arange(n_neurons, device=self.device).float() * 0.1 + phase
-            )) / 2
+            modulation = (
+                1 + torch.sin(torch.arange(n_neurons, device=self.device).float() * 0.1 + phase)
+            ) / 2
 
             spike_prob = encoding_norm * modulation * 0.2
             spikes[:, :, t, :] = (torch.rand_like(spike_prob) < spike_prob).float()
@@ -612,18 +628,22 @@ class SequenceTimer(nn.Module):
         # Theta neurons - use centralized phase
         theta_diff = (self.theta_phase - self.neuron_phases[:n_theta]) % (2 * math.pi)
         theta_diff = torch.min(theta_diff, 2 * math.pi - theta_diff)
-        theta_prob = torch.exp(-4 * theta_diff ** 2) * 0.3
+        theta_prob = torch.exp(-4 * theta_diff**2) * 0.3
 
         # Gamma neurons - use centralized phase
-        gamma_diff = (self.gamma_phase - self.neuron_phases[:self.n_neurons - n_theta]) % (2 * math.pi)
+        gamma_diff = (self.gamma_phase - self.neuron_phases[: self.n_neurons - n_theta]) % (
+            2 * math.pi
+        )
         gamma_diff = torch.min(gamma_diff, 2 * math.pi - gamma_diff)
-        gamma_prob = torch.exp(-4 * gamma_diff ** 2) * 0.3
+        gamma_prob = torch.exp(-4 * gamma_diff**2) * 0.3
 
         # Generate spikes
         device = self.neuron_phases.device
         spikes = torch.zeros(self.n_neurons, device=device)
         spikes[:n_theta] = (torch.rand(n_theta, device=device) < theta_prob).float()
-        spikes[n_theta:] = (torch.rand(self.n_neurons - n_theta, device=device) < gamma_prob).float()
+        spikes[n_theta:] = (
+            torch.rand(self.n_neurons - n_theta, device=device) < gamma_prob
+        ).float()
 
         return spikes
 

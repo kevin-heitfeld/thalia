@@ -94,20 +94,20 @@ def test_wrap_around():
             delayed = buffer.read(delay=2)
             # Should be what we wrote 2 timesteps ago
             expected_t = t - 2
-            expected = torch.tensor(
-                [expected_t % 2 == 0, expected_t % 2 == 1],
-                dtype=torch.bool
-            )
+            expected = torch.tensor([expected_t % 2 == 0, expected_t % 2 == 1], dtype=torch.bool)
             assert torch.equal(delayed, expected), f"Failed at t={t}"
 
         buffer.advance()
 
 
-@pytest.mark.parametrize("initial_size,new_size", [
-    (3, 5),
-    (10, 20),
-    (50, 100),
-])
+@pytest.mark.parametrize(
+    "initial_size,new_size",
+    [
+        (3, 5),
+        (10, 20),
+        (50, 100),
+    ],
+)
 def test_grow_various_sizes(initial_size, new_size):
     """Test growing buffer from various initial sizes.
 

@@ -105,21 +105,27 @@ Date: December 2025
 from __future__ import annotations
 
 import math
-from typing import Optional, Dict, Any, Union
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.coding import compute_firing_rate, compute_spike_count
-from thalia.components.gap_junctions import GapJunctionCoupling, GapJunctionConfig
+from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.components.neurons import create_cortical_layer_neurons
-from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer, update_trace
+from thalia.components.synapses import (
+    ShortTermPlasticity,
+    STPConfig,
+    STPType,
+    WeightInitializer,
+    update_trace,
+)
 from thalia.constants.architecture import (
     CORTEX_L4_DA_FRACTION,
-    CORTEX_L23_DA_FRACTION,
     CORTEX_L5_DA_FRACTION,
     CORTEX_L6_DA_FRACTION,
+    CORTEX_L23_DA_FRACTION,
 )
 from thalia.constants.learning import EMA_DECAY_FAST
 from thalia.constants.oscillator import (
@@ -132,18 +138,21 @@ from thalia.core.diagnostics_schema import (
     compute_plasticity_metrics,
 )
 from thalia.core.neural_region import NeuralRegion
-from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import compute_ne_gain
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
 from thalia.learning.ei_balance import LayerEIBalance
-from thalia.learning.homeostasis.synaptic_homeostasis import UnifiedHomeostasis, UnifiedHomeostasisConfig
+from thalia.learning.homeostasis.synaptic_homeostasis import (
+    UnifiedHomeostasis,
+    UnifiedHomeostasisConfig,
+)
+from thalia.managers.component_registry import register_region
+from thalia.neuromodulation import compute_ne_gain
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.typing import LayeredCortexDiagnostics
-from thalia.utils.core_utils import ensure_1d, clamp_weights, initialize_phase_preferences
+from thalia.utils.core_utils import clamp_weights, ensure_1d, initialize_phase_preferences
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
-    compute_theta_encoding_retrieval,
     compute_ach_recurrent_suppression,
+    compute_theta_encoding_retrieval,
 )
 
 from .config import LayeredCortexConfig, LayeredCortexState
@@ -329,11 +338,21 @@ class LayeredCortex(NeuralRegion):
             )
 
             # Use create_cortex_strategy() factory helper for STDP+BCM composite
-            self.bcm_l4 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
-            self.bcm_l23 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
-            self.bcm_l5 = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
-            self.bcm_l6a = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
-            self.bcm_l6b = create_cortex_strategy(use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg)
+            self.bcm_l4 = create_cortex_strategy(
+                use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg
+            )
+            self.bcm_l23 = create_cortex_strategy(
+                use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg
+            )
+            self.bcm_l5 = create_cortex_strategy(
+                use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg
+            )
+            self.bcm_l6a = create_cortex_strategy(
+                use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg
+            )
+            self.bcm_l6b = create_cortex_strategy(
+                use_stdp=True, stdp_config=stdp_cfg, bcm_config=bcm_cfg
+            )
         else:
             self.bcm_l4 = None
             self.bcm_l23 = None
@@ -378,9 +397,7 @@ class LayeredCortex(NeuralRegion):
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights in _init_weights."""
-        return nn.Parameter(
-            torch.zeros(self._actual_output, self.input_size)
-        )
+        return nn.Parameter(torch.zeros(self._actual_output, self.input_size))
 
     def _create_neurons(self):
         """Placeholder - neurons created in _init_layers."""
@@ -456,9 +473,17 @@ class LayeredCortex(NeuralRegion):
             self.l23_size,
             "L2/3",
             self.device,
-            adapt_increment=cfg.adapt_increment if not cfg.use_layer_heterogeneity else l23_overrides["adapt_increment"],
+            adapt_increment=(
+                cfg.adapt_increment
+                if not cfg.use_layer_heterogeneity
+                else l23_overrides["adapt_increment"]
+            ),
             tau_adapt=cfg.adapt_tau,
-            **({} if not cfg.use_layer_heterogeneity else {k: v for k, v in l23_overrides.items() if k != "adapt_increment"})
+            **(
+                {}
+                if not cfg.use_layer_heterogeneity
+                else {k: v for k, v in l23_overrides.items() if k != "adapt_increment"}
+            ),
         )
         self.l5_neurons = create_cortical_layer_neurons(
             self.l5_size, "L5", self.device, **l5_overrides
@@ -589,7 +614,9 @@ class LayeredCortex(NeuralRegion):
 
         Using uniform [0, max] with max scaled by fan-in and expected sparsity.
         """
-        device = self.device  # Use self.device (torch.device), not self.config.device (doesn't exist)
+        device = (
+            self.device
+        )  # Use self.device (torch.device), not self.config.device (doesn't exist)
         cfg = self.config
 
         # Expected number of active inputs given sparsity
@@ -609,7 +636,7 @@ class LayeredCortex(NeuralRegion):
                 n_input=self.input_size,
                 mean=0.0,
                 std=w_scale_input,
-                device=device
+                device=device,
             )
         )
         # Register external input source (NeuralRegion pattern)
@@ -625,7 +652,7 @@ class LayeredCortex(NeuralRegion):
                 n_input=self.l4_size,
                 mean=0.0,
                 std=w_scale_l4_l23,
-                device=device
+                device=device,
             )
         )
         self.synaptic_weights["l4_l23"] = nn.Parameter(l4_l23_weights)
@@ -637,11 +664,7 @@ class LayeredCortex(NeuralRegion):
         # Positive weights = local excitation, negative weights = lateral inhibition.
         # Uses dedicated bounds [l23_recurrent_w_min, l23_recurrent_w_max] during learning.
         l23_recurrent_weights = WeightInitializer.gaussian(
-            n_output=self.l23_size,
-            n_input=self.l23_size,
-            mean=0.0,
-            std=0.2,
-            device=device
+            n_output=self.l23_size, n_input=self.l23_size, mean=0.0, std=0.2, device=device
         )
         l23_recurrent_weights.fill_diagonal_(0.0)
         self.synaptic_weights["l23_recurrent"] = nn.Parameter(l23_recurrent_weights)
@@ -654,7 +677,7 @@ class LayeredCortex(NeuralRegion):
                 n_input=self.l23_size,
                 mean=0.0,
                 std=w_scale_l23_l5,
-                device=device
+                device=device,
             )
         )
         self.synaptic_weights["l23_l5"] = nn.Parameter(l23_l5_weights)
@@ -667,7 +690,7 @@ class LayeredCortex(NeuralRegion):
                 n_input=self.l23_size,
                 mean=0.0,
                 std=w_scale_l23_l6a,
-                device=device
+                device=device,
             )
         )
         self.synaptic_weights["l23_l6a"] = nn.Parameter(l23_l6a_weights)
@@ -680,18 +703,15 @@ class LayeredCortex(NeuralRegion):
                 n_input=self.l23_size,
                 mean=0.0,
                 std=w_scale_l23_l6b,
-                device=device
+                device=device,
             )
         )
         self.synaptic_weights["l23_l6b"] = nn.Parameter(l23_l6b_weights)
 
         # L2/3 inhibition: positive (inhibitory connections suppress) (AT L2/3 DENDRITES)
         l23_inhib_weights = (
-            WeightInitializer.ones(
-                n_output=self.l23_size,
-                n_input=self.l23_size,
-                device=device
-            ) * 0.3
+            WeightInitializer.ones(n_output=self.l23_size, n_input=self.l23_size, device=device)
+            * 0.3
         )
         l23_inhib_weights.fill_diagonal_(0.0)
         self.synaptic_weights["l23_inhib"] = nn.Parameter(l23_inhib_weights)
@@ -701,7 +721,7 @@ class LayeredCortex(NeuralRegion):
         # =====================================================================
         # Now that l23_inhib weights exist, create gap junction network
         # Interneurons that share inhibitory targets are anatomically close
-        if hasattr(self, '_gap_config_l23') and self._gap_config_l23.enabled:
+        if hasattr(self, "_gap_config_l23") and self._gap_config_l23.enabled:
             self.gap_junctions_l23 = GapJunctionCoupling(
                 n_neurons=self.l23_size,
                 afferent_weights=self.synaptic_weights["l23_inhib"],  # Shared targets → proximity
@@ -729,7 +749,7 @@ class LayeredCortex(NeuralRegion):
         for name in names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)
-                if subsystem is not None and hasattr(subsystem, 'reset_state'):
+                if subsystem is not None and hasattr(subsystem, "reset_state"):
                     subsystem.reset_state()
 
     def _reset_scalars(self, **scalar_values: Any) -> None:
@@ -748,13 +768,20 @@ class LayeredCortex(NeuralRegion):
         dev = self.device
 
         # Reset neuron populations and STP using helpers
-        self._reset_subsystems('l4_neurons', 'l23_neurons', 'l5_neurons', 'l6a_neurons', 'l6b_neurons', 'stp_l23_recurrent')
+        self._reset_subsystems(
+            "l4_neurons",
+            "l23_neurons",
+            "l5_neurons",
+            "l6a_neurons",
+            "l6b_neurons",
+            "stp_l23_recurrent",
+        )
 
         # Note: No local oscillators to reset - phases come from Brain
 
         # Preserve oscillator signals if they exist (set via set_oscillator_phases)
-        existing_phases = getattr(self.state, '_oscillator_phases', {})
-        existing_signals = getattr(self.state, '_oscillator_signals', {})
+        existing_phases = getattr(self.state, "_oscillator_phases", {})
+        existing_signals = getattr(self.state, "_oscillator_signals", {})
 
         self.state = LayeredCortexState(
             l4_spikes=torch.zeros(self.l4_size, device=dev),
@@ -783,37 +810,33 @@ class LayeredCortex(NeuralRegion):
             _cumulative_l23_spikes=0,
             _cumulative_l5_spikes=0,
             _cumulative_l6a_spikes=0,
-            _cumulative_l6b_spikes=0
+            _cumulative_l6b_spikes=0,
         )
 
         # Initialize all delay buffers if delays are configured
         if self._l4_l23_delay_steps > 0:
             self._l4_l23_delay_buffer = torch.zeros(
-                self._l4_l23_delay_steps, self.l4_size,
-                device=dev, dtype=torch.bool
+                self._l4_l23_delay_steps, self.l4_size, device=dev, dtype=torch.bool
             )
             self._l4_l23_delay_ptr = 0
 
         if self._l23_l5_delay_steps > 0:
             self._l23_l5_delay_buffer = torch.zeros(
-                self._l23_l5_delay_steps, self.l23_size,
-                device=dev, dtype=torch.bool
+                self._l23_l5_delay_steps, self.l23_size, device=dev, dtype=torch.bool
             )
             self._l23_l5_delay_ptr = 0
 
         # L6a delay buffer (L2/3 → L6a)
         if self._l23_l6a_delay_steps > 0:
             self._l23_l6a_delay_buffer = torch.zeros(
-                self._l23_l6a_delay_steps, self.l23_size,
-                device=dev, dtype=torch.bool
+                self._l23_l6a_delay_steps, self.l23_size, device=dev, dtype=torch.bool
             )
             self._l23_l6a_delay_ptr = 0
 
         # L6b delay buffer (L2/3 → L6b)
         if self._l23_l6b_delay_steps > 0:
             self._l23_l6b_delay_buffer = torch.zeros(
-                self._l23_l6b_delay_steps, self.l23_size,
-                device=dev, dtype=torch.bool
+                self._l23_l6b_delay_steps, self.l23_size, device=dev, dtype=torch.bool
             )
             self._l23_l6b_delay_ptr = 0
 
@@ -846,7 +869,7 @@ class LayeredCortex(NeuralRegion):
     def grow_output(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow output dimension by expanding all layers proportionally.
@@ -892,7 +915,7 @@ class LayeredCortex(NeuralRegion):
             self.synaptic_weights["input"].data,
             l4_growth,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
         self.synaptic_weights["input"] = nn.Parameter(expanded_input)
 
@@ -902,14 +925,11 @@ class LayeredCortex(NeuralRegion):
             self.synaptic_weights["l4_l23"].data,
             l23_growth,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
         self.synaptic_weights["l4_l23"] = nn.Parameter(
             self._grow_weight_matrix_cols(
-                expanded_l23_rows,
-                l4_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_l23_rows, l4_growth, initializer=initialization, sparsity=sparsity
             )
         )
 
@@ -919,14 +939,11 @@ class LayeredCortex(NeuralRegion):
             self.synaptic_weights["l23_recurrent"].data,
             l23_growth,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
         self.synaptic_weights["l23_recurrent"] = nn.Parameter(
             self._grow_weight_matrix_cols(
-                expanded_recurrent_rows,
-                l23_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_recurrent_rows, l23_growth, initializer=initialization, sparsity=sparsity
             )
         )
 
@@ -937,15 +954,12 @@ class LayeredCortex(NeuralRegion):
                 self.synaptic_weights["l23_inhib"].data,
                 l23_growth,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
         )
         self.synaptic_weights["l23_inhib"].data = -torch.abs(
             self._grow_weight_matrix_cols(
-                expanded_inhib_rows,
-                l23_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_inhib_rows, l23_growth, initializer=initialization, sparsity=sparsity
             )
         )
         # Zero out diagonal (no self-inhibition)
@@ -957,14 +971,11 @@ class LayeredCortex(NeuralRegion):
             self.synaptic_weights["l23_l5"].data,
             l5_growth,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
         self.synaptic_weights["l23_l5"] = nn.Parameter(
             self._grow_weight_matrix_cols(
-                expanded_l5_rows,
-                l23_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_l5_rows, l23_growth, initializer=initialization, sparsity=sparsity
             )
         )
 
@@ -974,14 +985,11 @@ class LayeredCortex(NeuralRegion):
             self.synaptic_weights["l23_l6a"].data,
             l6a_growth,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
         self.synaptic_weights["l23_l6a"] = nn.Parameter(
             self._grow_weight_matrix_cols(
-                expanded_l6a_rows,
-                l23_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_l6a_rows, l23_growth, initializer=initialization, sparsity=sparsity
             )
         )
 
@@ -991,14 +999,11 @@ class LayeredCortex(NeuralRegion):
             self.synaptic_weights["l23_l6b"].data,
             l6b_growth,
             initializer=initialization,
-            sparsity=sparsity
+            sparsity=sparsity,
         )
         self.synaptic_weights["l23_l6b"] = nn.Parameter(
             self._grow_weight_matrix_cols(
-                expanded_l6b_rows,
-                l23_growth,
-                initializer=initialization,
-                sparsity=sparsity
+                expanded_l6b_rows, l23_growth, initializer=initialization, sparsity=sparsity
             )
         )
 
@@ -1051,9 +1056,17 @@ class LayeredCortex(NeuralRegion):
             self.l23_size,
             "L2/3",
             self.device,
-            adapt_increment=self.config.adapt_increment if not cfg.use_layer_heterogeneity else l23_overrides["adapt_increment"],
+            adapt_increment=(
+                self.config.adapt_increment
+                if not cfg.use_layer_heterogeneity
+                else l23_overrides["adapt_increment"]
+            ),
             tau_adapt=self.config.adapt_tau,
-            **({} if not cfg.use_layer_heterogeneity else {k: v for k, v in l23_overrides.items() if k != "adapt_increment"})
+            **(
+                {}
+                if not cfg.use_layer_heterogeneity
+                else {k: v for k, v in l23_overrides.items() if k != "adapt_increment"}
+            ),
         )
 
         self.l5_size = new_l5_size
@@ -1116,7 +1129,7 @@ class LayeredCortex(NeuralRegion):
         self,
         layer_name: str,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow specific cortical layer (SEMANTIC API).
@@ -1131,7 +1144,7 @@ class LayeredCortex(NeuralRegion):
             Use layer_name='output' to grow L2/3 and L5 proportionally (recommended).
             Direct growth of individual layers not yet supported.
         """
-        if layer_name.lower() in ['output', 'l23+l5']:
+        if layer_name.lower() in ["output", "l23+l5"]:
             self.grow_output(n_new, initialization, sparsity)
         else:
             raise NotImplementedError(
@@ -1142,7 +1155,7 @@ class LayeredCortex(NeuralRegion):
     def grow_input(
         self,
         n_new: int,
-        initialization: str = 'sparse_random',
+        initialization: str = "sparse_random",
         sparsity: float = 0.1,
     ) -> None:
         """Grow cortex input dimension when upstream region grows.
@@ -1181,7 +1194,7 @@ class LayeredCortex(NeuralRegion):
                 self.synaptic_weights["input"].data,
                 n_new,
                 initializer=initialization,
-                sparsity=sparsity
+                sparsity=sparsity,
             )
         )
 
@@ -1247,9 +1260,9 @@ class LayeredCortex(NeuralRegion):
         )
 
         if top_down is not None:
-            assert top_down.dim() == 1, (
-                f"LayeredCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
-            )
+            assert (
+                top_down.dim() == 1
+            ), f"LayeredCortex.forward: Expected 1D top_down (ADR-005), got shape {top_down.shape}"
             assert top_down.shape[0] == self.l23_size, (
                 f"LayeredCortex.forward: top_down has shape {top_down.shape} "
                 f"but L2/3 size={self.l23_size}. Top-down must match L2/3 for modulation."
@@ -1273,8 +1286,11 @@ class LayeredCortex(NeuralRegion):
         alpha_suppression = 1.0  # Default: no suppression
         gamma_modulation = 1.0  # Default: no gamma modulation
 
-        if hasattr(self.state, '_oscillator_signals') and self.state._oscillator_signals is not None:
-            alpha_signal = self.state._oscillator_signals.get('alpha', 0.0)
+        if (
+            hasattr(self.state, "_oscillator_signals")
+            and self.state._oscillator_signals is not None
+        ):
+            alpha_signal = self.state._oscillator_signals.get("alpha", 0.0)
 
             # Alpha signal ranges [-1, 1], convert to suppression [0, 0.5]
             # High positive alpha (near 1.0) → max suppression (50%)
@@ -1339,20 +1355,26 @@ class LayeredCortex(NeuralRegion):
             if self._l4_l23_delay_buffer is None:
                 # Use exact delay size (no safety margin) for memory efficiency
                 self._l4_l23_delay_buffer = torch.zeros(
-                    self._l4_l23_delay_steps, self.l4_size,
-                    device=l4_spikes.device, dtype=torch.bool
+                    self._l4_l23_delay_steps,
+                    self.l4_size,
+                    device=l4_spikes.device,
+                    dtype=torch.bool,
                 )
                 self._l4_l23_delay_ptr = 0
 
             # Retrieve delayed spikes FIRST (before storing new ones)
-            read_idx = (self._l4_l23_delay_ptr - self._l4_l23_delay_steps) % self._l4_l23_delay_buffer.shape[0]
+            read_idx = (
+                self._l4_l23_delay_ptr - self._l4_l23_delay_steps
+            ) % self._l4_l23_delay_buffer.shape[0]
             l4_spikes_delayed = self._l4_l23_delay_buffer[read_idx]
 
             # Then store current spikes for future retrieval
             self._l4_l23_delay_buffer[self._l4_l23_delay_ptr] = l4_spikes
 
             # Advance pointer
-            self._l4_l23_delay_ptr = (self._l4_l23_delay_ptr + 1) % self._l4_l23_delay_buffer.shape[0]
+            self._l4_l23_delay_ptr = (self._l4_l23_delay_ptr + 1) % self._l4_l23_delay_buffer.shape[
+                0
+            ]
         else:
             l4_spikes_delayed = l4_spikes
 
@@ -1366,9 +1388,7 @@ class LayeredCortex(NeuralRegion):
         # Stimulus gating (transient inhibition - always enabled)
         ffi = self.stimulus_gating.compute(input_spikes, return_tensor=False)
         raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
-        self.state.ffi_strength = min(
-            1.0, raw_ffi / self.stimulus_gating.max_inhibition
-        )
+        self.state.ffi_strength = min(1.0, raw_ffi / self.stimulus_gating.max_inhibition)
         ffi_suppression = 1.0 - self.state.ffi_strength * cfg.ffi_strength
 
         # =====================================================================
@@ -1394,10 +1414,14 @@ class LayeredCortex(NeuralRegion):
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         if self.state.l23_recurrent_activity is not None:
-            recurrent_scale = L23_RECURRENT_RETRIEVAL_SCALE + L23_RECURRENT_RETRIEVAL_SCALE * retrieval_mod
+            recurrent_scale = (
+                L23_RECURRENT_RETRIEVAL_SCALE + L23_RECURRENT_RETRIEVAL_SCALE * retrieval_mod
+            )
 
             # Apply STP to recurrent connections (always enabled)
-            stp_efficacy = self.stp_l23_recurrent(self.state.l23_recurrent_activity.float())  # [l23_size, l23_size]
+            stp_efficacy = self.stp_l23_recurrent(
+                self.state.l23_recurrent_activity.float()
+            )  # [l23_size, l23_size]
 
             effective_w_rec = self.synaptic_weights["l23_recurrent"] * stp_efficacy
             l23_rec = (
@@ -1417,7 +1441,9 @@ class LayeredCortex(NeuralRegion):
 
         # Lateral inhibition
         if self.state.l23_spikes is not None:
-            l23_inhib = torch.matmul(self.synaptic_weights["l23_inhib"], self.state.l23_spikes.float())
+            l23_inhib = torch.matmul(
+                self.synaptic_weights["l23_inhib"], self.state.l23_spikes.float()
+            )
 
             # E/I Balance: Scale inhibition to maintain healthy E/I ratio
             if self.ei_balance is not None:
@@ -1434,8 +1460,7 @@ class LayeredCortex(NeuralRegion):
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset (UnifiedHomeostasis)
         # Neurons that fire too much have higher thresholds (less excitable)
         cfg = self.config
-        if (cfg.homeostasis_enabled and
-            self._l23_threshold_offset is not None):
+        if cfg.homeostasis_enabled and self._l23_threshold_offset is not None:
             l23_input = l23_input - self._l23_threshold_offset
 
         # GAP JUNCTION COUPLING (L2/3 interneuron synchronization)
@@ -1461,15 +1486,15 @@ class LayeredCortex(NeuralRegion):
 
         # Gamma-phase attention: Modulate L2/3 spikes by gamma phase from Brain
         # Always enabled for spike-native attention
-        if hasattr(self.state, '_oscillator_phases'):
-            gamma_phase = self.state._oscillator_phases.get('gamma', 0.0)
+        if hasattr(self.state, "_oscillator_phases"):
+            gamma_phase = self.state._oscillator_phases.get("gamma", 0.0)
 
             # Compute phase-based gating for each L2/3 neuron
             phase_diff = torch.abs(self.l23_phase_prefs - gamma_phase)
             phase_diff = torch.min(phase_diff, 2 * math.pi - phase_diff)
 
             # Gaussian gating based on phase proximity
-            gamma_gate = torch.exp(-phase_diff ** 2 / (2 * self.gamma_attention_width ** 2))
+            gamma_gate = torch.exp(-(phase_diff**2) / (2 * self.gamma_attention_width**2))
 
             # Modulate L2/3 spikes (attention without Q/K/V projections!)
             l23_spikes = l23_spikes * gamma_gate
@@ -1481,8 +1506,7 @@ class LayeredCortex(NeuralRegion):
         # Update recurrent activity trace
         if self.state.l23_recurrent_activity is not None:
             self.state.l23_recurrent_activity = (
-                self.state.l23_recurrent_activity * cfg.l23_recurrent_decay
-                + l23_spikes.float()
+                self.state.l23_recurrent_activity * cfg.l23_recurrent_decay + l23_spikes.float()
             )
         else:
             self.state.l23_recurrent_activity = l23_spikes.float()
@@ -1497,20 +1521,26 @@ class LayeredCortex(NeuralRegion):
             if self._l23_l5_delay_buffer is None:
                 # Use exact delay size (no safety margin) for memory efficiency
                 self._l23_l5_delay_buffer = torch.zeros(
-                    self._l23_l5_delay_steps, self.l23_size,
-                    device=l23_spikes.device, dtype=torch.bool
+                    self._l23_l5_delay_steps,
+                    self.l23_size,
+                    device=l23_spikes.device,
+                    dtype=torch.bool,
                 )
                 self._l23_l5_delay_ptr = 0
 
             # Retrieve delayed spikes FIRST (before storing new ones)
-            read_idx = (self._l23_l5_delay_ptr - self._l23_l5_delay_steps) % self._l23_l5_delay_buffer.shape[0]
+            read_idx = (
+                self._l23_l5_delay_ptr - self._l23_l5_delay_steps
+            ) % self._l23_l5_delay_buffer.shape[0]
             l23_spikes_delayed = self._l23_l5_delay_buffer[read_idx]
 
             # Then store current spikes for future retrieval
             self._l23_l5_delay_buffer[self._l23_l5_delay_ptr] = l23_spikes
 
             # Advance pointer
-            self._l23_l5_delay_ptr = (self._l23_l5_delay_ptr + 1) % self._l23_l5_delay_buffer.shape[0]
+            self._l23_l5_delay_ptr = (self._l23_l5_delay_ptr + 1) % self._l23_l5_delay_buffer.shape[
+                0
+            ]
         else:
             l23_spikes_delayed = l23_spikes
 
@@ -1550,18 +1580,24 @@ class LayeredCortex(NeuralRegion):
             # Initialize buffer on first use
             if self._l23_l6a_delay_buffer is None:
                 self._l23_l6a_delay_buffer = torch.zeros(
-                    self._l23_l6a_delay_steps, self.l23_size,
-                    device=l23_spikes.device, dtype=torch.bool
+                    self._l23_l6a_delay_steps,
+                    self.l23_size,
+                    device=l23_spikes.device,
+                    dtype=torch.bool,
                 )
                 self._l23_l6a_delay_ptr = 0
 
             # Retrieve delayed spikes
-            read_idx = (self._l23_l6a_delay_ptr - self._l23_l6a_delay_steps) % self._l23_l6a_delay_buffer.shape[0]
+            read_idx = (
+                self._l23_l6a_delay_ptr - self._l23_l6a_delay_steps
+            ) % self._l23_l6a_delay_buffer.shape[0]
             l23_spikes_for_l6a = self._l23_l6a_delay_buffer[read_idx]
 
             # Store current L2/3 spikes
             self._l23_l6a_delay_buffer[self._l23_l6a_delay_ptr] = l23_spikes
-            self._l23_l6a_delay_ptr = (self._l23_l6a_delay_ptr + 1) % self._l23_l6a_delay_buffer.shape[0]
+            self._l23_l6a_delay_ptr = (
+                self._l23_l6a_delay_ptr + 1
+            ) % self._l23_l6a_delay_buffer.shape[0]
         else:
             l23_spikes_for_l6a = l23_spikes
 
@@ -1583,18 +1619,24 @@ class LayeredCortex(NeuralRegion):
             # Initialize buffer on first use
             if self._l23_l6b_delay_buffer is None:
                 self._l23_l6b_delay_buffer = torch.zeros(
-                    self._l23_l6b_delay_steps, self.l23_size,
-                    device=l23_spikes.device, dtype=torch.bool
+                    self._l23_l6b_delay_steps,
+                    self.l23_size,
+                    device=l23_spikes.device,
+                    dtype=torch.bool,
                 )
                 self._l23_l6b_delay_ptr = 0
 
             # Retrieve delayed spikes
-            read_idx = (self._l23_l6b_delay_ptr - self._l23_l6b_delay_steps) % self._l23_l6b_delay_buffer.shape[0]
+            read_idx = (
+                self._l23_l6b_delay_ptr - self._l23_l6b_delay_steps
+            ) % self._l23_l6b_delay_buffer.shape[0]
             l23_spikes_for_l6b = self._l23_l6b_delay_buffer[read_idx]
 
             # Store current L2/3 spikes
             self._l23_l6b_delay_buffer[self._l23_l6b_delay_ptr] = l23_spikes
-            self._l23_l6b_delay_ptr = (self._l23_l6b_delay_ptr + 1) % self._l23_l6b_delay_buffer.shape[0]
+            self._l23_l6b_delay_ptr = (
+                self._l23_l6b_delay_ptr + 1
+            ) % self._l23_l6b_delay_buffer.shape[0]
         else:
             l23_spikes_for_l6b = l23_spikes
 
@@ -1721,14 +1763,15 @@ class LayeredCortex(NeuralRegion):
         elif port is None:
             # Default: L2/3 + L5 output
             if self.state.l23_spikes is None or self.state.l5_spikes is None:
-                return torch.zeros(self.l23_size + self.l5_size, device=self.device, dtype=torch.bool)
+                return torch.zeros(
+                    self.l23_size + self.l5_size, device=self.device, dtype=torch.bool
+                )
             return torch.cat([self.state.l23_spikes, self.state.l5_spikes], dim=-1)
         else:
             # Invalid port - raise error
             valid_ports = ["l6a", "l6b", "l23", "l5", None]
             raise ValueError(
-                f"LayeredCortex.get_output: Invalid port '{port}'. "
-                f"Valid ports: {valid_ports}"
+                f"LayeredCortex.get_output: Invalid port '{port}'. " f"Valid ports: {valid_ports}"
             )
 
     def _apply_sparsity_1d(
@@ -1871,19 +1914,23 @@ class LayeredCortex(NeuralRegion):
 
                 # Initialize if needed
                 if self._l23_activity_history is None:
-                    self._l23_activity_history = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
+                    self._l23_activity_history = torch.zeros(
+                        self.l23_size, device=l23_spikes_1d.device
+                    )
                 if self._l23_threshold_offset is None:
-                    self._l23_threshold_offset = torch.zeros(self.l23_size, device=l23_spikes_1d.device)
+                    self._l23_threshold_offset = torch.zeros(
+                        self.l23_size, device=l23_spikes_1d.device
+                    )
 
                 # Update activity history (exponential moving average)
                 self._l23_activity_history = (
-                    EMA_DECAY_FAST * self._l23_activity_history + (1 - EMA_DECAY_FAST) * l23_spikes_1d
+                    EMA_DECAY_FAST * self._l23_activity_history
+                    + (1 - EMA_DECAY_FAST) * l23_spikes_1d
                 )
 
                 # Compute threshold modulation using UnifiedHomeostasis
                 threshold_mod = self.homeostasis.compute_excitability_modulation(
-                    activity_history=self._l23_activity_history,
-                    tau=100.0
+                    activity_history=self._l23_activity_history, tau=100.0
                 )
                 self._l23_threshold_offset = threshold_mod.clamp(-0.5, 0.5)
 
@@ -1995,7 +2042,11 @@ class LayeredCortex(NeuralRegion):
 
         # Compute activity metrics from L2/3 (primary cortical output)
         activity = compute_activity_metrics(
-            output_spikes=self.state.l23_spikes if self.state.l23_spikes is not None else torch.zeros(self.l23_size, device=self.device),
+            output_spikes=(
+                self.state.l23_spikes
+                if self.state.l23_spikes is not None
+                else torch.zeros(self.l23_size, device=self.device)
+            ),
             total_neurons=self.l23_size,
         )
 
@@ -2015,11 +2066,31 @@ class LayeredCortex(NeuralRegion):
 
         # Compute health metrics
         health_tensors = {
-            "l4_spikes": self.state.l4_spikes if self.state.l4_spikes is not None else torch.zeros(self.l4_size, device=self.device),
-            "l23_spikes": self.state.l23_spikes if self.state.l23_spikes is not None else torch.zeros(self.l23_size, device=self.device),
-            "l5_spikes": self.state.l5_spikes if self.state.l5_spikes is not None else torch.zeros(self.l5_size, device=self.device),
-            "l6a_spikes": self.state.l6a_spikes if self.state.l6a_spikes is not None else torch.zeros(self.l6a_size, device=self.device),
-            "l6b_spikes": self.state.l6b_spikes if self.state.l6b_spikes is not None else torch.zeros(self.l6b_size, device=self.device),
+            "l4_spikes": (
+                self.state.l4_spikes
+                if self.state.l4_spikes is not None
+                else torch.zeros(self.l4_size, device=self.device)
+            ),
+            "l23_spikes": (
+                self.state.l23_spikes
+                if self.state.l23_spikes is not None
+                else torch.zeros(self.l23_size, device=self.device)
+            ),
+            "l5_spikes": (
+                self.state.l5_spikes
+                if self.state.l5_spikes is not None
+                else torch.zeros(self.l5_size, device=self.device)
+            ),
+            "l6a_spikes": (
+                self.state.l6a_spikes
+                if self.state.l6a_spikes is not None
+                else torch.zeros(self.l6a_size, device=self.device)
+            ),
+            "l6b_spikes": (
+                self.state.l6b_spikes
+                if self.state.l6b_spikes is not None
+                else torch.zeros(self.l6b_size, device=self.device)
+            ),
         }
 
         health = compute_health_metrics(
@@ -2036,7 +2107,7 @@ class LayeredCortex(NeuralRegion):
 
         # Neuromodulator metrics
         neuromodulators = {}
-        if hasattr(self, 'neuromodulators'):
+        if hasattr(self, "neuromodulators"):
             neuromodulators = self.neuromodulators.copy()
 
         # Region-specific custom metrics
@@ -2082,7 +2153,9 @@ class LayeredCortex(NeuralRegion):
 
         # Recurrent activity
         if self.state.l23_recurrent_activity is not None:
-            region_specific["recurrent_dynamics"]["l23_recurrent_mean"] = self.state.l23_recurrent_activity.mean().item()
+            region_specific["recurrent_dynamics"][
+                "l23_recurrent_mean"
+            ] = self.state.l23_recurrent_activity.mean().item()
 
         # Robustness mechanisms (E/I balance)
         if self.ei_balance is not None:
@@ -2116,9 +2189,8 @@ class LayeredCortex(NeuralRegion):
         state = state_obj.to_dict()
 
         # Add synaptic weights (required for checkpointing)
-        state['synaptic_weights'] = {
-            name: weights.detach().clone()
-            for name, weights in self.synaptic_weights.items()
+        state["synaptic_weights"] = {
+            name: weights.detach().clone() for name, weights in self.synaptic_weights.items()
         }
 
         return state
@@ -2133,8 +2205,8 @@ class LayeredCortex(NeuralRegion):
         self.load_state(state_obj)
 
         # Restore synaptic weights
-        if 'synaptic_weights' in state:
-            for name, weights in state['synaptic_weights'].items():
+        if "synaptic_weights" in state:
+            for name, weights in state["synaptic_weights"].items():
                 if name in self.synaptic_weights:
                     self.synaptic_weights[name].data = weights.to(self.device)
 
@@ -2167,7 +2239,9 @@ class LayeredCortex(NeuralRegion):
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
             # Input
-            input_spikes=self.state.input_spikes.clone() if self.state.input_spikes is not None else None,
+            input_spikes=(
+                self.state.input_spikes.clone() if self.state.input_spikes is not None else None
+            ),
             # Layer spike states
             l4_spikes=self.state.l4_spikes.clone() if self.state.l4_spikes is not None else None,
             l23_spikes=self.state.l23_spikes.clone() if self.state.l23_spikes is not None else None,
@@ -2175,7 +2249,11 @@ class LayeredCortex(NeuralRegion):
             l6a_spikes=self.state.l6a_spikes.clone() if self.state.l6a_spikes is not None else None,
             l6b_spikes=self.state.l6b_spikes.clone() if self.state.l6b_spikes is not None else None,
             # L2/3 recurrent activity
-            l23_recurrent_activity=self.state.l23_recurrent_activity.clone() if self.state.l23_recurrent_activity is not None else None,
+            l23_recurrent_activity=(
+                self.state.l23_recurrent_activity.clone()
+                if self.state.l23_recurrent_activity is not None
+                else None
+            ),
             # STDP traces
             l4_trace=self.state.l4_trace.clone() if self.state.l4_trace is not None else None,
             l23_trace=self.state.l23_trace.clone() if self.state.l23_trace is not None else None,
@@ -2183,18 +2261,28 @@ class LayeredCortex(NeuralRegion):
             l6a_trace=self.state.l6a_trace.clone() if self.state.l6a_trace is not None else None,
             l6b_trace=self.state.l6b_trace.clone() if self.state.l6b_trace is not None else None,
             # Modulation state
-            top_down_modulation=self.state.top_down_modulation.clone() if self.state.top_down_modulation is not None else None,
+            top_down_modulation=(
+                self.state.top_down_modulation.clone()
+                if self.state.top_down_modulation is not None
+                else None
+            ),
             ffi_strength=self.state.ffi_strength,
             alpha_suppression=self.state.alpha_suppression,
             # Gamma attention
             gamma_attention_phase=self.state.gamma_attention_phase,
-            gamma_attention_gate=self.state.gamma_attention_gate.clone() if self.state.gamma_attention_gate is not None else None,
+            gamma_attention_gate=(
+                self.state.gamma_attention_gate.clone()
+                if self.state.gamma_attention_gate is not None
+                else None
+            ),
             # Plasticity monitoring
             last_plasticity_delta=self.state.last_plasticity_delta,
             # STP state
             stp_l23_recurrent_state=stp_state,
             # Gap junction state
-            l23_membrane=self.state.l23_membrane.clone() if self.state.l23_membrane is not None else None,
+            l23_membrane=(
+                self.state.l23_membrane.clone() if self.state.l23_membrane is not None else None
+            ),
         )
 
     def load_state(self, state: LayeredCortexState) -> None:

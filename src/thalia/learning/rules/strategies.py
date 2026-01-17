@@ -127,20 +127,21 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List, Tuple, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 
 from thalia.core.base.component_config import LearningComponentConfig
+from thalia.learning.eligibility import EligibilityTraceManager
+from thalia.learning.eligibility import STDPConfig as CoreSTDPConfig
 from thalia.utils.core_utils import clamp_weights
-from thalia.learning.eligibility import EligibilityTraceManager, STDPConfig as CoreSTDPConfig
-
 
 # =============================================================================
 # Strategy Configuration Dataclasses
 # =============================================================================
+
 
 @dataclass
 class LearningConfig(LearningComponentConfig):
@@ -149,6 +150,7 @@ class LearningConfig(LearningComponentConfig):
     Inherits learning_rate, enabled from LearningComponentConfig.
     Inherits device, dtype, seed from BaseConfig.
     """
+
     w_min: float = 0.0
     w_max: float = 1.0
     use_sparse_updates: bool = False  # Enable sparse operations for large/sparse regions
@@ -157,6 +159,7 @@ class LearningConfig(LearningComponentConfig):
 @dataclass
 class HebbianConfig(LearningConfig):
     """Configuration for basic Hebbian learning."""
+
     normalize: bool = False  # Normalize weight updates
     decay_rate: float = 0.0  # Weight decay per timestep
 
@@ -173,11 +176,12 @@ class STDPConfig(LearningConfig):
         LTP: pre_trace × post_spike
         LTD: post_trace × pre_spike
     """
-    a_plus: float = 0.01      # LTP amplitude
-    a_minus: float = 0.012    # LTD amplitude (slightly larger for stability)
-    tau_plus: float = 20.0    # LTP time constant (ms)
-    tau_minus: float = 20.0   # LTD time constant (ms)
-    dt_ms: float = 1.0        # Simulation timestep (ms)
+
+    a_plus: float = 0.01  # LTP amplitude
+    a_minus: float = 0.012  # LTD amplitude (slightly larger for stability)
+    tau_plus: float = 20.0  # LTP time constant (ms)
+    tau_minus: float = 20.0  # LTD time constant (ms)
+    dt_ms: float = 1.0  # Simulation timestep (ms)
 
 
 @dataclass
@@ -190,12 +194,13 @@ class BCMConfig(LearningConfig):
 
     Threshold adapts: θ → E[c²]
     """
-    tau_theta: float = 5000.0   # Threshold time constant (ms)
-    theta_init: float = 0.01    # Initial threshold
-    theta_min: float = 1e-6     # Minimum threshold
-    theta_max: float = 1.0      # Maximum threshold
-    power: float = 2.0          # Power for threshold (c^p)
-    dt: float = 1.0             # Simulation timestep
+
+    tau_theta: float = 5000.0  # Threshold time constant (ms)
+    theta_init: float = 0.01  # Initial threshold
+    theta_min: float = 1e-6  # Minimum threshold
+    theta_max: float = 1.0  # Maximum threshold
+    power: float = 2.0  # Power for threshold (c^p)
+    dt: float = 1.0  # Simulation timestep
 
 
 @dataclass
@@ -206,8 +211,9 @@ class ThreeFactorConfig(LearningConfig):
     - Eligibility: accumulated spike timing correlations
     - Modulator: dopamine, reward signal, or error
     """
-    eligibility_tau: float = 100.0    # Eligibility trace decay (ms)
-    modulator_tau: float = 50.0       # Modulator decay (ms)
+
+    eligibility_tau: float = 100.0  # Eligibility trace decay (ms)
+    modulator_tau: float = 50.0  # Modulator decay (ms)
     dt: float = 1.0
 
 
@@ -217,12 +223,14 @@ class ErrorCorrectiveConfig(LearningConfig):
 
     Delta rule: Δw = lr × pre × (target - actual)
     """
+
     error_threshold: float = 0.01  # Minimum error to trigger learning
 
 
 # =============================================================================
 # Strategy Protocol
 # =============================================================================
+
 
 class LearningStrategy(Protocol):
     """Protocol defining the interface for all learning strategies."""
@@ -257,6 +265,7 @@ class LearningStrategy(Protocol):
 # =============================================================================
 # Strategy Implementations
 # =============================================================================
+
 
 class BaseStrategy(nn.Module, ABC):
     """Base class for learning strategies with common functionality."""
@@ -544,19 +553,19 @@ class STDPStrategy(BaseStrategy):
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(pre, post)
 
         # Extract modulation kwargs
-        dopamine = kwargs.get('dopamine', 0.0)
-        acetylcholine = kwargs.get('acetylcholine', 0.0)
-        norepinephrine = kwargs.get('norepinephrine', 0.0)
-        bcm_modulation = kwargs.get('bcm_modulation', 1.0)
-        oscillation_phase = kwargs.get('oscillation_phase', 0.0)
-        learning_rule = kwargs.get('learning_rule', None)
+        dopamine = kwargs.get("dopamine", 0.0)
+        acetylcholine = kwargs.get("acetylcholine", 0.0)
+        norepinephrine = kwargs.get("norepinephrine", 0.0)
+        bcm_modulation = kwargs.get("bcm_modulation", 1.0)
+        oscillation_phase = kwargs.get("oscillation_phase", 0.0)
+        learning_rule = kwargs.get("learning_rule", None)
 
         # Apply neuromodulator modulations to LTP
         if isinstance(ltp, torch.Tensor):
             # Dopamine modulation (for dopamine-STDP)
-            if learning_rule is not None and hasattr(learning_rule, 'name'):
+            if learning_rule is not None and hasattr(learning_rule, "name"):
                 # Check if this is dopamine-STDP rule
-                if 'DOPAMINE' in learning_rule.name:
+                if "DOPAMINE" in learning_rule.name:
                     ltp = ltp * (1.0 + dopamine)
 
             # Acetylcholine modulation (high ACh = favor LTP/encoding)
@@ -568,8 +577,8 @@ class STDPStrategy(BaseStrategy):
             ltp = ltp * ne_modulation
 
             # Phase modulation (for phase-STDP)
-            if learning_rule is not None and hasattr(learning_rule, 'name'):
-                if 'PHASE' in learning_rule.name:
+            if learning_rule is not None and hasattr(learning_rule, "name"):
+                if "PHASE" in learning_rule.name:
                     phase_mod = 0.5 + 0.5 * np.cos(oscillation_phase)
                     ltp = ltp * phase_mod
 
@@ -582,8 +591,8 @@ class STDPStrategy(BaseStrategy):
         # Apply neuromodulator modulations to LTD
         if isinstance(ltd, torch.Tensor):
             # Dopamine modulation (reduces LTD, protects good synapses)
-            if learning_rule is not None and hasattr(learning_rule, 'name'):
-                if 'DOPAMINE' in learning_rule.name:
+            if learning_rule is not None and hasattr(learning_rule, "name"):
+                if "DOPAMINE" in learning_rule.name:
                     ltd = ltd * (1.0 - 0.5 * max(0.0, dopamine))
 
             # Acetylcholine modulation (high ACh = reduce LTD/favor encoding)
@@ -595,8 +604,8 @@ class STDPStrategy(BaseStrategy):
             ltd = ltd * ne_modulation
 
             # Phase modulation (for phase-STDP)
-            if learning_rule is not None and hasattr(learning_rule, 'name'):
-                if 'PHASE' in learning_rule.name:
+            if learning_rule is not None and hasattr(learning_rule, "name"):
+                if "PHASE" in learning_rule.name:
                     phase_mod = 0.5 - 0.5 * np.cos(oscillation_phase)
                     ltd = ltd * phase_mod
 
@@ -607,7 +616,11 @@ class STDPStrategy(BaseStrategy):
         old_weights = weights.clone()
         new_weights = self._apply_bounds(weights, dw) if isinstance(dw, torch.Tensor) else weights
 
-        metrics = self._compute_metrics(old_weights, new_weights, dw if isinstance(dw, torch.Tensor) else torch.zeros_like(weights))
+        metrics = self._compute_metrics(
+            old_weights,
+            new_weights,
+            dw if isinstance(dw, torch.Tensor) else torch.zeros_like(weights),
+        )
         if self._trace_manager is not None:
             metrics["pre_trace_mean"] = self._trace_manager.input_trace.mean().item()
             metrics["post_trace_mean"] = self._trace_manager.output_trace.mean().item()
@@ -892,7 +905,9 @@ class ThreeFactorStrategy(BaseStrategy):
         if abs(modulator) < 0.01:
             return weights, {
                 "modulator": modulator,
-                "eligibility_mean": self.eligibility.mean().item() if self.eligibility is not None else 0.0,
+                "eligibility_mean": (
+                    self.eligibility.mean().item() if self.eligibility is not None else 0.0
+                ),
                 "ltp": 0.0,
                 "ltd": 0.0,
                 "net_change": 0.0,
@@ -907,7 +922,9 @@ class ThreeFactorStrategy(BaseStrategy):
 
         metrics = self._compute_metrics(old_weights, new_weights, dw)
         metrics["modulator"] = modulator
-        metrics["eligibility_mean"] = self.eligibility.mean().item() if self.eligibility is not None else 0.0
+        metrics["eligibility_mean"] = (
+            self.eligibility.mean().item() if self.eligibility is not None else 0.0
+        )
 
         return new_weights, metrics
 
@@ -956,9 +973,9 @@ class ErrorCorrectiveStrategy(BaseStrategy):
         if target.dim() != 1:
             target = target.squeeze()
 
-        assert pre.dim() == 1 and post.dim() == 1 and target.dim() == 1, (
-            "ErrorCorrectiveStrategy expects 1D inputs"
-        )
+        assert (
+            pre.dim() == 1 and post.dim() == 1 and target.dim() == 1
+        ), "ErrorCorrectiveStrategy expects 1D inputs"
 
         # Compute error
         error = target.float() - post.float()
@@ -1039,6 +1056,7 @@ class CompositeStrategy(BaseStrategy):
 # Convenience: Strategy Factory
 # =============================================================================
 
+
 def create_strategy(
     rule_name: str,
     **config_kwargs: Any,
@@ -1055,17 +1073,17 @@ def create_strategy(
     Example:
         strategy = create_strategy('stdp', a_plus=0.02, a_minus=0.02)
     """
-    name = rule_name.lower().replace('-', '_').replace(' ', '_')
+    name = rule_name.lower().replace("-", "_").replace(" ", "_")
 
-    if name == 'hebbian':
+    if name == "hebbian":
         return HebbianStrategy(HebbianConfig(**config_kwargs))
-    elif name == 'stdp':
+    elif name == "stdp":
         return STDPStrategy(STDPConfig(**config_kwargs))
-    elif name == 'bcm':
+    elif name == "bcm":
         return BCMStrategy(BCMConfig(**config_kwargs))
-    elif name in ('three_factor', 'threefactor', 'rl'):
+    elif name in ("three_factor", "threefactor", "rl"):
         return ThreeFactorStrategy(ThreeFactorConfig(**config_kwargs))
-    elif name in ('error_corrective', 'delta', 'supervised'):
+    elif name in ("error_corrective", "delta", "supervised"):
         return ErrorCorrectiveStrategy(ErrorCorrectiveConfig(**config_kwargs))
     else:
         raise ValueError(f"Unknown learning rule: {rule_name}")
@@ -1074,6 +1092,7 @@ def create_strategy(
 # =============================================================================
 # Strategy Registration (at module load time)
 # =============================================================================
+
 
 def _register_builtin_strategies() -> None:
     """Register all built-in learning strategies with the registry.

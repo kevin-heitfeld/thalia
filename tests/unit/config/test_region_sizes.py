@@ -17,16 +17,16 @@ from thalia.config import (
     compute_cerebellum_sizes,
     compute_cortex_layer_sizes,
     compute_hippocampus_sizes,
+    compute_multisensory_sizes,
     compute_striatum_sizes,
     compute_thalamus_sizes,
-    compute_multisensory_sizes,
 )
-from thalia.regions.cerebellum import CerebellumConfig, Cerebellum
-from thalia.regions.cortex import LayeredCortexConfig, LayeredCortex
-from thalia.regions.hippocampus import HippocampusConfig, Hippocampus
-from thalia.regions.striatum import StriatumConfig, Striatum
-from thalia.regions.thalamus import ThalamicRelayConfig, ThalamicRelay
-from thalia.regions.multisensory import MultimodalIntegrationConfig, MultimodalIntegration
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
+from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
+from thalia.regions.multisensory import MultimodalIntegration, MultimodalIntegrationConfig
+from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 class TestHelperFunctions:
@@ -104,10 +104,10 @@ class TestHelperFunctions:
 
         # Check they sum to total
         computed_total = (
-            sizes["visual_size"] +
-            sizes["auditory_size"] +
-            sizes["language_size"] +
-            sizes["integration_size"]
+            sizes["visual_size"]
+            + sizes["auditory_size"]
+            + sizes["language_size"]
+            + sizes["integration_size"]
         )
         assert computed_total == total_size
 
@@ -337,10 +337,10 @@ class TestGrowthMethods:
 
         # Check total is correct
         total_pool = (
-            multisensory.visual_pool_size +
-            multisensory.auditory_pool_size +
-            multisensory.language_pool_size +
-            multisensory.integration_pool_size
+            multisensory.visual_pool_size
+            + multisensory.auditory_pool_size
+            + multisensory.language_pool_size
+            + multisensory.integration_pool_size
         )
         assert total_pool == total_size + n_new
 
@@ -435,9 +435,7 @@ class TestEdgeCases:
     def test_minimal_sizes(self):
         """Test that minimal sizes (1 neuron) work."""
         sizes = {"input_size": 1, "relay_size": 1, "trn_size": 1}
-        config = ThalamicRelayConfig(
-            device="cpu"
-        )
+        config = ThalamicRelayConfig(device="cpu")
 
         thalamus = ThalamicRelay(config, sizes, "cpu")
 
