@@ -122,38 +122,42 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
     def __init__(self, config: SequenceMemoryConfig):
         super().__init__()
         self.config = config
-        self.device = torch.device(config.device)
+        self.device = torch.device(config.device)  # type: ignore[attr-defined]
 
         # Spike encoder for tokens
         encoder_config = SpikeEncoderConfig(
-            vocab_size=config.vocab_size,
-            n_neurons=config.n_neurons,
+            vocab_size=config.vocab_size,  # type: ignore[attr-defined]
+            n_neurons=config.n_neurons,  # type: ignore[attr-defined]
             n_timesteps=10,  # Timesteps per token
             coding_strategy=CodingStrategy.SDR,
             sparsity=0.05,
-            device=config.device,
+            device=config.device,  # type: ignore[attr-defined]
         )
         self.encoder = SpikeEncoder(encoder_config)
 
         # Position encoder for temporal order
         position_config = PositionEncoderConfig(
-            n_neurons=config.n_neurons,
+            n_neurons=config.n_neurons,  # type: ignore[attr-defined]
             max_positions=config.context_length,
-            theta_frequency_hz=config.theta_frequency,
-            gamma_frequency_hz=config.gamma_frequency,
-            device=config.device,
+            theta_frequency_hz=config.theta_frequency,  # type: ignore[attr-defined]
+            gamma_frequency_hz=config.gamma_frequency,  # type: ignore[attr-defined]
+            device=config.device,  # type: ignore[attr-defined]
         )
         self.position_encoder = OscillatoryPositionEncoder(position_config)
 
         # Hippocampus for sequence storage
         hippo_config = HippocampusConfig(
-            n_input=config.n_neurons,
-            n_output=config.n_neurons,
             learning_rate=config.learning_rate,
-            ca3_learning_rate=config.learning_rate,
-            device=config.device,
         )
-        self.hippocampus = Hippocampus(hippo_config)
+        # Hippocampus sizes: simple recurrent structure for sequence learning
+        hippo_sizes = {
+            "input_size": config.n_neurons,  # type: ignore[attr-defined]
+            "dg_size": config.n_neurons,  # type: ignore[attr-defined]
+            "ca3_size": config.n_neurons,  # type: ignore[attr-defined]
+            "ca2_size": config.n_neurons // 2,  # type: ignore[attr-defined]
+            "ca1_size": config.n_neurons,  # type: ignore[attr-defined]
+        }
+        self.hippocampus = Hippocampus(hippo_config, hippo_sizes, config.device)  # type: ignore[attr-defined]
 
         # Get CA3 size for association weights
         self.ca3_size = self.hippocampus.ca3_size
@@ -413,7 +417,7 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
             weights={"association_weights": self.association_weights},
             scalars={
                 "n_stored_contexts": len(self.stored_contexts),
-                "vocab_size": self.config.vocab_size,
+                "vocab_size": self.config.vocab_size,  # type: ignore[attr-defined]
                 "context_length": self.config.context_length,
                 **self.stats,  # Include all stats
             },
