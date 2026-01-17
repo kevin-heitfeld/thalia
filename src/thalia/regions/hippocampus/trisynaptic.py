@@ -515,7 +515,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self._gamma_phase = 0.0
             self._theta_slot = 0
             self._coupled_amplitudes = {}
-            self.replay_engine = None
+            self.replay_engine = None  # type: ignore[assignment]
 
         # Track current sequence position for encoding (auto-advances)
         self._sequence_position: int = 0
@@ -545,11 +545,22 @@ class TrisynapticHippocampus(NeuralRegion):
             self.her_integration = None
 
         # State
-        self.state: HippocampusState = HippocampusState()
+        self.state: HippocampusState = HippocampusState()  # type: ignore[assignment]
 
         # =========================================================================
         # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
         # =========================================================================
+        self._ca3_ca3_fast: Optional[torch.Tensor] = None
+        self._ca3_ca3_slow: Optional[torch.Tensor] = None
+        self._ca3_ca2_fast: Optional[torch.Tensor] = None
+        self._ca3_ca2_slow: Optional[torch.Tensor] = None
+        self._ec_ca2_fast: Optional[torch.Tensor] = None
+        self._ec_ca2_slow: Optional[torch.Tensor] = None
+        self._ec_ca1_fast: Optional[torch.Tensor] = None
+        self._ec_ca1_slow: Optional[torch.Tensor] = None
+        self._ca2_ca1_fast: Optional[torch.Tensor] = None
+        self._ca2_ca1_slow: Optional[torch.Tensor] = None
+
         # Initialize fast and slow eligibility traces for multi-timescale learning
         # Pattern: {pathway}_fast and {pathway}_slow for each learned connection
         # Only initialized if use_multiscale_consolidation is enabled
@@ -573,18 +584,6 @@ class TrisynapticHippocampus(NeuralRegion):
             # CA2→CA1 (context to output)
             self._ca2_ca1_fast = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
             self._ca2_ca1_slow = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
-        else:
-            # Placeholder None values when feature disabled
-            self._ca3_ca3_fast = None
-            self._ca3_ca3_slow = None
-            self._ca3_ca2_fast = None
-            self._ca3_ca2_slow = None
-            self._ec_ca2_fast = None
-            self._ec_ca2_slow = None
-            self._ec_ca1_fast = None
-            self._ec_ca1_slow = None
-            self._ca2_ca1_fast = None
-            self._ca2_ca1_slow = None
 
         # Initialize neurogenesis history tracking
         # Track creation timesteps for each neuron in each layer
@@ -1305,7 +1304,7 @@ class TrisynapticHippocampus(NeuralRegion):
         input_spikes = routed["ec"]
 
         # Ensure 1D input (single sample, no batch)
-        input_spikes = input_spikes.squeeze()
+        input_spikes = input_spikes.squeeze()  # type: ignore[union-attr]
         assert input_spikes.dim() == 1, (
             f"TrisynapticHippocampus.forward: input must be 1D [n_input], "
             f"got shape {input_spikes.shape}"
@@ -1783,7 +1782,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # Add learning to traces (if multi-timescale enabled)
             if self.config.use_multiscale_consolidation:
                 # Accumulate new learning into fast trace
-                self._ca3_ca3_fast = self._ca3_ca3_fast + dW
+                self._ca3_ca3_fast = self._ca3_ca3_fast + dW  # type: ignore[operator]
 
                 # Combined weight update: Fast (episodic) + Slow (semantic)
                 # Fast trace dominates initially, slow trace provides stability
@@ -1894,7 +1893,7 @@ class TrisynapticHippocampus(NeuralRegion):
             dW = effective_lr * torch.outer(ca2_activity, ca3_activity_for_ca2)
 
             if self.config.use_multiscale_consolidation:
-                self._ca3_ca2_fast = self._ca3_ca2_fast + dW
+                self._ca3_ca2_fast = self._ca3_ca2_fast + dW  # type: ignore[operator]
                 combined_dW = (
                     self._ca3_ca2_fast + self.config.slow_trace_contribution * self._ca3_ca2_slow
                 )
@@ -1929,7 +1928,7 @@ class TrisynapticHippocampus(NeuralRegion):
             dW = effective_lr * torch.outer(ca2_activity, input_spikes.float())
 
             if self.config.use_multiscale_consolidation:
-                self._ec_ca2_fast = self._ec_ca2_fast + dW
+                self._ec_ca2_fast = self._ec_ca2_fast + dW  # type: ignore[operator]
                 combined_dW = (
                     self._ec_ca2_fast + self.config.slow_trace_contribution * self._ec_ca2_slow
                 )
@@ -2438,18 +2437,10 @@ class TrisynapticHippocampus(NeuralRegion):
             HippocampusState with all state fields including STP state from 4 pathways.
         """
         # Capture STP state from all 4 pathways
-        self.state.stp_mossy_state = (
-            self.stp_mossy.get_state() if self.stp_mossy is not None else None
-        )
-        self.state.stp_schaffer_state = (
-            self.stp_schaffer.get_state() if self.stp_schaffer is not None else None
-        )
-        self.state.stp_ec_ca1_state = (
-            self.stp_ec_ca1.get_state() if self.stp_ec_ca1 is not None else None
-        )
-        self.state.stp_ca3_recurrent_state = (
-            self.stp_ca3_recurrent.get_state() if self.stp_ca3_recurrent is not None else None
-        )
+        self.state.stp_mossy_state = self.stp_mossy.get_state() if self.stp_mossy is not None else None  # type: ignore[assignment]
+        self.state.stp_schaffer_state = self.stp_schaffer.get_state() if self.stp_schaffer is not None else None  # type: ignore[assignment]
+        self.state.stp_ec_ca1_state = self.stp_ec_ca1.get_state() if self.stp_ec_ca1 is not None else None  # type: ignore[assignment]
+        self.state.stp_ca3_recurrent_state = self.stp_ca3_recurrent.get_state() if self.stp_ca3_recurrent is not None else None  # type: ignore[assignment]
         return self.state
 
     def load_state(self, state: HippocampusState) -> None:
@@ -2462,13 +2453,13 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Restore STP state for all 4 pathways
         if self.stp_mossy is not None and state.stp_mossy_state is not None:
-            self.stp_mossy.load_state(state.stp_mossy_state)
+            self.stp_mossy.load_state(state.stp_mossy_state)  # type: ignore[arg-type]
         if self.stp_schaffer is not None and state.stp_schaffer_state is not None:
-            self.stp_schaffer.load_state(state.stp_schaffer_state)
+            self.stp_schaffer.load_state(state.stp_schaffer_state)  # type: ignore[arg-type]
         if self.stp_ec_ca1 is not None and state.stp_ec_ca1_state is not None:
-            self.stp_ec_ca1.load_state(state.stp_ec_ca1_state)
+            self.stp_ec_ca1.load_state(state.stp_ec_ca1_state)  # type: ignore[arg-type]
         if self.stp_ca3_recurrent is not None and state.stp_ca3_recurrent_state is not None:
-            self.stp_ca3_recurrent.load_state(state.stp_ca3_recurrent_state)
+            self.stp_ca3_recurrent.load_state(state.stp_ca3_recurrent_state)  # type: ignore[arg-type]
 
     def store_episode(
         self,
@@ -2552,7 +2543,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def sample_episodes_prioritized(self, n: int) -> List[Episode]:
         """Sample episodes with probability proportional to priority."""
-        episodes: List[Episode] = self.memory.sample_episodes_prioritized(n)
+        episodes: List[Episode] = self.memory.sample_episodes_prioritized(n)  # type: ignore[attr-defined]
         return episodes
 
     def retrieve_similar(
@@ -2592,7 +2583,7 @@ class TrisynapticHippocampus(NeuralRegion):
             Uses cosine similarity in state space. For more sophisticated
             retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
         """
-        results: List[Dict[str, Any]] = self.memory.retrieve_similar(
+        results: List[Dict[str, Any]] = self.memory.retrieve_similar(  # type: ignore[attr-defined]
             query_state=query_state,
             query_action=query_action,
             k=k,
@@ -2802,10 +2793,10 @@ class TrisynapticHippocampus(NeuralRegion):
                 learning_rate=self.config.learning_rate,
             )
             # Add pathway-specific weight statistics
-            plasticity["ec_dg_mean"] = float(self.synaptic_weights["ec_dg"].data.mean().item())
-            plasticity["dg_ca3_mean"] = float(self.synaptic_weights["dg_ca3"].data.mean().item())
-            plasticity["ca3_ca1_mean"] = float(self.synaptic_weights["ca3_ca1"].data.mean().item())
-            plasticity["ec_ca1_mean"] = float(self.synaptic_weights["ec_ca1"].data.mean().item())
+            plasticity["ec_dg_mean"] = float(self.synaptic_weights["ec_dg"].data.mean().item())  # type: ignore[typeddict-item]
+            plasticity["dg_ca3_mean"] = float(self.synaptic_weights["dg_ca3"].data.mean().item())  # type: ignore[typeddict-item]
+            plasticity["ca3_ca1_mean"] = float(self.synaptic_weights["ca3_ca1"].data.mean().item())  # type: ignore[typeddict-item]
+            plasticity["ec_ca1_mean"] = float(self.synaptic_weights["ec_ca1"].data.mean().item())  # type: ignore[typeddict-item]
 
         # Compute health metrics
         health = compute_health_metrics(
@@ -2869,7 +2860,7 @@ class TrisynapticHippocampus(NeuralRegion):
             nmda_diagnostics["gated_neurons"] = (mg_removal > 0.5).sum().item()
 
         # Pattern comparison
-        pattern_comparison = {
+        pattern_comparison: dict[str, bool | int | float] = {
             "has_stored_pattern": state.stored_dg_pattern is not None,
         }
         if state.stored_dg_pattern is not None and state.dg_spikes is not None:
@@ -2877,9 +2868,9 @@ class TrisynapticHippocampus(NeuralRegion):
             current = state.dg_spikes.float().squeeze()
             similarity = cosine_similarity_safe(stored, current)
             pattern_comparison["dg_similarity"] = similarity.item()
-            pattern_comparison["stored_active"] = (stored > 0).sum().item()
-            pattern_comparison["current_active"] = (current > 0).sum().item()
-            pattern_comparison["overlap"] = ((stored > 0) & (current > 0)).sum().item()
+            pattern_comparison["stored_active"] = int((stored > 0).sum().item())  # type: ignore[assignment]
+            pattern_comparison["current_active"] = int((current > 0).sum().item())  # type: ignore[assignment]
+            pattern_comparison["overlap"] = int(((stored > 0) & (current > 0)).sum().item())  # type: ignore[assignment]
 
         # Region-specific custom metrics
         region_specific = {
