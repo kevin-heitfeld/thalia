@@ -63,127 +63,36 @@ Date: December 8, 2025
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 # ============================================================================
 # Common Health Checks (All Stages)
 # ============================================================================
 
 
-def check_firing_rates(
-    brain: Any,
-    target_range: Tuple[float, float] = (0.05, 0.15),
-    window_steps: int = 10000,
-) -> bool:
-    """Check that all regions maintain healthy firing rates.
-
-    Args:
-        brain: Brain instance
-        target_range: (min, max) acceptable firing rates
-        window_steps: Window for averaging
-
-    Returns:
-        True if all regions in range
-    """
-    # Get firing rates from all regions
-    # This would use brain's internal tracking
-    # Placeholder for now
-    return True
-
-
-def check_no_runaway_excitation(
-    brain: Any,
-    threshold: float = 0.8,
-    window_steps: int = 20000,
-) -> bool:
-    """Check for runaway excitation in any region.
-
-    Args:
-        brain: Brain instance
-        threshold: Max acceptable firing rate
-        window_steps: Window to check
-
-    Returns:
-        True if no runaway detected
-    """
-    # Check criticality state
-    # Placeholder for now
-    return True
-
-
-def check_bcm_convergence(
-    brain: Any,
-    drift_threshold: float = 0.01,
-    window_steps: int = 50000,
-) -> bool:
-    """Check that BCM thresholds have stabilized.
-
-    Args:
-        brain: Brain instance
-        drift_threshold: Max acceptable drift
-        window_steps: Window for stability check
-
-    Returns:
-        True if thresholds converged
-    """
-    # Check BCM threshold drift
-    # Placeholder for now
-    return True
-
-
-def check_weight_saturation(
-    brain: Any,
-    max_saturation: float = 0.80,
-) -> bool:
-    """Check that weights aren't saturated at extremes.
-
-    Args:
-        brain: Brain instance
-        max_saturation: Max fraction of saturated weights
-
-    Returns:
-        True if weight health is good
-    """
-    # Count weights near min/max
-    # Placeholder for now
-    return True
-
-
-def check_no_silent_regions(
-    brain: Any,
-    min_firing: float = 0.01,
-    max_silent_steps: int = 1000,
-) -> bool:
-    """Check that no region has been silent too long.
-
-    Args:
-        brain: Brain instance
-        min_firing: Minimum acceptable firing rate
-        max_silent_steps: Max steps a region can be silent
-
-    Returns:
-        True if no prolonged silence
-    """
-    # Check for silent regions
-    # Placeholder for now
-    return True
-
-
 def check_system_health(brain: Any) -> Dict[str, bool]:
     """Run all common health checks.
 
+    TODO: Implement using HealthMonitor and CriticalityMonitor instead of
+    returning all True. These placeholder checks have been removed.
+
     Args:
         brain: Brain instance
 
     Returns:
-        Dict of health check results
+        Dict of health check results (currently all True as placeholders)
     """
+    # Placeholder: All checks pass for now
+    # In the future, use:
+    #   from thalia.diagnostics import HealthMonitor
+    #   monitor = HealthMonitor(brain)
+    #   report = monitor.check_health()
     return {
-        "firing_stability": check_firing_rates(brain),
-        "no_runaway": check_no_runaway_excitation(brain),
-        "bcm_convergence": check_bcm_convergence(brain),
-        "weight_health": check_weight_saturation(brain),
-        "no_silence": check_no_silent_regions(brain),
+        "firing_stability": True,
+        "no_runaway": True,
+        "bcm_convergence": True,
+        "weight_health": True,
+        "no_silence": True,
     }
 
 
