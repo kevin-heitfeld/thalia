@@ -1,7 +1,7 @@
 # ADR-006: Temporal/Latency Coding for Sensory Pathways
 
-**Status**: Implemented  
-**Date**: 2025-12-07  
+**Status**: Implemented
+**Date**: 2025-12-07
 **Context**: Part of 1D bool tensor architecture migration (ADR-005)
 
 ## Decision
@@ -12,7 +12,7 @@ Sensory pathways use **temporal/latency coding** where information is encoded in
 
 ```python
 # High activity (1.0) → early spike (t=0)
-# Medium activity (0.5) → middle spike (t=10) 
+# Medium activity (0.5) → middle spike (t=10)
 # Low activity (0.1) → late spike (t=19)
 # Very low activity → no spike
 
@@ -52,11 +52,11 @@ latency = (1.0 - normalized_activity) * (n_timesteps - 1)
 def forward(self, image: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
     """Input: [C, H, W] or [H, W] (single image)
        Output: [n_timesteps, output_size] (2D bool)"""
-    
+
     # 1. Photoreceptor + temporal contrast
     # 2. Center-surround + ON/OFF channels
     # 3. Ganglion cell activity [output_size]
-    
+
     # 4. Temporal/latency coding
     spikes = self._generate_temporal_spikes(ganglion_activity)
     return spikes, metadata
@@ -73,12 +73,12 @@ def forward(self, image: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
 def forward(self, audio: torch.Tensor) -> Tuple[torch.Tensor, Dict]:
     """Input: [samples] (single audio clip)
        Output: [n_timesteps, output_size] (2D bool)"""
-    
+
     # 1. FFT spectrogram
     # 2. Mel filterbank (cochlear frequency channels)
     # 3. Hair cell processing + adaptation
     # 4. Project to output size
-    
+
     # 5. Temporal/latency coding
     spikes = self._generate_temporal_spikes(output_activity)
     return spikes, metadata
@@ -96,36 +96,36 @@ def _generate_temporal_spikes(self, activity: torch.Tensor) -> torch.Tensor:
     """Convert activity [output_size] to spikes [n_timesteps, output_size]."""
     n_neurons = activity.shape[0]
     n_timesteps = self.config.n_timesteps
-    
+
     spikes = torch.zeros(n_timesteps, n_neurons, dtype=torch.bool)
-    
+
     # Normalize activity to [0, 1]
     activity_norm = (activity - activity.min()) / (activity.max() - activity.min() + 1e-6)
-    
+
     # Latency coding: high activity → low latency (early spike)
     latencies = ((1.0 - activity_norm) * (n_timesteps - 1)).long()
-    
+
     # Generate spikes (threshold-based)
     threshold = self.config.sparsity
     for n in range(n_neurons):
         if activity_norm[n].item() > threshold:
             t = int(latencies[n].item())
             spikes[t, n] = True
-    
+
     return spikes  # [n_timesteps, output_size]
 ```
 
 ## Consequences
 
 ### Positive
-✅ **Biological realism**: Matches how real sensory neurons work  
-✅ **Information density**: Timing + presence > presence alone  
-✅ **Temporal dynamics**: Brain can learn temporal patterns  
-✅ **Clean architecture**: 2D output (time × neurons) fits sequential processing  
+✅ **Biological realism**: Matches how real sensory neurons work
+✅ **Information density**: Timing + presence > presence alone
+✅ **Temporal dynamics**: Brain can learn temporal patterns
+✅ **Clean architecture**: 2D output (time × neurons) fits sequential processing
 
 ### Negative
-❌ **Complexity**: More complex than single-timestep rate coding  
-❌ **Processing overhead**: Brain must process T timesteps per input  
+❌ **Complexity**: More complex than single-timestep rate coding
+❌ **Processing overhead**: Brain must process T timesteps per input
 ❌ **Parameter sensitivity**: Latency mapping depends on normalization
 
 ### Migration Path
@@ -139,7 +139,7 @@ def _generate_temporal_spikes(self, activity: torch.Tensor) -> torch.Tensor:
 ## Alternatives Considered
 
 ### 1. **Rate Coding** (rejected)
-- Encode as single timestep: `[output_size]` 
+- Encode as single timestep: `[output_size]`
 - Information in spike probability/count
 - ❌ Less biologically accurate
 - ❌ Less information per spike

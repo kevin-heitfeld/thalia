@@ -1,8 +1,8 @@
 # ADR-010: Axonal Delays for All Neural Components
 
-**Status**: Accepted  
-**Date**: 2025-12-11  
-**Authors**: Thalia Team  
+**Status**: Accepted
+**Date**: 2025-12-11
+**Authors**: Thalia Team
 **Related ADRs**: ADR-008 (Component Consolidation)
 
 ## Context
@@ -18,7 +18,7 @@ This violated our Component Parity Principle (see `docs/patterns/component-parit
 
 ALL neural connections have conduction delays:
 - **Within-region (local axons)**: 0.5-2ms
-- **Inter-region (long-range)**: 1-10ms  
+- **Inter-region (long-range)**: 1-10ms
 - **Thalamo-cortical**: 8-15ms
 - **Striato-cortical**: 10-20ms
 
@@ -28,7 +28,7 @@ Action potentials conduct at 0.5-120 m/s depending on myelination and axon diame
 
 The regions-vs-pathways asymmetry meant:
 1. Regions and pathways used **different code paths** for output
-2. Pathways were treated as "second-class" components  
+2. Pathways were treated as "second-class" components
 3. **Violated biological realism**: Real neurons don't produce instantaneous output
 4. Made curriculum learning fragile (pathways could become silent while regions stayed active)
 
@@ -62,7 +62,7 @@ The regions-vs-pathways asymmetry meant:
        """Apply axonal delay to output spikes using circular buffer."""
        if not hasattr(self, 'delay_buffer') or self.delay_buffer is None:
            self._initialize_delay_buffer(output_spikes.shape[0])
-       
+
        self.delay_buffer[self.delay_buffer_idx] = output_spikes
        delayed_idx = (self.delay_buffer_idx - self.avg_delay_steps) % self.delay_buffer.shape[0]
        delayed_spikes = self.delay_buffer[delayed_idx]
@@ -74,7 +74,7 @@ The regions-vs-pathways asymmetry meant:
    ```python
    # Before:
    return output_spikes
-   
+
    # After:
    delayed_spikes = self._apply_axonal_delay(output_spikes, dt)
    return delayed_spikes
@@ -122,7 +122,7 @@ This means:
 # Within-region connections (local)
 axonal_delay_ms: float = 1.0  # Regions default
 
-# Inter-region connections (long-range)  
+# Inter-region connections (long-range)
 axonal_delay_ms: float = 5.0  # Pathways typical
 
 # Can be customized per region/pathway:
@@ -167,8 +167,8 @@ See `tests/unit/test_region_axonal_delays.py`:
 
 ---
 
-**Implementation Date**: December 11, 2025  
-**Tests Added**: 10 tests in `test_region_axonal_delays.py`  
-**Lines Changed**: ~200 (base class + 5 regions)  
-**Breaking**: Yes (output timing changed)  
+**Implementation Date**: December 11, 2025
+**Tests Added**: 10 tests in `test_region_axonal_delays.py`
+**Lines Changed**: ~200 (base class + 5 regions)
+**Breaking**: Yes (output timing changed)
 **Backward Compatible**: No (all outputs now delayed)

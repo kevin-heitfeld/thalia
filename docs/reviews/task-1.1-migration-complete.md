@@ -1,7 +1,7 @@
 # Task 1.1 Migration Complete - Checkpoint Manager Consolidation
 
-**Date**: January 16, 2026  
-**Status**: ✅ **COMPLETE**  
+**Date**: January 16, 2026
+**Status**: ✅ **COMPLETE**
 **Implementation Time**: ~3 hours
 
 ## Summary
@@ -34,10 +34,10 @@ neuron_state = {
 if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
     checkpoint_active = neuron_state["n_neurons_active"]
     checkpoint_capacity = neuron_state["n_neurons_capacity"]
-    
+
     if checkpoint_capacity < checkpoint_active:
         raise ValueError(...)
-    
+
     if checkpoint_active > s.n_neurons_active:
         n_grow_neurons = checkpoint_active - s.n_neurons_active
         n_grow_actions = n_grow_neurons // s.neurons_per_action
@@ -78,11 +78,11 @@ if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
         neurons_per_unit=s.neurons_per_action,
         region_name="Striatum"
     )
-    
+
     if warning_msg:
         import warnings
         warnings.warn(warning_msg, UserWarning)
-    
+
     if should_grow:
         s.grow_output(n_new=n_grow_actions)
 ```

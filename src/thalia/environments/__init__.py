@@ -13,7 +13,7 @@ Components:
 
 Usage:
     from thalia.environments import SensorimotorWrapper
-    
+
     wrapper = SensorimotorWrapper('Reacher-v4')
     obs_spikes = wrapper.reset()
     motor_spikes = brain.motor_cortex(obs_spikes)
@@ -22,10 +22,9 @@ Usage:
 
 from __future__ import annotations
 
-
 from thalia.environments.sensorimotor_wrapper import (
-    SensorimotorWrapper,
     SensorimotorConfig,
+    SensorimotorWrapper,
     SpikeEncoding,
 )
 

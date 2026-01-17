@@ -64,12 +64,12 @@ graph TB
 graph LR
     Input["Input Data"]
     Encoding["Spike Encoding"]
-    Thalamus["Thalamus<br/>(relay)"]  
+    Thalamus["Thalamus<br/>(relay)"]
     Cortex["Cortex<br/>(processing)"]
     Hippo["Hippocampus<br/>(memory)"]
     Striatum["Striatum<br/>(action)"]
     Output["Output Spikes"]
-    Dopamine["Dopamine<br/>(reward)"]  
+    Dopamine["Dopamine<br/>(reward)"]
 
     Input --> Encoding
     Encoding --> Thalamus
@@ -242,4 +242,3 @@ graph TD
 - [DEPENDENCY_GRAPH.md](DEPENDENCY_GRAPH.md) - Module dependency structure
 - [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rule selection
 - [API_INDEX.md](API_INDEX.md) - Complete component index
-

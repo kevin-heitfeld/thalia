@@ -36,8 +36,8 @@ Total region states: 8
 
 ### [``AxonalProjectionState``](../../src/thalia/core/pathway_state.py#L130)
 
-**Base Class**: `PathwayState`  
-**Version**: 1  
+**Base Class**: `PathwayState`
+**Version**: 1
 **Source**: [`thalia/core/pathway_state.py`](../../src/thalia/core/pathway_state.py)
 
 **Description**: State for AxonalProjection with delay buffers.
@@ -52,8 +52,8 @@ Total region states: 8
 
 ### [``CerebellumState``](../../src/thalia/regions/cerebellum/cerebellum.py#L265)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/cerebellum/cerebellum.py`](../../src/thalia/regions/cerebellum/cerebellum.py)
 
 **Description**: Complete state for Cerebellum region.
@@ -80,8 +80,8 @@ Total region states: 8
 
 ### [``HippocampusState``](../../src/thalia/regions/hippocampus/config.py#L300)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/hippocampus/config.py`](../../src/thalia/regions/hippocampus/config.py)
 
 **Description**: State for hippocampus (DG→CA3→CA2→CA1 circuit) with RegionState protocol compliance.
@@ -116,8 +116,8 @@ Total region states: 8
 
 ### [``LayeredCortexState``](../../src/thalia/regions/cortex/config.py#L294)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/cortex/config.py`](../../src/thalia/regions/cortex/config.py)
 
 **Description**: State for layered cortex with RegionState protocol compliance.
@@ -151,8 +151,8 @@ Total region states: 8
 
 ### [``PredictiveCortexState``](../../src/thalia/regions/cortex/predictive_cortex.py#L115)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/cortex/predictive_cortex.py`](../../src/thalia/regions/cortex/predictive_cortex.py)
 
 **Description**: State for predictive cortex with RegionState protocol compliance.
@@ -179,8 +179,8 @@ Total region states: 8
 
 ### [``PrefrontalState``](../../src/thalia/regions/prefrontal/prefrontal.py#L239)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/prefrontal/prefrontal.py`](../../src/thalia/regions/prefrontal/prefrontal.py)
 
 **Description**: State for prefrontal cortex region.
@@ -199,8 +199,8 @@ Total region states: 8
 
 ### [``StriatumState``](../../src/thalia/regions/striatum/config.py#L306)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/striatum/config.py`](../../src/thalia/regions/striatum/config.py)
 
 **Description**: Complete state for Striatum region.
@@ -244,8 +244,8 @@ Total region states: 8
 
 ### [``ThalamicRelayState``](../../src/thalia/regions/thalamus/thalamus.py#L243)
 
-**Base Class**: `BaseRegionState`  
-**Version**: 1  
+**Base Class**: `BaseRegionState`
+**Version**: 1
 **Source**: [`thalia/regions/thalamus/thalamus.py`](../../src/thalia/regions/thalamus/thalamus.py)
 
 **Description**: State for thalamic relay nucleus with RegionState protocol compliance.
@@ -321,4 +321,3 @@ class MyRegionState(BaseRegionState):
 **See Also**:
 - `docs/patterns/state-management.md` - State management patterns
 - `docs/api/CHECKPOINT_FORMAT.md` - Checkpoint file format
-

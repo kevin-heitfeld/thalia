@@ -1,7 +1,7 @@
 # ADR-012: Directory Restructuring for Domain-Based Organization
 
-**Status**: Implemented  
-**Date**: 2025-12-12  
+**Status**: Implemented
+**Date**: 2025-12-12
 **Author**: System Architect
 
 ## Context

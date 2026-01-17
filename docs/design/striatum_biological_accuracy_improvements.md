@@ -1,7 +1,7 @@
 # Striatum Biological Accuracy Investigation
 
-**Date**: January 14, 2026  
-**Status**: Investigation & Recommendations  
+**Date**: January 14, 2026
+**Status**: Investigation & Recommendations
 **Context**: Post-refactoring analysis of D1/D2 implementation
 
 ## Executive Summary
@@ -24,7 +24,7 @@ The current striatum implementation is **biologically sound** at the systems lev
    ```python
    # D1: DA+ → LTP, DA- → LTD
    d1_update = eligibility * dopamine
-   
+
    # D2: DA+ → LTD, DA- → LTP (inverted)
    d2_update = eligibility * (-dopamine)
    ```
@@ -155,11 +155,11 @@ residual_calcium *= exp(-dt / tau_ca)  # tau_ca ~ 100ms
 for i in range(n_input):
     # Sample U from distribution (biological variability)
     U_synapse = np.random.lognormal(mean_U, std_U)
-    
+
     # Location-dependent: proximal = strong depression
     distance_to_soma = compute_dendritic_distance(synapse_id)
     U_synapse *= (1.0 + 0.5 * distance_to_soma / max_distance)
-    
+
 self.stp_modules[key] = ShortTermPlasticity(
     n_pre=n_input,
     n_post=n_neurons,
@@ -182,20 +182,20 @@ class CalciumSTP(ShortTermPlasticity):
         self.residual_ca = torch.zeros(n_pre, n_post)
         self.tau_ca = 100.0  # ms
         self.alpha_ca = 0.3  # Ca facilitation factor
-    
+
     def forward(self, pre_spikes):
         # Standard Tsodyks-Markram
         efficacy = self.u * self.x
-        
+
         # Calcium-modulated dynamics
         ca_boost = 1.0 + self.alpha_ca * self.residual_ca
         u_jump = self.U * (1 - self.u) * ca_boost
         self.u += pre_spikes.unsqueeze(-1) * u_jump
-        
+
         # Calcium accumulation and decay
         self.residual_ca += pre_spikes.unsqueeze(-1) * 0.1
         self.residual_ca *= exp(-dt / self.tau_ca)
-        
+
         return efficacy
 ```
 
@@ -266,27 +266,27 @@ g_exc = 0.2 * g_ampa + 0.8 * g_nmda  # 80% NMDA
 ```python
 class TwoCompartmentMSN(nn.Module):
     """MSN with soma + distal dendrite compartments."""
-    
+
     def __init__(self, n_neurons):
         self.soma = ConductanceLIF(n_neurons)
         self.dendrite = ConductanceLIF(n_neurons, theta=5.0)  # Higher threshold
         self.coupling_conductance = 0.1  # Weak coupling
-    
+
     def forward(self, proximal_input, distal_input):
         # Dendritic spike generation
         dend_spikes, V_dend = self.dendrite(distal_input)
-        
+
         # Dendritic amplification if spike
         dend_contribution = torch.where(
             dend_spikes > 0,
             distal_input * 3.0,  # Amplified
             distal_input * 0.3,  # Attenuated
         )
-        
+
         # Soma integration
         total_current = proximal_input + dend_contribution
         soma_spikes, V_soma = self.soma(total_current)
-        
+
         return soma_spikes, V_soma, V_dend
 ```
 

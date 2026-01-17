@@ -48,9 +48,13 @@ dev = [
     "pytest-timeout>=2.0",
     "pytest-benchmark>=4.0",
     "hypothesis>=6.0",
-    "black",
-    "isort",
-    "mypy",
+    "black>=24.0",
+    "isort>=5.13",
+    "mypy>=1.8",
+    "flake8>=7.0",
+    "bandit[toml]>=1.7",
+    "pre-commit>=3.0",
+    "nbstripout>=0.7",
     "ruff",
 ]
 experiments = [
@@ -74,15 +78,41 @@ Repository = "https://github.com/kevin-heitfeld/thalia"
 packages = ["src/thalia"]
 
 [tool.black]
-line-length = 88
+line-length = 100
 target-version = ["py310"]
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+  | __pycache__
+)/
+'''
 
 [tool.isort]
 profile = "black"
-line_length = 88
+line_length = 100
+skip_gitignore = true
+known_first_party = ["thalia"]
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "E501", "W503"]
+exclude = [".git", "__pycache__", "docs", "build", "dist", ".venv"]
+per-file-ignores = [
+    "__init__.py:F401,F403",  # Allow unused imports in __init__
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "temp", "docs"]
+skips = [
+    "B101",  # assert_used - we use asserts in tests
+    "B601",  # paramiko_calls
+]
 
 [tool.ruff]
-line-length = 88
+line-length = 100
 target-version = "py310"
 
 [tool.mypy]
@@ -156,18 +186,18 @@ disable = [
     "unsupported-membership-test",  # Wrong for __contains__ protocols
     "unsupported-assignment-operation",  # Wrong for __setitem__ protocols
     "unbalanced-tuple-unpacking",   # Often wrong for dataclass fields
-    
+
     # === Import/Module Issues ===
     "import-error",                 # False positives with namespace packages
     "no-name-in-module",           # Wrong for torch, numpy submodules
     "cyclic-import",               # Acceptable with TYPE_CHECKING guards
-    
+
     # === Code Style (handled by black/ruff) ===
     "line-too-long",               # Black handles this
     "missing-module-docstring",    # Not every file needs module docs
     "missing-class-docstring",     # Dataclasses often self-documenting
     "missing-function-docstring",  # Helper functions often self-documenting
-    
+
     # === Design Decisions (intentional patterns) ===
     "too-many-arguments",          # Config classes need many params
     "too-many-instance-attributes",  # Brain regions are complex
@@ -176,29 +206,29 @@ disable = [
     "too-many-statements",         # Complex initialization is fine
     "too-few-public-methods",      # Protocols, mixins, utilities
     "too-many-public-methods",     # Brain API is intentionally rich
-    
+
     # === Protected Access (intentional for internal APIs) ===
     "protected-access",            # _impl access is part of our architecture
-    
+
     # === Unused Variables (often wrong) ===
     "unused-argument",             # Protocol methods, hooks, callbacks
     "unused-variable",             # Intentional in comprehensions, unpacking
-    
+
     # === Abstract Methods (handled by type checker) ===
     "abstract-method",             # Mypy catches this better
-    
+
     # === Fixme Comments (we use TODO.md) ===
     "fixme",                       # We track TODOs separately
-    
+
     # === Duplicate Code (acceptable in tests, configs) ===
     "duplicate-code",              # Test setup often similar
-    
+
     # === Invalid Names (research code patterns) ===
     "invalid-name",                # x, y, z, W, b are standard in ML
-    
+
     # === Broad Exception Catching (intentional for robustness) ===
     "broad-exception-caught",      # Catch-all needed in cleanup, __del__
-    
+
     # === Redefined Outer Name (intentional shadowing) ===
     "redefined-outer-name",        # Pytest fixtures do this intentionally
 ]
@@ -241,7 +271,7 @@ min-similarity-lines = 10
 # Comments are removed from the similarity computation
 ignore-comments = true
 
-# Docstrings are removed from the similarity computation  
+# Docstrings are removed from the similarity computation
 ignore-docstrings = true
 
 # Imports are removed from the similarity computation

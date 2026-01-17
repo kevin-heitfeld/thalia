@@ -59,11 +59,11 @@ Date: December 11, 2025
 
 from __future__ import annotations
 
-from typing import Dict, Type, Optional, List, Callable, Any
 import inspect
+from typing import Any, Callable, Dict, List, Optional, Type
 
 from thalia.core.errors import ConfigurationError
-from thalia.learning.rules.strategies import LearningStrategy, LearningConfig
+from thalia.learning.rules.strategies import LearningConfig, LearningStrategy
 
 
 class LearningStrategyRegistry:
@@ -135,6 +135,7 @@ class LearningStrategyRegistry:
                 '''Three-factor learning with neuromodulation.'''
                 ...
         """
+
         def decorator(strategy_class: Type[LearningStrategy]) -> Type[LearningStrategy]:
             # Validate strategy class
             if not inspect.isclass(strategy_class):
@@ -236,9 +237,7 @@ class LearningStrategyRegistry:
         try:
             return strategy_class(config, **kwargs)
         except Exception as e:
-            raise ConfigurationError(
-                f"Failed to create strategy '{canonical_name}': {e}"
-            ) from e
+            raise ConfigurationError(f"Failed to create strategy '{canonical_name}': {e}") from e
 
     @classmethod
     def list_strategies(cls, include_aliases: bool = False) -> List[str]:
@@ -332,10 +331,7 @@ class LearningStrategyRegistry:
             del cls._metadata[name]
 
         # Remove aliases pointing to this strategy
-        aliases_to_remove = [
-            alias for alias, target in cls._aliases.items()
-            if target == name
-        ]
+        aliases_to_remove = [alias for alias, target in cls._aliases.items() if target == name]
         for alias in aliases_to_remove:
             del cls._aliases[alias]
 
@@ -356,6 +352,7 @@ class LearningStrategyRegistry:
 # Region-Specific Strategy Factory Helpers
 # =============================================================================
 
+
 def create_cortex_strategy(
     learning_rate: float = 0.001,
     tau_theta: float = 5000.0,
@@ -366,11 +363,11 @@ def create_cortex_strategy(
     **kwargs: Any,
 ) -> LearningStrategy:
     """Create composite STDP+BCM strategy for cortical learning.
-    
+
     Cortical learning typically combines:
     - STDP for spike-timing based plasticity
     - BCM for homeostatic sliding threshold
-    
+
     Args:
         learning_rate: Base learning rate for STDP (ignored if stdp_config provided)
         tau_theta: BCM threshold adaptation time constant (ms, ignored if bcm_config provided)
@@ -379,52 +376,42 @@ def create_cortex_strategy(
         stdp_config: Optional custom STDPConfig instance
         bcm_config: Optional custom BCMConfig instance
         **kwargs: Additional parameters for strategies (if configs not provided)
-    
+
     Returns:
         Configured learning strategy (composite if both enabled, single otherwise)
-    
+
     Example:
         >>> # Standard cortex strategy (STDP + BCM composite)
         >>> strategy = create_cortex_strategy(learning_rate=0.001)
-        
+
         >>> # Custom configs
         >>> stdp_cfg = STDPConfig(learning_rate=0.002, a_plus=0.02)
         >>> bcm_cfg = BCMConfig(tau_theta=10000.0)
         >>> strategy = create_cortex_strategy(stdp_config=stdp_cfg, bcm_config=bcm_cfg)
-        
+
         >>> # BCM only (unsupervised feature learning)
         >>> strategy = create_cortex_strategy(use_stdp=False)
     """
     from thalia.learning.rules.strategies import (
-        STDPConfig, STDPStrategy,
-        BCMConfig, BCMStrategy,
+        BCMConfig,
+        BCMStrategy,
         CompositeStrategy,
+        STDPConfig,
+        STDPStrategy,
     )
-    
+
     if use_stdp and use_bcm:
         # Create composite STDP+BCM strategy
-        stdp = STDPStrategy(
-            stdp_config or STDPConfig(learning_rate=learning_rate, **kwargs)
-        )
+        stdp = STDPStrategy(stdp_config or STDPConfig(learning_rate=learning_rate, **kwargs))
         bcm = BCMStrategy(
-            bcm_config or BCMConfig(
-                learning_rate=learning_rate,
-                tau_theta=tau_theta,
-                **kwargs
-            )
+            bcm_config or BCMConfig(learning_rate=learning_rate, tau_theta=tau_theta, **kwargs)
         )
         return CompositeStrategy([stdp, bcm])
     elif use_stdp:
-        return STDPStrategy(
-            stdp_config or STDPConfig(learning_rate=learning_rate, **kwargs)
-        )
+        return STDPStrategy(stdp_config or STDPConfig(learning_rate=learning_rate, **kwargs))
     elif use_bcm:
         return BCMStrategy(
-            bcm_config or BCMConfig(
-                learning_rate=learning_rate,
-                tau_theta=tau_theta,
-                **kwargs
-            )
+            bcm_config or BCMConfig(learning_rate=learning_rate, tau_theta=tau_theta, **kwargs)
         )
     else:
         raise ConfigurationError("Must enable at least one learning rule (STDP or BCM)")
@@ -440,11 +427,11 @@ def create_hippocampus_strategy(
     **kwargs: Any,
 ) -> LearningStrategy:
     """Create hippocampus-appropriate STDP with one-shot capability.
-    
+
     Hippocampus supports both:
     - Standard STDP for gradual pattern completion (CA3 recurrence)
     - One-shot learning for episodic encoding (high learning rate)
-    
+
     Args:
         learning_rate: Base learning rate (0.01 standard, 0.1 for one-shot)
         one_shot: Whether to use high learning rate for single-trial learning
@@ -453,41 +440,41 @@ def create_hippocampus_strategy(
         tau_minus: LTD time constant (ms)
         stdp_config: Optional custom STDPConfig instance (overrides all other params)
         **kwargs: Additional STDP parameters
-    
+
     Returns:
         Configured STDP strategy
-    
+
     Example:
         >>> # Standard hippocampal STDP
         >>> strategy = create_hippocampus_strategy()
-        
+
         >>> # One-shot episodic encoding
         >>> strategy = create_hippocampus_strategy(one_shot=True)
-        
+
         >>> # Custom config
         >>> cfg = STDPConfig(learning_rate=0.05, a_plus=0.05)
         >>> strategy = create_hippocampus_strategy(stdp_config=cfg)
     """
     from thalia.learning.rules.strategies import STDPConfig, STDPStrategy
-    
+
     # If custom config provided, use it directly
     if stdp_config is not None:
         return STDPStrategy(stdp_config)
-    
+
     # Set defaults based on one-shot mode
     if one_shot:
         learning_rate = 0.1 if learning_rate == 0.01 else learning_rate
         a_plus = 0.1 if a_plus is None else a_plus
     else:
         a_plus = 0.01 if a_plus is None else a_plus
-    
+
     return STDPStrategy(
         STDPConfig(
             learning_rate=learning_rate,
             a_plus=a_plus,
             tau_plus=tau_plus,
             tau_minus=tau_minus,
-            **kwargs
+            **kwargs,
         )
     )
 
@@ -499,44 +486,40 @@ def create_striatum_strategy(
     **kwargs: Any,
 ) -> LearningStrategy:
     """Create three-factor learning for striatum (dopamine-modulated).
-    
+
     Striatum uses three-factor rule:
     - Eligibility traces from pre/post activity
     - Dopamine signal gates weight changes
     - Δw = eligibility × dopamine
-    
+
     Args:
         learning_rate: Base learning rate
         eligibility_tau_ms: Eligibility trace time constant (ms)
         three_factor_config: Optional custom ThreeFactorConfig instance
         **kwargs: Additional three-factor parameters (dt, w_min, w_max, etc.)
-    
+
     Returns:
         Configured three-factor strategy
-    
+
     Example:
         >>> # Standard striatum learning
         >>> strategy = create_striatum_strategy()
-        
+
         >>> # Longer eligibility traces (delayed rewards)
         >>> strategy = create_striatum_strategy(eligibility_tau_ms=2000.0)
-        
+
         >>> # Custom config
         >>> cfg = ThreeFactorConfig(learning_rate=0.002, eligibility_tau=1500.0)
         >>> strategy = create_striatum_strategy(three_factor_config=cfg)
     """
     from thalia.learning.rules.strategies import ThreeFactorConfig, ThreeFactorStrategy
-    
+
     # If custom config provided, use it directly
     if three_factor_config is not None:
         return ThreeFactorStrategy(three_factor_config)
-    
+
     return ThreeFactorStrategy(
-        ThreeFactorConfig(
-            learning_rate=learning_rate,
-            eligibility_tau=eligibility_tau_ms,
-            **kwargs
-        )
+        ThreeFactorConfig(learning_rate=learning_rate, eligibility_tau=eligibility_tau_ms, **kwargs)
     )
 
 
@@ -547,38 +530,36 @@ def create_cerebellum_strategy(
     **kwargs: Any,
 ) -> LearningStrategy:
     """Create error-corrective learning for cerebellum (supervised).
-    
+
     Cerebellum uses delta rule for motor learning:
     - Δw ∝ error × input
     - Supervised by climbing fiber error signals
-    
+
     Args:
         learning_rate: Base learning rate (typically slower than cortex)
         error_threshold: Minimum error to trigger learning
         error_config: Optional custom ErrorCorrectiveConfig instance
         **kwargs: Additional parameters (w_min, w_max, etc.)
-    
+
     Returns:
         Configured error-corrective strategy
-    
+
     Example:
         >>> # Standard cerebellar learning
         >>> strategy = create_cerebellum_strategy()
-        
+
         >>> # Custom config
         >>> cfg = ErrorCorrectiveConfig(learning_rate=0.01, error_threshold=0.005)
         >>> strategy = create_cerebellum_strategy(error_config=cfg)
     """
     from thalia.learning.rules.strategies import ErrorCorrectiveConfig, ErrorCorrectiveStrategy
-    
+
     # If custom config provided, use it directly
     if error_config is not None:
         return ErrorCorrectiveStrategy(error_config)
-    
+
     return ErrorCorrectiveStrategy(
         ErrorCorrectiveConfig(
-            learning_rate=learning_rate,
-            error_threshold=error_threshold,
-            **kwargs
+            learning_rate=learning_rate, error_threshold=error_threshold, **kwargs
         )
     )

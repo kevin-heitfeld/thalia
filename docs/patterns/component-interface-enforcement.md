@@ -172,7 +172,7 @@ class MyNewRegion(NeuralComponent):
     def grow_input(self, n_new: int, initialization: str, sparsity: float):
         # Custom input dimension growth
         ...
-    
+
     def grow_output(self, n_new: int, initialization: str, sparsity: float):
         # Custom output dimension growth
         ...

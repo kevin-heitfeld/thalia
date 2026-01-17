@@ -10,7 +10,7 @@ This package provides the Striatum region with:
 
 Usage:
     from thalia.regions.striatum import Striatum, StriatumConfig
-    
+
     # Enable TD(λ) for extended temporal credit assignment:
     from thalia.regions.striatum import TDLambdaLearner, TDLambdaConfig
     config = StriatumConfig(use_td_lambda=True, td_lambda=0.9)
@@ -19,16 +19,15 @@ Usage:
 
 from __future__ import annotations
 
-
-from .config import StriatumConfig
 from .action_selection import ActionSelectionMixin
+from .config import StriatumConfig
 from .striatum import Striatum
 from .td_lambda import (
     TDLambdaConfig,
-    TDLambdaTraces,
     TDLambdaLearner,
-    compute_n_step_return,
+    TDLambdaTraces,
     compute_lambda_return,
+    compute_n_step_return,
 )
 
 __all__ = [

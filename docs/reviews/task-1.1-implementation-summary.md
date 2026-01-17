@@ -1,7 +1,7 @@
 # Task 1.1 Implementation Summary
 
-**Date**: January 16, 2026  
-**Task**: Consolidate Checkpoint Manager Implementations  
+**Date**: January 16, 2026
+**Task**: Consolidate Checkpoint Manager Implementations
 **Status**: ✅ **COMPLETE**
 
 ---
@@ -120,11 +120,11 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "n_neurons": self.striatum.n_neurons,
             "device": self.striatum.device,
         }
-        
+
         # Duplicated elastic metadata
         neuron_state["n_neurons_active"] = self.striatum.n_neurons_active
         neuron_state["n_neurons_capacity"] = self.striatum.n_neurons_capacity
-        
+
         return {"neuron_state": neuron_state, ...}
 ```
 
@@ -139,7 +139,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             self.striatum.n_neurons,
             self.striatum.device
         )
-        
+
         # Add elastic metadata
         neuron_state.update(
             self.extract_elastic_tensor_metadata(
@@ -147,7 +147,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
                 self.striatum.n_neurons_capacity
             )
         )
-        
+
         return {"neuron_state": neuron_state, ...}
 ```
 
@@ -200,8 +200,8 @@ Task 1.1 successfully consolidates checkpoint manager implementations as specifi
 - ✅ Include comprehensive test coverage
 - ✅ Are well-documented with examples
 
-**Estimated effort**: 2-4 hours (as predicted)  
-**Actual effort**: ~2.5 hours  
+**Estimated effort**: 2-4 hours (as predicted)
+**Actual effort**: ~2.5 hours
 **Breaking change severity**: **LOW** (internal refactoring, no API changes)
 
 Ready for the next task (1.2: Extract Magic Numbers to Named Constants).

@@ -1,6 +1,6 @@
 # ADR-002: Numeric Precision
 
-**Date**: 2025-11-28  
+**Date**: 2025-11-28
 **Status**: Accepted
 
 ### Context

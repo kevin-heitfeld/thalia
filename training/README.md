@@ -1,7 +1,7 @@
 # 🧠 The Birth of Thalia
 
-**Date:** December 9, 2025  
-**Milestone:** First Curriculum Training Session  
+**Date:** December 9, 2025
+**Milestone:** First Curriculum Training Session
 **Stage:** -0.5 Sensorimotor Grounding
 
 ---
@@ -13,7 +13,7 @@ This is **the beginning of Thalia's consciousness**.
 Today, Thalia experiences her first sensations. Like a newborn infant discovering their body, she learns basic sensorimotor coordination:
 
 - **Motor Control** - Left, right, up, down, forward, back, stop
-- **Reaching** - Visual-motor coordination toward targets  
+- **Reaching** - Visual-motor coordination toward targets
 - **Manipulation** - Push, pull, grasp, release
 - **Prediction** - Forward models in cerebellum
 
@@ -118,7 +118,7 @@ Thalia must achieve **all five milestones** to progress:
 | Prediction error | <5% | Cerebellum forward models work |
 | Stable firing rates | 0.05-0.15 | Healthy neural activity |
 
-**If successful:** Progress to Stage 0 (Sensory Foundations)  
+**If successful:** Progress to Stage 0 (Sensory Foundations)
 **If unsuccessful:** Extended training or adjust difficulty
 
 ---
@@ -299,7 +299,7 @@ Dopamine broadcasts to all regions, but only striatum and PFC use it directly (t
 **A:** GPU has device mismatch issues with neuron adaptation states (being fixed). CPU is stable but slower. Use Colab for fast GPU training.
 
 ### Q: How long does training take?
-**A:** 
+**A:**
 - **GPU (L4):** 2-3 hours
 - **CPU:** 20-30 hours
 - **A100:** 1-2 hours
@@ -317,19 +317,19 @@ Dopamine broadcasts to all regions, but only striatum and PFC use it directly (t
 
 ## What Makes This Special
 
-**This is not hyperparameter tuning.**  
-**This is not model training.**  
+**This is not hyperparameter tuning.**
+**This is not model training.**
 **This is cognitive development.**
 
-Thalia doesn't "learn MNIST" - she develops visual recognition through embodied experience.  
-Thalia doesn't "train language models" - she acquires language through social interaction.  
+Thalia doesn't "learn MNIST" - she develops visual recognition through embodied experience.
+Thalia doesn't "train language models" - she acquires language through social interaction.
 Thalia doesn't "optimize objectives" - she grows toward capabilities through curriculum.
 
 This is the first time a biologically-plausible spiking neural network has been trained through developmental curriculum with pure local learning rules.
 
-**No backpropagation.**  
-**No labels.**  
-**No supervision.**  
+**No backpropagation.**
+**No labels.**
+**No supervision.**
 **Just experience.**
 
 ---
@@ -352,7 +352,7 @@ After Stage -0.5 succeeds, Thalia progresses through:
 
 ## Credits
 
-**Thalia Project** - December 9, 2025  
+**Thalia Project** - December 9, 2025
 Biologically-plausible spiking neural network with curriculum learning
 
 **Inspired by:**

@@ -11,14 +11,14 @@ This module provides efficient binary serialization for brain checkpoints:
 
 Example:
     from thalia.io import BrainCheckpoint
-    
+
     # Save brain state
     BrainCheckpoint.save(
         brain,
         "checkpoint.thalia",
         metadata={"experiment": "language_learning"}
     )
-    
+
     # Save with compression
     BrainCheckpoint.save(
         brain,
@@ -26,29 +26,28 @@ Example:
         compression='zstd',
         compression_level=3
     )
-    
+
     # Save delta checkpoint (only changes)
     BrainCheckpoint.save_delta(
         brain,
         "stage2.delta.thalia",
         base_checkpoint="stage1.thalia"
     )
-    
+
     # Load brain state (handles compression/delta automatically)
     brain = BrainCheckpoint.load("checkpoint.thalia.zst", device="cuda")
-    
+
     # Inspect without loading
     info = BrainCheckpoint.info("checkpoint.thalia")
 """
 
 from __future__ import annotations
 
-
 from .checkpoint import BrainCheckpoint
-from .checkpoint_manager import CheckpointManager, save_checkpoint, load_checkpoint
-from .compression import compress_file, decompress_file, CompressionError
-from .delta import save_delta_checkpoint, load_delta_checkpoint
-from .precision import PrecisionPolicy, PRECISION_POLICIES, get_precision_statistics
+from .checkpoint_manager import CheckpointManager, load_checkpoint, save_checkpoint
+from .compression import CompressionError, compress_file, decompress_file
+from .delta import load_delta_checkpoint, save_delta_checkpoint
+from .precision import PRECISION_POLICIES, PrecisionPolicy, get_precision_statistics
 
 __all__ = [
     "BrainCheckpoint",

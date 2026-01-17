@@ -3,6 +3,67 @@
 # Run manually: pre-commit run --all-files
 
 repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^docs/archive/
+      - id: end-of-file-fixer
+        exclude: ^docs/archive/
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: debug-statements
+      - id: mixed-line-ending
+
+  # Black - Python code formatter
+  - repo: https://github.com/psf/black
+    rev: 25.12.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        args: [--line-length=100]
+
+  # isort - Import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=100]
+
+  # flake8 - Style guide enforcement
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.3.0
+    hooks:
+      - id: flake8
+        # Configuration in .flake8 file
+
+  # bandit - Security linter
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.2
+    hooks:
+      - id: bandit
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        exclude: ^tests/
+
+  # mypy - Static type checker (DISABLED: 477 pre-existing errors need systematic fixes)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.19.1
+  #   hooks:
+  #     - id: mypy
+  #       args: [--ignore-missing-imports, --show-error-codes]
+  #       exclude: ^(tests|docs)/
+
+  # nbstripout - Strip Jupyter notebook output
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.2
+    hooks:
+      - id: nbstripout
+
   # Documentation validation
   - repo: local
     hooks:
@@ -12,23 +73,4 @@ repos:
         language: system
         pass_filenames: false
         files: \.(md|py)$
-        stages: [commit]
-
-  # Trailing whitespace
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: trailing-whitespace
-        exclude: ^docs/archive/
-      - id: end-of-file-fixer
-        exclude: ^docs/archive/
-      - id: check-yaml
-      - id: check-added-large-files
-        args: ['--maxkb=1000']
-
-  # Python formatting (if desired)
-  # - repo: https://github.com/psf/black
-  #   rev: 23.12.1
-  #   hooks:
-  #     - id: black
-  #       args: [--line-length=100]
+        stages: [pre-commit]

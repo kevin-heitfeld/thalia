@@ -1,7 +1,7 @@
 # ADR-013: Explicit Pathway Projections
 
-**Status**: Accepted  
-**Date**: 2025-12-12  
+**Status**: Accepted
+**Date**: 2025-12-12
 **Authors**: Thalia Project
 
 ## Context
@@ -76,7 +76,7 @@ Pathways' role is to:
 ### Negative
 - ⚠️ Slightly more verbose pathway configuration when sizes differ
   - Mitigation: Configuration is explicit and self-documenting
-  
+
 ### Neutral
 - ℹ️ When region sizes match, direct connections work without pathways
   - Pathways are optional for same-size connections (can add for synaptic dynamics/delays)

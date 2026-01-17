@@ -36,7 +36,7 @@ graph LR
 
 ### [``compute_ach_recurrent_suppression()``](../../src/thalia/utils/oscillator_utils.py#L78)
 
-**Returns**: `float`  
+**Returns**: `float`
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute ACh-mediated suppression of recurrent connections.
@@ -63,7 +63,7 @@ Biological Basis:
 
 ### [``compute_learning_rate_modulation()``](../../src/thalia/utils/oscillator_utils.py#L216)
 
-**Returns**: `float`  
+**Returns**: `float`
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute gamma-modulated learning rate.
@@ -92,7 +92,7 @@ Biological Basis:
 
 ### [``compute_oscillator_modulated_gain()``](../../src/thalia/utils/oscillator_utils.py#L177)
 
-**Returns**: `float`  
+**Returns**: `float`
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Generic function for oscillator-modulated gain computation.
@@ -115,7 +115,7 @@ Biological Basis:
 
 ### [``compute_theta_encoding_retrieval()``](../../src/thalia/utils/oscillator_utils.py#L33)
 
-**Returns**: `tuple[float, float]`  
+**Returns**: `tuple[float, float]`
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute theta-phase encoding/retrieval modulation.
@@ -142,7 +142,7 @@ Biological Basis:
 
 ### [``compute_theta_gamma_coupling_gate()``](../../src/thalia/utils/oscillator_utils.py#L128)
 
-**Returns**: `float`  
+**Returns**: `float`
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute theta-gamma cross-frequency coupling gating.
@@ -173,7 +173,7 @@ Biological Basis:
 
 ### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L208)
 
-**Returns**: `dict`  
+**Returns**: `dict`
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
 
 **Description**: Compute cerebellum layer sizes.
@@ -189,7 +189,7 @@ Biological Basis:
 
 ### [``compute_cortex_layer_sizes()``](../../src/thalia/config/region_sizes.py#L53)
 
-**Returns**: `dict`  
+**Returns**: `dict`
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
 
 **Description**: Compute cortex layer sizes from input size.
@@ -204,7 +204,7 @@ Biological Basis:
 
 ### [``compute_hippocampus_sizes()``](../../src/thalia/config/region_sizes.py#L17)
 
-**Returns**: `dict`  
+**Returns**: `dict`
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
 
 **Description**: Compute hippocampus layer sizes from EC input size.
@@ -219,7 +219,7 @@ Biological Basis:
 
 ### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L177)
 
-**Returns**: `dict`  
+**Returns**: `dict`
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
 
 **Description**: Compute multisensory pool sizes.
@@ -237,7 +237,7 @@ Biological Basis:
 
 ### [``compute_striatum_sizes()``](../../src/thalia/config/region_sizes.py#L91)
 
-**Returns**: `dict`  
+**Returns**: `dict`
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
 
 **Description**: Compute explicit striatum pathway sizes.
@@ -254,7 +254,7 @@ Biological Basis:
 
 ### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L136)
 
-**Returns**: `dict`  
+**Returns**: `dict`
 **Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
 
 **Description**: Compute thalamus layer sizes.
@@ -309,4 +309,3 @@ encoding_bias = compute_acetylcholine_effect(ach_level)
 - [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by compute functions
 - [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions that use these functions
 - [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Real-world usage examples
-

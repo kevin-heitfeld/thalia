@@ -10,7 +10,7 @@ Total: 15 type aliases
 
 ## Type Aliases by Category
 
-### 
+###
 
 #### `BatchData`
 
@@ -163,4 +163,3 @@ Total: 15 type aliases
 **Source**: [`thalia/typing.py`](../../src/thalia/typing.py)
 
 ---
-

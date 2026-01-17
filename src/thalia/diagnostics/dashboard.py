@@ -33,14 +33,14 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import Dict, List, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
-from .health_monitor import HealthMonitor, HealthReport, HealthConfig
+from .health_monitor import HealthConfig, HealthMonitor, HealthReport
 
 
 class Dashboard:
@@ -107,13 +107,13 @@ class Dashboard:
 
         # Trim to window
         if len(self._timesteps) > self.window_size:
-            self._timesteps = self._timesteps[-self.window_size:]
-            self._spike_rates = self._spike_rates[-self.window_size:]
-            self._ei_ratios = self._ei_ratios[-self.window_size:]
-            self._branching_ratios = self._branching_ratios[-self.window_size:]
-            self._dopamine_levels = self._dopamine_levels[-self.window_size:]
-            self._health_scores = self._health_scores[-self.window_size:]
-            self._reports = self._reports[-self.window_size:]
+            self._timesteps = self._timesteps[-self.window_size :]
+            self._spike_rates = self._spike_rates[-self.window_size :]
+            self._ei_ratios = self._ei_ratios[-self.window_size :]
+            self._branching_ratios = self._branching_ratios[-self.window_size :]
+            self._dopamine_levels = self._dopamine_levels[-self.window_size :]
+            self._health_scores = self._health_scores[-self.window_size :]
+            self._reports = self._reports[-self.window_size :]
 
         self._current_timestep += 1
 
@@ -123,12 +123,12 @@ class Dashboard:
         data: List[float],
         title: str,
         ylabel: str,
-        color: str = 'blue',
+        color: str = "blue",
         thresholds: Optional[Dict[str, float]] = None,
         target_value: Optional[float] = None,
     ) -> None:
         """Helper method to setup a time series plot with common formatting.
-        
+
         Args:
             ax: Matplotlib axes object
             data: Data to plot
@@ -139,76 +139,106 @@ class Dashboard:
             target_value: Optional target line to draw
         """
         ax.plot(self._timesteps, data, color=color, linewidth=2)
-        
+
         if thresholds:
-            if 'min' in thresholds:
-                ax.axhline(y=thresholds['min'], color='r', linestyle='--', 
-                          alpha=0.5, label='Min threshold')
-            if 'max' in thresholds:
-                ax.axhline(y=thresholds['max'], color='r', linestyle='--', 
-                          alpha=0.5, label='Max threshold')
-        
+            if "min" in thresholds:
+                ax.axhline(
+                    y=thresholds["min"], color="r", linestyle="--", alpha=0.5, label="Min threshold"
+                )
+            if "max" in thresholds:
+                ax.axhline(
+                    y=thresholds["max"], color="r", linestyle="--", alpha=0.5, label="Max threshold"
+                )
+
         if target_value is not None:
-            ax.axhline(y=target_value, color='g', linestyle=':', 
-                      alpha=0.5, label='Target')
-        
+            ax.axhline(y=target_value, color="g", linestyle=":", alpha=0.5, label="Target")
+
         ax.set_xlabel("Timestep")
         ax.set_ylabel(ylabel)
         ax.set_title(title)
-        ax.legend(loc='upper right')
+        ax.legend(loc="upper right")
         ax.grid(True, alpha=0.3)
-    
+
     def _setup_health_score_plot(self, ax: Axes) -> None:
         """Setup the overall health score plot."""
-        ax.plot(self._timesteps, self._health_scores, 'b-', linewidth=2)
-        ax.axhline(y=90, color='g', linestyle='--', alpha=0.5, label='Good')
-        ax.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Warning')
-        ax.axhline(y=50, color='r', linestyle='--', alpha=0.5, label='Critical')
+        ax.plot(self._timesteps, self._health_scores, "b-", linewidth=2)
+        ax.axhline(y=90, color="g", linestyle="--", alpha=0.5, label="Good")
+        ax.axhline(y=70, color="orange", linestyle="--", alpha=0.5, label="Warning")
+        ax.axhline(y=50, color="r", linestyle="--", alpha=0.5, label="Critical")
         ax.set_xlabel("Timestep")
         ax.set_ylabel("Health Score")
         ax.set_title("Overall Health (100 - max severity)")
         ax.set_ylim([0, 105])
-        ax.legend(loc='lower right')
+        ax.legend(loc="lower right")
         ax.grid(True, alpha=0.3)
-    
+
     def _setup_issues_text_plot(self, ax: Axes, latest_report: HealthReport) -> None:
         """Setup the issues text display plot.
-        
+
         Args:
             ax: Matplotlib axes object
             latest_report: Latest health report
         """
-        ax.axis('off')
+        ax.axis("off")
 
         # Status box
-        status_color = 'green' if latest_report.is_healthy else 'red'
+        status_color = "green" if latest_report.is_healthy else "red"
         status_text = "✓ HEALTHY" if latest_report.is_healthy else "⚠ ISSUES DETECTED"
 
-        ax.text(0.5, 0.95, status_text,
-                ha='center', va='top', fontsize=14, fontweight='bold',
-                color=status_color, transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.95,
+            status_text,
+            ha="center",
+            va="top",
+            fontsize=14,
+            fontweight="bold",
+            color=status_color,
+            transform=ax.transAxes,
+        )
 
         # List issues
         y_pos = 0.85
         if latest_report.issues:
-            ax.text(0.05, y_pos, "Current Issues:",
-                   ha='left', va='top', fontsize=11, fontweight='bold',
-                   transform=ax.transAxes)
+            ax.text(
+                0.05,
+                y_pos,
+                "Current Issues:",
+                ha="left",
+                va="top",
+                fontsize=11,
+                fontweight="bold",
+                transform=ax.transAxes,
+            )
             y_pos -= 0.1
 
             for issue in latest_report.issues[:5]:  # Show top 5
-                severity_color = 'orange' if issue.severity < 50 else 'red'
+                severity_color = "orange" if issue.severity < 50 else "red"
                 issue_text = f"• {issue.description}\n  → {issue.recommendation}"
 
-                ax.text(0.05, y_pos, issue_text,
-                       ha='left', va='top', fontsize=9,
-                       color=severity_color, transform=ax.transAxes,
-                       wrap=True)
+                ax.text(
+                    0.05,
+                    y_pos,
+                    issue_text,
+                    ha="left",
+                    va="top",
+                    fontsize=9,
+                    color=severity_color,
+                    transform=ax.transAxes,
+                    wrap=True,
+                )
                 y_pos -= 0.15
         else:
-            ax.text(0.5, 0.5, "All Systems Nominal",
-                   ha='center', va='center', fontsize=12,
-                   color='green', transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "All Systems Nominal",
+                ha="center",
+                va="center",
+                fontsize=12,
+                color="green",
+                transform=ax.transAxes,
+            )
 
     def show(self, block: bool = False):
         """Display the dashboard.
@@ -248,8 +278,8 @@ class Dashboard:
             data=self._spike_rates,
             title="Average Spike Rate",
             ylabel="Spike Rate",
-            color='purple',
-            thresholds={'min': cfg.spike_rate_min, 'max': cfg.spike_rate_max}
+            color="purple",
+            thresholds={"min": cfg.spike_rate_min, "max": cfg.spike_rate_max},
         )
 
         # =====================================================================
@@ -261,14 +291,20 @@ class Dashboard:
                 data=self._ei_ratios,
                 title="Excitation/Inhibition Balance",
                 ylabel="E/I Ratio",
-                color='green',
-                thresholds={'min': cfg.ei_ratio_min, 'max': cfg.ei_ratio_max},
-                target_value=4.0
+                color="green",
+                thresholds={"min": cfg.ei_ratio_min, "max": cfg.ei_ratio_max},
+                target_value=4.0,
             )
         else:
             ax = self._axes[1][0]
-            ax.text(0.5, 0.5, "E/I Balance Not Enabled", 
-                   ha='center', va='center', transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "E/I Balance Not Enabled",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.set_xlabel("Timestep")
             ax.set_title("Excitation/Inhibition Balance")
             ax.grid(True, alpha=0.3)
@@ -282,14 +318,20 @@ class Dashboard:
                 data=self._branching_ratios,
                 title="Criticality (Branching Ratio)",
                 ylabel="Branching Ratio",
-                color='orange',
-                thresholds={'min': cfg.criticality_min, 'max': cfg.criticality_max},
-                target_value=1.0
+                color="orange",
+                thresholds={"min": cfg.criticality_min, "max": cfg.criticality_max},
+                target_value=1.0,
             )
         else:
             ax = self._axes[1][1]
-            ax.text(0.5, 0.5, "Criticality Monitor Not Enabled", 
-                   ha='center', va='center', transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                "Criticality Monitor Not Enabled",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.set_xlabel("Timestep")
             ax.set_title("Criticality (Branching Ratio)")
             ax.grid(True, alpha=0.3)
@@ -302,8 +344,8 @@ class Dashboard:
             data=self._dopamine_levels,
             title="Global Dopamine",
             ylabel="Dopamine Level",
-            color='red',
-            thresholds={'max': cfg.dopamine_max}
+            color="red",
+            thresholds={"max": cfg.dopamine_max},
         )
 
         # =====================================================================
@@ -328,7 +370,7 @@ class Dashboard:
             self.show()  # Generate figure
 
         if self._fig is not None:
-            self._fig.savefig(path, dpi=150, bbox_inches='tight')
+            self._fig.savefig(path, dpi=150, bbox_inches="tight")
             print(f"Dashboard saved to {path}")
 
     def close(self):
@@ -352,8 +394,12 @@ class Dashboard:
         total = len(self._reports)
 
         # Average metrics
-        avg_spike_rate = sum(self._spike_rates) / len(self._spike_rates) if self._spike_rates else 0.0
-        avg_health_score = sum(self._health_scores) / len(self._health_scores) if self._health_scores else 0.0
+        avg_spike_rate = (
+            sum(self._spike_rates) / len(self._spike_rates) if self._spike_rates else 0.0
+        )
+        avg_health_score = (
+            sum(self._health_scores) / len(self._health_scores) if self._health_scores else 0.0
+        )
 
         # Issue frequency
         issue_counts: Dict[str, int] = {}
@@ -375,18 +421,18 @@ class Dashboard:
         """Print summary to console."""
         summary = self.get_summary()
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("HEALTH DASHBOARD SUMMARY")
-        print("="*60)
+        print("=" * 60)
         print(f"Total timesteps: {summary['total_timesteps']}")
         print(f"Healthy: {summary['healthy_percentage']:.1f}%")
         print(f"Avg spike rate: {summary['avg_spike_rate']:.4f}")
         print(f"Avg health score: {summary['avg_health_score']:.1f}/100")
         print(f"\nCurrent status: {summary['current_status']}")
 
-        if summary['issue_counts']:
+        if summary["issue_counts"]:
             print("\nIssue frequency:")
-            for issue_type, count in sorted(summary['issue_counts'].items(), key=lambda x: -x[1]):
+            for issue_type, count in sorted(summary["issue_counts"].items(), key=lambda x: -x[1]):
                 print(f"  {issue_type}: {count} times")
 
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")

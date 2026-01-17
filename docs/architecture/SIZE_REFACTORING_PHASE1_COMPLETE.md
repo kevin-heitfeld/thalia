@@ -1,7 +1,7 @@
 # Size Specification Refactoring - Phase 1 Implementation
 
-**Date**: January 10, 2026  
-**Status**: ✅ PHASE 1 COMPLETE  
+**Date**: January 10, 2026
+**Status**: ✅ PHASE 1 COMPLETE
 **Next**: Phase 2 (Config API updates)
 
 ---
@@ -77,7 +77,7 @@ calc = LayerSizeCalculator()
 
 # Calculate cortex sizes from input
 sizes = calc.cortex_from_input(input_size=192)
-# Returns: {'l4_size': 288, 'l23_size': 576, 'l5_size': 288, 
+# Returns: {'l4_size': 288, 'l23_size': 576, 'l5_size': 288,
 #           'l6a_size': 115, 'l6b_size': 74, 'input_size': 192,
 #           'output_size': 864, 'total_neurons': 1341}
 
@@ -122,11 +122,11 @@ large = calc.cortex_from_scale(scale_factor=256)
 
 Created `temp/test_size_calculator.py` with comprehensive tests:
 
-✅ All cortex calculation patterns (input, output, scale)  
-✅ All region types (cortex, hippocampus, striatum, thalamus, cerebellum)  
-✅ Biological ratio validation  
-✅ Custom ratio support  
-✅ Deprecation warnings on old functions  
+✅ All cortex calculation patterns (input, output, scale)
+✅ All region types (cortex, hippocampus, striatum, thalamus, cerebellum)
+✅ Biological ratio validation
+✅ Custom ratio support
+✅ Deprecation warnings on old functions
 ✅ Backward compatibility of old API
 
 **Result**: All tests passing ✓
@@ -183,7 +183,7 @@ No immediate changes required! Old functions work but emit warnings.
 
 When you see:
 ```
-DeprecationWarning: compute_cortex_layer_sizes() is deprecated. 
+DeprecationWarning: compute_cortex_layer_sizes() is deprecated.
 Use LayerSizeCalculator().cortex_from_input() instead.
 ```
 
@@ -251,9 +251,9 @@ According to the refactoring plan:
 
 From the refactoring plan:
 
-✅ **Decision 1**: No auto-compute in configs - Users must call calculator explicitly  
-✅ **Decision 2**: Custom ratios supported via `BiologicalRatios`  
-✅ **Decision 3**: `input_size` in configs is optional (will be addressed in Phase 3)  
+✅ **Decision 1**: No auto-compute in configs - Users must call calculator explicitly
+✅ **Decision 2**: Custom ratios supported via `BiologicalRatios`
+✅ **Decision 3**: `input_size` in configs is optional (will be addressed in Phase 3)
 ✅ **Decision 4**: No checkpoint migration code needed (clean break)
 
 ---

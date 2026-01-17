@@ -36,7 +36,7 @@ graph LR
 
 ### [``create_cortical_layer_neurons()``](../../src/thalia/components/neurons/neuron_factory.py) 🟢 Simple
 
-**Returns**: `ConductanceLIF`  
+**Returns**: `ConductanceLIF`
 **Source**: [`thalia/components/neurons/neuron_factory.py`](../../src/thalia/components/neurons/neuron_factory.py)
 
 **Description**: Create layer-specific cortical neurons.
@@ -59,7 +59,7 @@ graph LR
 
 ### [``create_fast_spiking_neurons()``](../../src/thalia/components/neurons/neuron_factory.py) 🟢 Simple
 
-**Returns**: `ConductanceLIF`  
+**Returns**: `ConductanceLIF`
 **Source**: [`thalia/components/neurons/neuron_factory.py`](../../src/thalia/components/neurons/neuron_factory.py)
 
 **Description**: Create fast-spiking interneuron population (parvalbumin+).
@@ -81,7 +81,7 @@ graph LR
 
 ### [``create_pyramidal_neurons()``](../../src/thalia/components/neurons/neuron_factory.py) 🟢 Simple
 
-**Returns**: `ConductanceLIF`  
+**Returns**: `ConductanceLIF`
 **Source**: [`thalia/components/neurons/neuron_factory.py`](../../src/thalia/components/neurons/neuron_factory.py)
 
 **Description**: Create standard pyramidal neuron population.
@@ -105,7 +105,7 @@ graph LR
 
 ### [``create_relay_neurons()``](../../src/thalia/components/neurons/neuron_factory.py) 🟢 Simple
 
-**Returns**: `ConductanceLIF`  
+**Returns**: `ConductanceLIF`
 **Source**: [`thalia/components/neurons/neuron_factory.py`](../../src/thalia/components/neurons/neuron_factory.py)
 
 **Description**: Create thalamic relay neuron population.
@@ -127,7 +127,7 @@ graph LR
 
 ### [``create_trn_neurons()``](../../src/thalia/components/neurons/neuron_factory.py) 🟢 Simple
 
-**Returns**: `ConductanceLIF`  
+**Returns**: `ConductanceLIF`
 **Source**: [`thalia/components/neurons/neuron_factory.py`](../../src/thalia/components/neurons/neuron_factory.py)
 
 **Description**: Create thalamic reticular nucleus (TRN) inhibitory neuron population.
@@ -210,4 +210,3 @@ if NeuronFactory.has_type("pyramidal"):
 - [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by factories
 - [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Neuron configuration classes
 - [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions using these neurons
-

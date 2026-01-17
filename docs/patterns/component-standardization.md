@@ -62,20 +62,20 @@ from thalia.core.region_components import LearningComponent
 
 class StriatumLearningComponent(LearningComponent):
     """Manages three-factor learning for striatum (eligibility × dopamine)."""
-    
+
     def __init__(self, config, context):
         super().__init__(config, context)
         # Initialize component-specific state
-        
+
     def apply_learning(self, *args, **kwargs) -> Dict[str, Any]:
         """Apply dopamine-modulated learning."""
         # Implementation here
         return {"learning_applied": True, "metrics": ...}
-    
+
     def reset_state(self) -> None:
         """Reset component state."""
         # Clear eligibility traces, etc.
-    
+
     def get_learning_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics."""
         diag = super().get_learning_diagnostics()
@@ -98,21 +98,21 @@ from .exploration_component import StriatumExplorationComponent
 class Striatum(NeuralComponent):
     def __init__(self, config):
         # ...
-        
+
         # Use new component names
         self.learning = StriatumLearningComponent(config, context)
         self.homeostasis = StriatumHomeostasisComponent(config, context)
         self.exploration = StriatumExplorationComponent(config, context)
-        
+
     # Backwards compatibility properties
     @property
     def learning_manager(self):
         return self.learning
-    
+
     @property
     def homeostasis_manager(self):
         return self.homeostasis
-    
+
     @property
     def exploration_manager(self):
         return self.exploration
@@ -215,18 +215,18 @@ This ensures:
 
 ### DO create a component when:
 
-✅ Logic is complex (>100 lines)  
-✅ Component has dedicated state (traces, buffers, history)  
-✅ Functionality maps to a biological subsystem  
-✅ Multiple regions might need similar functionality  
-✅ Clear separation of concerns improves clarity  
+✅ Logic is complex (>100 lines)
+✅ Component has dedicated state (traces, buffers, history)
+✅ Functionality maps to a biological subsystem
+✅ Multiple regions might need similar functionality
+✅ Clear separation of concerns improves clarity
 
 ### DON'T create a component for:
 
-❌ Simple coordination logic (<50 lines)  
-❌ One-time initialization code  
-❌ Pure I/O operations (checkpointing)  
-❌ Simple state tracking (use instance variables)  
+❌ Simple coordination logic (<50 lines)
+❌ One-time initialization code
+❌ Pure I/O operations (checkpointing)
+❌ Simple state tracking (use instance variables)
 
 ### Examples of NON-components:
 
