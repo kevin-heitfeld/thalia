@@ -283,11 +283,11 @@ class DynamicBrain(nn.Module):
             if hasattr(cortex, "config"):
                 config = cortex.config
                 if hasattr(config, "l23_size") and hasattr(config, "l5_size"):
-                    output_size = config.l23_size + config.l5_size
+                    output_size = int(config.l23_size) + int(config.l5_size)
 
             # Try getting from instance attributes
             if output_size is None and hasattr(cortex, "l23_size") and hasattr(cortex, "l5_size"):
-                output_size = cortex.l23_size + cortex.l5_size
+                output_size = int(cortex.l23_size) + int(cortex.l5_size)
 
             # Fallback to n_output
             if output_size is None and hasattr(cortex, "n_output"):
@@ -295,7 +295,7 @@ class DynamicBrain(nn.Module):
 
             # Apply if we found a size
             if output_size is not None:
-                self.consolidation_manager.set_cortex_output_size(output_size)
+                self.consolidation_manager.set_cortex_output_size(int(output_size))
 
         # =================================================================
         # CHECKPOINT MANAGER (Phase 1.7.4)
@@ -340,9 +340,6 @@ class DynamicBrain(nn.Module):
                     hippocampus=self.components["hippocampus"],
                     config=DynaConfig(),
                 )
-
-        # Initialize spike count tracking (for diagnostics and intrinsic rewards)
-        self._spike_counts: Dict[str, int] = {name: 0 for name in components.keys()}
 
         # =================================================================
         # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
@@ -477,7 +474,7 @@ class DynamicBrain(nn.Module):
         Example:
             {"thalamus": ["cortex"], "cortex": ["hippocampus", "striatum"]}
         """
-        graph = {name: [] for name in self.components.keys()}
+        graph: Dict[str, List[str]] = {name: [] for name in self.components.keys()}
 
         # Extract connections from tuple keys
         for src, tgt in self.connections.keys():
@@ -844,21 +841,22 @@ class DynamicBrain(nn.Module):
         striatum = self.components["striatum"]
 
         # Use mental simulation if requested and available
-        if use_planning and self.mental_simulation is not None:
-            # Get current state from PFC
-            current_state = None
-            if "pfc" in self.components:
-                pfc = self.components["pfc"]
-                if hasattr(pfc, "state") and pfc.state is not None:
-                    current_state = pfc.state.spikes
-
-            if current_state is not None:
-                # Use tree search to find best action
-                action = self.mental_simulation.search(
-                    state=current_state,
-                    n_simulations=10,
-                )
-                return action, 1.0  # High confidence from planning
+        # TODO: Implement tree search method in MentalSimulationCoordinator
+        # if use_planning and self.mental_simulation is not None:
+        #     # Get current state from PFC
+        #     current_state = None
+        #     if "pfc" in self.components:
+        #         pfc = self.components["pfc"]
+        #         if hasattr(pfc, "state") and pfc.state is not None:
+        #             current_state = pfc.state.spikes  # type: ignore[union-attr]
+        #
+        #     if current_state is not None:
+        #         # Use tree search to find best action
+        #         action = self.mental_simulation.search(
+        #             state=current_state,
+        #             n_simulations=10,
+        #         )
+        #         return action, 1.0  # High confidence from planning
 
         # Striatum has finalize_action method for action selection
         if hasattr(striatum, "finalize_action"):
@@ -981,7 +979,7 @@ class DynamicBrain(nn.Module):
             if "pfc" in self.components:
                 pfc = self.components["pfc"]
                 if hasattr(pfc, "state") and pfc.state is not None:
-                    next_state = pfc.state.spikes
+                    next_state = pfc.state.spikes  # type: ignore[union-attr]
                     # Current state would need to be saved from before action
                     # For now, use same state (limitation: need state history)
                     current_state = next_state
@@ -1185,11 +1183,11 @@ class DynamicBrain(nn.Module):
 
             # Try PredictiveCortex first (has explicit free_energy)
             if hasattr(cortex, "state") and hasattr(cortex.state, "free_energy"):
-                free_energy = cortex.state.free_energy
+                free_energy = cortex.state.free_energy  # type: ignore[union-attr]
 
                 # Free energy is typically 0-10, lower is better
                 # Map: 0 → +1 (perfect prediction), 5 → 0, 10+ → -1 (bad prediction)
-                cortex_reward = 1.0 - 0.2 * min(free_energy, 10.0)
+                cortex_reward = 1.0 - 0.2 * float(min(free_energy, 10.0))  # type: ignore[arg-type]
                 cortex_reward = max(-1.0, min(1.0, cortex_reward))
                 reward += cortex_reward
                 n_sources += 1
@@ -1276,20 +1274,20 @@ class DynamicBrain(nn.Module):
                 and hasattr(cortex.state, "free_energy")
                 and cortex.state.free_energy is not None
             ):
-                free_energy = cortex.state.free_energy
+                free_energy = cortex.state.free_energy  # type: ignore[union-attr]
                 # High FE → high uncertainty
-                cortex_uncertainty = min(1.0, free_energy / 10.0)
+                cortex_uncertainty = float(min(1.0, free_energy / 10.0))  # type: ignore[arg-type]
                 uncertainty += cortex_uncertainty
                 n_sources += 1
 
         # Average across sources
         if n_sources > 0:
-            uncertainty = uncertainty / n_sources
+            uncertainty = float(uncertainty) / n_sources
         else:
             # No signals → assume moderate uncertainty
             uncertainty = 0.3
 
-        return max(0.0, min(1.0, uncertainty))
+        return float(max(0.0, min(1.0, uncertainty)))
 
     def _compute_cognitive_load(self) -> float:
         """Compute current cognitive load from PFC working memory usage.
@@ -2257,20 +2255,22 @@ class DynamicBrain(nn.Module):
         """
         return [event.to_dict() for event in self._growth_history]
 
-    def load_full_state(self, state: StateDict) -> None:
+    def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
 
         Args:
             state: State dict from get_full_state()
         """
         # Load time
-        self._current_time = state.get("current_time", 0.0)
+        self._current_time = float(state.get("current_time", 0.0))
 
         # Load topology
-        self._topology = state.get("topology", self._topology)
+        topology_value = state.get("topology", self._topology)
+        if isinstance(topology_value, dict):
+            self._topology = topology_value
 
         # Load component states
-        component_states = state.get("regions", {})
+        component_states: Dict[str, Any] = state.get("regions", {})
         for name, component_state in component_states.items():
             if name in self.components:
                 self.components[name].load_full_state(component_state)
