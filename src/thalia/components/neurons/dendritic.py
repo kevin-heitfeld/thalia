@@ -434,7 +434,11 @@ class DendriticNeuron(nn.Module):
         elif self.config.input_routing == "random":
             # Random routing: use pre-computed permutation indices
             # (batch, total) → gather per neuron → (batch, n_neurons, total)
-            inputs_tensor = cast(torch.Tensor, inputs)  # Mypy incorrectly infers Optional
+            assert inputs is not None, "inputs cannot be None for random routing"
+            assert (
+                self.input_routing_indices is not None
+            ), "input_routing_indices must be set for random mode"
+            inputs_tensor = cast(torch.Tensor, inputs)
             expanded_inputs = inputs_tensor.unsqueeze(1).expand(batch_size, self.n_neurons, -1)
             indices = self.input_routing_indices.unsqueeze(0).expand(batch_size, -1, -1)
             routed = torch.gather(expanded_inputs, dim=2, index=indices)

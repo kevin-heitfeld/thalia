@@ -368,12 +368,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # Create pathway-specific configuration
         # Pathways operate at MSN level (d1_size/d2_size), not action level
+        eligibility_tau = (
+            self.config.eligibility_tau_ms if self.config.eligibility_tau_ms is not None else 1000.0
+        )
         d1_pathway_config = StriatumPathwayConfig(
             n_input=self.input_size,
             n_output=self.d1_size,  # MSN neurons, not actions
             w_min=config.w_min,
             w_max=config.w_max,
-            eligibility_tau_ms=self.config.eligibility_tau_ms,
+            eligibility_tau_ms=eligibility_tau,
             stdp_lr=self.config.stdp_lr,
             device=str(self.device),
         )
@@ -382,7 +385,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             n_output=self.d2_size,  # MSN neurons, not actions
             w_min=config.w_min,
             w_max=config.w_max,
-            eligibility_tau_ms=self.config.eligibility_tau_ms,
+            eligibility_tau_ms=eligibility_tau,
             stdp_lr=self.config.stdp_lr,
             device=str(self.device),
         )
@@ -732,29 +735,29 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # These properties delegate to exploration component for convenience.
 
     @property
-    def _action_counts(self) -> torch.Tensor:
+    def _action_counts(self) -> torch.Tensor:  # type: ignore[override]
         """UCB action counts (delegates to exploration)."""
-        return self.exploration._action_counts
+        return cast(torch.Tensor, self.exploration._action_counts)
 
     @property
-    def _total_trials(self) -> int:
+    def _total_trials(self) -> int:  # type: ignore[override]
         """Total trial count (delegates to exploration)."""
-        return self.exploration._total_trials
+        return int(self.exploration._total_trials)
 
     @property
-    def _recent_rewards(self) -> List[float]:
+    def _recent_rewards(self) -> List[float]:  # type: ignore[override]
         """Recent reward history (delegates to exploration)."""
-        return self.exploration._recent_rewards
+        return cast(List[float], self.exploration._recent_rewards)
 
     @property
-    def _recent_accuracy(self) -> float:
-        """Running accuracy estimate (delegates to exploration)."""
-        return self.exploration._recent_accuracy
+    def _recent_accuracy(self) -> float:  # type: ignore[override]
+        """Recent accuracy (delegates to exploration)."""
+        return float(self.exploration._recent_accuracy)
 
     @property
-    def tonic_dopamine(self) -> float:
+    def tonic_dopamine(self) -> float:  # type: ignore[override]
         """Current tonic dopamine level (delegates to exploration)."""
-        return self.exploration.tonic_dopamine
+        return float(self.exploration.tonic_dopamine)
 
     @tonic_dopamine.setter
     def tonic_dopamine(self, value: float) -> None:
@@ -1986,7 +1989,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             return 500.0  # Intermediate phasic signals
         else:
             # Default to config value
-            return self.config.eligibility_tau_ms
+            return (
+                self.config.eligibility_tau_ms
+                if self.config.eligibility_tau_ms is not None
+                else 1000.0
+            )
 
     def _update_pathway_eligibility(
         self,

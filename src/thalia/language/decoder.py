@@ -45,7 +45,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -359,13 +359,11 @@ class SpikeDecoder(BaseSpikeDecoder):
         mean_error = (1.0 - predictions.gather(1, target_flat.unsqueeze(1))).mean().item()
         update_norm = weight_update.norm().item()
 
-        # Update counters (cast from register_buffer to Tensor for arithmetic)
-        assert isinstance(self.n_updates, torch.Tensor), "n_updates must be Tensor"
-        assert isinstance(self.total_error, torch.Tensor), "total_error must be Tensor"
-        n_up: torch.Tensor = self.n_updates  # type: ignore[union-attr]  # Explicit type for mypy
-        tot_err: torch.Tensor = self.total_error  # type: ignore[union-attr]  # Explicit type for mypy
-        self.n_updates = n_up + 1  # type: ignore[assignment,has-type]
-        self.total_error = tot_err + mean_error  # type: ignore[assignment,has-type]
+        # Update counters (register_buffer tensors - mypy cannot infer types)
+        n_up = cast(torch.Tensor, self.n_updates) + 1  # type: ignore[has-type]
+        tot_err = cast(torch.Tensor, self.total_error) + mean_error  # type: ignore[has-type]
+        self.n_updates = cast(torch.Tensor, n_up)  # type: ignore[has-type]
+        self.total_error = cast(torch.Tensor, tot_err)  # type: ignore[has-type]
 
         return {
             "error": mean_error,

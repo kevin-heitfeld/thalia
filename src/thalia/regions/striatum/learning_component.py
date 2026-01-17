@@ -141,7 +141,8 @@ class StriatumLearningComponent(LearningComponent):
         )
 
         # Apply goal modulation if enabled
-        if self.config.use_goal_conditioning and goal_context is not None:
+        use_goal = getattr(self.config, "use_goal_conditioning", False)
+        if use_goal and goal_context is not None:
             self._apply_goal_modulation(dopamine, goal_context)
 
         return {

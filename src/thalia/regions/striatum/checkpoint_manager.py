@@ -177,6 +177,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         # 6. GOAL MODULATION STATE (if enabled)
         goal_state = {}
         if hasattr(s, "pfc_modulation_d1") and s.pfc_modulation_d1 is not None:
+            assert s.pfc_modulation_d2 is not None, "pfc_modulation_d2 must exist if d1 exists"
             goal_state = {
                 "pfc_modulation_d1": s.pfc_modulation_d1.detach().clone(),
                 "pfc_modulation_d2": s.pfc_modulation_d2.detach().clone(),
@@ -288,10 +289,12 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         if "stp_modules" in pathway_state and hasattr(s, "stp_modules"):
             for key, stp_state in pathway_state["stp_modules"].items():
                 if key in s.stp_modules:
-                    if stp_state["u"] is not None and s.stp_modules[key].u is not None:
-                        s.stp_modules[key].u.data = stp_state["u"].to(s.device)
-                    if stp_state["x"] is not None and s.stp_modules[key].x is not None:
-                        s.stp_modules[key].x.data = stp_state["x"].to(s.device)
+                    if stp_state["u"] is not None:
+                        assert s.stp_modules[key].u is not None
+                        s.stp_modules[key].u.data = stp_state["u"].to(s.device)  # type: ignore[union-attr]
+                    if stp_state["x"] is not None:
+                        assert s.stp_modules[key].x is not None
+                        s.stp_modules[key].x.data = stp_state["x"].to(s.device)  # type: ignore[union-attr]
 
         # Restore input source tracking
         if "input_sources" in pathway_state:
@@ -340,9 +343,10 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         # 6. RESTORE GOAL MODULATION STATE (if present)
         if "goal_state" in state and state["goal_state"]:
             goal_state = state["goal_state"]
-            if hasattr(s, "pfc_modulation_d1"):
-                s.pfc_modulation_d1.data = goal_state["pfc_modulation_d1"].to(s.device)
-                s.pfc_modulation_d2.data = goal_state["pfc_modulation_d2"].to(s.device)
+            if hasattr(s, "pfc_modulation_d1") and s.pfc_modulation_d1 is not None:
+                assert s.pfc_modulation_d2 is not None, "pfc_modulation_d2 must exist"
+                s.pfc_modulation_d1.data = goal_state["pfc_modulation_d1"].to(s.device)  # type: ignore[union-attr]
+                s.pfc_modulation_d2.data = goal_state["pfc_modulation_d2"].to(s.device)  # type: ignore[union-attr]
 
         # 8. RESTORE ACTION SELECTION STATE
         action_state = state["action_state"]

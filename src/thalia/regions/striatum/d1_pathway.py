@@ -87,10 +87,9 @@ class D1Pathway(StriatumPathway):
         # Update weights
         self.weights.data = new_weights
 
-        # Add pathway identifier
+        # Add pathway identifier (metrics is Dict[str, Any] to allow mixed types)
         metrics["pathway"] = "D1"  # type: ignore[assignment]
-        metrics["dopamine_sign"] = (  # type: ignore[assignment]
-            "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
-        )
+        sign_value: str = "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
+        metrics["dopamine_sign"] = sign_value  # type: ignore[assignment]
 
         return metrics
