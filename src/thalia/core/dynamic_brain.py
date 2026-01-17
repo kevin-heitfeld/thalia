@@ -61,7 +61,6 @@ from thalia.typing import (
     SourceOutputs,
     StateDict,
     CheckpointMetadata,
-    DiagnosticsDict,
 )
 
 if TYPE_CHECKING:
@@ -544,7 +543,7 @@ class DynamicBrain(nn.Module):
         self,
         sensory_input: Optional[Union[torch.Tensor, Dict[str, Union[torch.Tensor, List[torch.Tensor], StimulusPattern]]]] = None,
         n_timesteps: Optional[int] = None,
-    ) -> DiagnosticsDict:
+    ) -> Dict[str, Any]:
         """Execute brain for n_timesteps.
 
         Supports multiple input modes:
@@ -994,7 +993,7 @@ class DynamicBrain(nn.Module):
         is_match: bool,
         selected_action: int,
         counterfactual_scale: float = 0.5,
-    ) -> DiagnosticsDict:
+    ) -> Dict[str, Any]:
         """Deliver reward with counterfactual learning for non-selected action.
 
         Implements model-based RL: after experiencing a real outcome, we also
@@ -1339,7 +1338,7 @@ class DynamicBrain(nn.Module):
         n_cycles: int = 5,
         batch_size: int = 32,
         verbose: bool = False,
-    ) -> DiagnosticsDict:
+    ) -> Dict[str, Any]:
         """Perform memory consolidation (replay) automatically.
 
         This simulates sleep/offline replay where hippocampus replays stored
@@ -1489,7 +1488,7 @@ class DynamicBrain(nn.Module):
     # DIAGNOSTICS & GROWTH (Phase 1.6.4)
     # =========================================================================
 
-    def check_growth_needs(self) -> DiagnosticsDict:
+    def check_growth_needs(self) -> Dict[str, Any]:
         """Check if any components need growth based on capacity metrics.
 
         Analyzes utilization, saturation, and activity patterns to determine
@@ -1937,7 +1936,7 @@ class DynamicBrain(nn.Module):
             n_stored_episodes=n_stored,
         )
 
-    def get_diagnostics(self) -> DiagnosticsDict:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostic information from all subsystems.
 
         Returns diagnostic metrics from:
@@ -2179,7 +2178,7 @@ class DynamicBrain(nn.Module):
         """
         return self.checkpoint_manager.load(path, device, strict)
 
-    def get_growth_history(self) -> List[DiagnosticsDict]:
+    def get_growth_history(self) -> List[Dict[str, Any]]:
         """Get complete growth history.
 
         Returns:

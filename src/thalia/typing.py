@@ -170,21 +170,6 @@ Example:
 # Diagnostics
 # ============================================================================
 
-DiagnosticsDict = Dict[str, Any]
-"""Component health and performance metrics.
-
-**DEPRECATED**: Use specific TypedDict subclasses below for better type safety.
-
-Example:
-    diagnostics: DiagnosticsDict = {
-        "firing_rate": 5.2,
-        "weight_mean": 0.35,
-        "weight_std": 0.12,
-        "sparsity": 0.15,
-    }
-"""
-
-
 # Structured diagnostic types (Architecture Review 2025-12-22, Tier 1.5)
 # =========================================================================
 
@@ -437,7 +422,7 @@ __all__ = [
     "StateDict",
     "CheckpointMetadata",
     # Diagnostics
-    "DiagnosticsDict",  # Deprecated, use TypedDict subclasses below
+    # DiagnosticsDict removed - use TypedDict subclasses below instead
     "BaseDiagnostics",
     "LayeredCortexDiagnostics",
     "StriatumDiagnostics",

@@ -31,7 +31,7 @@ from thalia.mixins.growth_mixin import GrowthMixin
 from thalia.mixins.resettable_mixin import ResettableMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.neuromodulation.mixin import NeuromodulatorMixin
-from thalia.typing import SourceOutputs, DiagnosticsDict, StateDict, InputSizes, LearningStrategies
+from thalia.typing import SourceOutputs, StateDict, InputSizes, LearningStrategies
 
 
 # Custom warning for performance issues
@@ -340,7 +340,7 @@ class NeuralRegion(nn.Module, BrainComponentMixin, NeuromodulatorMixin, GrowthMi
     # BrainComponent Protocol Implementation (Required Methods)
     # =========================================================================
 
-    def get_diagnostics(self) -> DiagnosticsDict:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get current activity and health metrics.
 
         Returns basic diagnostics. Subclasses should override to add region-specific metrics.

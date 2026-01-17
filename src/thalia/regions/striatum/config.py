@@ -432,20 +432,7 @@ class StriatumState(BaseRegionState):
     # ========================================================================
     # SHORT-TERM PLASTICITY (STP)
     # ========================================================================
-    # DEPRECATED (backward compatibility): Old single STP modules
-    stp_corticostriatal_u: Optional[torch.Tensor] = None
-    """DEPRECATED: STP release probability for corticostriatal pathway [n_pre, n_post]."""
-
-    stp_corticostriatal_x: Optional[torch.Tensor] = None
-    """DEPRECATED: STP available resources for corticostriatal pathway [n_pre, n_post]."""
-
-    stp_thalamostriatal_u: Optional[torch.Tensor] = None
-    """DEPRECATED: STP release probability for thalamostriatal pathway [n_pre, n_post]."""
-
-    stp_thalamostriatal_x: Optional[torch.Tensor] = None
-    """DEPRECATED: STP available resources for thalamostriatal pathway [n_pre, n_post]."""
-
-    # NEW (Phase 5): Per-source STP modules
+    # Per-source STP modules (Phase 5)
     stp_modules_state: Dict[str, Dict[str, Optional[torch.Tensor]]] = field(default_factory=dict)
     """Per-source STP states. Keys are source-pathway names (e.g., 'cortex:l5_d1'),
     values are dicts with 'u' and 'x' tensors."""
@@ -505,12 +492,6 @@ class StriatumState(BaseRegionState):
             "trial_timesteps": self.trial_timesteps,
             "homeostatic_scaling_applied": self.homeostatic_scaling_applied,
             "homeostasis_manager_state": self.homeostasis_manager_state,
-
-            # STP
-            "stp_corticostriatal_u": self.stp_corticostriatal_u,
-            "stp_corticostriatal_x": self.stp_corticostriatal_x,
-            "stp_thalamostriatal_u": self.stp_thalamostriatal_u,
-            "stp_thalamostriatal_x": self.stp_thalamostriatal_x,
 
             # Neuromodulators inherited from BaseRegionState
             "dopamine": self.dopamine,

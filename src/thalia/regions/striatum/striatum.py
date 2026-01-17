@@ -3144,11 +3144,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             stp_modules_state={key: {'u': stp.u.detach().clone() if stp.u is not None else None,
                                       'x': stp.x.detach().clone() if stp.x is not None else None}
                                for key, stp in self.stp_modules.items()} if hasattr(self, 'stp_modules') else {},
-            # DEPRECATED (backward compatibility): Old single STP modules
-            stp_corticostriatal_u=None,
-            stp_corticostriatal_x=None,
-            stp_thalamostriatal_u=None,
-            stp_thalamostriatal_x=None,
 
             # Neuromodulators
             dopamine=dopamine,
@@ -3228,14 +3223,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         self.stp_modules[key].u.data = stp_state['u'].to(self.device)
                     if stp_state['x'] is not None and self.stp_modules[key].x is not None:
                         self.stp_modules[key].x.data = stp_state['x'].to(self.device)
-        # DEPRECATED: Load old single STP modules (backward compatibility with old checkpoints)
-        elif hasattr(state, 'stp_corticostriatal_u') and state.stp_corticostriatal_u is not None:
-            # Old checkpoint format - try to migrate to first cortical source
-            cortical_keys = [k for k in self.stp_modules.keys() if 'cortex' in k]
-            if cortical_keys and self.stp_modules[cortical_keys[0]].u is not None:
-                self.stp_modules[cortical_keys[0]].u.data = state.stp_corticostriatal_u.to(self.device)
-            if cortical_keys and state.stp_corticostriatal_x is not None and self.stp_modules[cortical_keys[0]].x is not None:
-                self.stp_modules[cortical_keys[0]].x.data = state.stp_corticostriatal_x.to(self.device)
 
         # Restore goal modulation (optional)
         if state.pfc_modulation_d1 is not None and hasattr(self, 'pfc_modulation_d1'):

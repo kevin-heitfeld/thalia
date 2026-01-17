@@ -55,7 +55,7 @@ from thalia.typing import (
     LearningStrategies,
     StateDict,
     CheckpointMetadata,
-    DiagnosticsDict,
+    # DiagnosticsDict removed - use specific TypedDict subclasses instead
     NeuromodulatorLevels,
     BatchData,
 )
@@ -160,7 +160,7 @@ __all__ = [
     "LearningStrategies",
     "StateDict",
     "CheckpointMetadata",
-    "DiagnosticsDict",
+    # "DiagnosticsDict",  # Removed - use specific TypedDict subclasses
     "NeuromodulatorLevels",
     "BatchData",
     # Brain System
