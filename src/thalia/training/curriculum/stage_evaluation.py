@@ -65,34 +65,53 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from thalia.diagnostics import HealthIssue, HealthMonitor
+
 # ============================================================================
 # Common Health Checks (All Stages)
 # ============================================================================
 
 
 def check_system_health(brain: Any) -> Dict[str, bool]:
-    """Run all common health checks.
-
-    TODO: Implement using HealthMonitor and CriticalityMonitor instead of
-    returning all True. These placeholder checks have been removed.
+    """Run all common health checks using HealthMonitor.
 
     Args:
         brain: Brain instance
 
     Returns:
-        Dict of health check results (currently all True as placeholders)
+        Dict of health check results mapping to True/False
     """
-    # Placeholder: All checks pass for now
-    # In the future, use:
-    #   from thalia.diagnostics import HealthMonitor
-    #   monitor = HealthMonitor(brain)
-    #   report = monitor.check_health()
+    # Use HealthMonitor for proper health checking
+    monitor = HealthMonitor()
+
+    # Get diagnostics from brain
+    diagnostics = brain.get_diagnostics()
+
+    # Run health check
+    report = monitor.check_health(diagnostics)
+
+    # Map health report to expected boolean checks
+    # All pass if healthy, otherwise check specific issue types
+    if report.is_healthy:
+        return {
+            "firing_stability": True,
+            "no_runaway": True,
+            "bcm_convergence": True,
+            "weight_health": True,
+            "no_silence": True,
+        }
+
+    # Check for specific issues
+    issue_types = {issue.issue_type for issue in report.issues}
+
     return {
-        "firing_stability": True,
-        "no_runaway": True,
-        "bcm_convergence": True,
-        "weight_health": True,
-        "no_silence": True,
+        "firing_stability": HealthIssue.ACTIVITY_COLLAPSE not in issue_types
+        and HealthIssue.SEIZURE_RISK not in issue_types,
+        "no_runaway": HealthIssue.SEIZURE_RISK not in issue_types,
+        "bcm_convergence": True,  # Not directly tracked by HealthMonitor
+        "weight_health": HealthIssue.WEIGHT_EXPLOSION not in issue_types
+        and HealthIssue.WEIGHT_COLLAPSE not in issue_types,
+        "no_silence": HealthIssue.ACTIVITY_COLLAPSE not in issue_types,
     }
 
 
