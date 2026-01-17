@@ -16,7 +16,7 @@ def create_test_cerebellum(
     input_size: int = 64, purkinje_size: int = 32, device: str = "cpu", **kwargs
 ) -> Cerebellum:
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
-    expansion = kwargs.pop("granule_expansion_factor", 4.0)
+    kwargs.pop("granule_expansion_factor", 4.0)  # Remove if present
     calc = LayerSizeCalculator()
     sizes = calc.cerebellum_from_output(purkinje_size)
     sizes["input_size"] = input_size
@@ -122,15 +122,16 @@ class TestCerebellumGapJunctions:
         target = torch.rand(32, device=torch.device("cpu"))
 
         # Deliver error (gap junctions should synchronize/smooth the error)
-        metrics = cerebellum.deliver_error(target, output)
+        cerebellum.deliver_error(target, output)
 
-        # If gap junctions work, _io_membrane should be set
-        assert cerebellum._io_membrane is not None
-        assert cerebellum._io_membrane.numel() == 32
+        # If gap junctions work, io_membrane should be set - check via state
+        state = cerebellum.get_state()
+        assert state.io_membrane is not None, "IO membrane not in state after error delivery"
+        assert state.io_membrane.numel() == 32, "IO membrane shape mismatch"
 
         # IO membrane should have less variance than raw error would
         # (synchronization smooths out extreme differences)
-        io_variance = cerebellum._io_membrane.var().item()
+        io_variance = state.io_membrane.var().item()
 
         # Should have some variance (not completely uniform)
         assert io_variance > 0, "IO membrane should have some variance"

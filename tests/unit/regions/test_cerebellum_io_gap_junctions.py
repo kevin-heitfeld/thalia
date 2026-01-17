@@ -22,7 +22,7 @@ def create_test_cerebellum(
     input_size: int, purkinje_size: int, device: str = "cpu", **kwargs
 ) -> Cerebellum:
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
-    expansion = kwargs.pop("granule_expansion_factor", 4.0)
+    kwargs.pop("granule_expansion_factor", 4.0)  # Remove if present
     calc = LayerSizeCalculator()
     sizes = calc.cerebellum_from_output(purkinje_size)
     sizes["input_size"] = input_size
@@ -89,17 +89,19 @@ def test_io_membrane_synchronization():
     # Deliver error signal (triggers gap junction synchronization)
     cerebellum.deliver_error(target=target, output_spikes=output)
 
-    # Check that io_membrane state was updated
-    assert cerebellum._io_membrane is not None
-    io_membrane = cerebellum._io_membrane
+    # Check that io_membrane state was updated via checkpoint API
+    state = cerebellum.get_state()
+    assert state.io_membrane is not None, "IO membrane not in state after error delivery"
 
     # IO membrane should be non-zero where error occurred
-    assert io_membrane[5:10].sum() > 0, "IO membrane should reflect error in target neurons"
+    assert state.io_membrane[5:10].sum() > 0, "IO membrane should reflect error in target neurons"
 
     # Gap junctions should spread activity to neighbors
     # Neighboring neurons (4 and 10) should have some coupled activity
     # (though may be zero if not connected)
-    assert io_membrane.shape == (50,), f"IO membrane shape mismatch: {io_membrane.shape}"
+    assert state.io_membrane.shape == (
+        50,
+    ), f"IO membrane shape mismatch: {state.io_membrane.shape}"
 
 
 def test_error_sign_preservation():
@@ -133,9 +135,10 @@ def test_error_sign_preservation():
     # Deliver error
     cerebellum.deliver_error(target=target, output_spikes=output)
 
-    # IO membrane should be all positive (magnitude only)
-    io_membrane = cerebellum._io_membrane
-    assert (io_membrane >= 0).all(), "IO membrane should be non-negative (magnitude)"
+    # IO membrane should be all positive (magnitude only) - check via state
+    state = cerebellum.get_state()
+    assert state.io_membrane is not None, "IO membrane not in state"
+    assert (state.io_membrane >= 0).all(), "IO membrane should be non-negative (magnitude)"
 
 
 def test_io_gap_junction_state_serialization():
@@ -175,10 +178,11 @@ def test_io_gap_junction_state_serialization():
     )
     cerebellum2.load_state(state)
 
-    # Verify io_membrane was restored
-    assert cerebellum2._io_membrane is not None
+    # Verify io_membrane was restored via checkpoint API
+    state2 = cerebellum2.get_state()
+    assert state2.io_membrane is not None, "IO membrane not restored in state"
     assert torch.allclose(
-        cerebellum._io_membrane, cerebellum2._io_membrane, atol=1e-6
+        state.io_membrane, state2.io_membrane, atol=1e-6
     ), "IO membrane state not restored correctly"
 
 
@@ -200,16 +204,19 @@ def test_io_gap_junction_reset_state():
     output = cerebellum(input_spikes)
     cerebellum.deliver_error(target=target, output_spikes=output)
 
-    # Verify io_membrane is non-zero
-    assert cerebellum._io_membrane.abs().sum() > 0
+    # Verify io_membrane is non-zero via state
+    state_before = cerebellum.get_state()
+    assert state_before.io_membrane is not None, "IO membrane not in state"
+    assert state_before.io_membrane.abs().sum() > 0, "IO membrane should be non-zero after error"
 
     # Reset state
     cerebellum.reset_state()
 
     # io_membrane should be zeros after reset
-    assert cerebellum._io_membrane is not None
+    state_after = cerebellum.get_state()
+    assert state_after.io_membrane is not None, "IO membrane not in state after reset"
     assert torch.allclose(
-        cerebellum._io_membrane, torch.zeros(50, device=device), atol=1e-6
+        state_after.io_membrane, torch.zeros(50, device=device), atol=1e-6
     ), "IO membrane should be zeros after reset"
 
 
@@ -257,9 +264,13 @@ def test_io_coupling_strength_scaling():
     cerebellum_strong.deliver_error(target=target, output_spikes=output_strong)
 
     # Strong coupling should produce more uniform io_membrane distribution
-    # (neighbors get more synchronized)
-    io_weak = cerebellum_weak._io_membrane
-    io_strong = cerebellum_strong._io_membrane
+    # (neighbors get more synchronized) - check via state
+    state_weak = cerebellum_weak.get_state()
+    state_strong = cerebellum_strong.get_state()
+    assert state_weak.io_membrane is not None, "IO membrane not in weak coupling state"
+    assert state_strong.io_membrane is not None, "IO membrane not in strong coupling state"
+    io_weak = state_weak.io_membrane
+    io_strong = state_strong.io_membrane
 
     # Check that both have activity in the target region
     assert io_weak[10:15].sum() > 0
@@ -299,9 +310,10 @@ def test_io_gap_junctions_with_enhanced_microcircuit():
     output = cerebellum(mossy_fiber_input)
     cerebellum.deliver_error(target=target, output_spikes=output)
 
-    # Should produce io_membrane state
-    assert cerebellum._io_membrane is not None
-    assert cerebellum._io_membrane.shape == (50,)
+    # Should produce io_membrane state - verify via checkpoint API
+    state = cerebellum.get_state()
+    assert state.io_membrane is not None, "IO membrane not in state"
+    assert state.io_membrane.shape == (50,), "IO membrane shape mismatch"
 
 
 if __name__ == "__main__":
