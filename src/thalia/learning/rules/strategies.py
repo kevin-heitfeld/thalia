@@ -401,7 +401,7 @@ class HebbianStrategy(BaseStrategy):
 
     def __init__(self, config: Optional[HebbianConfig] = None):
         super().__init__(config or HebbianConfig())
-        self.hebbian_config = self.config  # type: HebbianConfig
+        self.hebbian_config: HebbianConfig = self.config  # type: ignore[assignment]
 
     def compute_update(
         self,
@@ -547,6 +547,7 @@ class STDPStrategy(BaseStrategy):
 
         # Initialize trace manager if needed
         self._ensure_trace_manager(pre, post)
+        assert self._trace_manager is not None, "Trace manager must be initialized"
 
         # Update traces and compute LTP/LTD
         self._trace_manager.update_traces(pre, post, cfg.dt_ms)
@@ -914,6 +915,7 @@ class ThreeFactorStrategy(BaseStrategy):
             }
 
         # Three-factor update
+        assert self.eligibility is not None, "Eligibility must be initialized"
         dw = cfg.learning_rate * self.eligibility * modulator
 
         # Apply bounds

@@ -17,6 +17,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
@@ -147,10 +148,8 @@ class AxonalProjection(RoutingComponent):
             target_name: Name of target region (for per-target delay selection)
         """
         # Create minimal config for RoutingComponent
-        from types import SimpleNamespace
-
         if config is None:
-            config = SimpleNamespace(device=device)
+            config = SimpleNamespace(device=device)  # type: ignore[assignment]
 
         # RoutingComponent.__init__ sets self._device as read-only property
         super().__init__(config)

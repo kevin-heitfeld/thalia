@@ -138,18 +138,26 @@ class RobustnessConfig:
         lines = [
             "Robustness Configuration:",
             f"  E/I Balance: {'ON' if self.enable_ei_balance else 'OFF'}",
-            f"  Divisive Norm: {'ON' if self.enable_divisive_norm else 'OFF'}",
-            f"  Intrinsic Plasticity: {'ON' if self.enable_intrinsic_plasticity else 'OFF'}",
+            f"  Divisive Norm: {'ON' if hasattr(self, 'enable_divisive_norm') and self.enable_divisive_norm else 'OFF'}",
+            f"  Intrinsic Plasticity: {'ON' if hasattr(self, 'enable_intrinsic_plasticity') and self.enable_intrinsic_plasticity else 'OFF'}",
             f"  Criticality: {'ON' if self.enable_criticality else 'OFF'}",
             f"  Metabolic: {'ON' if self.enable_metabolic else 'OFF'}",
         ]
 
         if self.enable_ei_balance:
             lines.append(f"    E/I target ratio: {self.ei_balance.target_ratio}")
-        if self.enable_divisive_norm:
-            lines.append(f"    Divisive sigma: {self.divisive_norm.sigma}")
-        if self.enable_intrinsic_plasticity:
-            lines.append(f"    IP target rate: {self.intrinsic_plasticity.target_rate}")
+        if (
+            hasattr(self, "enable_divisive_norm")
+            and self.enable_divisive_norm
+            and hasattr(self, "divisive_norm")
+        ):
+            lines.append(f"    Divisive sigma: {self.divisive_norm.sigma}")  # type: ignore[attr-defined]
+        if (
+            hasattr(self, "enable_intrinsic_plasticity")
+            and self.enable_intrinsic_plasticity
+            and hasattr(self, "intrinsic_plasticity")
+        ):
+            lines.append(f"    IP target rate: {self.intrinsic_plasticity.target_rate}")  # type: ignore[attr-defined]
         if self.enable_criticality:
             lines.append(f"    Target branching: {self.criticality.target_branching}")
         if self.enable_metabolic:

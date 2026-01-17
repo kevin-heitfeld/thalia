@@ -22,8 +22,6 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -189,7 +187,8 @@ class DeepCerebellarNuclei(nn.Module):
         ).clamp(
             min=-70.0, max=-50.0
         )  # Keep subthreshold
-        self.dcn_neurons.membrane.data = v_init
+        if self.dcn_neurons.membrane is not None:
+            self.dcn_neurons.membrane.data = v_init
 
     def get_state(self) -> dict:
         """Get DCN state for checkpointing."""

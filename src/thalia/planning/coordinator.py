@@ -308,6 +308,49 @@ class MentalSimulationCoordinator:
             priorities[action] = value
         return priorities
 
+    def search(
+        self,
+        state: torch.Tensor,
+        n_simulations: int,
+        goal_context: Optional[torch.Tensor] = None,
+    ) -> int:
+        """
+        Tree search to find best action from current state.
+
+        Performs multiple simulated rollouts to evaluate each action,
+        combining hippocampal memory retrieval with forward simulation.
+
+        Args:
+            state: Current state (spike pattern)
+            n_simulations: Number of simulations per action
+            goal_context: Optional goal context from PFC
+
+        Returns:
+            Best action to take (int)
+
+        Example:
+            >>> action = coordinator.search(
+            ...     state=current_pfc_spikes,
+            ...     n_simulations=10,
+            ...     goal_context=goal_spikes
+            ... )
+        """
+        # Limit simulations to computational budget
+        n_simulations = min(n_simulations, self.config.max_simulations)
+
+        # Get available actions from striatum
+        n_actions = self.striatum.n_actions
+        available_actions = list(range(n_actions))
+
+        # Use plan_best_action for efficient tree search
+        best_action, best_rollout = self.plan_best_action(
+            current_state=state,
+            available_actions=available_actions,
+            goal_context=goal_context,
+        )
+
+        return best_action
+
     def _generate_greedy_sequence(
         self,
         start_state: torch.Tensor,

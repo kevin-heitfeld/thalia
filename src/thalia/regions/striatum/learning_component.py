@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.neurons import WEIGHT_INIT_SCALE_SMALL
 from thalia.components.synapses import WeightInitializer
+from thalia.constants.neuron import WEIGHT_INIT_SCALE_SMALL
 from thalia.constants.oscillator import STRIATUM_PFC_MODULATION_LR
 from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
@@ -62,9 +62,10 @@ class StriatumLearningComponent(LearningComponent):
         if config.use_goal_conditioning:
             # PFC→D1/D2 modulation matrices [n_actions, pfc_size]
             # These learn which striatal neurons participate in which goals
+            n_output = context.n_output if context.n_output is not None else 1
             self.pfc_modulation_d1 = nn.Parameter(
                 WeightInitializer.gaussian(
-                    n_output=context.n_output,  # n_actions passed via context
+                    n_output=n_output,  # n_actions passed via context
                     n_input=config.pfc_size,
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,
@@ -74,7 +75,7 @@ class StriatumLearningComponent(LearningComponent):
             )
             self.pfc_modulation_d2 = nn.Parameter(
                 WeightInitializer.gaussian(
-                    n_output=context.n_output,  # n_actions passed via context
+                    n_output=n_output,  # n_actions passed via context
                     n_input=config.pfc_size,
                     mean=0.0,
                     std=WEIGHT_INIT_SCALE_SMALL,
@@ -172,8 +173,8 @@ class StriatumLearningComponent(LearningComponent):
         """
         # Compute goal-relevance weights for D1/D2
         # High values mean this neuron participates in current goal
-        goal_weight_d1 = torch.sigmoid(torch.matmul(self.pfc_modulation_d1, goal_context))
-        goal_weight_d2 = torch.sigmoid(torch.matmul(self.pfc_modulation_d2, goal_context))
+        _ = torch.sigmoid(torch.matmul(self.pfc_modulation_d1, goal_context))  # goal_weight_d1
+        _ = torch.sigmoid(torch.matmul(self.pfc_modulation_d2, goal_context))  # goal_weight_d2
 
         # Modulate recently applied weight updates (already applied by apply_dopamine_modulation)
         # In practice, goal modulation happens implicitly via forward pass gating
@@ -229,10 +230,10 @@ class StriatumLearningComponent(LearningComponent):
 
         # Hypothetical: What if we'd taken alternate action?
         # Assume it might have been better (optimism under uncertainty)
-        hypothetical_dopamine = min(0.0, dopamine * 0.5)  # Less negative
+        _ = min(0.0, dopamine * 0.5)  # hypothetical_dopamine - Less negative
 
         updates_made = 0
-        for alt_action in alternate_actions:
+        for _ in alternate_actions:
             # Boost eligibility traces for alternate action
             # This makes them more likely to be selected next time
             # Implementation depends on eligibility structure
@@ -255,11 +256,11 @@ class StriatumLearningComponent(LearningComponent):
         diag = super().get_learning_diagnostics()
         diag.update(
             {
-                "d1_eligibility_mean": self.d1_pathway.eligibility.mean().item(),
-                "d2_eligibility_mean": self.d2_pathway.eligibility.mean().item(),
-                "d1_weight_mean": self.d1_pathway.weights.mean().item(),
-                "d2_weight_mean": self.d2_pathway.weights.mean().item(),
-                "goal_conditioning_enabled": self.config.use_goal_conditioning,
+                "d1_eligibility_mean": self.d1_pathway.eligibility.mean().item() if self.d1_pathway.eligibility is not None else 0.0,  # type: ignore[union-attr]
+                "d2_eligibility_mean": self.d2_pathway.eligibility.mean().item() if self.d2_pathway.eligibility is not None else 0.0,  # type: ignore[union-attr]
+                "d1_weight_mean": self.d1_pathway.weights.mean().item() if self.d1_pathway.weights is not None else 0.0,  # type: ignore[union-attr]
+                "d2_weight_mean": self.d2_pathway.weights.mean().item() if self.d2_pathway.weights is not None else 0.0,  # type: ignore[union-attr]
+                "goal_conditioning_enabled": self.config.use_goal_conditioning if hasattr(self.config, "use_goal_conditioning") else False,  # type: ignore[attr-defined]
             }
         )
         return diag

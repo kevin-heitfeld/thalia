@@ -134,10 +134,10 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
             config: Homeostasis manager configuration
             context: Manager context (device, dimensions, etc.)
         """
-        super().__init__(config, context)
+        super().__init__(config, context)  # type: ignore[arg-type]
 
         # Type narrowing for mypy: config is HomeostasisManagerConfig
-        self.config: HomeostasisManagerConfig
+        self.config: HomeostasisManagerConfig = config  # type: ignore[assignment]
 
         # Extract dimensions from context
         self.n_actions = context.n_output if context.n_output else 1
@@ -176,7 +176,7 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
                 excitability_tau=100.0,
             )
         else:
-            self.unified_homeostasis = None
+            self.unified_homeostasis = None  # type: ignore[assignment]
 
     def apply_homeostasis(
         self, d1_weights: nn.Parameter, d2_weights: nn.Parameter, **kwargs

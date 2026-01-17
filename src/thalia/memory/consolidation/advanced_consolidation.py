@@ -875,10 +875,10 @@ def run_advanced_consolidation(
 
     # Phase 4: Random Replay (for generalization)
     if len(episodes) > 0:
-        for step in range(n_steps // 3):  # ~2000 steps
+        for _ in range(n_steps // 3):  # ~2000 steps
             episode = episodes[torch.randint(len(episodes), (1,)).item()]
             brain.forward(episode.state, learning_signal=0.0)
 
-    metrics["total_steps"] = n_steps
+    metrics["total_steps"] = n_steps  # type: ignore[assignment]
 
     return metrics

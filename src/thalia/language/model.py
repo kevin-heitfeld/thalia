@@ -59,20 +59,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from thalia.language.decoder import (
-    SpikeDecoder,
-    SpikeDecoderConfig,
-)
-
-# Import encoding/decoding components
-from thalia.language.encoder import (
-    SpikeEncoder,
-    SpikeEncoderConfig,
-)
-from thalia.language.position import (
-    OscillatoryPositionEncoder,
-    PositionEncoderConfig,
-)
+from thalia.language.decoder import SpikeDecoder, SpikeDecoderConfig
+from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
+from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.mixins import ConfigurableMixin
 
 if TYPE_CHECKING:
@@ -136,7 +125,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     CONFIG_CONVERTER_METHOD = "to_language_interface_config"
 
     @classmethod
-    def from_thalia_config(
+    def from_thalia_config(  # type: ignore[override]
         cls,
         brain: DynamicBrain,
         config: ThaliaConfig,

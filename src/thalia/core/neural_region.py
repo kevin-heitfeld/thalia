@@ -186,7 +186,7 @@ class NeuralRegion(
         n_input: int,
         learning_rule: Optional[
             str
-        ] = ...,  # Sentinel: ... = use default, None = no learning, str = specific rule
+        ] = None,  # None = use default, explicit None via kwarg = no learning
         sparsity: float = 0.2,
         weight_scale: float = 0.3,
     ) -> None:

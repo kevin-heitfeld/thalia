@@ -177,9 +177,9 @@ class SensoryPathway(LearnableComponent):
     """
 
     def __init__(self, config: SensoryPathwayConfig):
-        super().__init__()
+        super().__init__(config=config)  # type: ignore[call-arg]
         self.config = config
-        self.device = torch.device(config.device)
+        self.device = torch.device(config.device)  # type: ignore[misc]
 
     @abstractmethod
     def forward(
@@ -316,7 +316,7 @@ class RetinalEncoder(nn.Module):
 
         # Spatial pooling to output size
         # ON and OFF cells each get half the output
-        n_ganglion = config.n_on_cells + config.n_off_cells
+        _ = config.n_on_cells + config.n_off_cells  # n_ganglion - reserved for future
         pool_size = config.input_height * config.input_width
         self.spatial_pool = nn.Linear(pool_size * 2, config.output_size)  # *2 for ON/OFF
 

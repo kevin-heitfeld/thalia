@@ -142,14 +142,14 @@ def print_config(
     print(f"  CA3 sparsity: {hippo_cfg.ca3_sparsity}")
     print(f"  CA3 recurrent strength: {hippo_cfg.ca3_recurrent_strength}")
     print(f"  CA1 sparsity: {hippo_cfg.ca1_sparsity}")
-    print(f"  CA3 recurrent LR: {hippo_cfg.ca3_recurrent_learning_rate}")
+    print(f"  CA3 recurrent LR: {hippo_cfg.ca3_recurrent_learning_rate if hasattr(hippo_cfg, 'ca3_recurrent_learning_rate') else 'N/A'}")  # type: ignore[attr-defined]
     print(f"  NMDA tau: {hippo_cfg.nmda_tau} ms")
 
     # Striatum
     striatum_cfg = config.brain.striatum
     print("\n--- STRIATUM ---")
-    print(f"  Population coding: {striatum_cfg.population_coding}")
-    print(f"  Neurons per action: {striatum_cfg.neurons_per_action}")
+    print(f"  Population coding: {striatum_cfg.population_coding if hasattr(striatum_cfg, 'population_coding') else 'N/A'}")  # type: ignore[attr-defined]
+    print(f"  Neurons per action: {striatum_cfg.neurons_per_action if hasattr(striatum_cfg, 'neurons_per_action') else 'N/A'}")  # type: ignore[attr-defined]
     print(f"  Learning rate: {striatum_cfg.learning_rate}")
     print(f"  Eligibility tau: {striatum_cfg.eligibility_tau_ms} ms")
     print(f"  STDP LR: {striatum_cfg.stdp_lr}")

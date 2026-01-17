@@ -26,7 +26,8 @@ Date: December 23, 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
@@ -85,7 +86,7 @@ class ReplayResult:
     compression_factor: float = 1.0
 
     # Output
-    replayed_patterns: List[torch.Tensor] = None
+    replayed_patterns: List[torch.Tensor] = field(default_factory=list)  # type: ignore[assignment]
 
     # Diagnostics
     mode_used: ReplayMode = ReplayMode.SINGLE
@@ -192,8 +193,6 @@ class ReplayEngine(nn.Module):
             pattern_processor: Optional function to process each pattern
             gamma_phase: Current gamma phase in radians [0, 2π]
         """
-        import math
-
         n_patterns = len(sequence)
 
         # Result tracking
@@ -310,8 +309,6 @@ class ReplayEngine(nn.Module):
             return False, 0.0
 
         # Compute ripple phase (oscillation)
-        import math
-
         freq_hz = self.config.ripple_frequency
         self._ripple_phase = TAU * freq_hz * self._ripple_time * SECONDS_PER_MS
 
@@ -341,7 +338,7 @@ class ReplayEngine(nn.Module):
         }
 
         if self.config.ripple_enabled:
-            diag["ripple_state"] = {
+            diag["ripple_state"] = {  # type: ignore[assignment]
                 "active": self._ripple_active,
                 "phase": self._ripple_phase,
                 "time_ms": self._ripple_time,

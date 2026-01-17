@@ -80,10 +80,16 @@ class ActionSelectionMixin:
     config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
-    # device: provided by LearnableComponent base class as @property
+    device: torch.device  # provided by LearnableComponent base class as @property
     state_tracker: Any  # StriatumStateTracker
     exploration_manager: Any  # ExplorationManager
     state: Any
+    d1_pathway: Any  # D1Pathway
+    d2_pathway: Any  # D2Pathway
+    exploration: Any  # ExplorationManager (legacy name)
+    _total_trials: int
+    _action_counts: torch.Tensor
+    tonic_dopamine: float
 
     def _get_action_population_indices(self, action: int) -> slice:
         """Get the slice of neuron indices for a given action.

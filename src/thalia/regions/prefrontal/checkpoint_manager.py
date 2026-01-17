@@ -242,7 +242,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         # Restore learning state
         learning_state = state["learning_state"]
         if "stdp_strategy" in learning_state and hasattr(pfc, "learning_strategy"):
-            if hasattr(pfc.learning_strategy, "load_state"):
+            if pfc.learning_strategy is not None and hasattr(pfc.learning_strategy, "load_state"):
                 pfc.learning_strategy.load_state(learning_state["stdp_strategy"])
 
         if "stp_recurrent" in learning_state and pfc.stp_recurrent is not None:

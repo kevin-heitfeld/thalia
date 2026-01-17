@@ -20,7 +20,7 @@ from thalia.core.region_state import BaseRegionState
 
 
 @dataclass
-class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
+class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: ignore[misc]
     """Configuration specific to striatal regions (behavior only, no sizes).
 
     **Size-Free Config Pattern** (January 2026 Refactoring):

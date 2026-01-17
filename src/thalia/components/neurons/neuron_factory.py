@@ -94,7 +94,7 @@ class NeuronFactory:
             >>> @NeuronFactory.register("custom")
             ... def create_custom_neurons(n_neurons, device, **overrides):
             ...     config = ConductanceLIFConfig(...)
-            ...     return ConductanceLIF(n_neurons, config)
+            ...     return ConductanceLIF(n_neurons, config, device)
         """
 
         def decorator(func: Callable) -> Callable:
@@ -219,8 +219,7 @@ def create_pyramidal_neurons(
         tau_mem=TAU_MEM_STANDARD,
         **overrides,  # Allow customization
     )
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
-    neurons.to(device)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
     return neurons
 
 
@@ -265,8 +264,7 @@ def create_relay_neurons(
         tau_I=TAU_INHIBITORY_CONDUCTANCE,  # Slower inhibitory (from TRN)
         **overrides,
     )
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
-    neurons.to(device)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
     return neurons
 
 
@@ -308,8 +306,7 @@ def create_trn_neurons(
         tau_I=8.0,  # Fast inhibitory
         **overrides,
     )
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
-    neurons.to(device)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
     return neurons
 
 
@@ -419,10 +416,8 @@ def create_cortical_layer_neurons(
     # Apply overrides
     layer_config.update(overrides)
 
-    config = ConductanceLIFConfig(**layer_config)
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
-    # Move neurons to specified device (neurons are created on CPU by default)
-    neurons.to(device)
+    config = ConductanceLIFConfig(**layer_config)  # type: ignore[arg-type]
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
     return neurons
 
 
@@ -490,8 +485,7 @@ def create_fast_spiking_neurons(
         tau_mem=fsi_config.get("tau_mem", TAU_MEM_FAST),  # Fast dynamics
     )
 
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
-    neurons.to(device)
+    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
     return neurons
 
 

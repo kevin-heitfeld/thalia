@@ -890,7 +890,7 @@ class LearnableComponent(
                 # Replace direct weights with effective weights (direct + spillover)
                 self.weights.data = self.spillover.get_effective_weights()
             else:
-                self.spillover = None
+                self.spillover = None  # type: ignore[assignment]
 
         # Initialize neurons (subclasses implement _create_neurons)
         neurons = self._create_neurons()
@@ -977,7 +977,7 @@ class LearnableComponent(
             raise AttributeError(f"{self.__class__.__name__} config has no n_input attribute")
 
     @property
-    def n_output(self) -> int:
+    def n_output(self) -> int:  # type: ignore[override]
         """Number of output neurons (convenience accessor)."""
         if hasattr(self.config, "n_output"):
             return int(self.config.n_output)
@@ -1066,7 +1066,7 @@ class LearnableComponent(
 
         # Create report
         is_healthy = len(issues) == 0
-        overall_severity = max([issue.severity.value for issue in issues]) if issues else 0.0
+        overall_severity = max([issue.severity.value if hasattr(issue.severity, "value") else float(issue.severity) for issue in issues]) if issues else 0.0  # type: ignore[attr-defined]
 
         if is_healthy:
             summary = f"{self.__class__.__name__}: Healthy"

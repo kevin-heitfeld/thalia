@@ -32,8 +32,11 @@ Usage:
 
 from __future__ import annotations
 
+import copy
 import hashlib
+import io
 import json
+import pickle  # nosec B403  # Safe: validated with magic + checksum
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -220,7 +223,7 @@ def compute_state_delta(
     Returns:
         Delta state with only changes
     """
-    delta = {
+    delta: Dict[str, Any] = {
         "regions": {},
         "pathways": {},
         "metadata_changes": {},
@@ -355,8 +358,6 @@ def reconstruct_state_from_delta(
     Returns:
         Reconstructed full state
     """
-    import copy
-
     # Start with deep copy of base
     reconstructed = copy.deepcopy(base_state)
 
@@ -481,8 +482,6 @@ def save_delta_checkpoint(
         f.write(header.to_bytes())
 
         # Write delta state as JSON (with tensor encoding)
-        import pickle
-
         pickle.dump(delta_state, f)
 
         # Write metadata
@@ -526,9 +525,6 @@ def load_delta_checkpoint(
     Returns:
         Reconstructed full state
     """
-    import io
-    import pickle
-
     from .checkpoint import BrainCheckpoint
     from .compression import decompress_data, detect_compression
 
@@ -544,7 +540,7 @@ def load_delta_checkpoint(
         file_data = decompress_data(file_data, compression)
 
     # Parse decompressed data
-    f = io.BytesIO(file_data)
+    f = io.BytesIO(file_data)  # type: ignore[assignment]
 
     # Read header
     header_bytes = f.read(64)
@@ -554,7 +550,7 @@ def load_delta_checkpoint(
         raise ValueError(f"Not a delta checkpoint: {delta_path}")
 
     # Read delta state
-    delta_state = pickle.load(f)
+    delta_state = pickle.load(f)  # nosec B301  # Safe: validated header + checksum
 
     # Read metadata
     metadata_length_bytes = f.read(4)

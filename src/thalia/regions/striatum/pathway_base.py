@@ -25,15 +25,17 @@ import torch
 import torch.nn as nn
 
 from thalia.components.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
+)
+from thalia.components.synapses import WeightInitializer
+from thalia.constants.neuron import (
     E_EXCITATORY,
     E_INHIBITORY,
     E_LEAK,
     V_RESET_STANDARD,
     V_THRESHOLD_STANDARD,
-    ConductanceLIF,
-    ConductanceLIFConfig,
 )
-from thalia.components.synapses import WeightInitializer
 from thalia.core.base.component_config import PathwayConfig
 from thalia.learning import create_striatum_strategy
 from thalia.mixins import GrowthMixin, ResettableMixin
@@ -207,7 +209,8 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
     @eligibility.setter
     def eligibility(self, value: torch.Tensor) -> None:
         """Set eligibility traces (for checkpoint loading)."""
-        self.learning_strategy.eligibility = value
+        if hasattr(self.learning_strategy, "eligibility"):
+            self.learning_strategy.eligibility = value  # type: ignore[attr-defined]
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create neuron population for this pathway.
@@ -291,7 +294,8 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             output_spikes: Output spikes [n_output]
         """
         # Strategy handles eligibility trace updates internally
-        self.learning_strategy.update_eligibility(input_spikes, output_spikes)
+        if hasattr(self.learning_strategy, "update_eligibility"):
+            self.learning_strategy.update_eligibility(input_spikes, output_spikes)  # type: ignore[attr-defined]
 
     @abstractmethod
     def apply_dopamine_modulation(

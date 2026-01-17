@@ -94,10 +94,12 @@ class D2Pathway(StriatumPathway):
         self.weights.data = new_weights
 
         # Add pathway identifier
-        metrics["pathway"] = "D2"
-        metrics["dopamine_sign"] = (
+        metrics["pathway"] = "D2"  # type: ignore[assignment]
+        metrics["dopamine_sign"] = (  # type: ignore[assignment]
             "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
         )
-        metrics["inverted_response"] = True  # Flag to indicate D2's inverted learning
+        metrics["inverted_response"] = (
+            True  # Flag to indicate D2's inverted learning  # type: ignore[assignment]
+        )
 
         return metrics

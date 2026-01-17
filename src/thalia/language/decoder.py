@@ -364,8 +364,8 @@ class SpikeDecoder(BaseSpikeDecoder):
         assert isinstance(self.total_error, torch.Tensor), "total_error must be Tensor"
         n_up: torch.Tensor = self.n_updates  # type: ignore[union-attr]  # Explicit type for mypy
         tot_err: torch.Tensor = self.total_error  # type: ignore[union-attr]  # Explicit type for mypy
-        self.n_updates = n_up + 1  # type: ignore[assignment]
-        self.total_error = tot_err + mean_error  # type: ignore[assignment]
+        self.n_updates = n_up + 1  # type: ignore[assignment,has-type]
+        self.total_error = tot_err + mean_error  # type: ignore[assignment,has-type]
 
         return {
             "error": mean_error,

@@ -435,7 +435,7 @@ class DendriticNeuron(nn.Module):
             # Random routing: use pre-computed permutation indices
             # (batch, total) → gather per neuron → (batch, n_neurons, total)
             inputs_tensor = cast(torch.Tensor, inputs)  # Mypy incorrectly infers Optional
-            expanded_inputs = inputs_tensor.unsqueeze(1).expand(batch_size, self.n_neurons, -1)  # type: ignore[attr-defined]
+            expanded_inputs = inputs_tensor.unsqueeze(1).expand(batch_size, self.n_neurons, -1)
             indices = self.input_routing_indices.unsqueeze(0).expand(batch_size, -1, -1)
             routed = torch.gather(expanded_inputs, dim=2, index=indices)
             routed = routed.view(
@@ -580,10 +580,7 @@ class DendriticNeuron(nn.Module):
 
         # Add internal batch dimension for vectorization: [total_inputs] → [1, total_inputs]
         inputs_batched = inputs.unsqueeze(0)
-        if g_inh is not None:
-            g_inh_batched = g_inh.unsqueeze(0)
-        else:
-            g_inh_batched = None
+        # Note: g_inh could be batched if needed, but currently unused
         # Get current membrane potential for voltage-dependent NMDA
         # soma.membrane is already 1D [n_neurons] per ADR-005
         membrane_potential = self.soma.membrane
@@ -619,10 +616,7 @@ class DendriticNeuron(nn.Module):
         """
         # Add batch dimension for internal computation
         inputs_batched = inputs.unsqueeze(0)
-        if g_inh is not None:
-            g_inh_batched = g_inh.unsqueeze(0)
-        else:
-            g_inh_batched = None
+        # Note: g_inh unused in current implementation
 
         membrane_potential = self.soma.membrane
         branch_outputs_batched = self._compute_branch_outputs(inputs_batched, membrane_potential)

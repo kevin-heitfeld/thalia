@@ -857,22 +857,36 @@ class DynamicBrain(nn.Module):
         striatum = self._get_component("striatum")
 
         # Use mental simulation if requested and available
-        # TODO: Implement tree search method in MentalSimulationCoordinator
-        # if use_planning and self.mental_simulation is not None:
-        #     # Get current state from PFC
-        #     current_state = None
-        #     if "pfc" in self.components:
-        #         pfc = self._get_component("pfc")
-        #         if hasattr(pfc, "state") and pfc.state is not None:
-        #             current_state = pfc.state.spikes  # type: ignore[union-attr]
-        #
-        #     if current_state is not None:
-        #         # Use tree search to find best action
-        #         action = self.mental_simulation.search(
-        #             state=current_state,
-        #             n_simulations=10,
-        #         )
-        #         return action, 1.0  # High confidence from planning
+        if use_planning and self.mental_simulation is not None:
+            # Get current state from PFC
+            current_state = None
+            goal_context = None
+
+            if "pfc" in self.components:
+                pfc = self._get_component("pfc")
+                if hasattr(pfc, "state") and pfc.state is not None:
+                    current_state = pfc.state.spikes  # type: ignore[union-attr]
+
+                # Get goal context if available
+                if hasattr(pfc, "goal_manager") and pfc.goal_manager is not None:
+                    active_goals = pfc.goal_manager.active_goals  # type: ignore[union-attr]
+                    if len(active_goals) > 0:  # type: ignore[arg-type]
+                        # Use top goal as context
+                        goal_context = active_goals[0].representation  # type: ignore[union-attr,index]
+
+            if current_state is not None:
+                # Use tree search to find best action
+                action = self.mental_simulation.search(
+                    state=current_state,
+                    n_simulations=10,
+                    goal_context=goal_context,
+                )
+
+                # Store for deliver_reward
+                self._last_action = action
+                self._last_confidence = 0.9  # High confidence from planning
+
+                return action, 0.9  # High confidence from planning
 
         # Striatum has finalize_action method for action selection
         if hasattr(striatum, "finalize_action"):

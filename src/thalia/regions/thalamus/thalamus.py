@@ -581,7 +581,7 @@ class ThalamicRelay(NeuralRegion):
         # =====================================================================
         # STATE
         # =====================================================================
-        self.state: ThalamicRelayState = ThalamicRelayState()
+        self.state: ThalamicRelayState = ThalamicRelayState()  # type: ignore[assignment]
 
         # Oscillator state (provided by brain)
         self._alpha_phase: float = 0.0
@@ -1164,10 +1164,10 @@ class ThalamicRelay(NeuralRegion):
                 learning_rate=self.config.learning_rate,
             )
             # Add other connection statistics
-            plasticity["input_to_trn_mean"] = float(self.input_to_trn.data.mean().item())
-            plasticity["relay_to_trn_mean"] = float(self.relay_to_trn.data.mean().item())
-            plasticity["trn_to_relay_mean"] = float(self.trn_to_relay.data.mean().item())
-            plasticity["trn_recurrent_mean"] = float(self.trn_recurrent.data.mean().item())
+            plasticity["input_to_trn_mean"] = float(self.input_to_trn.data.mean().item())  # type: ignore[typeddict-unknown-key]
+            plasticity["relay_to_trn_mean"] = float(self.relay_to_trn.data.mean().item())  # type: ignore[typeddict-unknown-key]
+            plasticity["trn_to_relay_mean"] = float(self.trn_to_relay.data.mean().item())  # type: ignore[typeddict-unknown-key]
+            plasticity["trn_recurrent_mean"] = float(self.trn_recurrent.data.mean().item())  # type: ignore[typeddict-unknown-key]
 
         # Compute health metrics
         health_tensors = {
@@ -1197,12 +1197,12 @@ class ThalamicRelay(NeuralRegion):
             burst_fraction = (
                 (self.state.current_mode < THALAMUS_MODE_THRESHOLD).float().mean().item()
             )
-            health["burst_mode_fraction"] = burst_fraction
-            health["tonic_mode_fraction"] = 1.0 - burst_fraction
+            health["burst_mode_fraction"] = burst_fraction  # type: ignore[typeddict-unknown-key]
+            health["tonic_mode_fraction"] = 1.0 - burst_fraction  # type: ignore[typeddict-unknown-key]
 
         if self.state.alpha_gate is not None:
-            health["alpha_gate_mean"] = self.state.alpha_gate.mean().item()
-            health["alpha_gate_std"] = self.state.alpha_gate.std().item()
+            health["alpha_gate_mean"] = self.state.alpha_gate.mean().item()  # type: ignore[typeddict-unknown-key]
+            health["alpha_gate_std"] = self.state.alpha_gate.std().item()  # type: ignore[typeddict-unknown-key]
 
         # Neuromodulator metrics
         neuromodulators = {

@@ -298,8 +298,6 @@ class ComponentRegistry:
         # Create instance
         # Check if component expects (config, sizes, device) signature (new pattern)
         # by inspecting __init__ parameters
-        import inspect
-
         sig = inspect.signature(component_class.__init__)
         params = list(sig.parameters.keys())
 
@@ -310,11 +308,11 @@ class ComponentRegistry:
                 device = kwargs.pop("device", None)
                 if device is None:
                     device = getattr(config, "device", "cpu")
-                return component_class(config=config, sizes=sizes, device=device, **kwargs)
+                return component_class(config=config, sizes=sizes, device=device, **kwargs)  # type: ignore[call-arg]
 
             # Pattern for pathways and sub-components: (config) or (config, **kwargs)
             else:
-                return component_class(config, **kwargs)
+                return component_class(config, **kwargs)  # type: ignore[call-arg]
 
         except TypeError as e:
             raise TypeError(

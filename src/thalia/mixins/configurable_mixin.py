@@ -68,7 +68,7 @@ class ConfigurableMixin:
 
         # Convert and instantiate
         component_config = converter()
-        return cls(component_config, **kwargs)
+        return cls(component_config, **kwargs)  # type: ignore[call-arg]
 
 
 __all__ = ["ConfigurableMixin"]

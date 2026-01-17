@@ -10,8 +10,11 @@ Provides simple API for checkpoint persistence:
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import time
+import warnings
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
@@ -51,7 +54,7 @@ def _convert_to_json_serializable(obj: Any) -> Any:
         # Preserve dataclass type information for reconstruction
         return {
             "_dataclass": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
-            "_fields": {k: _convert_to_json_serializable(v) for k, v in asdict(obj).items()},
+            "_fields": {k: _convert_to_json_serializable(v) for k, v in asdict(obj).items()},  # type: ignore[arg-type]
         }
     elif isinstance(obj, dict):
         return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
@@ -206,7 +209,7 @@ class BrainCheckpoint:
                 json_offset = writer.tell()
                 region_bytes = writer.write_json(region_json)
 
-                region_length = writer.tell() - region_offset
+                _ = writer.tell() - region_offset  # region_length - unused
 
                 region_index.append(
                     RegionIndexEntry(
@@ -226,7 +229,7 @@ class BrainCheckpoint:
                     json_offset = writer.tell()
                     pathway_bytes = writer.write_json(pathway_json)
 
-                    pathway_length = writer.tell() - pathway_offset
+                    _ = writer.tell() - pathway_offset  # pathway_length - unused
 
                     region_index.append(
                         RegionIndexEntry(
@@ -267,15 +270,13 @@ class BrainCheckpoint:
             f.write(header_bytes)
 
         # Apply compression if requested (BEFORE checksum)
-        import hashlib
-
         if compression is not None:
             # Read uncompressed file
             with open(path, "rb") as f:
                 uncompressed_data = f.read()
 
             # Compress
-            compressed_data = compress_data(uncompressed_data, compression, compression_level)
+            compressed_data = compress_data(uncompressed_data, compression, compression_level)  # type: ignore[arg-type]
 
             # Overwrite with compressed version
             with open(path, "wb") as f:
@@ -345,8 +346,6 @@ class BrainCheckpoint:
             >>> # Load delta checkpoint (auto-reconstructs)
             >>> brain = BrainCheckpoint.load("stage3.delta.thalia")
         """
-        import io
-
         from .compression import decompress_data, detect_compression
         from .delta import DELTA_MAGIC, load_delta_checkpoint
 
@@ -364,8 +363,6 @@ class BrainCheckpoint:
 
         # Validate checksum FIRST (on compressed or uncompressed data)
         # Checksum is always the last 32 bytes
-        import hashlib
-
         if len(raw_file_data) < 32:
             raise ValueError("File too small to contain checksum")
 
@@ -391,7 +388,7 @@ class BrainCheckpoint:
             return load_delta_checkpoint(path, device=device)
 
         # Now parse the decompressed data (checksum already validated)
-        f = io.BytesIO(file_data)
+        f = io.BytesIO(file_data)  # type: ignore[assignment]
         reader = BinaryReader(f)
 
         # Read header
@@ -412,8 +409,6 @@ class BrainCheckpoint:
 
         # Warn if minor/patch versions differ (non-breaking changes)
         if checkpoint_version[1:] != current_version[1:]:
-            import warnings
-
             warnings.warn(
                 f"Checkpoint format version mismatch: "
                 f"checkpoint is v{checkpoint_version[0]}.{checkpoint_version[1]}.{checkpoint_version[2]}, "
@@ -430,8 +425,6 @@ class BrainCheckpoint:
         # Log version info from metadata for debugging
         saved_thalia_version = metadata.get("thalia_version", "unknown")
         if saved_thalia_version != THALIA_VERSION:
-            import warnings
-
             warnings.warn(
                 f"Checkpoint was saved with Thalia v{saved_thalia_version}, "
                 f"loading with v{THALIA_VERSION}. API changes may cause issues.",
@@ -576,7 +569,7 @@ class BrainCheckpoint:
             compress_file(
                 uncompressed_path,
                 compressed_path,
-                compression=compression,
+                compression=compression,  # type: ignore[arg-type]
                 level=compression_level,
             )
 
@@ -658,8 +651,6 @@ class BrainCheckpoint:
         try:
             with open(path, "rb") as f:
                 # Validate checksum FIRST (same as load)
-                import hashlib
-
                 f.seek(0, 2)  # Seek to end
                 file_size = f.tell()
                 f.seek(0)  # Back to start
@@ -719,7 +710,7 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
             json_dict[key] = _serialize_region_state(value, writer)
         elif isinstance(value, list):
             # Handle lists (e.g., replay buffer)
-            json_dict[key] = _serialize_list(value, writer)
+            json_dict[key] = _serialize_list(value, writer)  # type: ignore[assignment]
         elif is_dataclass(value) or isinstance(value, Enum):
             # Convert dataclass or enum to JSON-serializable form
             json_dict[key] = _convert_to_json_serializable(value)
@@ -747,9 +738,9 @@ def _serialize_list(lst: list, writer: BinaryWriter) -> list:
             )
         elif isinstance(item, dict):
             serialized_dict = _serialize_region_state(item, writer)
-            result.append(serialized_dict)
+            result.append(serialized_dict)  # type: ignore[arg-type]
         elif isinstance(item, list):
-            result.append(_serialize_list(item, writer))
+            result.append(_serialize_list(item, writer))  # type: ignore[arg-type]
         else:
             result.append(item)
 

@@ -107,10 +107,10 @@ class StriatumExplorationComponent(ExplorationComponent):
             context: Manager context (device, dimensions, etc.)
             initial_tonic_dopamine: Starting tonic DA level
         """
-        super().__init__(config, context)
+        super().__init__(config, context)  # type: ignore[arg-type]
 
         # Type narrowing for mypy: config is ExplorationConfig
-        self.config: ExplorationConfig
+        self.config: ExplorationConfig = config  # type: ignore[assignment]
 
         # Extract n_actions from context
         self.n_actions = context.n_output if context.n_output else 1

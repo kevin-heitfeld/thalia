@@ -63,7 +63,19 @@ import inspect
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from thalia.core.errors import ConfigurationError
-from thalia.learning.rules.strategies import LearningConfig, LearningStrategy
+from thalia.learning.rules.strategies import (
+    BCMConfig,
+    BCMStrategy,
+    CompositeStrategy,
+    ErrorCorrectiveConfig,
+    ErrorCorrectiveStrategy,
+    LearningConfig,
+    LearningStrategy,
+    STDPConfig,
+    STDPStrategy,
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
+)
 
 
 class LearningStrategyRegistry:
@@ -235,7 +247,7 @@ class LearningStrategyRegistry:
 
         # Create strategy instance
         try:
-            return strategy_class(config, **kwargs)
+            return strategy_class(config, **kwargs)  # type: ignore[call-arg]
         except Exception as e:
             raise ConfigurationError(f"Failed to create strategy '{canonical_name}': {e}") from e
 
@@ -392,14 +404,6 @@ def create_cortex_strategy(
         >>> # BCM only (unsupervised feature learning)
         >>> strategy = create_cortex_strategy(use_stdp=False)
     """
-    from thalia.learning.rules.strategies import (
-        BCMConfig,
-        BCMStrategy,
-        CompositeStrategy,
-        STDPConfig,
-        STDPStrategy,
-    )
-
     if use_stdp and use_bcm:
         # Create composite STDP+BCM strategy
         stdp = STDPStrategy(stdp_config or STDPConfig(learning_rate=learning_rate, **kwargs))
@@ -455,8 +459,6 @@ def create_hippocampus_strategy(
         >>> cfg = STDPConfig(learning_rate=0.05, a_plus=0.05)
         >>> strategy = create_hippocampus_strategy(stdp_config=cfg)
     """
-    from thalia.learning.rules.strategies import STDPConfig, STDPStrategy
-
     # If custom config provided, use it directly
     if stdp_config is not None:
         return STDPStrategy(stdp_config)
@@ -512,8 +514,6 @@ def create_striatum_strategy(
         >>> cfg = ThreeFactorConfig(learning_rate=0.002, eligibility_tau=1500.0)
         >>> strategy = create_striatum_strategy(three_factor_config=cfg)
     """
-    from thalia.learning.rules.strategies import ThreeFactorConfig, ThreeFactorStrategy
-
     # If custom config provided, use it directly
     if three_factor_config is not None:
         return ThreeFactorStrategy(three_factor_config)
@@ -552,8 +552,6 @@ def create_cerebellum_strategy(
         >>> cfg = ErrorCorrectiveConfig(learning_rate=0.01, error_threshold=0.005)
         >>> strategy = create_cerebellum_strategy(error_config=cfg)
     """
-    from thalia.learning.rules.strategies import ErrorCorrectiveConfig, ErrorCorrectiveStrategy
-
     # If custom config provided, use it directly
     if error_config is not None:
         return ErrorCorrectiveStrategy(error_config)
