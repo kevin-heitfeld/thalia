@@ -781,10 +781,6 @@ class LayeredCortex(NeuralRegion):
 
         # Note: No local oscillators to reset - phases come from Brain
 
-        # Preserve oscillator signals if they exist (set via set_oscillator_phases)
-        existing_phases = getattr(self.state, "_oscillator_phases", {})
-        existing_signals = getattr(self.state, "_oscillator_signals", {})
-
         self.state = LayeredCortexState(
             l4_spikes=torch.zeros(self.l4_size, device=dev),
             l23_spikes=torch.zeros(self.l23_size, device=dev),
@@ -1285,7 +1281,6 @@ class LayeredCortex(NeuralRegion):
         # excitability. Regions with high alpha are "idling" or suppressed
         # to prevent interference with attended regions.
         alpha_suppression = 1.0  # Default: no suppression
-        gamma_modulation = 1.0  # Default: no gamma modulation
 
         if (
             hasattr(self.state, "_oscillator_signals")
@@ -1299,11 +1294,10 @@ class LayeredCortex(NeuralRegion):
             alpha_magnitude = max(0.0, alpha_signal)  # Only positive values
             alpha_suppression = 1.0 - (alpha_magnitude * 0.5)  # Scale to 50-100%
 
-            # Automatic gamma modulation: ALL slower oscillators affect gamma
-            # This gives emergent multi-oscillator coupling (e.g., theta-alpha-beta-gamma)
-            gamma_modulation = self._gamma_amplitude_effective
+            # Note: Gamma modulation via _gamma_amplitude_effective is automatic
+            # (All slower oscillators affect gamma for emergent multi-oscillator coupling)
 
-            # Store for diagnostics (alpha_suppression only, gamma_modulation is internal)
+            # Store for diagnostics (alpha_suppression only)
             self.state.alpha_suppression = alpha_suppression
 
         # Apply alpha suppression to input (early gating)

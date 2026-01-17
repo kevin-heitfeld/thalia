@@ -57,7 +57,7 @@ class TrainingMonitor:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.figsize = figsize
         self._stop_refresh = False
-        self._refresh_thread = None
+        self._refresh_thread: Optional[threading.Thread] = None
         self.data = self._load_data()
 
         # Set matplotlib style
@@ -192,7 +192,7 @@ class TrainingMonitor:
 
         # Extract metrics from all checkpoints
         steps = []
-        metrics_data = {}
+        metrics_data: Dict[str, List[float]] = {}
 
         for cp in self.data["checkpoints"]:
             metadata = cp.get("metadata", {})
@@ -258,7 +258,7 @@ class TrainingMonitor:
 
         # Extract growth data
         steps = []
-        region_counts = {}
+        region_counts: Dict[str, List[int]] = {}
 
         for cp in self.data["checkpoints"]:
             metadata = cp.get("metadata", {})
@@ -284,7 +284,7 @@ class TrainingMonitor:
 
         # Stack the regions
         bottom = [0] * len(steps)
-        colors = plt.cm.Set3(range(len(region_counts)))
+        colors = plt.cm.get_cmap("Set3")(range(len(region_counts)))
 
         for idx, (region_name, counts) in enumerate(region_counts.items()):
             ax.fill_between(
@@ -345,6 +345,9 @@ class TrainingMonitor:
                 plt.close("all")  # Close previous figures
                 self.refresh(sections)
                 time.sleep(interval)
+
+        if self._refresh_thread is not None:
+            self.stop_auto_refresh()  # Stop existing thread first
 
         self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
         self._refresh_thread.start()

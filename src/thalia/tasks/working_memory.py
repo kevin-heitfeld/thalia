@@ -349,7 +349,7 @@ class NBackTask:
 
         # Try to retrieve N-back item
         is_match = False
-        retrieval_info = {}
+        retrieval_info: Dict[str, Any] = {}
 
         if current_index >= self.n_back:
             # Can retrieve N-back item
@@ -454,7 +454,7 @@ def create_n_back_sequence(
         sequence: List of stimulus patterns
         matches: List of match indicators
     """
-    sequence = []
+    sequence: List[torch.Tensor] = []
     matches = []
 
     for i in range(n_items):

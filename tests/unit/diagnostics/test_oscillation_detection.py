@@ -195,7 +195,7 @@ class TestOscillationDetectionIntegration:
         builder = BrainBuilder(global_config)
         calc = LayerSizeCalculator()
         thalamus_sizes = calc.thalamus_from_relay(100)
-        builder.add_component("thalamus", "thalamus", input_size=100, **thalamus_sizes)
+        builder.add_component("thalamus", "thalamus", **thalamus_sizes)
         builder.add_component("hippocampus", "hippocampus", ca1_size=200)
         builder.connect("thalamus", "hippocampus", pathway_type="axonal")
         brain = builder.build()

@@ -67,6 +67,7 @@ Date: December 8, 2025
 
 from __future__ import annotations
 
+import random
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -309,7 +310,15 @@ class MetacognitiveCalibrator:
         output = self.brain.forward(sample.input_data)
 
         # Extract prediction (highest activation)
-        prediction = output.argmax(dim=-1) if output.dim() > 1 else output
+        # Handle both tensor outputs and dict outputs
+        if isinstance(output, dict):
+            # If output is a dict, get the main output tensor
+            output_tensor = output.get("output", output.get("spikes", torch.tensor(0.0)))
+            if not isinstance(output_tensor, torch.Tensor):
+                output_tensor = torch.tensor(0.0)
+        else:
+            output_tensor = output
+        prediction = output_tensor.argmax(dim=-1) if output_tensor.dim() > 1 else output_tensor
 
         # Extract confidence
         if extract_confidence is not None:
@@ -460,7 +469,7 @@ class MetacognitiveCalibrator:
 
         for epoch in range(n_epochs):
             # Shuffle training data
-            np.random.shuffle(train_dataset)
+            random.shuffle(train_dataset)
 
             # Training loop
             train_predictions = []

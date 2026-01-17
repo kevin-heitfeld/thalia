@@ -475,8 +475,8 @@ class ManipulationTask:
         self.config = config
         self.device = device
 
-        self.current_action = None
-        self.current_object = None
+        self.current_action: Optional[str] = None
+        self.current_object: Optional[int] = None
 
     def get_task(self, task_name: str = "manipulation") -> Dict[str, Any]:
         """Generate one manipulation trial.
@@ -632,8 +632,8 @@ class SensorimotorTaskLoader:
         }
 
         # Current task tracker
-        self.current_task_type = None
-        self.current_task_data = None
+        self.current_task_type: Optional[str] = None
+        self.current_task_data: Optional[Dict[str, Any]] = None
 
     def get_task(self, task_name: Optional[str] = None) -> Dict[str, Any]:
         """Get next sensorimotor task.
