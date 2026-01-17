@@ -13,7 +13,7 @@ Instead of verbose dataclass configuration:
         ),
         ...
     )
-    brain = DynamicBrain.from_thalia_config(config)
+    brain = BrainBuilder.preset("default", global_config)
 
 Use fluent builder pattern:
     brain = (
@@ -81,18 +81,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Any, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, List, Optional, Any, Tuple
 
+from thalia.config import GlobalConfig
 from thalia.config.region_sizes import compute_cerebellum_sizes, compute_hippocampus_sizes, compute_thalamus_sizes
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
+from thalia.core.dynamic_brain import DynamicBrain
 from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.cortex import calculate_layer_sizes
-
-if TYPE_CHECKING:
-    from thalia.config import GlobalConfig
-    from thalia.core.dynamic_brain import DynamicBrain
 
 
 # Size parameter names that should be separated from behavioral config
@@ -145,8 +144,6 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
     Returns:
         Computed size parameters suitable for region constructor
     """
-    from thalia.config.size_calculator import LayerSizeCalculator
-
     calc = LayerSizeCalculator()
 
     if registry_name == "striatum":
@@ -520,7 +517,6 @@ class BrainBuilder:
                 return params["ca1_size"]
             # If ca1_size not specified but input_size is, compute it
             elif "input_size" in params:
-                from thalia.config.size_calculator import LayerSizeCalculator
                 calc = LayerSizeCalculator()
                 sizes = calc.hippocampus_from_input(params["input_size"])
                 return sizes["ca1_size"]
@@ -987,9 +983,6 @@ class BrainBuilder:
                 connections[conn_key] = pathway
                 for spec in target_specs:
                     spec.instance = pathway
-
-        # Import DynamicBrain locally to avoid circular import
-        from thalia.core.dynamic_brain import DynamicBrain
 
         # Create DynamicBrain
         # Build connection_specs dict with compound keys matching connections dict

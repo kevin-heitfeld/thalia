@@ -15,7 +15,7 @@ Quick Start (External Users):
 
     # Or use full brain system (DynamicBrain)
     config = ThaliaConfig(...)
-    brain = DynamicBrain.from_thalia_config(config)
+    brain = BrainBuilder.preset("default", config)
 
 Internal Development:
 ====================

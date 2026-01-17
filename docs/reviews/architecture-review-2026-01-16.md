@@ -660,8 +660,30 @@ def test_my_feature():
 
 **Total Immediate Impact**: **8 files refactored, 90 lines eliminated**
 
-**Remaining Candidates**:
-Most remaining files with ThaliaConfig usage are testing the `from_thalia_config()` method itself and should keep using ThaliaConfig directly for proper test coverage. The most impactful refactoring candidates have been completed.
+**Task 2.4 Completion**: ✅ **FULLY COMPLETE** (January 17, 2026)
+
+All test fixtures created and adopted. Additionally, the legacy `from_thalia_config()` method has been **removed entirely** from the codebase:
+
+**Legacy Method Removal** (January 17, 2026):
+- ✅ Refactored 3 production training scripts to use `BrainBuilder`
+- ✅ Removed `DynamicBrain.from_thalia_config()` method (~120 lines)
+- ✅ Removed test class `TestThaliaConfigCompatibility` (2 tests, ~70 lines)
+- ✅ Updated all documentation examples to use `BrainBuilder.preset()`
+- ✅ Total additional cleanup: ~190 lines of legacy code eliminated
+
+**Modern Brain Construction**:
+```python
+# Modern approach (recommended)
+brain = BrainBuilder.preset(\"default\", global_config)
+
+# Or custom construction
+builder = BrainBuilder(global_config)
+builder.add_component(\"cortex\", \"cortex\", l4_size=128, l23_size=192, l5_size=128)
+# ... add more components and connections
+brain = builder.build()
+```
+
+The legacy `ThaliaConfig` + `from_thalia_config()` pattern has been fully replaced with the modern `BrainBuilder` API across the entire codebase.
 
 ---
 

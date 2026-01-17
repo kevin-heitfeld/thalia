@@ -27,33 +27,22 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple, Union, Set, TYPE_CHECKING
 from types import SimpleNamespace
+from typing import Dict, List, Optional, Any, Tuple, Union, Set, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
-from thalia.typing import (
-    ComponentGraph,
-    TopologyGraph,
-    SourceOutputs,
-    StateDict,
-    CheckpointMetadata,
-    DiagnosticsDict,
-)
-from thalia.core.protocols.component import LearnableComponent
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.diagnostics import (
     StriatumDiagnostics,
     HippocampusDiagnostics,
     BrainSystemDiagnostics,
 )
-from thalia.core.brain_builder import BrainBuilder
-from thalia.config import LayerSizeCalculator
-from thalia.config.region_sizes import compute_hippocampus_sizes, compute_thalamus_sizes
+from thalia.core.protocols.component import LearnableComponent
+from thalia.components.coding import compute_firing_rate
 from thalia.coordination.oscillator import OscillatorManager, OSCILLATOR_DEFAULTS
 from thalia.coordination.growth import GrowthEvent, GrowthManager
-from thalia.components.coding import compute_firing_rate
 from thalia.diagnostics import HealthMonitor, CriticalityMonitor
 from thalia.io.checkpoint_manager import CheckpointManager
 from thalia.memory.consolidation.manager import ConsolidationManager
@@ -66,11 +55,19 @@ from thalia.planning import (
     DynaConfig,
 )
 from thalia.stimuli.base import StimulusPattern
+from thalia.typing import (
+    ComponentGraph,
+    TopologyGraph,
+    SourceOutputs,
+    StateDict,
+    CheckpointMetadata,
+    DiagnosticsDict,
+)
 
 if TYPE_CHECKING:
-    from thalia.config import GlobalConfig, ThaliaConfig
-    from thalia.managers.component_registry import ComponentRegistry
+    from thalia.config import GlobalConfig
     from thalia.diagnostics.health_monitor import HealthReport
+    from thalia.managers.component_registry import ComponentRegistry
 
 
 class DynamicBrain(nn.Module):
@@ -467,99 +464,6 @@ class DynamicBrain(nn.Module):
         phase_locking = max(0.0, 1.0 - ratio_error)
 
         return phase_locking
-
-    @classmethod
-    def from_thalia_config(cls, config: ThaliaConfig) -> DynamicBrain:
-        """Create DynamicBrain from ThaliaConfig (backward compatibility).
-
-        This factory method enables drop-in replacement of EventDrivenBrain
-        with DynamicBrain using the same ThaliaConfig format.
-
-        Args:
-            config: ThaliaConfig with global_, brain, and region configs
-
-        Returns:
-            DynamicBrain instance matching EventDrivenBrain architecture
-
-        Example:
-            config = ThaliaConfig(
-                global_=GlobalConfig(device="cpu", dt_ms=1.0),
-                brain=BrainConfig(sizes=RegionSizes(...)),
-            )
-            brain = DynamicBrain.from_thalia_config(config)
-
-        Note:
-            Uses LayerSizeCalculator for biologically-accurate size computation.
-            Builder infers input_size from connection graph.
-        """
-        sizes = config.brain.sizes
-        calc = LayerSizeCalculator()
-
-        builder = BrainBuilder(config.global_)
-
-        # Add regions with sizes from config
-        # Thalamus is input interface
-        thalamus_sizes = compute_thalamus_sizes(sizes.thalamus_size)
-        builder.add_component(
-            "thalamus", "thalamus",
-            input_size=sizes.input_size,
-            **thalamus_sizes
-        )
-
-        # Cortex - use cortex_type from config (PREDICTIVE or LAYERED)
-        # Both types expose l23_size/l5_size for port-based routing
-        cortex_registry_name = "predictive_cortex" if config.brain.cortex_type.value == "predictive" else "cortex"
-
-        # Use explicit layer sizes if available, otherwise compute from cortex_size
-        if sizes._cortex_l4_size is not None and sizes._cortex_l23_size is not None and sizes._cortex_l5_size is not None:
-            cortex_config = {
-                "l4_size": sizes.cortex_l4_size,
-                "l23_size": sizes.cortex_l23_size,
-                "l5_size": sizes.cortex_l5_size,
-            }
-        else:
-            # Use LayerSizeCalculator with cortex_size as scale parameter
-            # This ensures biologically-accurate layer ratios
-            # Note: input_size is omitted - will be inferred by builder from connections
-            cortex_layer_sizes = calc.cortex_from_scale(sizes.cortex_size)
-            cortex_config = {
-                "l4_size": cortex_layer_sizes["l4_size"],
-                "l23_size": cortex_layer_sizes["l23_size"],
-                "l5_size": cortex_layer_sizes["l5_size"],
-                "l6a_size": cortex_layer_sizes["l6a_size"],
-                "l6b_size": cortex_layer_sizes["l6b_size"],
-            }
-
-        builder.add_component("cortex", cortex_registry_name, **cortex_config)
-
-        # Hippocampus - compute all layer sizes to enable output size validation
-        hipp_sizes = compute_hippocampus_sizes(sizes.hippocampus_size)
-        builder.add_component("hippocampus", "hippocampus",
-            input_size=sizes.hippocampus_size,
-            dg_size=hipp_sizes["dg_size"],
-            ca3_size=hipp_sizes["ca3_size"],
-            ca2_size=hipp_sizes["ca2_size"],
-            ca1_size=hipp_sizes["ca1_size"])
-
-        builder.add_component("pfc", "prefrontal", n_neurons=sizes.pfc_size)
-        builder.add_component("striatum", "striatum", n_actions=sizes.n_actions, neurons_per_action=10, input_sources={})
-        builder.add_component("cerebellum", "cerebellum", purkinje_size=sizes.n_actions)
-
-        # Add connections (standard sensorimotor topology)
-        # Thalamus → Cortex → Hippocampus/PFC → Striatum → Cerebellum
-        builder.connect("thalamus", "cortex", "axonal_projection")
-        builder.connect("cortex", "hippocampus", "axonal_projection", source_port="l23")  # Cortico-cortical
-        builder.connect("hippocampus", "cortex", "axonal_projection")  # Bidirectional (replay pathway)
-        builder.connect("cortex", "pfc", "axonal_projection", source_port="l23")  # Cortico-cortical
-        builder.connect("hippocampus", "pfc", "axonal_projection")
-        # Striatum receives from 3 sources: cortex L5, hippocampus, pfc
-        builder.connect("cortex", "striatum", "axonal_projection", source_port="l5")  # Subcortical
-        builder.connect("hippocampus", "striatum", "axonal_projection")
-        builder.connect("pfc", "striatum", "axonal_projection")
-        builder.connect("striatum", "pfc", "axonal_projection")  # Bidirectional
-        builder.connect("pfc", "cerebellum", "axonal_projection")  # PFC→cerebellum (motor refinement)
-
-        return builder.build()
 
     def _build_topology_graph(self) -> TopologyGraph:
         """Build adjacency list of component dependencies.

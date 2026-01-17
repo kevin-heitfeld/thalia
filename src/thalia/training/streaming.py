@@ -39,11 +39,13 @@ Example Usage:
 ==============
 
     from thalia.training.streaming import StreamingTrainer, StreamConfig
-    from thalia.core.dynamic_brain import DynamicBrain
+    from thalia.core.brain_builder import BrainBuilder
+    from thalia.config import GlobalConfig
     import torch
 
     # Create brain
-    brain = DynamicBrain.from_thalia_config(config)
+    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain = BrainBuilder.preset("default", global_config)
 
     # Create data stream (infinite generator)
     def mnist_stream():
@@ -105,17 +107,15 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 import time
-from typing import Iterator, Optional, Dict, Any, Callable, Deque, TYPE_CHECKING
+from typing import Iterator, Optional, Dict, Any, Callable, Deque
 
 import numpy as np
 import torch
 
+from thalia.core.dynamic_brain import DynamicBrain
 from thalia.diagnostics.health_monitor import HealthMonitor
 from thalia.diagnostics.performance_profiler import PerformanceProfiler
 from thalia.io.checkpoint import BrainCheckpoint
-
-if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
 
 
 @dataclass

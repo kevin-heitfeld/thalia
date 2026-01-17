@@ -33,6 +33,9 @@ from typing import List, Optional
 
 import torch
 
+from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.core.brain_builder import BrainBuilder
+
 
 def generate_sparse_spikes(
     n_neurons: int,
@@ -214,10 +217,8 @@ def create_minimal_thalia_config(
 
     Example:
         >>> config = create_minimal_thalia_config(input_size=64, cortex_size=128)
-        >>> brain = DynamicBrain.from_thalia_config(config)
+        >>> brain = BrainBuilder.preset("default", config.global_)
     """
-    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-
     config = ThaliaConfig(
         global_=GlobalConfig(device=device, dt_ms=dt_ms),
         brain=BrainConfig(
@@ -263,10 +264,15 @@ def create_test_brain(
         >>> brain = create_test_brain(input_size=64, cortex_size=128)
         >>> brain = create_test_brain(device="cuda" if torch.cuda.is_available() else "cpu")
     """
-    from thalia.core.dynamic_brain import DynamicBrain
-
     config = create_minimal_thalia_config(device=device, **config_overrides)
-    brain = DynamicBrain.from_thalia_config(config)
+    brain = BrainBuilder.preset(
+        "default",
+        global_config=config.global_,
+        thalamus_relay_size=config.brain.sizes.thalamus_size,
+        cortex_size=config.brain.sizes.cortex_size,
+        pfc_n_neurons=config.brain.sizes.pfc_size,
+        striatum_actions=config.brain.sizes.n_actions,
+    )
 
     # Note: region filtering would require surgery module, kept simple for now
     # If users need specific regions, they can use BrainBuilder or surgery tools

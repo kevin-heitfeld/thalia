@@ -120,7 +120,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     once converted to spikes, the brain processes it like any other modality.
 
     Usage:
-        brain = DynamicBrain.from_thalia_config(config)
+        brain = BrainBuilder.preset("default", config.global_)
         lang_interface = LanguageBrainInterface(brain, LanguageInterfaceConfig())
 
         # Process text

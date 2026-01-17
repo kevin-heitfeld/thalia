@@ -56,7 +56,7 @@ config = ThaliaConfig(
         ),
     ),
 )
-brain = DynamicBrain.from_thalia_config(config)
+brain = BrainBuilder.preset("default", global_config)
 
 # Process sensory input (encoding phase)
 visual_input = torch.rand(784, dtype=torch.float32)

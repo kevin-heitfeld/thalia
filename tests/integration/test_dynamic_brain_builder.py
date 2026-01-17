@@ -14,8 +14,10 @@ import torch
 
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.core.brain_builder import BrainBuilder
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
-from thalia.regions.cortex import calculate_layer_sizes
+from thalia.config import GlobalConfig
+from thalia.pathways.axonal_projection import AxonalProjection
+from thalia.regions.cortex import LayeredCortex, calculate_layer_sizes
+from thalia.regions.cortex.config import LayeredCortexConfig
 
 
 @pytest.fixture
@@ -121,9 +123,6 @@ class TestDynamicBrainIntegration:
         )
 
         # Add component dynamically
-        from thalia.regions.cortex import LayeredCortex
-        from thalia.regions.cortex.config import LayeredCortexConfig
-
         cortex_sizes = {
             "input_size": 32,
             "l4_size": 4,
@@ -138,7 +137,6 @@ class TestDynamicBrainIntegration:
         brain.add_component("cortex", cortex)
 
         # Create AxonalProjection from input to cortex
-        from thalia.pathways.axonal_projection import AxonalProjection
         pathway = AxonalProjection(
             sources=[("input", None, 32, 2.0)],  # (region_name, port, size, delay_ms)
             device=device,
@@ -276,77 +274,6 @@ class TestSaveAndLoad:
         input_data = {"input": torch.randn(32, device=device)}
         result = loaded_brain.forward(input_data, n_timesteps=10)
         assert "cortex" in result["outputs"]
-
-
-class TestThaliaConfigCompatibility:
-    """Test backward compatibility with ThaliaConfig."""
-
-    def test_from_thalia_config(self, device):
-        """Test creating DynamicBrain from ThaliaConfig."""
-        config = ThaliaConfig(
-            global_=GlobalConfig(device=device, dt_ms=1.0),
-            brain=BrainConfig(
-                sizes=RegionSizes(
-                    input_size=128,
-                    thalamus_size=128,  # Must explicitly set, defaults to 256
-                    cortex_size=256,
-                    hippocampus_size=128,
-                    pfc_size=64,
-                    n_actions=7,
-                ),
-            ),
-        )
-
-        brain = DynamicBrain.from_thalia_config(config)
-
-        # Verify structure
-        assert isinstance(brain, DynamicBrain)
-        expected_regions = ["thalamus", "cortex", "hippocampus", "pfc", "striatum", "cerebellum"]
-        for region in expected_regions:
-            assert region in brain.components, f"Missing region: {region}"
-
-        # Verify thalamus has valid dimensions (relay preserves size)
-        thalamus = brain.components["thalamus"]
-        assert thalamus.input_size > 0
-        assert thalamus.relay_size > 0
-        assert thalamus.input_size == thalamus.relay_size  # Relay property
-
-        # Test execution
-        input_data = {"thalamus": torch.randn(128, device=device)}
-        result = brain.forward(input_data, n_timesteps=10)
-
-        assert "outputs" in result
-        assert "time" in result
-        assert "thalamus" in result["outputs"]
-
-    def test_from_thalia_config_custom_sizes(self, device):
-        """Test from_thalia_config with different sizes."""
-        config = ThaliaConfig(
-            global_=GlobalConfig(device=device, dt_ms=1.0),
-            brain=BrainConfig(
-                sizes=RegionSizes(
-                    input_size=64,
-                    cortex_size=128,
-                    hippocampus_size=64,
-                    pfc_size=32,
-                    n_actions=5,
-                ),
-            ),
-        )
-
-        brain = DynamicBrain.from_thalia_config(config)
-
-        # Verify custom sizes and structure
-        thalamus = brain.components["thalamus"]
-        striatum = brain.components["striatum"]
-
-        # Validate thalamus dimensions
-        assert thalamus.input_size > 0
-        assert thalamus.input_size == config.brain.sizes.input_size
-
-        # Striatum uses population coding: actual neurons = n_actions * neurons_per_action
-        assert striatum.n_actions == config.brain.sizes.n_actions
-        assert striatum.n_output == striatum.n_actions * striatum.neurons_per_action
 
 
 class TestRLInterface:

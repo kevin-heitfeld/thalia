@@ -25,7 +25,7 @@ config = ThaliaConfig(
         ),
     ),
 )
-brain = DynamicBrain.from_thalia_config(config)
+brain = BrainBuilder.preset("default", global_config)
 
 # Alternative: Use preset architecture
 # brain = BrainBuilder.preset("sensorimotor", GlobalConfig(device="cpu"))

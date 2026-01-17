@@ -16,8 +16,9 @@ Date: December 2025
 """
 
 from __future__ import annotations
-from typing import List, Optional, TYPE_CHECKING, Any, Tuple, Callable, Dict
+
 import math
+from typing import List, Optional, TYPE_CHECKING, Any, Tuple, Callable, Dict
 
 if TYPE_CHECKING:
     from .thalia_config import ThaliaConfig
@@ -227,7 +228,7 @@ def validate_thalia_config(config: "ThaliaConfig") -> None:
         >>> from thalia.config import ThaliaConfig, validate_thalia_config
         >>> config = ThaliaConfig(...)
         >>> validate_thalia_config(config)  # Raises if invalid
-        >>> brain = DynamicBrain.from_thalia_config(config)  # Safe to create
+        >>> brain = BrainBuilder.preset("default", config.global_)  # Safe to create
     """
     errors: List[str] = []
 

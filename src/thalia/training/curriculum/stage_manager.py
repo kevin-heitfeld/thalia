@@ -71,11 +71,13 @@ Usage:
         StageConfig,
         CurriculumStage,
     )
-    from thalia.core.dynamic_brain import DynamicBrain
+    from thalia.core.brain_builder import BrainBuilder
+    from thalia.config import GlobalConfig
     from thalia.config.curriculum_growth import get_curriculum_growth_config
 
     # Initialize brain
-    brain = DynamicBrain.from_thalia_config(config)
+    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain = BrainBuilder.preset("default", global_config)
 
     # Initialize trainer
     trainer = CurriculumTrainer(
@@ -135,6 +137,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 import time
+import traceback
 from typing import Dict, List, Optional, Any, Tuple, Callable
 
 import numpy as np
@@ -144,11 +147,14 @@ from thalia.config.curriculum_growth import (
     CurriculumGrowthConfig,
     CurriculumStage,
     get_curriculum_growth_config,
+    get_attention_stage_for_curriculum,
 )
+from thalia.constants.regions import THALAMUS_ALPHA_SUPPRESSION
 from thalia.constants.training import (
     FIRING_RATE_MINIMUM,
     CURRICULUM_LOAD_THRESHOLD,
     CURRICULUM_MARGIN,
+    get_attention_weights,
 )
 from thalia.coordination.growth import GrowthManager
 from thalia.diagnostics import (
@@ -1762,9 +1768,6 @@ class CurriculumTrainer:
         Args:
             curriculum_stage: Current curriculum training stage
         """
-        from thalia.config.curriculum_growth import get_attention_stage_for_curriculum
-        from thalia.constants.training import get_attention_weights
-
         # Get attention stage and weights for this curriculum stage
         attention_stage = get_attention_stage_for_curriculum(curriculum_stage)
         bottom_up_weight, top_down_weight = get_attention_weights(attention_stage)
@@ -1789,9 +1792,6 @@ class CurriculumTrainer:
         # Higher bottom-up weight → lower suppression (more reactive to salience)
         # Lower bottom-up weight → higher suppression (ignore distractors)
         if hasattr(thalamus, 'thalamus_config'):
-            # Base suppression from constants
-            from thalia.constants.regions import THALAMUS_ALPHA_SUPPRESSION
-
             # Scale suppression inversely with bottom-up weight
             # Infant (100% bottom-up): 0.5x suppression (very reactive)
             # School-age (30% bottom-up): 1.5x suppression (ignore distractors)
@@ -2024,7 +2024,6 @@ class CurriculumTrainer:
         except Exception as e:
             # Graceful degradation if brain diagnostics fail
             if self.verbose:
-                import traceback
                 print(f"  ⚠️ Warning: Failed to collect brain diagnostics: {e}")
                 traceback.print_exc()  # Always print traceback
             metrics['firing_rate/average'] = 0.0
@@ -2062,7 +2061,6 @@ class CurriculumTrainer:
 
         except Exception as e:
             if self.verbose:
-                import traceback
                 print(f"  ⚠️ Warning: Failed to check health: {e}")
                 traceback.print_exc()  # Always print traceback
             metrics['health/is_healthy'] = 1.0  # Assume healthy if check fails

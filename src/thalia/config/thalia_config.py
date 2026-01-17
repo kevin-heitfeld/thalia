@@ -205,7 +205,7 @@ class ThaliaConfig:
 
         # Create brain from config
         from thalia.core.dynamic_brain import DynamicBrain
-        brain = DynamicBrain.from_thalia_config(config)
+        brain = BrainBuilder.preset("default", config.global_)
     """
 
     # Global parameters (inherited by all modules)

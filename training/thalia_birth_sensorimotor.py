@@ -78,22 +78,18 @@ Milestone: First Curriculum Training Session
 
 from __future__ import annotations
 
-from pathlib import Path
-import json
 from datetime import datetime
+import json
+from pathlib import Path
+import traceback
 from typing import Dict, Any
 
+from thalia.core.brain_builder import BrainBuilder, compute_thalamus_sizes, compute_hippocampus_sizes
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
-)
-from thalia.training.curriculum.stage_manager import (
-    CurriculumTrainer,
-)
-from thalia.training.curriculum.stage_configs import (
-    get_sensorimotor_config,
 )
 from thalia.tasks.sensorimotor import (
     SensorimotorTaskLoader,
@@ -101,6 +97,8 @@ from thalia.tasks.sensorimotor import (
     ReachingConfig,
     ManipulationConfig,
 )
+from thalia.training.curriculum.stage_configs import get_sensorimotor_config
+from thalia.training.curriculum.stage_manager import CurriculumTrainer
 
 
 def print_birth_banner():
@@ -136,30 +134,68 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     """
     print("[1/4] Creating neural substrate...")
 
-    config = ThaliaConfig(
-        global_=GlobalConfig(
-            device=device,
-            dt_ms=1.0,
+    # Configuration for tracking
+    global_config = GlobalConfig(device=device, dt_ms=1.0)
+    brain_config = BrainConfig(
+        sizes=RegionSizes(
+            input_size=128,        # Sensory input (visual + proprioceptive)
+            thalamus_size=128,     # Match input for 1:1 relay
+            cortex_size=320,       # Cortex total output (L2/3 + L5 = 192 + 128)
+            _cortex_l4_size=128,   # L4 input layer
+            _cortex_l23_size=192,  # L2/3 processing layer (cortico-cortical)
+            _cortex_l5_size=128,   # L5 output layer (subcortical)
+            hippocampus_size=64,   # Episodic memory
+            pfc_size=32,           # Working memory
+            n_actions=7,           # Movement directions (L/R/U/D/F/B/STOP)
         ),
-        brain=BrainConfig(
-            sizes=RegionSizes(
-                input_size=128,        # Sensory input (visual + proprioceptive)
-                thalamus_size=128,     # Match input for 1:1 relay
-                cortex_size=320,       # Cortex total output (L2/3 + L5 = 192 + 128)
-                _cortex_l4_size=128,   # L4 input layer
-                _cortex_l23_size=192,  # L2/3 processing layer (cortico-cortical)
-                _cortex_l5_size=128,   # L5 output layer (subcortical)
-                hippocampus_size=64,   # Episodic memory
-                pfc_size=32,           # Working memory
-                n_actions=7,           # Movement directions (L/R/U/D/F/B/STOP)
-            ),
-            encoding_timesteps=10,
-            delay_timesteps=5,
-            test_timesteps=10,
-        ),
+        encoding_timesteps=10,
+        delay_timesteps=5,
+        test_timesteps=10,
     )
+    config = ThaliaConfig(global_=global_config, brain=brain_config)
 
-    brain = DynamicBrain.from_thalia_config(config)
+    # Build brain using BrainBuilder with custom layer sizes
+    builder = BrainBuilder(global_config)
+
+    # Thalamus (input interface)
+    thalamus_sizes = compute_thalamus_sizes(128)
+    builder.add_component("thalamus", "thalamus", input_size=128, **thalamus_sizes)
+
+    # Cortex with custom layer sizes
+    builder.add_component("cortex", "cortex",
+                         l4_size=128, l23_size=192, l5_size=128,
+                         l6a_size=26, l6b_size=128)  # L6a=20% of relay, L6b matches relay
+
+    # Hippocampus
+    cortex_output_size = 192 + 128  # L2/3 + L5
+    hippocampus_sizes = compute_hippocampus_sizes(cortex_output_size)
+    builder.add_component("hippocampus", "hippocampus", **hippocampus_sizes)
+
+    # PFC
+    builder.add_component("pfc", "prefrontal", n_neurons=32)
+
+    # Striatum
+    builder.add_component("striatum", "striatum", n_actions=7, neurons_per_action=15)
+
+    # Cerebellum
+    builder.add_component("cerebellum", "cerebellum", purkinje_size=100)
+
+    # Connections
+    builder.connect("thalamus", "cortex", pathway_type="axonal", axonal_delay_ms=2.5)
+    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6a", target_port="l6a_feedback", axonal_delay_ms=10.0)
+    builder.connect("cortex", "thalamus", pathway_type="axonal", source_port="l6b", target_port="l6b_feedback", axonal_delay_ms=5.0)
+    builder.connect("cortex", "hippocampus", pathway_type="axonal", axonal_delay_ms=6.5)
+    builder.connect("hippocampus", "cortex", pathway_type="axonal", axonal_delay_ms=6.5)
+    builder.connect("cortex", "pfc", pathway_type="axonal", axonal_delay_ms=12.5)
+    builder.connect("cortex", "striatum", pathway_type="axonal", axonal_delay_ms=4.0)
+    builder.connect("hippocampus", "striatum", pathway_type="axonal", axonal_delay_ms=8.5)
+    builder.connect("pfc", "striatum", pathway_type="axonal", axonal_delay_ms=15.0)
+    builder.connect("striatum", "pfc", pathway_type="axonal", axonal_delay_ms=17.5)
+    builder.connect("cortex", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0)
+    builder.connect("pfc", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0)
+    builder.connect("cerebellum", "cortex", pathway_type="axonal", axonal_delay_ms=17.5)
+
+    brain = builder.build()
 
     # Move to GPU if available
     if device == "cuda":
@@ -727,7 +763,6 @@ def main():
 
     except Exception as e:
         print(f"\n\n❌ Training failed: {e}")
-        import traceback
         traceback.print_exc()
         print(f"\n   Logs: {log_file}")
         print(f"   Checkpoints: {checkpoint_dir}")
