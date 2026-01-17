@@ -78,18 +78,31 @@ class BaseCheckpointManager(ABC):
 - ✅ Striatum checkpoint manager migrated to use new utilities (~80 lines removed)
 - ✅ Full checkpoint save/restore cycle tested and working
 - ℹ️ Prefrontal and Hippocampus managers use delegation pattern (no changes needed)
+- ✅ **Backward compatibility cleanup (2026-01-17)**: Removed ~375 lines of legacy code and redundant tests:
+  - ✅ Removed `from_thalia_config()` method (~120 lines)
+  - ✅ Removed deprecated STP fields from Striatum (~20 lines)
+  - ✅ Removed DiagnosticsDict type alias (~15 lines)
+  - ✅ Removed 3 redundant legacy port verification tests (~54 lines)
+  - ✅ Removed 7 old checkpoint backward compatibility tests (~166 lines)
+  - **Total cleanup: ~375 lines of unnecessary legacy/test code removed**
 
-**Rationale**: Reduces ~400 lines of duplicated code across 3 files. Easier maintenance when checkpoint format changes. Single source of truth for validation and serialization logic.
+**Rationale**: Reduces ~400 lines of duplicated code across 3 files. Easier maintenance when checkpoint format changes. Single source of truth for validation and serialization logic. Legacy code removal ensures codebase focuses on current architecture without maintaining backward compatibility for non-existent external users.
 
 **Impact**:
-- Files affected: 3 checkpoint managers + 1 base class
-- Breaking change: **LOW** (internal refactoring, no API changes)
+- Files affected: 3 checkpoint managers + 1 base class + 15 docs + 3 training scripts + 8 test files
+- Breaking change: **MEDIUM** (breaking changes for non-existent external users)
 - Lines added to base: ~200 lines (utilities)
 - Lines removed from striatum: ~80 lines (duplication eliminated)
-- Net reduction: Positive (improved maintainability)
-- Effort: 3 hours (completed)
+- Lines removed from legacy cleanup: ~375 lines (backward compatibility code + redundant tests)
+- Net reduction: **~255 lines removed** (improved maintainability and clarity)
+- Effort: 5 hours total (completed)
 
 **Implementation Details**: See [task-1.1-migration-complete.md](task-1.1-migration-complete.md)
+
+**Backward Compatibility Cleanup Details**:
+- Commit e9c7d48: Removed deprecated STP fields and DiagnosticsDict
+- Commit 4d47269: Removed from_thalia_config() and updated docs
+- Commit 61e8256: Removed old checkpoint tests (no external users/checkpoints exist)
 
 **Next Steps for Full Migration**:
 - ✅ Striatum checkpoint manager updated to use utilities (COMPLETE)
