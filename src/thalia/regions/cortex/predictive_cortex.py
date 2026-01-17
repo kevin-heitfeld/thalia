@@ -74,7 +74,7 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -398,6 +398,8 @@ class PredictiveCortex(NeuralRegion):
         # =====================================================================
         # PREDICTIVE CODING MODULE
         # =====================================================================
+        self.prediction_layer: Optional[PredictiveCodingLayer] = None
+
         if config.prediction_enabled:
             # L5+L6 → L4 prediction pathway
             # Both deep layers (L5 and L6) are prediction neurons:
@@ -419,9 +421,6 @@ class PredictiveCortex(NeuralRegion):
                     device=device,  # Use device argument, not config.device string
                 )
             )
-            # No need to call .to() - prediction layer created on correct device
-        else:
-            self.prediction_layer = None
 
         # =====================================================================
         # GAMMA ATTENTION (inherited from LayeredCortex base)
@@ -436,16 +435,16 @@ class PredictiveCortex(NeuralRegion):
         # =====================================================================
         if config.use_precision_weighting:
             # Maps attention output to precision modulation
-            self.precision_modulator = nn.Linear(self.l23_size, self.l4_size)
+            self.precision_modulator: Optional[nn.Linear] = nn.Linear(self.l23_size, self.l4_size)
             nn.init.zeros_(self.precision_modulator.weight)
             nn.init.ones_(self.precision_modulator.bias)
         else:
-            self.precision_modulator = None
+            self.precision_modulator = None  # type: ignore[assignment]
 
         # =====================================================================
         # STATE
         # =====================================================================
-        self.state = PredictiveCortexState()
+        self.state: PredictiveCortexState = PredictiveCortexState()  # type: ignore[assignment]
 
         # Metrics for monitoring
         self._total_free_energy = 0.0
@@ -646,9 +645,9 @@ class PredictiveCortex(NeuralRegion):
                 )
             )
 
-        # Note: Gamma attention resizing handled by base LayeredCortex.grow_output()
+        # NOTE: Gamma attention resizing handled by base LayeredCortex.grow_output()
 
-    def forward(
+    def forward(  # type: ignore[override]
         self,
         input_spikes: torch.Tensor,
         top_down: Optional[torch.Tensor] = None,
@@ -693,7 +692,8 @@ class PredictiveCortex(NeuralRegion):
             )
 
         # Initialize if needed
-        if self.state.l4_spikes is None:
+        state = self.state  # type: PredictiveCortexState
+        if state.l4_spikes is None:
             self.reset_state()
 
         # =====================================================================
@@ -715,12 +715,12 @@ class PredictiveCortex(NeuralRegion):
         l6_output = self.cortex.get_l6_spikes()  # Combined L6a + L6b
 
         # Store in state (including original input for learning)
-        self.state.input_spikes = input_spikes
-        self.state.l4_spikes = l4_output
-        self.state.l23_spikes = l23_output
-        self.state.l5_spikes = l5_output
-        self.state.l6a_spikes = l6a_output
-        self.state.l6b_spikes = l6b_output
+        state.input_spikes = input_spikes
+        state.l4_spikes = l4_output
+        state.l23_spikes = l23_output
+        state.l5_spikes = l5_output
+        state.l6a_spikes = l6a_output
+        state.l6b_spikes = l6b_output
 
         # Update cumulative spike counters (for diagnostics)
         if l4_output is not None:
@@ -742,26 +742,36 @@ class PredictiveCortex(NeuralRegion):
             # Both deep layers participate in predictive coding
             # NOTE: top_down is for L2/3 modulation, NOT for L4 prediction
             # Convert bool spikes to float for prediction layer (ADR-004)
-            combined_representation = torch.cat([l5_output.float(), l6_output.float()], dim=-1)
+            # Check for None before calling float()
+            l5_float = l5_output.float() if l5_output is not None else torch.zeros(self.l5_size, device=self.device)
+            l6_float = l6_output.float() if l6_output is not None else torch.zeros(self.l6_size, device=self.device)
+            combined_representation = torch.cat(
+                [
+                    l5_float,
+                    l6_float,
+                ],
+                dim=-1,
+            )
             error, prediction, _ = self.prediction_layer(
-                actual_input=l4_output.float(),
+                actual_input=l4_output.float() if l4_output is not None else torch.zeros(self.l4_size, device=self.device),
                 representation=combined_representation,
                 top_down_prediction=None,  # L5+L6→L4 prediction is generated internally
             )
 
-            self.state.prediction = prediction
-            self.state.error = error
-            self.state.precision = self.prediction_layer.precision
-            self.state.free_energy = self.prediction_layer.get_free_energy().item()
+            state.prediction = prediction
+            state.error = error
+            state.precision = self.prediction_layer.precision
+            free_energy_tensor = self.prediction_layer.get_free_energy()
+            state.free_energy = free_energy_tensor.item() if free_energy_tensor is not None else 0.0
 
             # Accumulate free energy for monitoring
-            self._total_free_energy += self.state.free_energy
+            self._total_free_energy += state.free_energy
             self._timesteps += 1
 
         # =====================================================================
         # STEP 3: Gamma attention already applied by base LayeredCortex
         # =====================================================================
-        # Note: Inner cortex applies gamma-phase gating to L2/3 if enabled
+        # NOTE: Inner cortex applies gamma-phase gating to L2/3 if enabled
         # We can access the gating weights from cortex.state.gamma_attention_gate
 
         # =====================================================================
@@ -849,12 +859,13 @@ class PredictiveCortex(NeuralRegion):
 
         # Spike diagnostics for each layer (same format as LayeredCortex)
         # These are INSTANTANEOUS counts from the last forward pass
-        if self.state.l4_spikes is not None:
-            diag.update(self.spike_diagnostics(self.state.l4_spikes, "l4"))
-        if self.state.l23_spikes is not None:
-            diag.update(self.spike_diagnostics(self.state.l23_spikes, "l23"))
-        if self.state.l5_spikes is not None:
-            diag.update(self.spike_diagnostics(self.state.l5_spikes, "l5"))
+        state = self.state  # type: PredictiveCortexState
+        if state.l4_spikes is not None:
+            diag.update(self.spike_diagnostics(state.l4_spikes, "l4"))
+        if state.l23_spikes is not None:
+            diag.update(self.spike_diagnostics(state.l23_spikes, "l23"))
+        if state.l5_spikes is not None:
+            diag.update(self.spike_diagnostics(state.l5_spikes, "l5"))
 
         # Weight diagnostics from prediction layer (if available)
         if self.prediction_layer is not None:
@@ -865,20 +876,6 @@ class PredictiveCortex(NeuralRegion):
                 diag.update(self.weight_diagnostics(self.prediction_layer.W_pred.data, "pred"))
             if hasattr(self.prediction_layer, "W_encode"):
                 diag.update(self.weight_diagnostics(self.prediction_layer.W_encode.data, "encode"))
-
-        # Gamma attention diagnostics (from base cortex)
-        if hasattr(self.cortex, "gamma_attention") and self.cortex.gamma_attention is not None:
-            diag["gamma_attn_phase"] = self.cortex.state.gamma_attention_phase
-            diag["gamma_attn_frequency_hz"] = (
-                self.cortex.gamma_attention.frequency_hz
-            )  # Direct property
-            if self.cortex.state.gamma_attention_gate is not None:
-                diag["gamma_attn_mean_gate"] = float(
-                    self.cortex.state.gamma_attention_gate.mean().item()
-                )
-                diag["gamma_attn_max_gate"] = float(
-                    self.cortex.state.gamma_attention_gate.max().item()
-                )
 
         return diag
 
@@ -932,7 +929,7 @@ class PredictiveCortex(NeuralRegion):
         else:
             state_dict["prediction_state"] = None
 
-        # Note: Gamma attention state saved by base LayeredCortex
+        # NOTE: Gamma attention state saved by base LayeredCortex
 
         # Add config dict with PredictiveCortex-specific parameters
         if "config" not in state_dict:
@@ -990,7 +987,7 @@ class PredictiveCortex(NeuralRegion):
                     }
                 )
 
-        # Note: Gamma attention state loaded by base LayeredCortex
+        # NOTE: Gamma attention state loaded by base LayeredCortex
 
     def get_l6_spikes(self) -> Optional[torch.Tensor]:
         """Get L6 corticothalamic feedback spikes.
@@ -1073,13 +1070,12 @@ class PredictiveHierarchy(nn.Module):
         n_areas = len(area_sizes) - 1
 
         if base_config is None:
-            base_config = PredictiveCortexConfig(input_size=area_sizes[0])
+            base_config = PredictiveCortexConfig()
 
         self.areas = nn.ModuleList()
 
         for i in range(n_areas):
             area_config = PredictiveCortexConfig(
-                input_size=area_sizes[i],
                 prediction_enabled=True,
                 device=base_config.device,
             )
@@ -1089,7 +1085,8 @@ class PredictiveHierarchy(nn.Module):
 
     def reset_state(self) -> None:
         """Reset all areas."""
-        for area in self.areas:
+        for area_module in self.areas:
+            area = cast(PredictiveCortex, area_module)
             area.reset_state()
 
     def forward(
@@ -1120,7 +1117,10 @@ class PredictiveHierarchy(nn.Module):
     def get_total_free_energy(self) -> float:
         """Sum of free energy across all areas."""
         total = 0.0
-        for area in self.areas:
+        for area_module in self.areas:
+            area = cast(PredictiveCortex, area_module)
             if hasattr(area, "prediction_layer") and area.prediction_layer is not None:
-                total += area.prediction_layer.get_free_energy().item()
+                free_energy_tensor = area.prediction_layer.get_free_energy()
+                if free_energy_tensor is not None:
+                    total += free_energy_tensor.item()
         return total
