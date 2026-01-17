@@ -81,7 +81,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from thalia.config import GlobalConfig
 from thalia.config.size_calculator import LayerSizeCalculator
@@ -310,6 +310,10 @@ class BrainBuilder:
         if not found:
             available = self._registry.list_components()
             raise KeyError(f"Registry name '{registry_name}' not found. " f"Available: {available}")
+
+        # Ensure component_type is a string (should always be from found entry)
+        if component_type is None:
+            raise ValueError(f"Component type not found for '{registry_name}'")
 
         # Create component spec
         spec = ComponentSpec(
@@ -644,15 +648,15 @@ class BrainBuilder:
         # Check for layer-specific outputs (cortex)
         if hasattr(source_comp, "l23_size") and hasattr(source_comp, "l5_size"):
             if source_port == "l23":
-                return int(source_comp.l23_size)
+                return int(source_comp.l23_size)  # type: ignore[arg-type]
             elif source_port == "l5":
-                return int(source_comp.l5_size)
+                return int(source_comp.l5_size)  # type: ignore[arg-type]
             elif source_port == "l4" and hasattr(source_comp, "l4_size"):
-                return int(source_comp.l4_size)
+                return int(source_comp.l4_size)  # type: ignore[arg-type]
             elif source_port == "l6a" and hasattr(source_comp, "l6a_size"):
-                return int(source_comp.l6a_size)
+                return int(source_comp.l6a_size)  # type: ignore[arg-type]
             elif source_port == "l6b" and hasattr(source_comp, "l6b_size"):
-                return int(source_comp.l6b_size)
+                return int(source_comp.l6b_size)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -709,12 +713,12 @@ class BrainBuilder:
                     # Skip if input source already registered (avoid duplicate registration)
                     if (
                         hasattr(target_comp, "input_sources")
-                        and source_key in target_comp.input_sources
+                        and source_key in target_comp.input_sources  # type: ignore[operator]
                     ):
                         continue
 
                     # Call striatum-specific method (creates D1/D2 weights)
-                    target_comp.add_input_source_striatum(source_key, n_input=source_size)
+                    target_comp.add_input_source_striatum(source_key, n_input=source_size)  # type: ignore[operator]
 
             # Check if target has standard add_input_source method (NeuralRegion, etc.)
             elif hasattr(target_comp, "add_input_source"):
@@ -725,12 +729,12 @@ class BrainBuilder:
                     # Skip if input source already registered (avoid duplicate registration)
                     if (
                         hasattr(target_comp, "input_sources")
-                        and source_key in target_comp.input_sources
+                        and source_key in target_comp.input_sources  # type: ignore[operator]
                     ):
                         continue
 
                     # Call add_input_source (standard NeuralRegion method)
-                    target_comp.add_input_source(source_key, n_input=source_size)
+                    target_comp.add_input_source(source_key, n_input=source_size)  # type: ignore[operator]
 
     def _create_axonal_projection(
         self,
@@ -785,12 +789,13 @@ class BrainBuilder:
                         spec.source_port,  # port (can be None)
                         source_size,  # size
                         delay_ms,  # delay_ms
+                        {},  # empty target_delays dict for backward compatibility
                     )
                 )
 
         # Create AxonalProjection with target_name for delay selection
         projection = AxonalProjection(
-            sources=sources,
+            sources=sources,  # type: ignore[arg-type]
             device=self.global_config.device,
             dt_ms=self.global_config.dt_ms,
             target_name=target_name,  # NEW: enables per-target delay selection
@@ -907,22 +912,23 @@ class BrainBuilder:
             if hasattr(component, "to"):
                 component.to(self.global_config.device)
 
-            components[name] = component
+            components[name] = cast(LearnableComponent, component)
             spec.instance = component
 
         # === MULTI-SOURCE PATHWAY CONSTRUCTION ===
         # Instantiate pathways - GROUP BY (TARGET, TARGET_PORT) for multi-source pathways
         # This allows multiple independent pathways to the same target (e.g., L6a and L6b to thalamus)
-        connections: Dict[Tuple[str, str], LearnableComponent] = {}
+        connections: Dict[Tuple[str, str], Any] = {}
 
         # Group connections by (target, target_port) to create multi-source pathways
         # Key is (target_name, target_port) so L6a and L6b are separate groups
         connections_by_target_port: Dict[Tuple[str, Optional[str]], List[ConnectionSpec]] = {}
-        for spec in self._connections:
-            group_key = (spec.target, spec.target_port)
+        conn_spec: ConnectionSpec
+        for conn_spec in self._connections:
+            group_key = (conn_spec.target, conn_spec.target_port)
             if group_key not in connections_by_target_port:
                 connections_by_target_port[group_key] = []
-            connections_by_target_port[group_key].append(spec)
+            connections_by_target_port[group_key].append(conn_spec)
 
         # Create one pathway per (target, target_port) group (multi-source if multiple inputs)
         for (target_name, target_port), target_specs in connections_by_target_port.items():
@@ -930,7 +936,7 @@ class BrainBuilder:
 
             if len(target_specs) == 1:
                 # Single source - use standard pathway
-                spec = target_specs[0]
+                spec: ConnectionSpec = target_specs[0]
                 source_comp = components[spec.source]
 
                 # Special handling for AxonalProjection (v2.0 architecture)
