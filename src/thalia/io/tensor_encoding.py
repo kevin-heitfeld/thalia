@@ -198,6 +198,8 @@ def _decode_dense(
         numel *= dim
 
     # Map dtype to numpy dtype
+    np_dtype: type[np.generic]
+    bytes_per_elem: int
     if dtype == torch.float32:
         np_dtype = np.float32
         bytes_per_elem = 4
@@ -256,6 +258,8 @@ def _decode_sparse_coo(
     indices = torch.from_numpy(indices_np.copy())
 
     # Read values [nnz]
+    np_dtype: type[np.generic]
+    bytes_per_elem: int
     if dtype == torch.float32:
         np_dtype = np.float32
         bytes_per_elem = 4
@@ -295,7 +299,7 @@ def estimate_encoding_size(tensor: torch.Tensor, sparsity_threshold: float = 0.1
         Estimated bytes
     """
     # Header: encoding_type (4) + dtype (4) + ndim (4) + shape (4*ndim)
-    header_size = 12 + 4 * len(tensor.shape)
+    header_size: int = 12 + 4 * len(tensor.shape)
 
     # Check if sparse encoding would be used
     is_sparse = tensor.is_sparse
@@ -303,12 +307,14 @@ def estimate_encoding_size(tensor: torch.Tensor, sparsity_threshold: float = 0.1
         zero_ratio = (tensor == 0).float().mean().item()
         is_sparse = zero_ratio > (1.0 - sparsity_threshold)
 
+    data_size: int
     if is_sparse:
         # Sparse: nnz (8) + indices (ndim * nnz * 8) + values (nnz * bytes_per_elem)
+        nnz: int
         if tensor.is_sparse:
             nnz = tensor._nnz()
         else:
-            nnz = (tensor != 0).sum().item()
+            nnz = int((tensor != 0).sum().item())
 
         bytes_per_elem = tensor.element_size()
         ndim = len(tensor.shape)
@@ -317,4 +323,4 @@ def estimate_encoding_size(tensor: torch.Tensor, sparsity_threshold: float = 0.1
         # Dense: numel * bytes_per_elem
         data_size = tensor.numel() * tensor.element_size()
 
-    return int(header_size + data_size)
+    return header_size + data_size

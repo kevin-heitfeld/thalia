@@ -239,31 +239,30 @@ class ConductanceLIF(nn.Module):
         device = self.C_m.device
 
         # Membrane starts at leak reversal (resting potential)
-        membrane = torch.full(
-            (self.n_neurons,), self.config.E_L, device=device, dtype=torch.float32
-        )
+        dev = torch.device(str(device)) if device else torch.device("cpu")
+        membrane = torch.full((self.n_neurons,), self.config.E_L, device=dev, dtype=torch.float32)
         # Remove old attribute/buffer if exists, then register as buffer
         if hasattr(self, "membrane"):
             delattr(self, "membrane")
         self.register_buffer("membrane", membrane, persistent=False)
 
         # All conductances start at zero
-        g_E = torch.zeros(self.n_neurons, device=device, dtype=torch.float32)
+        g_E = torch.zeros(self.n_neurons, device=dev, dtype=torch.float32)
         if hasattr(self, "g_E"):
             delattr(self, "g_E")
         self.register_buffer("g_E", g_E, persistent=False)
 
-        g_I = torch.zeros(self.n_neurons, device=device, dtype=torch.float32)
+        g_I = torch.zeros(self.n_neurons, device=dev, dtype=torch.float32)
         if hasattr(self, "g_I"):
             delattr(self, "g_I")
         self.register_buffer("g_I", g_I, persistent=False)
 
-        g_adapt = torch.zeros(self.n_neurons, device=device, dtype=torch.float32)
+        g_adapt = torch.zeros(self.n_neurons, device=dev, dtype=torch.float32)
         if hasattr(self, "g_adapt"):
             delattr(self, "g_adapt")
         self.register_buffer("g_adapt", g_adapt, persistent=False)
 
-        refractory = torch.zeros(self.n_neurons, device=device, dtype=torch.int32)
+        refractory = torch.zeros(self.n_neurons, device=dev, dtype=torch.int32)
         if hasattr(self, "refractory"):
             delattr(self, "refractory")
         self.register_buffer("refractory", refractory, persistent=False)
@@ -283,7 +282,8 @@ class ConductanceLIF(nn.Module):
             delta = delta.mean(dim=0)
 
         # Apply adjustment and clamp to valid range
-        self.v_threshold = (self.v_threshold + delta).clamp(min_threshold, max_threshold)
+        self.v_threshold: torch.Tensor  # Type annotation for mypy
+        self.v_threshold = (self.v_threshold + delta).clamp(min_threshold, max_threshold)  # type: ignore[has-type]
 
     def forward(
         self, g_exc_input: torch.Tensor, g_inh_input: Optional[torch.Tensor] = None
@@ -315,62 +315,70 @@ class ConductanceLIF(nn.Module):
         )
 
         # Decrement refractory counter (in-place)
-        self.refractory = (self.refractory - 1).clamp_(min=0)
+        assert self.refractory is not None, "refractory must be initialized"
+        self.refractory = (self.refractory - 1).clamp_(min=0)  # type: ignore[assignment]
         not_refractory = self.refractory == 0
 
         # Update synaptic conductances (in-place decay + add input)
-        self.g_E.mul_(self.g_E_decay).add_(g_exc_input)
+        assert self.g_E is not None, "g_E must be initialized"
+        assert self.g_I is not None, "g_I must be initialized"
+        self.g_E.mul_(self.g_E_decay).add_(g_exc_input)  # type: ignore[union-attr, arg-type]
         if g_inh_input is not None:
-            self.g_I.mul_(self.g_I_decay).add_(g_inh_input)
+            self.g_I.mul_(self.g_I_decay).add_(g_inh_input)  # type: ignore[union-attr, arg-type]
         else:
-            self.g_I.mul_(self.g_I_decay)
+            self.g_I.mul_(self.g_I_decay)  # type: ignore[union-attr, arg-type]
 
         # Decay adaptation conductance (in-place) - handle None case
         if self.g_adapt is not None:
-            self.g_adapt.mul_(self.adapt_decay)
+            self.g_adapt.mul_(self.adapt_decay)  # type: ignore[union-attr, arg-type]
         else:
             # Initialize if missing (can happen after loading old checkpoints)
-            self.g_adapt = torch.zeros(self.n_neurons, device=self.membrane.device)
+            assert self.membrane is not None, "membrane must be initialized"
+            self.g_adapt = torch.zeros(self.n_neurons, device=self.membrane.device)  # type: ignore[union-attr]
 
         # Compute total conductance (for effective time constant)
         # Pre-add g_L to avoid extra addition
-        g_total = self.g_L + self.g_E + self.g_I + self.g_adapt
+        g_total = self.g_L + self.g_E + self.g_I + self.g_adapt  # type: ignore[operator]
 
         # Compute equilibrium potential (weighted average of reversals)
         # Fused: V_inf = (g_L*E_L + g_E*E_E + g_I*E_I + g_adapt*E_adapt) / g_total
         # Pre-compute g_L*E_L once (it's a constant)
         V_inf = (
-            self.g_L * self.E_L
-            + self.g_E * self.E_E
-            + self.g_I * self.E_I
-            + self.g_adapt * self.E_adapt
-        ) / g_total
+            self.g_L * self.E_L  # type: ignore[operator]
+            + self.g_E * self.E_E  # type: ignore[operator]
+            + self.g_I * self.E_I  # type: ignore[operator]
+            + self.g_adapt * self.E_adapt  # type: ignore[operator]
+        ) / g_total  # type: ignore[operator]
 
         # Effective time constant: τ_eff = C_m / g_total
         # V(t+dt) = V_inf + (V(t) - V_inf) * exp(-dt * g_total / C_m)
-        decay_factor = torch.exp((-self.config.dt_ms / self.C_m) * g_total)
+        decay_factor = torch.exp((-self.config.dt_ms / self.C_m) * g_total)  # type: ignore[operator]
 
         # Update membrane for non-refractory neurons
         # Fused: new_V = V_inf + (V - V_inf) * decay = V_inf * (1 - decay) + V * decay
-        V_diff = self.membrane - V_inf
+        assert self.membrane is not None, "membrane must be initialized"
+        V_diff = self.membrane - V_inf  # type: ignore[operator]
         new_membrane = V_inf + V_diff * decay_factor
 
         # Add noise only if configured (branch elimination)
         if self.config.noise_std > 0:
-            new_membrane = new_membrane + torch.randn_like(self.membrane) * self.config.noise_std
+            new_membrane = new_membrane + torch.randn_like(self.membrane) * self.config.noise_std  # type: ignore[arg-type]
 
         # Apply only to non-refractory neurons
-        self.membrane = torch.where(not_refractory, new_membrane, self.membrane)
+        self.membrane = torch.where(not_refractory, new_membrane, self.membrane)  # type: ignore[assignment, arg-type]
 
         # Spike generation (bool for biological accuracy and memory efficiency)
-        spikes = self.membrane >= self.v_threshold
+        self.v_threshold = torch.tensor(self.v_threshold)  # Ensure it's a Tensor for mypy
+        spikes = self.membrane >= self.v_threshold  # type: ignore[operator, arg-type]
 
         # Combined spike handling: reset membrane AND set refractory in one pass
         # This avoids creating intermediate tensors
         if spikes.any():
-            self.membrane = torch.where(spikes, self.v_reset, self.membrane)
+            self.membrane = torch.where(spikes, self.v_reset, self.membrane)  # type: ignore[assignment, arg-type]
             self.refractory = torch.where(
-                spikes, self.config.ref_steps, self.refractory  # scalar broadcasts
+                spikes,
+                self.config.ref_steps,
+                self.refractory,  # scalar broadcasts  # type: ignore[arg-type]
             )
             # Increment adaptation for spiking neurons (need float for arithmetic)
             if self.config.adapt_increment > 0:
@@ -395,8 +403,11 @@ class ConductanceLIF(nn.Module):
         """
         # Split into excitatory and inhibitory components
         # Scale by (E_E - E_L) to match current-based behavior at rest
-        g_exc = torch.clamp(input_current, min=0) / (self.E_E - self.E_L)
-        g_inh = torch.clamp(-input_current, min=0) / (self.E_L - self.E_I)
+        e_e_val = torch.tensor(self.E_E) if not isinstance(self.E_E, torch.Tensor) else self.E_E  # type: ignore[arg-type]
+        e_l_val = torch.tensor(self.E_L) if not isinstance(self.E_L, torch.Tensor) else self.E_L  # type: ignore[arg-type]
+        e_i_val = torch.tensor(self.E_I) if not isinstance(self.E_I, torch.Tensor) else self.E_I  # type: ignore[arg-type]
+        g_exc = torch.clamp(input_current, min=0) / (e_e_val - e_l_val)  # type: ignore[operator]
+        g_inh = torch.clamp(-input_current, min=0) / (e_l_val - e_i_val)  # type: ignore[operator]
 
         return self.forward(g_exc, g_inh)
 
@@ -427,16 +438,17 @@ class ConductanceLIF(nn.Module):
         else:
             device = torch.device("cpu")
 
+        dev_cast = torch.device(str(device))  # Cast for type compatibility
         if state["membrane"] is not None:
-            self.membrane = state["membrane"].to(device)
+            self.membrane = state["membrane"].to(dev_cast)  # type: ignore[assignment, arg-type]
         if state["g_E"] is not None:
-            self.g_E = state["g_E"].to(device)
+            self.g_E = state["g_E"].to(dev_cast)  # type: ignore[assignment, arg-type]
         if state["g_I"] is not None:
-            self.g_I = state["g_I"].to(device)
+            self.g_I = state["g_I"].to(dev_cast)  # type: ignore[assignment, arg-type]
         if state["g_adapt"] is not None:
-            self.g_adapt = state["g_adapt"].to(device)
+            self.g_adapt = state["g_adapt"].to(dev_cast)  # type: ignore[assignment, arg-type]
         if state["refractory"] is not None:
-            self.refractory = state["refractory"].to(device)
+            self.refractory = state["refractory"].to(dev_cast)  # type: ignore[assignment, arg-type]
 
     def grow_neurons(self, n_new: int) -> None:
         """Grow neuron population by adding new neurons.
@@ -465,27 +477,34 @@ class ConductanceLIF(nn.Module):
         # Update neuron count
         self.n_neurons = new_n
 
+        # Get device from existing tensors
+        assert self.v_threshold is not None, "v_threshold must be initialized"
+        device = self.v_threshold.device  # type: ignore[union-attr]
+        dev_cast = torch.device(str(device))  # Cast for type compatibility
+
         # Expand per-neuron threshold buffer (registered buffer)
         new_thresholds = torch.full(
-            (n_new,), self.config.v_threshold, dtype=torch.float32, device=device
+            (n_new,), self.config.v_threshold, dtype=torch.float32, device=dev_cast  # type: ignore[arg-type]
         )
-        self.v_threshold = torch.cat([self.v_threshold, new_thresholds])
+        self.v_threshold = torch.cat([self.v_threshold, new_thresholds])  # type: ignore[assignment, list-item]
 
         # Expand state tensors (only if already initialized)
         if self.membrane is not None:
             # Preserve old state, initialize new neurons at resting potential
-            new_membrane = torch.full((n_new,), self.config.E_L, device=device, dtype=torch.float32)
-            self.membrane = torch.cat([self.membrane, new_membrane])
+            new_membrane = torch.full((n_new,), self.config.E_L, device=dev_cast, dtype=torch.float32)  # type: ignore[arg-type]
+            self.membrane = torch.cat([self.membrane, new_membrane])  # type: ignore[assignment, list-item]
 
             # Zero conductances for new neurons
-            new_zeros = torch.zeros(n_new, device=device, dtype=torch.float32)
-            self.g_E = torch.cat([self.g_E, new_zeros])
-            self.g_I = torch.cat([self.g_I, new_zeros])
-            self.g_adapt = torch.cat([self.g_adapt, new_zeros])
+            new_zeros = torch.zeros(n_new, device=dev_cast, dtype=torch.float32)  # type: ignore[arg-type]
+            assert self.g_E is not None and self.g_I is not None and self.g_adapt is not None
+            self.g_E = torch.cat([self.g_E, new_zeros])  # type: ignore[assignment, list-item]
+            self.g_I = torch.cat([self.g_I, new_zeros])  # type: ignore[assignment, list-item]
+            self.g_adapt = torch.cat([self.g_adapt, new_zeros])  # type: ignore[assignment, list-item]
 
             # Zero refractory for new neurons
-            new_ref = torch.zeros(n_new, device=device, dtype=torch.int32)
-            self.refractory = torch.cat([self.refractory, new_ref])
+            new_ref = torch.zeros(n_new, device=dev_cast, dtype=torch.int32)  # type: ignore[arg-type]
+            assert self.refractory is not None
+            self.refractory = torch.cat([self.refractory, new_ref])  # type: ignore[assignment, list-item]
 
     def _apply(self, fn, recurse: bool = True):
         """Apply a function to all tensors, including state variables.

@@ -465,8 +465,8 @@ class StriatumHomeostasis(UnifiedHomeostasis):
             d2 = d2.mean(dim=0)
 
         # Update running averages
-        self.d1_activity_avg = decay * self.d1_activity_avg + (1 - decay) * d1
-        self.d2_activity_avg = decay * self.d2_activity_avg + (1 - decay) * d2
+        self.d1_activity_avg: torch.Tensor = decay * self.d1_activity_avg + (1 - decay) * d1
+        self.d2_activity_avg: torch.Tensor = decay * self.d2_activity_avg + (1 - decay) * d2
 
     def compute_excitability(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute excitability modulation based on activity history.
@@ -675,20 +675,23 @@ class UnifiedHomeostasisGrowable:
         Args:
             n_new_neurons: Number of new neurons to add
         """
-        # Update neuron count
-        old_n_neurons = self.n_neurons
-        self.n_neurons += n_new_neurons
+        # Access instance attributes (d1_size/d2_size are set in __init__)
+        # Grow both pathways equally
+        if hasattr(self, "d1_size"):
+            self.d1_size += n_new_neurons
+        if hasattr(self, "d2_size"):
+            self.d2_size += n_new_neurons
 
         # Expand activity tracking buffers [n_neurons]
-        new_d1_activity = torch.zeros(n_new_neurons, device=self.d1_activity_avg.device)
-        self.d1_activity_avg = torch.cat([self.d1_activity_avg, new_d1_activity])
+        new_d1_activity = torch.zeros(n_new_neurons, device=self.d1_activity_avg.device)  # type: ignore[union-attr]
+        self.d1_activity_avg: torch.Tensor = torch.cat([self.d1_activity_avg, new_d1_activity])  # type: ignore[assignment]
 
-        new_d2_activity = torch.zeros(n_new_neurons, device=self.d2_activity_avg.device)
-        self.d2_activity_avg = torch.cat([self.d2_activity_avg, new_d2_activity])
+        new_d2_activity = torch.zeros(n_new_neurons, device=self.d2_activity_avg.device)  # type: ignore[union-attr]
+        self.d2_activity_avg: torch.Tensor = torch.cat([self.d2_activity_avg, new_d2_activity])  # type: ignore[assignment]
 
         # Expand excitability buffers [n_neurons] - start at neutral (1.0)
-        new_d1_excitability = torch.ones(n_new_neurons, device=self.d1_excitability.device)
-        self.d1_excitability = torch.cat([self.d1_excitability, new_d1_excitability])
+        new_d1_excitability = torch.ones(n_new_neurons, device=self.d1_excitability.device)  # type: ignore[union-attr]
+        self.d1_excitability: torch.Tensor = torch.cat([self.d1_excitability, new_d1_excitability])  # type: ignore[assignment]
 
-        new_d2_excitability = torch.ones(n_new_neurons, device=self.d2_excitability.device)
-        self.d2_excitability = torch.cat([self.d2_excitability, new_d2_excitability])
+        new_d2_excitability = torch.ones(n_new_neurons, device=self.d2_excitability.device)  # type: ignore[union-attr]
+        self.d2_excitability: torch.Tensor = torch.cat([self.d2_excitability, new_d2_excitability])  # type: ignore[assignment]

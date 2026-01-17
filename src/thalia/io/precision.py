@@ -20,6 +20,7 @@ Usage:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, Union
 
@@ -201,8 +202,6 @@ def apply_precision_policy_to_state(
     policy = get_precision_policy(policy)
 
     if not in_place:
-        import copy
-
         state = copy.deepcopy(state)
 
     _apply_precision_recursive(state, policy, parent_key="")
@@ -256,8 +255,6 @@ def restore_precision_to_fp32(
         State dict with all floating point tensors in FP32
     """
     if not in_place:
-        import copy
-
         state = copy.deepcopy(state)
 
     _restore_fp32_recursive(state)
@@ -341,6 +338,7 @@ def get_precision_statistics(state: Dict[str, Any]) -> Dict[str, Any]:
         else:
             stats[key]["percent"] = 0.0
 
-    stats["total_mb"] = total_bytes / (1024 * 1024)
+    total_mb_value = float(total_bytes / (1024 * 1024))
+    stats["total_mb"] = total_mb_value  # type: ignore[assignment]
 
     return stats

@@ -37,8 +37,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from numpy.typing import NDArray
 
 from .health_monitor import HealthConfig, HealthMonitor, HealthReport
 
@@ -81,7 +83,7 @@ class Dashboard:
 
         # Figure and axes (created on first show)
         self._fig: Optional[Figure] = None
-        self._axes: Optional[List[Axes]] = None
+        self._axes: Optional[NDArray[np.object_]] = None
 
     def update(self, diagnostics: Dict[str, Any]):
         """Update dashboard with new diagnostic data.
@@ -168,7 +170,7 @@ class Dashboard:
         ax.set_xlabel("Timestep")
         ax.set_ylabel("Health Score")
         ax.set_title("Overall Health (100 - max severity)")
-        ax.set_ylim([0, 105])
+        ax.set_ylim(0, 105)
         ax.legend(loc="lower right")
         ax.grid(True, alpha=0.3)
 
@@ -255,6 +257,9 @@ class Dashboard:
             self._fig, self._axes = plt.subplots(3, 2, figsize=self.figsize)
             self._fig.suptitle("Thalia Network Health Dashboard", fontsize=16)
             plt.ion()  # Interactive mode
+
+        # Type narrowing for mypy
+        assert self._axes is not None
 
         # Clear all axes
         for ax_row in self._axes:

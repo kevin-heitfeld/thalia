@@ -1715,23 +1715,23 @@ class CurriculumTrainer:
         if self.verbose:
             print(f"\n⚠️ SAFETY INTERVENTION: {intervention.value}")
 
-        actions = self.safety_system.handle_intervention(intervention, self.brain)
+        actions = self.safety_system.handle_intervention(intervention)
 
         if intervention == InterventionType.EMERGENCY_STOP:
             # Critical failure - halt training
-            print(f"❌ EMERGENCY STOP triggered")
+            print("❌ EMERGENCY STOP triggered")
             print(f"Actions: {actions['actions']}")
-            print(f"System frozen. Manual investigation required.")
+            print("System frozen. Manual investigation required.")
             raise RuntimeError(f"Emergency stop triggered: {actions}")
 
         elif intervention == InterventionType.CONSOLIDATE:
             # Emergency consolidation needed
-            print(f"⏸️ Triggering emergency consolidation")
+            print("⏸️ Triggering emergency consolidation")
             self._check_and_trigger_consolidation(stage, config, None, force=True)
 
         elif intervention == InterventionType.REDUCE_LOAD:
             # Reduce cognitive load
-            print(f"📉 Reducing cognitive load")
+            print("📉 Reducing cognitive load")
             # Lower learning rates temporarily
             if hasattr(self.brain, "learning_rate"):
                 original_lr = self.brain.learning_rate
@@ -1744,16 +1744,16 @@ class CurriculumTrainer:
 
         elif intervention == InterventionType.TEMPORAL_SEPARATION:
             # Enable temporal separation of modalities
-            print(f"🔀 Enabling temporal separation of modalities")
+            print("🔀 Enabling temporal separation of modalities")
             # Set flag for subsequent training steps
             if not hasattr(self, "_temporal_separation_active"):
                 self._temporal_separation_active = True
                 if self.verbose:
-                    print(f"   Will alternate modality training")
+                    print("   Will alternate modality training")
 
         elif intervention == InterventionType.ROLLBACK:
             # Rollback to previous checkpoint
-            print(f"⏪ Rollback triggered")
+            print("⏪ Rollback triggered")
             raise RuntimeError(f"Rollback requested: {actions}")
 
     def _save_checkpoint(

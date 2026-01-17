@@ -94,8 +94,8 @@ class ContinuousMonitor:
         self.enable_auto_intervention = enable_auto_intervention
 
         # Metric history
-        self.metrics_history = deque(maxlen=window_size)
-        self.intervention_history = []
+        self.metrics_history: deque[MonitoringMetrics] = deque(maxlen=window_size)
+        self.intervention_history: list[Tuple[int, InterventionType]] = []
 
         # Current state
         self.steps = 0
@@ -103,10 +103,10 @@ class ContinuousMonitor:
         self.current_stage = 0
 
         # Baseline performance (set during initial training)
-        self.baselines = {}
+        self.baselines: dict[str, float] = {}
 
         # Alerts
-        self.active_alerts = set()
+        self.active_alerts: set[str] = set()
 
     def update(
         self, brain, step: int, task_result: Optional[Dict] = None
@@ -361,7 +361,7 @@ class ContinuousMonitor:
 
     def record_intervention(self, intervention: InterventionType):
         """Record that an intervention was triggered."""
-        self.intervention_history.append((intervention, self.steps))
+        self.intervention_history.append((self.steps, intervention))
         logger.info(f"Intervention triggered at step {self.steps}: {intervention.value}")
 
     def get_metrics_summary(self, window: int = 1000) -> Dict:

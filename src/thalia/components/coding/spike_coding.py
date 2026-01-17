@@ -188,7 +188,7 @@ class SpikeEncoder(nn.Module, ABC):
             for b in range(batch):
                 for s in range(seq_len):
                     for n in range(n_neurons):
-                        t = latencies[b, s, n].item()
+                        t = int(latencies[b, s, n].item())
                         if 0 <= t < self.config.n_timesteps:
                             spikes[b, s, t, n] = 1.0
 
@@ -259,7 +259,8 @@ class SpikeEncoder(nn.Module, ABC):
     def reset_state(self) -> None:
         """Reset any temporal state (e.g., adaptation, phase)."""
         if hasattr(self, "phase"):
-            self.phase.zero_()
+            phase_tensor: torch.Tensor = self.phase  # type: ignore[assignment]
+            phase_tensor.zero_()
 
 
 class SpikeDecoder(nn.Module, ABC):
@@ -381,9 +382,11 @@ class SpikeDecoder(nn.Module, ABC):
 
     def reset_state(self) -> None:
         """Reset temporal integration state."""
-        self.integration_state.zero_()
+        integration_state_tensor: torch.Tensor = self.integration_state  # type: ignore[assignment]
+        integration_state_tensor.zero_()
         if hasattr(self, "first_spike_time"):
-            self.first_spike_time.fill_(float("inf"))
+            first_spike_time_tensor: torch.Tensor = self.first_spike_time  # type: ignore[assignment]
+            first_spike_time_tensor.fill_(float("inf"))
 
 
 class RateEncoder(SpikeEncoder):

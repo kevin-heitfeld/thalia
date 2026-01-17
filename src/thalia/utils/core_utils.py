@@ -98,13 +98,13 @@ def cosine_similarity_safe(
     """
     # Handle 1D vectors
     if a.dim() == 1 and b.dim() == 1:
-        norm_a = a.norm() + eps
-        norm_b = b.norm() + eps
-        return (a @ b) / (norm_a * norm_b)
+        norm_a: torch.Tensor = a.norm() + eps
+        norm_b: torch.Tensor = b.norm() + eps
+        return torch.tensor((a @ b) / (norm_a * norm_b))
 
     # Handle higher dimensional tensors
-    a_norm = a / (a.norm(dim=dim, keepdim=True) + eps)
-    b_norm = b / (b.norm(dim=dim, keepdim=True) + eps)
+    a_norm: torch.Tensor = a / (a.norm(dim=dim, keepdim=True) + eps)
+    b_norm: torch.Tensor = b / (b.norm(dim=dim, keepdim=True) + eps)
     return (a_norm * b_norm).sum(dim=dim)
 
 

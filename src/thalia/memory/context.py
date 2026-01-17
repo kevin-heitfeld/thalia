@@ -190,7 +190,7 @@ class ContextBuffer(nn.Module):
 
         # Get relevant weights (may be shorter than max_length)
         n_items = len(activations)
-        weights = self.recency_weights[-n_items:]
+        weights: torch.Tensor = self.recency_weights[-n_items:]  # type: ignore[index]
         weights = weights / weights.sum()  # Normalize
 
         # Weighted sum
@@ -208,7 +208,8 @@ class ContextBuffer(nn.Module):
         if n_items == 0:
             return torch.zeros(0, device=self.device)
 
-        return self.recency_weights[-n_items:].clone()
+        result: torch.Tensor = self.recency_weights[-n_items:].clone()  # type: ignore[index]
+        return result
 
     def compress(self) -> torch.Tensor:
         """

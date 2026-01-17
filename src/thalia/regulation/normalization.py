@@ -295,7 +295,8 @@ class ContrastNormalization(nn.Module):
         std = centered.std(dim=dim, keepdim=True)
         pool = std.expand_as(centered)
 
-        return self.divisive(centered, pool=pool)
+        result: torch.Tensor = self.divisive(centered, pool=pool)
+        return result
 
 
 class SpatialDivisiveNorm(nn.Module):
@@ -312,9 +313,9 @@ class SpatialDivisiveNorm(nn.Module):
         epsilon: float = 1e-8,
     ):
         super().__init__()
-        self.kernel_size = kernel_size
-        self.sigma = sigma
-        self.epsilon = epsilon
+        self.kernel_size: int = kernel_size
+        self.sigma: float = sigma
+        self.epsilon: float = epsilon
 
         # Create Gaussian kernel for local pooling
         x = torch.arange(kernel_size) - kernel_size // 2
@@ -333,10 +334,10 @@ class SpatialDivisiveNorm(nn.Module):
         Returns:
             Normalized tensor of same shape
         """
-        batch, channels, h, w = x.shape
+        _batch, channels, _h, _w = x.shape
 
         # Expand kernel for all channels
-        kernel = self.kernel.expand(channels, 1, -1, -1)
+        kernel: torch.Tensor = self.kernel.expand(channels, 1, -1, -1)  # type: ignore[operator]
 
         # Compute local energy
         x_sq = x**2

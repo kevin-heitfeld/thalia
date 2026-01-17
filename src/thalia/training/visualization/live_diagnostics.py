@@ -72,30 +72,30 @@ class LiveDiagnostics:
         self.figsize = figsize
 
         # History buffers
-        self.step_history = deque(maxlen=history_size)
-        self.firing_rate_history = {
+        self.step_history: deque[int] = deque(maxlen=history_size)
+        self.firing_rate_history: dict[str, deque[float]] = {
             "cortex": deque(maxlen=history_size),
             "hippocampus": deque(maxlen=history_size),
             "pfc": deque(maxlen=history_size),
             "striatum": deque(maxlen=history_size),
         }
-        self.health_history = {
+        self.health_history: dict[str, deque[float]] = {
             "is_healthy": deque(maxlen=history_size),
             "runaway_count": deque(maxlen=history_size),
             "silent_count": deque(maxlen=history_size),
         }
-        self.performance_history = {
+        self.performance_history: dict[str, deque[float]] = {
             "motor_control": deque(maxlen=history_size),
             "reaching": deque(maxlen=history_size),
             "manipulation": deque(maxlen=history_size),
         }
         # NEW: Performance timing history
-        self.timing_history = {
+        self.timing_history: dict[str, deque[float]] = {
             "steps_per_sec": deque(maxlen=history_size),
             "forward_ms": deque(maxlen=history_size),
         }
         # NEW: Memory history
-        self.memory_history = {
+        self.memory_history: dict[str, deque[float]] = {
             "cpu_mb": deque(maxlen=history_size),
             "gpu_mb": deque(maxlen=history_size),
         }
@@ -103,7 +103,7 @@ class LiveDiagnostics:
         self.latest_weights: Dict[str, Any] = {}
 
         # Latest spike data for raster plot
-        self.latest_spikes = {}
+        self.latest_spikes: dict[str, torch.Tensor] = {}
         self.current_step = 0
 
         # Figure setup
@@ -250,7 +250,7 @@ class LiveDiagnostics:
 
         # Combine spikes from all regions
         y_offset = 0
-        colors = plt.cm.Set3(range(len(self.latest_spikes)))
+        colors = plt.cm.get_cmap("Set3")(range(len(self.latest_spikes)))
 
         for idx, (region_name, spikes) in enumerate(self.latest_spikes.items()):
             if spikes is None or not isinstance(spikes, torch.Tensor):
@@ -259,11 +259,16 @@ class LiveDiagnostics:
             # Get spike locations
             if spikes.dim() == 2:  # (timesteps, neurons)
                 spike_times, spike_neurons = torch.where(spikes > 0)
-                spike_times = spike_times.cpu().numpy()
-                spike_neurons = spike_neurons.cpu().numpy() + y_offset
+                spike_times_np = spike_times.cpu().numpy()
+                spike_neurons_np = spike_neurons.cpu().numpy() + y_offset
 
                 ax.scatter(
-                    spike_times, spike_neurons, s=1, alpha=0.6, color=colors[idx], label=region_name
+                    spike_times_np,
+                    spike_neurons_np,
+                    s=1,
+                    alpha=0.6,
+                    color=colors[idx],
+                    label=region_name,
                 )
 
                 y_offset += spikes.shape[1]

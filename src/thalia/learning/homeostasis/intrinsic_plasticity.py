@@ -178,12 +178,14 @@ class IntrinsicPlasticity(nn.Module):
             "rate_avg",
             torch.full((n_neurons,), self.config.target_rate, device=self._device),
         )
+        self.rate_avg: torch.Tensor  # Type annotation for mypy
 
         # Per-neuron thresholds (can be modified by adaptation)
         self.register_buffer(
             "thresholds",
             torch.full((n_neurons,), initial_threshold, device=self._device),
         )
+        self.thresholds: torch.Tensor  # Type annotation for mypy
 
         # Track total adaptation for diagnostics
         self._total_adaptation: float = 0.0

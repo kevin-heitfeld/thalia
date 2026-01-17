@@ -63,7 +63,6 @@ from thalia.constants.learning import (
     LEARNING_RATE_BCM,
     TAU_BCM_THRESHOLD,
 )
-from thalia.core.errors import ComponentError
 
 
 @dataclass
@@ -207,6 +206,8 @@ class BCMRule(nn.Module):
         if self.theta is None:
             self.reset_state()
 
+        assert self.theta is not None, "theta must be initialized"
+
         # BCM function: φ(c, θ) = c(c - θ)
         # With normalize: φ(c, θ) = c(c - θ) / θ for scale invariance
         phi = post_activity * (post_activity - self.theta)
@@ -234,11 +235,15 @@ class BCMRule(nn.Module):
         if self.theta is None:
             self.reset_state()
 
+        assert self.theta is not None, "theta must be initialized"
+
         # Compute activity^p per neuron
         c_p = post_activity.pow(self.config.p)  # (n_post,)
 
         # Update threshold with EMA (per-neuron)
-        self.theta = self.decay_theta * self.theta + self.one_minus_decay * c_p
+        decay_theta_tensor: torch.Tensor = self.decay_theta  # type: ignore[assignment]
+        one_minus_decay_tensor: torch.Tensor = self.one_minus_decay  # type: ignore[assignment]
+        self.theta = decay_theta_tensor * self.theta + one_minus_decay_tensor * c_p  # type: ignore[assignment]
 
         # Clamp to valid range
         self.theta = torch.clamp(self.theta, self.config.theta_min, self.config.theta_max)
@@ -306,7 +311,8 @@ class BCMRule(nn.Module):
     def get_threshold(self) -> torch.Tensor:
         """Get current sliding threshold."""
         if self.theta is None:
-            raise ComponentError("BCM", "BCM state not initialized. Call reset_state() first.")
+            self.reset_state()
+        assert self.theta is not None, "theta must be initialized"
         return self.theta.clone()
 
     def get_state(self) -> dict[str, Optional[torch.Tensor]]:

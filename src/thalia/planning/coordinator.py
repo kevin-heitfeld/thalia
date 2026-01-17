@@ -208,6 +208,17 @@ class MentalSimulationCoordinator:
                 best_action = action
                 best_rollout = rollout
 
+        # If no action found, return first available action with empty rollout
+        if best_action is None or best_rollout is None:
+            best_action = available_actions[0]
+            best_rollout = Rollout(
+                states=[current_state],
+                actions=[],
+                rewards=[],
+                cumulative_value=0.0,
+                uncertainty=1.0,  # Maximum uncertainty for empty rollout
+            )
+
         return best_action, best_rollout
 
     def _predict_next_state(

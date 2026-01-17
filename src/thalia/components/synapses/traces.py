@@ -185,6 +185,7 @@ class SpikeTrace(nn.Module):
 
         # Register trace as buffer (not a parameter, but saved with model)
         self.register_buffer("trace", torch.zeros(size, dtype=dtype, device=device))
+        self.trace: torch.Tensor  # Type annotation for mypy
 
         # Cache decay factor for efficiency (recomputed if tau changes)
         self._cached_dt: Optional[float] = None
@@ -312,8 +313,8 @@ class PairedTraces(nn.Module):
 
     def reset_state(self, batch_size: Optional[int] = None) -> None:
         """Reset both traces."""
-        self.pre_trace.reset_state(batch_size)
-        self.post_trace.reset_state(batch_size)
+        self.pre_trace.reset_state()  # SpikeTrace.reset_state() takes no args
+        self.post_trace.reset_state()  # SpikeTrace.reset_state() takes no args
 
     def get_traces(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Get current trace values."""

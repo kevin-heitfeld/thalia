@@ -215,15 +215,19 @@ class ShortTermPlasticity(nn.Module):
         - x starts at 1 (full vesicle pool)
         - Uses 1D tensors per single-brain architecture
         """
-        device = self.U.device
+        device = self.U.device  # type: ignore[union-attr]
 
+        shape: tuple[int, int] | tuple[int]
         if self.per_synapse:
+            assert self.n_post is not None, "n_post must be set for per_synapse mode"
             shape = (self.n_pre, self.n_post)
         else:
             shape = (self.n_pre,)
 
-        self.u = torch.full(shape, self.config.U, device=device, dtype=torch.float32)
-        self.x = torch.ones(shape, device=device, dtype=torch.float32)
+        # Cast device from parameter for mypy (register_buffer returns Union[Tensor, Module])
+        dev = torch.device(str(device)) if device else torch.device("cpu")
+        self.u = torch.full(shape, self.config.U, device=dev, dtype=torch.float32)
+        self.x = torch.ones(shape, device=dev, dtype=torch.float32)
 
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
         """Compute STP efficacy for current timestep (ADR-005: 1D tensors).
@@ -258,13 +262,13 @@ class ShortTermPlasticity(nn.Module):
         # === Continuous dynamics (between spikes) ===
         # u decays toward U: u(t+dt) = u(t)*decay_f + U*(1-decay_f)
         # x recovers toward 1: x(t+dt) = x(t)*decay_d + 1*(1-decay_d)
-        self.u = self.u * self.decay_f + self.recovery_f
-        self.x = self.x * self.decay_d + self.recovery_d
+        self.u = self.u * self.decay_f + self.recovery_f  # type: ignore[operator]
+        self.x = self.x * self.decay_d + self.recovery_d  # type: ignore[operator]
 
         # === Spike-triggered dynamics ===
         # Compute efficacy BEFORE applying spike effects
         # This is the u*x at the moment of the spike
-        efficacy = self.u * self.x
+        efficacy = self.u * self.x  # type: ignore[operator]
 
         # On spike: u jumps up (facilitation), x drops (depression)
         # u → u + U(1-u) = u(1-U) + U = lerp toward 1 with step U
@@ -276,17 +280,23 @@ class ShortTermPlasticity(nn.Module):
 
         # Apply spike effects (only where spikes occurred)
         # Depression first (uses current u): x decreases by u*x
-        u_for_release = self.u.clone()  # Save u before facilitation
-        x_release = u_for_release * self.x
-        self.x = self.x - spikes * x_release
+        u_tensor: torch.Tensor = self.u  # type: ignore[assignment]
+        x_tensor: torch.Tensor = self.x  # type: ignore[assignment]
+        U_tensor: torch.Tensor = self.U  # type: ignore[assignment]
+
+        u_for_release = u_tensor.clone()  # Save u before facilitation
+        x_release = u_for_release * x_tensor
+        self.x = x_tensor - spikes * x_release  # type: ignore[assignment]
 
         # Facilitation second: u increases toward 1
-        u_jump = self.U * (1.0 - self.u)
-        self.u = self.u + spikes * u_jump
+        u_jump = U_tensor * (1.0 - u_tensor)
+        self.u = u_tensor + spikes * u_jump  # type: ignore[assignment]
 
         # Clamp to valid range (numerical safety)
-        self.u = torch.clamp(self.u, 0.0, 1.0)
-        self.x = torch.clamp(self.x, 0.0, 1.0)
+        u_clamped: torch.Tensor = self.u  # type: ignore[assignment]
+        x_clamped: torch.Tensor = self.x  # type: ignore[assignment]
+        self.u = torch.clamp(u_clamped, 0.0, 1.0)  # type: ignore[assignment]
+        self.x = torch.clamp(x_clamped, 0.0, 1.0)  # type: ignore[assignment]
 
         # Return efficacy (not modulated by spikes - that's the synaptic response)
         # The caller uses this to scale the PSP/PSC
@@ -307,10 +317,16 @@ class ShortTermPlasticity(nn.Module):
 
     def get_state(self) -> dict[str, Optional[torch.Tensor]]:
         """Get current STP state for analysis/saving."""
+        efficacy_value: Optional[torch.Tensor] = None
+        if self.u is not None and self.x is not None:
+            u_tensor: torch.Tensor = self.u
+            x_tensor: torch.Tensor = self.x
+            efficacy_value = (u_tensor * x_tensor).clone()
+
         return {
             "u": self.u.clone() if self.u is not None else None,
             "x": self.x.clone() if self.x is not None else None,
-            "efficacy": (self.u * self.x).clone() if self.u is not None else None,
+            "efficacy": efficacy_value,
         }
 
     def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
@@ -320,9 +336,11 @@ class ShortTermPlasticity(nn.Module):
             state: Dictionary from get_state()
         """
         if state["u"] is not None:
-            self.u = state["u"].to(self.U.device)
+            u_device = self.U.device  # type: ignore[union-attr]
+            self.u = state["u"].to(u_device)  # type: ignore[arg-type]
         if state["x"] is not None:
-            self.x = state["x"].to(self.U.device)
+            x_device = self.U.device  # type: ignore[union-attr]
+            self.x = state["x"].to(x_device)  # type: ignore[arg-type]
 
     def grow(self, n_new: int, target: str = "pre") -> None:
         """Grow STP dimensions by adding new neurons.
@@ -342,30 +360,36 @@ class ShortTermPlasticity(nn.Module):
             if self.u is not None and self.x is not None:
                 if self.per_synapse:
                     # Add new rows: [old_n_pre, n_post] → [new_n_pre, n_post]
+                    u_device = self.U.device  # type: ignore[union-attr]
+                    assert self.n_post is not None, "n_post must be set for per_synapse mode"
+                    shape_2d: tuple[int, int] = (n_new, self.n_post)  # Explicit type for mypy
                     new_u = torch.full(
-                        (n_new, self.n_post),
+                        shape_2d,
                         self.config.U,
-                        device=self.u.device,
+                        device=u_device,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
+                    x_device = self.X.device  # type: ignore[union-attr]
                     new_x = torch.ones(
-                        (n_new, self.n_post),
-                        device=self.x.device,
+                        shape_2d,
+                        device=x_device,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
                     self.u = torch.cat([self.u, new_u], dim=0)
                     self.x = torch.cat([self.x, new_x], dim=0)
                 else:
                     # Add new elements: [old_n_pre] → [new_n_pre]
+                    u_device_1d = self.U.device  # type: ignore[union-attr]
+                    x_device_1d = self.X.device  # type: ignore[union-attr]
                     new_u = torch.full(
                         (n_new,),
                         self.config.U,
-                        device=self.u.device,
+                        device=u_device_1d,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
                     new_x = torch.ones(
                         (n_new,),
-                        device=self.x.device,
+                        device=x_device_1d,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
                     self.u = torch.cat([self.u, new_u], dim=0)
@@ -381,15 +405,17 @@ class ShortTermPlasticity(nn.Module):
             if self.u is not None and self.x is not None:
                 if self.per_synapse:
                     # Add new columns: [n_pre, old_n_post] → [n_pre, new_n_post]
+                    u_device_post = self.U.device  # type: ignore[union-attr]
+                    x_device_post = self.X.device  # type: ignore[union-attr]
                     new_u = torch.full(
                         (self.n_pre, n_new),
                         self.config.U,
-                        device=self.u.device,
+                        device=u_device_post,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
                     new_x = torch.ones(
                         (self.n_pre, n_new),
-                        device=self.x.device,
+                        device=x_device_post,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
                     self.u = torch.cat([self.u, new_u], dim=1)

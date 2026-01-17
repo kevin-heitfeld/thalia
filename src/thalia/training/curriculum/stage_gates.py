@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
@@ -198,8 +198,8 @@ class Stage1SurvivalGate:
 
     def _check_oscillators(self) -> Tuple[bool, List[str], Dict[str, float]]:
         """Check oscillator stability criteria."""
-        failures = []
-        metrics = {}
+        failures: list[str] = []
+        metrics: dict[str, float] = {}
 
         if len(self.history["theta_freq"]) < 100:
             failures.append("Insufficient oscillator data")
@@ -251,8 +251,8 @@ class Stage1SurvivalGate:
 
     def _check_working_memory(self) -> Tuple[bool, List[str], Dict[str, float]]:
         """Check working memory capacity criteria."""
-        failures = []
-        metrics = {}
+        failures: list[str] = []
+        metrics: dict[str, float] = {}
 
         if len(self.history["n_back_accuracy"]) < 100:
             failures.append("Insufficient WM performance data")
@@ -286,8 +286,8 @@ class Stage1SurvivalGate:
 
     def _check_interference(self, brain) -> Tuple[bool, List[str], Dict[str, float]]:
         """Check cross-modal interference."""
-        failures = []
-        metrics = {}
+        failures: list[str] = []
+        metrics: dict[str, float] = {}
 
         # Check if both phonology and vision regions exist
         has_phonology = hasattr(brain, "phonology_region")
@@ -375,7 +375,7 @@ class GracefulDegradationManager:
 
     def handle_module_failure(
         self, module_name: str, baseline_performance: float, current_performance: float
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Route module failures to appropriate responses.
 
@@ -418,7 +418,7 @@ class GracefulDegradationManager:
                 "recommendations": ["Verify module classification"],
             }
 
-    def _handle_critical_failure(self, module_name: str, drop: float) -> Dict[str, any]:
+    def _handle_critical_failure(self, module_name: str, drop: float) -> Dict[str, Any]:
         """Handle failure of critical system."""
         if drop > SAFETY_CRITICAL_THRESHOLD:
             return {
@@ -454,7 +454,7 @@ class GracefulDegradationManager:
                 ],
             }
 
-    def _handle_degradable_failure(self, module_name: str, drop: float) -> Dict[str, any]:
+    def _handle_degradable_failure(self, module_name: str, drop: float) -> Dict[str, Any]:
         """Handle failure of degradable system."""
         if drop > SAFETY_DEGRADABLE_THRESHOLD:
             self.degraded_modules.add(module_name)
@@ -480,7 +480,7 @@ class GracefulDegradationManager:
                 "alert": f"{module_name}_MINOR_DEGRADATION",
             }
 
-    def _handle_limited_failure(self, module_name: str, drop: float) -> Dict[str, any]:
+    def _handle_limited_failure(self, module_name: str, drop: float) -> Dict[str, Any]:
         """Handle failure of limited degradation system."""
         if drop > SAFETY_LIMITED_THRESHOLD:
             self.degraded_modules.add(module_name)
@@ -507,7 +507,7 @@ class GracefulDegradationManager:
                 "alert": f"{module_name}_MINOR_DEGRADATION",
             }
 
-    def get_system_status(self) -> Dict[str, any]:
+    def get_system_status(self) -> Dict[str, Any]:
         """Get overall system degradation status."""
         return {
             "degraded_modules": list(self.degraded_modules),

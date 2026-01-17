@@ -438,7 +438,7 @@ def _hierarchical_layout(G: Any, region_info: Dict[str, Any]) -> Dict[str, Tuple
     }
 
     # Group nodes by layer
-    layer_nodes = {}
+    layer_nodes: dict[int, list[str]] = {}
     for node, info in region_info.items():
         layer = layers.get(info["type"], 3)
         if layer not in layer_nodes:

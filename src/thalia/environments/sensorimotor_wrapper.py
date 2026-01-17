@@ -204,6 +204,8 @@ class SensorimotorWrapper:
         )
 
         # Get observation/action dimensions
+        assert self.env.observation_space.shape is not None, "Observation space must have shape"
+        assert self.env.action_space.shape is not None, "Action space must have shape"
         self.obs_dim = self.env.observation_space.shape[0]
         self.action_dim = self.env.action_space.shape[0]
 
@@ -265,13 +267,13 @@ class SensorimotorWrapper:
         obs, reward, terminated, truncated, info = self.env.step(action)
 
         # Update episode tracking
-        self._episode_reward += reward
+        self._episode_reward += float(reward)
         self._episode_steps += 1
 
         # Encode observation as spikes
         obs_spikes = self._encode_observation(obs)
 
-        return obs_spikes, reward, terminated, truncated
+        return obs_spikes, float(reward), terminated, truncated
 
     def _encode_observation(self, obs: np.ndarray) -> torch.Tensor:
         """Encode continuous observation as spike pattern.
@@ -398,8 +400,8 @@ class SensorimotorWrapper:
         # Clip to action bounds
         action_clipped = np.clip(
             action_noisy,
-            self.env.action_space.low,
-            self.env.action_space.high,
+            self.env.action_space.low,  # type: ignore[attr-defined]
+            self.env.action_space.high,  # type: ignore[attr-defined]
         )
 
         return action_clipped
@@ -422,8 +424,8 @@ class SensorimotorWrapper:
         spikes_reshaped = spikes_np.reshape(self.action_dim, self.config.n_neurons_per_dof)
 
         # Preferred values (evenly spaced in action space)
-        action_low = self.env.action_space.low
-        action_high = self.env.action_space.high
+        action_low = self.env.action_space.low  # type: ignore[attr-defined]
+        action_high = self.env.action_space.high  # type: ignore[attr-defined]
 
         action = np.zeros(self.action_dim)
         for i in range(self.action_dim):
@@ -455,9 +457,9 @@ class SensorimotorWrapper:
         firing_rates = spikes_reshaped.mean(axis=1)  # Average over neurons
 
         # Scale to action range
-        action_low = self.env.action_space.low
-        action_high = self.env.action_space.high
-        action = action_low + firing_rates * (action_high - action_low)
+        action_low = self.env.action_space.low  # type: ignore[attr-defined]
+        action_high = self.env.action_space.high  # type: ignore[attr-defined]
+        action: np.ndarray = action_low + firing_rates * (action_high - action_low)
 
         return action
 

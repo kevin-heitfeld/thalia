@@ -311,7 +311,9 @@ class ReadingDataset:
             task_type: Type of task generated
         """
         if task_type is None:
-            task_type = np.random.choice(self.config.tasks_to_test)
+            # Cast to numpy array first to satisfy type checker
+            tasks_array = np.array(self.config.tasks_to_test, dtype=object)
+            task_type = np.random.choice(tasks_array)
 
         task_data, label = self.task_generators[task_type]()
 

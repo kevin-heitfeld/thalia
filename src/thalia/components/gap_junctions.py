@@ -190,7 +190,8 @@ class GapJunctionCoupling(nn.Module):
                     continue  # No valid neighbors
 
                 # Select top-k neighbors
-                k = min(self.config.max_neighbors, (scores >= 0).sum().item())
+                k_value = min(self.config.max_neighbors, (scores >= 0).sum().item())
+                k = int(k_value)
                 if k == 0:
                     continue
 
@@ -231,11 +232,12 @@ class GapJunctionCoupling(nn.Module):
 
         # Compute voltage differences: V[j] - V[i] for all coupled pairs
         # coupling_matrix[i,j] * voltages[j] gives contribution from j to i
-        neighbor_contribution = self.coupling_matrix @ voltages  # [n_neurons]
+        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix  # type: ignore[assignment]
+        neighbor_contribution = coupling_matrix_tensor @ voltages  # [n_neurons]
 
         # Subtract own voltage scaled by total coupling
         # This ensures I_gap = Σ g[i,j] * (V[j] - V[i])
-        total_coupling_per_neuron = self.coupling_matrix.sum(dim=1)  # [n_neurons]
+        total_coupling_per_neuron: torch.Tensor = coupling_matrix_tensor.sum(dim=1)  # type: ignore[operator]
         self_contribution = total_coupling_per_neuron * voltages
 
         coupling_current = neighbor_contribution - self_contribution
@@ -262,14 +264,17 @@ class GapJunctionCoupling(nn.Module):
             }
 
         # Count neurons with at least one gap junction
-        has_coupling = (self.coupling_matrix.sum(dim=1) > 0) | (self.coupling_matrix.sum(dim=0) > 0)
-        n_coupled = has_coupling.sum().item()
+        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix  # type: ignore[assignment]
+        has_coupling = (coupling_matrix_tensor.sum(dim=1) > 0) | (  # type: ignore[operator]
+            coupling_matrix_tensor.sum(dim=0) > 0
+        )  # type: ignore[operator]
+        n_coupled = int(has_coupling.sum().item())
 
         # Count total connections (undirected, so divide by 2)
-        n_connections = (self.coupling_matrix > 0).sum().item() // 2
+        n_connections = int((coupling_matrix_tensor > 0).sum().item()) // 2  # type: ignore[operator]
 
         # Average neighbors per coupled neuron
-        neighbors_per_neuron = (self.coupling_matrix > 0).sum(dim=1).float()
+        neighbors_per_neuron = (coupling_matrix_tensor > 0).sum(dim=1).float()  # type: ignore[operator]
         avg_neighbors = neighbors_per_neuron[has_coupling].mean().item() if n_coupled > 0 else 0.0
 
         # Coupling density among interneurons

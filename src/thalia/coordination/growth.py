@@ -518,7 +518,7 @@ class GrowthCoordinator:
         # 3. Grow input pathways (pre-synaptic → new post-synaptic)
         # These pathways send spikes TO the growing region
         # Need to add neurons to target side to match region growth
-        events: list[GrowthEvent] = []
+        # events list already created above, append to it
         for pathway_name, pathway in input_pathways:
             if hasattr(pathway, "grow_output"):
                 # Skip routing pathways (AxonalProjection) - they have no learnable weights

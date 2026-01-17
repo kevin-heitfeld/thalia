@@ -7,9 +7,12 @@ across 15-18 region implementations.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
+
+if TYPE_CHECKING:
+    pass
 
 
 class StateLoadingMixin:
@@ -35,6 +38,10 @@ class StateLoadingMixin:
                 if state.working_memory is not None:
                     self.working_memory.data = state.working_memory.to(self.device)
     """
+
+    # Type annotation for device (must be provided by implementing class)
+    if TYPE_CHECKING:
+        device: torch.device
 
     def _restore_neuron_state(self, state_dict: Dict[str, Any]) -> None:
         """Restore neuron membrane potentials and refractory state.

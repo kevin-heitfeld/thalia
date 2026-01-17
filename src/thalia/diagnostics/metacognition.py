@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -150,7 +150,8 @@ class CalibrationNetwork(nn.Module):
         Returns:
             calibrated: Calibrated confidence [batch, 1]
         """
-        return self.network(raw_confidence)
+        result: torch.Tensor = self.network(raw_confidence)
+        return result
 
     def update(
         self, raw_confidence: float, actual_correct: float, dopamine: Optional[float] = None
@@ -176,8 +177,9 @@ class CalibrationNetwork(nn.Module):
         # This is the ONLY module that uses backpropagation (at a different timescale)
         with torch.enable_grad():
             # Forward pass
+            network_device = next(self.network.parameters()).device
             raw_conf_tensor = torch.tensor(
-                [[raw_confidence]], device=self.network[0].weight.device, requires_grad=True
+                [[raw_confidence]], device=network_device, requires_grad=True
             )
             calibrated = self.forward(raw_conf_tensor)
 
@@ -243,7 +245,7 @@ class MetacognitiveMonitor:
 
     def estimate_confidence(
         self, population_activity: torch.Tensor
-    ) -> Tuple[float, Dict[str, float]]:
+    ) -> Tuple[float, Dict[str, float | str]]:
         """
         Estimate confidence with stage-appropriate granularity.
 
@@ -297,7 +299,7 @@ class MetacognitiveMonitor:
             0.9 * self.statistics["avg_confidence"] + 0.1 * confidence
         )
 
-        breakdown = {
+        breakdown: dict[str, float | str] = {
             "raw": raw_confidence,
             "processed": confidence,
             "stage": self.config.stage.name,
@@ -338,7 +340,7 @@ class MetacognitiveMonitor:
         population_activity: torch.Tensor,
         actual_correct: bool,
         dopamine: Optional[float] = None,
-    ) -> Dict[str, float]:
+    ) -> Dict[str, float | str]:
         """
         Train calibration network (Stage 3-4 only).
 
@@ -357,11 +359,12 @@ class MetacognitiveMonitor:
         raw_confidence = self.confidence_estimator.estimate_raw_confidence(population_activity)
 
         # Update calibration network
-        metrics = self.calibration_network.update(
+        metrics_result = self.calibration_network.update(
             raw_confidence=raw_confidence,
             actual_correct=1.0 if actual_correct else 0.0,
             dopamine=dopamine,
         )
+        metrics: dict[str, float | str] = cast(dict[str, float | str], metrics_result)
 
         return metrics
 
@@ -373,7 +376,7 @@ class MetacognitiveMonitor:
         """Get current stage."""
         return self.config.stage
 
-    def get_statistics(self) -> Dict[str, any]:
+    def get_statistics(self) -> Dict[str, Any]:
         """Get monitoring statistics."""
         abstention_rate = (
             self.statistics["n_abstentions"] / self.statistics["n_estimates"]

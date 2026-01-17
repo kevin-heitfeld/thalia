@@ -199,13 +199,13 @@ class SpikeDecoder(BaseSpikeDecoder):
         batch, seq_len, n_timesteps, n_neurons = spikes.shape
         decay = self.config.decay_factor
 
-        if self.config.decoding_type == CodingStrategy.RATE:
+        if self.config.coding_strategy == CodingStrategy.RATE:
             # Rate decoding: Simply count spikes
             features = spikes.sum(dim=2)  # [batch, seq_len, n_neurons]
             # Normalize by number of timesteps
             features = features / n_timesteps
 
-        elif self.config.decoding_type == CodingStrategy.TEMPORAL:
+        elif self.config.coding_strategy == CodingStrategy.TEMPORAL:
             # Temporal decoding: First spikes matter most
             features = torch.zeros(
                 batch,
@@ -219,7 +219,7 @@ class SpikeDecoder(BaseSpikeDecoder):
                 weight = (n_timesteps - t) / n_timesteps
                 features += spikes[:, :, t, :] * weight
 
-        elif self.config.decoding_type == CodingStrategy.POPULATION:
+        elif self.config.coding_strategy == CodingStrategy.POPULATION:
             # Population decoding: Leaky integration
             features = torch.zeros(
                 batch,
@@ -236,7 +236,7 @@ class SpikeDecoder(BaseSpikeDecoder):
                     state = state * decay + spikes[:, s, t, :]
                 features[:, s, :] = state
 
-        elif self.config.decoding_type == CodingStrategy.WTA:
+        elif self.config.coding_strategy == CodingStrategy.WTA:
             # WTA: Competition during integration
             features = torch.zeros(
                 batch,
@@ -275,7 +275,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         logits = F.linear(features, self.readout_weights, self.readout_bias)
 
         # For WTA, apply competition in token space
-        if self.config.decoding_type == CodingStrategy.WTA:
+        if self.config.coding_strategy == CodingStrategy.WTA:
             logits = self._apply_wta(logits)
 
         return logits
@@ -318,8 +318,7 @@ class SpikeDecoder(BaseSpikeDecoder):
         if target_ids.dim() == 1:
             target_ids = target_ids.unsqueeze(0)  # [1, seq_len]
 
-        batch, seq_len, n_neurons = features.shape
-        vocab_size = self.config.vocab_size
+        _batch, _seq_len, n_neurons = features.shape
         lr = self.config.learning_rate
         weight_decay = self.config.weight_decay
 
@@ -360,15 +359,20 @@ class SpikeDecoder(BaseSpikeDecoder):
         mean_error = (1.0 - predictions.gather(1, target_flat.unsqueeze(1))).mean().item()
         update_norm = weight_update.norm().item()
 
-        self.n_updates += 1
-        self.total_error += mean_error
+        # Update counters (cast from register_buffer to Tensor for arithmetic)
+        assert isinstance(self.n_updates, torch.Tensor), "n_updates must be Tensor"
+        assert isinstance(self.total_error, torch.Tensor), "total_error must be Tensor"
+        n_up: torch.Tensor = self.n_updates  # type: ignore[union-attr]  # Explicit type for mypy
+        tot_err: torch.Tensor = self.total_error  # type: ignore[union-attr]  # Explicit type for mypy
+        self.n_updates = n_up + 1  # type: ignore[assignment]
+        self.total_error = tot_err + mean_error  # type: ignore[assignment]
 
         return {
             "error": mean_error,
             "weight_update_norm": update_norm,
             "bias_update_norm": bias_update.norm().item(),
-            "n_updates": self.n_updates.item(),
-            "avg_error": (self.total_error / self.n_updates).item(),
+            "n_updates": int(self.n_updates.item()),  # Explicit cast
+            "avg_error": float((self.total_error / self.n_updates).item()),  # Explicit cast
         }
 
     def _apply_wta(
@@ -497,14 +501,15 @@ class SpikeDecoder(BaseSpikeDecoder):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get decoder diagnostics."""
+        n_updates_val = torch.tensor(self.n_updates, device=self.n_updates.device)  # type: ignore[arg-type]
         return {
-            "decoding_type": self.config.decoding_type.value,
+            "decoding_type": self.config.coding_strategy.value,
             "n_neurons": self.config.n_neurons,
             "vocab_size": self.config.vocab_size,
             "temperature": self.config.temperature,
             "learning_rate": self.config.learning_rate,
-            "n_updates": int(self.n_updates),
-            "avg_error": float(self.total_error / max(self.n_updates, 1)),
+            "n_updates": int(n_updates_val),  # type: ignore[arg-type]
+            "avg_error": float(self.total_error / max(n_updates_val, 1)),  # type: ignore[arg-type, operator]
         }
 
 
@@ -612,7 +617,8 @@ class StreamingDecoder(nn.Module):
             self.config.n_neurons,
             device=self.device,
         )
-        self.evidence.zero_()
+        self.evidence: torch.Tensor  # Type annotation for mypy
+        self.evidence.zero_()  # type: ignore[union-attr]
         self.decoder.reset_state()
 
     def step(
@@ -654,8 +660,8 @@ class StreamingDecoder(nn.Module):
 
         # Check if confident enough to emit token
         if conf >= self.confidence_threshold:
-            token = probs.argmax().item()
+            token_int = int(probs.argmax().item())  # Explicit int cast
             self.reset_state()  # Reset for next token
-            return token, conf, probs
+            return token_int, conf, probs
 
         return None, conf, probs

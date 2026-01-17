@@ -363,7 +363,7 @@ class CIFARForThalia:
 
         for idx in range(min(n_samples, len(self))):
             spikes, _ = self[idx]
-            total_spikes += spikes.sum().item()
+            total_spikes += int(spikes.sum().item())
             total_possible += spikes.numel()
 
         mean_firing_rate = total_spikes / total_possible if total_possible > 0 else 0.0

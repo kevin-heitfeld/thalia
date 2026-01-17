@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .stage_gates import GateDecision, GateResult, GracefulDegradationManager, Stage1SurvivalGate
 from .stage_monitoring import ContinuousMonitor, InterventionType, MonitoringMetrics, Stage1Monitor
@@ -92,11 +92,11 @@ class CurriculumSafetySystem:
         self.gate_check_interval = 5000  # Check gate every 5k steps
 
         # Performance baselines
-        self.baselines = {}
+        self.baselines: dict[str, float] = {}
 
         logger.info(f"Safety system initialized for stage {current_stage}")
 
-    def _create_stage_gates(self) -> Dict[int, any]:
+    def _create_stage_gates(self) -> Dict[int, Any]:
         """Create stage-specific gates."""
         gates = {}
 
@@ -323,8 +323,8 @@ class CurriculumSafetySystem:
         # Penalize recent interventions
         if len(self.monitor.intervention_history) > 0:
             recent_interventions = [
-                i
-                for i, step in self.monitor.intervention_history
+                intervention
+                for step, intervention in self.monitor.intervention_history
                 if self.monitor.steps - step < 5000
             ]
             score -= len(recent_interventions) * 0.05
@@ -362,18 +362,17 @@ class CurriculumSafetySystem:
         if self.checkpoint_callback:
             self.checkpoint_callback(stage=self.current_stage, reason=f"emergency_stop_{reason}")
 
-    def handle_intervention(self, intervention: InterventionType, brain) -> Dict:
+    def handle_intervention(self, intervention: InterventionType) -> Dict:
         """
         Execute intervention response.
 
         Args:
             intervention: Type of intervention needed
-            brain: Brain instance
 
         Returns:
             Dict with actions taken
         """
-        actions = {"intervention": intervention.value, "actions": []}
+        actions: dict[str, Any] = {"intervention": intervention.value, "actions": []}
 
         if intervention == InterventionType.EMERGENCY_STOP:
             actions["actions"].append("freeze_learning")

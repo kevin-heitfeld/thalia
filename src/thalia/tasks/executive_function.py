@@ -16,11 +16,12 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import scipy as sp
 import torch
 
 from thalia.constants.task import (
@@ -126,12 +127,10 @@ class RavensMatricesConfig:
     pattern_complexity: str = "simple"  # simple, medium, hard
     n_answer_choices: int = 8  # Number of answer options
     stimulus_dim: int = 64  # Feature dimension per cell
-    rule_types: List[str] = None  # progression, constant, distribution
+    rule_types: List[str] = field(
+        default_factory=lambda: ["progression", "constant", "distribution"]
+    )
     device: str = "cpu"
-
-    def __post_init__(self):
-        if self.rule_types is None:
-            self.rule_types = ["progression", "constant", "distribution"]
 
 
 @dataclass
@@ -261,45 +260,45 @@ class ExecutiveFunctionTasks:
         Returns:
             metrics: Performance metrics
         """
-        responses = np.array(responses)
-        correct_responses = np.array(correct_responses)
-        stimulus_types = np.array(stimulus_types)
+        responses_arr: np.ndarray = np.array(responses)
+        correct_responses_arr: np.ndarray = np.array(correct_responses)
+        stimulus_types_arr: np.ndarray = np.array(stimulus_types)
 
         # Overall accuracy
-        correct = responses == correct_responses
+        correct: np.ndarray = responses_arr == correct_responses_arr
         overall_accuracy = correct.mean()
 
         # Go trials (target)
-        go_trials = np.array([st == StimulusType.TARGET for st in stimulus_types])
-        go_accuracy = (responses[go_trials] == correct_responses[go_trials]).mean()
+        go_trials: np.ndarray = np.array([st == StimulusType.TARGET for st in stimulus_types_arr])
+        go_accuracy = (responses_arr[go_trials] == correct_responses_arr[go_trials]).mean()
 
         # No-go trials (distractor)
-        no_go_trials = np.array([st == StimulusType.DISTRACTOR for st in stimulus_types])
-        no_go_accuracy = (responses[no_go_trials] == correct_responses[no_go_trials]).mean()
+        no_go_trials: np.ndarray = np.array(
+            [st == StimulusType.DISTRACTOR for st in stimulus_types_arr]
+        )
+        no_go_accuracy = (responses_arr[no_go_trials] == correct_responses_arr[no_go_trials]).mean()
 
         # False alarm rate (incorrectly responding on no-go)
-        false_alarms = responses[no_go_trials].sum()
-        fa_rate = false_alarms / no_go_trials.sum()
+        false_alarms = int(responses_arr[no_go_trials].sum())
+        fa_rate = false_alarms / int(no_go_trials.sum())
 
         # Hit rate (correctly responding on go)
-        hits = responses[go_trials].sum()
-        hit_rate = hits / go_trials.sum()
+        hits = int(responses_arr[go_trials].sum())
+        hit_rate = hits / int(go_trials.sum())
 
         # d-prime (signal detection sensitivity)
-        from scipy.stats import norm
-
         hit_rate_adj = np.clip(hit_rate, 0.01, 0.99)
         fa_rate_adj = np.clip(fa_rate, 0.01, 0.99)
-        d_prime = norm.ppf(hit_rate_adj) - norm.ppf(fa_rate_adj)
+        d_prime = sp.stats.norm.ppf(hit_rate_adj) - sp.stats.norm.ppf(fa_rate_adj)
 
         # Update statistics
-        self.statistics["n_trials"] += len(responses)
-        self.statistics["n_correct"] += correct.sum()
+        self.statistics["n_trials"] += len(responses_arr)
+        self.statistics["n_correct"] += int(correct.sum())
 
         if "go_no_go" not in self.statistics["by_task"]:
             self.statistics["by_task"]["go_no_go"] = {"correct": 0, "total": 0}
-        self.statistics["by_task"]["go_no_go"]["correct"] += correct.sum()
-        self.statistics["by_task"]["go_no_go"]["total"] += len(responses)
+        self.statistics["by_task"]["go_no_go"]["correct"] += int(correct.sum())
+        self.statistics["by_task"]["go_no_go"]["total"] += len(responses_arr)
 
         return {
             "overall_accuracy": overall_accuracy,
@@ -369,24 +368,24 @@ class ExecutiveFunctionTasks:
         Returns:
             metrics: Performance metrics
         """
-        choices = np.array(choices)
-        optimal_choices = np.array(optimal_choices)
+        choices_arr: np.ndarray = np.array(choices)
+        optimal_choices_arr: np.ndarray = np.array(optimal_choices)
 
         # Proportion delayed
-        delayed_proportion = (choices == "delayed").mean()
+        delayed_proportion = (choices_arr == "delayed").mean()
 
         # Accuracy
-        accuracy = (choices == optimal_choices).mean()
+        accuracy = (choices_arr == optimal_choices_arr).mean()
 
         # Update statistics
-        correct = (choices == optimal_choices).sum()
-        self.statistics["n_trials"] += len(choices)
+        correct = int((choices_arr == optimal_choices_arr).sum())
+        self.statistics["n_trials"] += len(choices_arr)
         self.statistics["n_correct"] += correct
 
         if "delayed_gratification" not in self.statistics["by_task"]:
             self.statistics["by_task"]["delayed_gratification"] = {"correct": 0, "total": 0}
         self.statistics["by_task"]["delayed_gratification"]["correct"] += correct
-        self.statistics["by_task"]["delayed_gratification"]["total"] += len(choices)
+        self.statistics["by_task"]["delayed_gratification"]["total"] += len(choices_arr)
 
         return {
             "accuracy": accuracy,
@@ -480,26 +479,26 @@ class ExecutiveFunctionTasks:
         Returns:
             metrics: Performance metrics
         """
-        responses = np.array(responses)
-        correct_bins = np.array(correct_bins)
+        responses_arr: np.ndarray = np.array(responses)
+        correct_bins_arr: np.ndarray = np.array(correct_bins)
 
         # Pre-switch accuracy
-        pre_switch = responses[:switch_trial] == correct_bins[:switch_trial]
+        pre_switch: np.ndarray = responses_arr[:switch_trial] == correct_bins_arr[:switch_trial]
         pre_switch_accuracy = pre_switch.mean()
 
         # Post-switch accuracy
-        post_switch = responses[switch_trial:] == correct_bins[switch_trial:]
+        post_switch: np.ndarray = responses_arr[switch_trial:] == correct_bins_arr[switch_trial:]
         post_switch_accuracy = post_switch.mean()
 
         # Switch cost
         switch_cost = pre_switch_accuracy - post_switch_accuracy
 
         # Overall accuracy
-        overall_accuracy = (responses == correct_bins).mean()
+        overall_accuracy = (responses_arr == correct_bins_arr).mean()
 
         # Update statistics
-        correct = (responses == correct_bins).sum()
-        self.statistics["n_trials"] += len(responses)
+        correct = int((responses_arr == correct_bins_arr).sum())
+        self.statistics["n_trials"] += len(responses_arr)
         self.statistics["n_correct"] += correct
 
         if "dccs" not in self.statistics["by_task"]:
@@ -603,24 +602,24 @@ class ExecutiveFunctionTasks:
         Returns:
             metrics: Performance metrics
         """
-        responses = np.array(responses)
-        correct_responses = np.array(correct_responses)
-        is_switch = np.array(is_switch)
+        responses_arr: np.ndarray = np.array(responses)
+        correct_responses_arr: np.ndarray = np.array(correct_responses)
+        is_switch_arr: np.ndarray = np.array(is_switch)
 
         # Overall accuracy
-        correct = responses == correct_responses
+        correct: np.ndarray = responses_arr == correct_responses_arr
         overall_accuracy = correct.mean()
 
         # Switch trial accuracy
-        switch_trials = is_switch
-        if switch_trials.sum() > 0:
+        switch_trials: np.ndarray = is_switch_arr
+        if int(switch_trials.sum()) > 0:
             switch_accuracy = correct[switch_trials].mean()
         else:
             switch_accuracy = np.nan
 
         # Repeat trial accuracy
-        repeat_trials = ~is_switch
-        if repeat_trials.sum() > 0:
+        repeat_trials: np.ndarray = ~is_switch_arr
+        if int(repeat_trials.sum()) > 0:
             repeat_accuracy = correct[repeat_trials].mean()
         else:
             repeat_accuracy = np.nan
@@ -632,22 +631,22 @@ class ExecutiveFunctionTasks:
             switch_cost = np.nan
 
         # Update statistics
-        correct_count = correct.sum()
-        self.statistics["n_trials"] += len(responses)
+        correct_count = int(correct.sum())
+        self.statistics["n_trials"] += len(responses_arr)
         self.statistics["n_correct"] += correct_count
 
         if "task_switching" not in self.statistics["by_task"]:
             self.statistics["by_task"]["task_switching"] = {"correct": 0, "total": 0}
         self.statistics["by_task"]["task_switching"]["correct"] += correct_count
-        self.statistics["by_task"]["task_switching"]["total"] += len(responses)
+        self.statistics["by_task"]["task_switching"]["total"] += len(responses_arr)
 
         return {
             "overall_accuracy": overall_accuracy,
             "switch_accuracy": switch_accuracy,
             "repeat_accuracy": repeat_accuracy,
             "switch_cost": switch_cost,
-            "n_switch_trials": switch_trials.sum(),
-            "n_repeat_trials": repeat_trials.sum(),
+            "n_switch_trials": int(switch_trials.sum()),
+            "n_repeat_trials": int(repeat_trials.sum()),
         }
 
     # ========================================================================
@@ -691,7 +690,7 @@ class ExecutiveFunctionTasks:
 
         states = []
         disk_moved = []
-        moves = []
+        moves: list[tuple[int, int]] = []
 
         # Encode initial state
         states.append(self._encode_hanoi_state(pegs, encode_dim, n_disks, config.device))
@@ -930,22 +929,24 @@ class ExecutiveFunctionTasks:
             )
 
         # Generate answer choices (correct + distractors)
-        answer_choices = []
+        answer_choices_list: list[torch.Tensor] = []
         correct_idx = np.random.randint(0, n_choices)
 
         for i in range(n_choices):
             if i == correct_idx:
                 # Correct answer
-                answer_choices.append(correct_cell)
+                answer_choices_list.append(correct_cell)
             else:
                 # Distractor (random or systematic perturbation)
                 distractor = self._generate_distractor(correct_cell, matrix, rule_type, device)
-                answer_choices.append(distractor)
+                answer_choices_list.append(distractor)
 
-        answer_choices = torch.stack(answer_choices, dim=0)
+        answer_choices = torch.stack(answer_choices_list, dim=0)
 
         # Replace last cell with zeros (missing cell)
-        matrix[-1] = torch.zeros_like(matrix[-1])
+        matrix_flat = matrix.reshape(-1, stimulus_dim)
+        matrix_flat[-1] = torch.zeros_like(matrix_flat[-1])
+        matrix = matrix_flat.reshape(grid_size, grid_size, stimulus_dim)
 
         return matrix, answer_choices, correct_idx, rule_type
 
@@ -1196,8 +1197,8 @@ class ExecutiveFunctionTasks:
             return stimuli_tensor, labels_tensor
 
         elif task_type == TaskType.DCCS:
-            config = DCCSConfig(n_trials=batch_size, **task_kwargs)
-            cards, rules, correct_bins = self.dccs(config)
+            dccs_config = DCCSConfig(n_trials=batch_size, **task_kwargs)
+            cards, _rules, correct_bins = self.dccs(dccs_config)
 
             # Stack cards
             cards_tensor = torch.stack(cards, dim=0)
@@ -1206,16 +1207,19 @@ class ExecutiveFunctionTasks:
             return cards_tensor, labels_tensor
 
         elif task_type == TaskType.TASK_SWITCHING:
-            config = TaskSwitchingConfig(n_trials=batch_size, **task_kwargs)
-            stimuli, task_cues, correct_responses, is_switch = self.task_switching(config)
+            ts_config = TaskSwitchingConfig(n_trials=batch_size, **task_kwargs)
+            stimuli, task_cues, correct_responses_int, _is_switch_list = self.task_switching(
+                ts_config
+            )
 
             # Stack stimuli and concatenate with task cues
             stimuli_tensor = torch.stack(stimuli, dim=0)
+            correct_responses_tensor = torch.tensor(correct_responses_int, dtype=torch.long)
             task_cues_tensor = torch.tensor(task_cues, dtype=torch.float32).unsqueeze(1)
 
             # Concatenate stimulus with task cue
             full_input = torch.cat([stimuli_tensor, task_cues_tensor], dim=1)
-            labels_tensor = torch.tensor(correct_responses, dtype=torch.long)
+            labels_tensor = correct_responses_tensor  # Use the already created tensor
 
             return full_input, labels_tensor
 

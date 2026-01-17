@@ -165,7 +165,7 @@ class DynaPlanner:
         probs = priorities / priorities.sum()
 
         # Sample
-        idx = torch.multinomial(probs, 1).item()
+        idx: int = int(torch.multinomial(probs, 1).item())
         state_hash = states[idx]
 
         # Retrieve actual state from hippocampus
@@ -177,7 +177,8 @@ class DynaPlanner:
             return None
 
         episode = random.choice(self.hippocampus.episode_buffer)
-        return episode.state
+        state: torch.Tensor = episode.state
+        return state
 
     def _state_hash(self, state: torch.Tensor) -> int:
         """Simple hash for state (for priority dict)."""
@@ -188,5 +189,6 @@ class DynaPlanner:
         # Simplified - in practice would need proper state->hash mapping
         for episode in self.hippocampus.episode_buffer:
             if self._state_hash(episode.state) == state_hash:
-                return episode.state
+                state: torch.Tensor = episode.state
+                return state
         return None

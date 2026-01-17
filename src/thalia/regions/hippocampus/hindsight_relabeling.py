@@ -32,6 +32,8 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
+from thalia.components.synapses.weight_init import WeightInitializer
+
 
 class HERStrategy(Enum):
     """Strategy for selecting hindsight goals."""
@@ -193,6 +195,7 @@ class HindsightRelabeler:
         if self.config.strategy == HERStrategy.FINAL:
             # Use final achieved state as goal
             final_goal = episode[-1].achieved_goal
+            assert final_goal is not None, "achieved_goal cannot be None for HER"
             return [final_goal] * k
 
         elif self.config.strategy == HERStrategy.FUTURE:
@@ -200,13 +203,17 @@ class HindsightRelabeler:
             future_indices = range(transition_idx + 1, len(episode))
             if len(future_indices) == 0:
                 # No future states, use final
-                return [episode[-1].achieved_goal] * k
+                final_goal = episode[-1].achieved_goal
+                assert final_goal is not None, "achieved_goal must be set"
+                return [final_goal] * k
 
             # Sample k indices (with replacement if needed)
             sampled_indices = torch.randint(len(future_indices), (k,), device=self.config.device)
-            goals = [
-                episode[transition_idx + 1 + idx.item()].achieved_goal for idx in sampled_indices
-            ]
+            goals: list[torch.Tensor] = []
+            for idx in sampled_indices:
+                goal = episode[transition_idx + 1 + int(idx.item())].achieved_goal
+                assert goal is not None, "achieved_goal must be set"
+                goals.append(goal)
             return goals
 
         elif self.config.strategy == HERStrategy.EPISODE:
@@ -217,8 +224,6 @@ class HindsightRelabeler:
 
         elif self.config.strategy == HERStrategy.RANDOM:
             # Sample random goals (baseline - not very useful)
-            from thalia.components.synapses.weight_init import WeightInitializer
-
             return [
                 WeightInitializer.gaussian(
                     self.config.goal_dim, 1, mean=0.0, std=1.0, device=self.config.device
@@ -263,19 +268,26 @@ class HindsightRelabeler:
             # Create hindsight transitions
             for hindsight_goal in hindsight_goals:
                 # Check if this goal was achieved
-                achieved = self.check_goal_achieved(transition.achieved_goal, hindsight_goal)
+                achieved_goal = transition.achieved_goal
+                assert achieved_goal is not None, "achieved_goal must be set"
+                achieved = self.check_goal_achieved(achieved_goal, hindsight_goal)
                 hindsight_reward = 1.0 if achieved else 0.0
 
                 # Create relabeled transition
+                state_clone = transition.state
+                next_state = transition.next_state
+                assert (
+                    state_clone is not None and next_state is not None
+                ), "state tensors must be set"
                 hindsight_transition = EpisodeTransition(
-                    state=transition.state.clone(),
+                    state=state_clone.clone(),
                     action=transition.action,
-                    next_state=transition.next_state.clone(),
+                    next_state=next_state.clone(),
                     goal=hindsight_goal.clone(),  # RELABELED GOAL
                     reward=hindsight_reward,  # RELABELED REWARD
                     done=transition.done,
                     timestep=transition.timestep,
-                    achieved_goal=transition.achieved_goal.clone(),
+                    achieved_goal=achieved_goal.clone(),
                 )
                 augmented.append(hindsight_transition)
 
@@ -308,13 +320,16 @@ class HindsightRelabeler:
 
         # Sample real experiences
         for _ in range(n_real):
-            episode = episodes[torch.randint(len(episodes), (1,)).item()]
-            transition = episode[torch.randint(len(episode), (1,)).item()]
+            episode_idx = int(torch.randint(len(episodes), (1,)).item())
+            episode = episodes[episode_idx]
+            transition_idx = int(torch.randint(len(episode), (1,)).item())
+            transition = episode[transition_idx]
             batch.append(transition)
 
         # Sample hindsight experiences
         for _ in range(n_hindsight):
-            episode = episodes[torch.randint(len(episodes), (1,)).item()]
+            episode_idx_h = int(torch.randint(len(episodes), (1,)).item())
+            episode = episodes[episode_idx_h]
             # Relabel this episode
             hindsight_transitions = self.relabel_episode(episode)
             # Sample from hindsight (skip originals)
@@ -324,7 +339,8 @@ class HindsightRelabeler:
                 if not any(torch.equal(t.goal, orig.goal) for orig in episode)
             ]
             if len(hindsight_only) > 0:
-                transition = hindsight_only[torch.randint(len(hindsight_only), (1,)).item()]
+                hindsight_idx = int(torch.randint(len(hindsight_only), (1,)).item())
+                transition = hindsight_only[hindsight_idx]
                 batch.append(transition)
 
         return batch

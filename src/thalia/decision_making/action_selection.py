@@ -205,9 +205,10 @@ class ActionSelector:
             logits = net_votes / self.config.temperature
             probabilities = torch.softmax(logits, dim=0)
             action = int(torch.multinomial(probabilities, num_samples=1).item())
-            is_exploring: bool = bool(
+            exploring_flag: bool = bool(
                 (probabilities.max() < 0.99).item()
             )  # Consider high-confidence as exploitation
+            is_exploring = exploring_flag
 
         # Update statistics
         self.action_counts[action] += 1

@@ -127,7 +127,10 @@ Date: December 2025
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from thalia.core.component_state import NeuralComponentState
 
 # =============================================================================
 # Validation Control
@@ -219,6 +222,10 @@ class NeuromodulatorMixin:
 
     These are initialized in NeuralComponentState (base.py).
     """
+
+    # Type annotation for state (must be provided by implementing class)
+    if TYPE_CHECKING:
+        state: NeuralComponentState
 
     # Default time constants (can be overridden in subclasses)
     DEFAULT_DOPAMINE_TAU_MS: float = 200.0
@@ -353,15 +360,15 @@ class NeuromodulatorMixin:
             Modulated learning rate
         """
         if base_lr is None:
-            base_lr = getattr(self, "base_learning_rate", 0.01)
+            base_lr = float(getattr(self, "base_learning_rate", 0.01))
 
         modulation = 1.0 + dopamine_sensitivity * self.state.dopamine
         # Clamp to non-negative (can't have negative learning rate)
         modulation = max(0.0, modulation)
 
-        return float(base_lr * modulation)
+        return base_lr * modulation
 
-    def get_neuromodulator_state(self) -> dict:
+    def get_neuromodulator_state(self) -> dict[str, float]:
         """Get current neuromodulator levels for diagnostics.
 
         Returns:

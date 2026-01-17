@@ -70,8 +70,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -82,6 +83,11 @@ from thalia.constants.training import (
     CURRICULUM_DIFFICULTY_MAX,
     CURRICULUM_DIFFICULTY_MIN,
 )
+from thalia.core.errors import ConfigurationError
+
+if TYPE_CHECKING:
+    from thalia.core.dynamic_brain import DynamicBrain
+
 
 # ============================================================================
 # Data Structures
@@ -109,8 +115,6 @@ class CalibrationSample:
     def __post_init__(self):
         """Validate sample parameters."""
         if not 0 <= self.difficulty <= 1:
-            from thalia.core.errors import ConfigurationError
-
             raise ConfigurationError(f"Difficulty must be in [0, 1], got {self.difficulty}")
 
 
@@ -137,8 +141,6 @@ class CalibrationPrediction:
     def __post_init__(self):
         """Validate prediction parameters."""
         if not 0 <= self.confidence <= 1:
-            from thalia.core.errors import ConfigurationError
-
             raise ConfigurationError(f"Confidence must be in [0, 1], got {self.confidence}")
 
 
@@ -197,7 +199,7 @@ class MetacognitiveCalibrator:
     5. Periodically evaluate ECE on held-out set
 
     **Attributes**:
-        brain: Brain instance to calibrate (DynamicBrain)
+        brain: Brain instance to calibrate
         confidence_region: Brain region producing confidence (typically PFC)
         n_bins: Number of bins for ECE computation
         device: Torch device for computation
@@ -206,7 +208,7 @@ class MetacognitiveCalibrator:
 
     def __init__(
         self,
-        brain: Any,  # DynamicBrain, but use Any to avoid import
+        brain: DynamicBrain,
         confidence_region: str = "prefrontal",
         n_bins: int = 10,
         device: Optional[torch.device] = None,
@@ -214,7 +216,7 @@ class MetacognitiveCalibrator:
         """Initialize metacognitive calibrator.
 
         **Args**:
-            brain: Brain instance to calibrate (DynamicBrain)
+            brain: Brain instance to calibrate
             confidence_region: Brain region for confidence estimates
             n_bins: Number of bins for ECE computation (default 10)
             device: Torch device for computation
@@ -444,7 +446,7 @@ class MetacognitiveCalibrator:
         val_dataset = dataset[:n_val]
         train_dataset = dataset[n_val:]
 
-        history = {
+        history: dict[str, list[float]] = {
             "train_ece": [],
             "val_ece": [],
             "train_accuracy": [],
@@ -619,16 +621,10 @@ class MetacognitiveCalibrator:
             extract_confidence: Function to extract confidence from brain
             save_path: Path to save plot (optional)
         """
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("matplotlib not available, skipping plot")
-            return
-
         metrics = self.evaluate_calibration(dataset, extract_confidence)
 
         # Create figure
-        fig, ax = plt.subplots(figsize=(8, 8))
+        _fig, ax = plt.subplots(figsize=(8, 8))
 
         # Plot perfect calibration line
         ax.plot([0, 1], [0, 1], "k--", label="Perfect Calibration", linewidth=2)

@@ -618,7 +618,7 @@ class OscillatorHealthMonitor:
                 for r2 in regions[i + 1 :]:
                     region_pairs.append((r1, r2))
 
-        coherence_map = {}
+        coherence_map: dict[str, dict[str, float]] = {}
 
         for region1, region2 in region_pairs:
             if region1 not in region_phases or region2 not in region_phases:
@@ -699,7 +699,6 @@ class OscillatorHealthMonitor:
                             metrics={
                                 "coherence": coherence,
                                 "expected": min_coherence,
-                                "oscillator": osc,
                             },
                         )
                     )

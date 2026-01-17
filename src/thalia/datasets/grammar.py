@@ -89,8 +89,8 @@ class GrammarVocabulary:
             raise ValueError(f"Unsupported language: {language}")
 
         # Build word→index mapping
-        self.word2idx = {}
-        self.idx2word = {}
+        self.word2idx: dict[str, int] = {}
+        self.idx2word: dict[int, str] = {}
 
         idx = 0
         for word_list in [
@@ -297,7 +297,9 @@ class GrammarDataset:
             rule: Grammar rule that was tested
         """
         if rule is None:
-            rule = np.random.choice(self.config.rules_to_test)
+            # Cast to numpy array first to satisfy type checker
+            rules_array = np.array(self.config.rules_to_test, dtype=object)
+            rule = np.random.choice(rules_array)
 
         # Generate base phrase
         phrase_words, is_grammatical = self.rule_generators[rule]()
@@ -556,8 +558,9 @@ class GrammarDataset:
         Returns:
             results: Dict mapping rule → accuracy
         """
-        results = {}
+        results: dict[str, float] = {}
 
+        assert self.config.rules_to_test is not None, "rules_to_test must be set"
         for rule in self.config.rules_to_test:
             correct = 0
             total = 0

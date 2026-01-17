@@ -281,7 +281,7 @@ class OscillatoryPositionEncoder(nn.Module):
     ) -> torch.Tensor:
         """Sinusoidal encoding with optional spike conversion."""
         # Look up precomputed encoding
-        encoding = self.sinusoidal_pe[position_ids]  # [batch, seq, n_neurons]
+        encoding: torch.Tensor = self.sinusoidal_pe[position_ids]  # type: ignore[index]  # [batch, seq, n_neurons]
 
         if as_spikes:
             # Convert to spike patterns over time
@@ -317,10 +317,12 @@ class OscillatoryPositionEncoder(nn.Module):
                 time_phase = 2 * math.pi * t * config.dt_ms / config.theta_period_ms
 
                 # Each neuron's phase
+                preferred_phases_tensor: torch.Tensor = self.preferred_phases  # type: ignore[assignment]
+                frequency_scale_tensor: torch.Tensor = self.frequency_scale  # type: ignore[assignment]
                 neuron_phase = (
                     position_phase  # Position-dependent
-                    + self.preferred_phases  # Neuron's preferred phase
-                    + time_phase * self.frequency_scale  # Time evolution
+                    + preferred_phases_tensor  # Neuron's preferred phase
+                    + time_phase * frequency_scale_tensor  # Time evolution
                 )
 
                 # Spike probability: maximum at phase = 0
@@ -332,7 +334,7 @@ class OscillatoryPositionEncoder(nn.Module):
             return spikes
         else:
             # Return phase encoding
-            encoding = torch.cos(position_phase + self.preferred_phases)
+            encoding = torch.cos(position_phase + self.preferred_phases)  # type: ignore[operator]
             return encoding
 
     def _encode_phase_precession(
@@ -346,7 +348,7 @@ class OscillatoryPositionEncoder(nn.Module):
 
         # Distance from each neuron's field center
         positions = position_ids.float().unsqueeze(-1)  # [batch, seq, 1]
-        distance = positions - self.field_centers  # [batch, seq, n_neurons]
+        distance = positions - self.field_centers  # type: ignore[operator]  # [batch, seq, n_neurons]
 
         # Normalized position within field (-1 to 1)
         normalized_pos = distance / self.field_width
@@ -430,7 +432,7 @@ class OscillatoryPositionEncoder(nn.Module):
 
                 # Theta neurons: encode chunk
                 theta_target = chunk_idx.unsqueeze(-1) * 0.5  # Chunk-dependent phase
-                theta_diff = (theta_phase + theta_target - self.theta_phases) % (2 * math.pi)
+                theta_diff = (theta_phase + theta_target - self.theta_phases) % (2 * math.pi)  # type: ignore[operator]
                 theta_diff = torch.min(theta_diff, 2 * math.pi - theta_diff)
                 theta_prob = torch.exp(-4 * theta_diff**2)
 
@@ -438,7 +440,7 @@ class OscillatoryPositionEncoder(nn.Module):
                 gamma_target = within_chunk_pos.unsqueeze(-1) * (
                     2 * math.pi / self.gammas_per_theta
                 )
-                gamma_diff = (gamma_phase + gamma_target - self.gamma_phases) % (2 * math.pi)
+                gamma_diff = (gamma_phase + gamma_target - self.gamma_phases) % (2 * math.pi)  # type: ignore[operator]
                 gamma_diff = torch.min(gamma_diff, 2 * math.pi - gamma_diff)
                 gamma_prob = torch.exp(-4 * gamma_diff**2)
 
@@ -456,11 +458,11 @@ class OscillatoryPositionEncoder(nn.Module):
 
             # Theta encoding
             theta_target = chunk_idx.unsqueeze(-1) * 0.5
-            encoding[:, :, :n_theta] = torch.cos(theta_target - self.theta_phases)
+            encoding[:, :, :n_theta] = torch.cos(theta_target - self.theta_phases)  # type: ignore[operator]
 
             # Gamma encoding
             gamma_target = within_chunk_pos.unsqueeze(-1) * (2 * math.pi / self.gammas_per_theta)
-            encoding[:, :, n_theta:] = torch.cos(gamma_target - self.gamma_phases)
+            encoding[:, :, n_theta:] = torch.cos(gamma_target - self.gamma_phases)  # type: ignore[operator]
 
             return encoding
 
@@ -600,7 +602,7 @@ class SequenceTimer(nn.Module):
 
         Note: Oscillator phases come from Brain, not reset locally.
         """
-        self.position.zero_()
+        self.position.zero_()  # type: ignore[operator]
         self.theta_phase = 0.0
         self.gamma_phase = 0.0
 
@@ -628,19 +630,20 @@ class SequenceTimer(nn.Module):
         n_theta = self.n_neurons // 2
 
         # Theta neurons - use centralized phase
-        theta_diff = (self.theta_phase - self.neuron_phases[:n_theta]) % (2 * math.pi)
+        theta_diff = (self.theta_phase - self.neuron_phases[:n_theta]) % (2 * math.pi)  # type: ignore[index]
         theta_diff = torch.min(theta_diff, 2 * math.pi - theta_diff)
         theta_prob = torch.exp(-4 * theta_diff**2) * 0.3
 
         # Gamma neurons - use centralized phase
-        gamma_diff = (self.gamma_phase - self.neuron_phases[: self.n_neurons - n_theta]) % (
+        gamma_diff = (self.gamma_phase - self.neuron_phases[: self.n_neurons - n_theta]) % (  # type: ignore[index]
             2 * math.pi
         )
         gamma_diff = torch.min(gamma_diff, 2 * math.pi - gamma_diff)
         gamma_prob = torch.exp(-4 * gamma_diff**2) * 0.3
 
         # Generate spikes
-        device = self.neuron_phases.device
+        neuron_phases_tensor: torch.Tensor = self.neuron_phases  # type: ignore[assignment]
+        device: torch.device = neuron_phases_tensor.device
         spikes = torch.zeros(self.n_neurons, device=device)
         spikes[:n_theta] = (torch.rand(n_theta, device=device) < theta_prob).float()
         spikes[n_theta:] = (
@@ -651,12 +654,13 @@ class SequenceTimer(nn.Module):
 
     def advance_position(self) -> None:
         """Advance sequence position by one."""
-        self.position.add_(1)
+        self.position.add_(1)  # type: ignore[operator]
 
     def get_state(self) -> Dict[str, float]:
         """Get current timer state."""
+        position_tensor: torch.Tensor = self.position  # type: ignore[assignment]
         return {
             "theta_phase": self.theta_phase,
             "gamma_phase": self.gamma_phase,
-            "position": self.position.item(),
+            "position": position_tensor.item(),
         }

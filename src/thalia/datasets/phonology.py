@@ -20,10 +20,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+from scipy.stats import norm
 
 
 class Language(Enum):
@@ -449,6 +450,7 @@ class PhonologicalDataset:
         elif features.f1 is not None:
             # Vowel: encode formants as energy peaks in frequency dimension
             f1, f2 = features.f1, features.f2
+            assert f1 is not None and f2 is not None, "Formants must be set for vowels"
 
             if add_variance:
                 f1 += np.random.randn() * f1 * self.config.within_category_variance
@@ -547,6 +549,9 @@ class PhonologicalDataset:
                 )
             elif features1.f1 is not None and features2.f1 is not None:
                 # Formant continuum
+                assert (
+                    features1.f2 is not None and features2.f2 is not None
+                ), "F2 must be set if F1 is set"
                 f1 = features1.f1 + ratio * (features2.f1 - features1.f1)
                 f2 = features1.f2 + ratio * (features2.f2 - features1.f2)
                 intermediate_features = PhonemeFeatures(
@@ -705,8 +710,6 @@ class PhonologicalDataset:
         fa_rate = (false_alarms + 0.5) / (n_same + 1)
 
         # Convert to z-scores
-        from scipy.stats import norm
-
         d_prime = norm.ppf(hit_rate) - norm.ppf(fa_rate)
 
         return {
@@ -716,7 +719,7 @@ class PhonologicalDataset:
             "fa_rate": fa_rate,
         }
 
-    def get_statistics(self) -> Dict[str, any]:
+    def get_statistics(self) -> Dict[str, Any]:
         """Get cumulative performance statistics."""
         overall_accuracy = (
             self.stats["n_correct"] / self.stats["n_trials"] if self.stats["n_trials"] > 0 else 0.0

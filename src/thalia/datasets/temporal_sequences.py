@@ -91,7 +91,8 @@ class TemporalSequenceDataset:
             pattern_type: Type of pattern generated
         """
         if pattern_type is None:
-            pattern_type = np.random.choice(self.config.pattern_types)
+            pattern_array = np.array(self.config.pattern_types, dtype=object)
+            pattern_type = np.random.choice(pattern_array)
 
         # Generate base pattern
         symbol_sequence = self.pattern_generators[pattern_type]()
@@ -125,9 +126,9 @@ class TemporalSequenceDataset:
             targets: (batch_size, length, n_symbols)
             pattern_types: List of pattern types
         """
-        sequences = []
-        targets_list = []
-        pattern_types = []
+        sequences: list[torch.Tensor] = []
+        targets_list: list[torch.Tensor] = []
+        pattern_types: list[PatternType] = []
 
         if balance_patterns:
             # Generate equal numbers of each pattern
@@ -261,7 +262,7 @@ class TemporalSequenceDataset:
             # Make each symbol have consistent representation
             for t, symbol in enumerate(symbol_sequence):
                 torch.manual_seed(symbol)  # Consistent per symbol
-                encoded[t] = torch.randn(self.config.n_symbols * 2, device=self.device)
+                encoded[t] = torch.randn(self.config.n_symbols * 2, device=self.config.device)
         else:
             raise ValueError(f"Unknown encoding: {self.config.encoding}")
 

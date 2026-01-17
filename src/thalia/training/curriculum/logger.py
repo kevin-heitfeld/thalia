@@ -653,14 +653,14 @@ class CurriculumLogger:
 
         filepath = self.log_dir / filename
 
-        session_data = {
+        session_data: dict[str, Any] = {
             "session_start_time": self.session_start_time,
             "session_duration_hours": (time.time() - self.session_start_time) / 3600,
             "stages": {},
         }
 
         for stage, stage_log in self.stage_logs.items():
-            session_data["stages"][str(stage)] = {
+            session_data["stages"][str(stage)] = {  # type: ignore[index]
                 "start_time": stage_log.start_time,
                 "end_time": stage_log.end_time,
                 "duration_hours": stage_log.duration_hours(),

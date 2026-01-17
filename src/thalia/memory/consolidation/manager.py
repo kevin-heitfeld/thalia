@@ -102,6 +102,9 @@ class ConsolidationManager:
             if l23 is not None and l5 is not None:
                 cortex_out = torch.cat([l23, l5], dim=-1)  # Concatenate L23+L5
         if cortex_out is None:
+            assert (
+                self._cortex_output_size is not None
+            ), "Cortex output size must be set via set_cortex_output_size()"
             cortex_out = torch.zeros(1, self._cortex_output_size, device=self.config.device)
 
         hippo_out = (
@@ -110,10 +113,12 @@ class ConsolidationManager:
             else None
         )
         if hippo_out is None:
+            assert self._hippo_size is not None, "Hippocampus size not set"
             hippo_out = torch.zeros(1, self._hippo_size, device=self.config.device)
 
         pfc_out = self.pfc.state.spikes if hasattr(self.pfc, "state") and self.pfc.state else None
         if pfc_out is None:
+            assert self._pfc_size is not None, "PFC size not set"
             pfc_out = torch.zeros(1, self._pfc_size, device=self.config.device)
 
         combined_state = torch.cat(
@@ -259,22 +264,24 @@ class ConsolidationManager:
         # Handle both dict and dataclass (Episode) formats
         if hasattr(experience, "action"):
             # Dataclass format (Episode)
-            action = experience.action
-            reward = experience.reward
-            state = experience.state
+            action = getattr(experience, "action")
+            reward = float(getattr(experience, "reward"))
+            state = getattr(experience, "state")
         else:
             # Dict format
-            action = experience.get("action", None)
-            reward = experience.get("reward", 0.0)
-            state = experience.get("state", None)
+            action = experience.get("action", None)  # type: ignore[union-attr]
+            reward = experience.get("reward", 0.0)  # type: ignore[union-attr]
+            state = experience.get("state", None)  # type: ignore[union-attr]
 
         if action is None or state is None:
             return
 
         # Reconstruct state components
+        assert self._cortex_output_size is not None, "Cortex output size must be set"
+        assert self._hippo_size is not None, "Hippocampus size not set"
+        assert self._pfc_size is not None, "PFC size not set"
         cortex_size = self._cortex_output_size  # Full cortex output (L23+L5)
         hippo_size = self._hippo_size
-        _ = self._pfc_size  # Kept for reference
 
         cortex_state = state[:cortex_size]
         hippo_state = state[cortex_size : cortex_size + hippo_size]
