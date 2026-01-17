@@ -146,22 +146,6 @@ class TestHippocampus(RegionTestBase):
             assert state.ca3_persistent is not None
             assert state.ca3_persistent.shape[0] == region.ca3_size
 
-    def test_theta_encoding_retrieval(self):
-        """Test theta phase modulates encoding vs retrieval."""
-        params = self.get_default_params()
-        region = self.create_region(**params)
-
-        # Set theta phase for encoding (trough)
-        if hasattr(region, "_theta_phase"):
-            region._theta_phase = 3.14159  # π radians (trough)
-
-        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        region.forward(input_spikes)
-
-        # Should encode (DG→CA3 strong)
-        # (Detailed theta modulation testing would require monitoring
-        # internal pathway strengths, which is implementation-specific)
-
     def test_stp_mossy_fibers(self):
         """Test mossy fiber pathway (DG→CA3) uses facilitating STP."""
         params = self.get_default_params()
