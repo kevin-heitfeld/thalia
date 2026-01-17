@@ -100,7 +100,7 @@ class PerformanceProfiler:
         Args:
             window_size: Number of samples to keep for moving averages
         """
-        self.window_size = window_size
+        self.window_size: int = window_size
 
         # Timing buffers (circular buffers for efficiency)
         self.forward_times: deque = deque(maxlen=window_size)
@@ -120,6 +120,7 @@ class PerformanceProfiler:
         self._forward_start: Optional[float] = None
         self._region_start: Optional[float] = None
         self._current_region: Optional[str] = None
+        self._step_start: Optional[float] = None
         self._last_step_time: float = time.time()
         self._total_steps: int = 0
 
@@ -146,7 +147,7 @@ class PerformanceProfiler:
 
         Call this before processing a sample.
         """
-        self._step_start: Optional[float] = time.time()
+        self._step_start = time.time()
 
     def end_step(self) -> None:
         """End timing a training step.

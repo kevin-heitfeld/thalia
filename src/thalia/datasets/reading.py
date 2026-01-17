@@ -92,10 +92,11 @@ class ReadingVocabulary:
         self.idx2word = {idx: word for word, idx in self.word2idx.items()}
 
         # Phoneme inventory
-        self.phonemes = set()
+        self.phonemes: list = []
+        phonemes_set = set()
         for phoneme_list in self.all_words.values():
-            self.phonemes.update(phoneme_list)
-        self.phonemes = sorted(list(self.phonemes))
+            phonemes_set.update(phoneme_list)
+        self.phonemes = sorted(list(phonemes_set))
 
         self.phoneme2idx = {p: idx for idx, p in enumerate(self.phonemes)}
         self.idx2phoneme = {idx: p for p, idx in self.phoneme2idx.items()}

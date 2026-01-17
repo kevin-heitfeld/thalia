@@ -296,12 +296,12 @@ def get_precision_statistics(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Statistics dict with counts and sizes by precision
     """
-    stats = {
-        "fp32": {"count": 0, "bytes": 0},
-        "fp16": {"count": 0, "bytes": 0},
-        "fp64": {"count": 0, "bytes": 0},
-        "int": {"count": 0, "bytes": 0},
-        "other": {"count": 0, "bytes": 0},
+    stats: Dict[str, Dict[str, float]] = {
+        "fp32": {"count": 0.0, "bytes": 0.0},
+        "fp16": {"count": 0.0, "bytes": 0.0},
+        "fp64": {"count": 0.0, "bytes": 0.0},
+        "int": {"count": 0.0, "bytes": 0.0},
+        "other": {"count": 0.0, "bytes": 0.0},
     }
 
     def _count_recursive(obj: Any) -> None:

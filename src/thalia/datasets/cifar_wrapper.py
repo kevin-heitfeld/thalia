@@ -367,7 +367,7 @@ class CIFARForThalia:
             total_possible += spikes.numel()
 
         mean_firing_rate = total_spikes / total_possible if total_possible > 0 else 0.0
-        sparsity = 1.0 - mean_firing_rate
+        sparsity: float = 1.0 - mean_firing_rate
 
         return {
             "mean_firing_rate": mean_firing_rate,
