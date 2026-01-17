@@ -91,10 +91,6 @@ Date: December 12, 2025 (Tier 3 Implementation)
 
 from __future__ import annotations
 
-from .ablation import (
-    ablate_pathway,
-    restore_pathway,
-)
 from .growth import (
     add_region_to_trained_brain,
 )
@@ -117,9 +113,6 @@ __all__ = [
     "partial_lesion",
     "temporary_lesion",
     "restore_region",
-    # Ablation operations
-    "ablate_pathway",
-    "restore_pathway",
     # Plasticity control
     "freeze_region",
     "unfreeze_region",

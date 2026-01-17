@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from tests.utils import create_test_brain
 from thalia.coordination.growth import GrowthCoordinator
 
 
@@ -34,8 +35,6 @@ def test_coordinate_growth_missing_region():
 
 def test_state_persistence():
     """Growth coordinator should support checkpointing with real brain components."""
-    from tests.utils import create_test_brain
-
     # Create small real brain
     brain = create_test_brain(
         input_size=10,
@@ -113,8 +112,6 @@ def test_coordinate_growth_with_real_brain():
 
     Cortex uses grow_output() API for growth (not a separate growth_manager).
     """
-    from tests.utils import create_test_brain
-
     # Create small real brain
     brain = create_test_brain(
         input_size=10,

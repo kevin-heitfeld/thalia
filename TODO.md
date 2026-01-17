@@ -58,26 +58,35 @@
 
 ---
 
-### **Category 3: Ablation Surgery Compatibility Shim**
+### **Category 3: Ablation Surgery Compatibility Shim** ✅ **COMPLETE**
 
-**Affected File:**
-ablation.py (lines 30-75)
+**Status**: Removed ablate_pathway() and restore_pathway() functions, replaced with documentation
 
-**Issue:** The `ablate_pathway()` function contains extensive documentation and error handling for "v3.0 architecture" (AxonalProjection), but immediately raises `NotImplementedError` for the only pathway type currently in use.
+**Completed Actions:**
+- ✅ Removed `ablate_pathway()` function (lines 26-84)
+- ✅ Removed `restore_pathway()` function (lines 87-115)
+- ✅ Removed helper functions: `_save_ablation_state()`
+- ✅ Kept `_get_pathway()` helper (may be used elsewhere)
+- ✅ Removed 3 tests from test_surgery.py
+- ✅ Updated surgery/__init__.py to remove exports
+- ✅ Replaced module with documentation pointing to alternatives
+- ✅ All surgery tests passing (9/9)
 
-**Current Code:**
-```python
-def ablate_pathway(...):
-    """...extensive v3.0 documentation..."""
-    # Check if pathway has learnable parameters
-    if not has_learnable_params:
-        raise NotImplementedError(
-            f"Cannot ablate routing pathway '{pathway_name}'..."
-        )
-```
+**Files Modified:**
+- src/thalia/surgery/ablation.py (now documentation-only)
+- src/thalia/surgery/__init__.py (removed imports/exports)
+- tests/unit/test_surgery.py (removed 3 tests)
 
-**Recommended Action:**
-- Remove `ablate_pathway()` entirely or mark as deprecated
+**Impact**: ~150 lines removed, tests simplified
+
+**Alternatives Documented:**
+1. `lesion_region(brain, "source_name")` - silence source region
+2. `brain.components["target"].synaptic_weights["source"].zero_()` - zero weights at target
+3. `del brain.connections[("source", "target")]` - remove pathway from connections
+
+---
+
+### **Category 2: Curriculum Backward Compatibility Checks**
 - Document recommended approach: use `lesion_region()` or manually zero weights
 - If kept, drastically simplify documentation
 

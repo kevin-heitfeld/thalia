@@ -8,12 +8,11 @@ import pytest
 import torch
 
 from tests.utils import create_test_brain
+from thalia.core.dynamic_brain import DynamicBrain
 from thalia.surgery import (
-    ablate_pathway,
     freeze_region,
     lesion_region,
     partial_lesion,
-    restore_pathway,
     restore_region,
     temporary_lesion,
     unfreeze_region,
@@ -21,7 +20,7 @@ from thalia.surgery import (
 
 
 @pytest.fixture
-def test_brain():
+def test_brain() -> "DynamicBrain":
     """Create minimal brain for testing."""
     return create_test_brain(
         input_size=10,
@@ -33,7 +32,7 @@ def test_brain():
     )
 
 
-def test_lesion_region_silences_region(test_brain):
+def test_lesion_region_silences_region(test_brain: "DynamicBrain"):
     """Test complete region lesion."""
     # Lesion hippocampus
     lesion_region(test_brain, "hippocampus")
@@ -47,7 +46,7 @@ def test_lesion_region_silences_region(test_brain):
     assert test_brain.components["hippocampus"].plasticity_enabled is False
 
 
-def test_lesion_region_alternate_names(test_brain):
+def test_lesion_region_alternate_names(test_brain: "DynamicBrain"):
     """Test lesion with alternate region names."""
     # Should work with both names
     lesion_region(test_brain, "pfc")
@@ -59,7 +58,7 @@ def test_lesion_region_alternate_names(test_brain):
     assert test_brain.components["pfc"].plasticity_enabled is False
 
 
-def test_partial_lesion(test_brain):
+def test_partial_lesion(test_brain: "DynamicBrain"):
     """Test partial region lesion."""
     # Lesion 30% of cortex
     partial_lesion(test_brain, "cortex", lesion_fraction=0.3)
@@ -74,7 +73,7 @@ def test_partial_lesion(test_brain):
     assert has_nonzero, "All weights zeroed (should be partial)"
 
 
-def test_temporary_lesion(test_brain):
+def test_temporary_lesion(test_brain: "DynamicBrain"):
     """Test temporary lesion with context manager."""
     # Save initial state
     initial_weights = list(test_brain.components["striatum"].parameters())[0].data.clone()
@@ -90,7 +89,7 @@ def test_temporary_lesion(test_brain):
     assert torch.allclose(restored_weights, initial_weights, atol=1e-6)
 
 
-def test_restore_region(test_brain):
+def test_restore_region(test_brain: "DynamicBrain"):
     """Test region restoration after lesion."""
     # Save initial weights
     initial_weights = {
@@ -112,60 +111,13 @@ def test_restore_region(test_brain):
             ), f"{name} not restored"
 
 
-def test_restore_without_lesion_raises(test_brain):
+def test_restore_without_lesion_raises(test_brain: "DynamicBrain"):
     """Test restore fails if no lesion was saved."""
     with pytest.raises(ValueError, match="No saved state"):
         restore_region(test_brain, "thalamus")
 
 
-def test_ablate_pathway(test_brain):
-    """Test pathway ablation.
-
-    NOTE: This test expects NotImplementedError because current v3.0 architecture
-    uses routing pathways (AxonalProjection) with no weights to ablate.
-    """
-    # All pathways in test_brain are AxonalProjection (routing only)
-    with pytest.raises(NotImplementedError, match="Cannot ablate routing pathway"):
-        ablate_pathway(test_brain, "cortex_to_hippocampus")
-
-
-def test_restore_pathway(test_brain):
-    """Test pathway restoration.
-
-    Note: v3.0 architecture uses routing pathways (AxonalProjection) with no weights,
-    so ablate/restore operations are not applicable. Test now expects NotImplementedError.
-    """
-    pathway_name = "cortex_to_pfc"
-    pathway = test_brain.connections[("cortex", "pfc")]
-
-    # Check if pathway has learnable parameters
-    has_learnable_params = any(p.requires_grad for p in pathway.parameters())
-
-    if not has_learnable_params:
-        # Routing pathway - ablate should raise NotImplementedError
-        with pytest.raises(NotImplementedError, match="Cannot ablate routing pathway"):
-            ablate_pathway(test_brain, pathway_name)
-        # Can't test restore if ablate doesn't work
-        return
-
-    # Weighted pathway - test ablate/restore
-    initial_weights = {name: param.data.clone() for name, param in pathway.named_parameters()}
-
-    # Ablate and restore
-    ablate_pathway(test_brain, pathway_name)
-    restore_pathway(test_brain, pathway_name)
-
-    # Check restored
-    for name, param in pathway.named_parameters():
-        if name in initial_weights:
-            assert torch.allclose(
-                param.data,
-                initial_weights[name],
-                atol=1e-6,
-            )
-
-
-def test_freeze_region(test_brain):
+def test_freeze_region(test_brain: "DynamicBrain"):
     """Test freezing region plasticity."""
     freeze_region(test_brain, "cortex")
 
@@ -177,7 +129,7 @@ def test_freeze_region(test_brain):
         assert param.requires_grad is False
 
 
-def test_unfreeze_region(test_brain):
+def test_unfreeze_region(test_brain: "DynamicBrain"):
     """Test unfreezing region plasticity."""
     freeze_region(test_brain, "hippocampus")
     unfreeze_region(test_brain, "hippocampus")
@@ -190,13 +142,7 @@ def test_unfreeze_region(test_brain):
         assert param.requires_grad is True
 
 
-def test_lesion_invalid_region_raises(test_brain):
+def test_lesion_invalid_region_raises(test_brain: "DynamicBrain"):
     """Test lesion with invalid region name."""
     with pytest.raises(ValueError, match="Unknown region"):
         lesion_region(test_brain, "invalid_region")
-
-
-def test_ablate_invalid_pathway_raises(test_brain):
-    """Test ablation with invalid pathway name."""
-    with pytest.raises(ValueError, match="Unknown pathway"):
-        ablate_pathway(test_brain, "invalid_pathway")

@@ -18,9 +18,6 @@ Usage:
     # Generate random weight matrix with optional sparsity
     weights = generate_random_weights(64, 128, scale=0.3, sparsity=0.2)
 
-    # Create minimal test brain
-    brain = create_test_brain(regions=["thalamus", "cortex", "hippocampus"])
-
     # Create custom config
     config = create_minimal_thalia_config(input_size=64, cortex_size=128)
 
@@ -198,16 +195,13 @@ def create_minimal_thalia_config(
     return config
 
 
-def create_test_brain(
-    regions: Optional[List[str]] = None, device: str = "cpu", **config_overrides
-) -> "DynamicBrain":
+def create_test_brain(device: str = "cpu", **config_overrides) -> "DynamicBrain":
     """Create minimal DynamicBrain for testing.
 
     Convenience wrapper that creates a ThaliaConfig and DynamicBrain in one call.
     Useful for integration tests that need a functioning brain without custom setup.
 
     Args:
-        regions: List of region names to include (None = all regions)
         device: Device for computations
         **config_overrides: Parameters passed to create_minimal_thalia_config()
 
@@ -215,7 +209,6 @@ def create_test_brain(
         Initialized DynamicBrain instance
 
     Example:
-        >>> brain = create_test_brain(regions=["thalamus", "cortex"])
         >>> brain = create_test_brain(input_size=64, cortex_size=128)
         >>> brain = create_test_brain(device="cuda" if torch.cuda.is_available() else "cpu")
     """
