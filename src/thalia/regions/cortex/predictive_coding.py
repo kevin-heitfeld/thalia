@@ -121,7 +121,6 @@ class PredictiveCodingConfig:
 
         # Architecture choices
         error_type: How errors are represented (separate +/- or signed)
-        use_spiking: Whether to use spiking neurons (vs rate-based)
         sparse_coding: Apply sparsity constraint on representations
         sparsity_target: Target activation fraction if sparse_coding=True
 
@@ -153,7 +152,6 @@ class PredictiveCodingConfig:
 
     # Architecture
     error_type: ErrorType = ErrorType.SIGNED
-    use_spiking: bool = True
     sparse_coding: bool = True
     sparsity_target: float = 0.1
 
@@ -266,29 +264,25 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         #   - inhibition from prediction
         # Net activity = error signal
 
-        self.error_neurons: Optional[ConductanceLIF] = None
-        self.prediction_neurons: Optional[ConductanceLIF] = None
+        # Spiking error neurons (fast dynamics)
+        error_config = ConductanceLIFConfig(
+            g_L=1.0 / config.error_tau_ms,  # Convert tau to conductance
+            tau_E=5.0,  # Fast excitatory
+            tau_I=10.0,  # Fast inhibitory
+            v_threshold=0.5,  # Lower threshold for sensitive error detection
+            dt_ms=config.dt_ms,
+        )
+        self.error_neurons = ConductanceLIF(config.n_input, error_config, device=device)
 
-        if config.use_spiking:
-            # Spiking error neurons (fast dynamics)
-            error_config = ConductanceLIFConfig(
-                g_L=1.0 / config.error_tau_ms,  # Convert tau to conductance
-                tau_E=5.0,  # Fast excitatory
-                tau_I=10.0,  # Fast inhibitory
-                v_threshold=0.5,  # Lower threshold for sensitive error detection
-                dt_ms=config.dt_ms,
-            )
-            self.error_neurons = ConductanceLIF(config.n_input, error_config, device=device)
-
-            # Spiking prediction neurons (slow dynamics)
-            pred_config = ConductanceLIFConfig(
-                g_L=1.0 / config.prediction_tau_ms,  # Convert tau to conductance
-                tau_E=10.0,  # Slower excitatory for temporal integration
-                tau_I=15.0,
-                v_threshold=1.0,
-                dt_ms=config.dt_ms,
-            )
-            self.prediction_neurons = ConductanceLIF(config.n_input, pred_config, device=device)
+        # Spiking prediction neurons (slow dynamics)
+        pred_config = ConductanceLIFConfig(
+            g_L=1.0 / config.prediction_tau_ms,  # Convert tau to conductance
+            tau_E=10.0,  # Slower excitatory for temporal integration
+            tau_I=15.0,
+            v_threshold=1.0,
+            dt_ms=config.dt_ms,
+        )
+        self.prediction_neurons = ConductanceLIF(config.n_input, pred_config, device=device)
 
         # =================================================================
         # PRECISION (attention/confidence weighting)
@@ -378,9 +372,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         self._error_history.clear()
         self._timestep_counter = 0
 
-        if self.config.use_spiking:
-            self.error_neurons.reset_state()
-            self.prediction_neurons.reset_state()
+        # Reset spiking neurons
+        self.error_neurons.reset_state()
+        self.prediction_neurons.reset_state()
 
     def get_state(self) -> Dict[str, Any]:
         """Get state for checkpointing."""
@@ -434,13 +428,10 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Linear prediction (can be made nonlinear if needed)
         prediction = F.linear(representation, self.W_pred, self.b_pred)
 
-        if self.config.use_spiking:
-            # Convert to conductance and get spikes (ConductanceLIF expects g_exc)
-            pred_g_exc = F.relu(prediction)  # Clamp to positive conductance
-            pred_spikes, pred_membrane = self.prediction_neurons(pred_g_exc, g_inh_input=None)
-            return pred_membrane  # type: ignore[no-any-return]  # Use membrane potential as analog prediction
-        else:
-            return prediction
+        # Convert to conductance and get spikes (ConductanceLIF expects g_exc)
+        pred_g_exc = F.relu(prediction)  # Clamp to positive conductance
+        pred_spikes, pred_membrane = self.prediction_neurons(pred_g_exc, g_inh_input=None)
+        return pred_membrane  # type: ignore[no-any-return]  # Use membrane potential as analog prediction
 
     def compute_error(
         self,
@@ -466,21 +457,18 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Raw error
         raw_error = actual - predicted
 
-        if self.config.use_spiking:
-            # Error neurons: convert signed error to separate E/I conductances
-            # Positive error → excitation, negative error → inhibition
-            if self.config.error_type == ErrorType.SIGNED:
-                # Split signed error into excitatory (positive) and inhibitory (negative)
-                error_g_exc = F.relu(raw_error)  # Positive errors
-                error_g_inh = F.relu(-raw_error)  # Negative errors (flipped)
-                error_spikes, error_membrane = self.error_neurons(error_g_exc, error_g_inh)
-                error = error_membrane
-            else:
-                # Two populations: E+ for positive, E- for negative
-                # Not implemented for simplicity, but would double neurons
-                raise NotImplementedError("Separate E+/E- populations not yet implemented")
+        # Error neurons: convert signed error to separate E/I conductances
+        # Positive error → excitation, negative error → inhibition
+        if self.config.error_type == ErrorType.SIGNED:
+            # Split signed error into excitatory (positive) and inhibitory (negative)
+            error_g_exc = F.relu(raw_error)  # Positive errors
+            error_g_inh = F.relu(-raw_error)  # Negative errors (flipped)
+            error_spikes, error_membrane = self.error_neurons(error_g_exc, error_g_inh)
+            error = error_membrane
         else:
-            error = raw_error
+            # Two populations: E+ for positive, E- for negative
+            # Not implemented for simplicity, but would double neurons
+            raise NotImplementedError("Separate E+/E- populations not yet implemented")
 
         # Apply precision weighting (high precision = amplify error)
         precision_weighted_error = error * self.precision

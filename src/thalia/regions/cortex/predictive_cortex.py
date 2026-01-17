@@ -352,7 +352,6 @@ class PredictiveCortex(NeuralRegion):
         l5_size = sizes["l5_size"]
         l6a_size = sizes["l6a_size"]
         l6b_size = sizes["l6b_size"]
-        input_size = sizes.get("input_size", 0)
 
         l6_total = l6a_size + l6b_size  # Total L6 size
 
@@ -417,7 +416,6 @@ class PredictiveCortex(NeuralRegion):
                     learning_rate=config.prediction_learning_rate,
                     initial_precision=config.initial_precision,
                     precision_learning_rate=config.precision_learning_rate,
-                    use_spiking=True,
                     device=device,  # Use device argument, not config.device string
                 )
             )
@@ -640,7 +638,6 @@ class PredictiveCortex(NeuralRegion):
                     learning_rate=self.config.prediction_learning_rate,
                     initial_precision=self.config.initial_precision,
                     precision_learning_rate=self.config.precision_learning_rate,
-                    use_spiking=True,
                     device=str(self.device),
                 )
             )
@@ -743,8 +740,16 @@ class PredictiveCortex(NeuralRegion):
             # NOTE: top_down is for L2/3 modulation, NOT for L4 prediction
             # Convert bool spikes to float for prediction layer (ADR-004)
             # Check for None before calling float()
-            l5_float = l5_output.float() if l5_output is not None else torch.zeros(self.l5_size, device=self.device)
-            l6_float = l6_output.float() if l6_output is not None else torch.zeros(self.l6_size, device=self.device)
+            l5_float = (
+                l5_output.float()
+                if l5_output is not None
+                else torch.zeros(self.l5_size, device=self.device)
+            )
+            l6_float = (
+                l6_output.float()
+                if l6_output is not None
+                else torch.zeros(self.l6_size, device=self.device)
+            )
             combined_representation = torch.cat(
                 [
                     l5_float,
@@ -753,7 +758,11 @@ class PredictiveCortex(NeuralRegion):
                 dim=-1,
             )
             error, prediction, _ = self.prediction_layer(
-                actual_input=l4_output.float() if l4_output is not None else torch.zeros(self.l4_size, device=self.device),
+                actual_input=(
+                    l4_output.float()
+                    if l4_output is not None
+                    else torch.zeros(self.l4_size, device=self.device)
+                ),
                 representation=combined_representation,
                 top_down_prediction=None,  # L5+L6→L4 prediction is generated internally
             )
