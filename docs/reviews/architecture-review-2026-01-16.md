@@ -669,7 +669,13 @@ All test fixtures created and adopted. Additionally, the legacy `from_thalia_con
 - ✅ Removed `DynamicBrain.from_thalia_config()` method (~120 lines)
 - ✅ Removed test class `TestThaliaConfigCompatibility` (2 tests, ~70 lines)
 - ✅ Updated all documentation examples to use `BrainBuilder.preset()`
-- ✅ Total additional cleanup: ~190 lines of legacy code eliminated
+- ✅ **Removed deprecated STP fields from Striatum** (~20 lines)
+- ✅ **Removed `DiagnosticsDict` type alias** (~15 lines + type hint updates)
+- ✅ Total additional cleanup: ~225 lines of legacy code eliminated
+
+**Backward Compatibility Breaking Changes**:
+- Old striatum checkpoints with single STP modules no longer loadable (use per-source `stp_modules_state`)
+- Code using `DiagnosticsDict` type must use `Dict[str, Any]` or specific TypedDict subclasses
 
 **Modern Brain Construction**:
 ```python
