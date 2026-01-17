@@ -15,10 +15,6 @@ Date: December 12, 2025
 
 from __future__ import annotations
 
-from thalia.constants.training import (
-    AttentionStage,
-    get_attention_weights,
-)
 from thalia.training.curriculum.curriculum import (
     CurriculumDifficultyCalibrator,
     DifficultyCalibratorConfig,
@@ -79,9 +75,6 @@ from thalia.training.curriculum.stage_monitoring import (
 )
 
 __all__ = [
-    # Constants (NEW)
-    "AttentionStage",
-    "get_attention_weights",
     # Curriculum mechanics
     "InterleavedCurriculumSampler",
     "InterleavedCurriculumSamplerConfig",

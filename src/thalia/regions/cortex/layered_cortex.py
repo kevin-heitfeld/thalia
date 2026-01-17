@@ -128,6 +128,7 @@ from thalia.constants.architecture import (
     CORTEX_L23_DA_FRACTION,
 )
 from thalia.constants.learning import EMA_DECAY_FAST
+from thalia.constants.neuromodulation import compute_ne_gain
 from thalia.constants.oscillator import (
     L4_INPUT_ENCODING_SCALE,
     L23_RECURRENT_RETRIEVAL_SCALE,
@@ -146,7 +147,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
 )
 from thalia.learning.rules.strategies import LearningStrategy
 from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import compute_ne_gain
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.utils.core_utils import clamp_weights, ensure_1d, initialize_phase_preferences
 from thalia.utils.input_routing import InputRouter

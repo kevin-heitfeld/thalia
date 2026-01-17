@@ -104,6 +104,7 @@ from thalia.constants.architecture import (
     ACTIVITY_HISTORY_DECAY,
     ACTIVITY_HISTORY_INCREMENT,
 )
+from thalia.constants.neuromodulation import compute_ne_gain
 from thalia.constants.oscillator import (
     CA1_SPARSITY_RETRIEVAL_BOOST,
     CA3_CA1_ENCODING_SCALE,
@@ -128,7 +129,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
 )
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import compute_ne_gain
 from thalia.regions.hippocampus.hindsight_relabeling import (
     HERConfig,
     HERStrategy,

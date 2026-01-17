@@ -109,11 +109,6 @@ import torch.nn as nn
 
 from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.components.neurons import (
-    E_EXCITATORY,
-    E_INHIBITORY,
-    E_LEAK,
-    V_RESET_STANDARD,
-    V_THRESHOLD_STANDARD,
     ConductanceLIF,
     ConductanceLIFConfig,
     create_fast_spiking_neurons,
@@ -124,7 +119,18 @@ from thalia.components.synapses import (
     create_heterogeneous_stp_configs,
     get_stp_config,
 )
-from thalia.constants.neuromodulation import compute_ne_gain
+from thalia.constants.neuromodulation import (
+    ACH_BASELINE,
+    NE_BASELINE,
+    compute_ne_gain,
+)
+from thalia.constants.neuron import (
+    E_EXCITATORY,
+    E_INHIBITORY,
+    E_LEAK,
+    V_RESET_STANDARD,
+    V_THRESHOLD_STANDARD,
+)
 from thalia.core.diagnostics_schema import (
     compute_activity_metrics,
     compute_health_metrics,
@@ -133,7 +139,6 @@ from thalia.core.diagnostics_schema import (
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
 from thalia.regions.striatum.exploration import ExplorationConfig
 from thalia.typing import SourceOutputs, StateDict
 from thalia.utils.core_utils import clamp_weights

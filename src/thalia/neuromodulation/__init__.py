@@ -3,21 +3,12 @@ Neuromodulation systems and management.
 
 This module provides neuromodulator systems (VTA, locus coeruleus, nucleus basalis)
 and management infrastructure for global neuromodulatory signals.
+
+NOTE: Import constants directly from thalia.constants.neuromodulation.
 """
 
 from __future__ import annotations
 
-from thalia.constants.neuromodulation import (
-    ACH_BASELINE,
-    DA_BASELINE_STANDARD,
-    DA_BASELINE_STRIATUM,
-    NE_BASELINE,
-    NE_GAIN_MAX,
-    NE_GAIN_MIN,
-    compute_ne_gain,
-    decay_constant_to_tau,
-    tau_to_decay_constant,
-)
 from thalia.neuromodulation.homeostasis import (
     NeuromodulatorHomeostasis,
     NeuromodulatorHomeostasisConfig,
@@ -54,15 +45,4 @@ __all__ = [
     "NeuromodulatorHomeostasisConfig",
     "NeuromodulatorManager",
     "NeuromodulatorMixin",
-    # Constants
-    "ACH_BASELINE",
-    "DA_BASELINE_STANDARD",
-    "DA_BASELINE_STRIATUM",
-    "NE_BASELINE",
-    "NE_GAIN_MIN",
-    "NE_GAIN_MAX",
-    # Helper functions
-    "compute_ne_gain",
-    "decay_constant_to_tau",
-    "tau_to_decay_constant",
 ]

@@ -71,6 +71,7 @@ import torch.nn as nn
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
 from thalia.constants.learning import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
+from thalia.constants.neuromodulation import DA_BASELINE_STANDARD, compute_ne_gain
 from thalia.constants.oscillator import (
     PFC_FEEDFORWARD_GAIN_MIN,
     PFC_FEEDFORWARD_GAIN_RANGE,
@@ -87,7 +88,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasisConfig,
 )
 from thalia.managers.component_registry import register_region
-from thalia.neuromodulation import DA_BASELINE_STANDARD, compute_ne_gain
 from thalia.regions.prefrontal.checkpoint_manager import PrefrontalCheckpointManager
 from thalia.regions.prefrontal.hierarchy import (
     Goal,
