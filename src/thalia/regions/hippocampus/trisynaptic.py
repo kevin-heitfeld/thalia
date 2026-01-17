@@ -544,7 +544,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.her_integration = None
 
         # State
-        self.state = HippocampusState()
+        self.state: HippocampusState = HippocampusState()
 
         # =========================================================================
         # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)

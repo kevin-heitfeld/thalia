@@ -727,7 +727,7 @@ class Prefrontal(NeuralRegion):
         self._current_training_step = 0  # Updated externally by training loop
 
         # Initialize working memory state (1D tensors, ADR-005)
-        self.state = PrefrontalState(
+        self.state: PrefrontalState = PrefrontalState(
             working_memory=torch.zeros(self.n_neurons, device=self.device),
             update_gate=torch.zeros(self.n_neurons, device=self.device),
             dopamine=config.dopamine_baseline,

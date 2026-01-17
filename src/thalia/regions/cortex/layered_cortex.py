@@ -360,7 +360,7 @@ class LayeredCortex(NeuralRegion):
             self.bcm_l6b = None
 
         # State
-        self.state = LayeredCortexState()
+        self.state: LayeredCortexState = LayeredCortexState()
 
         # Theta phase for encoding/retrieval modulation
         self._theta_phase = 0.0

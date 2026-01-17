@@ -581,7 +581,7 @@ class ThalamicRelay(NeuralRegion):
         # =====================================================================
         # STATE
         # =====================================================================
-        self.state = ThalamicRelayState()
+        self.state: ThalamicRelayState = ThalamicRelayState()
 
         # Oscillator state (provided by brain)
         self._alpha_phase: float = 0.0

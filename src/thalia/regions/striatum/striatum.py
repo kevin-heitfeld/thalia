@@ -672,7 +672,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # STATE OBJECT - Required for NeuromodulatorMixin
         # =====================================================================
         # Initialize state object with neuromodulator fields
-        self.state = StriatumState(
+        self.state: StriatumState = StriatumState(
             dopamine=self.config.tonic_dopamine,
             acetylcholine=ACH_BASELINE,
             norepinephrine=NE_BASELINE,
