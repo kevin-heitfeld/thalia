@@ -41,7 +41,7 @@ Usage Example:
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Generic, Optional, TypeVar
 
 import torch
@@ -73,11 +73,7 @@ class ManagerContext:
     n_input: Optional[int] = None
     n_output: Optional[int] = None
     dt_ms: float = 1.0
-    metadata: Dict[str, Any] = None
-
-    def __post_init__(self):
-        if self.metadata is None:
-            self.metadata = {}
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 TConfig = TypeVar("TConfig")

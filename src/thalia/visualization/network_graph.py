@@ -243,9 +243,9 @@ def export_topology_to_graphviz(
         >>> export_topology_to_graphviz(brain, "topology.dot")
         >>> # Then render with: dot -Tpng -O topology.dot
     """
-    output_path = Path(output_path)
+    output_path_obj = Path(output_path)
 
-    with open(output_path, "w") as f:
+    with open(output_path_obj, "w") as f:
         f.write("digraph BrainTopology {\n")
         f.write("  rankdir=LR;\n")
         f.write("  node [shape=box, style=rounded];\n\n")
@@ -448,7 +448,7 @@ def _hierarchical_layout(G: Any, region_info: Dict[str, Any]) -> Dict[str, Tuple
     # Assign positions
     pos = {}
     y_spacing = HIERARCHICAL_Y_SPACING
-    max_nodes_in_layer = max(len(nodes) for nodes in layer_nodes.values())
+    _ = max(len(nodes) for nodes in layer_nodes.values())  # Kept for potential use
 
     for layer, nodes in layer_nodes.items():
         n_nodes = len(nodes)

@@ -14,7 +14,7 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
@@ -48,17 +48,11 @@ class SocialContext:
 
     cue_type: SocialCueType
     demonstration_present: bool = False
-    ostensive_cues: Dict[str, bool] = None  # eye_contact, motherese, pointing
+    ostensive_cues: Dict[str, bool] = field(
+        default_factory=lambda: {"eye_contact": False, "motherese": False, "pointing": False}
+    )
     gaze_direction: Optional[torch.Tensor] = None  # Direction vector
     shared_attention: float = 0.0  # Joint attention strength [0, 1]
-
-    def __post_init__(self):
-        if self.ostensive_cues is None:
-            self.ostensive_cues = {
-                "eye_contact": False,
-                "motherese": False,
-                "pointing": False,
-            }
 
 
 class SocialLearningModule:

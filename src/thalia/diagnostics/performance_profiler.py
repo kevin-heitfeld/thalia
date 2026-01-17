@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -84,15 +84,8 @@ class PerformanceStats:
     gpu_memory_reserved_mb: float = 0.0
     tensor_count: int = 0
     total_parameters: int = 0
-    region_times_ms: Dict[str, float] = None
-    spike_stats: Dict[str, Any] = None
-
-    def __post_init__(self):
-        """Initialize default mutable fields."""
-        if self.region_times_ms is None:
-            self.region_times_ms = {}
-        if self.spike_stats is None:
-            self.spike_stats = {}
+    region_times_ms: Dict[str, float] = field(default_factory=dict)
+    spike_stats: Dict[str, Any] = field(default_factory=dict)
 
 
 class PerformanceProfiler:
@@ -428,7 +421,7 @@ class PerformanceProfiler:
 
             # Total GPU memory (if available via nvidia-smi)
             try:
-                _total_memory = torch.cuda.get_device_properties(device_idx).total_memory
+                _ = torch.cuda.get_device_properties(device_idx).total_memory
                 used_memory = allocated  # Approximation
                 gpu_mb = used_memory
             except Exception:

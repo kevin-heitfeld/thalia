@@ -10,7 +10,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -69,6 +69,7 @@ class ConsolidationManager:
             hippocampus, "n_output", 128
         )
         self._pfc_size = getattr(config, "pfc_size", None) or getattr(pfc, "n_output", 64)
+        self._cortex_output_size: Optional[int] = None
 
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""
@@ -274,7 +275,7 @@ class ConsolidationManager:
         # Reconstruct state components
         cortex_size = self._cortex_output_size  # Full cortex output (L23+L5)
         hippo_size = self._hippo_size
-        pfc_size = self._pfc_size
+        _ = self._pfc_size  # Kept for reference
 
         cortex_state = state[:cortex_size]
         hippo_state = state[cortex_size : cortex_size + hippo_size]

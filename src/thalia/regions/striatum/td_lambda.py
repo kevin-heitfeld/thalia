@@ -475,11 +475,11 @@ def compute_n_step_return(
 
         for k in range(min(n, T - t)):
             # Add discounted reward
-            return_val += (gamma**k) * rewards[t + k]
+            return_val += (gamma**k) * float(rewards[t + k])
 
         # Add bootstrap value if episode didn't end
         if t + n < T:
-            return_val += (gamma**n) * values[t + n]
+            return_val += (gamma**n) * float(values[t + n])
 
         returns[t] = return_val
 

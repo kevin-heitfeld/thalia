@@ -15,7 +15,7 @@ Biologically relevant:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
@@ -39,14 +39,12 @@ class SequenceConfig:
 
     n_symbols: int = 5  # Number of distinct symbols
     sequence_length: int = 10  # Length of each sequence
-    pattern_types: List[PatternType] = None  # Patterns to generate
+    pattern_types: List[PatternType] = field(
+        default_factory=lambda: [PatternType.ABC, PatternType.ABA, PatternType.AAB]
+    )
     violation_probability: float = 0.1  # Probability of pattern violation
     encoding: str = "one_hot"  # "one_hot" or "distributed"
     device: torch.device = torch.device("cpu")
-
-    def __post_init__(self):
-        if self.pattern_types is None:
-            self.pattern_types = [PatternType.ABC, PatternType.ABA, PatternType.AAB]
 
 
 class TemporalSequenceDataset:
