@@ -506,4 +506,4 @@ def theta_gamma_n_back(
     task = NBackTask(prefrontal, config, n_back=n)
     results = task.run_sequence(stimulus_sequence)
 
-    return results["responses"]
+    return list(results["responses"])

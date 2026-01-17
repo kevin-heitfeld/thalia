@@ -343,7 +343,7 @@ class CIFARForThalia:
 
     def get_class_name(self, label: int) -> str:
         """Get human-readable class name."""
-        return self.classes[label]
+        return str(self.classes[label])
 
     def analyze_encoding_statistics(
         self,

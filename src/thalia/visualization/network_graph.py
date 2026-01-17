@@ -346,11 +346,11 @@ def _get_neuron_count(region: Any) -> int:
     """
     # Try various attributes
     if hasattr(region, "n_neurons"):
-        return region.n_neurons
+        return int(region.n_neurons)
     elif hasattr(region, "config") and hasattr(region.config, "n_neurons"):
-        return region.config.n_neurons
+        return int(region.config.n_neurons)
     elif hasattr(region, "membrane") and hasattr(region.membrane, "shape"):
-        return region.membrane.shape[0]
+        return int(region.membrane.shape[0])
     else:
         return 0
 

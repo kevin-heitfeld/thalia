@@ -315,7 +315,7 @@ class TemporalSequenceDataset:
         # Cross-entropy: -sum(target * log(pred))
         ce = -torch.sum(targets * torch.log(predictions), dim=-1)
 
-        return ce.mean().item()
+        return float(ce.mean().item())
 
     def analyze_pattern_learning(
         self,

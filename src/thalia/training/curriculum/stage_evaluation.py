@@ -233,7 +233,7 @@ def test_reaching_accuracy(
     """
     if hasattr(wrapper, "reaching_task"):
         stats = wrapper.reaching_task(brain, n_trials=n_trials)
-        return stats.get("success_rate", 0.0) > threshold
+        return bool(stats.get("success_rate", 0.0) > threshold)
     return True
 
 

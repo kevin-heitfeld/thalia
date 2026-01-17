@@ -710,7 +710,7 @@ class BrainComponentMixin:
     @property
     def _theta_phase(self) -> float:
         """Current theta phase in radians [0, 2π)."""
-        return getattr(self, "_oscillator_phases", {}).get("theta", 0.0)
+        return float(getattr(self, "_oscillator_phases", {}).get("theta", 0.0))
 
     @_theta_phase.setter
     def _theta_phase(self, value: float) -> None:
@@ -722,7 +722,7 @@ class BrainComponentMixin:
     @property
     def _gamma_phase(self) -> float:
         """Current gamma phase in radians [0, 2π)."""
-        return getattr(self, "_oscillator_phases", {}).get("gamma", 0.0)
+        return float(getattr(self, "_oscillator_phases", {}).get("gamma", 0.0))
 
     @_gamma_phase.setter
     def _gamma_phase(self, value: float) -> None:
@@ -734,7 +734,7 @@ class BrainComponentMixin:
     @property
     def _alpha_phase(self) -> float:
         """Current alpha phase in radians [0, 2π)."""
-        return getattr(self, "_oscillator_phases", {}).get("alpha", 0.0)
+        return float(getattr(self, "_oscillator_phases", {}).get("alpha", 0.0))
 
     @_alpha_phase.setter
     def _alpha_phase(self, value: float) -> None:
@@ -746,7 +746,7 @@ class BrainComponentMixin:
     @property
     def _beta_phase(self) -> float:
         """Current beta phase in radians [0, 2π)."""
-        return getattr(self, "_oscillator_phases", {}).get("beta", 0.0)
+        return float(getattr(self, "_oscillator_phases", {}).get("beta", 0.0))
 
     @_beta_phase.setter
     def _beta_phase(self, value: float) -> None:
@@ -758,7 +758,7 @@ class BrainComponentMixin:
     @property
     def _delta_phase(self) -> float:
         """Current delta phase in radians [0, 2π)."""
-        return getattr(self, "_oscillator_phases", {}).get("delta", 0.0)
+        return float(getattr(self, "_oscillator_phases", {}).get("delta", 0.0))
 
     @_delta_phase.setter
     def _delta_phase(self, value: float) -> None:
@@ -770,12 +770,12 @@ class BrainComponentMixin:
     @property
     def _gamma_amplitude_effective(self) -> float:
         """Effective gamma amplitude (with cross-frequency coupling)."""
-        return getattr(self, "_coupled_amplitudes", {}).get("gamma", 1.0)
+        return float(getattr(self, "_coupled_amplitudes", {}).get("gamma", 1.0))
 
     @property
     def _beta_amplitude_effective(self) -> float:
         """Effective beta amplitude (with cross-frequency coupling)."""
-        return getattr(self, "_coupled_amplitudes", {}).get("beta", 1.0)
+        return float(getattr(self, "_coupled_amplitudes", {}).get("beta", 1.0))
 
 
 # =============================================================================
@@ -972,7 +972,7 @@ class LearnableComponent(
     def n_input(self) -> int:
         """Number of input connections (convenience accessor)."""
         if hasattr(self.config, "n_input"):
-            return self.config.n_input
+            return int(self.config.n_input)
         else:
             raise AttributeError(f"{self.__class__.__name__} config has no n_input attribute")
 
@@ -980,9 +980,9 @@ class LearnableComponent(
     def n_output(self) -> int:
         """Number of output neurons (convenience accessor)."""
         if hasattr(self.config, "n_output"):
-            return self.config.n_output
+            return int(self.config.n_output)
         elif hasattr(self.config, "n_neurons"):
-            return self.config.n_neurons
+            return int(self.config.n_neurons)
         else:
             raise AttributeError(
                 f"{self.__class__.__name__} config has no n_output or n_neurons attribute"

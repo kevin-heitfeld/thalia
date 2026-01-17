@@ -2396,7 +2396,7 @@ class CurriculumTrainer:
         # Use striatum's action as prediction
         if hasattr(self.brain, "striatum"):
             action, _confidence = self.brain.select_action(explore=False)
-            return action
+            return int(action)
 
         # Fallback: use most active region
         return 0

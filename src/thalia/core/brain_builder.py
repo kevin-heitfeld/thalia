@@ -520,17 +520,17 @@ class BrainBuilder:
         if registry_name in ("cortex", "layered_cortex", "predictive_cortex"):
             # Cortex: output_size = l23_size + l5_size
             if "l23_size" in params and "l5_size" in params:
-                return params["l23_size"] + params["l5_size"]
+                return int(params["l23_size"] + params["l5_size"])
 
         elif registry_name in ("thalamus", "thalamic_relay"):
             # Thalamus: output_size = relay_size
             if "relay_size" in params:
-                return params["relay_size"]
+                return int(params["relay_size"])
 
         elif registry_name == "hippocampus":
             # Hippocampus: output_size = ca1_size
             if "ca1_size" in params:
-                return params["ca1_size"]
+                return int(params["ca1_size"])
             # If ca1_size not specified but input_size is, compute it
             elif "input_size" in params:
                 calc = LayerSizeCalculator()
@@ -540,17 +540,17 @@ class BrainBuilder:
         elif registry_name == "prefrontal":
             # Prefrontal: output_size = n_neurons (working memory neurons)
             if "n_neurons" in params:
-                return params["n_neurons"]
+                return int(params["n_neurons"])
 
         elif registry_name == "striatum":
             # Striatum: output_size = d1_size + d2_size = 2 * n_actions * neurons_per_action
             if "n_actions" in params and "neurons_per_action" in params:
-                return 2 * params["n_actions"] * params["neurons_per_action"]
+                return int(2 * params["n_actions"] * params["neurons_per_action"])
 
         elif registry_name == "cerebellum":
             # Cerebellum: output_size = purkinje_size
             if "purkinje_size" in params:
-                return params["purkinje_size"]
+                return int(params["purkinje_size"])
 
         # Could not determine output size
         return None
@@ -601,15 +601,15 @@ class BrainBuilder:
 
             # Return layer-specific size
             if source_port == "l23":
-                return l23_size
+                return int(l23_size)
             elif source_port == "l5":
-                return l5_size
+                return int(l5_size)
             elif source_port == "l4":
-                return l4_size
+                return int(l4_size)
             elif source_port == "l6a":
-                return l6a_size
+                return int(l6a_size)
             elif source_port == "l6b":
-                return l6b_size
+                return int(l6b_size)
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -644,15 +644,15 @@ class BrainBuilder:
         # Check for layer-specific outputs (cortex)
         if hasattr(source_comp, "l23_size") and hasattr(source_comp, "l5_size"):
             if source_port == "l23":
-                return source_comp.l23_size
+                return int(source_comp.l23_size)
             elif source_port == "l5":
-                return source_comp.l5_size
+                return int(source_comp.l5_size)
             elif source_port == "l4" and hasattr(source_comp, "l4_size"):
-                return source_comp.l4_size
+                return int(source_comp.l4_size)
             elif source_port == "l6a" and hasattr(source_comp, "l6a_size"):
-                return source_comp.l6a_size
+                return int(source_comp.l6a_size)
             elif source_port == "l6b" and hasattr(source_comp, "l6b_size"):
-                return source_comp.l6b_size
+                return int(source_comp.l6b_size)
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 

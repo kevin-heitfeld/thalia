@@ -224,9 +224,9 @@ def _get_region(brain: "DynamicBrain", region_name: str):
 def _get_region_size(region_impl) -> int:
     """Get number of neurons in region."""
     if hasattr(region_impl, "n_output"):
-        return region_impl.n_output
+        return int(region_impl.n_output)
     elif hasattr(region_impl, "config") and hasattr(region_impl.config, "n_output"):
-        return region_impl.config.n_output
+        return int(region_impl.config.n_output)
     else:
         raise ValueError("Cannot determine region size")
 
