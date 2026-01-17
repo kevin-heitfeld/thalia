@@ -121,6 +121,8 @@ class SparseDistributedRepresentation(nn.Module):
         self._generate_fixed_patterns()
 
         # Option 2: Learnable SDR generator
+        self.token_embedding: Optional[nn.Embedding] = None
+        self.sdr_projection: Optional[nn.Sequential] = None
         if config.learnable_embedding:
             self.token_embedding = nn.Embedding(
                 config.vocab_size,
@@ -135,9 +137,6 @@ class SparseDistributedRepresentation(nn.Module):
                 nn.GELU(),
                 nn.Linear(config.n_neurons * 2, config.n_neurons),
             )
-        else:
-            self.token_embedding = None
-            self.sdr_projection = None
 
     def _generate_fixed_patterns(self) -> None:
         """Generate fixed SDR patterns for each token."""
@@ -180,7 +179,7 @@ class SparseDistributedRepresentation(nn.Module):
         if use_learned and self.token_embedding is not None:
             # Learned SDR
             embeddings = self.token_embedding(token_ids)  # [batch, seq, emb_dim]
-            logits = self.sdr_projection(embeddings)  # [batch, seq, n_neurons]
+            logits = self.sdr_projection(embeddings)  # type: ignore[misc]  # [batch, seq, n_neurons]
 
             # Apply top-k sparsity
             k = self.config.sdr_on_bits
@@ -193,7 +192,7 @@ class SparseDistributedRepresentation(nn.Module):
             return sdr
         else:
             # Fixed SDR from precomputed patterns
-            return self.fixed_patterns[token_ids]
+            return self.fixed_patterns[token_ids]  # type: ignore[index]
 
     def get_similarity(
         self,
@@ -258,7 +257,7 @@ class SpikeEncoder(BaseSpikeEncoder):
     def reset_phase(self) -> None:
         """Reset theta phase for new sequence."""
         if hasattr(self, "theta_phase"):
-            self.theta_phase.zero_()
+            self.theta_phase.zero_()  # type: ignore[operator]
 
     def encode(
         self,
@@ -287,7 +286,7 @@ class SpikeEncoder(BaseSpikeEncoder):
 
         return spikes
 
-    def forward(
+    def forward(  # type: ignore[override]
         self,
         token_ids: torch.Tensor,
         position_ids: Optional[torch.Tensor] = None,
@@ -325,7 +324,7 @@ class SpikeEncoder(BaseSpikeEncoder):
         batch, seq_len, n_neurons = sdr.shape
         n_timesteps = self.config.n_timesteps
 
-        if self.config.encoding_type == CodingStrategy.SDR:
+        if self.config.encoding_type == CodingStrategy.SDR:  # type: ignore[attr-defined]
             # Simple SDR: Same pattern repeated, sparsely spiking
             # Active neurons spike once at a random time
             spikes = torch.zeros(
@@ -359,13 +358,13 @@ class SpikeEncoder(BaseSpikeEncoder):
                             if no_spike[b, s, n]:
                                 spikes[b, s, random_times[b, s, n], n] = 1.0
 
-        elif self.config.encoding_type == CodingStrategy.RATE:
+        elif self.config.encoding_type == CodingStrategy.RATE:  # type: ignore[attr-defined]
             # Rate coding: Spike probability proportional to activation
             spike_prob = torch.sigmoid(sdr * self.rate_scale)  # [batch, seq, neurons]
             spike_prob = spike_prob.unsqueeze(2).expand(-1, -1, n_timesteps, -1)
             spikes = (torch.rand_like(spike_prob) < spike_prob).float()
 
-        elif self.config.encoding_type == CodingStrategy.TEMPORAL:
+        elif self.config.encoding_type == CodingStrategy.TEMPORAL:  # type: ignore[attr-defined]
             # Temporal coding: Higher activation → earlier spike
             # Compute spike times based on activation rank
             spikes = torch.zeros(
@@ -378,7 +377,7 @@ class SpikeEncoder(BaseSpikeEncoder):
 
             # Spike time is inversely proportional to activation
             # Strongest neurons spike first
-            spike_times = ((1 - sdr) * self.temporal_scale).long()
+            spike_times = ((1 - sdr) * self.temporal_scale).long()  # type: ignore[operator]
             spike_times = torch.clamp(spike_times, 0, n_timesteps - 1)
 
             # Only active neurons (SDR > 0.5) actually spike
@@ -389,10 +388,10 @@ class SpikeEncoder(BaseSpikeEncoder):
                 for s in range(seq_len):
                     for n in range(n_neurons):
                         if active_mask[b, s, n]:
-                            t = spike_times[b, s, n].item()
+                            t = spike_times[b, s, n].item()  # type: ignore[assignment]
                             spikes[b, s, t, n] = 1.0
 
-        elif self.config.encoding_type == CodingStrategy.PHASE:
+        elif self.config.encoding_type == CodingStrategy.PHASE:  # type: ignore[attr-defined]
             # Phase coding: Spike at specific phase relative to theta
             spikes = torch.zeros(
                 batch,
@@ -404,10 +403,10 @@ class SpikeEncoder(BaseSpikeEncoder):
 
             for t in range(n_timesteps):
                 # Current theta phase
-                phase = (self.theta_phase + t * self.phase_increment) % (2 * math.pi)
+                phase = (self.theta_phase + t * self.phase_increment) % (2 * math.pi)  # type: ignore[operator]
 
                 # Neurons spike when phase matches their preferred phase
-                preferred_phase = self.phase_offset + sdr * math.pi  # Active = peak phase
+                preferred_phase = self.phase_offset + sdr * math.pi  # type: ignore[operator]  # Active = peak phase
                 phase_diff = torch.abs(phase - preferred_phase)
                 phase_diff = torch.min(phase_diff, 2 * math.pi - phase_diff)
 
@@ -416,7 +415,7 @@ class SpikeEncoder(BaseSpikeEncoder):
                 spike_mask = (phase_diff < phase_window) & (sdr > 0.5)
                 spikes[:, :, t, :] = spike_mask.float()
 
-        elif self.config.encoding_type == CodingStrategy.BURST:
+        elif self.config.encoding_type == CodingStrategy.BURST:  # type: ignore[attr-defined]
             # Burst coding: Number of spikes in burst encodes strength
             spikes = torch.zeros(
                 batch,
@@ -427,7 +426,7 @@ class SpikeEncoder(BaseSpikeEncoder):
             )
 
             # Number of spikes proportional to activation
-            n_spikes = (sdr * n_timesteps * self.burst_threshold).long()
+            n_spikes = (sdr * n_timesteps * self.burst_threshold).long()  # type: ignore[operator]
             n_spikes = torch.clamp(n_spikes, 0, n_timesteps)
 
             # Generate bursts at the beginning of the window
@@ -436,10 +435,10 @@ class SpikeEncoder(BaseSpikeEncoder):
                     for n in range(n_neurons):
                         n_s = n_spikes[b, s, n].item()
                         if n_s > 0:
-                            spikes[b, s, :n_s, n] = 1.0
+                            spikes[b, s, :n_s, n] = 1.0  # type: ignore[misc]
 
         else:
-            raise ValueError(f"Unknown encoding type: {self.config.encoding_type}")
+            raise ValueError(f"Unknown encoding type: {self.config.encoding_type}")  # type: ignore[attr-defined]
 
         return spikes
 
@@ -508,7 +507,7 @@ class SpikeEncoder(BaseSpikeEncoder):
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get encoding diagnostics."""
         return {
-            "encoding_type": self.config.encoding_type.value,
+            "encoding_type": self.config.encoding_type.value,  # type: ignore[attr-defined]
             "n_neurons": self.config.n_neurons,
             "sparsity": self.config.sparsity,
             "n_timesteps": self.config.n_timesteps,
@@ -542,20 +541,20 @@ class HierarchicalSpikeEncoder(nn.Module):
             char_config.n_timesteps = 10  # Fast
             self.char_encoder = SpikeEncoder(char_config)
         else:
-            self.char_encoder = None
+            self.char_encoder = None  # type: ignore[assignment]
 
         # Subword encoder (medium)
         if subword_config is not None:
             self.subword_encoder = SpikeEncoder(subword_config)
         else:
-            self.subword_encoder = None
+            self.subword_encoder = None  # type: ignore[assignment]
 
         # Word encoder (slow, semantic)
         if word_config is not None:
             word_config.n_timesteps = 50  # Slow
             self.word_encoder = SpikeEncoder(word_config)
         else:
-            self.word_encoder = None
+            self.word_encoder = None  # type: ignore[assignment]
 
     def forward(
         self,
