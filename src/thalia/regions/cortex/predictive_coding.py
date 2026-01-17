@@ -266,6 +266,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         #   - inhibition from prediction
         # Net activity = error signal
 
+        self.error_neurons: Optional[ConductanceLIF] = None
+        self.prediction_neurons: Optional[ConductanceLIF] = None
+
         if config.use_spiking:
             # Spiking error neurons (fast dynamics)
             error_config = ConductanceLIFConfig(
@@ -286,9 +289,6 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 dt_ms=config.dt_ms,
             )
             self.prediction_neurons = ConductanceLIF(config.n_input, pred_config, device=device)
-        else:
-            self.error_neurons = None
-            self.prediction_neurons = None
 
         # =================================================================
         # PRECISION (attention/confidence weighting)
@@ -321,6 +321,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # =================================================================
         # OUTPUT PROJECTION (if n_output != n_input)
         # =================================================================
+        self.W_output: Optional[nn.Parameter] = None
         if config.n_output != config.n_input:
             self.W_output = nn.Parameter(
                 WeightInitializer.gaussian(
@@ -331,8 +332,6 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                     device=device,
                 )
             )
-        else:
-            self.W_output = None
 
         # =================================================================
         # STATE
@@ -439,7 +438,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             # Convert to conductance and get spikes (ConductanceLIF expects g_exc)
             pred_g_exc = F.relu(prediction)  # Clamp to positive conductance
             pred_spikes, pred_membrane = self.prediction_neurons(pred_g_exc, g_inh_input=None)
-            return pred_membrane  # Use membrane potential as analog prediction
+            return pred_membrane  # type: ignore[no-any-return]  # Use membrane potential as analog prediction
         else:
             return prediction
 
@@ -486,7 +485,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Apply precision weighting (high precision = amplify error)
         precision_weighted_error = error * self.precision
 
-        return precision_weighted_error
+        return precision_weighted_error  # type: ignore[no-any-return]
 
     def encode(self, error: torch.Tensor) -> torch.Tensor:
         """
@@ -557,11 +556,11 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         if top_down_prediction is not None:
             prediction = top_down_prediction
         else:
-            prediction = self.predict(self.state.representation)
+            prediction = self.predict(self.state.representation)  # type: ignore[arg-type]
 
         # Smooth prediction over time (temporal integration)
         self.state.prediction = (
-            self.prediction_decay * self.state.prediction + (1 - self.prediction_decay) * prediction
+            self.prediction_decay * self.state.prediction + (1 - self.prediction_decay) * prediction  # type: ignore[operator]
         )
 
         # Compute prediction error
@@ -574,7 +573,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         representation_update = self.encode(error)
 
         # Update eligibility trace for learning
-        self._update_eligibility(actual_input, self.state.representation, error)
+        self._update_eligibility(actual_input, self.state.representation, error)  # type: ignore[arg-type]
 
         # Project error to output dimension if needed
         if self.W_output is not None:
@@ -606,7 +605,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Exponential moving average of eligibility
         eligibility_decay = 0.95
         self.state.eligibility = (
-            eligibility_decay * self.state.eligibility
+            eligibility_decay * self.state.eligibility  # type: ignore[operator]
             + (1 - eligibility_decay) * eligibility_update
         )
 
@@ -847,7 +846,7 @@ class HierarchicalPredictiveCoding(nn.Module):
     def reset_state(self) -> None:
         """Reset all layers."""
         for layer in self.layers:
-            layer.reset_state()
+            layer.reset_state()  # type: ignore[operator]
 
     def forward(
         self,
@@ -877,19 +876,19 @@ class HierarchicalPredictiveCoding(nn.Module):
             current_input = error
 
             # Store representation
-            representations.append(layer.state.representation)
+            representations.append(layer.state.representation)  # type: ignore[union-attr]
 
-        return errors, representations
+        return errors, representations  # type: ignore[return-value]
 
     def learn(self, reward_signal: Optional[torch.Tensor] = None) -> Dict[str, float]:
         """Learn at all layers."""
         metrics = {}
         for i, layer in enumerate(self.layers):
-            layer_metrics = layer.learn(reward_signal)
+            layer_metrics = layer.learn(reward_signal)  # type: ignore[operator]
             for k, v in layer_metrics.items():
                 metrics[f"layer{i}_{k}"] = v
         return metrics
 
     def get_total_free_energy(self) -> torch.Tensor:
         """Sum of free energy across all layers."""
-        return sum(layer.get_free_energy() for layer in self.layers)
+        return sum(layer.get_free_energy() for layer in self.layers)  # type: ignore[return-value, operator]

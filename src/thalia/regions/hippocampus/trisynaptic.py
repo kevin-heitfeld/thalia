@@ -494,7 +494,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self._theta_slot: int = 0
             self._coupled_amplitudes: Dict[str, float] = {}
 
-            # Replay engine for sequence replay (lazy import to avoid circular dependency)
+            # Replay engine for sequence replay
             # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase)
             # from hippocampus, which gets them from brain's centralized OscillatorManager
             # Capacity (~5-7 patterns) emerges from gamma/theta ratio (40Hz/8Hz)
