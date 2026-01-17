@@ -81,8 +81,7 @@ class TestPrefrontal(RegionTestBase):
         # Check working memory state initialized
         state = region.get_state()
         if hasattr(state, "working_memory"):
-            assert state.working_memory is not None
-            assert state.working_memory.shape[0] == region.n_output
+            assert state.working_memory.shape[0] == region.n_output, "Working memory shape mismatch"
 
             # Run with no input (maintenance)
             zero_input = torch.zeros(self._get_input_size(params), device=region.device)
@@ -129,9 +128,11 @@ class TestPrefrontal(RegionTestBase):
 
         # Check for recurrent weights
         if hasattr(region, "rec_weights"):
-            assert region.rec_weights is not None
             # Recurrent weights should be [n_output, n_output]
-            assert region.rec_weights.shape == (region.n_output, region.n_output)
+            assert region.rec_weights.shape == (
+                region.n_output,
+                region.n_output,
+            ), "Recurrent weights shape mismatch"
 
     def test_inhibitory_connections(self):
         """Test PFC has lateral inhibition for selection."""
@@ -140,9 +141,11 @@ class TestPrefrontal(RegionTestBase):
 
         # Check for inhibitory weights
         if hasattr(region, "inhib_weights"):
-            assert region.inhib_weights is not None
             # Inhibition should be [n_output, n_output]
-            assert region.inhib_weights.shape == (region.n_output, region.n_output)
+            assert region.inhib_weights.shape == (
+                region.n_output,
+                region.n_output,
+            ), "Inhibitory weights shape mismatch"
 
     def test_dopamine_gating(self):
         """Test dopamine modulates WM gating."""

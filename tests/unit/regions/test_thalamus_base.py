@@ -188,9 +188,11 @@ class TestThalamus(RegionTestBase):
 
         # Check if TRN has lateral inhibition weights
         if hasattr(region, "trn_lateral_weights"):
-            assert region.trn_lateral_weights is not None
             # Should be [n_trn, n_trn]
-            assert region.trn_lateral_weights.shape == (params["n_trn"], params["n_trn"])
+            assert region.trn_lateral_weights.shape == (
+                params["n_trn"],
+                params["n_trn"],
+            ), "TRN lateral weights shape mismatch"
 
     def test_corticothalamic_plasticity(self):
         """Test plasticity in corticothalamic feedback connections."""

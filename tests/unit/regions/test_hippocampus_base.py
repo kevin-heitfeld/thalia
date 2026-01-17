@@ -143,8 +143,9 @@ class TestHippocampus(RegionTestBase):
         # Check for persistent activity state
         state = region.get_state()
         if hasattr(state, "ca3_persistent"):
-            assert state.ca3_persistent is not None
-            assert state.ca3_persistent.shape[0] == region.ca3_size
+            assert (
+                state.ca3_persistent.shape[0] == region.ca3_size
+            ), "CA3 persistent state shape mismatch"
 
     def test_stp_mossy_fibers(self):
         """Test mossy fiber pathway (DG→CA3) uses facilitating STP."""

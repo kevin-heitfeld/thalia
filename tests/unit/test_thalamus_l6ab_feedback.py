@@ -63,14 +63,16 @@ class TestThalamusL6abFeedback:
             l6b_feedback=l6b_feedback,
         )
 
-        # Validate outputs are generated with correct properties
-        assert thalamus.state.relay_spikes is not None
-        assert thalamus.state.relay_spikes.shape == (thalamus.n_relay,)
-        assert thalamus.state.relay_spikes.dtype == torch.bool
+        # Validate outputs have correct shape and dtype (non-None guaranteed by forward pass)
+        assert thalamus.state.relay_spikes.shape == (
+            thalamus.n_relay,
+        ), "Relay output shape mismatch"
+        assert (
+            thalamus.state.relay_spikes.dtype == torch.bool
+        ), "Relay output should be boolean spikes"
 
-        assert thalamus.state.trn_spikes is not None
-        assert thalamus.state.trn_spikes.shape == (thalamus.n_trn,)
-        assert thalamus.state.trn_spikes.dtype == torch.bool
+        assert thalamus.state.trn_spikes.shape == (thalamus.n_trn,), "TRN output shape mismatch"
+        assert thalamus.state.trn_spikes.dtype == torch.bool, "TRN output should be boolean spikes"
 
     def test_only_l6a_feedback(self, thalamus_config, device):
         """Test thalamus with only L6a feedback (TRN pathway)."""

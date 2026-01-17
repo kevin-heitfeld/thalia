@@ -45,15 +45,19 @@ class TestHippocampusStateEdgeCases:
 
         data = state.to_dict()
 
-        # Verify all 4 STP dicts preserved
-        assert data["stp_mossy_state"] is not None
-        assert torch.equal(data["stp_mossy_state"]["u"], stp_mossy["u"])
-        assert data["stp_schaffer_state"] is not None
-        assert torch.equal(data["stp_schaffer_state"]["u"], stp_schaffer["u"])
-        assert data["stp_ec_ca1_state"] is not None
-        assert torch.equal(data["stp_ec_ca1_state"]["u"], stp_ec_ca1["u"])
-        assert data["stp_ca3_recurrent_state"] is not None
-        assert torch.equal(data["stp_ca3_recurrent_state"]["u"], stp_ca3_recurrent["u"])
+        # Verify all 4 STP dicts preserved (would raise KeyError if missing)
+        assert torch.equal(
+            data["stp_mossy_state"]["u"], stp_mossy["u"]
+        ), "Mossy fiber STP state not preserved"
+        assert torch.equal(
+            data["stp_schaffer_state"]["u"], stp_schaffer["u"]
+        ), "Schaffer collateral STP state not preserved"
+        assert torch.equal(
+            data["stp_ec_ca1_state"]["u"], stp_ec_ca1["u"]
+        ), "EC-CA1 STP state not preserved"
+        assert torch.equal(
+            data["stp_ca3_recurrent_state"]["u"], stp_ca3_recurrent["u"]
+        ), "CA3 recurrent STP state not preserved"
 
     def test_from_dict_with_nested_stp_state(self):
         """Test from_dict() restores all 4 nested STP pathway states."""

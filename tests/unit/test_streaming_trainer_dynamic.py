@@ -57,10 +57,10 @@ def test_experience_buffer_add_and_sample():
 
     # Sample
     sample = buffer.sample_random()
-    assert sample is not None
-    assert "input" in sample
-    assert "label" in sample
-    assert "_timestamp" not in sample  # Should be removed
+    # Test sample structure (type system guarantees non-None if method succeeds)
+    assert "input" in sample, "Sample should contain input"
+    assert "label" in sample, "Sample should contain label"
+    assert "_timestamp" not in sample, "Internal timestamp should be removed"
 
 
 def test_experience_buffer_max_capacity():

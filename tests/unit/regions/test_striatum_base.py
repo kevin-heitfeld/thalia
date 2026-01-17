@@ -280,12 +280,14 @@ class TestStriatum(RegionTestBase):
         # Verify vote accumulation for population coding
         # Votes are per-action (not per-neuron)
         if hasattr(state, "d1_votes_accumulated"):
-            assert state.d1_votes_accumulated is not None
-            assert state.d1_votes_accumulated.shape[0] == region.n_actions  # n_actions
+            assert (
+                state.d1_votes_accumulated.shape[0] == region.n_actions
+            ), "D1 votes shape mismatch"
 
         if hasattr(state, "d2_votes_accumulated"):
-            assert state.d2_votes_accumulated is not None
-            assert state.d2_votes_accumulated.shape[0] == region.n_actions  # n_actions
+            assert (
+                state.d2_votes_accumulated.shape[0] == region.n_actions
+            ), "D2 votes shape mismatch"
 
     def test_action_selection(self):
         """Test striatum selects actions based on vote competition."""

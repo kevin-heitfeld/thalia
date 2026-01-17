@@ -11,6 +11,7 @@ Tests verify:
 import pytest
 import torch
 
+from thalia.components.gap_junctions import GapJunctionCoupling
 from thalia.config import LayerSizeCalculator
 from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState
 from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
@@ -34,9 +35,11 @@ def test_gap_junctions_enabled_by_default():
     cfg = HippocampusConfig()
     hippo = TrisynapticHippocampus(config=cfg, sizes=sizes, device="cpu")
 
-    # Should have gap junction module
-    assert hippo.gap_junctions_ca1 is not None
-    assert hasattr(hippo, "gap_junctions_ca1")
+    # Should have gap junction module (hasattr validates existence, type check validates it's a GapJunction)
+    assert hasattr(hippo, "gap_junctions_ca1"), "Gap junctions_ca1 attribute should exist"
+    assert isinstance(
+        hippo.gap_junctions_ca1, GapJunctionCoupling
+    ), "Should be a GapJunctionCoupling instance"
 
 
 def test_gap_junction_creates_coupling():

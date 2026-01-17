@@ -6,6 +6,8 @@ version compatibility checking works during load.
 """
 
 import tempfile
+import time
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +15,7 @@ import pytest
 import torch
 
 from thalia import __version__ as THALIA_VERSION
-from thalia.io.binary_format import MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION
+from thalia.io.binary_format import MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION, CheckpointHeader
 from thalia.io.checkpoint import BrainCheckpoint
 
 
@@ -150,8 +152,8 @@ def test_load_different_version(version_patch, expect_error, error_match):
             else:
                 with pytest.warns(UserWarning, match=error_match):
                     state = BrainCheckpoint.load(checkpoint_path)
-                    assert state is not None
-                    assert "regions" in state
+                    # Test loaded state structure
+                    assert "regions" in state, "Loaded state should contain regions"
 
     finally:
         Path(checkpoint_path).unlink(missing_ok=True)
@@ -191,13 +193,11 @@ def test_load_compatible_version_no_warning():
         BrainCheckpoint.save(brain, checkpoint_path)
 
         # Load should succeed without warnings
-        import warnings
-
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # Turn warnings into errors
             state = BrainCheckpoint.load(checkpoint_path)
-            assert state is not None
-            assert "regions" in state
+            # Test loaded state structure (non-None guaranteed by load success)
+            assert "regions" in state, "Loaded state should contain regions"
 
     finally:
         Path(checkpoint_path).unlink(missing_ok=True)
@@ -205,10 +205,6 @@ def test_load_compatible_version_no_warning():
 
 def test_version_in_binary_header():
     """Binary header should contain version information."""
-    import time
-
-    from thalia.io.binary_format import CheckpointHeader
-
     header = CheckpointHeader(
         magic=b"THAL",
         major_version=MAJOR_VERSION,

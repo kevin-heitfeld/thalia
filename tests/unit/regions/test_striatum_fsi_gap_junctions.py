@@ -22,9 +22,9 @@ Biology: Koós & Tepper (1999), Gittis et al. (2010)
 import pytest
 import torch
 
+from thalia.components.gap_junctions import GapJunctionCoupling
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.striatum import Striatum, StriatumConfig
-from thalia.regions.striatum.config import StriatumState
 
 
 @pytest.fixture
@@ -73,13 +73,14 @@ def test_gap_junctions_can_be_disabled(device, striatum_sizes):
     )
     striatum2 = Striatum(config=config_no_gaps, sizes=striatum_sizes, device=device)
 
-    # FSI should exist but gap junctions should be None
+    # FSI should exist but gap junctions should be None (disabled)
     # With 50 actions, neurons_per_action=1: 50 D1 + 50 D2 = 100 MSNs
     # FSI = 2% of 100 = 2
     expected_fsi = int(100 * 0.02)  # 2 FSI neurons
-    assert striatum2.fsi_size == expected_fsi
-    assert striatum2.fsi_neurons is not None
-    assert striatum2.gap_junctions_fsi is None
+    assert striatum2.fsi_size == expected_fsi, "FSI size should be 2% of MSNs"
+    # Verify FSI neurons exist as a tensor with correct shape
+    assert striatum2.fsi_neurons.n_neurons == expected_fsi, "FSI neuron count mismatch"
+    assert striatum2.gap_junctions_fsi is None, "Gap junctions should be disabled"
 
 
 def test_gap_junctions_enabled_by_default(default_config, striatum_sizes):
@@ -93,9 +94,12 @@ def test_gap_junctions_enabled_by_default(default_config, striatum_sizes):
     # With 50 actions × 1 neuron/action × 2 pathways = 100 MSNs
     # FSI = int(100*0.02) = 2
     expected_fsi = int(100 * 0.02)  # 2 FSI neurons
-    assert striatum.fsi_size == expected_fsi
-    assert striatum.fsi_neurons is not None
-    assert striatum.gap_junctions_fsi is not None
+    assert striatum.fsi_size == expected_fsi, "FSI size should be 2% of MSNs"
+    assert striatum.fsi_neurons.n_neurons == expected_fsi, "FSI neuron count mismatch"
+    # Verify gap junctions exist
+    assert isinstance(
+        striatum.gap_junctions_fsi, GapJunctionCoupling
+    ), "Should have GapJunctionCoupling instance"
 
 
 def test_gap_junction_creates_coupling(default_config, striatum_sizes, device):

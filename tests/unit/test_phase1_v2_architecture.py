@@ -254,7 +254,10 @@ class TestAfferentSynapses:
         ), f"Weight shape should be (70, 224), got {synapses.weights.shape}"
         assert not torch.isnan(synapses.weights).any(), "Weights contain NaN values"
         assert not torch.isinf(synapses.weights).any(), "Weights contain Inf values"
-        assert synapses.learning_strategy is not None
+        # Learning strategy initialized (type system ensures non-None if config specifies rule)
+        assert hasattr(
+            synapses.learning_strategy, "compute_update"
+        ), "Learning strategy should have compute_update method"
 
     def test_forward_integration(self):
         """Test synaptic integration."""

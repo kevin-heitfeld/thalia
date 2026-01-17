@@ -13,6 +13,8 @@ import numpy as np
 import pytest
 import torch
 
+from thalia.components.synapses import ShortTermPlasticity
+from thalia.components.synapses.stp import STPType
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
@@ -37,8 +39,13 @@ class TestThalamusSTPConfiguration:
         thalamus = ThalamicRelay(config=config, sizes=sizes, device=device)
 
         assert config.stp_enabled is True, "STP should be enabled by default (HIGH PRIORITY)"
-        assert thalamus.stp_sensory_relay is not None, "Sensory relay STP should be initialized"
-        assert thalamus.stp_l6_feedback is not None, "L6 feedback STP should be initialized"
+        # Verify STP modules are initialized with correct types
+        assert isinstance(
+            thalamus.stp_sensory_relay, ShortTermPlasticity
+        ), "Sensory relay STP should be initialized"
+        assert isinstance(
+            thalamus.stp_l6_feedback, ShortTermPlasticity
+        ), "L6 feedback STP should be initialized"
 
     def test_stp_can_be_disabled(self):
         """Test that STP can be disabled via config."""
@@ -54,7 +61,6 @@ class TestThalamusSTPConfiguration:
 
     def test_stp_types_correct(self, thalamus_config):
         """Test that STP types are set correctly."""
-        from thalia.components.synapses.stp import STPType
 
         config, sizes, device = thalamus_config
 

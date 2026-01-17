@@ -155,8 +155,7 @@ def test_delays_work_from_first_forward(striatum_with_delays, striatum_sizes_wit
     input_spikes = generate_sparse_spikes(50, firing_rate=0.4)
     output = striatum_with_delays({"default": input_spikes})
 
-    # Behavioral contract: output should be valid even on first pass
-    assert output is not None
+    # Behavioral contract: output should be valid tensor with correct shape
     # Striatum outputs D1+D2 spikes concatenated (not just n_actions)
     expected_shape = striatum_sizes_with_delays["d1_size"] + striatum_sizes_with_delays["d2_size"]
     assert output.shape == (

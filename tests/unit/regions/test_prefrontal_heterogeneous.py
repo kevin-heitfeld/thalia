@@ -322,10 +322,9 @@ def test_prefrontal_d1_d2_populations(
     n_d1_expected = int(n_neurons * heterogeneous_config.d1_fraction)
     n_d2_expected = n_neurons - n_d1_expected
 
-    assert pfc._d1_neurons is not None
-    assert pfc._d2_neurons is not None
-    assert len(pfc._d1_neurons) == n_d1_expected
-    assert len(pfc._d2_neurons) == n_d2_expected
+    # Check D1/D2 populations (non-None guaranteed by init)
+    assert len(pfc._d1_neurons) == n_d1_expected, "D1 population size mismatch"
+    assert len(pfc._d2_neurons) == n_d2_expected, "D2 population size mismatch"
 
     # Check that populations don't overlap
     d1_set = set(pfc._d1_neurons.tolist())
@@ -508,9 +507,8 @@ def test_heterogeneous_wm_integration_with_forward(
         assert output.shape == (standard_sizes["n_neurons"],)
         assert output.dtype == torch.bool
 
-        # Check WM is being updated
-        assert pfc.state.working_memory is not None
-        assert pfc.state.working_memory.shape == (standard_sizes["n_neurons"],)
+        # Check WM is being updated with correct shape
+        assert pfc.state.working_memory.shape == (standard_sizes["n_neurons"],), "WM shape mismatch"
 
 
 # =====================================================================
