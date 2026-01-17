@@ -102,7 +102,7 @@ See: docs/decisions/adr-011-large-file-justification.md
 from __future__ import annotations
 
 import weakref
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 import torch
 import torch.nn as nn
@@ -770,12 +770,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     @property
     def d1_neurons(self) -> ConductanceLIF:
         """D1 neuron population (delegates to d1_pathway)."""
-        return self.d1_pathway.neurons  # type: ignore[return-value]
+        return self.d1_pathway.neurons  # type: ignore[return-value, no-any-return]
 
     @property
     def d2_neurons(self) -> ConductanceLIF:
         """D2 neuron population (delegates to d2_pathway)."""
-        return self.d2_pathway.neurons  # type: ignore[return-value]
+        return self.d2_pathway.neurons  # type: ignore[return-value, no-any-return]
 
     @property
     def last_action(self) -> Optional[int]:
@@ -1152,7 +1152,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 f"Source '{source}' not found in D1 pathway. "
                 f"Available sources: {self._list_d1_sources()}"
             )
-        return self.synaptic_weights[d1_key]  # type: ignore[return-value]
+        return self.synaptic_weights[d1_key]  # type: ignore[return-value, no-any-return]
 
     def get_d2_weights(self, source: str) -> torch.Tensor:
         """Get D2 MSN weights for a given source.
@@ -1173,7 +1173,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 f"Source '{source}' not found in D2 pathway. "
                 f"Available sources: {self._list_d2_sources()}"
             )
-        return self.synaptic_weights[d2_key]  # type: ignore[return-value]
+        return self.synaptic_weights[d2_key]  # type: ignore[return-value, no-any-return]
 
     def set_d1_weights(self, weights: torch.Tensor, source: str) -> None:
         """Update D1 MSN weights for a given source.
@@ -1377,7 +1377,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Filter out None values before expansion
         state_2d_d1 = {k: v for k, v in state_2d_d1.items() if v is not None}
-        expanded_2d_d1 = self._expand_state_tensors(state_2d_d1, n_new_d1)
+        expanded_2d_d1 = self._expand_state_tensors(cast(dict[str, torch.Tensor], state_2d_d1), n_new_d1)
         self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
         if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
             self.td_lambda_d1.traces.traces = expanded_2d_d1["td_lambda_d1_traces"]
@@ -1400,7 +1400,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Filter out None values before expansion
         state_2d_d2 = {k: v for k, v in state_2d_d2.items() if v is not None}
-        expanded_2d_d2 = self._expand_state_tensors(state_2d_d2, n_new_d2)
+        expanded_2d_d2 = self._expand_state_tensors(cast(dict[str, torch.Tensor], state_2d_d2), n_new_d2)
         self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
         if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
             self.td_lambda_d2.traces.traces = expanded_2d_d2["td_lambda_d2_traces"]
@@ -2326,7 +2326,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         for source_name, input_spikes in inputs.items():
             if source_name in self.synaptic_weights:
                 # Apply synaptic weights at target dendrites
-                current: torch.Tensor = self._apply_synapses(source_name, input_spikes)
+                current: torch.Tensor = self._apply_synapses(source_name, input_spikes)  # type: ignore[operator]
                 total_current += current
 
         return total_current
@@ -2493,22 +2493,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     fsi_current += self.synaptic_weights[fsi_key] @ source_spikes_float
 
             # Apply gap junction coupling (if enabled and state available)
-            if self.gap_junctions_fsi is not None and self.state.fsi_membrane is not None:
-                gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)  # type: ignore[misc]
+            if self.gap_junctions_fsi is not None and self.state.fsi_membrane is not None:  # type: ignore[attr-defined]
+                gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)  # type: ignore[misc, attr-defined]
                 fsi_current = fsi_current + gap_current
 
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
-            fsi_spikes, fsi_membrane = self.fsi_neurons(
+            fsi_spikes, fsi_membrane = self.fsi_neurons(  # type: ignore[misc]
                 g_exc_input=fsi_current,
                 g_inh_input=torch.zeros_like(fsi_current),  # FSI receive minimal inhibition
             )
 
             # Store FSI membrane for next timestep gap junctions
-            self.state.fsi_membrane = fsi_membrane
+            self.state.fsi_membrane = fsi_membrane  # type: ignore[attr-defined]
 
             # FSI provide feedforward inhibition to ALL MSNs (broadcast)
             # Each FSI spike contributes 0.5 inhibitory conductance (strong!)
-            fsi_inhibition = torch.sum(fsi_spikes) * 0.5
+            fsi_inhibition = float(torch.sum(fsi_spikes).item()) * 0.5  # type: ignore[assignment]
 
         # =====================================================================
         # D1/D2 NEURON ACTIVATION with Modulation
@@ -2678,7 +2678,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
             # Update TD(λ) eligibility for D2 pathway
             d2_gradient = torch.outer(d2_spikes.float(), combined_input)
-            self.td_lambda_d2.traces.update(d2_gradient)
+            self.td_lambda_d2.traces.update(d2_gradient)  # type: ignore[union-attr]
 
         # Update recent spikes and trial activity via state_tracker
         self.state_tracker.update_recent_spikes(d1_spikes, d2_spikes, decay=0.9)
@@ -2852,7 +2852,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Args:
             action_only: If True, only reset chosen action. If False, reset all.
         """
-        self.learning.reset_eligibility(self.last_action, action_only)
+        self.learning.reset_eligibility(self.last_action, action_only)  # type: ignore[attr-defined]
 
     def _reset_subsystems(self, *subsystem_names: str) -> None:
         """Reset multiple subsystems by calling their reset_state() methods.
@@ -2906,8 +2906,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Reset TD(λ) traces if enabled
         if self.td_lambda_d1 is not None:
-            self.td_lambda_d1.reset_episode()
-            self.td_lambda_d2.reset_episode()
+            self.td_lambda_d1.reset_episode()  # type: ignore[union-attr]
+            self.td_lambda_d2.reset_episode()  # type: ignore[union-attr]
 
         # Reset D1/D2 pathway delay buffers
         # Keep buffers allocated (for efficiency) but reset pointers to beginning
@@ -2925,7 +2925,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             if self.fsi_neurons is not None:
                 self.fsi_neurons.reset_state()
             # Initialize FSI membrane state for gap junctions
-            self.state.fsi_membrane = torch.zeros(self.fsi_size, device=self.device)
+            self.state.fsi_membrane = torch.zeros(self.fsi_size, device=self.device)  # type: ignore[attr-defined]
 
     def set_neuromodulators(
         self,
@@ -3022,11 +3022,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             learning_rate=self.config.learning_rate,
         )
         # Add D2 and NET statistics
-        plasticity["d2_weight_mean"] = float(self.d2_pathway.weights.mean().item())
-        plasticity["d2_weight_std"] = float(self.d2_pathway.weights.std().item())
+        plasticity["d2_weight_mean"] = float(self.d2_pathway.weights.mean().item())  # type: ignore[typeddict-item]
+        plasticity["d2_weight_std"] = float(self.d2_pathway.weights.std().item())  # type: ignore[typeddict-item]
         net_weights = self.d1_pathway.weights - self.d2_pathway.weights
-        plasticity["net_weight_mean"] = float(net_weights.mean().item())
-        plasticity["net_weight_std"] = float(net_weights.std().item())
+        plasticity["net_weight_mean"] = float(net_weights.mean().item())  # type: ignore[typeddict-item]
+        plasticity["net_weight_std"] = float(net_weights.std().item())  # type: ignore[typeddict-item]
 
         # Compute health metrics
         health = compute_health_metrics(
@@ -3061,8 +3061,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 "td_lambda_enabled": True,
                 "lambda": self.td_lambda_d1.config.lambda_,
                 "gamma": self.td_lambda_d1.config.gamma,
-                "d1_td_lambda": self.td_lambda_d1.get_diagnostics(),
-                "d2_td_lambda": self.td_lambda_d2.get_diagnostics(),
+                "d1_td_lambda": self.td_lambda_d1.get_diagnostics(),  # type: ignore[union-attr]
+                "d2_td_lambda": self.td_lambda_d2.get_diagnostics(),  # type: ignore[union-attr]
             }
         else:
             td_lambda_state = {"td_lambda_enabled": False}
@@ -3200,8 +3200,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             ),
             membrane=membrane,
             # D1/D2 pathways
-            d1_pathway_state=d1_pathway_state,
-            d2_pathway_state=d2_pathway_state,
+            d1_pathway_state=d1_pathway_state,  # type: ignore[arg-type]
+            d2_pathway_state=d2_pathway_state,  # type: ignore[arg-type]
             # Vote accumulation
             d1_votes_accumulated=self.state_tracker._d1_votes_accumulated.detach().clone(),
             d2_votes_accumulated=self.state_tracker._d2_votes_accumulated.detach().clone(),
@@ -3212,7 +3212,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             exploring=self.state_tracker.exploring,
             last_uncertainty=self.state_tracker._last_uncertainty,
             last_exploration_prob=self.state_tracker._last_exploration_prob,
-            exploration_manager_state=exploration_manager_state,
+            exploration_manager_state=exploration_manager_state,  # type: ignore[arg-type]
             # Value/RPE (optional)
             value_estimates=(
                 self.value_estimates.detach().clone()
@@ -3253,7 +3253,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d2_delay_ptr=self._d2_delay_ptr if hasattr(self, "_d2_delay_ptr") else 0,
             # Homeostasis
             activity_ema=self._activity_ema if hasattr(self, "_activity_ema") else 0.0,
-            trial_spike_count=self._trial_spike_count if hasattr(self, "_trial_spike_count") else 0,
+            trial_spike_count=int(self._trial_spike_count) if hasattr(self, "_trial_spike_count") else 0,
             trial_timesteps=self._trial_timesteps if hasattr(self, "_trial_timesteps") else 0,
             homeostatic_scaling_applied=(
                 self._homeostatic_scaling_applied
@@ -3302,9 +3302,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         """
         # Restore D1/D2 pathway states
         if state.d1_pathway_state is not None:
-            self.d1_pathway.load_state(state.d1_pathway_state)
+            self.d1_pathway.load_state(state.d1_pathway_state)  # type: ignore[arg-type]
         if state.d2_pathway_state is not None:
-            self.d2_pathway.load_state(state.d2_pathway_state)
+            self.d2_pathway.load_state(state.d2_pathway_state)  # type: ignore[arg-type]
 
         # Restore neuron membrane state
         if state.membrane is not None:
@@ -3339,11 +3339,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.state_tracker._last_uncertainty = state.last_uncertainty
         self.state_tracker._last_exploration_prob = state.last_exploration_prob
         if state.exploration_manager_state is not None and hasattr(self.exploration, "load_state"):
-            self.exploration.load_state(state.exploration_manager_state)
+            self.exploration.load_state(state.exploration_manager_state)  # type: ignore[arg-type]
 
         # Restore value/RPE (optional)
         if state.value_estimates is not None and hasattr(self, "value_estimates"):
-            self.value_estimates.data = state.value_estimates.to(self.device)
+            self.value_estimates.data = state.value_estimates.to(self.device)  # type: ignore[union-attr]
         if state.last_rpe is not None:
             self.state_tracker._last_rpe = state.last_rpe
         if state.last_expected is not None:
@@ -3358,15 +3358,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             for key, stp_state in state.stp_modules_state.items():
                 if key in self.stp_modules:
                     if stp_state["u"] is not None and self.stp_modules[key].u is not None:
-                        self.stp_modules[key].u.data = stp_state["u"].to(self.device)
+                        self.stp_modules[key].u.data = stp_state["u"].to(self.device)  # type: ignore[union-attr]
                     if stp_state["x"] is not None and self.stp_modules[key].x is not None:
-                        self.stp_modules[key].x.data = stp_state["x"].to(self.device)
+                        self.stp_modules[key].x.data = stp_state["x"].to(self.device)  # type: ignore[union-attr]
 
         # Restore goal modulation (optional)
         if state.pfc_modulation_d1 is not None and hasattr(self, "pfc_modulation_d1"):
-            self.pfc_modulation_d1.data = state.pfc_modulation_d1.to(self.device)
+            self.pfc_modulation_d1.data = state.pfc_modulation_d1.to(self.device)  # type: ignore[union-attr]
         if state.pfc_modulation_d2 is not None and hasattr(self, "pfc_modulation_d2"):
-            self.pfc_modulation_d2.data = state.pfc_modulation_d2.to(self.device)
+            self.pfc_modulation_d2.data = state.pfc_modulation_d2.to(self.device)  # type: ignore[union-attr]
 
         # Restore delay buffers (optional)
         if state.d1_delay_buffer is not None and hasattr(self, "_d1_delay_buffer"):
