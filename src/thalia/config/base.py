@@ -37,6 +37,11 @@ class BaseConfig:
     seed: Optional[int] = None
     """Random seed for reproducibility. None = no seeding."""
 
+    def __post_init__(self):
+        """Convert torch.device to string if needed."""
+        if isinstance(self.device, torch.device):
+            self.device = str(self.device)
+
     def get_torch_device(self) -> torch.device:
         """Get PyTorch device object."""
         return torch.device(self.device)

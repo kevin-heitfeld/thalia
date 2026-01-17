@@ -126,7 +126,6 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
-from thalia.typing import ThalamicRelayDiagnostics
 from thalia.utils.input_routing import InputRouter
 
 
@@ -1130,7 +1129,7 @@ class ThalamicRelay(NeuralRegion):
         self._alpha_phase = 0.0
         self._alpha_amplitude = 1.0
 
-    def get_diagnostics(self) -> ThalamicRelayDiagnostics:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

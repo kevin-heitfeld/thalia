@@ -147,7 +147,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
 from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import compute_ne_gain
 from thalia.regions.stimulus_gating import StimulusGating
-from thalia.typing import LayeredCortexDiagnostics
 from thalia.utils.core_utils import clamp_weights, ensure_1d, initialize_phase_preferences
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
@@ -2021,7 +2020,7 @@ class LayeredCortex(NeuralRegion):
 
     # region Diagnostics and Health Monitoring
 
-    def get_diagnostics(self) -> LayeredCortexDiagnostics:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized LayeredCortexDiagnostics format.
 
         Returns consolidated diagnostic information about:

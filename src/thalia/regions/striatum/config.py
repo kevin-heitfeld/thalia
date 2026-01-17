@@ -197,13 +197,9 @@ class StriatumConfig(NeuralComponentConfig, ModulatedLearningConfig):
                 "Example: input_sources={'cortex': 256, 'thalamus': 128}"
             )
 
-        # Pass semantic parameters - __post_init__ will compute d1_size, d2_size, total_neurons
-        return cls(
-            n_actions=n_actions,
-            neurons_per_action=neurons_per_action,
-            input_sources=input_sources,
-            **kwargs,
-        )
+        # Note: Size computation now handled by LayerSizeCalculator.
+        # This method is deprecated - use standard config construction.
+        return cls(**kwargs)
 
     # =========================================================================
     # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons
@@ -550,11 +546,8 @@ class StriatumState(BaseRegionState):
             trial_timesteps=data.get("trial_timesteps", 0),
             homeostatic_scaling_applied=data.get("homeostatic_scaling_applied", False),
             homeostasis_manager_state=data.get("homeostasis_manager_state"),
-            # STP
-            stp_corticostriatal_u=to_device(data.get("stp_corticostriatal_u")),
-            stp_corticostriatal_x=to_device(data.get("stp_corticostriatal_x")),
-            stp_thalamostriatal_u=to_device(data.get("stp_thalamostriatal_u")),
-            stp_thalamostriatal_x=to_device(data.get("stp_thalamostriatal_x")),
+            # STP (unified format)
+            stp_modules_state=data.get("stp_modules_state", {}),
             # Neuromodulators inherited from BaseRegionState
             # Striatum uses higher baseline for RL
             dopamine=data.get("dopamine", DA_BASELINE_STRIATUM),

@@ -101,11 +101,13 @@ See: docs/decisions/adr-011-large-file-justification.md
 
 from __future__ import annotations
 
+import weakref
 from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.nn as nn
 
+from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.components.neurons import (
     E_EXCITATORY,
     E_INHIBITORY,
@@ -114,15 +116,26 @@ from thalia.components.neurons import (
     V_THRESHOLD_STANDARD,
     ConductanceLIF,
     ConductanceLIFConfig,
+    create_fast_spiking_neurons,
 )
-from thalia.components.synapses import ShortTermPlasticity, WeightInitializer, get_stp_config
+from thalia.components.synapses import (
+    ShortTermPlasticity,
+    WeightInitializer,
+    create_heterogeneous_stp_configs,
+    get_stp_config,
+)
 from thalia.constants.neuromodulation import compute_ne_gain
+from thalia.core.diagnostics_schema import (
+    compute_activity_metrics,
+    compute_health_metrics,
+    compute_plasticity_metrics,
+)
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import ACH_BASELINE, NE_BASELINE
 from thalia.regions.striatum.exploration import ExplorationConfig
-from thalia.typing import SourceOutputs, StateDict, StriatumDiagnostics
+from thalia.typing import SourceOutputs, StateDict
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
@@ -362,7 +375,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             w_max=config.w_max,
             eligibility_tau_ms=self.config.eligibility_tau_ms,
             stdp_lr=self.config.stdp_lr,
-            device=self.device,
+            device=str(self.device),
         )
         d2_pathway_config = StriatumPathwayConfig(
             n_input=self.input_size,
@@ -371,7 +384,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             w_max=config.w_max,
             eligibility_tau_ms=self.config.eligibility_tau_ms,
             stdp_lr=self.config.stdp_lr,
-            device=self.device,
+            device=str(self.device),
         )
 
         # Create D1 and D2 pathways (neurons only, weights stored in parent)
@@ -384,12 +397,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # FSI are ~2% of striatal neurons, provide feedforward inhibition
         # Critical for action selection timing (Koós & Tepper 1999)
         # Gap junction networks enable ultra-fast synchronization (<0.1ms)
+
+        # Type annotations for optional FSI components
+        self.fsi_neurons: Optional[ConductanceLIF]
+        self.gap_junctions_fsi: Optional[GapJunctionCoupling]
+
         if self.config.fsi_enabled:
             total_msn_neurons = self.d1_size + self.d2_size
             self.fsi_size = int(total_msn_neurons * self.config.fsi_ratio)
             # FSI have fast kinetics (tau_mem ~5ms vs ~20ms for MSNs)
-            from thalia.components.neurons import create_fast_spiking_neurons
-
             self.fsi_neurons = create_fast_spiking_neurons(
                 n_neurons=self.fsi_size,
                 device=self.device,
@@ -397,8 +413,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
             # Store gap junction config BEFORE weight initialization
             if self.config.gap_junctions_enabled:
-                from thalia.components.gap_junctions import GapJunctionConfig
-
                 self._gap_config_fsi = GapJunctionConfig(
                     enabled=True,
                     coupling_strength=self.config.gap_junction_strength,
@@ -480,6 +494,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         #
         # DYNAMIC BUDGET: Computed from actual initialized weights to adapt to
         # any architecture (population_coding on/off, different n_input, etc.)
+
+        # Type annotation for optional homeostasis component
+        self.homeostasis: Optional[StriatumHomeostasisComponent]
+
         if self.config.homeostasis_enabled:
             # Compute budget from initialized weights (per-action sum of D1+D2)
             # This ensures the budget matches the actual weight scale
@@ -495,7 +513,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 baseline_target_net=self.config.baseline_target_net,
                 w_min=self.config.w_min,
                 w_max=self.config.w_max,
-                device=self.device,
+                device=str(self.device),
             )
             # Create manager context for homeostasis
             homeostasis_context = ManagerContext(
@@ -523,6 +541,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         #
         # When enabled, replaces basic eligibility traces with TD(λ) traces that
         # accumulate with factor (γλ) instead of simple exponential decay.
+
+        # Type annotations for optional TD(λ) learners
+        self.td_lambda_d1: Optional[TDLambdaLearner]
+        self.td_lambda_d2: Optional[TDLambdaLearner]
+
         if self.config.use_td_lambda:
             td_config = TDLambdaConfig(
                 lambda_=self.config.td_lambda,
@@ -582,6 +605,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Biology: PFC working memory → Striatum modulation (Miller & Cohen 2001)
         # Learning: Three-factor rule extended with goal context:
         #   Δw = eligibility × dopamine × goal_context
+
+        # Type annotations for optional PFC modulation
+        self.pfc_modulation_d1: Optional[nn.Parameter]
+        self.pfc_modulation_d2: Optional[nn.Parameter]
+
         if self.config.use_goal_conditioning:
             # Initialize PFC → D1 modulation weights [d1_size, pfc_size]
             self.pfc_modulation_d1 = nn.Parameter(
@@ -613,6 +641,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Track expected value per action for computing prediction error.
         # DA = actual_reward - expected_reward
         # This prevents runaway winners (high expectation → small surprise)
+
+        # Type annotation for optional value estimates
+        self.value_estimates: Optional[torch.Tensor]
+
         if self.config.rpe_enabled:
             self.value_estimates = torch.full(
                 (self.n_actions,), self.config.rpe_initial_value, device=self.device
@@ -869,7 +901,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
             # Scale action values by goal relevance
             # Higher goal modulation → boost that action's value
-            if self.config.population_coding:
+            if self.neurons_per_action > 1:
                 # With population coding, modulation applies per action
                 for action_idx in range(self.n_actions):
                     start = action_idx * self.neurons_per_action
@@ -954,13 +986,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Link pathways to parent on first source (for checkpoint compatibility)
         # Pathways need _parent_striatum_ref and _weight_source to access weights
         if self.d1_pathway._parent_striatum_ref is None:
-            import weakref
-
             self.d1_pathway._parent_striatum_ref = weakref.ref(self)
             self.d1_pathway._weight_source = d1_key
         if self.d2_pathway._parent_striatum_ref is None:
-            import weakref
-
             self.d2_pathway._parent_striatum_ref = weakref.ref(self)
             self.d2_pathway._weight_source = d2_key
 
@@ -989,8 +1017,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             if self.config.heterogeneous_stp:
                 # Phase 1 Enhancement: Sample per-synapse STP parameters from distributions
                 # Biology: 10-fold variability in U within same pathway (Dobrunz & Stevens 1997)
-                from thalia.components.synapses import create_heterogeneous_stp_configs
-
                 # D1 pathway: Create list of per-synapse STP configs
                 d1_configs = create_heterogeneous_stp_configs(
                     base_preset=stp_type,
@@ -1083,8 +1109,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Create gap junction coupling (if enabled and this is first FSI source)
         if hasattr(self, "_gap_config_fsi") and self.gap_junctions_fsi is None:
-            from thalia.components.gap_junctions import GapJunctionCoupling
-
             # Use first FSI source weights for gap junction neighborhood computation
             self.gap_junctions_fsi = GapJunctionCoupling(
                 n_neurons=self.fsi_size,
@@ -1911,7 +1935,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # eligibility from the same input, causing learning instability.
         if chosen_action is not None:
             action_mask = torch.zeros_like(d1_output_1d)
-            if self.config.population_coding:
+            if self.neurons_per_action > 1:
                 pop_slice = self._get_action_population_indices(chosen_action)
                 action_mask[pop_slice] = 1.0
             else:
@@ -2944,7 +2968,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # DIAGNOSTIC METHODS
     # =========================================================================
 
-    def get_diagnostics(self) -> StriatumDiagnostics:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:
@@ -2956,12 +2980,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         This is the primary diagnostic interface for the Striatum.
         """
-        from thalia.core.diagnostics_schema import (
-            compute_activity_metrics,
-            compute_health_metrics,
-            compute_plasticity_metrics,
-        )
-
         # D1/D2 per-action means and NET
         d1_per_action: list[float] = []
         d2_per_action: list[float] = []
@@ -3116,8 +3134,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             This is the NEW state management API (Phase 3.2).
             For legacy checkpoint format, use get_full_state().
         """
-        from thalia.regions.striatum.config import StriatumState
-
         # Get D1/D2 pathway states (opaque dicts)
         d1_pathway_state = self.d1_pathway.get_state()
         d2_pathway_state = self.d2_pathway.get_state()

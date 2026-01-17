@@ -8,15 +8,13 @@ Standardized component following the region_components pattern.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import Any, Dict, List
 
 import torch
 
 from thalia.core.region_components import ExplorationComponent
 from thalia.managers.base_manager import ManagerContext
-
-if TYPE_CHECKING:
-    from thalia.regions.striatum.config import StriatumConfig
+from thalia.regions.striatum.exploration import ExplorationConfig
 
 
 @dataclass
@@ -98,18 +96,21 @@ class StriatumExplorationComponent(ExplorationComponent):
 
     def __init__(
         self,
-        config: StriatumConfig,
+        config: ExplorationConfig,
         context: ManagerContext,
         initial_tonic_dopamine: float = 0.1,
     ):
         """Initialize striatum exploration component.
 
         Args:
-            config: Striatum configuration
+            config: Exploration configuration
             context: Manager context (device, dimensions, etc.)
             initial_tonic_dopamine: Starting tonic DA level
         """
         super().__init__(config, context)
+
+        # Type narrowing for mypy: config is ExplorationConfig
+        self.config: ExplorationConfig
 
         # Extract n_actions from context
         self.n_actions = context.n_output if context.n_output else 1

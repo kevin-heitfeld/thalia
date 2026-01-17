@@ -71,7 +71,7 @@ from __future__ import annotations
 
 import math
 from enum import Enum, auto
-from typing import Callable, Dict
+from typing import Callable, Dict, Union
 
 import torch
 import torch.nn as nn
@@ -134,7 +134,7 @@ class WeightInitializer:
         n_input: int,
         mean: float = 0.0,
         std: float = 0.1,
-        device: str = "cpu",
+        device: Union[str, torch.device] = "cpu",
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -160,7 +160,7 @@ class WeightInitializer:
         n_input: int,
         low: float = 0.0,
         high: float = 1.0,
-        device: str = "cpu",
+        device: Union[str, torch.device] = "cpu",
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -184,7 +184,11 @@ class WeightInitializer:
 
     @staticmethod
     def xavier(
-        n_output: int, n_input: int, gain: float = 1.0, device: str = "cpu", **kwargs
+        n_output: int,
+        n_input: int,
+        gain: float = 1.0,
+        device: Union[str, torch.device] = "cpu",
+        **kwargs,
     ) -> torch.Tensor:
         """
         Xavier/Glorot initialization.
@@ -212,7 +216,7 @@ class WeightInitializer:
         n_input: int,
         mode: str = "fan_in",
         nonlinearity: str = "relu",
-        device: str = "cpu",
+        device: Union[str, torch.device] = "cpu",
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -245,7 +249,7 @@ class WeightInitializer:
         sparsity: float = 0.3,
         weight_scale: float = 0.1,
         normalize_rows: bool = False,
-        device: str = "cpu",
+        device: Union[str, torch.device] = "cpu",
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -287,7 +291,7 @@ class WeightInitializer:
         base_weight: float = 0.1,
         sigma_factor: float = 4.0,
         boost_strength: float = 0.3,
-        device: str = "cpu",
+        device: Union[str, torch.device] = "cpu",
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -331,7 +335,11 @@ class WeightInitializer:
 
     @staticmethod
     def orthogonal(
-        n_output: int, n_input: int, gain: float = 1.0, device: str = "cpu", **kwargs
+        n_output: int,
+        n_input: int,
+        gain: float = 1.0,
+        device: Union[str, torch.device] = "cpu",
+        **kwargs,
     ) -> torch.Tensor:
         """
         Orthogonal initialization.
@@ -355,17 +363,23 @@ class WeightInitializer:
         return weights
 
     @staticmethod
-    def zeros(n_output: int, n_input: int, device: str = "cpu", **kwargs) -> torch.Tensor:
+    def zeros(
+        n_output: int, n_input: int, device: Union[str, torch.device] = "cpu", **kwargs
+    ) -> torch.Tensor:
         """All zeros initialization."""
         return torch.zeros(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
-    def ones(n_output: int, n_input: int, device: str = "cpu", **kwargs) -> torch.Tensor:
+    def ones(
+        n_output: int, n_input: int, device: Union[str, torch.device] = "cpu", **kwargs
+    ) -> torch.Tensor:
         """All ones initialization."""
         return torch.ones(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
-    def identity(n_output: int, n_input: int, device: str = "cpu", **kwargs) -> torch.Tensor:
+    def identity(
+        n_output: int, n_input: int, device: Union[str, torch.device] = "cpu", **kwargs
+    ) -> torch.Tensor:
         """
         Identity matrix initialization.
 
@@ -378,7 +392,11 @@ class WeightInitializer:
 
     @staticmethod
     def constant(
-        n_output: int, n_input: int, value: float = 0.1, device: str = "cpu", **kwargs
+        n_output: int,
+        n_input: int,
+        value: float = 0.1,
+        device: Union[str, torch.device] = "cpu",
+        **kwargs,
     ) -> torch.Tensor:
         """Constant value initialization."""
         return torch.full((n_output, n_input), value, device=device, requires_grad=False)

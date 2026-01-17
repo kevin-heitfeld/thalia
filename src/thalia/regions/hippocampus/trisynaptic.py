@@ -135,7 +135,6 @@ from thalia.regions.hippocampus.hindsight_relabeling import (
     HippocampalHERIntegration,
 )
 from thalia.regions.stimulus_gating import StimulusGating
-from thalia.typing import HippocampusDiagnostics
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
@@ -2769,7 +2768,7 @@ class TrisynapticHippocampus(NeuralRegion):
         """
         self._current_training_step = step
 
-    def get_diagnostics(self) -> HippocampusDiagnostics:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

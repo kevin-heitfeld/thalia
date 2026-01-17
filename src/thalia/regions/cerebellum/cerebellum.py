@@ -98,7 +98,6 @@ from thalia.regions.cerebellum import (
     EnhancedPurkinjeCell,
     GranuleCellLayer,
 )
-from thalia.typing import CerebellumDiagnostics
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
@@ -1514,7 +1513,7 @@ class Cerebellum(NeuralRegion):
         # Validate growth completed correctly
         self._validate_input_growth(old_n_input, n_new)
 
-    def get_diagnostics(self) -> CerebellumDiagnostics:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

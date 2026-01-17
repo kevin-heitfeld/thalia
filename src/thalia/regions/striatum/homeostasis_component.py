@@ -37,7 +37,7 @@ Region-specific homeostasis components integrate global mechanisms:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Any, Dict
 
 import torch
 import torch.nn as nn
@@ -50,9 +50,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasisConfig,
 )
 from thalia.managers.base_manager import ManagerContext
-
-if TYPE_CHECKING:
-    from thalia.regions.striatum.config import StriatumConfig
 
 
 @dataclass
@@ -128,16 +125,19 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
 
     def __init__(
         self,
-        config: StriatumConfig,
+        config: HomeostasisManagerConfig,
         context: ManagerContext,
     ):
         """Initialize striatum homeostasis component.
 
         Args:
-            config: Striatum configuration
+            config: Homeostasis manager configuration
             context: Manager context (device, dimensions, etc.)
         """
         super().__init__(config, context)
+
+        # Type narrowing for mypy: config is HomeostasisManagerConfig
+        self.config: HomeostasisManagerConfig
 
         # Extract dimensions from context
         self.n_actions = context.n_output if context.n_output else 1
@@ -155,11 +155,11 @@ class StriatumHomeostasisComponent(HomeostasisComponent):
         # Create unified homeostasis controller
         if config.unified_homeostasis_enabled:
             homeostasis_config = UnifiedHomeostasisConfig(
-                weight_budget=config.weight_budget,
+                weight_budget=1.0,  # Will be updated dynamically from actual weights
                 w_min=config.w_min,
                 w_max=config.w_max,
                 normalization_rate=0.1,
-                device=self.context.device,
+                device=str(self.context.device),  # Convert device to str
             )
 
             # StriatumHomeostasis needs neurons per pathway (d1 or d2), not total

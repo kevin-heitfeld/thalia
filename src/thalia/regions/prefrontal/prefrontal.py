@@ -96,7 +96,7 @@ from thalia.regions.prefrontal.hierarchy import (
     HyperbolicDiscounter,
     HyperbolicDiscountingConfig,
 )
-from thalia.typing import PrefrontalDiagnostics, StateDict
+from thalia.typing import StateDict
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
     compute_oscillator_modulated_gain,
@@ -1264,7 +1264,7 @@ class Prefrontal(NeuralRegion):
         """
         self._current_training_step = step
 
-    def get_diagnostics(self) -> PrefrontalDiagnostics:
+    def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics using DiagnosticsMixin helpers.
 
         Reports working memory state, gating, and weight statistics.

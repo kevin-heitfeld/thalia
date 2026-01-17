@@ -109,7 +109,7 @@ class ActionSelectionMixin:
         if spikes.dim() != 1:
             spikes = spikes.squeeze()
 
-        if not self.config.population_coding:
+        if self.neurons_per_action <= 1:
             # Simple argmax for single-neuron coding
             if spikes.sum() == 0:
                 return 0  # Default action
