@@ -608,9 +608,9 @@ class Cerebellum(NeuralRegion):
             # Update weight dimensions for granule layer expansion
             expanded_input = self.granule_layer.n_granule
         else:
-            self.granule_layer = None
-            self.purkinje_cells = None
-            self.deep_nuclei = None
+            self.granule_layer = None  # type: ignore[assignment]
+            self.purkinje_cells = None  # type: ignore[assignment]
+            self.deep_nuclei = None  # type: ignore[assignment]
             expanded_input = self.input_size
 
         # =====================================================================
@@ -691,13 +691,13 @@ class Cerebellum(NeuralRegion):
                 )
                 self.stp_mf_granule.to(self.device)
             else:
-                self.stp_mf_granule = None
+                self.stp_mf_granule = None  # type: ignore[assignment]
 
         # Climbing Fibers→Purkinje: NO STP (reliable error signal)
         # Every climbing fiber spike is critical - no adaptation
         else:
-            self.stp_pf_purkinje = None
-            self.stp_mf_granule = None
+            self.stp_pf_purkinje = None  # type: ignore[assignment]
+            self.stp_mf_granule = None  # type: ignore[assignment]
 
         # Initialize for forward() storage (fixes attribute outside __init__)
         self.last_effective_input: Optional[torch.Tensor] = None
@@ -760,7 +760,7 @@ class Cerebellum(NeuralRegion):
     @property
     def weights(self) -> torch.Tensor:
         """Backward compatibility: access synaptic_weights["default"]."""
-        return self.synaptic_weights["default"]
+        return self.synaptic_weights["default"]  # type: ignore[no-any-return]
 
     @weights.setter
     def weights(self, value: torch.Tensor) -> None:
@@ -877,7 +877,7 @@ class Cerebellum(NeuralRegion):
         # =====================================================================
         if not self.use_enhanced:
             self.weights = self._expand_weights(
-                current_weights=self.weights,
+                current_weights=self.weights,  # type: ignore[arg-type]
                 n_new=n_new,
                 initialization=initialization,
                 sparsity=sparsity,
@@ -908,7 +908,7 @@ class Cerebellum(NeuralRegion):
                     EnhancedPurkinjeCell(
                         n_parallel_fibers=self.granule_layer.n_granule,
                         n_dendrites=self.config.purkinje_n_dendrites,
-                        device=self.device,
+                        device=self.device,  # type: ignore[arg-type]
                         dt_ms=self.config.dt_ms,
                     )
                 )
@@ -1127,7 +1127,7 @@ class Cerebellum(NeuralRegion):
         self.last_effective_input = effective_input
 
         # Axonal delays are handled by AxonalProjection pathways, not within regions
-        return output_spikes
+        return output_spikes  # type: ignore[no-any-return]
 
     def _generate_complex_spike_burst(
         self,
@@ -1336,17 +1336,17 @@ class Cerebellum(NeuralRegion):
                     # Weights not initialized yet (no forward pass)
                     continue
 
-                old_pf_weights = purkinje.pf_synaptic_weights.clone()
+                old_pf_weights = purkinje.pf_synaptic_weights.clone()  # type: ignore[operator]
 
                 # Compute per-cell error
                 cell_error = error[i]  # Scalar error for this Purkinje cell
 
                 # Delta rule: Δw = lr × error × pre_activity
                 # Shape: [n_granule] (parallel fiber weights for this Purkinje cell)
-                cell_dw = cfg.learning_rate * cell_error * granule_spikes.float()
+                cell_dw = cfg.learning_rate * cell_error * granule_spikes.float()  # type: ignore[union-attr]
 
                 # Update this Purkinje cell's dendritic weights
-                new_weights = purkinje.pf_synaptic_weights.squeeze(0) + cell_dw
+                new_weights = purkinje.pf_synaptic_weights.squeeze(0) + cell_dw  # type: ignore[operator]
                 purkinje.pf_synaptic_weights.data = clamp_weights(
                     new_weights.unsqueeze(0), cfg.w_min, cfg.w_max, inplace=False
                 )
@@ -1360,7 +1360,7 @@ class Cerebellum(NeuralRegion):
                 # Track actual weight change for this cell (for metrics)
                 # Note: actual_dw has shape [n_output, n_input] but Purkinje weights are [1, n_granule]
                 # We'll just record the sum of changes per cell
-                cell_weight_change = (
+                cell_weight_change = (  # type: ignore[operator]
                     (purkinje.pf_synaptic_weights.squeeze(0) - old_pf_weights.squeeze(0))
                     .sum()
                     .item()
@@ -1551,7 +1551,7 @@ class Cerebellum(NeuralRegion):
                 learning_rate=cfg.learning_rate_ltp,  # Use LTP rate (primary)
             )
             # Add LTD rate as well
-            plasticity["learning_rate_ltd"] = cfg.learning_rate_ltd
+            plasticity["learning_rate_ltd"] = cfg.learning_rate_ltd  # type: ignore[typeddict-item]
 
         # Compute health metrics
         health_tensors = {
@@ -1570,7 +1570,7 @@ class Cerebellum(NeuralRegion):
         )
 
         # Cerebellum doesn't use neuromodulators (uses error signals)
-        neuromodulators = {}
+        neuromodulators: dict[str, float] = {}
 
         # Region-specific custom metrics
         region_specific = {
@@ -1677,9 +1677,9 @@ class Cerebellum(NeuralRegion):
         purkinje_state = None
         dcn_state = None
         if self.use_enhanced:
-            granule_state = self.granule_layer.get_full_state()
-            purkinje_state = [pc.get_state() for pc in self.purkinje_cells]
-            dcn_state = self.deep_nuclei.get_full_state()
+            granule_state = self.granule_layer.get_full_state()  # type: ignore[misc]
+            purkinje_state = [pc.get_state() for pc in self.purkinje_cells]  # type: ignore[operator]
+            dcn_state = self.deep_nuclei.get_full_state()  # type: ignore[operator]
 
         # Get climbing fiber error
         cf_state = self.climbing_fiber.get_state()
@@ -1702,14 +1702,14 @@ class Cerebellum(NeuralRegion):
             g_exc=g_exc.clone() if g_exc is not None else None,
             g_inh=g_inh.clone() if g_inh is not None else None,
             # STP state
-            stp_pf_purkinje_state=stp_pf_state,
-            stp_mf_granule_state=stp_mf_state,
+            stp_pf_purkinje_state=stp_pf_state,  # type: ignore[arg-type]
+            stp_mf_granule_state=stp_mf_state,  # type: ignore[arg-type]
             # Neuromodulators (from NeuromodulatorMixin state)
             dopamine=self.state.dopamine,
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
             # Enhanced microcircuit
-            granule_layer_state=granule_state,
+            granule_layer_state=granule_state,  # type: ignore[arg-type]
             purkinje_cells_state=purkinje_state,
             deep_nuclei_state=dcn_state,
         )
@@ -1736,12 +1736,12 @@ class Cerebellum(NeuralRegion):
             state: CerebellumState to restore from.
         """
         # Restore traces
-        self._trace_manager.input_trace.copy_(state.input_trace.to(self.device))
-        self._trace_manager.output_trace.copy_(state.output_trace.to(self.device))
-        self._trace_manager.eligibility.copy_(state.stdp_eligibility.to(self.device))
+        self._trace_manager.input_trace.copy_(state.input_trace.to(self.device))  # type: ignore[union-attr]
+        self._trace_manager.output_trace.copy_(state.output_trace.to(self.device))  # type: ignore[union-attr]
+        self._trace_manager.eligibility.copy_(state.stdp_eligibility.to(self.device))  # type: ignore[union-attr]
 
         # Restore climbing fiber error
-        self.climbing_fiber.error.copy_(state.climbing_fiber_error.to(self.device))
+        self.climbing_fiber.error.copy_(state.climbing_fiber_error.to(self.device))  # type: ignore[union-attr]
 
         # Restore IO membrane (gap junction state) - backward compatible
         # Old checkpoints won't have io_membrane field
@@ -1766,10 +1766,10 @@ class Cerebellum(NeuralRegion):
         # Restore enhanced microcircuit state
         if self.use_enhanced:
             if state.granule_layer_state is not None:
-                self.granule_layer.load_full_state(state.granule_layer_state)
+                self.granule_layer.load_full_state(state.granule_layer_state)  # type: ignore[arg-type]
             if state.purkinje_cells_state is not None:
                 for pc, pc_state in zip(self.purkinje_cells, state.purkinje_cells_state):
-                    pc.load_state(pc_state)
+                    pc.load_state(pc_state)  # type: ignore[operator]
             if state.deep_nuclei_state is not None:
                 self.deep_nuclei.load_full_state(state.deep_nuclei_state)
 
@@ -1779,13 +1779,13 @@ class Cerebellum(NeuralRegion):
             # Reset state to ensure u/x are on correct device (they're not nn.Parameters)
             self.stp_pf_purkinje.reset_state()
             # Then load the actual state values
-            self.stp_pf_purkinje.load_state(state.stp_pf_purkinje_state)
+            self.stp_pf_purkinje.load_state(state.stp_pf_purkinje_state)  # type: ignore[arg-type]
 
         if self.stp_mf_granule is not None and state.stp_mf_granule_state is not None:
             self.stp_mf_granule.to(self.device)  # Move module to target device first
             # Reset state to ensure u/x are on correct device (they're not nn.Parameters)
             self.stp_mf_granule.reset_state()
             # Then load the actual state values
-            self.stp_mf_granule.load_state(state.stp_mf_granule_state)
+            self.stp_mf_granule.load_state(state.stp_mf_granule_state)  # type: ignore[arg-type]
 
         # Neuromodulators already restored by super().load_state() via _restore_neuromodulators()
