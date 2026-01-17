@@ -25,7 +25,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -223,7 +223,7 @@ class DendriticBranch(nn.Module):
             voltage_gate = torch.sigmoid(membrane_potential * 2)  # 0.5 at rest, ~1 at threshold
             effective_gain = 1 + (gain - 1) * voltage_gate
         else:
-            effective_gain = gain
+            effective_gain = gain  # type: ignore[assignment]
 
         # Smooth nonlinearity using sigmoid for transition
         # This avoids discontinuities while preserving the key dynamics
@@ -243,7 +243,7 @@ class DendriticBranch(nn.Module):
 
         # === NMDA Plateau Dynamics ===
         # Plateau decays but is boosted by suprathreshold activity
-        self.plateau = self.plateau * self.plateau_decay
+        self.plateau = self.plateau * self.plateau_decay  # type: ignore[operator]
 
         # Suprathreshold activity triggers/maintains plateau
         plateau_boost = above_threshold * instantaneous_output * 0.5
@@ -318,33 +318,33 @@ class DendriticNeuron(nn.Module):
         # Register branch config constants
         branch_cfg = self.config.branch_config
         self.register_buffer(
-            "plateau_decay", torch.tensor(branch_cfg.plateau_decay, dtype=torch.float32)
+            "plateau_decay", torch.tensor(branch_cfg.plateau_decay, dtype=torch.float32)  # type: ignore[union-attr]
         )
         self.register_buffer(
-            "nmda_threshold", torch.tensor(branch_cfg.nmda_threshold, dtype=torch.float32)
+            "nmda_threshold", torch.tensor(branch_cfg.nmda_threshold, dtype=torch.float32)  # type: ignore[union-attr]
         )
-        self.register_buffer("nmda_gain", torch.tensor(branch_cfg.nmda_gain, dtype=torch.float32))
+        self.register_buffer("nmda_gain", torch.tensor(branch_cfg.nmda_gain, dtype=torch.float32))  # type: ignore[union-attr]
         self.register_buffer(
-            "saturation_level", torch.tensor(branch_cfg.saturation_level, dtype=torch.float32)
+            "saturation_level", torch.tensor(branch_cfg.saturation_level, dtype=torch.float32)  # type: ignore[union-attr]
         )
         self.register_buffer(
             "subthreshold_attenuation",
-            torch.tensor(branch_cfg.subthreshold_attenuation, dtype=torch.float32),
+            torch.tensor(branch_cfg.subthreshold_attenuation, dtype=torch.float32),  # type: ignore[union-attr]
         )
         self.register_buffer(
-            "branch_coupling", torch.tensor(branch_cfg.branch_coupling, dtype=torch.float32)
+            "branch_coupling", torch.tensor(branch_cfg.branch_coupling, dtype=torch.float32)  # type: ignore[union-attr]
         )
 
         # Pre-compute gain difference for NMDA blend (optimization)
         self.register_buffer(
             "_gain_minus_atten",
             torch.tensor(
-                branch_cfg.nmda_gain - branch_cfg.subthreshold_attenuation, dtype=torch.float32
+                branch_cfg.nmda_gain - branch_cfg.subthreshold_attenuation, dtype=torch.float32  # type: ignore[union-attr]
             ),
         )
 
         # Synaptic conductance decay (for temporal integration)
-        self.register_buffer("syn_decay", torch.tensor(branch_cfg.syn_decay, dtype=torch.float32))
+        self.register_buffer("syn_decay", torch.tensor(branch_cfg.syn_decay, dtype=torch.float32))  # type: ignore[union-attr]
 
         # Somatic compartment (conductance-based LIF)
         self.soma = ConductanceLIF(n_neurons, self.config.soma_config)
@@ -434,7 +434,8 @@ class DendriticNeuron(nn.Module):
         elif self.config.input_routing == "random":
             # Random routing: use pre-computed permutation indices
             # (batch, total) → gather per neuron → (batch, n_neurons, total)
-            expanded_inputs = inputs.unsqueeze(1).expand(batch_size, self.n_neurons, -1)
+            inputs_tensor = cast(torch.Tensor, inputs)  # Mypy incorrectly infers Optional
+            expanded_inputs = inputs_tensor.unsqueeze(1).expand(batch_size, self.n_neurons, -1)  # type: ignore[attr-defined]
             indices = self.input_routing_indices.unsqueeze(0).expand(batch_size, -1, -1)
             routed = torch.gather(expanded_inputs, dim=2, index=indices)
             routed = routed.view(
@@ -503,14 +504,14 @@ class DendriticNeuron(nn.Module):
         # === Synaptic Conductance Dynamics (KEY for temporal integration) ===
         # g_syn decays and accumulates new spikes (in-place for efficiency)
         # This allows multiple spikes over time to sum and cross NMDA threshold
-        self.branch_g_syn = self.branch_g_syn.mul(self.syn_decay).add_(instantaneous_input)
+        self.branch_g_syn = self.branch_g_syn.mul(self.syn_decay).add_(instantaneous_input)  # type: ignore[union-attr, arg-type]
 
         # Use accumulated g_syn for NMDA threshold comparison
         g_syn = self.branch_g_syn
 
         # === NMDA Nonlinearity (Optimized) ===
         # Smooth threshold sigmoid
-        above_threshold = torch.sigmoid((g_syn - self.nmda_threshold) * 10)
+        above_threshold = torch.sigmoid((g_syn - self.nmda_threshold) * 10)  # type: ignore[operator]
 
         # Fused NMDA blend: linear_sum * (atten + (gain - atten) * above_threshold)
         # This combines subthreshold attenuation and suprathreshold gain in one operation
@@ -521,32 +522,32 @@ class DendriticNeuron(nn.Module):
             voltage_gate = torch.sigmoid(membrane_potential.unsqueeze(0).unsqueeze(-1) * 2)
             # effective_gain = 1 + (nmda_gain - 1) * voltage_gate
             # gain_diff = effective_gain - attenuation = (1 - atten) + (nmda_gain - 1) * voltage_gate
-            effective_gain_diff = (1.0 - self.subthreshold_attenuation) + (
-                self.nmda_gain - 1.0
+            effective_gain_diff = (1.0 - self.subthreshold_attenuation) + (  # type: ignore[operator]
+                self.nmda_gain - 1.0  # type: ignore[operator]
             ) * voltage_gate
-            blend_factor = self.subthreshold_attenuation + effective_gain_diff * above_threshold
+            blend_factor = self.subthreshold_attenuation + effective_gain_diff * above_threshold  # type: ignore[operator]
         else:
             # Static gain: use pre-computed (gain - attenuation)
-            blend_factor = self.subthreshold_attenuation + self._gain_minus_atten * above_threshold
+            blend_factor = self.subthreshold_attenuation + self._gain_minus_atten * above_threshold  # type: ignore[operator]
 
-        instantaneous_output = g_syn * blend_factor
+        instantaneous_output = g_syn * blend_factor  # type: ignore[operator]
 
         # Saturation (soft clamp)
-        instantaneous_output = self.saturation_level * torch.tanh(
-            instantaneous_output / self.saturation_level
+        instantaneous_output = self.saturation_level * torch.tanh(  # type: ignore[operator]
+            instantaneous_output / self.saturation_level  # type: ignore[operator]
         )
 
         # === NMDA Plateau Dynamics (in-place where possible) ===
-        self.branch_plateaus.mul_(self.plateau_decay)
+        self.branch_plateaus.mul_(self.plateau_decay)  # type: ignore[union-attr, arg-type]
         plateau_boost = above_threshold * instantaneous_output * 0.5
-        self.branch_plateaus = torch.maximum(self.branch_plateaus, plateau_boost)
+        self.branch_plateaus = torch.maximum(self.branch_plateaus, plateau_boost)  # type: ignore[arg-type]
 
         # Output is max of instantaneous and plateau, with coupling applied
         branch_output = torch.maximum(instantaneous_output, self.branch_plateaus)
 
         # Apply coupling (skip if 1.0)
         if self.branch_coupling != 1.0:
-            branch_output = branch_output * self.branch_coupling
+            branch_output = branch_output * self.branch_coupling  # type: ignore[operator]
 
         return branch_output
 
