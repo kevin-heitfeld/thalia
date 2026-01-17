@@ -103,6 +103,7 @@ class BaseCheckpointManager(ABC):
 - Commit e9c7d48: Removed deprecated STP fields and DiagnosticsDict
 - Commit 4d47269: Removed from_thalia_config() and updated docs
 - Commit 61e8256: Removed old checkpoint tests (no external users/checkpoints exist)
+- Commit a0f1e87: Removed deprecated region_sizes.py module (~250 lines, 18 files updated)
 
 **Next Steps for Full Migration**:
 - ✅ Striatum checkpoint manager updated to use utilities (COMPLETE)
