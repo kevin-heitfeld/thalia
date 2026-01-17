@@ -1,13 +1,9 @@
 """NeuralRegion: Biologically accurate region with synaptic inputs at dendrites.
 
-This is the new base class for brain regions in v2.0 architecture where:
+This is the base class for brain regions where:
 - Weights live at TARGET dendrites (not in pathways/axons)
 - Learning rules are region-specific (per-source customization)
 - Multi-source integration is natural (Dict[str, Tensor] input)
-
-Key differences from legacy architecture:
-- OLD: SpikingPathway has weights → Region.forward(tensor)
-- NEW: Region has synaptic_weights dict → Region.forward(dict_of_tensors)
 
 Biological accuracy:
 - Axons = pure routing (delay only, no weights)

@@ -56,7 +56,6 @@ from typing import TYPE_CHECKING, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.synapses import ShortTermPlasticity
 from thalia.constants.neuromodulation import compute_ne_gain
 from thalia.constants.neuron import (
     BASELINE_EXCITATION_SCALE,
@@ -100,7 +99,6 @@ class ForwardPassCoordinator:
         homeostasis_manager: Optional[StriatumHomeostasisComponent],
         pfc_modulation_d1: Optional[nn.Parameter],
         pfc_modulation_d2: Optional[nn.Parameter],
-        stp_module: Optional[ShortTermPlasticity],
         device: torch.device,
         n_actions: int,
         d1_size: int,
@@ -118,7 +116,6 @@ class ForwardPassCoordinator:
             homeostasis_manager: Optional homeostasis component
             pfc_modulation_d1: Optional PFC→D1 modulation weights
             pfc_modulation_d2: Optional PFC→D2 modulation weights
-            stp_module: Optional STP module for corticostriatal depression
             device: Torch device
         """
         self.config = config
@@ -129,7 +126,6 @@ class ForwardPassCoordinator:
         self.homeostasis_manager = homeostasis_manager
         self.pfc_modulation_d1 = pfc_modulation_d1
         self.pfc_modulation_d2 = pfc_modulation_d2
-        self.stp_module = stp_module
         self.device = device
 
         # Size parameters (no longer in config)
@@ -365,28 +361,10 @@ class ForwardPassCoordinator:
         # Convert bool spikes to float for matmul
         input_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
 
-        # Apply Short-Term Plasticity if enabled
-        # STP modulates synaptic efficacy based on recent presynaptic activity
-        # Biology: Corticostriatal synapses show depression (U=0.4)
-        # - Prevents saturation from sustained cortical input
-        # - Enables novelty detection (fresh inputs get stronger transmission)
-        if self.stp_module is not None:
-            # Get STP efficacy [n_input, n_total_msns] where n_total_msns = d1_size + d2_size
-            stp_efficacy = self.stp_module(input_float)
-            # Split efficacy for D1 and D2 pathways at MSN neuron level
-            n_d1 = self.d1_size  # Total D1 MSN neurons
-            n_d2 = self.d2_size  # Total D2 MSN neurons
-            stp_efficacy_d1 = stp_efficacy[:, :n_d1]  # [n_input, d1_size]
-            stp_efficacy_d2 = stp_efficacy[:, n_d1 : n_d1 + n_d2]  # [n_input, d2_size]
-
-            # Apply MSN-level STP to MSN-level weights: [d1_size, n_input] * [d1_size, n_input]
-            # Transpose STP to match weight dimensions: [n_input, d1_size] -> [d1_size, n_input]
-            d1_weights_effective = self.d1_pathway.weights * stp_efficacy_d1.T
-            d2_weights_effective = self.d2_pathway.weights * stp_efficacy_d2.T
-        else:
-            # No STP - use raw weights
-            d1_weights_effective = self.d1_pathway.weights
-            d2_weights_effective = self.d2_pathway.weights
+        # NOTE: STP is applied per-source in Striatum.forward()
+        # This allows different STP parameters for different input sources
+        d1_weights_effective = self.d1_pathway.weights
+        d2_weights_effective = self.d2_pathway.weights
 
         # Compute MSN-level activations: [d1_size] and [d2_size]
         d1_msn_activation = torch.matmul(d1_weights_effective, input_float)

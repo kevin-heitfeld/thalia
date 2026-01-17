@@ -77,63 +77,6 @@ class TestLayeredCortex(RegionTestBase):
             "dt_ms": 1.0,
         }
 
-    def _get_config_input_size(self, config) -> int:
-        """Override base class - LayeredCortex stores input_size on instance, not config.
-
-        Since config no longer has size fields, we access the region's instance variable.
-        We use a more robust approach: search the call stack for the region variable.
-        """
-        import inspect
-        import sys
-
-        # Walk up the call stack to find the 'region' variable
-        for frame_info in inspect.stack():
-            frame_locals = frame_info.frame.f_locals
-
-            # Check for 'region' variable
-            if "region" in frame_locals:
-                region = frame_locals["region"]
-                if hasattr(region, "input_size"):
-                    return region.input_size
-
-            # Also check 'self' for any stored region reference
-            if "self" in frame_locals:
-                obj = frame_locals["self"]
-                if hasattr(obj, "_test_region") and hasattr(obj._test_region, "input_size"):
-                    return obj._test_region.input_size
-
-        # Ultimate fallback: if we still can't find it, raise a clear error
-        raise RuntimeError(
-            "Cannot determine input_size - config no longer contains size fields. "
-            "LayeredCortex stores sizes as instance variables (self.input_size)."
-        )
-
-    def _get_config_output_size(self, config) -> int:
-        """Override base class - LayeredCortex stores output_size on instance, not config."""
-        import inspect
-
-        # Walk up the call stack to find the 'region' variable
-        for frame_info in inspect.stack():
-            frame_locals = frame_info.frame.f_locals
-
-            # Check for 'region' variable
-            if "region" in frame_locals:
-                region = frame_locals["region"]
-                if hasattr(region, "output_size"):
-                    return region.output_size
-
-            # Also check 'self' for stored region reference
-            if "self" in frame_locals:
-                obj = frame_locals["self"]
-                if hasattr(obj, "_test_region") and hasattr(obj._test_region, "output_size"):
-                    return obj._test_region.output_size
-
-        # Ultimate fallback
-        raise RuntimeError(
-            "Cannot determine output_size - config no longer contains size fields. "
-            "LayeredCortex stores sizes as instance variables (self.output_size)."
-        )
-
     def get_input_dict(self, n_input, device="cpu"):
         """Return dict input for cortex (supports multi-source)."""
         # Cortex uses InputRouter.concatenate_sources, accepts any dict

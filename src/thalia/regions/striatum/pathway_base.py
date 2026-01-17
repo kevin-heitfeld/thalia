@@ -5,10 +5,10 @@ Provides common interface for pathway-specific learning and dynamics.
 D1 and D2 pathways differ in dopamine polarity and functional role.
 
 **Architecture Note**:
-Internal pathways (D1/D2) are different from external pathways (SpikingPathway):
-- External pathways connect BETWEEN regions (managed by PathwayManager)
+Internal pathways (D1/D2) are different from external pathways (AxonalProjection):
+- External pathways connect BETWEEN regions (pure axonal transmission with delays)
 - Internal pathways are MSN subpopulations WITHIN striatum
-- Different biological roles: external = long-range projections with delays,
+- Different biological roles: external = long-range projections,
   internal = local cell type differentiation (D1 vs D2 receptors)
 
 This class uses mixins for shared utilities (weight init, growth) while
@@ -35,7 +35,7 @@ from thalia.components.neurons import (
 )
 from thalia.components.synapses import WeightInitializer
 from thalia.core.base.component_config import PathwayConfig
-from thalia.learning import ThreeFactorConfig, create_striatum_strategy
+from thalia.learning import create_striatum_strategy
 from thalia.mixins import GrowthMixin, ResettableMixin
 
 
@@ -183,12 +183,11 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
     @property
     def eligibility(self) -> Optional[torch.Tensor]:
-        """Eligibility traces [n_output, n_input] (from learning strategy or parent striatum).
+        """Eligibility traces [n_output, n_input] (from parent striatum).
 
-        Returns eligibility trace from parent's dict (new multi-source architecture).
-        Falls back to learning_strategy only if parent ref not available (legacy/standalone pathways).
+        Returns eligibility trace from parent's dict (multi-source architecture).
         """
-        # Prefer parent striatum's eligibility dict (new multi-source architecture)
+        # Get eligibility from parent striatum's dict
         if hasattr(self, "_parent_striatum_ref") and self._parent_striatum_ref is not None:
             parent = self._parent_striatum_ref()
             if parent is not None:
@@ -202,13 +201,6 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
                 # Return first available eligibility trace (usually only one source in tests)
                 if elig_dict:
                     return next(iter(elig_dict.values()))
-
-        # Fallback: learning_strategy (backward compatibility for standalone pathways)
-        if (
-            hasattr(self.learning_strategy, "eligibility")
-            and self.learning_strategy.eligibility is not None
-        ):
-            return self.learning_strategy.eligibility
 
         return None
 
@@ -449,9 +441,6 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
                     elig_dict = getattr(parent, elig_attr)
                     # Store under the weight source key (e.g., "default_d1")
                     elig_dict[self._weight_source] = eligibility_value.to(self.device)
-
-            # Fallback: also set learning_strategy (for backward compatibility)
-            self.learning_strategy.eligibility = eligibility_value
 
         if state.neuron_membrane is not None:
             self.neurons.membrane = state.neuron_membrane

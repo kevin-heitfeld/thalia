@@ -688,7 +688,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # FORWARD PASS COORDINATOR
         # =====================================================================
         # Handles D1/D2 pathway coordination and modulation during forward pass
-        # Note: STP is now applied per-source in forward() loop (Phase 5)
+        # NOTE: STP is applied per-source in forward() loop
         self.forward_coordinator = ForwardPassCoordinator(
             config=self.config,
             d1_pathway=self.d1_pathway,
@@ -698,7 +698,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             homeostasis_manager=self.homeostasis,
             pfc_modulation_d1=self.pfc_modulation_d1,
             pfc_modulation_d2=self.pfc_modulation_d2,
-            stp_module=None,  # Deprecated: STP now per-source in forward()
             device=self.device,
             n_actions=self.n_actions,
             d1_size=self.d1_size,
@@ -1377,7 +1376,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Filter out None values before expansion
         state_2d_d1 = {k: v for k, v in state_2d_d1.items() if v is not None}
-        expanded_2d_d1 = self._expand_state_tensors(cast(dict[str, torch.Tensor], state_2d_d1), n_new_d1)
+        expanded_2d_d1 = self._expand_state_tensors(
+            cast(dict[str, torch.Tensor], state_2d_d1), n_new_d1
+        )
         self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
         if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
             self.td_lambda_d1.traces.traces = expanded_2d_d1["td_lambda_d1_traces"]
@@ -1400,7 +1401,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Filter out None values before expansion
         state_2d_d2 = {k: v for k, v in state_2d_d2.items() if v is not None}
-        expanded_2d_d2 = self._expand_state_tensors(cast(dict[str, torch.Tensor], state_2d_d2), n_new_d2)
+        expanded_2d_d2 = self._expand_state_tensors(
+            cast(dict[str, torch.Tensor], state_2d_d2), n_new_d2
+        )
         self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
         if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
             self.td_lambda_d2.traces.traces = expanded_2d_d2["td_lambda_d2_traces"]
@@ -3253,7 +3256,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d2_delay_ptr=self._d2_delay_ptr if hasattr(self, "_d2_delay_ptr") else 0,
             # Homeostasis
             activity_ema=self._activity_ema if hasattr(self, "_activity_ema") else 0.0,
-            trial_spike_count=int(self._trial_spike_count) if hasattr(self, "_trial_spike_count") else 0,
+            trial_spike_count=(
+                int(self._trial_spike_count) if hasattr(self, "_trial_spike_count") else 0
+            ),
             trial_timesteps=self._trial_timesteps if hasattr(self, "_trial_timesteps") else 0,
             homeostatic_scaling_applied=(
                 self._homeostatic_scaling_applied

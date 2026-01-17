@@ -242,25 +242,6 @@ Normalized to 0.0 as reference point.
 Biological equivalent: ~-70mV for pyramidal neurons.
 """
 
-# Legacy aliases (millivolt versions for backward compatibility)
-SPIKE_THRESHOLD_MV = -50.0
-"""Spike threshold voltage (-50mV).
-
-Legacy value in absolute millivolts. Use V_THRESHOLD_STANDARD for normalized models.
-"""
-
-RESTING_POTENTIAL_MV = -70.0
-"""Resting membrane potential (-70mV).
-
-Legacy value in absolute millivolts. Use V_REST_STANDARD for normalized models.
-"""
-
-RESET_POTENTIAL_MV = -65.0
-"""Reset potential after spike (-65mV).
-
-Legacy value in absolute millivolts. Use V_RESET_STANDARD for normalized models.
-"""
-
 # =============================================================================
 # SPIKE DETECTION THRESHOLDS
 # =============================================================================
@@ -333,25 +314,6 @@ G_LEAK_SLOW = 0.033
 
 Lower leak = longer time constant (tau_mem ≈ 30ms).
 Used for some hippocampal and prefrontal neurons.
-"""
-
-# Legacy aliases (nanosiemens versions)
-CONDUCTANCE_LEAK_NS = 10.0
-"""Leak conductance (10 nS).
-
-Legacy value in absolute units. Use G_LEAK_STANDARD for normalized models.
-"""
-
-CONDUCTANCE_EXCITATORY_NS = 0.5
-"""Excitatory synaptic conductance (0.5 nS).
-
-Legacy value in absolute units. Use model-specific parameters for conductance-based models.
-"""
-
-CONDUCTANCE_INHIBITORY_NS = 1.0
-"""Inhibitory synaptic conductance (1.0 nS).
-
-Legacy value in absolute units. Use model-specific parameters for conductance-based models.
 """
 
 # =============================================================================
@@ -655,9 +617,6 @@ __all__ = [
     "V_THRESHOLD_STANDARD",
     "V_RESET_STANDARD",
     "V_REST_STANDARD",
-    "SPIKE_THRESHOLD_MV",
-    "RESTING_POTENTIAL_MV",
-    "RESET_POTENTIAL_MV",
     # Spike detection
     "SPIKE_DETECTION_THRESHOLD",
     "SPIKE_ACTIVITY_THRESHOLD",
@@ -672,9 +631,6 @@ __all__ = [
     "G_LEAK_SLOW",
     "MEMBRANE_CAPACITANCE_STANDARD",
     "C_MEM_STANDARD",
-    "CONDUCTANCE_LEAK_NS",
-    "CONDUCTANCE_EXCITATORY_NS",
-    "CONDUCTANCE_INHIBITORY_NS",
     # Adaptation parameters
     "TAU_ADAPT_STANDARD",
     "ADAPT_INCREMENT_NONE",

@@ -65,11 +65,6 @@ class TestPrefrontal(RegionTestBase):
         """Get actual output size from region instance."""
         return region.n_output
 
-    def _get_config_output_size(self, config):
-        """Get output size - but config no longer has it, use region.n_output instead."""
-        # Note: Tests should use region.n_output directly, not config
-        raise NotImplementedError("Use region.n_output instead of _get_config_output_size")
-
     # =========================================================================
     # PREFRONTAL-SPECIFIC TESTS
     # =========================================================================

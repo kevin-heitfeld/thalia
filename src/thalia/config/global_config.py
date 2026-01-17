@@ -111,19 +111,6 @@ class GlobalConfig(BaseConfig):
     timescale and will temporarily re-enable them with torch.enable_grad().
     """
 
-    # =========================================================================
-    # ARCHITECTURE VERSION (Phase 1 migration flag)
-    # =========================================================================
-    use_legacy_pathways: bool = True
-    """Use legacy pathway architecture (SpikingPathway, MultiSourcePathway).
-
-    When True (default): Traditional pathways have weights and learning
-    When False: New architecture - regions have synaptic weights, pathways are pure routing
-
-    This flag enables parallel implementation during v2.0 migration.
-    Will be removed in Phase 4 when migration is complete.
-    """
-
     def __post_init__(self):
         """Validate configuration after initialization."""
         self._validate()
@@ -245,7 +232,6 @@ class GlobalConfig(BaseConfig):
             "default_sparsity": self.default_sparsity,
             "w_min": self.w_min,
             "w_max": self.w_max,
-            "use_legacy_pathways": self.use_legacy_pathways,
         }
 
     @classmethod

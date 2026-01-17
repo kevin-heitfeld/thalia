@@ -19,7 +19,7 @@ Architecture:
     ComponentRegistry
         ├── region:cortex → LayeredCortex
         ├── region:hippocampus → TrisynapticCircuit
-        ├── pathway:spiking_stdp → SpikingPathway
+        ├── pathway:axonal → AxonalProjection
         ├── pathway:attention → AttentionPathway
         └── module:oscillator → ThetaOscillator
 
@@ -30,13 +30,13 @@ Usage Example:
     class LayeredCortex(NeuralRegion):
         ...
 
-    @ComponentRegistry.register("spiking_stdp", "pathway")
-    class SpikingPathway(LearnableComponent):
+    @ComponentRegistry.register("axonal", "pathway")
+    class AxonalProjection(RoutingComponent):
         ...
 
     # Create components dynamically
     cortex = ComponentRegistry.create("region", "cortex", config)
-    pathway = ComponentRegistry.create("pathway", "spiking_stdp", config)
+    pathway = ComponentRegistry.create("pathway", "axonal", config)
 
     # Discover components
     regions = ComponentRegistry.list_components("region")
@@ -75,7 +75,7 @@ class ComponentRegistry:
     Registry Structure:
         _registry = {
             "region": {"cortex": LayeredCortex, "hippocampus": Trisynaptic},
-            "pathway": {"spiking_stdp": SpikingPathway, "attention": Attention},
+            "pathway": {"axonal": AxonalProjection, "attention": Attention},
             "module": {"oscillator": ThetaOscillator}
         }
 
@@ -157,11 +157,11 @@ class ComponentRegistry:
                 ...
 
             @ComponentRegistry.register(
-                "spiking_stdp", "pathway",
-                config_class=SpikingPathwayConfig
+                "axonal", "pathway",
+                config_class=AxonalProjectionConfig
             )
-            class SpikingPathway(LearnableComponent):
-                '''STDP-learning spiking pathway.'''
+            class AxonalProjection(RoutingComponent):
+                '''Pure axonal transmission pathway.'''
                 ...
         """
         # Validate component type
@@ -304,7 +304,7 @@ class ComponentRegistry:
         params = list(sig.parameters.keys())
 
         try:
-            # New pattern: (config, sizes, device) for regions like LayeredCortex
+            # Pattern for regions: (config, sizes, device)
             if "sizes" in params and "device" in params:
                 sizes = kwargs.pop("sizes", {})
                 device = kwargs.pop("device", None)
@@ -312,7 +312,7 @@ class ComponentRegistry:
                     device = getattr(config, "device", "cpu")
                 return component_class(config=config, sizes=sizes, device=device, **kwargs)
 
-            # Old pattern: (config) or (config, **kwargs)
+            # Pattern for pathways and sub-components: (config) or (config, **kwargs)
             else:
                 return component_class(config, **kwargs)
 
@@ -708,8 +708,8 @@ def register_pathway(
         Decorator function
 
     Example:
-        @register_pathway("spiking_stdp", aliases=["stdp_pathway"], config_class=SpikingPathwayConfig)
-        class SpikingPathway(LearnableComponent):
+        @register_pathway("axonal", aliases=["axonal_projection"], config_class=AxonalProjectionConfig)
+        class AxonalProjection(RoutingComponent):
             ...
     """
     return ComponentRegistry.register(

@@ -61,11 +61,6 @@ class TestThalamus(RegionTestBase):
         relay_size = params.get("relay_size", 80)
         return relay_size
 
-    def _get_config_output_size(self, config):
-        """Get output size from config (for backward compatibility with tests)."""
-        # Config no longer has size fields, return None to force using region instance
-        return None
-
     def get_input_dict(self, n_input, device="cpu"):
         """Return dict input for thalamus (sensory + optional feedback).
 

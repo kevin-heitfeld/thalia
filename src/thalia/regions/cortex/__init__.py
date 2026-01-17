@@ -18,7 +18,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from .config import LayeredCortexConfig, LayeredCortexState, calculate_layer_sizes
+from .config import LayeredCortexConfig, LayeredCortexState
 from .layered_cortex import LayeredCortex
 from .predictive_cortex import PredictiveCortex, PredictiveCortexConfig, PredictiveCortexState
 
@@ -26,7 +26,6 @@ __all__ = [
     "LayeredCortex",
     "LayeredCortexConfig",
     "LayeredCortexState",
-    "calculate_layer_sizes",
     "PredictiveCortex",
     "PredictiveCortexConfig",
     "PredictiveCortexState",

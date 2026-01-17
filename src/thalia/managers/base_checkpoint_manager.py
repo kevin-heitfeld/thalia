@@ -535,8 +535,7 @@ class BaseCheckpointManager(ABC):
     def restore_state(self, state: Dict[str, Any]) -> None:
         """Restore region-specific state from checkpoint (elastic tensor format).
 
-        This method should restore all state extracted by collect_state(),
-        handling backward compatibility and graceful degradation for missing fields.
+        This method should restore all state extracted by collect_state().
 
         This is the elastic tensor format counterpart to load_neuromorphic_state().
 

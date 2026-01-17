@@ -16,9 +16,8 @@ import math
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import GlobalConfig, LayerSizeCalculator
 from thalia.core.brain_builder import BrainBuilder
-from thalia.regions.cortex import calculate_layer_sizes
 
 
 class TestOscillatorManagerIntegration:
@@ -35,7 +34,12 @@ class TestOscillatorManagerIntegration:
         brain = (
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
-            .add_component("cortex", "layered_cortex", input_size=64, **calculate_layer_sizes(32))
+            .add_component(
+                "cortex",
+                "layered_cortex",
+                input_size=64,
+                **LayerSizeCalculator().cortex_from_output(32),
+            )
             .connect("input", "cortex", pathway_type="axonal_projection")
             .build()
         )

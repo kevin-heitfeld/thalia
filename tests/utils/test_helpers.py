@@ -142,44 +142,6 @@ def generate_batch_spikes(
     )
 
 
-def create_test_region_config(**overrides):
-    """Create a minimal test region configuration.
-
-    Provides sensible defaults for testing, with ability to override
-    specific parameters.
-
-    NOTE: This helper maintains backward compatibility with n_input/n_output,
-    but new tests should use semantic config patterns directly:
-    - Thalamus: ThaliamusConfig(input_size=X, relay_size=Y)
-    - Cortex: CortexConfig(input_size=X, layer_sizes=[L4, L23, L5])
-    - Hippocampus: HippocampusConfig(input_size=X, ca3_size=Y, ca1_size=Z)
-    - Prefrontal: PrefrontalConfig(input_size=X, n_neurons=Y)
-    - Striatum: StriatumConfig(n_actions=X, neurons_per_action=Y, input_sources={...})
-    - Cerebellum: CerebellumConfig(input_size=X, purkinje_size=Y)
-
-    Args:
-        **overrides: Configuration parameters to override
-
-    Returns:
-        Configuration dictionary suitable for region initialization
-
-    Example:
-        >>> config = create_test_region_config(n_input=128, n_output=64)
-        >>> config["device"]
-        'cpu'
-    """
-    defaults = {
-        "n_input": 100,
-        "n_output": 64,
-        "device": "cpu",
-        "dt_ms": 1.0,
-        "learning_rate": 0.01,
-        "enable_learning": True,
-    }
-    defaults.update(overrides)
-    return defaults
-
-
 def create_minimal_thalia_config(
     device: str = "cpu",
     dt_ms: float = 1.0,
@@ -328,7 +290,6 @@ __all__ = [
     "generate_sparse_spikes",
     "generate_random_weights",
     "generate_batch_spikes",
-    "create_test_region_config",
     "create_minimal_thalia_config",
     "create_test_brain",
     "create_test_spike_input",

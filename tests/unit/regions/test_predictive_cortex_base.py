@@ -35,22 +35,23 @@ class TestPredictiveCortex(RegionTestBase):
         config = PredictiveCortexConfig(**config_params)
         return PredictiveCortex(config=config, sizes=sizes, device=device)
 
-    def _get_config_input_size(self, config):
-        """Get input size from config - PredictiveCortex doesn't store size in config."""
-        # Use stack introspection to find the test params (same pattern as test_cortex_base.py)
-        import inspect
+    def _get_region_input_size(self, region):
+        """Get input size from PredictiveCortex region instance."""
+        return region.input_size
 
-        for frame_info in inspect.stack():
-            frame_locals = frame_info.frame.f_locals
-            if "params" in frame_locals:
-                params = frame_locals["params"]
-                if isinstance(params, dict) and "input_size" in params:
-                    return params["input_size"]
-        # Fallback: If we can't find from stack, return 0 (test will fail gracefully)
-        return 0
+    def _get_region_output_size(self, region):
+        """Get output size from PredictiveCortex region instance."""
+        return region.output_size
 
-    def _get_config_output_size(self, config):
-        """Get output size from config - PredictiveCortex computes this from layers."""
+    def get_input_dict(self, n_input, device="cpu"):
+        """Return dict input for predictive cortex."""
+        # PredictiveCortex uses InputRouter.concatenate_sources
+        return {
+            "sensory": torch.zeros(n_input, device=device),
+        }
+
+    def _get_region_output_size_override(self, region):
+        """Override for tests - use actual region instance."""
         # Use stack introspection to find region instance
         import inspect
 

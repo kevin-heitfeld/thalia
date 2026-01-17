@@ -96,8 +96,8 @@ class DynamicBrain(nn.Module):
         }
 
         connections = {
-            ("thalamus", "cortex"): SpikingPathway(config),
-            ("cortex", "hippocampus"): SpikingPathway(config),
+            ("thalamus", "cortex"): AxonalProjection(...),
+            ("cortex", "hippocampus"): AxonalProjection(...),
         }
 
         brain = DynamicBrain(components, connections, global_config)

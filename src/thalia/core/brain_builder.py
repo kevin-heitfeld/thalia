@@ -47,25 +47,11 @@ builder.connect("cortex", "striatum", pathway_type="axonal")
 # No double-synapse problem, clear ownership
 ```
 
-### 2. SpikingPathway (Use when pathway has neurons)
-- **For relay stations**: Thalamus, pathway interneurons
-- **Has neurons**: Real neural populations in pathway
-- **Has learning**: Pathway-specific plasticity
-- **Computation**: Filters, gates, or transforms information
-- **Usage**: `builder.connect(src, tgt, pathway_type="spiking")`
-
-Example (sensory input → thalamus):
-```python
-# Thalamus IS a neural population (relay neurons)
-builder.add_component("thalamus", "thalamus", n_input=784, n_output=256)
-
-# Thalamus → cortex: Now just axons
-builder.connect("thalamus", "cortex", pathway_type="axonal")
-```
-
-**Decision Rule:**
-- Does the connection have neurons? → Use SpikingPathway
-- Is it pure transmission? → Use AxonalProjection (recommended)
+### 2. AxonalProjection Architecture
+- **Pure axonal transmission**: Delays only, no weights
+- **Synapses at target**: Weights stored in target region's dendrites
+- **Multi-source support**: Multiple input streams to single target
+- **Usage**: `builder.connect(src, tgt, pathway_type="axonal")`
 
 **Benefits of AxonalProjection:**
 1. Matches biology (axons ≠ synapses)
@@ -90,7 +76,6 @@ from thalia.core.dynamic_brain import DynamicBrain
 from thalia.core.protocols.component import BrainComponent, LearnableComponent
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.cortex import calculate_layer_sizes
 
 # Size parameter names that should be separated from behavioral config
 SIZE_PARAMS = {
@@ -177,7 +162,6 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
         if "purkinje_size" in size_params and "granule_size" not in size_params:
             purkinje_size = size_params["purkinje_size"]
             # expansion = size_params.get("granule_expansion_factor", 4.0)
-            calc = LayerSizeCalculator()
             computed = calc.cerebellum_from_output(purkinje_size)
             return {**size_params, **computed}
 
@@ -185,7 +169,6 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
         # Hippocampus needs input_size → all layer sizes
         if "input_size" in size_params and "dg_size" not in size_params:
             input_size = size_params["input_size"]
-            calc = LayerSizeCalculator()
             computed = calc.hippocampus_from_input(input_size)
             return {**size_params, **computed}
 
@@ -509,7 +492,7 @@ class BrainBuilder:
                 spec.config_params["_has_feedback"] = True
 
     def _get_output_size_from_params(self, spec: ComponentSpec) -> Optional[int]:
-        """Get output size from config params, checking both legacy and semantic fields.
+        """Get output size from config params using semantic field names.
 
         Args:
             spec: Component specification
@@ -519,6 +502,7 @@ class BrainBuilder:
         """
         params = spec.config_params
         registry_name = spec.registry_name
+        calc = LayerSizeCalculator()
 
         # Region-specific semantic output size computation
         if registry_name in ("cortex", "layered_cortex", "predictive_cortex"):
@@ -537,7 +521,6 @@ class BrainBuilder:
                 return int(params["ca1_size"])
             # If ca1_size not specified but input_size is, compute it
             elif "input_size" in params:
-                calc = LayerSizeCalculator()
                 sizes = calc.hippocampus_from_input(params["input_size"])
                 return sizes["ca1_size"]
 
@@ -868,8 +851,7 @@ class BrainBuilder:
             config_class = self._registry.get_config_class(spec.component_type, spec.registry_name)
 
             if config_class is None:
-                # Legacy component without config class metadata
-                # Try to instantiate directly (will fail if config required)
+                # Component missing config class metadata in registry
                 raise ValueError(
                     f"Component '{spec.registry_name}' has no config_class "
                     f"registered. Update registry with config_class metadata."
@@ -1022,8 +1004,7 @@ class BrainBuilder:
                 conn_spec.instance = pathway
 
             else:
-                # Multiple sources - must use AxonalProjection
-                # Legacy SpikingPathway/MultiSourcePathway no longer supported
+                # Multiple sources - use AxonalProjection
                 pathway = self._create_axonal_projection(target_specs, components, target_name)
                 # Use compound key if target_port specified
                 first_spec = target_specs[0]
@@ -1306,6 +1287,8 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     - Thalamus: input_size, relay_size
     - Cortex: layer_sizes (computed from size parameter)
     """
+    calc = LayerSizeCalculator()
+
     input_size = overrides.get("input_size", 64)
     process_size = overrides.get("process_size", 128)
     output_size = overrides.get("output_size", 64)
@@ -1317,8 +1300,8 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     )
 
     # Processing components - input_size inferred from connections
-    builder.add_component("process", "layered_cortex", **calculate_layer_sizes(process_size))
-    builder.add_component("output", "layered_cortex", **calculate_layer_sizes(output_size))
+    builder.add_component("process", "layered_cortex", **calc.cortex_from_output(process_size))
+    builder.add_component("output", "layered_cortex", **calc.cortex_from_output(output_size))
 
     # Connections use axonal projections (pure spike routing)
     builder.connect("input", "process", pathway_type="axonal")
@@ -1347,6 +1330,8 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     - All inter-region connections use AXONAL projections (pure spike routing)
     - Synapses are owned by target regions (biologically accurate)
     """
+    calc = LayerSizeCalculator()
+
     # Default sizes (can be overridden)
     thalamus_relay_size = overrides.get("thalamus_relay_size", 128)
     cortex_size = overrides.get("cortex_size", 500)
@@ -1359,7 +1344,7 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # BIOLOGICAL CONSTRAINTS for corticothalamic feedback:
     # - L6b must match thalamus relay size (one-to-one direct modulation)
     # - L6a must match TRN size (which is trn_ratio * relay size, typically 20%)
-    cortex_sizes = calculate_layer_sizes(cortex_size)
+    cortex_sizes = calc.cortex_from_output(cortex_size)
     cortex_sizes["l6b_size"] = thalamus_relay_size  # Override to match relay neurons
     cortex_sizes["l6a_size"] = int(thalamus_relay_size * 0.2)  # Match TRN size (20% of relay)
 
@@ -1367,7 +1352,6 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     cortex_output_size = cortex_sizes["l23_size"] + cortex_sizes["l5_size"]
 
     # Add regions (only thalamus needs input_size as it's the input interface)
-    calc = LayerSizeCalculator()
     thalamus_sizes = calc.thalamus_from_relay(thalamus_relay_size)
     builder.add_component("thalamus", "thalamus", input_size=thalamus_relay_size, **thalamus_sizes)
     builder.add_component("cortex", "cortex", **cortex_sizes)

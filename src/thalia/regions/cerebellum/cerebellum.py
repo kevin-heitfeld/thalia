@@ -1743,13 +1743,9 @@ class Cerebellum(NeuralRegion):
         # Restore climbing fiber error
         self.climbing_fiber.error.copy_(state.climbing_fiber_error.to(self.device))  # type: ignore[union-attr]
 
-        # Restore IO membrane (gap junction state) - backward compatible
-        # Old checkpoints won't have io_membrane field
+        # Restore IO membrane (gap junction state)
         if state.io_membrane is not None:
             self._io_membrane = state.io_membrane.to(self.device)
-        elif self.gap_junctions_io is not None:
-            # Initialize for new gap junction module if not in checkpoint
-            self._io_membrane = torch.zeros(self.purkinje_size, device=self.device)
 
         # Restore classic neuron state (if not using enhanced microcircuit)
         if not self.use_enhanced and self.neurons is not None:

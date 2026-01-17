@@ -234,36 +234,6 @@ class RegionTestBase(ABC):
         """
         return getattr(region, "n_output", None)
 
-    def _get_config_input_size(self, config: Any) -> int:
-        """Get input size from config using semantic field name.
-
-        DEPRECATED: Use _get_region_input_size() instead (new size-free config pattern).
-        This method is kept for backward compatibility.
-
-        Args:
-            config: Region configuration object
-
-        Returns:
-            Input size value from config (or None if not present)
-        """
-        field = self._get_input_field_name()
-        return getattr(config, field, None)
-
-    def _get_config_output_size(self, config: Any) -> int:
-        """Get output size from config using semantic field name.
-
-        DEPRECATED: Use _get_region_output_size() instead (new size-free config pattern).
-        This method is kept for backward compatibility.
-
-        Args:
-            config: Region configuration object
-
-        Returns:
-            Output size value from config (or None if not present)
-        """
-        field = self._get_output_field_name()
-        return getattr(config, field, None)
-
     # =========================================================================
     # COMMON TEST PATTERNS
     # =========================================================================

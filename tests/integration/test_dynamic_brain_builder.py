@@ -12,11 +12,11 @@ Tests end-to-end functionality:
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import GlobalConfig, LayerSizeCalculator
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.cortex import LayeredCortex, calculate_layer_sizes
+from thalia.regions.cortex import LayeredCortex
 from thalia.regions.cortex.config import LayeredCortexConfig
 
 
@@ -49,7 +49,7 @@ class TestDynamicBrainIntegration:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component(
-                "cortex", "layered_cortex", **calculate_layer_sizes(32)
+                "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(32)
             )  # n_input inferred!
             .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
             .build()
@@ -74,10 +74,10 @@ class TestDynamicBrainIntegration:
             BrainBuilder(global_config)
             .add_component("region_a", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component(
-                "region_b", "layered_cortex", **calculate_layer_sizes(64)
+                "region_b", "layered_cortex", **LayerSizeCalculator().cortex_from_output(64)
             )  # n_input inferred from region_a
             .add_component(
-                "region_c", "layered_cortex", **calculate_layer_sizes(16)
+                "region_c", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
             )  # n_input inferred from region_b
             .connect("region_a", "region_b", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .connect("region_b", "region_c", pathway_type="axonal_projection", axonal_delay_ms=3.0)
@@ -101,13 +101,13 @@ class TestDynamicBrainIntegration:
             BrainBuilder(global_config)
             .add_component("source", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component(
-                "branch1", "layered_cortex", **calculate_layer_sizes(16)
+                "branch1", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
             )  # n_input=32 inferred
             .add_component(
-                "branch2", "layered_cortex", **calculate_layer_sizes(16)
+                "branch2", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
             )  # n_input=32 inferred
             .add_component(
-                "sink", "layered_cortex", **calculate_layer_sizes(8)
+                "sink", "layered_cortex", **LayerSizeCalculator().cortex_from_output(8)
             )  # n_input=32 inferred (16+16)
             .connect("source", "branch1", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .connect("source", "branch2", pathway_type="axonal_projection", axonal_delay_ms=3.0)
@@ -272,7 +272,7 @@ class TestSaveAndLoad:
             BrainBuilder(global_config)
             .add_component("input", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component(
-                "cortex", "layered_cortex", **calculate_layer_sizes(16)
+                "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
             )  # n_input inferred
             .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         )
@@ -612,7 +612,9 @@ class TestStateManagement:
         return (
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
-            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
+            .add_component(
+                "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
+            )
             .add_component("hippocampus", "hippocampus", n_output=15)
             .add_component("pfc", "prefrontal", input_size=20, n_neurons=12)
             .add_component("striatum", "striatum", n_actions=3, neurons_per_action=2)
@@ -771,7 +773,9 @@ class TestStateManagement:
         brain1 = (
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
-            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
+            .add_component(
+                "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
+            )
             .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
@@ -788,7 +792,9 @@ class TestStateManagement:
         brain2 = (
             BrainBuilder(global_config)
             .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
-            .add_component("cortex", "layered_cortex", **calculate_layer_sizes(20))
+            .add_component(
+                "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
+            )
             .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
