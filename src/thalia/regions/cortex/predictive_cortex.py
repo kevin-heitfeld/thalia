@@ -410,7 +410,6 @@ class PredictiveCortex(NeuralRegion):
                 PredictiveCodingConfig(
                     n_input=self.l4_size,  # Predicts L4 input
                     n_representation=prediction_repr_size,  # From L5+L6 combined
-                    n_output=self.l4_size,
                     prediction_tau_ms=config.prediction_tau_ms,
                     error_tau_ms=config.error_tau_ms,
                     learning_rate=config.prediction_learning_rate,
@@ -632,7 +631,6 @@ class PredictiveCortex(NeuralRegion):
                 PredictiveCodingConfig(
                     n_input=self.l4_size,
                     n_representation=prediction_repr_size,
-                    n_output=self.l4_size,
                     prediction_tau_ms=self.config.prediction_tau_ms,
                     error_tau_ms=self.config.error_tau_ms,
                     learning_rate=self.config.prediction_learning_rate,

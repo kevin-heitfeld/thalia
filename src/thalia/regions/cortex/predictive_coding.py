@@ -104,7 +104,6 @@ class PredictiveCodingConfig:
     Attributes:
         n_input: Size of input (from lower layer or sensory)
         n_representation: Size of internal representation (prediction neurons)
-        n_output: Size of output to higher layers (typically = n_input for residuals)
 
         # Prediction dynamics
         prediction_tau_ms: Time constant for prediction integration (slow, NMDA-like)
@@ -130,7 +129,6 @@ class PredictiveCodingConfig:
 
     n_input: int = 256
     n_representation: int = 128
-    n_output: int = 256  # Usually same as n_input for residuals
 
     # Dynamics
     prediction_tau_ms: float = 50.0  # Slow (NMDA-like) for stable predictions
@@ -311,21 +309,6 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 device=device,
             )
         )
-
-        # =================================================================
-        # OUTPUT PROJECTION (if n_output != n_input)
-        # =================================================================
-        self.W_output: Optional[nn.Parameter] = None
-        if config.n_output != config.n_input:
-            self.W_output = nn.Parameter(
-                WeightInitializer.gaussian(
-                    config.n_output,
-                    config.n_input,
-                    mean=0.0,
-                    std=WEIGHT_INIT_SCALE_PREDICTIVE,
-                    device=device,
-                )
-            )
 
         # =================================================================
         # STATE
@@ -563,13 +546,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # Update eligibility trace for learning
         self._update_eligibility(actual_input, self.state.representation, error)  # type: ignore[arg-type]
 
-        # Project error to output dimension if needed
-        if self.W_output is not None:
-            output_error = F.linear(error, self.W_output)
-        else:
-            output_error = error
-
-        return output_error, self.state.prediction, representation_update
+        # Error propagates upward with same dimensionality as input
+        # (Per ADR-013: dimensional transformations handled by pathways)
+        return error, self.state.prediction, representation_update
 
     def _update_eligibility(
         self,
@@ -825,7 +804,6 @@ class HierarchicalPredictiveCoding(nn.Module):
             config = PredictiveCodingConfig(
                 n_input=n_input,
                 n_representation=n_repr,
-                n_output=n_next,  # Output matches next layer's input
                 **(config_overrides or {}),
             )
 
