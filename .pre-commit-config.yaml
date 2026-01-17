@@ -50,13 +50,13 @@ repos:
         additional_dependencies: ["bandit[toml]"]
         exclude: ^tests/
 
-  # mypy - Static type checker (DISABLED: 477 pre-existing errors need systematic fixes)
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.19.1
-  #   hooks:
-  #     - id: mypy
-  #       args: [--ignore-missing-imports, --show-error-codes]
-  #       exclude: ^(tests|docs)/
+  # mypy - Static type checker
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports, --show-error-codes]
+        exclude: ^(tests|docs)/
 
   # nbstripout - Strip Jupyter notebook output
   - repo: https://github.com/kynan/nbstripout

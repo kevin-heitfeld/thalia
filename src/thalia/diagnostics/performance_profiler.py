@@ -395,7 +395,7 @@ class PerformanceProfiler:
 
         try:
             process = psutil.Process()
-            return process.memory_info().rss / (1024**2)  # Convert to MB
+            return float(process.memory_info().rss / (1024**2))  # Convert to MB
         except Exception:
             return 0.0
 

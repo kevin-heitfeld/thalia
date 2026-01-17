@@ -1725,7 +1725,8 @@ class DynamicBrain(nn.Module):
             available = list(self.components.keys())
             raise KeyError(f"Component '{name}' not found. Available: {available}")
         # Cast from Module to LearnableComponent (all our components are LearnableComponent)
-        return self.components[name]  # type: ignore[return-value]
+        component: LearnableComponent = self.components[name]  # type: ignore[assignment]
+        return component
 
     def add_component(
         self,

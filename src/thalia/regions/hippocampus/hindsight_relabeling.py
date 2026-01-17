@@ -237,7 +237,7 @@ class HindsightRelabeler:
         )
         target_float = target_goal.float() if target_goal.dtype == torch.bool else target_goal
         distance = torch.norm(achieved_float - target_float)
-        return distance < self.config.goal_tolerance
+        return bool(distance < self.config.goal_tolerance)
 
     def relabel_episode(self, episode: List[EpisodeTransition]) -> List[EpisodeTransition]:
         """

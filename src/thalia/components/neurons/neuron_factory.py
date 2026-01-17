@@ -135,7 +135,10 @@ class NeuronFactory:
                 f"Available types: {available}. "
                 f"Use NeuronFactory.register() to add custom types."
             )
-        return cls._registry[neuron_type](n_neurons=n_neurons, device=device, **overrides)
+        result: ConductanceLIF = cls._registry[neuron_type](
+            n_neurons=n_neurons, device=device, **overrides
+        )
+        return result
 
     @classmethod
     def list_types(cls) -> List[str]:

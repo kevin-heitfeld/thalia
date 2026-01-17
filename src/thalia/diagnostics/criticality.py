@@ -229,7 +229,7 @@ class CriticalityMonitor(nn.Module):
         branching = ratio ** (1.0 / timesteps)
 
         # Clamp to reasonable range
-        return max(0.1, min(10.0, branching))
+        return float(max(0.1, min(10.0, branching)))
 
     def _update_weight_scaling(self):
         """Update weight scaling to move toward criticality."""

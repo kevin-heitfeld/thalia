@@ -261,7 +261,7 @@ def save_pathway_state(pathway: Any) -> Dict[str, Any]:
     """
     if hasattr(pathway, "get_state"):
         state = pathway.get_state()
-        return state.to_dict()
+        return dict(state.to_dict())
     else:
         raise AttributeError(f"Pathway {type(pathway).__name__} does not implement get_state()")
 

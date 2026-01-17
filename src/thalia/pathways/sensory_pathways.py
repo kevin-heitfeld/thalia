@@ -112,6 +112,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.coding import compute_firing_rate
+from thalia.constants.sensory import (
+    AUDITORY_NERVE_ADAPTATION_DECAY,
+    AUDITORY_NERVE_ADAPTATION_RATE,
+    DOG_FILTER_SIZE,
+    DOG_SIGMA_CENTER,
+    DOG_SIGMA_SURROUND,
+    HAIR_CELL_ADAPTATION_SUPPRESSION,
+    HAIR_CELL_COMPRESSION_EXPONENT,
+    LATENCY_EPSILON,
+    RETINA_ADAPTATION_DECAY,
+    RETINA_ADAPTATION_RATE,
+)
 from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import register_pathway
 

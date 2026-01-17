@@ -349,7 +349,7 @@ class SchemaExtractionConsolidation:
         """
         a_norm = a / (a.norm() + 1e-8)
         b_norm = b / (b.norm() + 1e-8)
-        return (a_norm * b_norm).sum().item()
+        return float((a_norm * b_norm).sum().item())
 
     def get_schema(self, schema_id: int) -> Optional[Schema]:
         """Retrieve a stored schema.
@@ -557,7 +557,8 @@ class SemanticReorganization:
         if not cluster_episodes:
             return None
 
-        return cluster_episodes[torch.randint(len(cluster_episodes), (1,)).item()]
+        idx: int = int(torch.randint(len(cluster_episodes), (1,)).item())
+        return cluster_episodes[idx]
 
     def _kmeans(
         self,
@@ -762,7 +763,7 @@ class InterferenceResolution:
         """
         a_norm = a / (a.norm() + 1e-8)
         b_norm = b / (b.norm() + 1e-8)
-        return (a_norm * b_norm).sum().item()
+        return float((a_norm * b_norm).sum().item())
 
     def _apply_contrastive_push(
         self,

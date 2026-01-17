@@ -311,7 +311,7 @@ class SpilloverTransmission:
         if direct_norm + spillover_norm == 0:
             return 0.0
 
-        return spillover_norm / (direct_norm + spillover_norm)
+        return float(spillover_norm / (direct_norm + spillover_norm))
 
     def update_direct_weights(self, new_weights: torch.Tensor) -> None:
         """

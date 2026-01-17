@@ -2552,7 +2552,8 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def sample_episodes_prioritized(self, n: int) -> List[Episode]:
         """Sample episodes with probability proportional to priority."""
-        return self.memory.sample_episodes_prioritized(n)
+        episodes: List[Episode] = self.memory.sample_episodes_prioritized(n)
+        return episodes
 
     def retrieve_similar(
         self,
@@ -2591,12 +2592,13 @@ class TrisynapticHippocampus(NeuralRegion):
             Uses cosine similarity in state space. For more sophisticated
             retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
         """
-        return self.memory.retrieve_similar(
+        results: List[Dict[str, Any]] = self.memory.retrieve_similar(
             query_state=query_state,
             query_action=query_action,
             k=k,
             similarity_threshold=similarity_threshold,
         )
+        return results
 
     # =========================================================================
     # HINDSIGHT EXPERIENCE REPLAY (HER)

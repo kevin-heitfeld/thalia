@@ -113,7 +113,7 @@ def compress_data(
 
         try:
             compressor = zstd.ZstdCompressor(level=level)
-            return compressor.compress(data)
+            return bytes(compressor.compress(data))
         except Exception as e:
             raise CompressionError(f"zstd compression failed: {e}")
 
@@ -125,7 +125,7 @@ def compress_data(
             )
 
         try:
-            return lz4.frame.compress(data, compression_level=level)
+            return bytes(lz4.frame.compress(data, compression_level=level))
         except Exception as e:
             raise CompressionError(f"lz4 compression failed: {e}")
 
@@ -161,7 +161,7 @@ def decompress_data(
 
         try:
             decompressor = zstd.ZstdDecompressor()
-            return decompressor.decompress(data)
+            return bytes(decompressor.decompress(data))
         except Exception as e:
             raise CompressionError(f"zstd decompression failed: {e}")
 
@@ -173,7 +173,7 @@ def decompress_data(
             )
 
         try:
-            return lz4.frame.decompress(data)
+            return bytes(lz4.frame.decompress(data))
         except Exception as e:
             raise CompressionError(f"lz4 decompression failed: {e}")
 

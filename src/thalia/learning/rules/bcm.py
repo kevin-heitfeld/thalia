@@ -103,7 +103,7 @@ class BCMConfig:
     @property
     def decay_theta(self) -> float:
         """Decay factor for threshold EMA per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_theta)).item()
+        return float(torch.exp(torch.tensor(-self.dt / self.tau_theta)).item())
 
 
 class BCMRule(nn.Module):

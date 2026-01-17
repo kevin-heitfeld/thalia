@@ -95,11 +95,11 @@ class DeviceMixin:
 
     def get_device_type(self) -> str:
         """Get device type string ('cpu', 'cuda', etc.)."""
-        return self.device.type
+        return str(self.device.type)
 
     def is_cuda(self) -> bool:
         """Check if using CUDA device."""
-        return self.device.type == "cuda"
+        return bool(self.device.type == "cuda")
 
 
 __all__ = ["DeviceMixin"]

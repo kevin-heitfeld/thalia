@@ -518,7 +518,10 @@ class DopamineGatingSystem:
         Returns smooth gate value based on dopamine level.
         """
         # Sigmoid around threshold
-        return 1.0 / (1.0 + torch.exp(torch.tensor(-10 * (self.level - self.threshold))).item())
+        gate_value: float = 1.0 / (
+            1.0 + torch.exp(torch.tensor(-10 * (self.level - self.threshold))).item()
+        )
+        return gate_value
 
     def get_state(self) -> Dict[str, Any]:
         """Get state for checkpointing."""

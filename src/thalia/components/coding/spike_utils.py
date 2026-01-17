@@ -50,7 +50,7 @@ def compute_firing_rate(spikes: torch.Tensor) -> float:
     """
     if spikes.numel() == 0:
         return 0.0
-    return spikes.float().mean().item()
+    return float(spikes.float().mean().item())
 
 
 def compute_spike_count(spikes: torch.Tensor) -> int:

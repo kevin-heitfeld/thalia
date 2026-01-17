@@ -279,7 +279,7 @@ class MentalSimulationCoordinator:
         avg_similarity = sum(exp["similarity"] for exp in similar_experiences) / len(
             similar_experiences
         )
-        return 1.0 - avg_similarity
+        return float(1.0 - avg_similarity)
 
     def _get_action_priorities(
         self, state: torch.Tensor, actions: List[int], goal_context: Optional[torch.Tensor]

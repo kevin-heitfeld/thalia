@@ -359,7 +359,7 @@ class NeuromodulatorMixin:
         # Clamp to non-negative (can't have negative learning rate)
         modulation = max(0.0, modulation)
 
-        return base_lr * modulation
+        return float(base_lr * modulation)
 
     def get_neuromodulator_state(self) -> dict:
         """Get current neuromodulator levels for diagnostics.

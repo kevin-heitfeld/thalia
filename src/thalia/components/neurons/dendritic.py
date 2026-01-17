@@ -77,12 +77,12 @@ class DendriticBranchConfig:
     @property
     def plateau_decay(self) -> float:
         """Decay factor for NMDA plateau per timestep."""
-        return torch.exp(torch.tensor(-self.dt_ms / self.plateau_tau_ms)).item()
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.plateau_tau_ms)).item())
 
     @property
     def syn_decay(self) -> float:
         """Decay factor for synaptic conductance per timestep."""
-        return torch.exp(torch.tensor(-self.dt_ms / self.tau_syn_ms)).item()
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_syn_ms)).item())
 
 
 @dataclass
@@ -693,6 +693,7 @@ def create_clustered_input(
     n_active: int,
     cluster_branch: int,
     n_branches: int,
+    device: torch.device = torch.device("cpu"),
 ) -> torch.Tensor:
     """Create an input pattern with activity clustered on one branch.
 
@@ -704,6 +705,7 @@ def create_clustered_input(
         n_active: Number of active inputs
         cluster_branch: Which branch to cluster activity on (0 to n_branches-1)
         n_branches: Number of branches
+        device: Device for tensor creation
 
     Returns:
         Input pattern, shape (n_inputs,)
@@ -722,6 +724,7 @@ def create_scattered_input(
     n_inputs: int,
     n_active: int,
     n_branches: int,
+    device: torch.device = torch.device("cpu"),
 ) -> torch.Tensor:
     """Create an input pattern with activity scattered across branches.
 
@@ -732,6 +735,7 @@ def create_scattered_input(
         n_inputs: Total number of inputs
         n_active: Number of active inputs per branch
         n_branches: Number of branches
+        device: Device to create tensor on
 
     Returns:
         Input pattern, shape (n_inputs,)

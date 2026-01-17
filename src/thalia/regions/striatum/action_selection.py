@@ -172,7 +172,8 @@ class ActionSelectionMixin:
         Returns:
             Action index (0 to n_actions-1), or None if no action taken.
         """
-        return self.state_tracker.last_action
+        action: Optional[int] = self.state_tracker.last_action
+        return action
 
     def get_accumulated_net_votes(self) -> torch.Tensor:
         """Get accumulated D1-D2 (NET) votes across all timesteps.

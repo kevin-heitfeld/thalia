@@ -317,4 +317,4 @@ def estimate_encoding_size(tensor: torch.Tensor, sparsity_threshold: float = 0.1
         # Dense: numel * bytes_per_elem
         data_size = tensor.numel() * tensor.element_size()
 
-    return header_size + data_size
+    return int(header_size + data_size)

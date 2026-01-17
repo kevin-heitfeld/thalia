@@ -748,7 +748,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     @property
     def last_action(self) -> Optional[int]:
         """Last selected action (delegates to state_tracker)."""
-        return self.state_tracker.last_action
+        action: Optional[int] = self.state_tracker.last_action
+        return action
 
     # =========================================================================
     # VALUE ESTIMATION (for centralized RPE computation in Brain/VTA)
@@ -882,7 +883,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 action_values *= 0.5 + action_mod
 
         # Return max value (best action from this state)
-        return action_values.max().item()
+        return float(action_values.max().item())
 
     # =========================================================================
     # SYNAPTIC WEIGHT INITIALIZATION (Phase 2 - Option B)

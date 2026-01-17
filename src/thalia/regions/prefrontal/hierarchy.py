@@ -118,13 +118,13 @@ class Goal:
     def is_achievable(self, state: torch.Tensor) -> bool:
         """Check if goal can be pursued from current state."""
         if self.initiation_set is not None:
-            return self.initiation_set(state)
+            return bool(self.initiation_set(state))
         return True  # Always achievable if no constraint
 
     def is_achieved(self, state: torch.Tensor) -> bool:
         """Check if goal is achieved in current state."""
         if self.termination_condition is not None:
-            return self.termination_condition(state)
+            return bool(self.termination_condition(state))
 
         # Default: Check if all subgoals completed
         if len(self.subgoals) > 0:
@@ -241,7 +241,7 @@ class GoalHierarchyManager:
 
             return random.choice(available_goals)
         else:
-            best_idx = torch.tensor(scores).argmax().item()
+            best_idx = int(torch.tensor(scores).argmax().item())
             return available_goals[best_idx]
 
     def decompose_goal(self, goal: Goal, state: torch.Tensor) -> List[Goal]:

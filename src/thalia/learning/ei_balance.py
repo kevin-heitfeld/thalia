@@ -91,7 +91,7 @@ class EIBalanceConfig:
     @property
     def decay(self) -> float:
         """Decay factor for exponential moving average."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_balance)).item()
+        return float(torch.exp(torch.tensor(-self.dt / self.tau_balance)).item())
 
 
 class EIBalanceRegulator(nn.Module):
@@ -381,4 +381,4 @@ class LayerEIBalance(nn.Module):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostic information."""
-        return self.regulator.get_diagnostics()
+        return dict(self.regulator.get_diagnostics())

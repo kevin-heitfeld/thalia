@@ -130,12 +130,12 @@ class STPConfig:
     @property
     def decay_d(self) -> float:
         """Depression recovery decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_d)).item()
+        return float(torch.exp(torch.tensor(-self.dt / self.tau_d)).item())
 
     @property
     def decay_f(self) -> float:
         """Facilitation decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_f)).item()
+        return float(torch.exp(torch.tensor(-self.dt / self.tau_f)).item())
 
 
 class ShortTermPlasticity(nn.Module):

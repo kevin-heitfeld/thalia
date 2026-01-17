@@ -438,4 +438,4 @@ def compute_shared_attention(
     else:
         shared_attention = 0.0
 
-    return shared_attention
+    return float(shared_attention)

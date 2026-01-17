@@ -137,17 +137,17 @@ class ConductanceLIFConfig(BaseNeuronConfig):
     @property
     def g_E_decay(self) -> float:
         """Excitatory conductance decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt_ms / self.tau_E)).item()
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_E)).item())
 
     @property
     def g_I_decay(self) -> float:
         """Inhibitory conductance decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt_ms / self.tau_I)).item()
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_I)).item())
 
     @property
     def adapt_decay(self) -> float:
         """Adaptation conductance decay factor per timestep."""
-        return torch.exp(torch.tensor(-self.dt_ms / self.tau_adapt)).item()
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_adapt)).item())
 
     @property
     def ref_steps(self) -> int:

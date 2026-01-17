@@ -123,7 +123,7 @@ class MetabolicConfig:
     @property
     def energy_decay(self) -> float:
         """Decay factor for energy averaging."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_energy)).item()
+        return float(torch.exp(torch.tensor(-self.dt / self.tau_energy)).item())
 
 
 class MetabolicConstraint(nn.Module):
@@ -182,7 +182,7 @@ class MetabolicConstraint(nn.Module):
         n_spikes = spikes.float().sum().item()
         cost = n_spikes * cfg.energy_per_spike + cfg.baseline_cost
 
-        return cost
+        return float(cost)
 
     def compute_penalty(
         self,
@@ -415,7 +415,7 @@ class RegionalMetabolicBudget:
         excess = max(0, cost - budget)
         self.region_penalties[region] = excess * cfg.penalty_scale
 
-        return cost
+        return float(cost)
 
     def get_total_cost(self) -> float:
         """Get total energy cost across all regions."""

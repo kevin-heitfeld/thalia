@@ -29,12 +29,14 @@ Date: December 22, 2025
 Updated: January 17, 2026 (Task 2.4 - Extract Common Testing Patterns)
 """
 
+import pathlib
 from typing import List, Optional
 
 import torch
 
 from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig
 from thalia.core.brain_builder import BrainBuilder
+from thalia.core.dynamic_brain import DynamicBrain
 
 
 def generate_sparse_spikes(

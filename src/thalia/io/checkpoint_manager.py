@@ -293,7 +293,7 @@ class CheckpointManager:
 
         # Use BrainCheckpoint info API
         info = BrainCheckpoint.info(path)
-        return info.get("metadata", {})
+        return dict(info.get("metadata", {}))
 
     def list_components(self) -> Dict[str, Any]:
         """List all components managed by this checkpoint manager.

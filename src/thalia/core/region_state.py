@@ -309,7 +309,7 @@ def get_state_version(state_dict: Dict[str, Any]) -> int:
         - Version checking before deserialization
         - Migration decision logic
     """
-    return state_dict.get("state_version", 1)
+    return int(state_dict.get("state_version", 1))
 
 
 # =====================================================================

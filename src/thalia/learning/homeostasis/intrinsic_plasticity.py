@@ -95,6 +95,7 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 
+from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.diagnostics import auto_diagnostics
 
 
@@ -142,7 +143,7 @@ class IntrinsicPlasticityConfig:
     @property
     def rate_decay(self) -> float:
         """Decay factor for rate exponential moving average."""
-        return torch.exp(torch.tensor(-self.dt / self.tau_rate)).item()
+        return float(torch.exp(torch.tensor(-self.dt / self.tau_rate)).item())
 
     @property
     def effective_lr(self) -> float:

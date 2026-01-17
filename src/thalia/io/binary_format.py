@@ -262,7 +262,7 @@ class BinaryReader:
         self.hasher.update(data)
         self._read_count += length
 
-        return json.loads(data.decode("utf-8"))
+        return dict(json.loads(data.decode("utf-8")))
 
     def read_bytes(self, offset: int, length: int) -> bytes:
         """Read raw bytes at specific offset."""
