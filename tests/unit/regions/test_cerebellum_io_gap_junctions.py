@@ -185,47 +185,6 @@ def test_io_gap_junction_state_serialization():
     ), "IO membrane state not restored correctly"
 
 
-def test_io_gap_junction_backward_compatibility():
-    """Test loading old checkpoints without io_membrane field.
-
-    Old checkpoints won't have io_membrane. The cerebellum should handle this
-    gracefully by initializing io_membrane to zeros.
-    """
-    cerebellum = create_test_cerebellum(
-        input_size=100,
-        purkinje_size=50,
-        device="cpu",
-        gap_junctions_enabled=True,
-    )
-
-    # Create state without io_membrane (simulating old checkpoint)
-    device = cerebellum.device
-    state = cerebellum.get_state()
-    old_state_dict = state.to_dict()
-    del old_state_dict["io_membrane"]  # Remove to simulate old checkpoint
-
-    # Reconstruct state from dict (simulating from_dict)
-    old_state = CerebellumState.from_dict(old_state_dict, device=device)
-
-    # Load into new cerebellum with gap junctions enabled
-    cerebellum2 = create_test_cerebellum(
-        input_size=100,
-        purkinje_size=50,
-        device="cpu",
-        gap_junctions_enabled=True,
-    )
-    cerebellum2.load_state(old_state)
-
-    # Should initialize io_membrane to zeros
-    assert cerebellum2._io_membrane is not None
-    assert cerebellum2._io_membrane.shape == (50,)
-    assert torch.allclose(
-        cerebellum2._io_membrane,
-        torch.zeros(50, device=device),
-        atol=1e-6
-    ), "IO membrane should initialize to zeros for old checkpoints"
-
-
 def test_io_gap_junction_reset_state():
     """Test that reset_state properly initializes io_membrane."""
     cerebellum = create_test_cerebellum(

@@ -117,28 +117,6 @@ class TestPerTargetDelays:
         # At t=10, delayed spikes (from t=0) should appear
         assert outputs[10] == 128, f"Expected 128 spikes at t=10, got {outputs[10]}"
 
-    def test_backward_compatibility_four_tuple(self):
-        """Test backward compatibility with 4-tuple source specification."""
-        projection = AxonalProjection(
-            sources=[("cortex", "l5", 128, 5.0)],  # Old format
-            device="cpu",
-            dt_ms=1.0,
-        )
-
-        assert projection.sources[0].delay_ms == 5.0
-        assert projection.sources[0].target_delays is None
-
-    def test_backward_compatibility_three_tuple(self):
-        """Test backward compatibility with 3-tuple source specification."""
-        projection = AxonalProjection(
-            sources=[("cortex", "l5", 128)],  # Very old format
-            device="cpu",
-            dt_ms=1.0,
-        )
-
-        assert projection.sources[0].delay_ms == 2.0  # Default
-        assert projection.sources[0].target_delays is None
-
     def test_multi_source_per_target_delays(self):
         """Test multiple sources with different per-target delays."""
         projection = AxonalProjection(

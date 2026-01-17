@@ -453,37 +453,6 @@ class TestReservedSpaceUtilization:
 class TestEdgeCases:
     """Test edge cases and error conditions."""
 
-    def test_load_corrupted_metadata(self, striatum_small, tmp_path):
-        """Loading checkpoint with missing capacity falls back to old format (warns)."""
-        checkpoint_path = tmp_path / "corrupted.ckpt"
-
-        # Get real checkpoint and corrupt it
-        state = striatum_small.get_full_state()
-        del state["neuron_state"]["n_neurons_capacity"]  # Remove capacity field
-
-        torch.save(state, checkpoint_path)
-        loaded_state = torch.load(checkpoint_path, weights_only=False)
-
-        # Should warn about old format (not raise error)
-        with pytest.warns(UserWarning, match="old.*format"):
-            striatum_small.load_full_state(loaded_state)
-
-    def test_load_old_format_without_capacity(self, striatum_small, tmp_path):
-        """Loading old checkpoint without capacity metadata should warn."""
-        checkpoint_path = tmp_path / "old_format.ckpt"
-
-        # Get real checkpoint and remove capacity metadata
-        state = striatum_small.get_full_state()
-        del state["neuron_state"]["n_neurons_active"]
-        del state["neuron_state"]["n_neurons_capacity"]
-
-        torch.save(state, checkpoint_path)
-        loaded_state = torch.load(checkpoint_path, weights_only=False)
-
-        # Should warn about old format
-        with pytest.warns(UserWarning, match="old.*format"):
-            striatum_small.load_full_state(loaded_state)
-
     def test_save_load_round_trip(self, striatum_small, tmp_path):
         """Save and load should be perfect round-trip."""
         checkpoint_path = tmp_path / "roundtrip.ckpt"

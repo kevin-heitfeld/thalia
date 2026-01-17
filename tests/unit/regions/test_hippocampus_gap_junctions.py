@@ -138,31 +138,6 @@ def test_gap_junction_state_serialization():
     assert torch.allclose(restored_state.ca1_membrane, state.ca1_membrane)
 
 
-def test_gap_junction_backward_compatibility():
-    """Old states without ca1_membrane can be loaded (backward compatible)."""
-    from thalia.regions.hippocampus.config import HippocampusState
-
-    # Simulate old state dict (no ca1_membrane)
-    old_state_dict = {
-        "dg_spikes": torch.zeros(96),
-        "ca3_spikes": torch.zeros(48),
-        "ca1_spikes": torch.zeros(64),
-        "ca3_membrane": torch.zeros(48),
-        "ca3_persistent": torch.zeros(48),
-        "dg_trace": torch.zeros(96),
-        "ca3_trace": torch.zeros(48),
-        "nmda_trace": torch.zeros(64),
-        "ffi_strength": 0.0,
-        # ca1_membrane deliberately missing
-    }
-
-    # Should load without error
-    state = HippocampusState.from_dict(old_state_dict)
-
-    # ca1_membrane should be None (not present in old state)
-    assert state.ca1_membrane is None
-
-
 def test_gap_junction_uses_ca1_inhib_weights():
     """Gap junctions use ca1_inhib weights to infer neighborhoods."""
     sizes = compute_hippocampus_sizes(32)

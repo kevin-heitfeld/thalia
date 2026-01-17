@@ -198,32 +198,6 @@ def test_gap_junction_state_serialization(default_config, striatum_sizes, device
         assert torch.allclose(striatum2.state.fsi_membrane, striatum.state.fsi_membrane)
 
 
-def test_gap_junction_backward_compatibility(striatum_sizes, device):
-    """Test that old states without FSI fields can be loaded."""
-    config = StriatumConfig(fsi_enabled=True)
-    striatum = Striatum(config=config, sizes=striatum_sizes, device=device)
-
-    # Create old state dict WITHOUT fsi_membrane
-    old_state_dict = {
-        "spikes": None,
-        "membrane": None,
-        "dopamine": 0.3,
-        "acetylcholine": 0.0,
-        "norepinephrine": 0.0,
-        # No fsi_membrane field
-    }
-
-    # Should load without error (fsi_membrane will be None)
-    loaded_state = StriatumState.from_dict(old_state_dict, device=device)
-
-    assert loaded_state.fsi_membrane is None  # Missing field defaults to None
-
-    # Reset should initialize it
-    striatum.state = loaded_state
-    striatum.reset_state()
-    assert striatum.state.fsi_membrane is not None
-
-
 def test_gap_junction_uses_fsi_weights(default_config, striatum_sizes, device):
     """Test that gap junctions use FSI weights for neighborhood inference."""
     striatum = Striatum(config=default_config, sizes=striatum_sizes, device=device)

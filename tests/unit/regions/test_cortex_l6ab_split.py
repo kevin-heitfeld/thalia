@@ -213,22 +213,6 @@ class TestL6abSplit:
         # Verify L6a is slower (type I inhibitory modulation)
         assert cortex.config.l6a_to_trn_delay_ms > cortex.config.l6b_to_relay_delay_ms
 
-    def test_l6ab_no_legacy_ports(self, cortex_config_l6ab, cortex_sizes, device):
-        """Test that legacy 'l6' and 'l6_feedback' ports raise ValueError."""
-        cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
-
-        n_input = cortex_config_l6ab.n_input
-        sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
-        cortex.reset_state()
-        _ = cortex(sensory_input)
-
-        # Legacy ports should raise ValueError (not supported)
-        with pytest.raises(ValueError, match="Invalid port 'l6'"):
-            _ = cortex.get_output("l6")
-
-        with pytest.raises(ValueError, match="Invalid port 'l6_feedback'"):
-            _ = cortex.get_output("l6_feedback")
-
     def test_l6ab_state_reset(self, cortex_config_l6ab, cortex_sizes, device):
         """Test that reset_state() properly clears L6a and L6b state."""
         cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))

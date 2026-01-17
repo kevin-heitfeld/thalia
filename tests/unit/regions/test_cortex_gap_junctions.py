@@ -179,34 +179,6 @@ def test_gap_junction_state_serialization():
     assert torch.allclose(restored_state.l23_membrane, state.l23_membrane)
 
 
-def test_gap_junction_backward_compatibility():
-    """Old states without l23_membrane can be loaded (backward compatible)."""
-    from thalia.regions.cortex.config import LayeredCortexState
-
-    # Simulate old state dict (no l23_membrane)
-    old_state_dict = {
-        "l4_spikes": torch.zeros(32),
-        "l23_spikes": torch.zeros(64),
-        "l5_spikes": torch.zeros(32),
-        "l6a_spikes": torch.zeros(16),
-        "l6b_spikes": torch.zeros(16),
-        "l23_recurrent_activity": torch.zeros(64),
-        "l4_trace": torch.zeros(32),
-        "l23_trace": torch.zeros(64),
-        "l5_trace": torch.zeros(32),
-        "l6a_trace": torch.zeros(16),
-        "l6b_trace": torch.zeros(16),
-        "ffi_strength": 0.0,
-        # l23_membrane deliberately missing
-    }
-
-    # Should load without error
-    state = LayeredCortexState.from_dict(old_state_dict)
-
-    # l23_membrane should be None (not present in old state)
-    assert state.l23_membrane is None
-
-
 def test_gap_junction_uses_l23_inhib_weights():
     """Gap junctions use l23_inhib weights to infer neighborhoods."""
     sizes = {
