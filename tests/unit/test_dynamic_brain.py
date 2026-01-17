@@ -34,7 +34,8 @@ def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu") 
     """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
     config = ThalamicRelayConfig(device=device)
     calc = LayerSizeCalculator()
-    sizes = calc.thalamus_from_relay(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
+    sizes = calc.thalamus_from_relay(relay_size)
+    sizes["trn_size"] = 0  # Set trn_size=0 for tests
     sizes["input_size"] = input_size
     return ThalamicRelay(config, sizes, device)
 

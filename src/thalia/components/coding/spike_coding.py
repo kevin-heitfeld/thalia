@@ -31,8 +31,6 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from thalia.core.errors import ConfigurationError
-
 
 class CodingStrategy(Enum):
     """Spike coding strategies (shared across encoders/decoders)."""
@@ -481,6 +479,6 @@ def compute_spike_similarity(
         similarity = intersection / (union + 1e-6)
 
     else:
-        raise ConfigurationError(f"Unknown similarity method: {method}")
+        raise ValueError(f"Unknown similarity method: {method}")
 
     return similarity

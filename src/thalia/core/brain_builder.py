@@ -1353,7 +1353,7 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Add regions (only thalamus needs input_size as it's the input interface)
     thalamus_sizes = calc.thalamus_from_relay(thalamus_relay_size)
-    builder.add_component("thalamus", "thalamus", input_size=thalamus_relay_size, **thalamus_sizes)
+    builder.add_component("thalamus", "thalamus", **thalamus_sizes)
     builder.add_component("cortex", "cortex", **cortex_sizes)
 
     # Hippocampus: input from cortex (L2/3 + L5 = 1250)

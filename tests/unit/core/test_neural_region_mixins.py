@@ -2,7 +2,6 @@
 
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
@@ -10,7 +9,7 @@ from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
 
 
 def create_test_prefrontal(input_size: int, n_neurons: int, device: str) -> Prefrontal:
-    """Create Prefrontal instance for testing with Phase 2 pattern."""
+    """Create Prefrontal instance for testing."""
     sizes = {"input_size": input_size, "n_neurons": n_neurons}
     config = PrefrontalConfig()
     return Prefrontal(config=config, sizes=sizes, device=device)
@@ -19,11 +18,15 @@ def create_test_prefrontal(input_size: int, n_neurons: int, device: str) -> Pref
 def create_test_cerebellum(
     input_size: int, purkinje_size: int, device: str, **kwargs
 ) -> Cerebellum:
-    """Create Cerebellum instance for testing with Phase 2 pattern."""
+    """Create Cerebellum instance for testing."""
     expansion = kwargs.pop("granule_expansion_factor", 4.0)
-    calc = LayerSizeCalculator()
-    sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
-    sizes["input_size"] = input_size  # Add input_size to sizes dict
+    granule_size = int(input_size * expansion)
+    sizes = {
+        "input_size": input_size,
+        "purkinje_size": purkinje_size,
+        "granule_size": granule_size,
+        "dcn_size": purkinje_size,
+    }
     config = CerebellumConfig(**kwargs)
     return Cerebellum(config=config, sizes=sizes, device=device)
 

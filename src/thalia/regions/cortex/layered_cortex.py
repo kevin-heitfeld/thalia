@@ -1844,6 +1844,10 @@ class LayeredCortex(NeuralRegion):
         # Brain broadcasts to all regions every timestep via _update_neuromodulators().
         # No local decay needed.
 
+        # Skip plasticity if BCM is not enabled
+        if not self.config.bcm_enabled:
+            return
+
         # Get 1D versions of spike tensors for torch.outer
         l4_spikes = ensure_1d(self.state.l4_spikes)
         l23_spikes = ensure_1d(self.state.l23_spikes) if self.state.l23_spikes is not None else None

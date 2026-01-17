@@ -18,12 +18,18 @@ from thalia.regions.prefrontal.hierarchy import (
     Goal,
     GoalStatus,
 )
-from thalia.regions.prefrontal.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
+from thalia.regions.prefrontal.prefrontal import (
+    Prefrontal,
+    PrefrontalConfig,
+    PrefrontalState,
+    sample_heterogeneous_wm_neurons,
+)
 
 __all__ = [
     "Prefrontal",
     "PrefrontalConfig",
     "PrefrontalState",
+    "sample_heterogeneous_wm_neurons",
     "Goal",
     "GoalStatus",
     "PrefrontalCheckpointManager",

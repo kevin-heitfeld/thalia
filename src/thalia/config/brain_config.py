@@ -15,16 +15,15 @@ from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
 from thalia.diagnostics.criticality import CriticalityConfig
-from thalia.regions.cerebellum import CerebellumConfig
-
-# Import region configs from canonical locations
-from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
-from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.regions.prefrontal import PrefrontalConfig
-from thalia.regions.striatum.config import StriatumConfig
 
 if TYPE_CHECKING:
     from thalia.coordination.oscillator import OscillatorCoupling
+    # Import region configs from canonical locations
+    from thalia.regions.cerebellum import CerebellumConfig
+    from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+    from thalia.regions.hippocampus.config import HippocampusConfig
+    from thalia.regions.prefrontal import PrefrontalConfig
+    from thalia.regions.striatum.config import StriatumConfig
 
 
 class RegionType(Enum):
@@ -235,6 +234,32 @@ class RegionSizes:
 # consistency between config definitions and actual usage.
 
 
+# Lazy factory functions to avoid circular imports
+def _default_cerebellum_config():
+    from thalia.regions.cerebellum import CerebellumConfig
+    return CerebellumConfig()
+
+
+def _default_cortex_config():
+    from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+    return PredictiveCortexConfig()
+
+
+def _default_hippocampus_config():
+    from thalia.regions.hippocampus.config import HippocampusConfig
+    return HippocampusConfig()
+
+
+def _default_pfc_config():
+    from thalia.regions.prefrontal import PrefrontalConfig
+    return PrefrontalConfig()
+
+
+def _default_striatum_config():
+    from thalia.regions.striatum.config import StriatumConfig
+    return StriatumConfig()
+
+
 @dataclass
 class BrainConfig:
     """Complete brain configuration.
@@ -252,11 +277,11 @@ class BrainConfig:
 
     # Region-specific configs (BEHAVIORAL PARAMS ONLY - no sizes)
     # Sizes come from RegionSizes and are passed separately during construction
-    cortex: PredictiveCortexConfig = field(default_factory=PredictiveCortexConfig)
-    hippocampus: HippocampusConfig = field(default_factory=HippocampusConfig)
-    striatum: StriatumConfig = field(default_factory=StriatumConfig)
-    pfc: PrefrontalConfig = field(default_factory=PrefrontalConfig)
-    cerebellum: CerebellumConfig = field(default_factory=CerebellumConfig)
+    cortex: "PredictiveCortexConfig" = field(default_factory=_default_cortex_config)
+    hippocampus: "HippocampusConfig" = field(default_factory=_default_hippocampus_config)
+    striatum: "StriatumConfig" = field(default_factory=_default_striatum_config)
+    pfc: "PrefrontalConfig" = field(default_factory=_default_pfc_config)
+    cerebellum: "CerebellumConfig" = field(default_factory=_default_cerebellum_config)
 
     # Region type selection (allows swapping implementations)
     cortex_type: CortexType = CortexType.PREDICTIVE

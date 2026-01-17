@@ -66,11 +66,6 @@ from typing import Any, Dict, Optional, Union
 import torch
 
 from thalia.components.neurons import (
-    E_EXCITATORY,
-    E_INHIBITORY,
-    E_LEAK,
-    V_RESET_STANDARD,
-    V_THRESHOLD_STANDARD,
     ConductanceLIF,
     ConductanceLIFConfig,
 )
@@ -81,6 +76,13 @@ from thalia.constants.neuromodulation import (
     DA_BASELINE_STANDARD,
     NE_BASELINE,
     compute_ne_gain,
+)
+from thalia.constants.neuron import (
+    E_EXCITATORY,
+    E_INHIBITORY,
+    E_LEAK,
+    V_RESET_STANDARD,
+    V_THRESHOLD_STANDARD,
 )
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.component_state import NeuralComponentState
@@ -93,14 +95,13 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasisConfig,
 )
 from thalia.managers.component_registry import register_region
-from thalia.regions.cerebellum import (
-    DeepCerebellarNuclei,
-    EnhancedPurkinjeCell,
-    GranuleCellLayer,
-)
 from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
+
+from .deep_nuclei import DeepCerebellarNuclei
+from .granule_layer import GranuleCellLayer
+from .purkinje_cell import EnhancedPurkinjeCell
 
 
 @dataclass
