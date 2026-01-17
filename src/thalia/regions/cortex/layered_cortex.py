@@ -139,12 +139,12 @@ from thalia.core.diagnostics_schema import (
 )
 from thalia.core.neural_region import NeuralRegion
 from thalia.learning import BCMStrategyConfig, STDPConfig, create_cortex_strategy
-from thalia.learning.rules.strategies import LearningStrategy
 from thalia.learning.ei_balance import LayerEIBalance
 from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
 )
+from thalia.learning.rules.strategies import LearningStrategy
 from thalia.managers.component_registry import register_region
 from thalia.neuromodulation import compute_ne_gain
 from thalia.regions.stimulus_gating import StimulusGating
@@ -2157,9 +2157,9 @@ class LayeredCortex(NeuralRegion):
 
         # Recurrent activity
         if self.state.l23_recurrent_activity is not None:
-            region_specific["recurrent_dynamics"][
-                "l23_recurrent_mean"
-            ] = float(self.state.l23_recurrent_activity.mean().item())  # type: ignore[assignment]
+            region_specific["recurrent_dynamics"]["l23_recurrent_mean"] = float(
+                self.state.l23_recurrent_activity.mean().item()
+            )  # type: ignore[assignment]
 
         # Robustness mechanisms (E/I balance)
         if self.ei_balance is not None:

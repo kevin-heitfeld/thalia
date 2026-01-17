@@ -35,7 +35,7 @@ def cerebellum_classic_config(device):
     input_size = 128
     purkinje_size = 64
     calc = LayerSizeCalculator()
-    sizes = calc.cerebellum_from_purkinje(purkinje_size)
+    sizes = calc.cerebellum_from_output(purkinje_size)
     sizes["input_size"] = input_size
 
     config = CerebellumConfig(
@@ -53,7 +53,7 @@ def cerebellum_enhanced_config(device):
     purkinje_size = 64
     granule_expansion = 4.0
     calc = LayerSizeCalculator()
-    sizes = calc.cerebellum_from_purkinje(purkinje_size, granule_expansion)
+    sizes = calc.cerebellum_from_output(purkinje_size)
     sizes["input_size"] = input_size
 
     config = CerebellumConfig(
@@ -667,7 +667,7 @@ class TestBackwardCompatibility:
 
         # Classic config
         calc = LayerSizeCalculator()
-        classic_sizes = calc.cerebellum_from_purkinje(purkinje_size)
+        classic_sizes = calc.cerebellum_from_output(purkinje_size)
         classic_sizes["input_size"] = input_size
         classic_cfg = CerebellumConfig(
             use_enhanced_microcircuit=False,
@@ -677,7 +677,7 @@ class TestBackwardCompatibility:
         classic = Cerebellum(classic_cfg, classic_sizes, str(device))
 
         # Enhanced config
-        enhanced_sizes = calc.cerebellum_from_purkinje(purkinje_size)
+        enhanced_sizes = calc.cerebellum_from_output(purkinje_size)
         enhanced_sizes["input_size"] = input_size
         enhanced_cfg = CerebellumConfig(
             use_enhanced_microcircuit=True,

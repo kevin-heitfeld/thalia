@@ -141,7 +141,10 @@ def __getattr__(name: str):
     _region_config_map = {
         "CerebellumConfig": ("thalia.regions.cerebellum", "CerebellumConfig"),
         "LayeredCortexConfig": ("thalia.regions.cortex.config", "LayeredCortexConfig"),
-        "PredictiveCortexConfig": ("thalia.regions.cortex.predictive_cortex", "PredictiveCortexConfig"),
+        "PredictiveCortexConfig": (
+            "thalia.regions.cortex.predictive_cortex",
+            "PredictiveCortexConfig",
+        ),
         "RobustnessConfig": ("thalia.regions.cortex.robustness_config", "RobustnessConfig"),
         "HippocampusConfig": ("thalia.regions.hippocampus.config", "HippocampusConfig"),
         "PrefrontalConfig": ("thalia.regions.prefrontal", "PrefrontalConfig"),
@@ -151,6 +154,7 @@ def __getattr__(name: str):
     if name in _region_config_map:
         module_name, attr_name = _region_config_map[name]
         import importlib
+
         module = importlib.import_module(module_name)
         return getattr(module, attr_name)
 

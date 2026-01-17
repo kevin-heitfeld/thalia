@@ -95,13 +95,17 @@ SIZE_PARAMS = {
     "relay_size",
     "trn_size",  # Thalamus
     "purkinje_size",
-    "granule_size",  # Cerebellum
+    "granule_size",
+    "basket_size",
+    "stellate_size",
+    "dcn_size",  # Cerebellum
     "n_neurons",
     "n_actions",
     "neurons_per_action",  # Generic + Striatum
     "d1_size",
     "d2_size",  # Striatum pathways
     "input_sources",  # Striatum multi-source
+    "total_neurons",  # Computed size metadata
 }
 
 

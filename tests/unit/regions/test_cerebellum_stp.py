@@ -21,10 +21,9 @@ def create_test_cerebellum(
     input_size: int, purkinje_size: int, device: str = "cpu", **kwargs
 ) -> Cerebellum:
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
-    # Always compute granule_size (Cerebellum.__init__ requires it)
     expansion = kwargs.pop("granule_expansion_factor", 4.0)
     calc = LayerSizeCalculator()
-    sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
+    sizes = calc.cerebellum_from_output(purkinje_size)
     sizes["input_size"] = input_size
 
     config = CerebellumConfig(device=device, **kwargs)

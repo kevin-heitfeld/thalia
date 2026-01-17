@@ -18,6 +18,7 @@ from thalia.diagnostics.criticality import CriticalityConfig
 
 if TYPE_CHECKING:
     from thalia.coordination.oscillator import OscillatorCoupling
+
     # Import region configs from canonical locations
     from thalia.regions.cerebellum import CerebellumConfig
     from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
@@ -237,26 +238,31 @@ class RegionSizes:
 # Lazy factory functions to avoid circular imports
 def _default_cerebellum_config():
     from thalia.regions.cerebellum import CerebellumConfig
+
     return CerebellumConfig()
 
 
 def _default_cortex_config():
     from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
+
     return PredictiveCortexConfig()
 
 
 def _default_hippocampus_config():
     from thalia.regions.hippocampus.config import HippocampusConfig
+
     return HippocampusConfig()
 
 
 def _default_pfc_config():
     from thalia.regions.prefrontal import PrefrontalConfig
+
     return PrefrontalConfig()
 
 
 def _default_striatum_config():
     from thalia.regions.striatum.config import StriatumConfig
+
     return StriatumConfig()
 
 

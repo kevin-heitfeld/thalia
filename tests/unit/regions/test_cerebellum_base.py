@@ -27,7 +27,7 @@ class TestCerebellum(RegionTestBase):
             purkinje_size = kwargs.pop("purkinje_size")
             expansion = kwargs.pop("granule_expansion_factor")
             calc = LayerSizeCalculator()
-            sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
+            sizes = calc.cerebellum_from_output(purkinje_size)
             sizes["input_size"] = input_size
             kwargs["use_enhanced_microcircuit"] = True
         else:
