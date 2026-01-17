@@ -9,10 +9,11 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 
 import torch
 
-from tests.utils.region_test_base import RegionTestBase
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.hippocampus import Hippocampus
 from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.config.region_sizes import compute_hippocampus_sizes
+
+from tests.utils.region_test_base import RegionTestBase
 
 
 class TestHippocampus(RegionTestBase):
@@ -28,9 +29,10 @@ class TestHippocampus(RegionTestBase):
         if "input_size" in kwargs:
             input_size = kwargs.pop("input_size")
             # Compute all sizes from input_size
-            sizes = compute_hippocampus_sizes(input_size)
+            calc = LayerSizeCalculator()
+            sizes = calc.hippocampus_from_input(input_size)
             size_params.update(sizes)
-            # Add input_size to size_params (compute_hippocampus_sizes returns it)
+            # Add input_size to size_params (calculator returns it)
             # but double check it's there
             if "input_size" not in size_params:
                 size_params["input_size"] = input_size

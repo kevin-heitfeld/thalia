@@ -14,8 +14,8 @@ Biology:
 import pytest
 import torch
 
-from thalia.config import compute_cerebellum_sizes
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
+from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 
 def create_test_cerebellum(
@@ -27,7 +27,8 @@ def create_test_cerebellum(
     """Create Cerebellum for testing with new (config, sizes, device) pattern."""
     # Always compute granule_size (Cerebellum.__init__ requires it)
     expansion = kwargs.pop("granule_expansion_factor", 4.0)
-    sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+    calc = LayerSizeCalculator()
+    sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
     sizes["input_size"] = input_size
 
     config = CerebellumConfig(device=device, **kwargs)

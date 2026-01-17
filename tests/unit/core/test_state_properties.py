@@ -13,27 +13,27 @@ Author: Thalia Project
 Date: December 2025
 """
 
-import torch
 from hypothesis import given, strategies as st, assume, settings
+import pytest
+import torch
 
 from thalia.core.region_state import BaseRegionState
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.striatum import Striatum, StriatumConfig
 from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
 from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
-from thalia.config.region_sizes import compute_hippocampus_sizes, compute_cortex_layer_sizes
 
 
 def create_test_hippocampus(input_size: int, device: str, **kwargs) -> TrisynapticHippocampus:
     """Create TrisynapticHippocampus for testing with Phase 2 pattern."""
-    sizes = compute_hippocampus_sizes(input_size)
+    calc = LayerSizeCalculator()
+    sizes = calc.hippocampus_from_input(input_size)
     config = HippocampusConfig(**kwargs)
     return TrisynapticHippocampus(config=config, sizes=sizes, device=device)
 
 
 def create_test_striatum(input_sources: dict, n_actions: int, device: str, **kwargs) -> Striatum:
     """Create Striatum for testing with Phase 2 pattern."""
-    from thalia.config.size_calculator import LayerSizeCalculator
-
     # Extract neurons_per_action (default to 1 for minimal testing)
     neurons_per_action = kwargs.pop('neurons_per_action', 1)
 
@@ -277,7 +277,6 @@ class TestMultiRegionIndependence:
 
         This is tracked in: TODO - add issue number
         """
-        import pytest
         pytest.skip(
             "Requires neuron state serialization (refractory, g_E, g_I, g_adapt). "
             "Region get_state/load_state currently only saves membrane voltages, "

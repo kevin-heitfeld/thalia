@@ -10,16 +10,17 @@ Tests:
     - Component validation
 """
 
-from pathlib import Path
-import tempfile
 import json
+from pathlib import Path
 import pytest
+import tempfile
 import torch
+from unittest.mock import Mock
 
-from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
 from thalia.core.brain_builder import BrainBuilder
+from thalia.core.dynamic_brain import DynamicBrain, ComponentSpec, ConnectionSpec
 from thalia.config import GlobalConfig
-from thalia.config.region_sizes import compute_thalamus_sizes
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 from thalia.pathways.axonal_projection import AxonalProjection
 
@@ -31,7 +32,8 @@ from thalia.pathways.axonal_projection import AxonalProjection
 def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu") -> ThalamicRelay:
     """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
     config = ThalamicRelayConfig(device=device)
-    sizes = compute_thalamus_sizes(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
+    calc = LayerSizeCalculator()
+    sizes = calc.thalamus_from_relay(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
     sizes["input_size"] = input_size
     return ThalamicRelay(config, sizes, device)
 
@@ -168,7 +170,6 @@ def test_dynamic_brain_reset_state():
     brain = DynamicBrain(components, {}, global_config)
 
     # Set mock registry to avoid adapter requirement
-    from unittest.mock import Mock
     brain._registry = Mock()
 
     # Execute to set state

@@ -11,12 +11,12 @@ NOT from explicit slot assignments!
 
 from collections import defaultdict
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
+from thalia.config import LayerSizeCalculator
 from thalia.regions.hippocampus import TrisynapticHippocampus, HippocampusConfig
-from thalia.config import compute_hippocampus_sizes
 
 
 @pytest.fixture
@@ -40,7 +40,8 @@ def hippocampus_config(device):
 @pytest.fixture
 def hippocampus_sizes():
     """Hippocampus sizes for testing."""
-    sizes = compute_hippocampus_sizes(64)
+    calc = LayerSizeCalculator()
+    sizes = calc.hippocampus_from_input(64)
     sizes['input_size'] = 64
     return sizes
 

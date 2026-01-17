@@ -10,14 +10,16 @@ Architecture Review 2025-12-21, Tier 1.1 Implementation
 import pytest
 import torch
 
-from thalia.config.region_sizes import compute_thalamus_sizes
+from thalia.components.synapses import WeightInitializer
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
 
 
 def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu", **kwargs) -> ThalamicRelay:
     """Create a ThalamicRelay for testing with new (config, sizes, device) pattern."""
     config = ThalamicRelayConfig(device=device, **kwargs)
-    sizes = compute_thalamus_sizes(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
+    calc = LayerSizeCalculator()
+    sizes = calc.thalamus_from_relay(relay_size, trn_ratio=0.0)  # trn_size=0 for tests
     sizes["input_size"] = input_size
     return ThalamicRelay(config, sizes, device)
 
@@ -285,14 +287,12 @@ class TestRegressionAgainstOldPattern:
         self, n_out: int, n_in: int, device: torch.device
     ) -> torch.Tensor:
         """Old pattern: inline xavier initialization."""
-        from thalia.components.synapses import WeightInitializer
         return WeightInitializer.xavier(n_out, n_in, device=device)
 
     def old_new_weights_for_sparse(
         self, n_out: int, n_in: int, sparsity: float, device: torch.device
     ) -> torch.Tensor:
         """Old pattern: inline sparse_random initialization."""
-        from thalia.components.synapses import WeightInitializer
         return WeightInitializer.sparse_random(n_out, n_in, sparsity, device=device)
 
     def test_xavier_produces_equivalent_distribution(self, region):

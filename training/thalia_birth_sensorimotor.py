@@ -84,13 +84,14 @@ from pathlib import Path
 import traceback
 from typing import Dict, Any
 
-from thalia.core.brain_builder import BrainBuilder, compute_thalamus_sizes, compute_hippocampus_sizes
+from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
 )
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.tasks.sensorimotor import (
     SensorimotorTaskLoader,
     MotorControlConfig,
@@ -158,7 +159,8 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     builder = BrainBuilder(global_config)
 
     # Thalamus (input interface)
-    thalamus_sizes = compute_thalamus_sizes(128)
+    calc = LayerSizeCalculator()
+    thalamus_sizes = calc.thalamus_from_relay(128)
     builder.add_component("thalamus", "thalamus", input_size=128, **thalamus_sizes)
 
     # Cortex with custom layer sizes
@@ -168,7 +170,7 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
 
     # Hippocampus
     cortex_output_size = 192 + 128  # L2/3 + L5
-    hippocampus_sizes = compute_hippocampus_sizes(cortex_output_size)
+    hippocampus_sizes = calc.hippocampus_from_input(cortex_output_size)
     builder.add_component("hippocampus", "hippocampus", **hippocampus_sizes)
 
     # PFC

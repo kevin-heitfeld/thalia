@@ -9,7 +9,7 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 
 import torch
 
-from thalia.config import compute_cerebellum_sizes
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 
 from tests.utils.region_test_base import RegionTestBase
@@ -27,7 +27,8 @@ class TestCerebellum(RegionTestBase):
         if "granule_expansion_factor" in kwargs:
             purkinje_size = kwargs.pop("purkinje_size")
             expansion = kwargs.pop("granule_expansion_factor")
-            sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+            calc = LayerSizeCalculator()
+            sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
             sizes["input_size"] = input_size
             kwargs["use_enhanced_microcircuit"] = True
         else:

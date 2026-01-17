@@ -84,7 +84,6 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Any, Tuple
 
 from thalia.config import GlobalConfig
-from thalia.config.region_sizes import compute_cerebellum_sizes, compute_hippocampus_sizes, compute_thalamus_sizes
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.dynamic_brain import DynamicBrain
@@ -164,14 +163,16 @@ def _compute_region_sizes(registry_name: str, size_params: Dict[str, Any]) -> Di
         if 'purkinje_size' in size_params and 'granule_size' not in size_params:
             purkinje_size = size_params['purkinje_size']
             expansion = size_params.get('granule_expansion_factor', 4.0)
-            computed = compute_cerebellum_sizes(purkinje_size, expansion)
+            calc = LayerSizeCalculator()
+            computed = calc.cerebellum_from_purkinje(purkinje_size, expansion)
             return {**size_params, **computed}
 
     elif registry_name == "hippocampus":
         # Hippocampus needs input_size → all layer sizes
         if 'input_size' in size_params and 'dg_size' not in size_params:
             input_size = size_params['input_size']
-            computed = compute_hippocampus_sizes(input_size)
+            calc = LayerSizeCalculator()
+            computed = calc.hippocampus_from_input(input_size)
             return {**size_params, **computed}
 
     # No transformation needed for this region type
@@ -1316,7 +1317,8 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     cortex_output_size = cortex_sizes["l23_size"] + cortex_sizes["l5_size"]
 
     # Add regions (only thalamus needs input_size as it's the input interface)
-    thalamus_sizes = compute_thalamus_sizes(thalamus_relay_size)
+    calc = LayerSizeCalculator()
+    thalamus_sizes = calc.thalamus_from_relay(thalamus_relay_size)
     builder.add_component("thalamus", "thalamus", input_size=thalamus_relay_size, **thalamus_sizes)
     builder.add_component("cortex", "cortex", **cortex_sizes)
 
@@ -1324,7 +1326,7 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Compute all layer sizes from this input using biological ratios
     # Result: DG=5000, CA3=1250, CA2=1000, CA1=2500 with default ratios
     hippocampus_input_size = cortex_output_size  # Will be verified by _infer_component_sizes
-    hippocampus_sizes = compute_hippocampus_sizes(hippocampus_input_size)
+    hippocampus_sizes = calc.hippocampus_from_input(hippocampus_input_size)
     builder.add_component("hippocampus", "hippocampus", **hippocampus_sizes)
 
     # Prefrontal: specify n_neurons (working memory neurons)

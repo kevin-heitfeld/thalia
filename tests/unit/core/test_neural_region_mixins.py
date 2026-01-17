@@ -2,7 +2,7 @@
 
 import torch
 
-from thalia.config.region_sizes import compute_cerebellum_sizes
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.learning.strategy_mixin import LearningStrategyMixin
 from thalia.mixins.state_loading_mixin import StateLoadingMixin
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
@@ -19,7 +19,8 @@ def create_test_prefrontal(input_size: int, n_neurons: int, device: str) -> Pref
 def create_test_cerebellum(input_size: int, purkinje_size: int, device: str, **kwargs) -> Cerebellum:
     """Create Cerebellum instance for testing with Phase 2 pattern."""
     expansion = kwargs.pop('granule_expansion_factor', 4.0)
-    sizes = compute_cerebellum_sizes(purkinje_size, expansion)
+    calc = LayerSizeCalculator()
+    sizes = calc.cerebellum_from_purkinje(purkinje_size, expansion)
     sizes['input_size'] = input_size  # Add input_size to sizes dict
     config = CerebellumConfig(**kwargs)
     return Cerebellum(config=config, sizes=sizes, device=device)

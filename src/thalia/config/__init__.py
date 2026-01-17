@@ -79,15 +79,6 @@ from .validation import (
     ValidatedConfig,
     ValidatorRegistry,
 )
-from .region_sizes import (
-    # Utility functions (DEPRECATED - use LayerSizeCalculator instead)
-    compute_hippocampus_sizes,
-    compute_cortex_layer_sizes,
-    compute_striatum_sizes,
-    compute_thalamus_sizes,
-    compute_multisensory_sizes,
-    compute_cerebellum_sizes,
-)
 from .size_calculator import LayerSizeCalculator, BiologicalRatios
 
 __all__ = [
@@ -135,14 +126,7 @@ __all__ = [
     "DecodingConfig",
     "PositionConfig",
     "SequenceMemoryConfig",
-    # Size calculator (NEW - preferred)
+    # Size calculator
     "LayerSizeCalculator",
     "BiologicalRatios",
-    # DEPRECATED size functions (use LayerSizeCalculator instead)
-    "compute_hippocampus_sizes",
-    "compute_cortex_layer_sizes",
-    "compute_striatum_sizes",
-    "compute_thalamus_sizes",
-    "compute_multisensory_sizes",
-    "compute_cerebellum_sizes",
 ]

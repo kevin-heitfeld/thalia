@@ -16,6 +16,7 @@ Tests:
 import pytest
 import torch
 
+from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
 from thalia.regions.cerebellum.granule_layer import GranuleCellLayer
 from thalia.regions.cerebellum.purkinje_cell import EnhancedPurkinjeCell
@@ -31,11 +32,10 @@ def device():
 @pytest.fixture
 def cerebellum_classic_config(device):
     """Classic cerebellum configuration (no enhanced microcircuit)."""
-    from thalia.config import compute_cerebellum_sizes
-
     input_size = 128
     purkinje_size = 64
-    sizes = compute_cerebellum_sizes(purkinje_size)
+    calc = LayerSizeCalculator()
+    sizes = calc.cerebellum_from_purkinje(purkinje_size)
     sizes["input_size"] = input_size
 
     config = CerebellumConfig(
@@ -49,12 +49,11 @@ def cerebellum_classic_config(device):
 @pytest.fixture
 def cerebellum_enhanced_config(device):
     """Enhanced cerebellum configuration with granule layer and DCN."""
-    from thalia.config import compute_cerebellum_sizes
-
     input_size = 128
     purkinje_size = 64
     granule_expansion = 4.0
-    sizes = compute_cerebellum_sizes(purkinje_size, granule_expansion)
+    calc = LayerSizeCalculator()
+    sizes = calc.cerebellum_from_purkinje(purkinje_size, granule_expansion)
     sizes["input_size"] = input_size
 
     config = CerebellumConfig(
@@ -650,13 +649,12 @@ class TestBackwardCompatibility:
 
     def test_enhanced_flag_controls_pathway(self, device):
         """Test use_enhanced_microcircuit flag correctly enables/disables enhanced pathway."""
-        from thalia.config import compute_cerebellum_sizes
-
         input_size = 128
         purkinje_size = 64
 
         # Classic config
-        classic_sizes = compute_cerebellum_sizes(purkinje_size)
+        calc = LayerSizeCalculator()
+        classic_sizes = calc.cerebellum_from_purkinje(purkinje_size)
         classic_sizes["input_size"] = input_size
         classic_cfg = CerebellumConfig(
             use_enhanced_microcircuit=False,
@@ -666,7 +664,7 @@ class TestBackwardCompatibility:
         classic = Cerebellum(classic_cfg, classic_sizes, str(device))
 
         # Enhanced config
-        enhanced_sizes = compute_cerebellum_sizes(purkinje_size)
+        enhanced_sizes = calc.cerebellum_from_purkinje(purkinje_size)
         enhanced_sizes["input_size"] = input_size
         enhanced_cfg = CerebellumConfig(
             use_enhanced_microcircuit=True,
