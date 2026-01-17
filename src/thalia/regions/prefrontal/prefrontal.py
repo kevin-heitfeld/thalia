@@ -593,6 +593,10 @@ class Prefrontal(NeuralRegion):
         # =====================================================================
         # HETEROGENEOUS WORKING MEMORY NEURONS (Phase 1B)
         # =====================================================================
+        self._recurrent_strength: Optional[torch.Tensor] = None
+        self._tau_mem_heterogeneous: Optional[torch.Tensor] = None
+        self._neuron_type: Optional[torch.Tensor] = None
+
         # Sample heterogeneous recurrent strengths and time constants
         # mimicking biological diversity in WM stability across neurons
         if config.use_heterogeneous_wm:
@@ -601,29 +605,25 @@ class Prefrontal(NeuralRegion):
                 stability_cv=config.stability_cv,
                 tau_mem_min=config.tau_mem_min,
                 tau_mem_max=config.tau_mem_max,
-                device=self.device,
+                device=self.device,  # type: ignore[arg-type]
                 seed=None,  # Use random seed for variability
             )
             self._recurrent_strength = wm_properties["recurrent_strength"]
             self._tau_mem_heterogeneous = wm_properties["tau_mem"]
             self._neuron_type = wm_properties["neuron_type"]  # 0=flexible, 1=stable
-        else:
-            self._recurrent_strength = None
-            self._tau_mem_heterogeneous = None
-            self._neuron_type = None
 
         # =====================================================================
         # D1/D2 RECEPTOR SUBTYPES (Phase 1B)
         # =====================================================================
+        self._d1_neurons: Optional[torch.Tensor] = None
+        self._d2_neurons: Optional[torch.Tensor] = None
+
         # Split neurons into D1-dominant (excitatory DA response) and
         # D2-dominant (inhibitory DA response) populations
         if config.use_d1_d2_subtypes:
             n_d1 = int(self.n_neurons * config.d1_fraction)
             self._d1_neurons = torch.arange(n_d1, device=self.device)
             self._d2_neurons = torch.arange(n_d1, self.n_neurons, device=self.device)
-        else:
-            self._d1_neurons = None
-            self._d2_neurons = None
 
         # Initialize NeuralRegion with total neurons
         super().__init__(
@@ -696,7 +696,7 @@ class Prefrontal(NeuralRegion):
 
         # Initialize learning strategy (STDP with dopamine gating)
         # Using LearningStrategyRegistry for pluggable learning strategies
-        self.learning_strategy = LearningStrategyRegistry.create(
+        self.learning_strategy = LearningStrategyRegistry.create(  # type: ignore[assignment]
             "stdp",
             STDPConfig(
                 learning_rate=config.learning_rate,
@@ -727,7 +727,7 @@ class Prefrontal(NeuralRegion):
         self._current_training_step = 0  # Updated externally by training loop
 
         # Initialize working memory state (1D tensors, ADR-005)
-        self.state: PrefrontalState = PrefrontalState(
+        self.state: PrefrontalState = PrefrontalState(  # type: ignore[assignment]
             working_memory=torch.zeros(self.n_neurons, device=self.device),
             update_gate=torch.zeros(self.n_neurons, device=self.device),
             dopamine=config.dopamine_baseline,
@@ -778,6 +778,8 @@ class Prefrontal(NeuralRegion):
         # =====================================================================
         # SHORT-TERM PLASTICITY for feedforward connections
         # =====================================================================
+        self.stp_feedforward: Optional[ShortTermPlasticity] = None
+
         # PFC feedforward connections show SHORT-TERM FACILITATION/DEPRESSION
         # for temporal filtering and gain control during encoding.
         if cfg.stp_feedforward_enabled:
@@ -788,12 +790,12 @@ class Prefrontal(NeuralRegion):
                 per_synapse=True,
             )
             self.stp_feedforward.to(self.device)
-        else:
-            self.stp_feedforward = None
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for recurrent connections
         # =====================================================================
+        self.stp_recurrent: Optional[ShortTermPlasticity] = None
+
         # PFC recurrent connections show SHORT-TERM DEPRESSION, preventing
         # frozen attractors. This allows working memory to be updated.
         if cfg.stp_recurrent_enabled:
@@ -804,8 +806,6 @@ class Prefrontal(NeuralRegion):
                 per_synapse=True,
             )
             self.stp_recurrent.to(self.device)
-        else:
-            self.stp_recurrent = None
 
         # =====================================================================
         # Phase 2 Registration: Opt-in auto-growth for STP modules
@@ -881,12 +881,12 @@ class Prefrontal(NeuralRegion):
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
         # =====================================================================
-        assert input_spikes.dim() == 1, (
+        assert input_spikes.dim() == 1, (  # type: ignore[union-attr]
             f"PrefrontalCortex.forward: input_spikes must be 1D [n_input], "
-            f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."
+            f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."  # type: ignore[union-attr]
         )
-        assert input_spikes.shape[0] == self.input_size, (
-            f"PrefrontalCortex.forward: input_spikes has shape {input_spikes.shape} "
+        assert input_spikes.shape[0] == self.input_size, (  # type: ignore[union-attr]
+            f"PrefrontalCortex.forward: input_spikes has shape {input_spikes.shape} "  # type: ignore[union-attr]
             f"but input_size={self.input_size}. Check that input matches PFC config."
         )
 
@@ -924,15 +924,15 @@ class Prefrontal(NeuralRegion):
         if hasattr(self, "stp_feedforward") and self.stp_feedforward is not None:
             # Apply STP to feedforward connections (1D → 2D per-synapse efficacy)
             # stp_efficacy has shape [n_output, n_input] - per-synapse modulation
-            stp_efficacy = self.stp_feedforward(input_spikes.float())
+            stp_efficacy = self.stp_feedforward(input_spikes.float())  # type: ignore[union-attr]
             # Effective weights: element-wise multiply with STP efficacy
             effective_ff_weights = self.synaptic_weights["default"] * stp_efficacy.t()
             # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]
-            ff_input = (effective_ff_weights @ input_spikes.float()) * ff_gain
+            ff_input = (effective_ff_weights @ input_spikes.float()) * ff_gain  # type: ignore[union-attr]
         else:
             # No STP: direct feedforward
             # Apply synaptic weights: weights[n_output, n_input] @ input[n_input] → [n_output]
-            ff_input = (self.synaptic_weights["default"] @ input_spikes.float()) * ff_gain
+            ff_input = (self.synaptic_weights["default"] @ input_spikes.float()) * ff_gain  # type: ignore[union-attr]
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -971,7 +971,7 @@ class Prefrontal(NeuralRegion):
             wm = (
                 self.state.working_memory.float()
                 if self.state.working_memory is not None
-                else torch.zeros(self.n_neurons, device=input_spikes.device)
+                else torch.zeros(self.n_neurons, device=input_spikes.device)  # type: ignore[union-attr]
             )
             rec_input = (self.rec_weights @ wm) * rec_gain
 
@@ -979,7 +979,7 @@ class Prefrontal(NeuralRegion):
         wm = (
             self.state.working_memory.float()
             if self.state.working_memory is not None
-            else torch.zeros(self.n_neurons, device=input_spikes.device)
+            else torch.zeros(self.n_neurons, device=input_spikes.device)  # type: ignore[union-attr]
         )
         inhib = self.inhib_weights @ wm
 
@@ -1017,7 +1017,7 @@ class Prefrontal(NeuralRegion):
         # Update working memory with gating
         # High gate (high DA) → update with new activity
         # Low gate (low DA) → maintain current WM
-        gate_tensor = torch.full_like(self.state.working_memory, gate)
+        gate_tensor = torch.full_like(self.state.working_memory, gate)  # type: ignore[arg-type]
         self.state.update_gate = gate_tensor
 
         # WM decay
@@ -1025,8 +1025,8 @@ class Prefrontal(NeuralRegion):
 
         # Gated update: WM = gate * new_input + (1-gate) * decayed_old
         new_wm = (
-            gate_tensor * output_spikes.float()
-            + (1 - gate_tensor) * self.state.working_memory * decay
+            gate_tensor * output_spikes.float()  # type: ignore[operator]
+            + (1 - gate_tensor) * self.state.working_memory * decay  # type: ignore[operator]
         )
 
         # Add noise for stochasticity
@@ -1049,12 +1049,12 @@ class Prefrontal(NeuralRegion):
         )
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
-        self._apply_plasticity(input_spikes, output_spikes)
+        self._apply_plasticity(input_spikes, output_spikes)  # type: ignore[arg-type]
 
         # Store output (NeuralRegion pattern)
         self.output_spikes = output_spikes
 
-        return output_spikes
+        return output_spikes  # type: ignore[no-any-return]
 
     def _apply_plasticity(
         self,
@@ -1208,7 +1208,7 @@ class Prefrontal(NeuralRegion):
             tau_ms=self.pfc_config.dopamine_tau_ms,
             baseline=self.pfc_config.dopamine_baseline,
             threshold=self.pfc_config.gate_threshold,
-            device=self.device,
+            device=self.device,  # type: ignore[arg-type]
         )
 
         # 5.5. Expand state tensors for new neurons
@@ -1309,7 +1309,7 @@ class Prefrontal(NeuralRegion):
                 "inhibition": self.inhib_weights.data,
             },
             spike_tensors={
-                "output": self.state.spikes,
+                "output": self.state.spikes,  # type: ignore[dict-item]
             },
             custom_metrics=custom,
         )
