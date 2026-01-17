@@ -123,7 +123,7 @@ class SensorimotorConfig:
     output_size: int = 256
 
     # Task mixing
-    task_probabilities: Dict[str, float] = None
+    task_probabilities: Dict[str, float] = None  # type: ignore[assignment]
 
     # Episode settings
     max_episode_steps: int = 1000
@@ -287,7 +287,7 @@ class SensorimotorTaskLoader:
         if np.random.rand() < 0.5:
             # Random exploration
             motor_spikes = create_motor_spikes(
-                self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device
+                self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device  # type: ignore[arg-type]
             )
         else:
             # Directed command (simple policy)
@@ -304,8 +304,8 @@ class SensorimotorTaskLoader:
         self.current_obs = next_obs
 
         # Store for next step
-        self.last_obs = next_obs
-        self.last_action = motor_spikes
+        self.last_obs = next_obs  # type: ignore[assignment]
+        self.last_action = motor_spikes  # type: ignore[assignment]
 
         # Reward based on movement execution
         movement_reward = REWARD_SMALL_SUCCESS if reward > REWARD_MOVEMENT_THRESHOLD else 0.0
@@ -323,17 +323,17 @@ class SensorimotorTaskLoader:
         """Reaching task: Move effector toward visual target."""
         # Simple heuristic policy
         motor_spikes = create_motor_spikes(
-            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_MEDIUM, self.config.device
+            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_MEDIUM, self.config.device  # type: ignore[arg-type]
         )
 
         # Execute action
-        next_obs, reward, terminated, truncated = self.wrapper.step(motor_spikes)
+        next_obs, reward, _terminated, _truncated = self.wrapper.step(motor_spikes)
 
         # Update current observation for next call
         self.current_obs = next_obs
         # Store state
-        self.last_obs = next_obs
-        self.last_action = motor_spikes
+        self.last_obs = next_obs  # type: ignore[assignment]
+        self.last_action = motor_spikes  # type: ignore[assignment]
 
         # Reward is based on reaching accuracy
         reaching_reward = max(0.0, reward + REWARD_SMALL_SUCCESS)
@@ -356,7 +356,7 @@ class SensorimotorTaskLoader:
         """Manipulation task: Push/pull objects."""
         # Generate motor command
         motor_spikes = create_motor_spikes(
-            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_HIGH, self.config.device
+            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_HIGH, self.config.device  # type: ignore[arg-type]
         )
 
         # Execute action
@@ -365,8 +365,8 @@ class SensorimotorTaskLoader:
         # Update current observation for next call
         self.current_obs = next_obs
         # Store state
-        self.last_obs = next_obs
-        self.last_action = motor_spikes
+        self.last_obs = next_obs  # type: ignore[assignment]
+        self.last_action = motor_spikes  # type: ignore[assignment]
 
         # Reward for any interaction
         manipulation_reward = (
@@ -391,7 +391,7 @@ class SensorimotorTaskLoader:
         """Prediction task: Learn forward/inverse models."""
         # Generate motor command
         motor_spikes = create_motor_spikes(
-            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device
+            self.wrapper.n_motor_neurons, SPIKE_PROBABILITY_LOW, self.config.device  # type: ignore[arg-type]
         )
 
         # Execute action
@@ -406,8 +406,8 @@ class SensorimotorTaskLoader:
             prediction_reward = 0.0
 
         # Store state
-        self.last_obs = next_obs
-        self.last_action = motor_spikes
+        self.last_obs = next_obs  # type: ignore[assignment]
+        self.last_action = motor_spikes  # type: ignore[assignment]
 
         return {
             "input": obs_spikes,
@@ -466,7 +466,7 @@ class PhonologyConfig:
     output_size: int = 256
 
     # Task mixing
-    task_probabilities: Dict[str, float] = None
+    task_probabilities: Dict[str, float] = None  # type: ignore[assignment]
 
     # Encoding parameters
     n_timesteps: int = 10
@@ -542,7 +542,7 @@ class PhonologyTaskLoader:
 
         # Track statistics
         self.task_counts = {t: 0 for t in self.task_types}
-        self.task_accuracies = {t: [] for t in self.task_types}
+        self.task_accuracies: Dict[str, List[float]] = {t: [] for t in self.task_types}
 
         # Initialize datasets (lazy loading)
         self._mnist_dataset = None
@@ -722,7 +722,7 @@ class PhonologyTaskLoader:
         else:
             # Get next sample from dataset
             if self._mnist_iter is None:
-                self._mnist_iter = iter(
+                self._mnist_iter = iter(  # type: ignore[assignment]
                     torch.utils.data.DataLoader(
                         self.mnist_dataset,
                         batch_size=1,
@@ -731,17 +731,17 @@ class PhonologyTaskLoader:
                 )
 
             try:
-                image, label = next(self._mnist_iter)
+                image, label = next(self._mnist_iter)  # type: ignore[call-overload]
             except StopIteration:
                 # Reset iterator
-                self._mnist_iter = iter(
+                self._mnist_iter = iter(  # type: ignore[assignment]
                     torch.utils.data.DataLoader(
                         self.mnist_dataset,
                         batch_size=1,
                         shuffle=True,
                     )
                 )
-                image, label = next(self._mnist_iter)
+                image, label = next(self._mnist_iter)  # type: ignore[call-overload]
 
             # Encode through RetinalEncoder
             # image shape: [1, 1, 28, 28] → squeeze to [28, 28]
@@ -865,12 +865,12 @@ class PhonologyTaskLoader:
         self._temporal_iter = None
         self._phonology_iter = None
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> Dict[str, Dict[str, float] | Dict[str, int]]:
         """Get task statistics."""
-        avg_accuracies = {}
+        avg_accuracies: Dict[str, float] = {}
         for task_type in self.task_types:
             if len(self.task_accuracies[task_type]) > 0:
-                avg_accuracies[task_type] = np.mean(self.task_accuracies[task_type])
+                avg_accuracies[task_type] = float(np.mean(self.task_accuracies[task_type]))
             else:
                 avg_accuracies[task_type] = 0.0
 
