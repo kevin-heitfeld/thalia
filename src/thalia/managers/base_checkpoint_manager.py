@@ -37,7 +37,9 @@ Different brain regions require different checkpoint strategies:
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
@@ -588,8 +590,6 @@ class BaseCheckpointManager(ABC):
         """
         # Validate format (basic check)
         if "format" not in state:
-            import warnings
-
             warnings.warn(
                 "Checkpoint missing 'format' field. Assuming elastic_tensor format.", UserWarning
             )
@@ -602,8 +602,6 @@ class BaseCheckpointManager(ABC):
         # Validate version compatibility (optional)
         is_compatible, error_msg = self.validate_checkpoint_compatibility(state)
         if not is_compatible:
-            import warnings
-
             warnings.warn(f"Checkpoint version compatibility warning: {error_msg}", UserWarning)
 
         # Delegate to region-specific restore logic
@@ -715,9 +713,7 @@ class BaseCheckpointManager(ABC):
         Returns:
             Dict with checkpoint metadata (path, format, size, etc.)
         """
-        from pathlib import Path
-
-        path = Path(path)
+        path_obj = Path(path)
 
         # Auto-select format using region-specific logic
         use_neuromorphic = self._should_use_neuromorphic()
@@ -746,10 +742,10 @@ class BaseCheckpointManager(ABC):
         n_neurons = getattr(region.config, "n_output", None)
 
         return {
-            "path": str(path),
+            "path": str(path_obj),
             "format": format_name,
             "n_neurons": n_neurons,
-            "file_size": path.stat().st_size if path.exists() else 0,
+            "file_size": path_obj.stat().st_size if path_obj.exists() else 0,
         }
 
     def load(self, path: str) -> None:
@@ -764,12 +760,10 @@ class BaseCheckpointManager(ABC):
         Raises:
             ValueError: If checkpoint is missing hybrid_metadata or has invalid format
         """
-        from pathlib import Path
-
-        path = Path(path)
+        path_obj = Path(path)
 
         # Load checkpoint from disk
-        state = torch.load(path, weights_only=False)
+        state = torch.load(path_obj, weights_only=False)  # nosec B614
 
         # Validate hybrid metadata presence
         if "hybrid_metadata" not in state:

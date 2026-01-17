@@ -129,7 +129,7 @@ class DivisiveNormalization(nn.Module):
 
         # For learned pooling
         if self.config.pool_type == "learned" and n_features is not None:
-            self.pool_weights = nn.Parameter(
+            self.pool_weights: Optional[nn.Parameter] = nn.Parameter(
                 torch.ones(n_features, n_features, device=device) / n_features
             )
         else:

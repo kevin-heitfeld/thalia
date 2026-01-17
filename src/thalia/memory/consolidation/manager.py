@@ -10,7 +10,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import torch
 
@@ -62,14 +62,13 @@ class ConsolidationManager:
         self._deliver_reward = deliver_reward_fn
 
         # Cache sizes for state reconstruction - fallback to component sizes if config doesn't have them
-        self._cortex_output_size = (
+        self._cortex_output_size: int | None = (
             None  # Full cortex output (L23+L5), set via set_cortex_output_size()
         )
         self._hippo_size = getattr(config, "hippocampus_size", None) or getattr(
             hippocampus, "n_output", 128
         )
         self._pfc_size = getattr(config, "pfc_size", None) or getattr(pfc, "n_output", 64)
-        self._cortex_output_size: Optional[int] = None
 
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""

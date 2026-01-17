@@ -43,7 +43,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -164,7 +164,9 @@ class OscillatoryPositionEncoder(nn.Module):
 
         # Optional learnable component
         if config.learnable:
-            self.learnable_pos = nn.Embedding(config.max_positions, config.n_neurons)
+            self.learnable_pos: Optional[nn.Embedding] = nn.Embedding(
+                config.max_positions, config.n_neurons
+            )
         else:
             self.learnable_pos = None
 
@@ -409,7 +411,7 @@ class OscillatoryPositionEncoder(nn.Module):
         within_chunk_pos = positions % self.gammas_per_theta
 
         n_theta = config.n_neurons // 2
-        n_gamma = config.n_neurons - n_theta
+        # n_gamma = config.n_neurons - n_theta  # for future use
 
         if as_spikes:
             spikes = torch.zeros(

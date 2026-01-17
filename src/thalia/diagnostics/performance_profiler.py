@@ -146,7 +146,7 @@ class PerformanceProfiler:
 
         Call this before processing a sample.
         """
-        self._step_start = time.time()
+        self._step_start: Optional[float] = time.time()
 
     def end_step(self) -> None:
         """End timing a training step.
