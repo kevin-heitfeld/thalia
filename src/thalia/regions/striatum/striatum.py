@@ -102,7 +102,7 @@ See: docs/decisions/adr-011-large-file-justification.md
 from __future__ import annotations
 
 import weakref
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, cast
 
 import torch
 import torch.nn as nn
@@ -2427,7 +2427,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def forward(
         self,
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.

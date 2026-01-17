@@ -6,10 +6,10 @@ brain regions, eliminating the need for ad-hoc isinstance() checks and manual
 dict.get() chains.
 
 **Design Goals**:
-1. **Type Safety**: Handle both Dict[str, Tensor] and Tensor inputs uniformly
-2. **Alias Support**: Map multiple port names to canonical names (e.g., "input" → "sensory")
-3. **Default Values**: Provide fallback tensors when optional ports are missing
-4. **Error Messages**: Clear feedback when required ports are missing
+1. **Alias Support**: Map multiple port names to canonical names (e.g., "input" → "sensory")
+2. **Default Values**: Provide fallback tensors when optional ports are missing
+3. **Error Messages**: Clear feedback when required ports are missing
+4. **Consistency**: Uniform input handling across all brain regions
 
 **Usage Pattern**:
 
@@ -35,33 +35,12 @@ def forward(self, inputs, **kwargs):
     feedback_input = routed["feedback"]
 ```
 
-**Backward Compatibility**:
-- Single tensor input: Automatically wrapped as {"default": tensor}
-- No breaking changes to existing code
-
 **Architecture Pattern**:
-This replaces the repeated pattern in regions:
-
-```python
-# OLD (repeated in 6+ regions):
-if isinstance(inputs, torch.Tensor):
-    input_spikes = inputs
-else:
-    input_spikes = inputs.get("sensory", inputs.get("input", inputs.get("default")))
-    feedback = inputs.get("l6_feedback", None)
-    if input_spikes is None:
-        raise ValueError(...)
-
-# NEW (standardized):
-routed = InputRouter.route(
-    inputs,
-    port_mapping={"sensory": ["sensory", "input", "default"], "feedback": ["l6_feedback"]},
-    defaults={"feedback": None},
-    required=["sensory"],
-)
-input_spikes = routed["sensory"]
-feedback = routed["feedback"]
-```
+Provides standardized multi-port input routing with:
+- Alias resolution (multiple names for same port)
+- Default values for optional ports
+- Clear error messages for missing required ports
+- Consistent handling across all brain regions
 
 References:
 - Architecture Review 2025-12-20, Tier 2, Recommendation 2.2
@@ -69,7 +48,7 @@ References:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import torch
 
@@ -81,7 +60,7 @@ class InputRouter:
 
     @staticmethod
     def route(
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         port_mapping: TopologyGraph,
         defaults: Optional[Dict[str, Optional[torch.Tensor]]] = None,
         required: Optional[List[str]] = None,
@@ -91,7 +70,7 @@ class InputRouter:
         Route inputs to canonical port names with alias resolution.
 
         Args:
-            inputs: Either a dict of named inputs or a single tensor (backward compat)
+            inputs: Dict of named inputs mapping port names to tensors
             port_mapping: Dict mapping canonical port names to lists of aliases.
                          Example: {"sensory": ["sensory", "input", "default"]}
                          First alias found in inputs dict is used.
@@ -120,10 +99,6 @@ class InputRouter:
             >>> sensory = routed["sensory"]  # tensor1 (via "input" alias)
             >>> feedback = routed["feedback"]  # tensor2
         """
-        # Convert single tensor to dict (backward compatibility)
-        if isinstance(inputs, torch.Tensor):
-            inputs = {"default": inputs}
-
         # Resolve aliases and build output dict
         routed: Dict[str, Optional[torch.Tensor]] = {}
         defaults = defaults or {}
@@ -155,7 +130,7 @@ class InputRouter:
 
     @staticmethod
     def concatenate_sources(
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         component_name: str = "Component",
         n_input: Optional[int] = None,
         device: Optional[torch.device] = None,
@@ -170,7 +145,7 @@ class InputRouter:
         when empty dict provided, returns zeros of size n_input.
 
         Args:
-            inputs: Either dict of named inputs or single tensor (backward compat)
+            inputs: Dict of named inputs mapping source names to tensors
             component_name: Name of component for error messages
             n_input: Expected input size (required for empty dict handling)
             device: Device for zero tensor creation (required for empty dict)
@@ -187,20 +162,12 @@ class InputRouter:
             ...     {}, n_input=128, device=device
             ... )
         """
-        if isinstance(inputs, torch.Tensor):
-            return inputs
-        elif isinstance(inputs, dict):
-            if not inputs:
-                # Empty input: return zeros for clock-driven execution
-                if n_input is None or device is None:
-                    raise ValueError(
-                        f"{component_name}.forward: Empty input dict requires n_input and device "
-                        f"for zero-input execution (clock-driven architecture)"
-                    )
-                return torch.zeros(n_input, dtype=torch.bool, device=device)
-            return torch.cat(list(inputs.values()), dim=0)
-        else:
-            raise TypeError(
-                f"{component_name}.forward: inputs must be Tensor or Dict[str, Tensor], "
-                f"got {type(inputs)}"
-            )
+        if not inputs:
+            # Empty input: return zeros for clock-driven execution
+            if n_input is None or device is None:
+                raise ValueError(
+                    f"{component_name}.forward: Empty input dict requires n_input and device "
+                    f"for zero-input execution (clock-driven architecture)"
+                )
+            return torch.zeros(n_input, dtype=torch.bool, device=device)
+        return torch.cat(list(inputs.values()), dim=0)

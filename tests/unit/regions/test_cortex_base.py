@@ -110,14 +110,15 @@ class TestLayeredCortex(RegionTestBase):
         assert region.l23_size + region.l5_size > 0
 
     def test_forward_pass_tensor_input(self):
-        """Test forward pass with tensor input - OVERRIDE for LayeredCortex."""
+        """Test forward pass with dict input - OVERRIDE for LayeredCortex."""
         params = self.get_default_params()
         region = self.create_region(**params)
 
         input_size = self._get_input_size(params)
         input_spikes = torch.rand(input_size, device=region.device)
 
-        output = region.forward(input_spikes)
+        # Pass as dict (all regions now require dict format)
+        output = region.forward({"input": input_spikes})
 
         # Verify output shape (L2/3 + L5)
         expected_output_size = region.l23_size + region.l5_size
@@ -147,7 +148,7 @@ class TestLayeredCortex(RegionTestBase):
         input_size = self._get_input_size(params)
         input_spikes = torch.zeros(input_size, device=region.device)
 
-        output = region.forward(input_spikes)
+        output = region.forward({"input": input_spikes})
 
         # Verify output shape (L2/3 + L5)
         expected_output_size = region.l23_size + region.l5_size
@@ -164,7 +165,7 @@ class TestLayeredCortex(RegionTestBase):
 
         for _ in range(5):
             input_spikes = torch.rand(input_size, device=region.device)
-            output = region.forward(input_spikes)
+            output = region.forward({"input": input_spikes})
 
             # Verify consistent output shape
             assert output.shape[0] == expected_output_size
@@ -202,7 +203,7 @@ class TestLayeredCortex(RegionTestBase):
         # Test forward pass with new input size
         new_input_size = region.input_size
         input_spikes = torch.zeros(new_input_size, device=region.device)
-        output = region.forward(input_spikes)
+        output = region.forward({"input": input_spikes})
 
         # Verify output shape unchanged
         assert output.shape[0] == original_output
@@ -215,7 +216,7 @@ class TestLayeredCortex(RegionTestBase):
         # Run forward pass to establish state
         input_size = self._get_input_size(params)
         input_spikes = torch.ones(input_size, device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         n_original = region.l23_size + region.l5_size
 
@@ -243,7 +244,7 @@ class TestLayeredCortex(RegionTestBase):
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
 
         # Forward pass
-        output = region.forward(input_spikes)
+        output = region.forward({"input": input_spikes})
 
         # Verify output is concatenation of L2/3 + L5
         expected_output_size = params["l23_size"] + params["l5_size"]
@@ -267,7 +268,7 @@ class TestLayeredCortex(RegionTestBase):
         top_down = torch.ones(params["l23_size"], device=region.device)
 
         # Forward with top-down modulation
-        output = region.forward(input_spikes, top_down=top_down)
+        output = region.forward({"input": input_spikes}, top_down=top_down)
 
         # Verify output shape (L2/3 + L5)
         expected_output_size = region.l23_size + region.l5_size
@@ -280,7 +281,7 @@ class TestLayeredCortex(RegionTestBase):
 
         # Run forward pass
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Verify L6 state exists
         state = region.get_state()
@@ -296,7 +297,7 @@ class TestLayeredCortex(RegionTestBase):
         # Run multiple forward passes
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(5):
-            region.forward(input_spikes)
+            region.forward({"input": input_spikes})
 
         # Verify STDP traces exist and are non-zero
         state = region.get_state()
@@ -313,7 +314,7 @@ class TestLayeredCortex(RegionTestBase):
         # Run forward passes
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
-            region.forward(input_spikes)
+            region.forward({"input": input_spikes})
 
         # Verify STP state exists for L2/3 recurrent
         state = region.get_state()
@@ -330,12 +331,14 @@ class TestLayeredCortex(RegionTestBase):
 
         # Run forward pass
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Verify gamma attention state exists
         state = region.get_state()
         if hasattr(state, "gamma_attention_phase"):
-            assert isinstance(state.gamma_attention_phase, float)
+            # Phase can be None if gamma oscillations not configured
+            if state.gamma_attention_phase is not None:
+                assert isinstance(state.gamma_attention_phase, float)
 
         if hasattr(state, "gamma_attention_gate"):
             # Gate should be between 0 and 1
@@ -358,7 +361,7 @@ class TestLayeredCortex(RegionTestBase):
             # Run multiple forward passes with active input
             input_spikes = torch.ones(self._get_input_size(params), device=region.device)
             for _ in range(100):
-                region.forward(input_spikes)
+                region.forward({"input": input_spikes})
 
             # Verify weights changed (plasticity applied)
             weights_changed = False

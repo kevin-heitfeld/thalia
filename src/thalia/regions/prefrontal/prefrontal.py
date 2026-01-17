@@ -63,7 +63,7 @@ When to Use:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -847,7 +847,7 @@ class Prefrontal(NeuralRegion):
 
     def forward(
         self,
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         dopamine_signal: float = 0.0,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -855,8 +855,7 @@ class Prefrontal(NeuralRegion):
         Process input through prefrontal cortex.
 
         Args:
-            inputs: Input spikes - Dict mapping source names to spike tensors,
-                   or single Tensor (auto-wrapped as {"default": tensor}) [n_input]
+            inputs: Input spikes - Dict mapping source names to spike tensors [n_input]
             dopamine_signal: External DA signal for gating (-1 to 1)
             **kwargs: Additional inputs
 

@@ -105,7 +105,7 @@ Date: December 2025
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional, Union, cast
+from typing import Any, Dict, Optional, cast
 
 import torch
 import torch.nn as nn
@@ -1211,7 +1211,7 @@ class LayeredCortex(NeuralRegion):
 
     def forward(
         self,
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         top_down: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> torch.Tensor:
@@ -1223,7 +1223,7 @@ class LayeredCortex(NeuralRegion):
         not a separate training phase.
 
         Args:
-            inputs: Input spikes - dict {"input": tensor} or tensor [n_input] (1D per ADR-005)
+            inputs: Input spikes - dict mapping source names to spike tensors [n_input] (1D per ADR-005)
             top_down: Optional top-down modulation [l23_size] (1D)
 
         Returns:

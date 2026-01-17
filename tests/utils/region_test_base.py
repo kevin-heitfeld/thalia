@@ -681,7 +681,7 @@ class RegionTestBase(ABC):
         # Serialize and deserialize
         data = state1.to_dict()
         state_class = type(state1)
-        state2 = state_class.from_dict(data, device=params["device"])
+        _state2 = state_class.from_dict(data, device=params["device"])
 
         # Should not raise errors
         # Verify at least some fields are present
@@ -692,24 +692,22 @@ class RegionTestBase(ABC):
 # =============================================================================
 # STANDARD TEST SUMMARY
 # =============================================================================
-# Total: 19 standard tests inherited by all region test classes
 #
-# Initialization (2 tests):
+# Initialization:
 #   - test_initialization: Verify with default params
 #   - test_initialization_minimal: Verify with minimal params
 #
-# Forward pass (4 tests):
-#   - test_forward_pass_tensor_input: Single tensor input
+# Forward pass:
 #   - test_forward_pass_dict_input: Multi-source dict input
 #   - test_forward_pass_zero_input: Zero/empty input handling
 #   - test_forward_pass_multiple_calls: Temporal consistency
 #
-# Growth (3 tests):
+# Growth:
 #   - test_grow_output: Add output neurons
 #   - test_grow_input: Expand input dimension
 #   - test_growth_preserves_state: State preservation during growth
 #
-# State management (7 tests):
+# State management:
 #   - test_state_get_and_load: Round-trip serialization via region methods
 #   - test_reset_state: State reinitialization
 #   - test_state_file_io: Save/load from disk
@@ -718,11 +716,11 @@ class RegionTestBase(ABC):
 #   - test_state_to_dict_from_dict_roundtrip: Direct serialization roundtrip
 #   - test_state_handles_none_fields: None/missing field handling
 #
-# Device support (2 tests):
+# Device support:
 #   - test_device_cpu: CPU execution
 #   - test_device_cuda: CUDA execution and state transfer
 #
-# Integration (2 tests):
+# Integration:
 #   - test_neuromodulator_update: Neuromodulator application
 #   - test_diagnostics_collection: Diagnostic metrics
 # =============================================================================

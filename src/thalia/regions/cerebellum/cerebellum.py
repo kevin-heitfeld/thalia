@@ -61,7 +61,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -968,16 +968,14 @@ class Cerebellum(NeuralRegion):
 
     def forward(
         self,
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process input through cerebellar circuit.
 
         Args:
-            inputs: Either:
-                   - Dict mapping source names to spike tensors
-                     e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
-                   - Tensor of spikes (auto-wrapped as {"default": tensor}) [n_input]
+            inputs: Dict mapping source names to spike tensors
+                   e.g., {"cortex": [n_cortex], "hippocampus": [n_hippo]}
             **kwargs: Additional arguments (unused)
 
         Returns:

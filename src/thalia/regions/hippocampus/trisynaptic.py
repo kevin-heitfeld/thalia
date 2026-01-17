@@ -86,7 +86,7 @@ References:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -1264,7 +1264,7 @@ class TrisynapticHippocampus(NeuralRegion):
 
     def forward(
         self,
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         ec_direct_input: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -1272,8 +1272,7 @@ class TrisynapticHippocampus(NeuralRegion):
         Process input spikes through DG→CA3→CA1 circuit.
 
         Args:
-            inputs: Input spikes - Dict mapping source names to spike tensors,
-                   or single Tensor (auto-wrapped as {"default": tensor}) [n_input]
+            inputs: Input spikes - Dict mapping source names to spike tensors [n_input]
             ec_direct_input: Optional separate input for EC→CA1 direct pathway [n_input] (1D)
                             If None, uses input_spikes (original behavior).
                             When provided, this models EC layer III input which

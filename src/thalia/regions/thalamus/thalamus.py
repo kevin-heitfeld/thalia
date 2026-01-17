@@ -90,7 +90,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -736,16 +736,15 @@ class ThalamicRelay(NeuralRegion):
 
     def forward(
         self,
-        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        inputs: Dict[str, torch.Tensor],
         **kwargs: Any,
     ) -> torch.Tensor:
         """Process sensory input through thalamic relay.
 
         Args:
             inputs: Multi-port input dict:
-                   - Dict: {"sensory": tensor, "l6a_feedback": tensor, "l6b_feedback": tensor} (multi-port)
-                   - Dict: {"input": tensor} (alias for "sensory")
-                   - Tensor: sensory_input [n_input] (auto-wrapped as {"default": tensor})
+                   - {"sensory": tensor, "l6a_feedback": tensor, "l6b_feedback": tensor} (multi-port)
+                   - {"input": tensor} (alias for "sensory")
             **kwargs: Additional arguments (unused)
 
         Returns:
