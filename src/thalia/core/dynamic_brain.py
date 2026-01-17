@@ -223,7 +223,7 @@ class DynamicBrain(nn.Module):
         self._last_confidence: Optional[float] = None
 
         # Mutable container for shared last_action state (needed by ConsolidationManager)
-        self._last_action_container = [None]
+        self._last_action_container: List[Optional[int]] = [None]
 
         # =================================================================
         # SPIKE COUNTING
@@ -1211,7 +1211,7 @@ class DynamicBrain(nn.Module):
 
             # Fallback: check for accumulated free energy in PredictiveCortex
             elif hasattr(cortex, "_total_free_energy"):
-                total_fe = cortex._total_free_energy
+                total_fe = float(cortex._total_free_energy)  # type: ignore[arg-type]
                 cortex_reward = 1.0 - 0.1 * min(total_fe, 20.0)
                 cortex_reward = max(-1.0, min(1.0, cortex_reward))
                 reward += cortex_reward
@@ -1333,9 +1333,9 @@ class DynamicBrain(nn.Module):
         # Also consider number of active goals (if hierarchical goals enabled)
         goal_load = 0.0
         if hasattr(pfc, "goal_manager") and pfc.goal_manager is not None:
-            n_active = len(pfc.goal_manager.active_goals)  # type: ignore[arg-type, union-attr]
-            max_goals = pfc.goal_manager.config.max_active_goals  # type: ignore[union-attr]
-            goal_load = n_active / max(max_goals, 1)  # type: ignore[arg-type, operator]
+            n_active = len(pfc.goal_manager.active_goals)  # type: ignore[union-attr,arg-type]
+            max_goals = int(pfc.goal_manager.config.max_active_goals)  # type: ignore[union-attr,arg-type]
+            goal_load = float(n_active) / max(max_goals, 1)
 
         # Combine WM activity and goal count (weighted average)
         cognitive_load = 0.7 * wm_activity + 0.3 * goal_load
@@ -1899,7 +1899,7 @@ class DynamicBrain(nn.Module):
                 and hasattr(striatum.d2_pathway, "weights")
                 and striatum.d2_pathway.weights is not None
             ):
-                d2_mean = striatum.d2_pathway.weights[start:end].mean().item()
+                d2_mean = striatum.d2_pathway.weights[start:end].mean().item()  # type: ignore[index]
             else:
                 d2_mean = 0.0
 
@@ -1920,7 +1920,7 @@ class DynamicBrain(nn.Module):
                 and striatum.d1_pathway.eligibility is not None
             ):
                 d1_elig_per_action.append(
-                    striatum.d1_pathway.eligibility[start:end].abs().mean().item()
+                    striatum.d1_pathway.eligibility[start:end].abs().mean().item()  # type: ignore[index]
                 )
             else:
                 d1_elig_per_action.append(0.0)
@@ -1930,7 +1930,7 @@ class DynamicBrain(nn.Module):
                 and striatum.d2_pathway.eligibility is not None
             ):
                 d2_elig_per_action.append(
-                    striatum.d2_pathway.eligibility[start:end].abs().mean().item()
+                    striatum.d2_pathway.eligibility[start:end].abs().mean().item()  # type: ignore[index]
                 )
             else:
                 d2_elig_per_action.append(0.0)
@@ -1939,7 +1939,7 @@ class DynamicBrain(nn.Module):
         action_counts = []
         total_trials = 0
         if hasattr(striatum, "_action_counts") and striatum._action_counts is not None:
-            action_counts = [int(c) for c in striatum._action_counts.tolist()]
+            action_counts = [int(c) for c in striatum._action_counts.tolist()]  # type: ignore[operator]
         if hasattr(striatum, "_total_trials"):
             total_trials = int(getattr(striatum, "_total_trials", 0))
         exploration_prob = getattr(striatum, "_last_exploration_prob", 0.0)
@@ -1998,7 +1998,7 @@ class DynamicBrain(nn.Module):
         # Memory metrics
         n_stored = 0
         if hasattr(hippo, "episode_buffer"):
-            n_stored = len(hippo.episode_buffer)
+            n_stored = len(hippo.episode_buffer)  # type: ignore[arg-type]
 
         return HippocampusDiagnostics(
             ca1_total_spikes=ca1_spikes,
@@ -2029,7 +2029,7 @@ class DynamicBrain(nn.Module):
             print(diag['pathways'])  # Pathway diagnostics
             print(diag['oscillators'])  # Oscillator phases/signals
         """
-        diagnostics = {
+        diagnostics: Dict[str, Any] = {
             "components": {},
             "spike_counts": {},
             "pathways": {},
@@ -2040,12 +2040,12 @@ class DynamicBrain(nn.Module):
         # Component diagnostics
         for name, component in self.components.items():
             if hasattr(component, "get_diagnostics"):
-                diagnostics["components"][name] = component.get_diagnostics()
+                diagnostics["components"][name] = component.get_diagnostics()  # type: ignore[operator]
 
             # Collect spike counts for health monitoring
             if hasattr(component, "state") and component.state is not None:
                 if hasattr(component.state, "spikes") and component.state.spikes is not None:
-                    diagnostics["spike_counts"][name] = component.state.spikes.sum().item()
+                    diagnostics["spike_counts"][name] = component.state.spikes.sum().item()  # type: ignore[operator]
 
         # Pathway diagnostics (from PathwayManager)
         diagnostics["pathways"] = self.pathway_manager.get_diagnostics()
@@ -2135,7 +2135,7 @@ class DynamicBrain(nn.Module):
             Uses "regions" key (not "components") for CheckpointManager compatibility.
             DynamicBrain's components are stored as regions in the checkpoint format.
         """
-        state = {
+        state: Dict[str, Any] = {
             "global_config": self.global_config,
             "current_time": self._current_time,
             "topology": self._topology,
@@ -2153,59 +2153,60 @@ class DynamicBrain(nn.Module):
                 state["config"][attr] = getattr(self.config, attr)
 
         # Get component states (stored as "regions" for compatibility)
-        for name, component in self.components.items():
-            state["regions"][name] = component.get_full_state()
+        regions_dict: Dict[str, Any] = state["regions"]
+        for name, component in cast(Dict[str, NeuralRegion], self.components).items():
+            regions_dict[name] = component.get_full_state()
 
         # Get pathway states via PathwayManager
-        state["pathways"] = self.pathway_manager.get_state()
+        state["pathways"] = self.pathway_manager.get_state()  # type: ignore[attr-defined]
 
         # Get oscillator states
-        state["oscillators"] = {
-            "delta": self.oscillators.delta.get_state(),
-            "theta": self.oscillators.theta.get_state(),
-            "alpha": self.oscillators.alpha.get_state(),
-            "beta": self.oscillators.beta.get_state(),
-            "gamma": self.oscillators.gamma.get_state(),
-            "ripple": self.oscillators.ripple.get_state(),
+        state["oscillators"] = {  # type: ignore[index]
+            "delta": self.oscillators.delta.get_state(),  # type: ignore[attr-defined]
+            "theta": self.oscillators.theta.get_state(),  # type: ignore[attr-defined]
+            "alpha": self.oscillators.alpha.get_state(),  # type: ignore[attr-defined]
+            "beta": self.oscillators.beta.get_state(),  # type: ignore[attr-defined]
+            "gamma": self.oscillators.gamma.get_state(),  # type: ignore[attr-defined]
+            "ripple": self.oscillators.ripple.get_state(),  # type: ignore[attr-defined]
         }
 
         # Get neuromodulator states using proper get_state() methods
-        if self.neuromodulator_manager.vta is not None:
-            if hasattr(self.neuromodulator_manager.vta, "get_state"):
-                state["neuromodulators"]["vta"] = self.neuromodulator_manager.vta.get_state()
+        if self.neuromodulator_manager.vta is not None:  # type: ignore[attr-defined]
+            if hasattr(self.neuromodulator_manager.vta, "get_state"):  # type: ignore[attr-defined]
+                state["neuromodulators"]["vta"] = self.neuromodulator_manager.vta.get_state()  # type: ignore[attr-defined, index]
             else:
                 # Fallback for VTA without get_state()
-                state["neuromodulators"]["vta"] = {
-                    "global_dopamine": self.neuromodulator_manager.vta._global_dopamine,
-                    "tonic_dopamine": self.neuromodulator_manager.vta._tonic_dopamine,
-                    "phasic_dopamine": self.neuromodulator_manager.vta._phasic_dopamine,
+                state["neuromodulators"]["vta"] = {  # type: ignore[index]
+                    "global_dopamine": self.neuromodulator_manager.vta._global_dopamine,  # type: ignore[attr-defined]
+                    "tonic_dopamine": self.neuromodulator_manager.vta._tonic_dopamine,  # type: ignore[attr-defined]
+                    "phasic_dopamine": self.neuromodulator_manager.vta._phasic_dopamine,  # type: ignore[attr-defined]
                 }
-        if self.neuromodulator_manager.locus_coeruleus is not None:
-            if hasattr(self.neuromodulator_manager.locus_coeruleus, "get_state"):
-                state["neuromodulators"][
+        if self.neuromodulator_manager.locus_coeruleus is not None:  # type: ignore[attr-defined]
+            if hasattr(self.neuromodulator_manager.locus_coeruleus, "get_state"):  # type: ignore[attr-defined]
+                state["neuromodulators"][  # type: ignore[index]
                     "locus_coeruleus"
-                ] = self.neuromodulator_manager.locus_coeruleus.get_state()
+                ] = self.neuromodulator_manager.locus_coeruleus.get_state()  # type: ignore[attr-defined]
             else:
                 # Fallback for LC without get_state()
-                state["neuromodulators"]["locus_coeruleus"] = {
-                    "norepinephrine": self.neuromodulator_manager.locus_coeruleus.get_norepinephrine(
+                state["neuromodulators"]["locus_coeruleus"] = {  # type: ignore[index]
+                    "norepinephrine": self.neuromodulator_manager.locus_coeruleus.get_norepinephrine(  # type: ignore[attr-defined]
                         apply_homeostasis=False
                     ),
                 }
-        if self.neuromodulator_manager.nucleus_basalis is not None:
-            if hasattr(self.neuromodulator_manager.nucleus_basalis, "get_state"):
-                state["neuromodulators"][
+        if self.neuromodulator_manager.nucleus_basalis is not None:  # type: ignore[attr-defined]
+            if hasattr(self.neuromodulator_manager.nucleus_basalis, "get_state"):  # type: ignore[attr-defined]
+                state["neuromodulators"][  # type: ignore[index]
                     "nucleus_basalis"
-                ] = self.neuromodulator_manager.nucleus_basalis.get_state()
+                ] = self.neuromodulator_manager.nucleus_basalis.get_state()  # type: ignore[attr-defined]
             else:
                 # Fallback for NB without get_state()
-                state["neuromodulators"]["nucleus_basalis"] = {
-                    "acetylcholine": self.neuromodulator_manager.nucleus_basalis.get_acetylcholine(
+                state["neuromodulators"]["nucleus_basalis"] = {  # type: ignore[index]
+                    "acetylcholine": self.neuromodulator_manager.nucleus_basalis.get_acetylcholine(  # type: ignore[attr-defined]
                         apply_homeostasis=False
                     ),
                 }
 
-        return state
+        return state  # type: ignore[return-value]
 
     def save_checkpoint(
         self,
@@ -2291,7 +2292,7 @@ class DynamicBrain(nn.Module):
         component_states: Dict[str, Any] = state.get("regions", {})
         for name, component_state in component_states.items():
             if name in self.components:
-                self.components[name].load_full_state(component_state)
+                self.components[name].load_full_state(component_state)  # type: ignore[operator]
 
         # Load pathway states via PathwayManager
         if "pathways" in state:
