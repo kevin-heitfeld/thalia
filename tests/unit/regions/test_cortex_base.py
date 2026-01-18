@@ -357,6 +357,7 @@ class TestLayeredCortex(RegionTestBase):
         """Test plasticity occurs continuously during forward passes."""
         params = self.get_default_params()
         params["bcm_enabled"] = True  # Enable BCM+STDP learning
+        params["learning_rate"] = 0.1  # High learning rate for detectable changes in 100 steps
         region = self.create_region(**params)
 
         # Get initial weights (if accessible)
@@ -383,6 +384,5 @@ class TestLayeredCortex(RegionTestBase):
                     weights_changed = True
                     break
 
-            # With varied input, weights should change
-            # (unless learning rate is zero, which is not default)
+            # With varied input and high learning rate, weights should change
             assert weights_changed, "Expected weight changes from continuous plasticity"

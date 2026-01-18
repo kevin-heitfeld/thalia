@@ -98,6 +98,8 @@ class DynaPlanner:
                 current_value = self.striatum.evaluate_state(state)
                 next_value = self.striatum.evaluate_state(next_state)
                 td_error = abs(reward + 0.95 * next_value - current_value)
+                # Clamp TD error to prevent NaN/inf in priority sampling
+                td_error = max(0.0, min(td_error, 1000.0))  # Cap at reasonable value
                 self.state_priorities[self._state_hash(state)] = td_error
 
         # 4. Do background planning
@@ -158,6 +160,10 @@ class DynaPlanner:
         # Convert priorities to probabilities
         states = list(self.state_priorities.keys())
         priorities = torch.tensor([self.state_priorities[s] for s in states])
+
+        # Handle edge cases: NaN, inf, or all zeros
+        if torch.isnan(priorities).any() or torch.isinf(priorities).any():
+            return self._sample_random_state()
 
         if priorities.sum() == 0:
             return self._sample_random_state()

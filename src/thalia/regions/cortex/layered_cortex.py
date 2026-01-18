@@ -1506,6 +1506,9 @@ class LayeredCortex(NeuralRegion):
             # Store for diagnostics (alpha_suppression only)
             self.state.alpha_suppression = alpha_suppression
 
+        # Store inputs for plasticity (needed by _apply_plasticity)
+        self.state.source_inputs = inputs
+
         # L4: Input processing with conductance-based neurons
         # BIOLOGICALLY CORRECT: Sum conductances from each input source separately
         # Each source (thalamus, hippocampus, etc.) has independent synaptic weights
