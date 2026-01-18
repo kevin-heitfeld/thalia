@@ -37,7 +37,6 @@ class TestOscillatorManagerIntegration:
             .add_component(
                 "cortex",
                 "layered_cortex",
-                input_size=64,
                 **LayerSizeCalculator().cortex_from_output(32),
             )
             .connect("input", "cortex", pathway_type="axonal_projection")
