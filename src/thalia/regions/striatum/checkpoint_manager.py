@@ -104,9 +104,43 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         # 2. PATHWAY STATE (Multi-source weights, eligibility, etc.)
         # PHASE 5: Multi-source architecture - save per-source weights and eligibility
+        # Note: D1/D2 pathway weights are stored in parent's synaptic_weights dict,
+        # so we save their neuron state separately instead of calling pathway.get_state()
         pathway_state = {
-            "d1_state": s.d1_pathway.get_state(),
-            "d2_state": s.d2_pathway.get_state(),
+            # D1 pathway neuron state
+            "d1_neuron_membrane": (
+                s.d1_pathway.neurons.membrane.clone()
+                if s.d1_pathway.neurons.membrane is not None
+                else None
+            ),
+            "d1_neuron_g_E": (
+                s.d1_pathway.neurons.g_E.clone() if s.d1_pathway.neurons.g_E is not None else None
+            ),
+            "d1_neuron_g_I": (
+                s.d1_pathway.neurons.g_I.clone() if s.d1_pathway.neurons.g_I is not None else None
+            ),
+            "d1_neuron_refractory": (
+                s.d1_pathway.neurons.refractory.clone()
+                if s.d1_pathway.neurons.refractory is not None
+                else None
+            ),
+            # D2 pathway neuron state
+            "d2_neuron_membrane": (
+                s.d2_pathway.neurons.membrane.clone()
+                if s.d2_pathway.neurons.membrane is not None
+                else None
+            ),
+            "d2_neuron_g_E": (
+                s.d2_pathway.neurons.g_E.clone() if s.d2_pathway.neurons.g_E is not None else None
+            ),
+            "d2_neuron_g_I": (
+                s.d2_pathway.neurons.g_I.clone() if s.d2_pathway.neurons.g_I is not None else None
+            ),
+            "d2_neuron_refractory": (
+                s.d2_pathway.neurons.refractory.clone()
+                if s.d2_pathway.neurons.refractory is not None
+                else None
+            ),
             # Multi-source weights (Phase 5)
             "synaptic_weights": {
                 key: tensor.detach().clone() for key, tensor in s.synaptic_weights.items()
@@ -261,6 +295,30 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         # 2. RESTORE PATHWAY STATE (Multi-source architecture)
         pathway_state = state["pathway_state"]
+
+        # Restore D1 pathway neuron state
+        if pathway_state.get("d1_neuron_membrane") is not None:
+            if s.d1_pathway.neurons.membrane is None:
+                s.d1_pathway.neurons.reset_state()
+            s.d1_pathway.neurons.membrane = pathway_state["d1_neuron_membrane"].to(s.device)
+        if pathway_state.get("d1_neuron_g_E") is not None:
+            s.d1_pathway.neurons.g_E = pathway_state["d1_neuron_g_E"].to(s.device)
+        if pathway_state.get("d1_neuron_g_I") is not None:
+            s.d1_pathway.neurons.g_I = pathway_state["d1_neuron_g_I"].to(s.device)
+        if pathway_state.get("d1_neuron_refractory") is not None:
+            s.d1_pathway.neurons.refractory = pathway_state["d1_neuron_refractory"].to(s.device)
+
+        # Restore D2 pathway neuron state
+        if pathway_state.get("d2_neuron_membrane") is not None:
+            if s.d2_pathway.neurons.membrane is None:
+                s.d2_pathway.neurons.reset_state()
+            s.d2_pathway.neurons.membrane = pathway_state["d2_neuron_membrane"].to(s.device)
+        if pathway_state.get("d2_neuron_g_E") is not None:
+            s.d2_pathway.neurons.g_E = pathway_state["d2_neuron_g_E"].to(s.device)
+        if pathway_state.get("d2_neuron_g_I") is not None:
+            s.d2_pathway.neurons.g_I = pathway_state["d2_neuron_g_I"].to(s.device)
+        if pathway_state.get("d2_neuron_refractory") is not None:
+            s.d2_pathway.neurons.refractory = pathway_state["d2_neuron_refractory"].to(s.device)
 
         # Multi-source weights
         for key, weights in pathway_state["synaptic_weights"].items():
