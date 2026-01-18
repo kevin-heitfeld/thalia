@@ -1053,14 +1053,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 d1_stp = ShortTermPlasticity(
                     n_pre=n_input,
                     n_post=self.d1_size,
-                    config=get_stp_config(stp_type, dt=self.config.dt_ms),
+                    config=get_stp_config(stp_type),
                     per_synapse=True,
                 )
 
                 d2_stp = ShortTermPlasticity(
                     n_pre=n_input,
                     n_post=self.d2_size,
-                    config=get_stp_config(stp_type, dt=self.config.dt_ms),
+                    config=get_stp_config(stp_type),
                     per_synapse=True,
                 )
 

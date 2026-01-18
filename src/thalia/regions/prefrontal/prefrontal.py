@@ -803,7 +803,7 @@ class Prefrontal(NeuralRegion):
             self.stp_feedforward = ShortTermPlasticity(
                 n_pre=self.input_size,
                 n_post=self.n_neurons,
-                config=STPConfig.from_type(STPType.FACILITATING, dt=cfg.dt_ms),
+                config=STPConfig.from_type(STPType.FACILITATING),
                 per_synapse=True,
             )
             self.stp_feedforward.to(self.device)
@@ -819,7 +819,7 @@ class Prefrontal(NeuralRegion):
             self.stp_recurrent = ShortTermPlasticity(
                 n_pre=self.n_neurons,
                 n_post=self.n_neurons,
-                config=STPConfig.from_type(STPType.DEPRESSING, dt=cfg.dt_ms),
+                config=STPConfig.from_type(STPType.DEPRESSING),
                 per_synapse=True,
             )
             self.stp_recurrent.to(self.device)

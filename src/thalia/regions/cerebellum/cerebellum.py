@@ -678,7 +678,7 @@ class Cerebellum(NeuralRegion):
             self.stp_pf_purkinje = ShortTermPlasticity(
                 n_pre=expanded_input,
                 n_post=self.purkinje_size,
-                config=STPConfig.from_type(self.config.stp_pf_purkinje_type, dt=config.dt_ms),
+                config=STPConfig.from_type(self.config.stp_pf_purkinje_type),
                 per_synapse=True,  # Per-synapse dynamics for maximum precision
             )
             self.stp_pf_purkinje.to(self.device)
@@ -689,7 +689,7 @@ class Cerebellum(NeuralRegion):
                 self.stp_mf_granule = ShortTermPlasticity(
                     n_pre=self.input_size,
                     n_post=self.granule_layer.n_granule,
-                    config=STPConfig.from_type(self.config.stp_mf_granule_type, dt=config.dt_ms),
+                    config=STPConfig.from_type(self.config.stp_mf_granule_type),
                     per_synapse=True,
                 )
                 self.stp_mf_granule.to(self.device)

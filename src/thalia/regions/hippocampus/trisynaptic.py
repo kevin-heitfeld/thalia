@@ -335,7 +335,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_mossy = ShortTermPlasticity(
                 n_pre=self.dg_size,
                 n_post=self.ca3_size,
-                config=get_stp_config("mossy_fiber", dt=1.0),
+                config=get_stp_config("mossy_fiber"),
                 per_synapse=True,
             )
             self.stp_mossy.to(device_obj)
@@ -346,7 +346,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_schaffer = ShortTermPlasticity(
                 n_pre=self.ca3_size,
                 n_post=self.ca1_size,
-                config=get_stp_config("schaffer_collateral", dt=1.0),
+                config=get_stp_config("schaffer_collateral"),
                 per_synapse=True,
             )
             self.stp_schaffer.to(device_obj)
@@ -362,7 +362,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ec_ca1 = ShortTermPlasticity(
                 n_pre=ec_ca1_input_size,
                 n_post=self.ca1_size,
-                config=get_stp_config("ec_ca1", dt=1.0),
+                config=get_stp_config("ec_ca1"),
                 per_synapse=True,
             )
             self.stp_ec_ca1.to(device_obj)
@@ -375,7 +375,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ca3_recurrent = ShortTermPlasticity(
                 n_pre=self.ca3_size,
                 n_post=self.ca3_size,
-                config=get_stp_config("ca3_recurrent", dt=1.0),
+                config=get_stp_config("ca3_recurrent"),
                 per_synapse=True,
             )
             self.stp_ca3_recurrent.to(device_obj)
@@ -389,9 +389,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ca3_ca2 = ShortTermPlasticity(
                 n_pre=self.ca3_size,
                 n_post=self.ca2_size,
-                config=get_stp_config(
-                    "schaffer_collateral", dt=1.0
-                ),  # Use Schaffer preset (depressing)
+                config=get_stp_config("schaffer_collateral"),  # Use Schaffer preset (depressing)
                 per_synapse=True,
             )
             self.stp_ca3_ca2.to(device_obj)
@@ -402,9 +400,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ca2_ca1 = ShortTermPlasticity(
                 n_pre=self.ca2_size,
                 n_post=self.ca1_size,
-                config=get_stp_config(
-                    "mossy_fiber", dt=1.0
-                ),  # Use mossy fiber preset (facilitating)
+                config=get_stp_config("mossy_fiber"),  # Use mossy fiber preset (facilitating)
                 per_synapse=True,
             )
             self.stp_ca2_ca1.to(device_obj)
@@ -414,7 +410,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ec_ca2 = ShortTermPlasticity(
                 n_pre=self.input_size,
                 n_post=self.ca2_size,
-                config=get_stp_config("ec_ca1", dt=1.0),  # Use EC→CA1 preset (depressing)
+                config=get_stp_config("ec_ca1"),  # Use EC→CA1 preset (depressing)
                 per_synapse=True,
             )
             self.stp_ec_ca2.to(device_obj)

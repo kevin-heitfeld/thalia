@@ -9,10 +9,10 @@ Usage:
     from thalia.core.stp_presets import STP_PRESETS, get_stp_config
 
     # Use a preset directly
-    config = STP_PRESETS["mossy_fiber"].configure(dt=1.0)
+    config = STP_PRESETS["mossy_fiber"].configure()
 
     # Or use the helper function
-    config = get_stp_config("mossy_fiber", dt=1.0)
+    config = get_stp_config("mossy_fiber")
 
 References:
     - Salin et al. (1996): Distinct short-term plasticity at two excitatory pathways
@@ -53,11 +53,8 @@ class STPPreset:
     description: str
     references: str
 
-    def configure(self, dt: float = 1.0) -> STPConfig:
+    def configure(self) -> STPConfig:
         """Create STPConfig with this preset's parameters.
-
-        Args:
-            dt: Simulation timestep in milliseconds
 
         Returns:
             Configured STPConfig instance
@@ -66,7 +63,6 @@ class STPPreset:
             U=self.U,
             tau_d=self.tau_x,  # tau_x → tau_d (depression recovery)
             tau_f=self.tau_u,  # tau_u → tau_f (facilitation decay)
-            dt=dt,
         )
 
 
@@ -278,12 +274,11 @@ STP_PRESETS: Dict[str, STPPreset] = {
 }
 
 
-def get_stp_config(pathway_type: str, dt: float = 1.0) -> STPConfig:
-    """Get standard STP configuration for a pathway type.
+def get_stp_config(pathway_type: str) -> STPConfig:
+    """Get STPConfig for a specific biological pathway.
 
     Args:
-        pathway_type: Name of the pathway (see STP_PRESETS keys)
-        dt: Simulation timestep in milliseconds
+        pathway_type: Name of pathway preset (e.g., "mossy_fiber", "schaffer_collateral")
 
     Returns:
         Configured STPConfig instance
@@ -292,15 +287,15 @@ def get_stp_config(pathway_type: str, dt: float = 1.0) -> STPConfig:
         KeyError: If pathway_type is not recognized
 
     Example:
-        >>> config = get_stp_config("mossy_fiber", dt=1.0)
+        >>> config = get_stp_config("mossy_fiber")
         >>> print(f"U={config.U}, tau_d={config.tau_d}, tau_f={config.tau_f}")
         U=0.03, tau_d=200.0, tau_f=800.0
     """
     if pathway_type not in STP_PRESETS:
         available = ", ".join(STP_PRESETS.keys())
-        raise KeyError(f"Unknown pathway type: {pathway_type}. " f"Available presets: {available}")
+        raise KeyError(f"Unknown pathway_type: {pathway_type}. " f"Available presets: {available}")
 
-    return STP_PRESETS[pathway_type].configure(dt=dt)
+    return STP_PRESETS[pathway_type].configure()
 
 
 def list_presets() -> Dict[str, str]:
@@ -317,7 +312,6 @@ def sample_heterogeneous_stp_params(
     n_synapses: int,
     variability: float = 0.3,
     seed: Optional[int] = None,
-    dt: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Sample heterogeneous STP parameters from biological distributions.
 
@@ -361,7 +355,7 @@ def sample_heterogeneous_stp_params(
         np.random.seed(seed)
 
     # Get base configuration
-    base_config = get_stp_config(base_preset, dt=dt)
+    base_config = get_stp_config(base_preset)
 
     # Sample from lognormal distributions (ensures positive values)
     # lognormal(mu, sigma) where mean = exp(mu + sigma^2/2)

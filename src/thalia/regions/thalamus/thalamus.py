@@ -562,7 +562,7 @@ class ThalamicRelay(NeuralRegion):
             self.stp_sensory_relay = ShortTermPlasticity(
                 n_pre=self.input_size,
                 n_post=self.relay_size,
-                config=STPConfig.from_type(config.stp_sensory_relay_type, dt=config.dt_ms),
+                config=STPConfig.from_type(config.stp_sensory_relay_type),
                 per_synapse=True,  # Per-synapse dynamics for maximum precision
             )
 
@@ -573,7 +573,7 @@ class ThalamicRelay(NeuralRegion):
             self.stp_l6_feedback = ShortTermPlasticity(
                 n_pre=self.relay_size,  # L6b must match relay size
                 n_post=self.relay_size,
-                config=STPConfig.from_type(config.stp_l6_feedback_type, dt=config.dt_ms),
+                config=STPConfig.from_type(config.stp_l6_feedback_type),
                 per_synapse=True,
             )
 

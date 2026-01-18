@@ -508,7 +508,7 @@ class LayeredCortex(NeuralRegion):
         self.stp_l23_recurrent = ShortTermPlasticity(
             n_pre=self.l23_size,
             n_post=self.l23_size,
-            config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=cfg.dt_ms),
+            config=STPConfig.from_type(STPType.DEPRESSING_FAST),
             per_synapse=True,
         )
         self.stp_l23_recurrent.to(self.device)
@@ -1076,7 +1076,7 @@ class LayeredCortex(NeuralRegion):
         self.stp_l23_recurrent = ShortTermPlasticity(
             n_pre=new_l23_size,
             n_post=new_l23_size,
-            config=STPConfig.from_type(STPType.DEPRESSING_FAST, dt=self.config.dt_ms),
+            config=STPConfig.from_type(STPType.DEPRESSING_FAST),
             per_synapse=True,
         )
         self.stp_l23_recurrent.to(self.device)

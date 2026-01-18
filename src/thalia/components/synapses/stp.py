@@ -102,40 +102,29 @@ class STPConfig:
     U: float = 0.5  # Baseline release probability
     tau_d: float = 200.0  # Depression recovery (ms)
     tau_f: float = 50.0  # Facilitation decay (ms)
-    dt: float = 1.0  # Timestep (ms)
 
     @classmethod
-    def from_type(cls, stp_type: STPType, dt: float = 1.0) -> STPConfig:
+    def from_type(cls, stp_type: STPType) -> STPConfig:
         """Create config from predefined synapse type.
 
         Parameters based on Markram et al. (1998) fits to cortical data.
         """
         if stp_type == STPType.DEPRESSING:
-            return cls(U=0.5, tau_d=800.0, tau_f=20.0, dt=dt)
+            return cls(U=0.5, tau_d=800.0, tau_f=20.0)
         elif stp_type == STPType.DEPRESSING_MODERATE:
-            return cls(U=0.4, tau_d=700.0, tau_f=30.0, dt=dt)
+            return cls(U=0.4, tau_d=700.0, tau_f=30.0)
         elif stp_type == STPType.DEPRESSING_STRONG:
-            return cls(U=0.7, tau_d=600.0, tau_f=15.0, dt=dt)
+            return cls(U=0.7, tau_d=600.0, tau_f=15.0)
         elif stp_type == STPType.DEPRESSING_FAST:
-            return cls(U=0.8, tau_d=200.0, tau_f=10.0, dt=dt)
+            return cls(U=0.8, tau_d=200.0, tau_f=10.0)
         elif stp_type == STPType.FACILITATING:
-            return cls(U=0.15, tau_d=200.0, tau_f=200.0, dt=dt)
+            return cls(U=0.15, tau_d=200.0, tau_f=200.0)
         elif stp_type == STPType.FACILITATING_STRONG:
-            return cls(U=0.05, tau_d=100.0, tau_f=500.0, dt=dt)
+            return cls(U=0.05, tau_d=100.0, tau_f=500.0)
         elif stp_type == STPType.PSEUDOLINEAR:
-            return cls(U=0.3, tau_d=400.0, tau_f=100.0, dt=dt)
+            return cls(U=0.3, tau_d=400.0, tau_f=100.0)
         else:  # NONE
-            return cls(U=1.0, tau_d=1e6, tau_f=1e-6, dt=dt)  # Effectively no STP
-
-    @property
-    def decay_d(self) -> float:
-        """Depression recovery decay factor per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt / self.tau_d)).item())
-
-    @property
-    def decay_f(self) -> float:
-        """Facilitation decay factor per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt / self.tau_f)).item())
+            return cls(U=1.0, tau_d=1e6, tau_f=1e-6)  # Effectively no STP
 
 
 class ShortTermPlasticity(nn.Module):
@@ -194,19 +183,50 @@ class ShortTermPlasticity(nn.Module):
 
         # Register constants
         self.register_buffer("U", torch.tensor(self.config.U, dtype=torch.float32))
-        self.register_buffer("decay_d", torch.tensor(self.config.decay_d, dtype=torch.float32))
-        self.register_buffer("decay_f", torch.tensor(self.config.decay_f, dtype=torch.float32))
-        self.register_buffer(
-            "recovery_d", torch.tensor(1.0 - self.config.decay_d, dtype=torch.float32)
-        )
-        self.register_buffer(
-            "recovery_f",
-            torch.tensor((1.0 - self.config.decay_f) * self.config.U, dtype=torch.float32),
-        )
+
+        # Decay factors (computed from dt in update_temporal_parameters)
+        # Initialize to dummy values - must call update_temporal_parameters() before use
+        self._dt_ms: Optional[float] = None
+        self.register_buffer("decay_d", torch.tensor(0.0, dtype=torch.float32))
+        self.register_buffer("decay_f", torch.tensor(0.0, dtype=torch.float32))
+        self.register_buffer("recovery_d", torch.tensor(0.0, dtype=torch.float32))
+        self.register_buffer("recovery_f", torch.tensor(0.0, dtype=torch.float32))
 
         # State variables (initialized on first forward or reset)
         self.u: Optional[torch.Tensor] = None  # Release probability (facilitation)
         self.x: Optional[torch.Tensor] = None  # Available resources (depression)
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update decay factors when brain timestep changes.
+
+        Recomputes cached decay/recovery factors based on new dt.
+        Called by DynamicBrain._broadcast_temporal_update().
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._dt_ms = dt_ms
+        device = self.U.device  # type: ignore[union-attr]
+
+        # Recompute depression decay: exp(-dt / tau_d)
+        self.decay_d = torch.tensor(
+            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_d)).item()),
+            device=device,
+            dtype=torch.float32,
+        )
+
+        # Recompute facilitation decay: exp(-dt / tau_f)
+        self.decay_f = torch.tensor(
+            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_f)).item()),
+            device=device,
+            dtype=torch.float32,
+        )
+
+        # Compute recovery rates
+        self.recovery_d = torch.tensor(1.0 - self.decay_d.item(), device=device, dtype=torch.float32)
+        self.recovery_f = torch.tensor(
+            (1.0 - self.decay_f.item()) * self.config.U, device=device, dtype=torch.float32
+        )
 
     def reset_state(self) -> None:
         """Reset STP state to baseline (ADR-005: 1D tensors).
@@ -215,6 +235,12 @@ class ShortTermPlasticity(nn.Module):
         - x starts at 1 (full vesicle pool)
         - Uses 1D tensors per single-brain architecture
         """
+        if self._dt_ms is None:
+            raise RuntimeError(
+                "ShortTermPlasticity.reset_state() called before update_temporal_parameters(). "
+                "Brain must call update_temporal_parameters() during initialization."
+            )
+
         device = self.U.device  # type: ignore[union-attr]
 
         shape: tuple[int, int] | tuple[int]
