@@ -127,8 +127,6 @@ class IntrinsicPlasticityConfig:
 
         bidirectional: Whether to both increase AND decrease thresholds
             If False, only increases threshold (prevents runaway only).
-
-        dt_ms: Simulation timestep (ms)
     """
 
     target_rate: float = 0.1
@@ -138,20 +136,6 @@ class IntrinsicPlasticityConfig:
     v_thresh_min: float = 0.5
     v_thresh_max: float = 2.0
     bidirectional: bool = True
-    dt_ms: float = 1.0
-
-    @property
-    def rate_decay(self) -> float:
-        """Decay factor for rate exponential moving average."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_rate)).item())
-
-    @property
-    def effective_lr(self) -> float:
-        """Effective learning rate for threshold adaptation."""
-        if self.learning_rate is not None:
-            return self.learning_rate
-        # Derive from tau: lr ≈ dt_ms / tau_threshold
-        return self.dt_ms / self.tau_threshold
 
 
 class IntrinsicPlasticity(nn.Module):
@@ -172,6 +156,10 @@ class IntrinsicPlasticity(nn.Module):
         self.n_neurons = n_neurons
         self.config = config or IntrinsicPlasticityConfig()
         self._device = device or torch.device("cpu")
+
+        # Cached temporal factors (updated via update_temporal_parameters)
+        self._rate_decay: Optional[float] = None
+        self._effective_lr: Optional[float] = None
 
         # Per-neuron running average of firing rate
         self.register_buffer(
@@ -196,8 +184,26 @@ class IntrinsicPlasticity(nn.Module):
         """Get device."""
         return self.rate_avg.device
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay and learning rate when dt changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._rate_decay = float(torch.exp(torch.tensor(-dt_ms / self.config.tau_rate)).item())
+
+        if self.config.learning_rate is not None:
+            self._effective_lr = self.config.learning_rate
+        else:
+            # Derive from tau: lr ≈ dt_ms / tau_threshold
+            self._effective_lr = dt_ms / self.config.tau_threshold
+
     def reset_state(self, initial_threshold: float = 1.0):
         """Reset all state to initial values."""
+        # Ensure temporal factors are initialized (use dt=1.0 if not set)
+        if self._rate_decay is None:
+            self.update_temporal_parameters(1.0)
+
         self.rate_avg.fill_(self.config.target_rate)
         self.thresholds.fill_(initial_threshold)
         self._total_adaptation = 0.0
@@ -229,9 +235,13 @@ class IntrinsicPlasticity(nn.Module):
         else:
             instant_rate = spikes.float()
 
+        # Ensure temporal factors are initialized
+        if self._rate_decay is None or self._effective_lr is None:
+            self.update_temporal_parameters(1.0)
+
         # Update running average of rate
-        decay = cfg.rate_decay
-        self.rate_avg = decay * self.rate_avg + (1 - decay) * instant_rate
+        assert self._rate_decay is not None and self._effective_lr is not None
+        self.rate_avg = self._rate_decay * self.rate_avg + (1 - self._rate_decay) * instant_rate
 
         # Compute error: positive if firing too much
         rate_error = self.rate_avg - cfg.target_rate
@@ -240,10 +250,10 @@ class IntrinsicPlasticity(nn.Module):
         # High rate → increase threshold (less excitable)
         # Low rate → decrease threshold (more excitable, if bidirectional)
         if cfg.bidirectional:
-            adjustment = cfg.effective_lr * rate_error
+            adjustment = self._effective_lr * rate_error
         else:
             # Only increase threshold (prevent runaway)
-            adjustment = cfg.effective_lr * torch.relu(rate_error)
+            adjustment = self._effective_lr * torch.relu(rate_error)
 
         # Update thresholds
         new_thresholds = thresholds + adjustment
@@ -327,14 +337,36 @@ class PopulationIntrinsicPlasticity(nn.Module):
         super().__init__()
         self.config = config or IntrinsicPlasticityConfig()
 
+        # Cached temporal factors (updated via update_temporal_parameters)
+        self._rate_decay: Optional[float] = None
+        self._effective_lr: Optional[float] = None
+
         # Population-level rate average
         self._rate_avg: float = self.config.target_rate
 
         # Global excitability modulation (multiplied with input)
         self._excitability: float = 1.0
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay and learning rate when dt changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._rate_decay = float(torch.exp(torch.tensor(-dt_ms / self.config.tau_rate)).item())
+
+        if self.config.learning_rate is not None:
+            self._effective_lr = self.config.learning_rate
+        else:
+            # Derive from tau: lr ≈ dt_ms / tau_threshold
+            self._effective_lr = dt_ms / self.config.tau_threshold
+
     def reset_state(self):
         """Reset to initial state."""
+        # Ensure temporal factors are initialized (use dt=1.0 if not set)
+        if self._rate_decay is None:
+            self.update_temporal_parameters(1.0)
+
         self._rate_avg = self.config.target_rate
         self._excitability = 1.0
 
@@ -352,9 +384,13 @@ class PopulationIntrinsicPlasticity(nn.Module):
         # Compute population rate
         pop_rate = compute_firing_rate(spikes)
 
+        # Ensure temporal factors are initialized
+        if self._rate_decay is None or self._effective_lr is None:
+            self.update_temporal_parameters(1.0)
+
         # Update running average
-        decay = cfg.rate_decay
-        self._rate_avg = decay * self._rate_avg + (1 - decay) * pop_rate
+        assert self._rate_decay is not None and self._effective_lr is not None
+        self._rate_avg = self._rate_decay * self._rate_avg + (1 - self._rate_decay) * pop_rate
 
         # Compute error
         rate_error = self._rate_avg - cfg.target_rate
@@ -363,9 +399,9 @@ class PopulationIntrinsicPlasticity(nn.Module):
         # High rate → lower excitability
         # Low rate → higher excitability
         if cfg.bidirectional:
-            adjustment = -cfg.effective_lr * rate_error
+            adjustment = -self._effective_lr * rate_error
         else:
-            adjustment = -cfg.effective_lr * max(0, rate_error)
+            adjustment = -self._effective_lr * max(0, rate_error)
 
         self._excitability = self._excitability * (1 + adjustment)
 

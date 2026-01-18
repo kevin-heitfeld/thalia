@@ -62,7 +62,6 @@ class WorkingMemoryTaskConfig:
         theta_freq_hz: Theta oscillation frequency (typically 4-10 Hz)
         gamma_freq_hz: Gamma oscillation frequency (typically 30-80 Hz)
         items_per_theta_cycle: How many items fit in one theta cycle
-        dt_ms: Timestep for simulation
         encoding_window_ms: Time window for encoding each item
         retrieval_window_ms: Time window for retrieval
         device: Computation device
@@ -71,7 +70,6 @@ class WorkingMemoryTaskConfig:
     theta_freq_hz: float = 8.0
     gamma_freq_hz: float = 40.0
     items_per_theta_cycle: int = 8
-    dt_ms: float = 1.0
     encoding_window_ms: float = 100.0  # 100ms to encode
     retrieval_window_ms: float = 50.0  # 50ms to retrieve
     device: str = "cpu"

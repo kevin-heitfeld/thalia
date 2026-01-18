@@ -105,8 +105,6 @@ class MetabolicConfig:
 
         tau_energy: Time constant for energy averaging (ms)
             Smooths energy estimation over time.
-
-        dt_ms: Simulation timestep (ms)
     """
 
     energy_per_spike: float = 0.001
@@ -118,12 +116,6 @@ class MetabolicConfig:
     gain_min: float = 0.1
     gain_max: float = 2.0
     tau_energy: float = 100.0
-    dt_ms: float = 1.0
-
-    @property
-    def energy_decay(self) -> float:
-        """Decay factor for energy averaging."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_energy)).item())
 
 
 class MetabolicConstraint(nn.Module):
@@ -140,6 +132,9 @@ class MetabolicConstraint(nn.Module):
         super().__init__()
         self.config = config or MetabolicConfig()
 
+        # Cached decay factor (updated via update_temporal_parameters)
+        self._energy_decay: Optional[float] = None
+
         # Running average of energy expenditure
         self._energy_avg: float = 0.0
 
@@ -155,8 +150,20 @@ class MetabolicConstraint(nn.Module):
         # History for diagnostics
         self._energy_history: List[float] = []
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay factor when dt changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._energy_decay = float(torch.exp(torch.tensor(-dt_ms / self.config.tau_energy)).item())
+
     def reset_state(self):
         """Reset all state."""
+        # Ensure decay factor is initialized (use dt=1.0 if not set)
+        if self._energy_decay is None:
+            self.update_temporal_parameters(1.0)
+
         self._energy_avg = 0.0
         self._gain = 1.0
         self._total_energy = 0.0
@@ -222,9 +229,13 @@ class MetabolicConstraint(nn.Module):
         cost = self.compute_cost(spikes)
         n_spikes = int(spikes.float().sum().item())
 
+        # Ensure decay factor is initialized
+        if self._energy_decay is None:
+            self.update_temporal_parameters(1.0)
+
         # Update running average
-        decay = cfg.energy_decay
-        self._energy_avg = decay * self._energy_avg + (1 - decay) * cost
+        assert self._energy_decay is not None
+        self._energy_avg = self._energy_decay * self._energy_avg + (1 - self._energy_decay) * cost
 
         # Update cumulative stats
         self._total_energy += cost

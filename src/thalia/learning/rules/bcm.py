@@ -87,8 +87,6 @@ class BCMConfig:
 
         p: Power for threshold computation (default: 2 for c²)
             Original BCM uses p=2, but p=1 (linear) is sometimes used.
-
-        dt_ms: Simulation timestep (ms)
     """
 
     tau_theta: float = TAU_BCM_THRESHOLD  # Slow adaptation (5 seconds)
@@ -97,12 +95,6 @@ class BCMConfig:
     theta_max: float = 1.0  # Maximum threshold
     learning_rate: float = LEARNING_RATE_BCM  # Base learning rate
     p: float = 2.0  # Power for threshold (c^p)
-    dt_ms: float = 1.0  # Timestep
-
-    @property
-    def decay_theta(self) -> float:
-        """Decay factor for threshold EMA per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_theta)).item())
 
 
 class BCMRule(nn.Module):
@@ -147,13 +139,9 @@ class BCMRule(nn.Module):
         self.n_post = n_post
         self.config = config or BCMConfig()
 
-        # Register constants
-        self.register_buffer(
-            "decay_theta", torch.tensor(self.config.decay_theta, dtype=torch.float32)
-        )
-        self.register_buffer(
-            "one_minus_decay", torch.tensor(1.0 - self.config.decay_theta, dtype=torch.float32)
-        )
+        # Cached decay factors (updated via update_temporal_parameters)
+        self._decay_theta: Optional[float] = None
+        self._one_minus_decay: Optional[float] = None
 
         # Sliding threshold (per neuron)
         self.theta: Optional[torch.Tensor] = None
@@ -161,10 +149,23 @@ class BCMRule(nn.Module):
         # Activity accumulator for smoother threshold updates
         self.activity_trace: Optional[torch.Tensor] = None
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay factors when dt changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        decay = float(torch.exp(torch.tensor(-dt_ms / self.config.tau_theta)).item())
+        self._decay_theta = decay
+        self._one_minus_decay = 1.0 - decay
+
     def reset_state(self) -> None:
         """Reset BCM state to batch_size=1."""
-        device = self.decay_theta.device
-        batch_size = 1
+        # Ensure decay factors are initialized (use dt=1.0 if not set)
+        if self._decay_theta is None:
+            self.update_temporal_parameters(1.0)
+
+        device = torch.device("cpu")  # Will be moved to correct device with theta
 
         # Threshold is per-neuron (not batched)
         self.theta = torch.full(
@@ -240,10 +241,13 @@ class BCMRule(nn.Module):
         # Compute activity^p per neuron
         c_p = post_activity.pow(self.config.p)  # (n_post,)
 
+        # Ensure decay factors are initialized
+        if self._decay_theta is None:
+            self.update_temporal_parameters(1.0)
+
         # Update threshold with EMA (per-neuron)
-        decay_theta_tensor: torch.Tensor = self.decay_theta  # type: ignore[assignment]
-        one_minus_decay_tensor: torch.Tensor = self.one_minus_decay  # type: ignore[assignment]
-        self.theta = decay_theta_tensor * self.theta + one_minus_decay_tensor * c_p  # type: ignore[assignment]
+        assert self._decay_theta is not None and self._one_minus_decay is not None
+        self.theta = self._decay_theta * self.theta + self._one_minus_decay * c_p  # type: ignore[assignment]
 
         # Clamp to valid range
         self.theta = torch.clamp(self.theta, self.config.theta_min, self.config.theta_max)

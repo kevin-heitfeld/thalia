@@ -75,8 +75,6 @@ class EIBalanceConfig:
 
         inh_scale_max: Maximum inhibitory scaling factor
             Prevents runaway inhibition boost.
-
-        dt_ms: Simulation timestep (ms)
     """
 
     target_ratio: float = 4.0
@@ -86,12 +84,6 @@ class EIBalanceConfig:
     ratio_max: float = 10.0
     inh_scale_min: float = 0.1
     inh_scale_max: float = 10.0
-    dt_ms: float = 1.0
-
-    @property
-    def decay(self) -> float:
-        """Decay factor for exponential moving average."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_balance)).item())
 
 
 class EIBalanceRegulator(nn.Module):
@@ -119,6 +111,9 @@ class EIBalanceRegulator(nn.Module):
         self.config = config or EIBalanceConfig()
         self._device = device
 
+        # Cached decay factor (updated via update_temporal_parameters)
+        self._decay: Optional[float] = None
+
         # Running averages of activity (as Python floats for stability)
         self._exc_avg: float = 0.1
         self._inh_avg: float = 0.025  # Start at target ratio
@@ -135,8 +130,20 @@ class EIBalanceRegulator(nn.Module):
         """Get the device (inferred from first tensor if not set)."""
         return self._device or torch.device("cpu")
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay factor when dt changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._decay = float(torch.exp(torch.tensor(-dt_ms / self.config.tau_balance)).item())
+
     def reset_state(self):
         """Reset running averages and scaling."""
+        # Ensure decay factor is initialized (use dt=1.0 if not set)
+        if self._decay is None:
+            self.update_temporal_parameters(1.0)
+
         self._exc_avg = 0.1
         self._inh_avg = 0.025
         self._inh_scale = 1.0
@@ -187,10 +194,14 @@ class EIBalanceRegulator(nn.Module):
         exc_rate = compute_firing_rate(exc_spikes)
         inh_rate = compute_firing_rate(inh_spikes)
 
+        # Ensure decay factor is initialized
+        if self._decay is None:
+            self.update_temporal_parameters(1.0)
+
         # Update running averages with exponential decay
-        decay = cfg.decay
-        self._exc_avg = decay * self._exc_avg + (1 - decay) * exc_rate
-        self._inh_avg = decay * self._inh_avg + (1 - decay) * inh_rate
+        assert self._decay is not None
+        self._exc_avg = self._decay * self._exc_avg + (1 - self._decay) * exc_rate
+        self._inh_avg = self._decay * self._inh_avg + (1 - self._decay) * inh_rate
 
         # Compute current ratio from averages (more stable than instantaneous)
         current_ratio = self._exc_avg / (self._inh_avg + 1e-8)

@@ -2677,10 +2677,6 @@ class TrisynapticHippocampus(NeuralRegion):
         if compression_factor != self.replay_engine.config.compression_factor:
             self.replay_engine.config.compression_factor = compression_factor
 
-        # Update dt if different
-        if dt_ms != self.replay_engine.config.dt_ms:
-            self.replay_engine.config.dt_ms = dt_ms
-
         # Pattern processor: forward through CA3 for pattern completion
         # Theta modulation computed internally from self._theta_phase
         def process_pattern(pattern: torch.Tensor) -> torch.Tensor:

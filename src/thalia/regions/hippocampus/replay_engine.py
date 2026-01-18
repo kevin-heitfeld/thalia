@@ -54,7 +54,6 @@ class ReplayConfig:
 
     # Time compression
     compression_factor: float = 5.0  # How much faster than encoding (5-20x typical)
-    dt_ms: float = 1.0  # Base time step in ms
 
     # Gamma phase-based replay (replaces discrete slots)
     phase_window_width: float = 0.5  # Gaussian width for phase-based pattern selection (radians)

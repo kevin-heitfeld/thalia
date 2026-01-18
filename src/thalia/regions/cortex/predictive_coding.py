@@ -154,7 +154,6 @@ class PredictiveCodingConfig:
     sparse_coding: bool = True
     sparsity_target: float = 0.1
 
-    dt_ms: float = 1.0
     device: str = "cpu"
 
 
@@ -321,23 +320,34 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         self._error_history: list[torch.Tensor] = []
         self._timestep_counter: int = 0
 
-        # Decay factors
-        self.register_buffer(
-            "prediction_decay",
-            torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.prediction_tau_ms)).item()),
-        )
-        self.register_buffer(
-            "error_decay",
-            torch.tensor(torch.exp(torch.tensor(-config.dt_ms / config.error_tau_ms)).item()),
-        )
+        # Cached decay factors (updated via update_temporal_parameters)
+        self._prediction_decay: Optional[float] = None
+        self._error_decay: Optional[float] = None
 
     @property
     def device(self) -> torch.device:
         """Get current device from parameters (tracks module.to() calls)."""
         return self.W_pred.device
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay factors when dt changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._prediction_decay = float(
+            torch.exp(torch.tensor(-dt_ms / self.config.prediction_tau_ms)).item()
+        )
+        self._error_decay = float(
+            torch.exp(torch.tensor(-dt_ms / self.config.error_tau_ms)).item()
+        )
+
     def reset_state(self) -> None:
         """Reset layer state for new sequence."""
+        # Ensure decay factors are initialized (use dt=1.0 if not set)
+        if self._prediction_decay is None or self._error_decay is None:
+            self.update_temporal_parameters(1.0)
+
         # ADR-005: Single-instance architecture (1D tensors, no batch dimension)
         self.state = PredictiveCodingState(
             prediction=torch.zeros(self.config.n_input, device=self.device),
@@ -528,8 +538,9 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             prediction = self.predict(self.state.representation)  # type: ignore[arg-type]
 
         # Smooth prediction over time (temporal integration)
+        assert self._prediction_decay is not None
         self.state.prediction = (
-            self.prediction_decay * self.state.prediction + (1 - self.prediction_decay) * prediction  # type: ignore[operator]
+            self._prediction_decay * self.state.prediction + (1 - self._prediction_decay) * prediction  # type: ignore[operator]
         )
 
         # Compute prediction error

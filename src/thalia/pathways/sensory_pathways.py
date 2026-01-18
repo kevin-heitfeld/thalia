@@ -153,9 +153,6 @@ class SensoryPathwayConfig:
     # Sparse coding
     sparsity: float = 0.05  # Target sparsity
 
-    # Timing
-    dt_ms: float = 1.0
-
     device: str = "cpu"
 
 
