@@ -611,7 +611,7 @@ class BrainComponentBase(ABC):
         """Data type for floating point tensors. REQUIRED."""
 
     # =========================================================================
-    # Temporal Dynamics (REQUIRED for adaptive dt)
+    # Temporal Dynamics
     # =========================================================================
 
     @abstractmethod
@@ -625,7 +625,6 @@ class BrainComponentBase(ABC):
         - Resize delay buffers if needed
         - Propagate update to sub-components (neurons, STP, learning strategies)
 
-        REQUIRED for all components to support adaptive dt.
         Default implementation available in BrainComponentMixin.
 
         Args:
@@ -1189,13 +1188,13 @@ class LearnableComponent(
     def _apply_axonal_delay(
         self,
         output_spikes: torch.Tensor,
-        dt: float,
+        dt_ms: float,
     ) -> torch.Tensor:
         """Apply axonal delay to output spikes using circular buffer.
 
         Args:
             output_spikes: Binary spike tensor [n_neurons]
-            dt: Timestep in milliseconds
+            dt_ms: Timestep in milliseconds
 
         Returns:
             Delayed spikes from avg_delay_steps ago

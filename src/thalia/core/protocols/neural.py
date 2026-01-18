@@ -125,7 +125,7 @@ class Forwardable(Protocol):
 
         Args:
             input_spikes: Input activity tensor
-            **kwargs: Additional inputs (dt, modulation, etc.)
+            **kwargs: Additional inputs
 
         Returns:
             Output activity tensor

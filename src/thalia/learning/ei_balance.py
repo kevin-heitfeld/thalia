@@ -76,7 +76,7 @@ class EIBalanceConfig:
         inh_scale_max: Maximum inhibitory scaling factor
             Prevents runaway inhibition boost.
 
-        dt: Simulation timestep (ms)
+        dt_ms: Simulation timestep (ms)
     """
 
     target_ratio: float = 4.0
@@ -86,12 +86,12 @@ class EIBalanceConfig:
     ratio_max: float = 10.0
     inh_scale_min: float = 0.1
     inh_scale_max: float = 10.0
-    dt: float = 1.0
+    dt_ms: float = 1.0
 
     @property
     def decay(self) -> float:
         """Decay factor for exponential moving average."""
-        return float(torch.exp(torch.tensor(-self.dt / self.tau_balance)).item())
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_balance)).item())
 
 
 class EIBalanceRegulator(nn.Module):

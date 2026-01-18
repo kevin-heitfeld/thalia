@@ -288,11 +288,11 @@ class ReplayEngine(nn.Module):
 
         return True
 
-    def get_ripple_modulation(self, dt: float) -> tuple[bool, float]:
+    def get_ripple_modulation(self, dt_ms: float) -> tuple[bool, float]:
         """Get ripple state and modulation value.
 
         Args:
-            dt: Time step in ms
+            dt_ms: Time step in ms
 
         Returns:
             (ripple_active, modulation_value)
@@ -301,7 +301,7 @@ class ReplayEngine(nn.Module):
             return False, 0.0
 
         # Advance ripple phase
-        self._ripple_time += dt
+        self._ripple_time += dt_ms
 
         # Check if ripple duration exceeded
         if self._ripple_time >= self.config.ripple_duration:

@@ -1218,7 +1218,7 @@ class LayeredCortex(NeuralRegion):
             )
 
         # Get timestep from config for temporal dynamics
-        dt = self.config.dt_ms
+        dt_ms = self.config.dt_ms
 
         # Compute theta modulation from oscillator phase (set by Brain)
         # encoding_mod: high at theta peak (0°), low at trough (180°)
@@ -1662,15 +1662,15 @@ class LayeredCortex(NeuralRegion):
 
         # Update STDP traces using utility function
         if self.state.l4_trace is not None:
-            update_trace(self.state.l4_trace, l4_spikes, tau=cfg.tau_plus_ms, dt=dt)
+            update_trace(self.state.l4_trace, l4_spikes, tau=cfg.tau_plus_ms, dt_ms=dt_ms)
         if self.state.l23_trace is not None:
-            update_trace(self.state.l23_trace, l23_spikes, tau=cfg.tau_plus_ms, dt=dt)
+            update_trace(self.state.l23_trace, l23_spikes, tau=cfg.tau_plus_ms, dt_ms=dt_ms)
         if self.state.l5_trace is not None:
-            update_trace(self.state.l5_trace, l5_spikes, tau=cfg.tau_plus_ms, dt=dt)
+            update_trace(self.state.l5_trace, l5_spikes, tau=cfg.tau_plus_ms, dt_ms=dt_ms)
         if self.state.l6a_trace is not None:
-            update_trace(self.state.l6a_trace, l6a_spikes, tau=cfg.tau_plus_ms, dt=dt)
+            update_trace(self.state.l6a_trace, l6a_spikes, tau=cfg.tau_plus_ms, dt_ms=dt_ms)
         if self.state.l6b_trace is not None:
-            update_trace(self.state.l6b_trace, l6b_spikes, tau=cfg.tau_plus_ms, dt=dt)
+            update_trace(self.state.l6b_trace, l6b_spikes, tau=cfg.tau_plus_ms, dt_ms=dt_ms)
 
         self.state.spikes = l5_spikes
 

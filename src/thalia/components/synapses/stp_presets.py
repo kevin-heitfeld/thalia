@@ -330,7 +330,6 @@ def sample_heterogeneous_stp_params(
         variability: Coefficient of variation (std/mean) for parameter sampling
                      Typical biological range: 0.2-0.5
         seed: Random seed for reproducibility
-        dt: Simulation timestep in milliseconds
 
     Returns:
         Tuple of (U_array, tau_d_array, tau_f_array) each shape [n_synapses]

@@ -577,6 +577,21 @@ class MultimodalIntegration(NeuralRegion):
         """Reset component state."""
         self._reset_state()
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters for new timestep.
+
+        Args:
+            dt_ms: New timestep in milliseconds
+        """
+        # Update neurons
+        if hasattr(self.neurons, "update_temporal_parameters"):
+            self.neurons.update_temporal_parameters(dt_ms)
+
+        # Update learning strategy
+        if hasattr(self, "hebbian_strategy") and self.hebbian_strategy is not None:
+            if hasattr(self.hebbian_strategy, "update_temporal_parameters"):
+                self.hebbian_strategy.update_temporal_parameters(dt_ms)
+
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing."""
         # Collect all learnable weights

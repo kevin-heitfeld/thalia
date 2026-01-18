@@ -95,8 +95,6 @@ class STPConfig:
         tau_f: Facilitation decay time constant (ms)
             Time for residual calcium to clear.
             Typical: 50-200ms for cortical synapses
-
-        dt: Simulation timestep (ms)
     """
 
     U: float = 0.5  # Baseline release probability

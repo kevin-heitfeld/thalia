@@ -614,15 +614,17 @@ class ThalamicRelay(NeuralRegion):
             dt_ms: New simulation timestep in milliseconds
         """
         # Update neurons
-        if hasattr(self.relay_neurons, "update_temporal_parameters"):
+        if hasattr(self, "relay_neurons") and hasattr(
+            self.relay_neurons, "update_temporal_parameters"
+        ):
             self.relay_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self.trn_neurons, "update_temporal_parameters"):
+        if hasattr(self, "trn_neurons") and hasattr(self.trn_neurons, "update_temporal_parameters"):
             self.trn_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if self.stp_sensory_relay is not None:
+        if hasattr(self, "stp_sensory_relay") and self.stp_sensory_relay is not None:
             self.stp_sensory_relay.update_temporal_parameters(dt_ms)
-        if self.stp_l6_feedback is not None:
+        if hasattr(self, "stp_l6_feedback") and self.stp_l6_feedback is not None:
             self.stp_l6_feedback.update_temporal_parameters(dt_ms)
 
     def _initialize_weights(self) -> Optional[torch.Tensor]:

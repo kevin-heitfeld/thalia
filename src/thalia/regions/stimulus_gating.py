@@ -204,13 +204,10 @@ class TemporalIntegrationLayer:
         # Leaky integration trace (accumulates spikes over time)
         self._trace: Optional[torch.Tensor] = None
 
-        # Precompute decay factor
-        self._decay = math.exp(-1.0 / tau)  # Decay per ms (assuming dt=1ms)
-
     def integrate(
         self,
         spikes: torch.Tensor,
-        dt: float = 1.0,
+        dt_ms: float = 1.0,
     ) -> torch.Tensor:
         """
         Integrate spike input and produce stable output pattern.
@@ -221,7 +218,7 @@ class TemporalIntegrationLayer:
 
         Args:
             spikes: Input spike pattern [n_neurons] (1D)
-            dt: Timestep in ms
+            dt_ms: Timestep in ms (defaults to 1.0ms if not specified)
 
         Returns:
             Integrated spike pattern [n_neurons] (1D)
@@ -237,7 +234,7 @@ class TemporalIntegrationLayer:
             self._trace = torch.zeros(self.n_neurons, device=self.device)
 
         # Leaky integration: trace = trace * decay + new_spikes
-        decay = math.exp(-dt / self.tau)
+        decay = math.exp(-dt_ms / self.tau)
         self._trace = self._trace * decay + spikes.float()
 
         # Convert rate (trace) to spikes

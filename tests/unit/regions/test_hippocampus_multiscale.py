@@ -280,7 +280,7 @@ def test_combined_learning(hippocampus):
 def test_episodic_vs_semantic_dynamics(hippocampus):
     """Test that fast trace captures episodes, slow trace captures patterns."""
     config = hippocampus.config
-    dt = config.dt_ms
+    dt_ms = config.dt_ms
 
     # Simulate 3 learning episodes with 60s gaps
     # Episode 1: Strong learning event
@@ -289,8 +289,8 @@ def test_episodic_vs_semantic_dynamics(hippocampus):
 
     # Wait 60 seconds (fast decays, slow accumulates)
     n_steps = 60_000
-    fast_decay = dt / config.fast_trace_tau_ms
-    slow_decay = dt / config.slow_trace_tau_ms
+    fast_decay = dt_ms / config.fast_trace_tau_ms
+    slow_decay = dt_ms / config.slow_trace_tau_ms
 
     for _ in range(n_steps):
         consolidation = config.consolidation_rate * hippocampus._ca3_ca3_fast
@@ -410,14 +410,14 @@ def test_all_pathways_have_traces(hippocampus):
 def test_time_constant_accuracy(hippocampus):
     """Test that decay rates match configured time constants."""
     config = hippocampus.config
-    dt = config.dt_ms
+    dt_ms = config.dt_ms
 
     # Fast trace: τ = 60,000ms
-    fast_decay_rate = dt / config.fast_trace_tau_ms
+    fast_decay_rate = dt_ms / config.fast_trace_tau_ms
     assert abs(fast_decay_rate - 1.0 / 60_000) < 1e-9
 
     # Slow trace: τ = 3,600,000ms
-    slow_decay_rate = dt / config.slow_trace_tau_ms
+    slow_decay_rate = dt_ms / config.slow_trace_tau_ms
     assert abs(slow_decay_rate - 1.0 / 3_600_000) < 1e-9
 
     # Half-life calculation

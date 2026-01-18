@@ -106,7 +106,7 @@ class MetabolicConfig:
         tau_energy: Time constant for energy averaging (ms)
             Smooths energy estimation over time.
 
-        dt: Simulation timestep (ms)
+        dt_ms: Simulation timestep (ms)
     """
 
     energy_per_spike: float = 0.001
@@ -118,12 +118,12 @@ class MetabolicConfig:
     gain_min: float = 0.1
     gain_max: float = 2.0
     tau_energy: float = 100.0
-    dt: float = 1.0
+    dt_ms: float = 1.0
 
     @property
     def energy_decay(self) -> float:
         """Decay factor for energy averaging."""
-        return float(torch.exp(torch.tensor(-self.dt / self.tau_energy)).item())
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_energy)).item())
 
 
 class MetabolicConstraint(nn.Module):

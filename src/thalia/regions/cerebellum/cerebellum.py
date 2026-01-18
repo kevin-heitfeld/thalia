@@ -852,21 +852,26 @@ class Cerebellum(NeuralRegion):
         # Note: Trace manager doesn't cache dt_ms, it's passed per-call
 
         # Update neurons
-        if hasattr(self.purkinje_neurons, "update_temporal_parameters"):
+        if hasattr(self, "purkinje_neurons") and hasattr(
+            self.purkinje_neurons, "update_temporal_parameters"
+        ):
             self.purkinje_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self.granule_neurons, "update_temporal_parameters"):
+        if hasattr(self, "granule_neurons") and hasattr(
+            self.granule_neurons, "update_temporal_parameters"
+        ):
             self.granule_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if self.stp_pf_purkinje is not None:
+        if hasattr(self, "stp_pf_purkinje") and self.stp_pf_purkinje is not None:
             self.stp_pf_purkinje.update_temporal_parameters(dt_ms)
-        if self.stp_mf_granule is not None:
+        if hasattr(self, "stp_mf_granule") and self.stp_mf_granule is not None:
             self.stp_mf_granule.update_temporal_parameters(dt_ms)
 
         # Update learning strategies
-        for strategy in self.strategies.values():
-            if hasattr(strategy, "update_temporal_parameters"):
-                strategy.update_temporal_parameters(dt_ms)
+        if hasattr(self, "strategies"):
+            for strategy in self.strategies.values():
+                if hasattr(strategy, "update_temporal_parameters"):
+                    strategy.update_temporal_parameters(dt_ms)
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create Purkinje-like neurons with constants from neuron_constants.py."""

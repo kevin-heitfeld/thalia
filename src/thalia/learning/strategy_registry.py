@@ -498,7 +498,7 @@ def create_striatum_strategy(
         learning_rate: Base learning rate
         eligibility_tau_ms: Eligibility trace time constant (ms)
         three_factor_config: Optional custom ThreeFactorConfig instance
-        **kwargs: Additional three-factor parameters (dt, w_min, w_max, etc.)
+        **kwargs: Additional three-factor parameters (w_min, w_max, etc.)
 
     Returns:
         Configured three-factor strategy

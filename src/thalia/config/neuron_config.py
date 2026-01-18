@@ -60,10 +60,6 @@ class BaseNeuronConfig(BaseConfig):
         tau_ref: Absolute refractory period in ms (default: 2.0)
             Duration during which neuron cannot fire after a spike.
             Biological range: 1-5ms depending on neuron type
-
-        Note: dt_ms removed (Phase 2 refactoring)
-            Decay factors are now computed via update_temporal_parameters()
-            called by the brain when dt changes.
     """
 
     tau_mem: float = TAU_MEM_STANDARD  # Membrane time constant (ms)

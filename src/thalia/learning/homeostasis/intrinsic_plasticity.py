@@ -128,7 +128,7 @@ class IntrinsicPlasticityConfig:
         bidirectional: Whether to both increase AND decrease thresholds
             If False, only increases threshold (prevents runaway only).
 
-        dt: Simulation timestep (ms)
+        dt_ms: Simulation timestep (ms)
     """
 
     target_rate: float = 0.1
@@ -138,20 +138,20 @@ class IntrinsicPlasticityConfig:
     v_thresh_min: float = 0.5
     v_thresh_max: float = 2.0
     bidirectional: bool = True
-    dt: float = 1.0
+    dt_ms: float = 1.0
 
     @property
     def rate_decay(self) -> float:
         """Decay factor for rate exponential moving average."""
-        return float(torch.exp(torch.tensor(-self.dt / self.tau_rate)).item())
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_rate)).item())
 
     @property
     def effective_lr(self) -> float:
         """Effective learning rate for threshold adaptation."""
         if self.learning_rate is not None:
             return self.learning_rate
-        # Derive from tau: lr ≈ dt / tau_threshold
-        return self.dt / self.tau_threshold
+        # Derive from tau: lr ≈ dt_ms / tau_threshold
+        return self.dt_ms / self.tau_threshold
 
 
 class IntrinsicPlasticity(nn.Module):

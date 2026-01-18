@@ -9,10 +9,10 @@ Usage:
     # Standalone trace object (for new code)
     trace = SpikeTrace(size=100, tau=20.0)
     for spikes in spike_train:
-        current_trace = trace.update(spikes, dt=1.0)
+        current_trace = trace.update(spikes, dt_ms=1.0)
 
     # Functional API (for existing code with state dataclasses)
-    trace = update_trace(trace, spikes, tau=20.0, dt=1.0)
+    trace = update_trace(trace, spikes, tau=20.0, dt_ms=1.0)
 
 Author: Thalia Project
 Date: December 2025
@@ -37,7 +37,7 @@ def update_trace(
     trace: torch.Tensor,
     spikes: torch.Tensor,
     tau: float,
-    dt: float = 1.0,
+    dt_ms: float = 1.0,
     decay_type: str = "exponential",
     amplitude: float = 1.0,
 ) -> torch.Tensor:
@@ -50,7 +50,7 @@ def update_trace(
         trace: Current trace tensor [size] or [batch, size]
         spikes: New spikes to accumulate [size] or [batch, size]
         tau: Time constant for decay (ms)
-        dt: Time step (ms)
+        dt_ms: Time step (ms)
         decay_type: 'exponential' or 'linear'
         amplitude: Spike contribution amplitude
 
@@ -60,13 +60,13 @@ def update_trace(
     Example:
         >>> # In a region's forward() method:
         >>> self.state.l4_trace = update_trace(
-        ...     self.state.l4_trace, l4_spikes, tau=20.0, dt=1.0
+        ...     self.state.l4_trace, l4_spikes, tau=20.0, dt_ms=1.0
         ... )
     """
     if decay_type == "exponential":
-        decay = torch.exp(torch.tensor(-dt / tau, device=trace.device))
+        decay = torch.exp(torch.tensor(-dt_ms / tau, device=trace.device))
     else:
-        decay = torch.tensor(max(0.0, 1.0 - dt / tau), device=trace.device)
+        decay = torch.tensor(max(0.0, 1.0 - dt_ms / tau), device=trace.device)
 
     # Handle batch dimension mismatch
     # If spikes has larger batch than trace, we need to expand trace first
@@ -85,12 +85,12 @@ def update_trace(
     return trace
 
 
-def compute_decay(tau: float, dt: float = 1.0, decay_type: str = "exponential") -> float:
-    """Compute decay factor for a given tau and dt.
+def compute_decay(tau: float, dt_ms: float = 1.0, decay_type: str = "exponential") -> float:
+    """Compute decay factor for a given tau and dt_ms.
 
     Args:
         tau: Time constant (ms)
-        dt: Time step (ms)
+        dt_ms: Time step (ms)
         decay_type: 'exponential' or 'linear'
 
     Returns:
@@ -99,9 +99,9 @@ def compute_decay(tau: float, dt: float = 1.0, decay_type: str = "exponential") 
     if decay_type == "exponential":
         import math
 
-        return math.exp(-dt / tau)
+        return math.exp(-dt_ms / tau)
     else:
-        return max(0.0, 1.0 - dt / tau)
+        return max(0.0, 1.0 - dt_ms / tau)
 
 
 # =============================================================================
@@ -150,8 +150,8 @@ class SpikeTrace(nn.Module):
         >>> post_trace = SpikeTrace(n_post=50, tau=20.0)
         >>>
         >>> # During forward pass
-        >>> pre_t = pre_trace.update(pre_spikes, dt=1.0)
-        >>> post_t = post_trace.update(post_spikes, dt=1.0)
+        >>> pre_t = pre_trace.update(pre_spikes, dt_ms=1.0)
+        >>> post_t = post_trace.update(post_spikes, dt_ms=1.0)
         >>>
         >>> # STDP update
         >>> ltp = torch.outer(post_spikes, pre_t)  # pre before post
@@ -172,7 +172,7 @@ class SpikeTrace(nn.Module):
         Args:
             size: Number of neurons to track
             tau: Time constant for exponential decay (ms)
-            decay_type: 'exponential' (exp(-dt/tau)) or 'linear' (1 - dt/tau)
+            decay_type: 'exponential' (exp(-dt_ms/tau)) or 'linear' (1 - dt_ms/tau)
             amplitude: Spike contribution to trace (default 1.0)
             device: Torch device for tensors
             dtype: Torch dtype for tensors
@@ -191,35 +191,35 @@ class SpikeTrace(nn.Module):
         self._cached_dt: Optional[float] = None
         self._cached_decay: Optional[torch.Tensor] = None
 
-    def _get_decay(self, dt: float) -> torch.Tensor:
+    def _get_decay(self, dt_ms: float) -> torch.Tensor:
         """Get decay factor, using cache if possible."""
-        if self._cached_dt != dt or self._cached_decay is None:
+        if self._cached_dt != dt_ms or self._cached_decay is None:
             if self.decay_type == "exponential":
                 self._cached_decay = torch.exp(
-                    torch.tensor(-dt / self.tau, device=self.trace.device)
+                    torch.tensor(-dt_ms / self.tau, device=self.trace.device)
                 )
             else:  # linear
                 self._cached_decay = torch.tensor(
-                    max(0.0, 1.0 - dt / self.tau), device=self.trace.device
+                    max(0.0, 1.0 - dt_ms / self.tau), device=self.trace.device
                 )
-            self._cached_dt = dt
+            self._cached_dt = dt_ms
         return self._cached_decay
 
     def update(
         self,
         spikes: torch.Tensor,
-        dt: float = 1.0,
+        dt_ms: float = 1.0,
     ) -> torch.Tensor:
         """Decay trace and add new spikes.
 
         Args:
             spikes: Binary spike tensor [size] or [batch, size]
-            dt: Time step in ms
+            dt_ms: Time step in ms
 
         Returns:
             Updated trace tensor (same shape as input)
         """
-        decay = self._get_decay(dt)
+        decay = self._get_decay(dt_ms)
 
         # Handle batched input
         if spikes.dim() == 2:
@@ -258,7 +258,7 @@ class PairedTraces(nn.Module):
         >>> traces = PairedTraces(n_pre=100, n_post=50, tau=20.0)
         >>>
         >>> # Update both traces
-        >>> pre_t, post_t = traces.update(pre_spikes, post_spikes, dt=1.0)
+        >>> pre_t, post_t = traces.update(pre_spikes, post_spikes, dt_ms=1.0)
         >>>
         >>> # Compute STDP
         >>> ltp = A_plus * torch.outer(post_spikes, pre_t)
@@ -295,20 +295,20 @@ class PairedTraces(nn.Module):
         self,
         pre_spikes: torch.Tensor,
         post_spikes: torch.Tensor,
-        dt: float = 1.0,
+        dt_ms: float = 1.0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Update both traces with new spikes.
 
         Args:
             pre_spikes: Presynaptic spikes [n_pre] or [batch, n_pre]
             post_spikes: Postsynaptic spikes [n_post] or [batch, n_post]
-            dt: Time step in ms
+            dt_ms: Time step in ms
 
         Returns:
             Tuple of (pre_trace, post_trace)
         """
-        pre_t = self.pre_trace.update(pre_spikes, dt)
-        post_t = self.post_trace.update(post_spikes, dt)
+        pre_t = self.pre_trace.update(pre_spikes, dt_ms)
+        post_t = self.post_trace.update(post_spikes, dt_ms)
         return pre_t, post_t
 
     def reset_state(self, batch_size: Optional[int] = None) -> None:

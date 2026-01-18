@@ -134,7 +134,6 @@ class NeuralRegion(
         neuron_config: Optional[ConductanceLIFConfig] = None,
         default_learning_rule: Optional[str] = None,
         device: str = "cpu",
-        dt_ms: float = 1.0,
         **kwargs,
     ):
         """Initialize neural region with neurons and empty synaptic weight dict.
@@ -145,8 +144,11 @@ class NeuralRegion(
             default_learning_rule: Default plasticity rule for new input sources
                                    Options: "stdp", "bcm", "hebbian", "three_factor"
             device: Device for computation ("cpu" or "cuda")
-            dt_ms: Simulation timestep in milliseconds
             **kwargs: Additional arguments for base class compatibility
+
+        Note:
+            dt_ms is NO LONGER stored in NeuralRegion. It's managed by BrainConfig
+            and propagated via update_temporal_parameters() when needed.
         """
         # Initialize as nn.Module (new v3.0 hierarchy)
         super().__init__()
@@ -155,7 +157,6 @@ class NeuralRegion(
         self.n_input = 0  # Updated as sources are added
         self.n_output = n_neurons
         self.device = torch.device(device)  # Regular attribute, not property
-        self.dt_ms = dt_ms
         self.default_learning_rule = default_learning_rule
 
         # Plasticity control (for surgery/experiments)

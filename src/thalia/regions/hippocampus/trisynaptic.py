@@ -1185,35 +1185,40 @@ class TrisynapticHippocampus(NeuralRegion):
             dt_ms: New simulation timestep in milliseconds
         """
         # Update neurons
-        if hasattr(self.dg_neurons, "update_temporal_parameters"):
+        if hasattr(self, "dg_neurons") and hasattr(self.dg_neurons, "update_temporal_parameters"):
             self.dg_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self.ca3_neurons, "update_temporal_parameters"):
+        if hasattr(self, "ca3_neurons") and hasattr(self.ca3_neurons, "update_temporal_parameters"):
             self.ca3_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self.ca1_neurons, "update_temporal_parameters"):
+        if hasattr(self, "ca1_neurons") and hasattr(self.ca1_neurons, "update_temporal_parameters"):
             self.ca1_neurons.update_temporal_parameters(dt_ms)
-        if self.ca2_neurons is not None and hasattr(self.ca2_neurons, "update_temporal_parameters"):
+        if (
+            hasattr(self, "ca2_neurons")
+            and self.ca2_neurons is not None
+            and hasattr(self.ca2_neurons, "update_temporal_parameters")
+        ):
             self.ca2_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if self.stp_mossy is not None:
+        if hasattr(self, "stp_mossy") and self.stp_mossy is not None:
             self.stp_mossy.update_temporal_parameters(dt_ms)
-        if self.stp_schaffer is not None:
+        if hasattr(self, "stp_schaffer") and self.stp_schaffer is not None:
             self.stp_schaffer.update_temporal_parameters(dt_ms)
-        if self.stp_ec_ca1 is not None:
+        if hasattr(self, "stp_ec_ca1") and self.stp_ec_ca1 is not None:
             self.stp_ec_ca1.update_temporal_parameters(dt_ms)
-        if self.stp_ca3_recurrent is not None:
+        if hasattr(self, "stp_ca3_recurrent") and self.stp_ca3_recurrent is not None:
             self.stp_ca3_recurrent.update_temporal_parameters(dt_ms)
-        if self.stp_ca3_ca2 is not None:
+        if hasattr(self, "stp_ca3_ca2") and self.stp_ca3_ca2 is not None:
             self.stp_ca3_ca2.update_temporal_parameters(dt_ms)
-        if self.stp_ca2_ca1 is not None:
+        if hasattr(self, "stp_ca2_ca1") and self.stp_ca2_ca1 is not None:
             self.stp_ca2_ca1.update_temporal_parameters(dt_ms)
-        if self.stp_ec_ca2 is not None:
+        if hasattr(self, "stp_ec_ca2") and self.stp_ec_ca2 is not None:
             self.stp_ec_ca2.update_temporal_parameters(dt_ms)
 
         # Update learning strategies
-        for strategy in self.strategies.values():
-            if hasattr(strategy, "update_temporal_parameters"):
-                strategy.update_temporal_parameters(dt_ms)
+        if hasattr(self, "strategies"):
+            for strategy in self.strategies.values():
+                if hasattr(strategy, "update_temporal_parameters"):
+                    strategy.update_temporal_parameters(dt_ms)
 
     def forward(
         self,
@@ -1637,8 +1642,8 @@ class TrisynapticHippocampus(NeuralRegion):
         # The trace accumulates spike activity with slow decay
         # Using a direct accumulation: trace += spike - decay*trace
         # This ensures spikes have strong immediate effect but decay slowly
-        dt = self.config.dt_ms
-        decay_rate = dt / self.config.ca3_persistent_tau
+        dt_ms = self.config.dt_ms
+        decay_rate = dt_ms / self.config.ca3_persistent_tau
 
         # Update persistent activity: stronger during encoding, decay otherwise
         # Encoding_mod determines how much new spikes contribute vs decay
@@ -1684,8 +1689,8 @@ class TrisynapticHippocampus(NeuralRegion):
         # decay with their own time constants regardless of neural activity.
         if self.config.use_multiscale_consolidation:
             # Compute decay factors
-            fast_decay = dt / self.config.fast_trace_tau_ms
-            slow_decay = dt / self.config.slow_trace_tau_ms
+            fast_decay = dt_ms / self.config.fast_trace_tau_ms
+            slow_decay = dt_ms / self.config.slow_trace_tau_ms
 
             # Apply decay to fast trace
             self._ca3_ca3_fast = (1.0 - fast_decay) * self._ca3_ca3_fast
@@ -1824,8 +1829,8 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Multi-timescale trace decay (continuous, time-based)
         if self.config.use_multiscale_consolidation:
-            fast_decay = dt / self.config.fast_trace_tau_ms
-            slow_decay = dt / self.config.slow_trace_tau_ms
+            fast_decay = dt_ms / self.config.fast_trace_tau_ms
+            slow_decay = dt_ms / self.config.slow_trace_tau_ms
 
             self._ca3_ca2_fast = (1.0 - fast_decay) * self._ca3_ca2_fast
             consolidation = self.config.consolidation_rate * self._ca3_ca2_fast
@@ -1860,8 +1865,8 @@ class TrisynapticHippocampus(NeuralRegion):
         # EC→CA2 STRONG PLASTICITY (temporal encoding)
         # Multi-timescale trace decay (continuous, time-based)
         if self.config.use_multiscale_consolidation:
-            fast_decay = dt / self.config.fast_trace_tau_ms
-            slow_decay = dt / self.config.slow_trace_tau_ms
+            fast_decay = dt_ms / self.config.fast_trace_tau_ms
+            slow_decay = dt_ms / self.config.slow_trace_tau_ms
 
             self._ec_ca2_fast = (1.0 - fast_decay) * self._ec_ca2_fast
             consolidation = self.config.consolidation_rate * self._ec_ca2_fast
@@ -2011,7 +2016,7 @@ class TrisynapticHippocampus(NeuralRegion):
         # NMDA trace update (for retrieval gating)
         # Tracks CA3-induced depolarization for Mg²⁺ block removal
         if self.state.nmda_trace is not None:
-            nmda_decay = torch.exp(torch.tensor(-dt / cfg.nmda_tau))
+            nmda_decay = torch.exp(torch.tensor(-dt_ms / cfg.nmda_tau))
             self.state.nmda_trace = self.state.nmda_trace * nmda_decay + ca1_from_ca3 * (
                 1.0 - nmda_decay
             )
@@ -2128,10 +2133,10 @@ class TrisynapticHippocampus(NeuralRegion):
 
             # Multi-timescale consolidation for EC→CA1
             if self.config.use_multiscale_consolidation:
-                fast_decay = dt / self.config.fast_trace_tau_ms
+                fast_decay = dt_ms / self.config.fast_trace_tau_ms
                 self._ec_ca1_fast = (1.0 - fast_decay) * self._ec_ca1_fast + dW
 
-                slow_decay = dt / self.config.slow_trace_tau_ms
+                slow_decay = dt_ms / self.config.slow_trace_tau_ms
                 consolidation = self.config.consolidation_rate * self._ec_ca1_fast
                 self._ec_ca1_slow = (1.0 - slow_decay) * self._ec_ca1_slow + consolidation
 
@@ -2175,10 +2180,10 @@ class TrisynapticHippocampus(NeuralRegion):
 
             # Multi-timescale consolidation for CA2→CA1
             if self.config.use_multiscale_consolidation:
-                fast_decay = dt / self.config.fast_trace_tau_ms
+                fast_decay = dt_ms / self.config.fast_trace_tau_ms
                 self._ca2_ca1_fast = (1.0 - fast_decay) * self._ca2_ca1_fast + dW
 
-                slow_decay = dt / self.config.slow_trace_tau_ms
+                slow_decay = dt_ms / self.config.slow_trace_tau_ms
                 consolidation = self.config.consolidation_rate * self._ca2_ca1_fast
                 self._ca2_ca1_slow = (1.0 - slow_decay) * self._ca2_ca1_slow + consolidation
 
@@ -2197,18 +2202,18 @@ class TrisynapticHippocampus(NeuralRegion):
         # Update STDP Traces (for learning, not comparison)
         # =====================================================================
         if self.state.dg_trace is not None:
-            update_trace(self.state.dg_trace, dg_spikes, tau=self.config.tau_plus_ms, dt=dt)
+            update_trace(self.state.dg_trace, dg_spikes, tau=self.config.tau_plus_ms, dt_ms=dt_ms)
         if self.state.ca3_trace is not None:
-            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.config.tau_plus_ms, dt=dt)
+            update_trace(self.state.ca3_trace, ca3_spikes, tau=self.config.tau_plus_ms, dt_ms=dt_ms)
         if self.state.ca2_trace is not None:
-            update_trace(self.state.ca2_trace, ca2_spikes, tau=self.config.tau_plus_ms, dt=dt)
+            update_trace(self.state.ca2_trace, ca2_spikes, tau=self.config.tau_plus_ms, dt_ms=dt_ms)
 
         # Store spikes in base state for compatibility
         # CA1 spikes ARE the output - downstream learns from these patterns!
         self.state.spikes = ca1_spikes
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
-        self._apply_plasticity(input_spikes, ca1_spikes, dt)
+        self._apply_plasticity(input_spikes, ca1_spikes, dt_ms)
 
         # =====================================================================
         # AUTO-ADVANCE GAMMA SLOT
@@ -2637,7 +2642,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self,
         episode: Episode,
         compression_factor: float = 5.0,
-        dt: float = 1.0,
+        dt_ms: float = 1.0,
     ) -> Dict[str, Any]:
         """Replay a sequence using gamma oscillator for time-compressed reactivation.
 
@@ -2652,7 +2657,7 @@ class TrisynapticHippocampus(NeuralRegion):
         Args:
             episode: Episode to replay (must have sequence field populated)
             compression_factor: Time compression (5.0 = 5x faster than encoding)
-            dt: Base time step in ms
+            dt_ms: Base time step in ms
 
         Returns:
             Dict with replay metrics:
@@ -2673,8 +2678,8 @@ class TrisynapticHippocampus(NeuralRegion):
             self.replay_engine.config.compression_factor = compression_factor
 
         # Update dt if different
-        if dt != self.replay_engine.config.dt_ms:
-            self.replay_engine.config.dt_ms = dt
+        if dt_ms != self.replay_engine.config.dt_ms:
+            self.replay_engine.config.dt_ms = dt_ms
 
         # Pattern processor: forward through CA3 for pattern completion
         # Theta modulation computed internally from self._theta_phase

@@ -485,6 +485,21 @@ class PredictiveCortex(NeuralRegion):
         self._cumulative_l5_spikes = 0
         self._cumulative_l6_spikes = 0
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters for new timestep.
+
+        Args:
+            dt_ms: New timestep in milliseconds
+        """
+        # Delegate to inner cortex (which has STP, neurons, strategies)
+        if hasattr(self.cortex, "update_temporal_parameters"):
+            self.cortex.update_temporal_parameters(dt_ms)
+
+        # Update prediction layer if present
+        if self.prediction_layer is not None:
+            if hasattr(self.prediction_layer, "update_temporal_parameters"):
+                self.prediction_layer.update_temporal_parameters(dt_ms)
+
     def get_state(self) -> PredictiveCortexState:
         """Get current predictive cortex state.
 

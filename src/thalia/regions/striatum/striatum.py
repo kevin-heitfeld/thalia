@@ -2396,23 +2396,28 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             dt_ms: New simulation timestep in milliseconds
         """
         # Update neurons
-        if hasattr(self.d1_neurons, "update_temporal_parameters"):
+        if hasattr(self, "d1_neurons") and hasattr(self.d1_neurons, "update_temporal_parameters"):
             self.d1_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self.d2_neurons, "update_temporal_parameters"):
+        if hasattr(self, "d2_neurons") and hasattr(self.d2_neurons, "update_temporal_parameters"):
             self.d2_neurons.update_temporal_parameters(dt_ms)
-        if self.fsi_neurons is not None and hasattr(self.fsi_neurons, "update_temporal_parameters"):
+        if (
+            hasattr(self, "fsi_neurons")
+            and self.fsi_neurons is not None
+            and hasattr(self.fsi_neurons, "update_temporal_parameters")
+        ):
             self.fsi_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if self.stp_d1 is not None:
+        if hasattr(self, "stp_d1") and self.stp_d1 is not None:
             self.stp_d1.update_temporal_parameters(dt_ms)
-        if self.stp_d2 is not None:
+        if hasattr(self, "stp_d2") and self.stp_d2 is not None:
             self.stp_d2.update_temporal_parameters(dt_ms)
 
         # Update learning strategies
-        for strategy in self.strategies.values():
-            if hasattr(strategy, "update_temporal_parameters"):
-                strategy.update_temporal_parameters(dt_ms)
+        if hasattr(self, "strategies"):
+            for strategy in self.strategies.values():
+                if hasattr(strategy, "update_temporal_parameters"):
+                    strategy.update_temporal_parameters(dt_ms)
 
     def forward(
         self,

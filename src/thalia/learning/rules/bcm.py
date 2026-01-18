@@ -88,7 +88,7 @@ class BCMConfig:
         p: Power for threshold computation (default: 2 for c²)
             Original BCM uses p=2, but p=1 (linear) is sometimes used.
 
-        dt: Simulation timestep (ms)
+        dt_ms: Simulation timestep (ms)
     """
 
     tau_theta: float = TAU_BCM_THRESHOLD  # Slow adaptation (5 seconds)
@@ -97,12 +97,12 @@ class BCMConfig:
     theta_max: float = 1.0  # Maximum threshold
     learning_rate: float = LEARNING_RATE_BCM  # Base learning rate
     p: float = 2.0  # Power for threshold (c^p)
-    dt: float = 1.0  # Timestep
+    dt_ms: float = 1.0  # Timestep
 
     @property
     def decay_theta(self) -> float:
         """Decay factor for threshold EMA per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt / self.tau_theta)).item())
+        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_theta)).item())
 
 
 class BCMRule(nn.Module):

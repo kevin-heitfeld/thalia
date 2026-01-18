@@ -143,7 +143,7 @@ class NeuralPathway(Protocol):
             input_data: Input tensor
                 - Inter-region pathways: spikes [n_neurons]
                 - Sensory pathways: raw input (image, audio, tokens)
-            **kwargs: Additional arguments (dt, time_ms, etc.)
+            **kwargs: Additional arguments
 
         Returns:
             output: Output tensor, or (output, metadata) tuple

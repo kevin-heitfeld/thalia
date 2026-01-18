@@ -150,7 +150,7 @@ class SensorimotorConfig:
     spike_encoding: str = "rate"  # 'rate', 'population', 'temporal'
     n_neurons_per_dof: int = 50  # Neurons per degree of freedom
     max_firing_rate: float = 100.0  # Hz (for rate coding)
-    dt: float = 0.001  # Simulation timestep (1ms)
+    dt_ms: float = 0.001  # Simulation timestep (1ms)
 
     # Motor decoding
     motor_decoding: str = "population_vector"  # 'population_vector', 'rate'
@@ -315,7 +315,7 @@ class SensorimotorWrapper:
         firing_rates = obs_norm * self.config.max_firing_rate
 
         # Convert to spike probabilities (per timestep)
-        spike_probs = firing_rates * self.config.dt
+        spike_probs = firing_rates * self.config.dt_ms
 
         # Tile to full population
         spike_probs_full = np.repeat(spike_probs, self.config.n_neurons_per_dof)
@@ -347,7 +347,7 @@ class SensorimotorWrapper:
             responses = np.exp(-((value - centers) ** 2) / (2 * tuning_width**2))
 
             # Convert to spike probabilities
-            spike_probs = responses * self.config.max_firing_rate * self.config.dt
+            spike_probs = responses * self.config.max_firing_rate * self.config.dt_ms
 
             # Sample spikes
             neuron_spikes = np.random.rand(self.config.n_neurons_per_dof) < spike_probs

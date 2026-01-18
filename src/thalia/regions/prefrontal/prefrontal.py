@@ -490,18 +490,18 @@ class DopamineGatingSystem:
         """Reset to baseline."""
         self.level = self.baseline
 
-    def update(self, signal: float, dt: float = 1.0) -> float:
+    def update(self, signal: float, dt_ms: float = 1.0) -> float:
         """Update dopamine level with new signal.
 
         Args:
             signal: External dopamine signal (-1 to 1)
-            dt: Timestep in ms
+            dt_ms: Timestep in ms
 
         Returns:
             Current dopamine level
         """
         # Decay toward baseline
-        decay = torch.exp(torch.tensor(-dt / self.tau_ms)).item()
+        decay = torch.exp(torch.tensor(-dt_ms / self.tau_ms)).item()
         self.level = self.baseline + (self.level - self.baseline) * decay
 
         # Add signal
@@ -892,7 +892,7 @@ class Prefrontal(NeuralRegion):
         input_spikes = routed["default"]
 
         # Get timestep from config for temporal dynamics
-        dt = self.config.dt_ms
+        dt_ms = self.config.dt_ms
 
         # =====================================================================
         # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
@@ -911,7 +911,7 @@ class Prefrontal(NeuralRegion):
             self.reset_state()
 
         # Update dopamine and get gate value
-        da_level = self.dopamine_system.update(dopamine_signal, dt)
+        da_level = self.dopamine_system.update(dopamine_signal, dt_ms)
         gate = self.dopamine_system.get_gate()
         self.state.dopamine = da_level
 
@@ -1037,7 +1037,7 @@ class Prefrontal(NeuralRegion):
         self.state.update_gate = gate_tensor
 
         # WM decay
-        decay = torch.exp(torch.tensor(-dt / self.pfc_config.wm_decay_tau_ms))
+        decay = torch.exp(torch.tensor(-dt_ms / self.pfc_config.wm_decay_tau_ms))
 
         # Gated update: WM = gate * new_input + (1-gate) * decayed_old
         new_wm = (
@@ -1251,19 +1251,20 @@ class Prefrontal(NeuralRegion):
             dt_ms: New simulation timestep in milliseconds
         """
         # Update neurons
-        if hasattr(self.neurons, "update_temporal_parameters"):
+        if hasattr(self, "neurons") and hasattr(self.neurons, "update_temporal_parameters"):
             self.neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if self.stp_feedforward is not None:
+        if hasattr(self, "stp_feedforward") and self.stp_feedforward is not None:
             self.stp_feedforward.update_temporal_parameters(dt_ms)
-        if self.stp_recurrent is not None:
+        if hasattr(self, "stp_recurrent") and self.stp_recurrent is not None:
             self.stp_recurrent.update_temporal_parameters(dt_ms)
 
         # Update learning strategies
-        for strategy in self.strategies.values():
-            if hasattr(strategy, "update_temporal_parameters"):
-                strategy.update_temporal_parameters(dt_ms)
+        if hasattr(self, "strategies"):
+            for strategy in self.strategies.values():
+                if hasattr(strategy, "update_temporal_parameters"):
+                    strategy.update_temporal_parameters(dt_ms)
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics using DiagnosticsMixin helpers.

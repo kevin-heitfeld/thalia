@@ -87,18 +87,18 @@ class DiagnosticCollectorMixin:
         """
         return {name: float(value)}
 
-    def collect_rate(self, spikes: torch.Tensor, name: str, dt: float = 1.0) -> dict:
+    def collect_rate(self, spikes: torch.Tensor, name: str, dt_ms: float = 1.0) -> dict:
         """Collect spike rate statistics.
 
         Args:
             spikes: Binary spike tensor
             name: Prefix for rate name
-            dt: Time step in ms
+            dt_ms: Time step in ms
 
         Returns:
             Dictionary with rate statistics
         """
-        rate_hz = (spikes.float().mean() / dt) * MS_PER_SECOND
+        rate_hz = (spikes.float().mean() / dt_ms) * MS_PER_SECOND
         return {f"{name}_rate_hz": rate_hz.item()}
 
     def weight_diagnostics(
@@ -130,21 +130,21 @@ class DiagnosticCollectorMixin:
         self,
         spikes: torch.Tensor,
         prefix: str,
-        dt: float = 1.0,
+        dt_ms: float = 1.0,
     ) -> dict:
         """Collect comprehensive spike statistics.
 
         Args:
             spikes: Binary spike tensor
             prefix: Prefix for stat names (e.g., "l4")
-            dt: Time step in ms for rate calculation
+            dt_ms: Time step in ms for rate calculation
 
         Returns:
             Dictionary with spike statistics
         """
         n_active = spikes.sum().item()
         n_total = spikes.numel()
-        rate_hz = (spikes.float().mean() / dt) * MS_PER_SECOND
+        rate_hz = (spikes.float().mean() / dt_ms) * MS_PER_SECOND
 
         stats = {
             f"{prefix}_active_count": int(n_active),
