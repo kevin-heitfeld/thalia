@@ -74,16 +74,18 @@ class OscillatorConfig:
 
     Attributes:
         frequency_hz: Base oscillation frequency in Hz
-        dt_ms: Default timestep in milliseconds
         initial_phase: Starting phase in radians [0, 2π)
         amplitude: Base amplitude (signal range multiplier)
         phase_noise_std: Standard deviation of phase noise in radians (default: 0.0)
             Biological oscillators have drift ~0.05 rad (~3 degrees)
             This makes phase coding more robust and realistic
+
+    Note:
+        dt_ms is NO LONGER stored here. It's managed by BrainConfig and passed
+        via update_temporal_parameters() when needed.
     """
 
     frequency_hz: float = 10.0
-    dt_ms: float = 1.0
     initial_phase: float = 0.0
     amplitude: float = 1.0
     phase_noise_std: float = 0.0  # Enable with 0.05 for biological realism
@@ -141,7 +143,7 @@ class BrainOscillator(nn.Module, ABC):
         """Update phase increment based on current frequency."""
         self._phase_per_ms = TAU * self._frequency_hz / MS_PER_SECOND
 
-    def advance(self, dt_ms: Optional[float] = None) -> None:
+    def advance(self, dt_ms: float) -> None:
         """
         Advance the oscillator by one timestep.
 
@@ -149,12 +151,13 @@ class BrainOscillator(nn.Module, ABC):
         Optionally adds phase noise for biological realism.
 
         Args:
-            dt_ms: Timestep in milliseconds (uses config default if None)
-        """
-        dt = dt_ms or self.config.dt_ms
+            dt_ms: Timestep in milliseconds (passed from OscillatorManager)
 
-        # Advance phase
-        self._phase += self._phase_per_ms * dt
+        Note:
+            dt_ms is now REQUIRED (no default). OscillatorManager passes it explicitly.
+        """
+        # Advance phase using cached phase increment
+        self._phase += self._phase_per_ms * dt_ms
 
         # Add phase noise if configured (biological oscillator drift)
         if self.config.phase_noise_std > 0:
@@ -165,7 +168,7 @@ class BrainOscillator(nn.Module, ABC):
         self._phase = self._phase % TAU
 
         # Update time
-        self.time_ms += dt
+        self.time_ms += dt_ms
 
     def sync_to_phase(self, target_phase: float) -> None:
         """
@@ -287,14 +290,12 @@ class SinusoidalOscillator(BrainOscillator):
     def __init__(
         self,
         frequency_hz: float = 10.0,
-        dt_ms: float = 1.0,
         initial_phase: float = 0.0,
         amplitude: float = 1.0,
         phase_noise_std: float = 0.0,
     ):
         config = OscillatorConfig(
             frequency_hz=frequency_hz,
-            dt_ms=dt_ms,
             initial_phase=initial_phase,
             amplitude=amplitude,
             phase_noise_std=phase_noise_std,
@@ -539,13 +540,13 @@ class OscillatorManager:
         self.gamma_freq = gamma_freq
         self.ripple_freq = ripple_freq
 
-        # Create all oscillators
-        self.delta = SinusoidalOscillator(frequency_hz=delta_freq, dt_ms=dt_ms)
-        self.theta = SinusoidalOscillator(frequency_hz=theta_freq, dt_ms=dt_ms)
-        self.alpha = SinusoidalOscillator(frequency_hz=alpha_freq, dt_ms=dt_ms)
-        self.beta = SinusoidalOscillator(frequency_hz=beta_freq, dt_ms=dt_ms)
-        self.gamma = SinusoidalOscillator(frequency_hz=gamma_freq, dt_ms=dt_ms)
-        self.ripple = SinusoidalOscillator(frequency_hz=ripple_freq, dt_ms=dt_ms)
+        # Create all oscillators (no dt_ms - will be set via update_temporal_parameters)
+        self.delta = SinusoidalOscillator(frequency_hz=delta_freq)
+        self.theta = SinusoidalOscillator(frequency_hz=theta_freq)
+        self.alpha = SinusoidalOscillator(frequency_hz=alpha_freq)
+        self.beta = SinusoidalOscillator(frequency_hz=beta_freq)
+        self.gamma = SinusoidalOscillator(frequency_hz=gamma_freq)
+        self.ripple = SinusoidalOscillator(frequency_hz=ripple_freq)
 
         # Cross-frequency couplings (simplified configuration)
         # Only specify the FAST oscillator - slow oscillators inferred from hierarchy
@@ -638,26 +639,27 @@ class OscillatorManager:
             "ripple": True,
         }
 
-    def advance(self, dt_ms: Optional[float] = None) -> None:
+    def advance(self, dt_ms: float) -> None:
         """Advance all enabled oscillators by one timestep.
 
         Args:
-            dt_ms: Timestep in milliseconds (uses default if None)
+            dt_ms: Timestep in milliseconds (passed from DynamicBrain)
+
+        Note:
+            dt_ms is now REQUIRED (no default). Brain passes it explicitly each timestep.
         """
-        dt = dt_ms or self.dt_ms
-
         if self._enabled["delta"]:
-            self.delta.advance(dt)
+            self.delta.advance(dt_ms)
         if self._enabled["theta"]:
-            self.theta.advance(dt)
+            self.theta.advance(dt_ms)
         if self._enabled["alpha"]:
-            self.alpha.advance(dt)
+            self.alpha.advance(dt_ms)
         if self._enabled["beta"]:
-            self.beta.advance(dt)
+            self.beta.advance(dt_ms)
         if self._enabled["gamma"]:
-            self.gamma.advance(dt)
+            self.gamma.advance(dt_ms)
 
-        self._time_ms += dt
+        self._time_ms += dt_ms
 
     def get_phases(self) -> Dict[str, float]:
         """Get current phases of all oscillators.
@@ -1072,25 +1074,12 @@ class OscillatorManager:
             # Speed up replay 10x
             brain.set_timestep(10.0)
             # Oscillators automatically adjust phase increments
+
+        Note:
+            OscillatorConfig no longer stores dt_ms. Phase increments are based
+            on frequency alone, and dt_ms is passed explicitly to advance().
         """
         self.dt_ms = dt_ms
 
-        # Update all oscillators
-        # Each oscillator's config.dt_ms will be updated, which affects phase increment
-        self.delta.config.dt_ms = dt_ms
-        self.delta._update_phase_increment()
-
-        self.theta.config.dt_ms = dt_ms
-        self.theta._update_phase_increment()
-
-        self.alpha.config.dt_ms = dt_ms
-        self.alpha._update_phase_increment()
-
-        self.beta.config.dt_ms = dt_ms
-        self.beta._update_phase_increment()
-
-        self.gamma.config.dt_ms = dt_ms
-        self.gamma._update_phase_increment()
-
-        self.ripple.config.dt_ms = dt_ms
-        self.ripple._update_phase_increment()
+        # No need to update individual oscillators - they compute phase increment
+        # from frequency alone, and dt_ms is passed to advance() explicitly
