@@ -13,7 +13,7 @@ Date: December 22, 2025
 import pytest
 import torch
 
-from thalia.config import StriatumConfig
+from thalia.config import LayerSizeCalculator, StriatumConfig
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions import Striatum
 
@@ -301,31 +301,8 @@ class TestStriatumD1D2DelayCompetition:
             adaptive_exploration=False,
         )
 
-    def test_d1_arrives_before_d2_after_load(self, striatum_config):
-        """Test D1 spikes arrive before D2 spikes after checkpoint load.
-
-        NOTE: This test is currently skipped because it tests striatum in isolation,
-        which doesn't reflect realistic operation. In the full brain:
-        - Input comes from coordinated cortex/hippocampus/thalamus activity
-        - Dopamine modulation affects D1/D2 pathway balance
-        - Multiple regions coordinate to produce meaningful action selection
-
-        The striatum requires coordinated multi-region activity to produce non-zero
-        D1/D2 votes. Testing with random binary inputs doesn't reliably trigger
-        the voting cascade needed for delay buffer testing.
-
-        TODO: Replace with full-brain integration test that verifies D1/D2 delay
-        competition in a realistic multi-region action selection context.
-        """
-        pytest.skip(
-            "Test requires full-brain context. Striatum in isolation with random inputs "
-            "doesn't reliably produce D1/D2 votes. See test docstring for details."
-        )
-
     def test_action_selection_consistent_after_checkpoint(self, striatum_config):
         """Test action selection dynamics preserved after checkpoint during delay window."""
-        from thalia.config.size_calculator import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)
         sizes["input_size"] = 50
@@ -364,7 +341,6 @@ class TestStriatumD1D2DelayCompetition:
         """Test circular buffer pointers preserved correctly."""
         # Set seed for deterministic behavior
         torch.manual_seed(42)
-        from thalia.config.size_calculator import LayerSizeCalculator
 
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=10, neurons_per_action=2)

@@ -409,27 +409,6 @@ class TestCA3PersistentActivity:
             dt_ms=1.0,
         )
 
-    def test_ca3_persistent_activity_preserved(self, hippocampus_config):
-        """Verify CA3 attractor state preserved across checkpoint.
-
-        NOTE: This test is currently skipped because it tests hippocampus in isolation,
-        which doesn't reflect realistic operation. In the full brain:
-        - Theta oscillations modulate encoding/retrieval
-        - Thalamic input is properly encoded
-        - Multiple regions coordinate activity
-
-        The hippocampus requires coordinated activity from the full brain to function
-        properly. Testing CA3 persistent activity in isolation with simple binary inputs
-        doesn't trigger the spiking cascade needed for persistent activity accumulation.
-
-        TODO: Replace with full-brain integration test that verifies CA3 persistent
-        activity in a realistic multi-region context.
-        """
-        pytest.skip(
-            "Test requires full-brain context. Hippocampus in isolation doesn't "
-            "produce realistic spiking patterns. See test docstring for details."
-        )
-
     def test_ca3_pattern_not_reset(self, hippocampus_config):
         """Verify CA3 pattern doesn't reset to zero at checkpoint."""
         calc = LayerSizeCalculator()
