@@ -330,7 +330,6 @@ class LayeredCortex(NeuralRegion):
                 learning_rate=config.learning_rate,
                 w_min=config.w_min,
                 w_max=config.w_max,
-                dt=config.dt_ms,
             )
 
             # Declare BCM learning strategies with Optional type
@@ -1675,9 +1674,6 @@ class LayeredCortex(NeuralRegion):
 
         self.state.spikes = l5_spikes
 
-        # Store per-source inputs for plasticity
-        self.state.source_inputs = inputs
-
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity()
 
@@ -2074,7 +2070,7 @@ class LayeredCortex(NeuralRegion):
             for source_name in self.input_sources:
                 if source_name in self.synaptic_weights:
                     key = f"{source_name}_l4_mean"
-                    plasticity[key] = float(self.synaptic_weights[source_name].data.mean().item())  # type: ignore[typeddict-item]
+                    plasticity[key] = float(self.synaptic_weights[source_name].data.mean().item())  # type: ignore[literal-required,typeddict-item]
 
             # Add inter-layer pathway statistics
             plasticity["l4_l23_mean"] = float(self.synaptic_weights["l4_l23"].data.mean().item())  # type: ignore[typeddict-item]

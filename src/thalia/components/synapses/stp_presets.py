@@ -389,7 +389,6 @@ def create_heterogeneous_stp_configs(
     n_synapses: int,
     variability: float = 0.3,
     seed: Optional[int] = None,
-    dt: float = 1.0,
 ) -> list[STPConfig]:
     """Create list of heterogeneous STP configs for per-synapse dynamics.
 
@@ -401,7 +400,6 @@ def create_heterogeneous_stp_configs(
         n_synapses: Number of synapses
         variability: Coefficient of variation (0.2-0.5 typical)
         seed: Random seed for reproducibility
-        dt: Simulation timestep in milliseconds
 
     Returns:
         List of STPConfig objects, one per synapse
@@ -420,7 +418,6 @@ def create_heterogeneous_stp_configs(
         n_synapses=n_synapses,
         variability=variability,
         seed=seed,
-        dt=dt,
     )
 
     # Create STPConfig for each synapse
@@ -430,7 +427,6 @@ def create_heterogeneous_stp_configs(
             U=float(U_samples[i]),
             tau_d=float(tau_d_samples[i]),
             tau_f=float(tau_f_samples[i]),
-            dt=dt,
         )
         configs.append(config)
 

@@ -223,7 +223,9 @@ class ShortTermPlasticity(nn.Module):
         )
 
         # Compute recovery rates
-        self.recovery_d = torch.tensor(1.0 - self.decay_d.item(), device=device, dtype=torch.float32)
+        self.recovery_d = torch.tensor(
+            1.0 - self.decay_d.item(), device=device, dtype=torch.float32
+        )
         self.recovery_f = torch.tensor(
             (1.0 - self.decay_f.item()) * self.config.U, device=device, dtype=torch.float32
         )

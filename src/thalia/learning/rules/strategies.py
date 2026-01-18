@@ -181,7 +181,6 @@ class STDPConfig(LearningConfig):
     a_minus: float = 0.012  # LTD amplitude (slightly larger for stability)
     tau_plus: float = 20.0  # LTP time constant (ms)
     tau_minus: float = 20.0  # LTD time constant (ms)
-    dt_ms: float = 1.0  # Simulation timestep (ms)
 
 
 @dataclass
@@ -200,7 +199,6 @@ class BCMConfig(LearningConfig):
     theta_min: float = 1e-6  # Minimum threshold
     theta_max: float = 1.0  # Maximum threshold
     power: float = 2.0  # Power for threshold (c^p)
-    dt: float = 1.0  # Simulation timestep
 
 
 @dataclass
@@ -214,7 +212,6 @@ class ThreeFactorConfig(LearningConfig):
 
     eligibility_tau: float = 100.0  # Eligibility trace decay (ms)
     modulator_tau: float = 50.0  # Modulator decay (ms)
-    dt: float = 1.0
 
 
 @dataclass
@@ -465,8 +462,20 @@ class STDPStrategy(BaseStrategy):
         super().__init__(config or STDPConfig())
         self.stdp_config: STDPConfig = self.config  # type: ignore
 
+        # Timestep (set by update_temporal_parameters)
+        self._dt_ms: Optional[float] = None
+
         # Trace manager (initialized lazily when we know dimensions)
         self._trace_manager: Optional[EligibilityTraceManager] = None
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._dt_ms = dt_ms
+        # Note: Trace manager computes decay factors on-the-fly in update_traces()
 
     def reset_state(self) -> None:
         """Reset traces."""
@@ -535,8 +544,6 @@ class STDPStrategy(BaseStrategy):
                 - oscillation_phase (float): Phase for phase-locked STDP
                 - learning_rule (SpikingLearningRule): Rule type for conditional modulation
         """
-        cfg = self.stdp_config
-
         # Ensure 1D inputs
         if pre.dim() != 1:
             pre = pre.squeeze()
@@ -549,8 +556,15 @@ class STDPStrategy(BaseStrategy):
         self._ensure_trace_manager(pre, post)
         assert self._trace_manager is not None, "Trace manager must be initialized"
 
+        # Ensure dt_ms is set
+        if self._dt_ms is None:
+            raise RuntimeError(
+                "STDPStrategy.compute_update() called before update_temporal_parameters(). "
+                "Brain must call update_temporal_parameters() during initialization."
+            )
+
         # Update traces and compute LTP/LTD
-        self._trace_manager.update_traces(pre, post, cfg.dt_ms)
+        self._trace_manager.update_traces(pre, post, self._dt_ms)
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(pre, post)
 
         # Extract modulation kwargs
@@ -643,16 +657,27 @@ class BCMStrategy(BaseStrategy):
         super().__init__(config or BCMConfig())
         self.bcm_config: BCMConfig = self.config  # type: ignore
 
-        # Compute decay factor
-        dt = self.bcm_config.dt
-        tau = self.bcm_config.tau_theta
+        # Decay factor (computed in update_temporal_parameters)
+        self._dt_ms: Optional[float] = None
         self.register_buffer(
             "decay_theta",
-            torch.tensor(1.0 - dt / tau, dtype=torch.float32),
+            torch.tensor(0.0, dtype=torch.float32),
         )
 
         # Sliding threshold (per-neuron)
         self.theta: Optional[torch.Tensor] = None
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update decay factors when brain timestep changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._dt_ms = dt_ms
+        tau = self.bcm_config.tau_theta
+        self.decay_theta: torch.Tensor = torch.tensor(
+            1.0 - dt_ms / tau, dtype=torch.float32, device=self.decay_theta.device
+        )
 
     def reset_state(self) -> None:
         """Reset threshold."""
@@ -806,15 +831,28 @@ class ThreeFactorStrategy(BaseStrategy):
         super().__init__(config or ThreeFactorConfig())
         self.tf_config: ThreeFactorConfig = self.config  # type: ignore
 
-        # Decay factors
-        dt = self.tf_config.dt
+        # Decay factors (computed in update_temporal_parameters)
+        self._dt_ms: Optional[float] = None
         self.register_buffer(
             "decay_elig",
-            torch.tensor(1.0 - dt / self.tf_config.eligibility_tau, dtype=torch.float32),
+            torch.tensor(0.0, dtype=torch.float32),
         )
 
         # Eligibility trace (Hebbian correlation)
         self.eligibility: Optional[torch.Tensor] = None
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update decay factors when brain timestep changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._dt_ms = dt_ms
+        self.decay_elig: torch.Tensor = torch.tensor(
+            1.0 - dt_ms / self.tf_config.eligibility_tau,
+            dtype=torch.float32,
+            device=self.decay_elig.device,
+        )
 
     def reset_state(self) -> None:
         """Reset eligibility trace."""

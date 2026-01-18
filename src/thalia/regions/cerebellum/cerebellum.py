@@ -640,6 +640,9 @@ class Cerebellum(NeuralRegion):
         self._beta_phase: float = 0.0
         self._gamma_phase: float = 0.0
 
+        # Timestep cache for trace manager calls
+        self._dt_ms: float = 0.0  # Will be set by brain via update_temporal_parameters()
+
         # IO membrane potential for gap junction coupling
         # Only used if gap_junctions_enabled; stored at cerebellum level like climbing_fiber.error
         self._io_membrane: Optional[torch.Tensor] = None
@@ -836,6 +839,15 @@ class Cerebellum(NeuralRegion):
         gate = gate * self._gamma_amplitude_effective
 
         return gate
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self._dt_ms = dt_ms
+        # Note: Trace manager doesn't cache dt_ms, it's passed per-call
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create Purkinje-like neurons with constants from neuron_constants.py."""
@@ -1193,6 +1205,7 @@ class Cerebellum(NeuralRegion):
         self._trace_manager.update_traces(
             input_spikes=effective_input,  # Use granule spikes if enhanced
             output_spikes=output_spikes,
+            dt_ms=self._dt_ms,
         )
 
         # Compute STDP weight change direction (raw LTP/LTD without combining)
@@ -1206,7 +1219,7 @@ class Cerebellum(NeuralRegion):
 
         # Accumulate into eligibility trace (with decay)
         if isinstance(stdp_dw, torch.Tensor):
-            self._trace_manager.accumulate_eligibility(stdp_dw)
+            self._trace_manager.accumulate_eligibility(stdp_dw, dt_ms=self._dt_ms)
 
         # Store output (NeuralRegion pattern - no state.t tracking)
         self.output_spikes = output_spikes

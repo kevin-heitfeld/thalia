@@ -1022,7 +1022,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     n_synapses=n_input * self.d1_size,  # Total synapses
                     variability=self.config.stp_variability,
                     seed=self.config.stp_seed,
-                    dt=self.config.dt_ms,
                 )
 
                 # D2 pathway: Create list of per-synapse STP configs
@@ -1031,7 +1030,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                     n_synapses=n_input * self.d2_size,  # Total synapses
                     variability=self.config.stp_variability,
                     seed=self.config.stp_seed,
-                    dt=self.config.dt_ms,
                 )
 
                 # Create STP modules with heterogeneous configs
@@ -3025,7 +3023,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             )
         else:
             # Minimal diagnostics if pathways not linked
-            plasticity = {
+            plasticity = {  # type: ignore[typeddict-unknown-key]
                 "weight_mean": 0.0,
                 "weight_std": 0.0,
                 "weight_range": 0.0,
@@ -3034,7 +3032,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 "net_weight_mean": 0.0,
                 "net_weight_std": 0.0,
             }
-            health = {
+            health = {  # type: ignore[typeddict-unknown-key]
                 "is_healthy": True,
                 "firing_rate_healthy": True,
                 "weight_distribution_healthy": True,
