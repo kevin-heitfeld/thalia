@@ -469,6 +469,39 @@ class AxonalProjection(RoutingComponent):
                     self._delay_buffers[key].size == size
                 ), f"Size mismatch for {key}: {self._delay_buffers[key].size} != {size}"
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Resizes delay buffers to accommodate new timestep while preserving
+        spike history. Delays are specified in milliseconds (fixed), but the
+        number of steps changes with dt:
+            delay_steps = delay_ms / dt_ms
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        old_dt_ms = self.dt_ms
+        self.dt_ms = dt_ms
+
+        # Resize each delay buffer
+        for spec in self.sources:
+            source_key = spec.compound_key()
+            if source_key not in self._delay_buffers:
+                continue
+
+            # Get appropriate delay for this target
+            effective_delay = (
+                spec.get_delay_for_target(self.target_name) if self.target_name else spec.delay_ms
+            )
+
+            # Resize buffer
+            buffer = self._delay_buffers[source_key]
+            buffer.resize_for_new_dt(
+                new_dt_ms=dt_ms,
+                delay_ms=effective_delay,
+                old_dt_ms=old_dt_ms,
+            )
+
     def __repr__(self) -> str:
         """Human-readable representation."""
         source_strs = []

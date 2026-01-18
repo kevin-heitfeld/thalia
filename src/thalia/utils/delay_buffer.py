@@ -169,6 +169,95 @@ class CircularDelayBuffer:
         self.buffer = new_buffer
         self.size = new_size
 
+    def resize_for_new_dt(self, new_dt_ms: float, delay_ms: float, old_dt_ms: float) -> None:
+        """Resize buffer when simulation timestep changes.
+
+        When dt changes, the number of steps required to implement a fixed
+        delay in milliseconds also changes:
+            delay_steps = delay_ms / dt_ms
+
+        This method resizes the buffer and interpolates existing spike history
+        to preserve temporal information.
+
+        Example:
+            - delay_ms = 5.0ms
+            - old_dt = 1.0ms → 5 steps
+            - new_dt = 0.5ms → 10 steps
+            Buffer expands from 6 to 11 slots, interpolating spike history
+
+        Args:
+            new_dt_ms: New simulation timestep in milliseconds
+            delay_ms: Delay duration in milliseconds (fixed)
+            old_dt_ms: Previous simulation timestep in milliseconds
+
+        Raises:
+            ValueError: If new_dt_ms or delay_ms are <= 0
+        """
+        if new_dt_ms <= 0:
+            raise ValueError(f"new_dt_ms must be > 0, got {new_dt_ms}")
+        if delay_ms < 0:
+            raise ValueError(f"delay_ms must be >= 0, got {delay_ms}")
+        if old_dt_ms <= 0:
+            raise ValueError(f"old_dt_ms must be > 0, got {old_dt_ms}")
+
+        # Calculate new delay in steps
+        new_delay_steps = int(delay_ms / new_dt_ms)
+
+        if new_delay_steps == self.max_delay:
+            return  # No resize needed
+
+        # Extract current buffer history in chronological order
+        # Start from oldest (ptr - max_delay) to newest (ptr)
+        history = []
+        for i in range(self.max_delay + 1):
+            idx = (self.ptr - self.max_delay + i) % (self.max_delay + 1)
+            history.append(self.buffer[idx])
+        history_tensor = torch.stack(history, dim=0)  # [old_steps+1, size]
+
+        # Interpolate to new length (if needed)
+        if new_delay_steps != self.max_delay:
+            # Convert to float for interpolation
+            history_float = history_tensor.float().unsqueeze(0)  # [1, old_steps+1, size]
+
+            # Interpolate along time dimension
+            new_length = new_delay_steps + 1
+            if new_length != history_float.shape[1]:
+                # Permute to [1, size, old_steps+1] for interpolation
+                history_float = history_float.permute(0, 2, 1)
+                # Interpolate
+                interpolated = torch.nn.functional.interpolate(
+                    history_float,
+                    size=new_length,
+                    mode="linear",
+                    align_corners=True if new_length > 1 else None,
+                )
+                # Permute back to [1, new_steps+1, size]
+                interpolated = interpolated.permute(0, 2, 1).squeeze(0)
+            else:
+                interpolated = history_float.squeeze(0)
+
+            # Convert back to original dtype (threshold at 0.5 for binary spikes)
+            if self.dtype == torch.bool:
+                new_history = (interpolated > 0.5).to(dtype=self.dtype)
+            else:
+                new_history = interpolated.to(dtype=self.dtype)
+        else:
+            new_history = history_tensor
+
+        # Create new buffer with new size
+        self.buffer = torch.zeros(
+            (new_delay_steps + 1, self.size),
+            dtype=self.dtype,
+            device=self.device,
+        )
+        self.max_delay = new_delay_steps
+
+        # Copy interpolated history into new buffer
+        self.buffer[:] = new_history
+
+        # Reset pointer to end (most recent is at buffer[-1])
+        self.ptr = new_delay_steps
+
     def to(self, device: str) -> CircularDelayBuffer:
         """Move buffer to different device.
 
