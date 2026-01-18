@@ -2387,6 +2387,33 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         return self
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Propagates dt update to neurons, STP components, and learning strategies.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        # Update neurons
+        if hasattr(self.d1_neurons, "update_temporal_parameters"):
+            self.d1_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self.d2_neurons, "update_temporal_parameters"):
+            self.d2_neurons.update_temporal_parameters(dt_ms)
+        if self.fsi_neurons is not None and hasattr(self.fsi_neurons, "update_temporal_parameters"):
+            self.fsi_neurons.update_temporal_parameters(dt_ms)
+
+        # Update STP components
+        if self.stp_d1 is not None:
+            self.stp_d1.update_temporal_parameters(dt_ms)
+        if self.stp_d2 is not None:
+            self.stp_d2.update_temporal_parameters(dt_ms)
+
+        # Update learning strategies
+        for strategy in self.strategies.values():
+            if hasattr(strategy, "update_temporal_parameters"):
+                strategy.update_temporal_parameters(dt_ms)
+
     def forward(
         self,
         inputs: Dict[str, torch.Tensor],

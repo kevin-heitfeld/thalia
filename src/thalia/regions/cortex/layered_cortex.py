@@ -2030,6 +2030,36 @@ class LayeredCortex(NeuralRegion):
 
     # region Diagnostics and Health Monitoring
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Propagates dt update to neurons, STP components, and learning strategies.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        # Update neurons in all layers
+        if hasattr(self, "l4_neurons") and hasattr(self.l4_neurons, "update_temporal_parameters"):
+            self.l4_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self, "l23_neurons") and hasattr(self.l23_neurons, "update_temporal_parameters"):
+            self.l23_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self, "l5_neurons") and hasattr(self.l5_neurons, "update_temporal_parameters"):
+            self.l5_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self, "l6a_neurons") and hasattr(self.l6a_neurons, "update_temporal_parameters"):
+            self.l6a_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self, "l6b_neurons") and hasattr(self.l6b_neurons, "update_temporal_parameters"):
+            self.l6b_neurons.update_temporal_parameters(dt_ms)
+
+        # Update STP components
+        if hasattr(self, "stp_l23_recurrent") and self.stp_l23_recurrent is not None:
+            self.stp_l23_recurrent.update_temporal_parameters(dt_ms)
+
+        # Update learning strategies (if initialized)
+        if hasattr(self, "strategies"):
+            for strategy in self.strategies.values():
+                if hasattr(strategy, "update_temporal_parameters"):
+                    strategy.update_temporal_parameters(dt_ms)
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized LayeredCortexDiagnostics format.
 

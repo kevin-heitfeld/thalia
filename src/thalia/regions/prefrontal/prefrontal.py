@@ -1242,6 +1242,29 @@ class Prefrontal(NeuralRegion):
         """
         self._current_training_step = step
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Propagates dt update to neurons, STP components, and learning strategies.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        # Update neurons
+        if hasattr(self.neurons, "update_temporal_parameters"):
+            self.neurons.update_temporal_parameters(dt_ms)
+
+        # Update STP components
+        if self.stp_feedforward is not None:
+            self.stp_feedforward.update_temporal_parameters(dt_ms)
+        if self.stp_recurrent is not None:
+            self.stp_recurrent.update_temporal_parameters(dt_ms)
+
+        # Update learning strategies
+        for strategy in self.strategies.values():
+            if hasattr(strategy, "update_temporal_parameters"):
+                strategy.update_temporal_parameters(dt_ms)
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get diagnostics using DiagnosticsMixin helpers.
 

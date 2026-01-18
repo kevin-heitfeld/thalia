@@ -1176,6 +1176,45 @@ class TrisynapticHippocampus(NeuralRegion):
 
     # region Forward Pass (DG→CA3→CA1)
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
+
+        Propagates dt update to neurons, STP components, and learning strategies.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        # Update neurons
+        if hasattr(self.dg_neurons, "update_temporal_parameters"):
+            self.dg_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self.ca3_neurons, "update_temporal_parameters"):
+            self.ca3_neurons.update_temporal_parameters(dt_ms)
+        if hasattr(self.ca1_neurons, "update_temporal_parameters"):
+            self.ca1_neurons.update_temporal_parameters(dt_ms)
+        if self.ca2_neurons is not None and hasattr(self.ca2_neurons, "update_temporal_parameters"):
+            self.ca2_neurons.update_temporal_parameters(dt_ms)
+
+        # Update STP components
+        if self.stp_mossy is not None:
+            self.stp_mossy.update_temporal_parameters(dt_ms)
+        if self.stp_schaffer is not None:
+            self.stp_schaffer.update_temporal_parameters(dt_ms)
+        if self.stp_ec_ca1 is not None:
+            self.stp_ec_ca1.update_temporal_parameters(dt_ms)
+        if self.stp_ca3_recurrent is not None:
+            self.stp_ca3_recurrent.update_temporal_parameters(dt_ms)
+        if self.stp_ca3_ca2 is not None:
+            self.stp_ca3_ca2.update_temporal_parameters(dt_ms)
+        if self.stp_ca2_ca1 is not None:
+            self.stp_ca2_ca1.update_temporal_parameters(dt_ms)
+        if self.stp_ec_ca2 is not None:
+            self.stp_ec_ca2.update_temporal_parameters(dt_ms)
+
+        # Update learning strategies
+        for strategy in self.strategies.values():
+            if hasattr(strategy, "update_temporal_parameters"):
+                strategy.update_temporal_parameters(dt_ms)
+
     def forward(
         self,
         inputs: Dict[str, torch.Tensor],
