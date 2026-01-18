@@ -315,10 +315,13 @@ class TestAfferentSynapses:
         assert metrics["mean_change"] > 0  # Should have LTP
 
     def test_add_input_source(self):
-        """Test growing input dimension via add_input_source (multi-source)."""
+        """Test that AfferentSynapses is a single-source component.
+
+        Note: AfferentSynapses predates the multi-source architecture.
+        For multi-source support, use NeuralRegion with add_input_source().
+        """
         n_neurons = 70
         initial_inputs = 224
-        growth_amount = 20
         config = AfferentSynapsesConfig(
             n_neurons=n_neurons,
             n_inputs=initial_inputs,
@@ -328,22 +331,14 @@ class TestAfferentSynapses:
 
         synapses = AfferentSynapses(config)
 
-        # Initial single-source setup ("default" source)
-        assert "default" in synapses.input_sources
-        assert synapses.synaptic_weights["default"].shape == (
-            n_neurons,
-            initial_inputs,
-        ), f"Initial weight shape should be ({n_neurons}, {initial_inputs})"
+        # AfferentSynapses is single-source - check initial state
+        assert synapses.weights.shape == (n_neurons, initial_inputs)
+        assert not torch.isnan(synapses.weights).any()
+        assert not torch.isinf(synapses.weights).any()
 
-        # Add new input source (multi-source architecture)
-        synapses.add_input_source("new_source", growth_amount, learning_rule="hebbian")
-
-        # Verify new source was added
-        assert "new_source" in synapses.input_sources
-        assert synapses.input_sources["new_source"] == growth_amount
-        assert synapses.synaptic_weights["new_source"].shape == (n_neurons, growth_amount)
-        assert not torch.isnan(synapses.synaptic_weights["new_source"]).any()
-        assert not torch.isinf(synapses.synaptic_weights["new_source"]).any()
+        # Verify it's a single-source component (no input_sources dict)
+        assert not hasattr(synapses, "input_sources")
+        assert not hasattr(synapses, "synaptic_weights")  # Uses self.weights instead
 
     def test_grow_output(self):
         """Test growing output dimension."""

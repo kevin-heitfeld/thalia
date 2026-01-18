@@ -24,7 +24,7 @@ def brain():
         thalamus_size=64,
         cortex_size=128,
         hippocampus_size=64,
-        pfc_size=32,
+        pfc_size=128,  # Match striatum's default pfc_size config (128)
         n_actions=4,
     )
 
@@ -195,7 +195,7 @@ class TestStructuredDiagnostics:
     def test_structured_diagnostics_updates_with_actions(self, brain):
         """Test that diagnostics update correctly after actions."""
         # Initial diagnostics
-        diag1 = brain.get_structured_diagnostics()
+        _ = brain.get_structured_diagnostics()  # Verify diagnostics work
 
         # Take action
         input_data = {"thalamus": torch.randn(64, device=brain.device)}

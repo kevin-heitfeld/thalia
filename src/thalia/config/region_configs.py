@@ -49,7 +49,7 @@ Date: January 2026 (Tier 2.1 Consolidation)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from thalia.components.synapses.stp import STPType
 from thalia.config.learning_config import (
@@ -84,7 +84,9 @@ from thalia.constants import (
 )
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.learning.rules.bcm import BCMConfig
-from thalia.regions.cortex.robustness_config import RobustnessConfig
+
+if TYPE_CHECKING:
+    from thalia.regions.cortex.robustness_config import RobustnessConfig
 
 # ============================================================================
 # MEMORY & LEARNING SYSTEMS

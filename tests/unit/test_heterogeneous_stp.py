@@ -261,8 +261,8 @@ class TestHeterogeneousSTPDynamics:
             assert hasattr(cfg, "U")
             assert hasattr(cfg, "tau_d")
             assert hasattr(cfg, "tau_f")
-            assert hasattr(cfg, "decay_d")
-            assert hasattr(cfg, "decay_f")
+            # Note: decay_d and decay_f are computed inside ShortTermPlasticity,
+            # not stored in the config dataclass
 
             # Values should be valid
             assert 0.0 <= cfg.U <= 1.0

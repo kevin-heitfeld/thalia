@@ -365,9 +365,15 @@ class TestLayeredCortex(RegionTestBase):
             for source, weights in region.synaptic_weights.items():
                 initial_weights[source] = weights.clone()
 
-            # Run multiple forward passes with active input
-            input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-            for _ in range(100):
+            # Run multiple forward passes with VARIED input (not constant)
+            # BCM requires variation to avoid immediate equilibrium
+            input_size = self._get_input_size(params)
+            for i in range(100):
+                # Vary input pattern to drive learning (alternate between patterns)
+                if i % 2 == 0:
+                    input_spikes = torch.randn(input_size, device=region.device) > 0.3
+                else:
+                    input_spikes = torch.randn(input_size, device=region.device) > 0.5
                 region.forward({"input": input_spikes})
 
             # Verify weights changed (plasticity applied)
@@ -377,6 +383,6 @@ class TestLayeredCortex(RegionTestBase):
                     weights_changed = True
                     break
 
-            # With continuous active input, weights should change
+            # With varied input, weights should change
             # (unless learning rate is zero, which is not default)
             assert weights_changed, "Expected weight changes from continuous plasticity"

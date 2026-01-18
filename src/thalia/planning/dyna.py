@@ -95,8 +95,8 @@ class DynaPlanner:
                 hasattr(self.striatum, "value_estimates")
                 and self.striatum.value_estimates is not None
             ):
-                current_value = self.striatum.evaluate_state(state, goal_context)
-                next_value = self.striatum.evaluate_state(next_state, goal_context)
+                current_value = self.striatum.evaluate_state(state)
+                next_value = self.striatum.evaluate_state(next_state)
                 td_error = abs(reward + 0.95 * next_value - current_value)
                 self.state_priorities[self._state_hash(state)] = td_error
 
@@ -124,7 +124,7 @@ class DynaPlanner:
 
             # Simulate action from this state
             available_actions = list(range(self.striatum.n_actions))
-            action = random.choice(available_actions)
+            action = random.choice(available_actions)  # nosec B311
 
             # Use coordinator to simulate outcome
             rollout = self.coordinator.simulate_rollout(
@@ -134,11 +134,11 @@ class DynaPlanner:
             if len(rollout.states) < 2 or len(rollout.rewards) < 1:
                 continue  # Invalid rollout
 
-            # Extract simulated experience
-            sim_next_state = rollout.states[1]  # State after action
-            sim_reward = rollout.rewards[0]
+            # Extract simulated experience (not used in placeholder)
+            _ = rollout.states[1]  # sim_next_state: State after action
+            _ = rollout.rewards[0]  # sim_reward
 
-            # NOTE: In full implementation, would update striatum values here
+            # TODO: In full implementation, would update striatum values here
             # For now, this is a placeholder for the learning update
             # The actual update would use the striatum's learning mechanism
             # with scaled learning rate for simulated experience:
@@ -176,7 +176,7 @@ class DynaPlanner:
         if len(self.hippocampus.episode_buffer) == 0:
             return None
 
-        episode = random.choice(self.hippocampus.episode_buffer)
+        episode = random.choice(self.hippocampus.episode_buffer)  # nosec B311
         state: torch.Tensor = episode.state
         return state
 

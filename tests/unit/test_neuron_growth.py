@@ -8,6 +8,8 @@ import pytest
 import torch
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.config import PrefrontalConfig
+from thalia.regions import Prefrontal
 
 
 class TestNeuronGrowth:
@@ -206,8 +208,6 @@ class TestGrowthIntegrationWithRegions:
 
     def test_prefrontal_uses_grow_neurons(self):
         """Test that Prefrontal region uses neuron growth properly."""
-        from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-
         initial_n = 64
         growth_amount = 32
         device = "cpu"

@@ -61,15 +61,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.components.neurons import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
-)
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, WeightInitializer
 from thalia.config.region_configs import CerebellumConfig
 from thalia.constants.neuromodulation import (
@@ -102,6 +98,9 @@ from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 from .deep_nuclei import DeepCerebellarNuclei
 from .granule_layer import GranuleCellLayer
 from .purkinje_cell import EnhancedPurkinjeCell
+
+if TYPE_CHECKING:
+    from thalia.components.neurons import ConductanceLIF
 
 
 @dataclass
@@ -711,8 +710,11 @@ class Cerebellum(NeuralRegion):
                 if hasattr(strategy, "update_temporal_parameters"):
                     strategy.update_temporal_parameters(dt_ms)
 
-    def _create_neurons(self) -> ConductanceLIF:
+    def _create_neurons(self) -> "ConductanceLIF":
         """Create Purkinje-like neurons with constants from neuron_constants.py."""
+        # Lazy import to avoid circular dependency
+        from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
+
         neuron_config = ConductanceLIFConfig(
             v_threshold=V_THRESHOLD_STANDARD,
             v_reset=V_RESET_STANDARD,
@@ -722,6 +724,7 @@ class Cerebellum(NeuralRegion):
             tau_E=3.0,  # Faster excitatory for precise timing
             tau_I=8.0,  # Faster inhibitory for precise timing
         )
+
         neurons = ConductanceLIF(
             n_neurons=self.purkinje_size,
             config=neuron_config,

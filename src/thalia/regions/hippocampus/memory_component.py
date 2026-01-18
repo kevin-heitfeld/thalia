@@ -145,8 +145,6 @@ class HippocampusMemoryComponent(MemoryComponent):
             sequence: Optional CA3 pattern sequence
             **kwargs: Additional parameters
         """
-        from thalia.regions.hippocampus.state import Episode
-
         cfg = self.config
 
         # Compute priority

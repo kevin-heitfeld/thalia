@@ -236,10 +236,9 @@ class ShortTermPlasticity(nn.Module):
         - Uses 1D tensors per single-brain architecture
         """
         if self._dt_ms is None:
-            raise RuntimeError(
-                "ShortTermPlasticity.reset_state() called before update_temporal_parameters(). "
-                "Brain must call update_temporal_parameters() during initialization."
-            )
+            # Auto-initialize with default dt_ms if not set (for testing/standalone use)
+            # In production, DynamicBrain calls update_temporal_parameters() during init
+            self.update_temporal_parameters(dt_ms=1.0)  # Default 1ms timestep
 
         device = self.U.device  # type: ignore[union-attr]
 

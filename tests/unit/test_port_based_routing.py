@@ -318,9 +318,12 @@ class TestLayerSpecificCorticalRouting:
         assert "cortex:l23" in hippo.synaptic_weights
         assert hippo.synaptic_weights["cortex:l23"].shape[1] == cortex.l23_size
 
-        # Striatum receives L5 from cortex (D1/D2 separation is internal)
-        assert "cortex:l5" in striatum.synaptic_weights
-        assert striatum.synaptic_weights["cortex:l5"].shape[1] == cortex.l5_size
+        # Striatum receives L5 from cortex with D1/D2 pathway separation
+        # The striatum internally routes to D1 and D2 pathways
+        assert "cortex:l5_d1" in striatum.synaptic_weights
+        assert "cortex:l5_d2" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
+        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
 
 
 class TestMultipleInputPorts:

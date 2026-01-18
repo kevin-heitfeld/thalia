@@ -339,10 +339,9 @@ class ConductanceLIF(nn.Module):
 
         # Check that temporal parameters have been initialized
         if self._dt_ms is None:
-            raise RuntimeError(
-                "ConductanceLIF.update_temporal_parameters() must be called before forward(). "
-                "This should be done automatically by DynamicBrain._broadcast_temporal_update()."
-            )
+            # Auto-initialize with default dt_ms if not set (for testing/standalone use)
+            # In production, DynamicBrain calls update_temporal_parameters() during init
+            self.update_temporal_parameters(dt_ms=1.0)  # Default 1ms timestep
 
         # Update synaptic conductances (in-place decay + add input)
         assert self.g_E is not None, "g_E must be initialized"

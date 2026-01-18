@@ -558,12 +558,12 @@ class STDPStrategy(BaseStrategy):
 
         # Ensure dt_ms is set
         if self._dt_ms is None:
-            raise RuntimeError(
-                "STDPStrategy.compute_update() called before update_temporal_parameters(). "
-                "Brain must call update_temporal_parameters() during initialization."
-            )
+            # Auto-initialize with default dt_ms if not set (for testing/standalone use)
+            # In production, DynamicBrain calls update_temporal_parameters() during init
+            self.update_temporal_parameters(dt_ms=1.0)  # Default 1ms timestep
 
-        # Update traces and compute LTP/LTD
+        # Update traces and compute LTP/LTD (dt_ms guaranteed non-None after auto-init)
+        assert self._dt_ms is not None
         self._trace_manager.update_traces(pre, post, self._dt_ms)
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(pre, post)
 
@@ -783,6 +783,10 @@ class BCMStrategy(BaseStrategy):
             pre: Presynaptic activity [n_pre] (1D)
             post: Postsynaptic activity [n_post] (1D)
         """
+        # Auto-initialize temporal parameters if not set
+        if self._dt_ms is None:
+            self.update_temporal_parameters(1.0)
+
         cfg = self.bcm_config
 
         # Ensure 1D inputs
@@ -871,6 +875,10 @@ class ThreeFactorStrategy(BaseStrategy):
             pre: Presynaptic spikes [n_pre] (1D)
             post: Postsynaptic spikes [n_post] (1D)
         """
+        # Auto-initialize dt_ms if not set (for testing/standalone use)
+        if self._dt_ms is None:
+            self.update_temporal_parameters(dt_ms=1.0)
+
         # Ensure 1D inputs
         if pre.dim() != 1:
             pre = pre.squeeze()

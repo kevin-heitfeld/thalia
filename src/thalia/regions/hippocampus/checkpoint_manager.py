@@ -54,14 +54,16 @@ Date: December 13, 2025 (hippocampus neuromorphic checkpoint support)
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
 from thalia.managers import BaseCheckpointManager
 
 from .memory_component import Episode
-from .trisynaptic import HippocampusState, TrisynapticHippocampus
+
+if TYPE_CHECKING:
+    from .trisynaptic import TrisynapticHippocampus
 
 
 class HippocampusCheckpointManager(BaseCheckpointManager):
@@ -671,6 +673,9 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
             state: Dict from collect_state()
         """
         h = self.hippocampus
+
+        # Lazy import to avoid circular dependency
+        from .trisynaptic import HippocampusState
 
         # Use the region's native state restoration
         state_obj = HippocampusState.from_dict(state, device=str(h.device))

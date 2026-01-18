@@ -41,9 +41,11 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.synapses import WeightInitializer
 from thalia.typing import StateDict
 from thalia.utils.core_utils import clamp_weights
+
+# Lazy import to avoid circular dependency during module initialization
+# WeightInitializer is imported at function/method level where needed
 
 
 class GrowthMixin:
@@ -154,6 +156,9 @@ class GrowthMixin:
         n_input = current_weights.shape[1]
         device = current_weights.device
 
+        # Lazy import to avoid circular dependency
+        from thalia.components.synapses import WeightInitializer
+
         # Default scale: Use constant from regulation module (Architecture Review 2025-12-21, Tier 1.3)
         if scale is None:
             from thalia.constants.architecture import GROWTH_NEW_WEIGHT_SCALE
@@ -230,6 +235,9 @@ class GrowthMixin:
             ... )
             >>> self.weights.data = torch.cat([self.weights.data, new_cols], dim=1)
         """
+        # Lazy import to avoid circular dependency
+        from thalia.components.synapses import WeightInitializer
+
         if initialization == "xavier":
             return WeightInitializer.xavier(n_output, n_input, device=self.device)
         elif initialization == "sparse_random":
@@ -315,6 +323,9 @@ class GrowthMixin:
         n_input = current_weights.shape[1]
         device = current_weights.device
 
+        # Lazy import to avoid circular dependency
+        from thalia.components.synapses import WeightInitializer
+
         # Create new rows
         if init_method == "xavier":
             new_rows = (
@@ -382,6 +393,9 @@ class GrowthMixin:
         current_weights = getattr(self, weight_param_name)
         n_output = current_weights.shape[0]
         device = current_weights.device
+
+        # Lazy import to avoid circular dependency
+        from thalia.components.synapses import WeightInitializer
 
         # Create new columns
         if init_method == "xavier":
@@ -451,6 +465,9 @@ class GrowthMixin:
         n_new_total = n_old + n_new_rows
         device = old_weights.device
 
+        # Lazy import to avoid circular dependency
+        from thalia.components.synapses import WeightInitializer
+
         # Create new matrix with appropriate initializer
         if initializer == "xavier":
             new_weights = (
@@ -506,6 +523,9 @@ class GrowthMixin:
         n_output, n_old = old_weights.shape
         n_new_total = n_old + n_new_cols
         device = old_weights.device
+
+        # Lazy import to avoid circular dependency
+        from thalia.components.synapses import WeightInitializer
 
         # Create new matrix with appropriate initializer
         if initializer == "xavier":

@@ -126,9 +126,9 @@ class TestOscillationDetection:
 class TestOscillationDetectionIntegration:
     """Integration tests with actual brain components."""
 
-    def test_l6_gamma_emergence(self, global_config, device):
+    def test_l6_gamma_emergence(self, brain_config, device):
         """Test L6→TRN loop shows gamma oscillation via FFT."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
 
         # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)
@@ -189,10 +189,10 @@ class TestOscillationDetectionIntegration:
             power_l6a > 0.05 or power_l6b > 0.05
         ), "At least one L6 pathway should show clear oscillatory power"
 
-    def test_ca3_shows_rhythmic_activity(self, global_config, device):
+    def test_ca3_shows_rhythmic_activity(self, brain_config, device):
         """Test CA3 recurrence shows rhythmic dynamics (may not be 8 Hz)."""
         # Build brain with hippocampus
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
         calc = LayerSizeCalculator()
         thalamus_sizes = calc.thalamus_from_relay(100)
         builder.add_component("thalamus", "thalamus", **thalamus_sizes)

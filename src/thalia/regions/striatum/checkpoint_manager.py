@@ -45,13 +45,14 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 from __future__ import annotations
 
 import warnings
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
 from thalia.managers import BaseCheckpointManager
 
-from .striatum import Striatum
+if TYPE_CHECKING:
+    from .striatum import Striatum
 
 
 class StriatumCheckpointManager(BaseCheckpointManager):
@@ -295,29 +296,63 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         # 2. RESTORE PATHWAY STATE (Multi-source architecture)
         pathway_state = state["pathway_state"]
 
-        # Restore D1 pathway neuron state
+        # Restore D1 pathway neuron state (elastic: only restore up to checkpoint size)
         if pathway_state.get("d1_neuron_membrane") is not None:
             if s.d1_pathway.neurons.membrane is None:
                 s.d1_pathway.neurons.reset_state()
-            s.d1_pathway.neurons.membrane = pathway_state["d1_neuron_membrane"].to(s.device)
-        if pathway_state.get("d1_neuron_g_E") is not None:
-            s.d1_pathway.neurons.g_E = pathway_state["d1_neuron_g_E"].to(s.device)
-        if pathway_state.get("d1_neuron_g_I") is not None:
-            s.d1_pathway.neurons.g_I = pathway_state["d1_neuron_g_I"].to(s.device)
-        if pathway_state.get("d1_neuron_refractory") is not None:
-            s.d1_pathway.neurons.refractory = pathway_state["d1_neuron_refractory"].to(s.device)
+            checkpoint_membrane = pathway_state["d1_neuron_membrane"].to(s.device)
+            n_restore = min(checkpoint_membrane.shape[0], s.d1_pathway.neurons.membrane.shape[0])
+            s.d1_pathway.neurons.membrane[:n_restore] = checkpoint_membrane[:n_restore]
 
-        # Restore D2 pathway neuron state
+        if pathway_state.get("d1_neuron_g_E") is not None:
+            if s.d1_pathway.neurons.g_E is None:
+                s.d1_pathway.neurons.reset_state()
+            checkpoint_g_E = pathway_state["d1_neuron_g_E"].to(s.device)
+            n_restore = min(checkpoint_g_E.shape[0], s.d1_pathway.neurons.g_E.shape[0])
+            s.d1_pathway.neurons.g_E[:n_restore] = checkpoint_g_E[:n_restore]
+
+        if pathway_state.get("d1_neuron_g_I") is not None:
+            if s.d1_pathway.neurons.g_I is None:
+                s.d1_pathway.neurons.reset_state()
+            checkpoint_g_I = pathway_state["d1_neuron_g_I"].to(s.device)
+            n_restore = min(checkpoint_g_I.shape[0], s.d1_pathway.neurons.g_I.shape[0])
+            s.d1_pathway.neurons.g_I[:n_restore] = checkpoint_g_I[:n_restore]
+
+        if pathway_state.get("d1_neuron_refractory") is not None:
+            if s.d1_pathway.neurons.refractory is None:
+                s.d1_pathway.neurons.reset_state()
+            checkpoint_refr = pathway_state["d1_neuron_refractory"].to(s.device)
+            n_restore = min(checkpoint_refr.shape[0], s.d1_pathway.neurons.refractory.shape[0])
+            s.d1_pathway.neurons.refractory[:n_restore] = checkpoint_refr[:n_restore]
+
+        # Restore D2 pathway neuron state (elastic: only restore up to checkpoint size)
         if pathway_state.get("d2_neuron_membrane") is not None:
             if s.d2_pathway.neurons.membrane is None:
                 s.d2_pathway.neurons.reset_state()
-            s.d2_pathway.neurons.membrane = pathway_state["d2_neuron_membrane"].to(s.device)
+            checkpoint_membrane = pathway_state["d2_neuron_membrane"].to(s.device)
+            n_restore = min(checkpoint_membrane.shape[0], s.d2_pathway.neurons.membrane.shape[0])
+            s.d2_pathway.neurons.membrane[:n_restore] = checkpoint_membrane[:n_restore]
+
         if pathway_state.get("d2_neuron_g_E") is not None:
-            s.d2_pathway.neurons.g_E = pathway_state["d2_neuron_g_E"].to(s.device)
+            if s.d2_pathway.neurons.g_E is None:
+                s.d2_pathway.neurons.reset_state()
+            checkpoint_g_E = pathway_state["d2_neuron_g_E"].to(s.device)
+            n_restore = min(checkpoint_g_E.shape[0], s.d2_pathway.neurons.g_E.shape[0])
+            s.d2_pathway.neurons.g_E[:n_restore] = checkpoint_g_E[:n_restore]
+
         if pathway_state.get("d2_neuron_g_I") is not None:
-            s.d2_pathway.neurons.g_I = pathway_state["d2_neuron_g_I"].to(s.device)
+            if s.d2_pathway.neurons.g_I is None:
+                s.d2_pathway.neurons.reset_state()
+            checkpoint_g_I = pathway_state["d2_neuron_g_I"].to(s.device)
+            n_restore = min(checkpoint_g_I.shape[0], s.d2_pathway.neurons.g_I.shape[0])
+            s.d2_pathway.neurons.g_I[:n_restore] = checkpoint_g_I[:n_restore]
+
         if pathway_state.get("d2_neuron_refractory") is not None:
-            s.d2_pathway.neurons.refractory = pathway_state["d2_neuron_refractory"].to(s.device)
+            if s.d2_pathway.neurons.refractory is None:
+                s.d2_pathway.neurons.reset_state()
+            checkpoint_refr = pathway_state["d2_neuron_refractory"].to(s.device)
+            n_restore = min(checkpoint_refr.shape[0], s.d2_pathway.neurons.refractory.shape[0])
+            s.d2_pathway.neurons.refractory[:n_restore] = checkpoint_refr[:n_restore]
 
         # Multi-source weights
         for key, weights in pathway_state["synaptic_weights"].items():

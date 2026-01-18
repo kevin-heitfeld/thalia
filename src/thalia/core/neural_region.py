@@ -349,6 +349,25 @@ class NeuralRegion(
     # BrainComponent Protocol Implementation (Required Methods)
     # =========================================================================
 
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters for neurons and learning strategies.
+
+        Called by brain when dt_ms changes. Propagates update to:
+        - Neurons (conductance decay factors)
+        - Learning strategies (trace decay factors)
+
+        Args:
+            dt_ms: New timestep in milliseconds
+        """
+        # Update neuron decay factors
+        if hasattr(self, "neurons"):
+            self.neurons.update_temporal_parameters(dt_ms)
+
+        # Update learning strategy trace decay
+        for strategy in self.plasticity_rules.values():
+            if hasattr(strategy, "update_temporal_parameters"):
+                strategy.update_temporal_parameters(dt_ms)
+
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get current activity and health metrics.
 

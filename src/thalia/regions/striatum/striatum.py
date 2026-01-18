@@ -1198,7 +1198,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Extract PFC component from concatenated state tensor
             # Format: [cortex_l5 | hippocampus | pfc]
             pfc_size = self.config.pfc_size
-            pfc_goal_context = state[-pfc_size:]
+            pfc_goal_context = state[
+                -pfc_size:
+            ].float()  # Convert to float for matrix multiplication
 
             # Shape assertion: PFC goal context must match modulation matrix columns
             expected_pfc_size = self.pfc_modulation_d1.shape[1]
