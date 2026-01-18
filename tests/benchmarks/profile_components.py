@@ -4,13 +4,13 @@ import time
 
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
 def profile_component_timing():
     """Profile individual component execution times."""
-    config = GlobalConfig(device="cpu", dt_ms=1.0)
+    config = BrainConfig(device="cpu", dt_ms=1.0)
     brain = BrainBuilder.preset("default", config)
 
     # Warm-up

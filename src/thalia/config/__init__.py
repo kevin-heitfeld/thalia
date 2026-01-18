@@ -10,12 +10,11 @@ This module provides a centralized configuration system that:
 Usage:
 ======
 
-    from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig
+    from thalia.config import ThaliaConfig, BrainConfig
 
     # Create configuration with customizations
     config = ThaliaConfig(
-        global_=GlobalConfig(device="cuda", vocab_size=10000),
-        brain=BrainConfig(cortex_size=256, hippocampus_size=128),
+        brain=BrainConfig(device="cuda", vocab_size=10000, cortex_size=256, hippocampus_size=128),
     )
 
     # Show what values are actually being used
@@ -56,7 +55,6 @@ from .brain_config import (
     NeuromodulationConfig,
     RegionSizes,
 )
-from .global_config import GlobalConfig
 from .language_config import (
     DecodingConfig,
     EncodingConfig,
@@ -106,8 +104,6 @@ __all__ = [
     "NeuralComponentConfig",
     "LearningComponentConfig",
     "PathwayConfig",
-    # Global
-    "GlobalConfig",
     # Brain
     "BrainConfig",
     "RegionSizes",

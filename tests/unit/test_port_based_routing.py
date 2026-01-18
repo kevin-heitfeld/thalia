@@ -11,7 +11,7 @@ Date: December 15, 2025
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder, ConnectionSpec
 
 
@@ -22,9 +22,9 @@ def device():
 
 
 @pytest.fixture
-def global_config(device):
-    """Create minimal GlobalConfig."""
-    return GlobalConfig(device=device, dt_ms=1.0)
+def brain_config(device):
+    """Create minimal BrainConfig."""
+    return BrainConfig(device=device, dt_ms=1.0)
 
 
 class TestConnectionSpecPorts:
@@ -85,9 +85,9 @@ class TestConnectionSpecPorts:
 class TestBrainBuilderPortBasedConnections:
     """Test BrainBuilder with port-based connections."""
 
-    def test_connect_with_source_port(self, global_config):
+    def test_(self, brain_config):
         """Test connecting with source port specification."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         # Add components (cortex needs all layer sizes and input_size specified)
         builder.add_component(
@@ -124,9 +124,9 @@ class TestBrainBuilderPortBasedConnections:
         pathway = brain.connections[("cortex", "hippocampus")]
         assert hasattr(pathway, "forward")  # Valid pathway exists
 
-    def test_connect_with_target_port(self, global_config):
+    def test_(self, brain_config):
         """Test connecting with target port specification."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("pfc", "prefrontal", input_size=64, wm_size=32)
         builder.add_component(
@@ -146,9 +146,9 @@ class TestBrainBuilderPortBasedConnections:
         conn = builder._connections[0]
         assert conn.target_port == "top_down"
 
-    def test_connect_with_both_ports(self, global_config):
+    def test_(self, brain_config):
         """Test connecting with both source and target ports."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component(
             "cortex",
@@ -176,9 +176,9 @@ class TestBrainBuilderPortBasedConnections:
         assert conn.source_port == "l5"
         assert conn.target_port == "cortical_input"
 
-    def test_multiple_connections_to_same_target_different_ports(self, global_config):
+    def test_(self, brain_config):
         """Test multiple connections to same target using different ports."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=32)
@@ -217,9 +217,9 @@ class TestBrainBuilderPortBasedConnections:
 class TestLayerSpecificCorticalRouting:
     """Test layer-specific cortical output routing (L2/3 vs L5)."""
 
-    def test_cortex_l23_to_hippocampus(self, global_config):
+    def test_(self, brain_config):
         """Test that cortex L2/3 output routes to hippocampus."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -249,9 +249,9 @@ class TestLayerSpecificCorticalRouting:
     @pytest.mark.skip(
         reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
     )
-    def test_cortex_l5_to_striatum(self, global_config):
+    def test_(self, brain_config):
         """Test that cortex L5 output routes to striatum with D1/D2 separation."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=0)
         builder.add_component(
@@ -288,9 +288,9 @@ class TestLayerSpecificCorticalRouting:
         assert striatum.synaptic_weights["cortex:l5_d1"].shape[0] == striatum.d1_size
         assert striatum.synaptic_weights["cortex:l5_d2"].shape[0] == striatum.d2_size
 
-    def test_cortex_outputs_to_multiple_targets_with_different_layers(self, global_config):
+    def test_(self, brain_config):
         """Test cortex routing L2/3 to one target and L5 to another with D1/D2 separation."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -326,9 +326,9 @@ class TestLayerSpecificCorticalRouting:
 class TestMultipleInputPorts:
     """Test components with multiple named input ports."""
 
-    def test_cortex_feedforward_and_topdown_inputs(self, global_config):
+    def test_(self, brain_config):
         """Test cortex receiving both feedforward and top-down inputs."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=32)
@@ -356,9 +356,9 @@ class TestMultipleInputPorts:
         # Check PFC → top_down connection
         assert "pfc:top_down" in cortex.synaptic_weights or "pfc" in cortex.synaptic_weights
 
-    def test_hippocampus_cortical_and_entorhinal_inputs(self, global_config):
+    def test_(self, brain_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -393,9 +393,9 @@ class TestMultipleInputPorts:
     @pytest.mark.skip(
         reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
     )
-    def test_striatum_multiple_input_sources(self, global_config):
+    def test_(self, brain_config):
         """Test striatum receiving inputs from cortex, hippocampus, and PFC with D1/D2 separation."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -453,9 +453,9 @@ class TestMultipleInputPorts:
 class TestPortBasedForwardPass:
     """Test forward pass with port-based routing."""
 
-    def test_forward_routes_correct_layer_outputs(self, global_config):
+    def test_(self, brain_config):
         """Test that forward pass routes layer-specific outputs correctly."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -497,9 +497,9 @@ class TestPortBasedForwardPass:
 class TestBackwardCompatibility:
     """Test that port-based routing maintains backward compatibility."""
 
-    def test_connections_without_ports_still_work(self, global_config):
+    def test_(self, brain_config):
         """Test that existing code without ports continues to work."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -521,9 +521,9 @@ class TestBackwardCompatibility:
         assert "thalamus" in cortex.synaptic_weights
         assert cortex.synaptic_weights["thalamus"].shape[1] == thalamus.relay_size
 
-    def test_mixed_ports_and_no_ports_connections(self, global_config):
+    def test_(self, brain_config):
         """Test mixing port-based and traditional connections."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(

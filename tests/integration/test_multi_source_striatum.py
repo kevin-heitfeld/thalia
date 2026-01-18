@@ -14,14 +14,14 @@ Date: January 14, 2026
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
 @pytest.fixture
-def global_config():
-    """Shared global config for tests."""
-    return GlobalConfig(device="cpu", dt_ms=1.0)
+def brain_config():
+    """Shared brain config for tests."""
+    return BrainConfig(device="cpu", dt_ms=1.0)
 
 
 class TestMultiSourceWeightStructure:

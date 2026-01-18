@@ -227,7 +227,7 @@ def validate_thalia_config(config: "ThaliaConfig") -> None:
         >>> from thalia.config import ThaliaConfig, validate_thalia_config
         >>> config = ThaliaConfig(...)
         >>> validate_thalia_config(config)  # Raises if invalid
-        >>> brain = BrainBuilder.preset("default", config.global_)  # Safe to create
+        >>> brain = BrainBuilder.preset("default", config.brain)  # Safe to create
     """
     errors: List[str] = []
 
@@ -347,19 +347,6 @@ def validate_global_consistency(config: "ThaliaConfig") -> List[str]:
         List of error messages (empty if valid)
     """
     errors: List[str] = []
-
-    # =========================================================================
-    # Device consistency (all modules should use same device)
-    # =========================================================================
-    devices = set()
-    devices.add(config.global_.device)
-    devices.add(config.brain.device)
-
-    if len(devices) > 1:
-        errors.append(
-            f"Device mismatch across configs: {devices}. "
-            f"All configs should use the same device (set global_.device)"
-        )
 
     # =========================================================================
     # Timestep consistency

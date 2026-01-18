@@ -45,7 +45,7 @@ from thalia.components.synapses.stp_presets import STP_PRESETS, STPPreset, get_s
 from thalia.components.synapses.weight_init import InitStrategy, WeightInitializer
 
 # Configuration
-from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig
+from thalia.config import BrainConfig, RegionSizes, ThaliaConfig
 
 # Oscillators
 from thalia.coordination.oscillator import (
@@ -142,7 +142,6 @@ __all__ = [
     "__version__",
     # Configuration
     "ThaliaConfig",
-    "GlobalConfig",
     "BrainConfig",
     "RegionSizes",
     # Type Aliases

@@ -314,8 +314,8 @@ class TestAfferentSynapses:
         assert "mean_change" in metrics
         assert metrics["mean_change"] > 0  # Should have LTP
 
-    def test_grow_input(self):
-        """Test growing input dimension."""
+    def test_add_input_source(self):
+        """Test growing input dimension via add_input_source (multi-source)."""
         n_neurons = 70
         initial_inputs = 224
         growth_amount = 20
@@ -328,22 +328,22 @@ class TestAfferentSynapses:
 
         synapses = AfferentSynapses(config)
 
-        assert synapses.weights.shape == (
+        # Initial single-source setup ("default" source)
+        assert "default" in synapses.input_sources
+        assert synapses.synaptic_weights["default"].shape == (
             n_neurons,
             initial_inputs,
-        ), f"Initial weight shape should be ({n_neurons}, {initial_inputs}), got {synapses.weights.shape}"
+        ), f"Initial weight shape should be ({n_neurons}, {initial_inputs})"
 
-        # Grow inputs
-        synapses.grow_input(n_new=growth_amount)
+        # Add new input source (multi-source architecture)
+        synapses.add_input_source("new_source", growth_amount, learning_rule="hebbian")
 
-        new_inputs = initial_inputs + growth_amount
-        assert synapses.weights.shape == (
-            n_neurons,
-            new_inputs,
-        ), f"Weight shape after growth should be ({n_neurons}, {new_inputs}), got {synapses.weights.shape}"
-        assert not torch.isnan(synapses.weights).any(), "Weights contain NaN after input growth"
-        assert not torch.isinf(synapses.weights).any(), "Weights contain Inf after input growth"
-        assert synapses.config.n_inputs == new_inputs
+        # Verify new source was added
+        assert "new_source" in synapses.input_sources
+        assert synapses.input_sources["new_source"] == growth_amount
+        assert synapses.synaptic_weights["new_source"].shape == (n_neurons, growth_amount)
+        assert not torch.isnan(synapses.synaptic_weights["new_source"]).any()
+        assert not torch.isinf(synapses.synaptic_weights["new_source"]).any()
 
     def test_grow_output(self):
         """Test growing output dimension."""
@@ -473,7 +473,7 @@ class TestIntegration:
         assert not torch.isinf(synaptic_current).any(), "Synaptic current contains Inf values"
 
     def test_growth_coordination(self):
-        """Test coordinated growth of projection and synapses."""
+        """Test coordinated growth of axonal projection."""
         # Initial setup
         initial_size = 128
         growth_amount = 20
@@ -483,32 +483,23 @@ class TestIntegration:
             dt_ms=1.0,
         )
 
-        synapses_config = AfferentSynapsesConfig(
-            n_neurons=70,
-            n_inputs=initial_size,
-            learning_rule="hebbian",
-            device="cpu",
-        )
-        synapses = AfferentSynapses(synapses_config)
-
         # Cortex grows
         new_size = initial_size + growth_amount
         projection.grow_source("cortex", new_size=new_size)
-        synapses.grow_input(n_new=growth_amount)
 
-        # Verify sizes match
+        # Verify projection size matches
         assert projection.n_output == new_size
-        assert synapses.config.n_inputs == new_size
-        assert synapses.weights.shape == (
-            70,
-            new_size,
-        ), f"Weight shape after coordinated growth should be (70, {new_size}), got {synapses.weights.shape}"
-        assert not torch.isnan(
-            synapses.weights
-        ).any(), "Weights contain NaN after coordinated growth"
-        assert not torch.isinf(
-            synapses.weights
-        ).any(), "Weights contain Inf after coordinated growth"
+
+        # Verify forward pass works with new size
+        cortex_spikes = {"cortex": torch.zeros(new_size, dtype=torch.bool)}
+        output_dict = projection(cortex_spikes)
+
+        # AxonalProjection returns dict, get the cortex output
+        assert "cortex" in output_dict
+        output = output_dict["cortex"]
+        assert output.shape[0] == new_size
+        assert not torch.isnan(output).any(), "Output contains NaN after growth"
+        assert not torch.isinf(output).any(), "Output contains Inf after growth"
 
 
 if __name__ == "__main__":

@@ -82,9 +82,9 @@ import json
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig, print_config
+from thalia.config import BrainConfig, RegionSizes, ThaliaConfig, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
@@ -136,8 +136,9 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     print("[1/4] Creating neural substrate...")
 
     # Configuration for tracking
-    global_config = GlobalConfig(device=device, dt_ms=1.0)
     brain_config = BrainConfig(
+        device=device,
+        dt_ms=1.0,
         sizes=RegionSizes(
             input_size=128,  # Sensory input (visual + proprioceptive)
             thalamus_size=128,  # Match input for 1:1 relay
@@ -153,10 +154,10 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
         delay_timesteps=5,
         test_timesteps=10,
     )
-    config = ThaliaConfig(global_=global_config, brain=brain_config)
+    config = ThaliaConfig(brain=brain_config)
 
     # Build brain using BrainBuilder with custom layer sizes
-    builder = BrainBuilder(global_config)
+    builder = BrainBuilder(brain_config)
 
     # Thalamus (input interface)
     calc = LayerSizeCalculator()
@@ -326,8 +327,8 @@ def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
         # Every 500 steps, add detailed analysis
         if step % 500 == 0:
             print(f"\n  📊 UNSUPERVISED LEARNING STATUS (Step {step}):")
-            print(f"      Stage -0.5 uses intrinsic learning (STDP/BCM/Hebbian)")
-            print(f"      No external rewards during training (evaluated at milestones)")
+            print("      Stage -0.5 uses intrinsic learning (STDP/BCM/Hebbian)")
+            print("      No external rewards during training (evaluated at milestones)")
             print()
 
             # Check each critical region
@@ -369,7 +370,7 @@ def progress_callback(step: int, metrics: Dict[str, Any]) -> None:
                 print(f"        Phasic (bursts):   {phasic:+.3f}  (reward prediction error)")
                 print(f"        Global (combined): {global_da:+.3f}  (total modulation)")
                 if abs(tonic) < 0.001 and abs(phasic) < 0.001:
-                    print(f"        ⚠️ No dopamine modulation - expected for unsupervised learning")
+                    print("        ⚠️ No dopamine modulation - expected for unsupervised learning")
 
             print()
 
@@ -470,7 +471,7 @@ def evaluate_stage_sensorimotor(
 
     # 1. Basic motor control accuracy
     print("\n[1/5] Testing basic motor control...")
-    motor_rewards = []
+    motor_rewards: List[float] = []
     for _ in range(n_trials):
         task_data = task_loader.get_task("motor_control")
         output = brain.forward(task_data["input"], n_timesteps=task_data["n_timesteps"])
@@ -483,7 +484,7 @@ def evaluate_stage_sensorimotor(
 
     # 2. Reaching accuracy
     print("\n[2/5] Testing reaching...")
-    reaching_rewards = []
+    reaching_rewards: List[float] = []
     for _ in range(n_trials):
         task_data = task_loader.get_task("reaching")
         output = brain.forward(task_data["input"], n_timesteps=task_data["n_timesteps"])
@@ -496,7 +497,7 @@ def evaluate_stage_sensorimotor(
 
     # 3. Manipulation success
     print("\n[3/5] Testing manipulation...")
-    manipulation_rewards = []
+    manipulation_rewards: List[float] = []
     for _ in range(n_trials):
         task_data = task_loader.get_task("manipulation")
         output = brain.forward(task_data["input"], n_timesteps=task_data["n_timesteps"])
@@ -714,7 +715,7 @@ def main():
         print(f"Total steps: {result.total_steps:,}")
 
         # Save results
-        with open(result_file, "w") as f:
+        with open(result_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "stage": "sensorimotor",

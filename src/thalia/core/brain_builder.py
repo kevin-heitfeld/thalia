@@ -6,14 +6,10 @@ using registered components.
 
 Instead of verbose dataclass configuration:
     config = ThaliaConfig(
-        global_config=GlobalConfig(...),
-        brain=BrainConfig(
-            regions=RegionSizes(...),
-            ...
-        ),
+        brain=BrainConfig(...),
         ...
     )
-    brain = BrainBuilder.preset("default", global_config)
+    brain = BrainBuilder.preset("default", config.brain)
 
 Use fluent builder pattern:
     brain = (
@@ -69,7 +65,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
-from thalia.config import GlobalConfig
+from thalia.config.brain_config import BrainConfig
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.dynamic_brain import DynamicBrain
@@ -191,7 +187,7 @@ class BrainBuilder:
         - Save/load component graphs to JSON
 
     Example - Custom Brain:
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
         builder.add_component("input", "thalamic_relay", n_neurons=128)
         builder.add_component("process", "layered_cortex", n_neurons=512)
         builder.add_component("memory", "hippocampus", n_neurons=256)
@@ -200,11 +196,11 @@ class BrainBuilder:
         brain = builder.build()
 
     Example - Preset Brain:
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
     Example - Chained Construction:
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("thalamus", "thalamic_relay", n_neurons=100)
             .add_component("cortex", "layered_cortex", n_neurons=500)
             .connect("thalamus", "cortex", "spiking")
@@ -217,14 +213,14 @@ class BrainBuilder:
 
     def __init__(
         self,
-        global_config: GlobalConfig,
+        brain_config: "BrainConfig",
     ):
-        """Initialize builder with global configuration.
+        """Initialize builder with brain configuration.
 
         Args:
-            global_config: Global configuration (device, dt_ms, etc.)
+            brain_config: Brain configuration (device, dt_ms, oscillators, etc.)
         """
-        self.global_config = global_config
+        self.brain_config = brain_config
         self._components: Dict[str, ComponentSpec] = {}
         self._connections: List[ConnectionSpec] = []
         self._registry = ComponentRegistry()
@@ -787,8 +783,8 @@ class BrainBuilder:
         # Create AxonalProjection with target_name for delay selection
         projection = AxonalProjection(
             sources=sources,  # type: ignore[arg-type]
-            device=self.global_config.device,
-            dt_ms=self.global_config.dt_ms,
+            device=self.brain_config.device,
+            dt_ms=self.brain_config.dt_ms,
             target_name=target_name,  # NEW: enables per-target delay selection
         )
 
@@ -918,8 +914,8 @@ class BrainBuilder:
             # Add global params to behavioral config
             behavioral_params.update(
                 {
-                    "device": self.global_config.device,
-                    "dt_ms": self.global_config.dt_ms,
+                    "device": self.brain_config.device,
+                    "dt_ms": self.brain_config.dt_ms,
                 }
             )
             config = config_class(**behavioral_params)
@@ -931,12 +927,12 @@ class BrainBuilder:
                 spec.registry_name,
                 config=config,
                 sizes=size_params if size_params else {},
-                device=self.global_config.device,
+                device=self.brain_config.device,
             )
 
             # Move component to correct device (config device string might not be applied)
             if hasattr(component, "to"):
-                component.to(self.global_config.device)
+                component.to(self.brain_config.device)
 
             components[name] = cast(LearnableComponent, component)
             spec.instance = component
@@ -1021,8 +1017,8 @@ class BrainBuilder:
                 pathway_config_params = {
                     "n_input": source_output_size,
                     "n_output": target_input_size,
-                    "device": self.global_config.device,
-                    "dt_ms": self.global_config.dt_ms,
+                    "device": self.brain_config.device,
+                    "dt_ms": self.brain_config.dt_ms,
                     **filtered_config_params,  # User-specified params override defaults
                 }
                 pathway_config = config_class(**pathway_config_params)
@@ -1036,7 +1032,7 @@ class BrainBuilder:
 
                 # Move pathway to correct device
                 if hasattr(pathway, "to"):
-                    pathway.to(self.global_config.device)
+                    pathway.to(self.brain_config.device)
 
                 # Use compound key if target_port specified
                 conn_key = (
@@ -1075,7 +1071,7 @@ class BrainBuilder:
         brain = DynamicBrain(
             components=components,
             connections=connections,
-            global_config=self.global_config,
+            brain_config=self.brain_config,
             connection_specs=connection_specs_dict,
         )
 
@@ -1130,13 +1126,13 @@ class BrainBuilder:
     def load_spec(
         cls,
         filepath: Path,
-        global_config: GlobalConfig,
+        brain_config: BrainConfig,
     ) -> BrainBuilder:
         """Load component graph specification from JSON.
 
         Args:
             filepath: Path to JSON file
-            global_config: Global configuration
+            brain_config: Brain configuration
 
         Returns:
             BrainBuilder populated with loaded specification
@@ -1144,14 +1140,14 @@ class BrainBuilder:
         Example:
             builder = BrainBuilder.load_spec(
                 Path("architectures/my_brain.json"),
-                global_config
+                brain_config
             )
             brain = builder.build()
         """
         with open(filepath, "r") as f:
             spec = json.load(f)
 
-        builder = cls(global_config)
+        builder = cls(brain_config)
 
         # Add components
         for comp in spec["components"]:
@@ -1208,14 +1204,14 @@ class BrainBuilder:
     def preset(
         cls,
         name: str,
-        global_config: GlobalConfig,
+        brain_config: BrainConfig,
         **overrides: Any,
     ) -> DynamicBrain:
         """Create brain from preset architecture.
 
         Args:
             name: Preset name (e.g., "default")
-            global_config: Global configuration
+            brain_config: Brain configuration
             **overrides: Override default preset parameters
 
         Returns:
@@ -1225,12 +1221,12 @@ class BrainBuilder:
             KeyError: If preset name not found
 
         Example:
-            brain = BrainBuilder.preset("default", global_config)
+            brain = BrainBuilder.preset("default", brain_config)
 
             # With overrides
             brain = BrainBuilder.preset(
                 "default",
-                global_config,
+                brain_config,
                 cortex_neurons=1024,  # Override default
             )
         """
@@ -1239,7 +1235,7 @@ class BrainBuilder:
             raise KeyError(f"Preset '{name}' not found. Available: {available}")
 
         preset = cls._presets[name]
-        builder = cls(global_config)
+        builder = cls(brain_config)
 
         # Apply preset builder function
         preset.builder_fn(builder, **overrides)
@@ -1259,7 +1255,7 @@ class BrainBuilder:
     def preset_builder(
         cls,
         name: str,
-        global_config: GlobalConfig,
+        brain_config: BrainConfig,
     ) -> BrainBuilder:
         """Create builder initialized with preset architecture.
 
@@ -1268,7 +1264,7 @@ class BrainBuilder:
 
         Args:
             name: Preset name (e.g., "default")
-            global_config: Global configuration
+            brain_config: Brain configuration
 
         Returns:
             BrainBuilder instance with preset applied
@@ -1278,7 +1274,7 @@ class BrainBuilder:
 
         Example:
             # Start with preset and add custom components
-            builder = BrainBuilder.preset_builder("minimal", global_config)
+            builder = BrainBuilder.preset_builder("minimal", brain_config)
             builder.add_component("pfc", "prefrontal", n_input=128, n_output=64)
             builder.connect("cortex", "pfc", pathway_type="spiking")
             brain = builder.build()
@@ -1288,7 +1284,7 @@ class BrainBuilder:
             raise KeyError(f"Preset '{name}' not found. Available: {available}")
 
         preset = cls._presets[name]
-        builder = cls(global_config)
+        builder = cls(brain_config)
         preset.builder_fn(builder)
         return builder
 

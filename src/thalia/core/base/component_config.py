@@ -59,7 +59,7 @@ class NeuralComponentConfig(BaseConfig):
     # TEMPORAL DYNAMICS
     # =========================================================================
     dt_ms: float = 1.0
-    """Simulation timestep in milliseconds. Set from GlobalConfig.dt_ms by Brain."""
+    """Simulation timestep in milliseconds. Set from BrainConfig.dt_ms by Brain."""
 
     axonal_delay_ms: float = 1.0
     """Axonal conduction delay in milliseconds.

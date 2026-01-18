@@ -2,7 +2,7 @@
 Brain Configuration - Settings for brain regions and architecture.
 
 This module defines configuration for DynamicBrain and its
-constituent regions, with clear inheritance from GlobalConfig.
+constituent regions.
 
 Author: Thalia Project
 Date: December 2025
@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
+
+import torch
 
 from thalia.diagnostics.criticality import CriticalityConfig
 
@@ -268,16 +270,140 @@ def _default_striatum_config():
 
 @dataclass
 class BrainConfig:
-    """Complete brain configuration.
+    """Complete brain configuration for a single brain instance.
 
-    Combines region sizes with region-specific parameters and neuromodulation.
-    Global parameters come from GlobalConfig.
+    Each brain instance is fully self-contained with
+    its own device, dt, oscillator frequencies, etc.
 
-    Note: cortex uses LayeredCortexConfig from thalia.regions.cortex.
-    The n_input/n_output in cortex config are ignored - sizes come from
-    RegionSizes.input_size and RegionSizes.cortex_size instead.
+    This enables:
+    - Multiple independent brains with different devices (GPU vs CPU)
+    - Different temporal resolutions per brain (dt_ms)
+    - Different oscillator frequencies per brain
+    - Per-brain learning modes (gradients on/off)
+
+    Example:
+        ```python
+        # High-res brain on GPU
+        brain1 = DynamicBrain(BrainConfig(
+            device="cuda",
+            dt_ms=0.1,
+            theta_frequency_hz=10.0,
+        ))
+
+        # Standard brain on CPU
+        brain2 = DynamicBrain(BrainConfig(
+            device="cpu",
+            dt_ms=1.0,
+            theta_frequency_hz=8.0,
+        ))
+        ```
     """
 
+    # =========================================================================
+    # COMPUTATION
+    # =========================================================================
+    device: str = "cpu"
+    """Device to run on: 'cpu', 'cuda', 'cuda:0', etc.
+
+    Each brain can run on a different device for parallel processing or
+    resource management.
+    """
+
+    dtype: str = "float32"
+    """Data type for tensors: 'float32', 'float64', 'float16', 'bfloat16'.
+
+    Different precision per brain allows speed vs accuracy tradeoffs.
+    """
+
+    seed: Optional[int] = None
+    """Random seed for reproducibility. None = no seeding.
+
+    Each brain can have its own seed for independent experiments.
+    """
+
+    enable_gradients: bool = False
+    """Enable gradient computation for backpropagation.
+
+    Default: False (disabled) for biologically-plausible local learning rules.
+
+    Thalia uses local learning rules (STDP, BCM, Hebbian, three-factor) that
+    do NOT require backpropagation. Disabling gradients provides:
+    - 50% memory savings (no backward graph storage)
+    - 20-40% faster forward passes
+    - Explicit biological constraint enforcement
+
+    Set to True for:
+    - Experimental comparison with backprop
+    - Metacognitive calibration modules
+    - Hybrid bio/non-bio learning
+    """
+
+    # =========================================================================
+    # TIMING
+    # =========================================================================
+    dt_ms: float = 1.0
+    """Simulation timestep in milliseconds. Smaller = more precise but slower.
+
+    **CRITICAL**: This is the single source of truth for temporal resolution.
+    All decay factors, delays, and oscillators derive from this value.
+
+    Can be changed adaptively during simulation via brain.set_timestep(new_dt).
+    Typical values:
+    - 1.0ms: Standard biological timescale (Brian2, most research)
+    - 0.1ms: High-resolution for detailed temporal dynamics
+    - 10ms: Fast replay for memory consolidation
+    """
+
+    # =========================================================================
+    # OSCILLATOR FREQUENCIES
+    # =========================================================================
+    delta_frequency_hz: float = 2.0
+    """Delta oscillation frequency. Range: 0.5-4 Hz (biological).
+    Deep sleep, slow-wave sleep, memory consolidation."""
+
+    theta_frequency_hz: float = 8.0
+    """Theta oscillation frequency. Range: 4-10 Hz (biological).
+    Memory encoding/retrieval rhythm, spatial navigation, phase coding."""
+
+    alpha_frequency_hz: float = 10.0
+    """Alpha oscillation frequency. Range: 8-13 Hz (biological).
+    Attention gating, inhibitory control, sensory suppression."""
+
+    beta_frequency_hz: float = 20.0
+    """Beta oscillation frequency. Range: 13-30 Hz (biological).
+    Motor control, active cognitive processing, decision-making."""
+
+    gamma_frequency_hz: float = 40.0
+    """Gamma oscillation frequency. Range: 30-100 Hz (biological).
+    Feature binding, local processing, attention, consciousness."""
+
+    ripple_frequency_hz: float = 150.0
+    """Sharp-wave ripple frequency. Range: 100-200 Hz (biological).
+    Memory replay during rest/sleep, hippocampal consolidation."""
+
+    # =========================================================================
+    # NEURAL PROPERTIES
+    # =========================================================================
+    vocab_size: int = 50257
+    """Token vocabulary size. Default is GPT-2 size.
+
+    Each brain can have its own vocabulary. If brains communicate,
+    an interface layer handles translation between vocabularies.
+    """
+
+    default_sparsity: float = 0.05
+    """Default target sparsity (fraction of neurons active).
+    Individual regions can override this."""
+
+    w_min: float = 0.0
+    """Minimum weight value. Usually 0 (no negative weights) or small negative."""
+
+    w_max: float = 1.0
+    """Maximum weight value. Prevents runaway potentiation."""
+
+    # =========================================================================
+    # ARCHITECTURE
+    # =========================================================================
     # Region sizes
     sizes: RegionSizes = field(default_factory=RegionSizes)
 
@@ -326,9 +452,6 @@ class BrainConfig:
 
     # Execution mode
     parallel: bool = False
-
-    # Device (should inherit from GlobalConfig, but provided for convenience)
-    device: str = "cpu"
 
     # =========================================================================
     # Goal-conditioned behavior (PFC → Striatum modulation)
@@ -419,6 +542,23 @@ class BrainConfig:
         """Return formatted summary of brain configuration."""
         lines = [
             "=== Brain Configuration ===",
+            f"  Device: {self.device}",
+            f"  Data type: {self.dtype}",
+            f"  Timestep: {self.dt_ms} ms",
+            f"  Gradients: {'enabled' if self.enable_gradients else 'disabled'}",
+            "",
+            "  Oscillator Frequencies:",
+            f"    Delta:  {self.delta_frequency_hz:>5.1f} Hz",
+            f"    Theta:  {self.theta_frequency_hz:>5.1f} Hz",
+            f"    Alpha:  {self.alpha_frequency_hz:>5.1f} Hz",
+            f"    Beta:   {self.beta_frequency_hz:>5.1f} Hz",
+            f"    Gamma:  {self.gamma_frequency_hz:>5.1f} Hz",
+            f"    Ripple: {self.ripple_frequency_hz:>5.1f} Hz",
+            "",
+            f"  Vocabulary: {self.vocab_size} tokens",
+            f"  Sparsity: {self.default_sparsity:.1%}",
+            f"  Weights: [{self.w_min}, {self.w_max}]",
+            "",
             self.sizes.summary(),
             "",
             "--- Region Types ---",
@@ -449,3 +589,62 @@ class BrainConfig:
         Returns sizes.pfc_size by default for consistency.
         """
         return self.sizes.pfc_size
+
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate configuration values."""
+        # Timing validation
+        if self.dt_ms <= 0:
+            raise ValueError(f"dt_ms must be positive, got {self.dt_ms}")
+
+        # Oscillator frequency validation (biological ranges)
+        if not (0.5 <= self.delta_frequency_hz <= 4.0):
+            raise ValueError(
+                f"delta_frequency_hz should be 0.5-4 Hz, got {self.delta_frequency_hz}"
+            )
+        if not (4.0 <= self.theta_frequency_hz <= 10.0):
+            raise ValueError(f"theta_frequency_hz should be 4-10 Hz, got {self.theta_frequency_hz}")
+        if not (8.0 <= self.alpha_frequency_hz <= 13.0):
+            raise ValueError(f"alpha_frequency_hz should be 8-13 Hz, got {self.alpha_frequency_hz}")
+        if not (13.0 <= self.beta_frequency_hz <= 30.0):
+            raise ValueError(f"beta_frequency_hz should be 13-30 Hz, got {self.beta_frequency_hz}")
+        if not (30.0 <= self.gamma_frequency_hz <= 100.0):
+            raise ValueError(
+                f"gamma_frequency_hz should be 30-100 Hz, got {self.gamma_frequency_hz}"
+            )
+        if not (100.0 <= self.ripple_frequency_hz <= 200.0):
+            raise ValueError(
+                f"ripple_frequency_hz should be 100-200 Hz, got {self.ripple_frequency_hz}"
+            )
+
+        # Neural properties validation
+        if self.vocab_size <= 0:
+            raise ValueError(f"vocab_size must be positive, got {self.vocab_size}")
+
+        if self.default_sparsity <= 0 or self.default_sparsity >= 1:
+            raise ValueError(f"default_sparsity must be in (0, 1), got {self.default_sparsity}")
+
+        if self.w_min > self.w_max:
+            raise ValueError(f"w_min ({self.w_min}) > w_max ({self.w_max})")
+
+    def get_torch_device(self) -> "torch.device":
+        """Get PyTorch device object."""
+        return torch.device(self.device)
+
+    def get_torch_dtype(self) -> "torch.dtype":
+        """Get PyTorch dtype object."""
+        dtype_map = {
+            "float32": torch.float32,
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float64": torch.float64,
+        }
+        return dtype_map.get(self.dtype, torch.float32)
+
+    @property
+    def theta_period_ms(self) -> float:
+        """Get theta period in milliseconds (computed from frequency)."""
+        return 1000.0 / self.theta_frequency_hz

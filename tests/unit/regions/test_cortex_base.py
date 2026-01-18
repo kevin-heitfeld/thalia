@@ -187,7 +187,7 @@ class TestLayeredCortex(RegionTestBase):
         assert new_output == original_output + n_new
 
     def test_grow_input(self):
-        """Test per-source input growth - OVERRIDE for LayeredCortex."""
+        """Test per-source input growth via add_input_source - OVERRIDE for LayeredCortex."""
         params = self.get_default_params()
         region = self.create_region(**params)
 

@@ -11,7 +11,7 @@ Validates that:
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
@@ -22,9 +22,9 @@ def device():
 
 
 @pytest.fixture
-def global_config(device):
-    """Global config for creating brain."""
-    return GlobalConfig(device=device, dt_ms=1.0)
+def brain_config(device):
+    """Brain config for creating brain."""
+    return BrainConfig(device=device, dt_ms=1.0)
 
 
 @pytest.fixture

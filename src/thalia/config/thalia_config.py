@@ -2,8 +2,8 @@
 ThaliaConfig - The unified configuration for the entire THALIA system.
 
 This is the single source of truth for all configuration. It:
-1. Contains GlobalConfig for universal parameters
-2. Contains module-specific configs that inherit global values
+1. Contains BrainConfig for brain-specific parameters
+2. Contains module-specific configs that inherit brain values
 3. Provides validation to catch inconsistencies
 4. Offers summary() to show effective values
 5. Can create resolved configs for legacy APIs
@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .brain_config import BrainConfig, RegionSizes
-from .global_config import GlobalConfig
 from .language_config import LanguageConfig
 from .training_config import TrainingConfig
 
@@ -63,9 +62,9 @@ def print_config(
 
     # Global
     print("\n--- GLOBAL ---")
-    print(f"  Device: {config.global_.device}")
-    print(f"  Vocab size: {config.global_.vocab_size}")
-    print(f"  Default sparsity: {config.global_.default_sparsity}")
+    print(f"  Device: {config.brain.device}")
+    print(f"  Vocab size: {config.brain.vocab_size}")
+    print(f"  Default sparsity: {config.brain.default_sparsity}")
 
     # Global learning toggles (from training config)
     print("\n--- TRAINING ---")
@@ -92,8 +91,8 @@ def print_config(
     print(f"  Brain encoding timesteps: {config.brain.encoding_timesteps}")
     print(f"  Delay timesteps: {config.brain.delay_timesteps}")
     print(f"  Test timesteps: {config.brain.test_timesteps}")
-    print(f"  Theta frequency: {config.global_.theta_frequency_hz} Hz")
-    print(f"  dt: {config.global_.dt_ms} ms")
+    print(f"  Theta frequency: {config.brain.theta_frequency_hz} Hz")
+    print(f"  dt: {config.brain.dt_ms} ms")
 
     # Brain sizes
     print("\n--- BRAIN SIZES ---")
@@ -191,10 +190,10 @@ class ThaliaConfig:
 
         # Create with customizations
         config = ThaliaConfig(
-            global_=GlobalConfig(device="cuda", vocab_size=10000),
             brain=BrainConfig(
-                sizes=RegionSizes(cortex_size=256),
-            ),
+                device="cuda",
+                vocab_size=10000,
+                sizes=RegionSizes(cortex_size=256)),
         )
 
         # Show effective configuration
@@ -205,14 +204,13 @@ class ThaliaConfig:
 
         # Create brain from config
         from thalia.core.dynamic_brain import DynamicBrain
-        brain = BrainBuilder.preset("default", config.global_)
+        brain = BrainBuilder.preset("default", config.brain)
     """
 
-    # Global parameters (inherited by all modules)
-    global_: GlobalConfig = field(default_factory=GlobalConfig)
+    # Brain parameters (primary configuration)
+    brain: BrainConfig = field(default_factory=BrainConfig)
 
     # Module-specific configurations
-    brain: BrainConfig = field(default_factory=BrainConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
 
@@ -240,14 +238,14 @@ class ThaliaConfig:
             issues.append(f"Position encoding only has {pos_neurons} neurons - may be too few")
 
         # Check that sparsity is reasonable for network size
-        if self.global_.default_sparsity * self.brain.sizes.cortex_size < 1:
+        if self.brain.default_sparsity * self.brain.sizes.cortex_size < 1:
             issues.append(
-                f"With sparsity {self.global_.default_sparsity} and cortex_size "
+                f"With sparsity {self.brain.default_sparsity} and cortex_size "
                 f"{self.brain.sizes.cortex_size}, average active neurons < 1"
             )
 
         # Check theta period vs timesteps
-        theta_period_timesteps = self.global_.theta_period_ms / self.global_.dt_ms
+        theta_period_timesteps = self.brain.theta_period_ms / self.brain.dt_ms
         if self.brain.encoding_timesteps > theta_period_timesteps * 2:
             issues.append(
                 f"Encoding timesteps ({self.brain.encoding_timesteps}) > 2 theta periods "
@@ -302,17 +300,17 @@ class ThaliaConfig:
         issues: List[str] = []
 
         # dt_ms should be reasonable
-        if self.global_.dt_ms < 0.1:
+        if self.brain.dt_ms < 0.1:
             issues.append(
-                f"dt_ms={self.global_.dt_ms} is very small - may be computationally expensive"
+                f"dt_ms={self.brain.dt_ms} is very small - may be computationally expensive"
             )
-        elif self.global_.dt_ms > 10.0:
-            issues.append(f"dt_ms={self.global_.dt_ms} is large - may miss important dynamics")
+        elif self.brain.dt_ms > 10.0:
+            issues.append(f"dt_ms={self.brain.dt_ms} is large - may miss important dynamics")
 
         # Theta frequency should be biological (4-12 Hz)
-        if not (4.0 <= self.global_.theta_frequency_hz <= 12.0):
+        if not (4.0 <= self.brain.theta_frequency_hz <= 12.0):
             issues.append(
-                f"theta_frequency_hz={self.global_.theta_frequency_hz} is outside biological range (4-12 Hz)"
+                f"theta_frequency_hz={self.brain.theta_frequency_hz} is outside biological range (4-12 Hz)"
             )
 
         # Timesteps should be positive
@@ -324,8 +322,8 @@ class ThaliaConfig:
             issues.append(f"test_timesteps={self.brain.test_timesteps} must be positive")
 
         # Encoding should allow at least one theta cycle
-        theta_period_ms = 1000.0 / self.global_.theta_frequency_hz
-        encoding_duration_ms = self.brain.encoding_timesteps * self.global_.dt_ms
+        theta_period_ms = 1000.0 / self.brain.theta_frequency_hz
+        encoding_duration_ms = self.brain.encoding_timesteps * self.brain.dt_ms
         if encoding_duration_ms < theta_period_ms:
             issues.append(
                 f"Encoding duration ({encoding_duration_ms:.1f} ms) < one theta cycle ({theta_period_ms:.1f} ms). "
@@ -348,13 +346,13 @@ class ThaliaConfig:
         issues: List[str] = []
 
         # Default sparsity check
-        if self.global_.default_sparsity < 0.01:
+        if self.brain.default_sparsity < 0.01:
             issues.append(
-                f"default_sparsity={self.global_.default_sparsity} is very sparse - may lose information"
+                f"default_sparsity={self.brain.default_sparsity} is very sparse - may lose information"
             )
-        elif self.global_.default_sparsity > 0.3:
+        elif self.brain.default_sparsity > 0.3:
             issues.append(
-                f"default_sparsity={self.global_.default_sparsity} is high - sparse coding benefits reduced"
+                f"default_sparsity={self.brain.default_sparsity} is high - sparse coding benefits reduced"
             )
 
         # Check active neurons for each region
@@ -362,17 +360,17 @@ class ThaliaConfig:
             (
                 "cortex",
                 self.brain.sizes.cortex_size,
-                getattr(self.brain.cortex, "l4_sparsity", self.global_.default_sparsity),
+                getattr(self.brain.cortex, "l4_sparsity", self.brain.default_sparsity),
             ),
             (
                 "hippocampus",
                 self.brain.sizes.hippocampus_size,
-                getattr(self.brain.hippocampus, "ca1_sparsity", self.global_.default_sparsity),
+                getattr(self.brain.hippocampus, "ca1_sparsity", self.brain.default_sparsity),
             ),
             (
                 "pfc",
                 self.brain.sizes.pfc_size,
-                getattr(self.brain.pfc, "sparsity", self.global_.default_sparsity),
+                getattr(self.brain.pfc, "sparsity", self.brain.default_sparsity),
             ),
         ]
 
@@ -524,8 +522,6 @@ class ThaliaConfig:
             "║              THALIA Configuration Summary                  ║",
             "╚════════════════════════════════════════════════════════════╝",
             "",
-            self.global_.summary(),
-            "",
             self.brain.summary(),
             "",
             self.language.summary(),
@@ -558,8 +554,11 @@ class ThaliaConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            "global": self.global_.to_dict(),
             "brain": {
+                "device": self.brain.device,
+                "dt_ms": self.brain.dt_ms,
+                "vocab_size": self.brain.vocab_size,
+                "default_sparsity": self.brain.default_sparsity,
                 "sizes": {
                     "input_size": self.brain.sizes.input_size,
                     "cortex_size": self.brain.sizes.cortex_size,
@@ -598,34 +597,32 @@ class ThaliaConfig:
     def save(self, path: str | Path) -> None:
         """Save configuration to JSON file."""
         path = Path(path)
-        path.write_text(self.to_json())
+        path.write_text(self.to_json(), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> ThaliaConfig:
         """Load configuration from JSON file."""
         path = Path(path)
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         return cls.from_dict(data)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> ThaliaConfig:
         """Create from dictionary."""
-        global_config = GlobalConfig.from_dict(d.get("global", {}))
+        brain_dict = d.get("brain", {})
 
-        brain_data = d.get("brain", {})
-        sizes_data = brain_data.get("sizes", {})
+        sizes_data = brain_dict.get("sizes", {})
         sizes = RegionSizes(**sizes_data)
 
         brain = BrainConfig(
             sizes=sizes,
-            encoding_timesteps=brain_data.get("encoding_timesteps", 15),
-            delay_timesteps=brain_data.get("delay_timesteps", 10),
-            test_timesteps=brain_data.get("test_timesteps", 15),
-            parallel=brain_data.get("parallel", False),
+            encoding_timesteps=brain_dict.get("encoding_timesteps", 15),
+            delay_timesteps=brain_dict.get("delay_timesteps", 10),
+            test_timesteps=brain_dict.get("test_timesteps", 15),
+            parallel=brain_dict.get("parallel", False),
         )
 
         return cls(
-            global_=global_config,
             brain=brain,
         )
 
@@ -643,12 +640,12 @@ class ThaliaConfig:
         from thalia.language.model import LanguageInterfaceConfig
 
         return LanguageInterfaceConfig(
-            vocab_size=self.global_.vocab_size,
+            vocab_size=self.brain.vocab_size,
             n_timesteps=self.language.encoding.n_timesteps,
-            sparsity=self.language.encoding.get_sparsity(self.global_),
+            sparsity=self.language.encoding.get_sparsity(self.brain),
             max_seq_len=self.language.position.max_positions,
             brain_input_size=self.brain.sizes.input_size,
-            device=self.global_.device,
+            device=self.brain.device,
         )
 
     # =========================================================================
@@ -662,8 +659,8 @@ class ThaliaConfig:
         Small network sizes for fast testing.
         """
         return cls(
-            global_=GlobalConfig(device=device),
             brain=BrainConfig(
+                device=device,
                 sizes=RegionSizes(
                     input_size=64,
                     cortex_size=32,

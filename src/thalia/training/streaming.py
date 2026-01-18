@@ -40,12 +40,12 @@ Example Usage:
 
     from thalia.training.streaming import StreamingTrainer, StreamConfig
     from thalia.core.brain_builder import BrainBuilder
-    from thalia.config import GlobalConfig
+    from thalia.config import BrainConfig
     import torch
 
     # Create brain
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    brain = BrainBuilder.preset("default", global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    brain = BrainBuilder.preset("default", brain_config)
 
     # Create data stream (infinite generator)
     def mnist_stream():
@@ -399,7 +399,7 @@ class StreamingTrainer:
         self.stats.throughput_samples_per_sec = sample_count / duration if duration > 0 else 0.0
 
         if verbose:
-            print(f"\n✅ Streaming training complete!")
+            print("\n✅ Streaming training complete!")
             print(f"   Samples processed: {sample_count:,}")
             print(f"   Duration: {duration:.1f}s")
             print(f"   Throughput: {self.stats.throughput_samples_per_sec:.1f} samples/sec")

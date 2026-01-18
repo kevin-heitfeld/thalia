@@ -18,7 +18,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import ComponentSpec, ConnectionSpec, DynamicBrain
@@ -47,7 +47,7 @@ def create_test_thalamus(input_size: int, relay_size: int, device: str = "cpu") 
 
 def test_dynamic_brain_creation():
     """Test DynamicBrain instantiation."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "region1": create_test_thalamus(input_size=32, relay_size=64),
@@ -60,7 +60,7 @@ def test_dynamic_brain_creation():
         ),
     }
 
-    brain = DynamicBrain(components, connections, global_config)
+    brain = DynamicBrain(components, connections, brain_config)
 
     # Test explicit setup (2 components explicitly created above)
     assert len(brain.components) == 2
@@ -71,7 +71,7 @@ def test_dynamic_brain_creation():
 
 def test_dynamic_brain_topology_graph():
     """Test topology graph construction."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "a": create_test_thalamus(input_size=32, relay_size=64),
@@ -84,7 +84,7 @@ def test_dynamic_brain_topology_graph():
         ("b", "c"): AxonalProjection(sources=[("b", None, 64, 1.0)], device="cpu"),
     }
 
-    brain = DynamicBrain(components, connections, global_config)
+    brain = DynamicBrain(components, connections, brain_config)
 
     # Test topology via public API behavior
     # Verify components exist and are connected correctly
@@ -99,13 +99,13 @@ def test_dynamic_brain_topology_graph():
 
 def test_dynamic_brain_get_component():
     """Test get_component method."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "region1": create_test_thalamus(input_size=32, relay_size=64),
     }
 
-    brain = DynamicBrain(components, {}, global_config)
+    brain = DynamicBrain(components, {}, brain_config)
 
     comp = brain.get_component("region1")
     assert comp is components["region1"]
@@ -116,13 +116,13 @@ def test_dynamic_brain_get_component():
 
 def test_dynamic_brain_add_component():
     """Test dynamic component addition."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "region1": create_test_thalamus(input_size=32, relay_size=64),
     }
 
-    brain = DynamicBrain(components, {}, global_config)
+    brain = DynamicBrain(components, {}, brain_config)
 
     # Add new component
     new_region = create_test_thalamus(input_size=64, relay_size=128)
@@ -134,14 +134,14 @@ def test_dynamic_brain_add_component():
 
 def test_dynamic_brain_add_connection():
     """Test dynamic connection addition."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "a": create_test_thalamus(input_size=32, relay_size=64),
         "b": create_test_thalamus(input_size=64, relay_size=64),
     }
 
-    brain = DynamicBrain(components, {}, global_config)
+    brain = DynamicBrain(components, {}, brain_config)
 
     # Add connection
     pathway = AxonalProjection(sources=[("a", None, 64, 1.0)], device="cpu")
@@ -154,13 +154,13 @@ def test_dynamic_brain_add_connection():
 
 def test_dynamic_brain_reset_state():
     """Test state reset."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "region": create_test_thalamus(input_size=32, relay_size=64),
     }
 
-    brain = DynamicBrain(components, {}, global_config)
+    brain = DynamicBrain(components, {}, brain_config)
 
     # Set mock registry to avoid adapter requirement
     brain._registry = Mock()
@@ -183,10 +183,10 @@ def test_dynamic_brain_reset_state():
 
 def test_brain_builder_creation():
     """Test BrainBuilder instantiation."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    builder = BrainBuilder(global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    builder = BrainBuilder(brain_config)
 
-    assert builder.global_config is global_config
+    assert builder.brain_config is brain_config
 
     # Test via public API - build empty brain
     brain = builder.build()
@@ -196,8 +196,8 @@ def test_brain_builder_creation():
 
 def test_brain_builder_add_component():
     """Test add_component method."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    builder = BrainBuilder(global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    builder = BrainBuilder(brain_config)
 
     # Note: This will fail without registered components
     # This test demonstrates the API but won't pass without registry setup
@@ -206,8 +206,8 @@ def test_brain_builder_add_component():
 
 def test_brain_builder_connect():
     """Test connect method."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    builder = BrainBuilder(global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    builder = BrainBuilder(brain_config)
 
     # Add mock components (would need registry)
     # builder.add_component("a", "mock_region", n_neurons=64)
@@ -219,8 +219,8 @@ def test_brain_builder_connect():
 
 def test_brain_builder_validation():
     """Test component graph validation."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    builder = BrainBuilder(global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    builder = BrainBuilder(brain_config)
 
     issues = builder.validate()
     assert len(issues) == 0  # Empty graph is valid
@@ -228,8 +228,8 @@ def test_brain_builder_validation():
 
 def test_brain_builder_save_load_spec():
     """Test save/load component specifications."""
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    builder = BrainBuilder(global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    builder = BrainBuilder(brain_config)
 
     # Mock some specs (without registry)
     builder._components["region1"] = ComponentSpec(
@@ -306,14 +306,14 @@ def test_brain_handles_connection_validation_failure():
     This test ensures that when adding a connection between components
     with mismatched dimensions, the brain catches the error early.
     """
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     # Create components with incompatible sizes
     components = {
         "source": create_test_thalamus(input_size=32, relay_size=64, device="cpu"),
         "target": create_test_thalamus(input_size=128, relay_size=64, device="cpu"),
     }
-    brain = DynamicBrain(components, {}, global_config)
+    brain = DynamicBrain(components, {}, brain_config)
 
     # Create pathway with output size that doesn't match target input
     # Source outputs 64, but target expects 128 → dimension mismatch
@@ -340,13 +340,13 @@ def test_brain_forward_with_missing_inputs():
     When forward() is called without inputs for all regions,
     should provide clear error message.
     """
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
 
     components = {
         "region_a": create_test_thalamus(input_size=32, relay_size=64, device="cpu"),
         "region_b": create_test_thalamus(input_size=64, relay_size=32, device="cpu"),
     }
-    brain = DynamicBrain(components, {}, global_config)
+    brain = DynamicBrain(components, {}, brain_config)
 
     # Only provide input for region_a, not region_b
     partial_inputs = {"region_a": torch.ones(32, dtype=torch.bool)}

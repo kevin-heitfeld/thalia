@@ -9,7 +9,7 @@ import inspect
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.managers.component_registry import ComponentRegistry
@@ -20,16 +20,16 @@ def health_brain() -> DynamicBrain:
     """Create DynamicBrain with health monitoring for testing."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Create global config
-    global_config = GlobalConfig(
+    # Create brain config
+    brain_config = BrainConfig(
         device=device,
         dt_ms=1.0,
     )
-    # Add criticality flag manually (not in GlobalConfig schema yet)
-    global_config.monitor_criticality = False  # type: ignore
+    # Add criticality flag manually (not in BrainConfig schema yet)
+    brain_config.monitor_criticality = False  # type: ignore
 
     # Create builder and build brain
-    builder = BrainBuilder(global_config)
+    builder = BrainBuilder(brain_config)
 
     # Add minimal regions for testing
     builder.add_component(
@@ -64,16 +64,16 @@ def criticality_brain() -> DynamicBrain:
     """Create DynamicBrain with criticality monitoring enabled."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Create global config
-    global_config = GlobalConfig(
+    # Create brain config
+    brain_config = BrainConfig(
         device=device,
         dt_ms=1.0,
     )
-    # Add criticality flag manually (not in GlobalConfig schema yet)
-    global_config.monitor_criticality = True  # type: ignore
+    # Add criticality flag manually (not in BrainConfig schema yet)
+    brain_config.monitor_criticality = True  # type: ignore
 
     # Create builder and build brain
-    builder = BrainBuilder(global_config)
+    builder = BrainBuilder(brain_config)
 
     # Add minimal regions for testing
     builder.add_component(
@@ -245,7 +245,7 @@ def test_criticality_tracking_updates(criticality_brain):
     updated_diagnostics = criticality_brain.criticality_monitor.get_diagnostics()
     assert updated_diagnostics is not None
 
-    print(f"✓ Criticality tracking updated during forward pass")
+    print("✓ Criticality tracking updated during forward pass")
 
 
 def test_criticality_in_diagnostics(criticality_brain):
@@ -263,7 +263,7 @@ def test_criticality_in_diagnostics(criticality_brain):
     # Should include criticality subsystem
     assert "criticality" in diagnostics
 
-    print(f"✓ Criticality metrics in diagnostics")
+    print("✓ Criticality metrics in diagnostics")
 
 
 def test_health_check_uses_all_diagnostics(health_brain):
@@ -286,7 +286,7 @@ def test_health_check_uses_all_diagnostics(health_brain):
     # Run health check to ensure it uses diagnostics
     health_brain.check_health()
 
-    print(f"✓ Health check uses comprehensive diagnostics")
+    print("✓ Health check uses comprehensive diagnostics")
 
 
 def test_health_monitoring_backward_compatibility(health_brain):

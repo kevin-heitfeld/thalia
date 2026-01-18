@@ -16,7 +16,7 @@ import pytest
 import torch
 from scipy import signal
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
@@ -27,9 +27,9 @@ def device():
 
 
 @pytest.fixture
-def global_config(device):
-    """Create GlobalConfig for testing."""
-    return GlobalConfig(device=device, dt_ms=1.0, theta_frequency_hz=8.0)
+def brain_config(device):
+    """Create BrainConfig for testing."""
+    return BrainConfig(device=device, dt_ms=1.0, theta_frequency_hz=8.0)
 
 
 def measure_oscillation_frequency(

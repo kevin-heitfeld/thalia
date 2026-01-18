@@ -15,7 +15,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from .global_config import GlobalConfig
+    from .brain_config import BrainConfig
 
 
 class EncodingType(Enum):
@@ -41,7 +41,7 @@ class DecodingType(Enum):
 class EncodingConfig:
     """Configuration for token-to-spike encoding.
 
-    Note: vocab_size, device, and timing come from GlobalConfig.
+    Note: vocab_size, device, and timing come from BrainConfig.
     """
 
     # SDR parameters
@@ -61,15 +61,15 @@ class EncodingConfig:
     # Embedding dimension (intermediate, before SDR projection)
     embedding_dim: int = 256
 
-    def get_sparsity(self, global_config: GlobalConfig) -> float:
+    def get_sparsity(self, brain_config: BrainConfig) -> float:
         """Get effective sparsity, falling back to global default."""
-        return self.sparsity if self.sparsity is not None else global_config.default_sparsity
+        return self.sparsity if self.sparsity is not None else brain_config.default_sparsity
 
-    def get_sdr_on_bits(self, n_neurons: int, global_config: GlobalConfig) -> int:
+    def get_sdr_on_bits(self, n_neurons: int, brain_config: BrainConfig) -> int:
         """Get number of active bits in SDR."""
         if self.sdr_on_bits is not None:
             return self.sdr_on_bits
-        sparsity = self.get_sparsity(global_config)
+        sparsity = self.get_sparsity(brain_config)
         return int(n_neurons * sparsity)
 
 
@@ -77,7 +77,7 @@ class EncodingConfig:
 class DecodingConfig:
     """Configuration for spike-to-token decoding.
 
-    Note: vocab_size and device come from GlobalConfig.
+    Note: vocab_size and device come from BrainConfig.
     """
 
     # Decoding type
@@ -131,7 +131,7 @@ class LanguageConfig:
     """Complete language processing configuration.
 
     Combines encoding, decoding, position, and memory settings.
-    Global parameters come from GlobalConfig.
+    Global parameters come from BrainConfig.
     """
 
     # Sub-configurations

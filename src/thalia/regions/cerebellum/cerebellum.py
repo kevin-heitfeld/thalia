@@ -64,6 +64,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 
 import torch
+import torch.nn as nn
 
 from thalia.components.neurons import (
     ConductanceLIF,
@@ -543,7 +544,7 @@ class Cerebellum(NeuralRegion):
         self.device = torch.device(device)
 
         # Extract sizes
-        self.input_size = sizes["input_size"]
+        input_size = sizes["input_size"]
         self.granule_size = sizes["granule_size"]
         self.purkinje_size = sizes["purkinje_size"]
         self.n_output = self.purkinje_size  # Purkinje cells are output
@@ -559,6 +560,11 @@ class Cerebellum(NeuralRegion):
             device=device,
             dt_ms=config.dt_ms,
         )
+
+        # Initialize default input source (multi-source architecture)
+        # Cerebellum uses single "default" source that accepts concatenated inputs
+        self.input_sources["default"] = input_size
+        self._total_input_size = input_size  # Track for concatenation validation
 
         # Initialize state for NeuromodulatorMixin
         self.state = NeuralComponentState()
@@ -576,8 +582,8 @@ class Cerebellum(NeuralRegion):
         if self.use_enhanced:
             # Granule cell layer (sparse expansion)
             self.granule_layer = GranuleCellLayer(
-                n_mossy_fibers=self.input_size,
-                expansion_factor=self.granule_size / self.input_size,
+                n_mossy_fibers=self._total_input_size,
+                expansion_factor=self.granule_size / self._total_input_size,
                 sparsity=self.config.granule_sparsity,
                 device=device,
                 dt_ms=config.dt_ms,
@@ -601,7 +607,7 @@ class Cerebellum(NeuralRegion):
             self.deep_nuclei = DeepCerebellarNuclei(
                 n_output=self.purkinje_size,
                 n_purkinje=self.purkinje_size,
-                n_mossy=self.input_size,
+                n_mossy=self._total_input_size,
                 device=device,
                 dt_ms=config.dt_ms,
             )
@@ -612,7 +618,7 @@ class Cerebellum(NeuralRegion):
             self.granule_layer = None  # type: ignore[assignment]
             self.purkinje_cells = None  # type: ignore[assignment]
             self.deep_nuclei = None  # type: ignore[assignment]
-            expanded_input = self.input_size
+            expanded_input = self._total_input_size
 
         # =====================================================================
         # ELIGIBILITY TRACE MANAGER for STDP
@@ -644,7 +650,7 @@ class Cerebellum(NeuralRegion):
 
         # Homeostasis for synaptic scaling
         homeostasis_config = UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * self.input_size,  # Total budget per neuron
+            weight_budget=config.weight_budget * self._total_input_size,  # Total budget per neuron
             w_min=config.w_min,
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
@@ -757,6 +763,11 @@ class Cerebellum(NeuralRegion):
         return torch.nn.Parameter(
             clamp_weights(weights, self.config.w_min, self.config.w_max, inplace=False)
         )
+
+    @property
+    def input_size(self) -> int:
+        """Total input size across all sources (backward compatibility)."""
+        return self._total_input_size
 
     @property
     def input_trace(self) -> torch.Tensor:
@@ -929,6 +940,97 @@ class Cerebellum(NeuralRegion):
         # instead of self.neurons, and classic mode already grew neurons
         self._validate_output_growth(old_n_output, n_new, check_neurons=not self.use_enhanced)
 
+    def grow_source(
+        self,
+        source_name: str,
+        new_size: int,
+        initialization: str = "xavier",
+        sparsity: float = 0.2,
+        weight_scale: float = 0.3,
+    ) -> None:
+        """Grow specific input source (override for cerebellar microcircuit).
+
+        Cerebellum has internal transformation mossy→granule→purkinje, so growing
+        the input requires:
+        1. Update input_sources tracking (mossy fiber count)
+        2. If using enhanced microcircuit, grow granule layer
+        3. Grow synaptic weights (parallel fiber→purkinje connections)
+
+        Args:
+            source_name: Name of source to grow (must be "default")
+            new_size: New total size for mossy fiber input
+            initialization: Weight initialization strategy
+            sparsity: Connection sparsity
+            weight_scale: Weight magnitude scale
+        """
+        if source_name != "default":
+            raise ValueError(
+                f"Cerebellum only supports 'default' source, got '{source_name}'. "
+                "Cerebellum uses concatenated multi-source input on single 'default' port."
+            )
+
+        old_mossy_size = self._total_input_size
+        n_new_mossy = new_size - old_mossy_size
+
+        if n_new_mossy <= 0:
+            return  # No growth needed
+
+        # Update input tracking
+        self.input_sources["default"] = new_size
+        self._total_input_size = new_size
+
+        if self.use_enhanced:
+            # Grow granule layer to accept more mossy fibers
+            old_granule_size = self.granule_layer.n_granule
+            expansion_factor = self.granule_size / old_mossy_size
+            new_granule_size = int(new_size * expansion_factor)
+            n_new_granule = new_granule_size - old_granule_size
+
+            # Grow granule layer
+            self.granule_layer.grow_output(n_new_granule)
+
+            # Grow parallel fiber→purkinje weights
+            for pc in self.purkinje_cells:
+                pc.grow_input(n_new_granule)
+
+            # Grow deep nuclei mossy fiber input
+            self.deep_nuclei.grow_input(n_new_mossy, source="mossy")
+        else:
+            # Classic pathway: grow parallel fiber→purkinje weights directly
+            old_weights = self.synaptic_weights["default"]
+            n_new = n_new_mossy  # Direct mapping in classic mode
+
+            # Initialize new input columns
+            if initialization == "xavier":
+                new_cols = WeightInitializer.xavier(
+                    n_output=self.purkinje_size,
+                    n_input=n_new,
+                    gain=weight_scale,
+                    device=self.device,
+                )
+            else:  # sparse_random (default)
+                new_cols = WeightInitializer.sparse_random(
+                    n_output=self.purkinje_size,
+                    n_input=n_new,
+                    sparsity=sparsity,
+                    scale=weight_scale,
+                    device=self.device,
+                )
+
+            # Concatenate new columns to existing weights
+            expanded_weights = torch.cat([old_weights, new_cols], dim=1)
+            self.synaptic_weights["default"] = nn.Parameter(expanded_weights)
+
+            # Grow STP module if enabled
+            if self.stp_pf_purkinje is not None:
+                self.stp_pf_purkinje.grow(n_new, target="pre")
+
+            # Grow trace manager
+            self._trace_manager = self._trace_manager.grow_dimension(n_new, dimension="input")
+
+        # Update base class n_input for compatibility
+        self.n_input = self._total_input_size
+
     def grow_layer(
         self,
         layer_name: str,
@@ -978,7 +1080,7 @@ class Cerebellum(NeuralRegion):
         input_spikes = InputRouter.concatenate_sources(
             inputs,
             component_name="Cerebellum",
-            n_input=self.input_size,
+            n_input=self._total_input_size,
             device=self.device,
         )
 
@@ -987,9 +1089,9 @@ class Cerebellum(NeuralRegion):
             f"Cerebellum.forward: input_spikes must be 1D [n_input], "
             f"got shape {input_spikes.shape}. See ADR-005: No Batch Dimension."
         )
-        assert input_spikes.shape[0] == self.input_size, (
+        assert input_spikes.shape[0] == self._total_input_size, (
             f"Cerebellum.forward: input_spikes has {input_spikes.shape[0]} neurons "
-            f"but expected {self.input_size}."
+            f"but expected {self._total_input_size}."
         )
 
         if self.neurons.membrane is None:
@@ -1504,7 +1606,7 @@ class Cerebellum(NeuralRegion):
         # Region-specific custom metrics
         region_specific = {
             "architecture": {
-                "n_input": self.input_size,
+                "n_input": self._total_input_size,
                 "n_output": self.n_output,
                 "use_enhanced_microcircuit": cfg.use_enhanced_microcircuit,
             },

@@ -989,8 +989,8 @@ def test_visualize_real_brain(tmp_path):
     """Test visualization with real brain structure."""
     # ✅ Use real (minimal) brain
     config = ThaliaConfig(
-        global_=GlobalConfig(device="cpu"),
         brain=BrainConfig(
+            device="cpu",
             sizes=RegionSizes(
                 input_size=10,
                 thalamus_size=20,

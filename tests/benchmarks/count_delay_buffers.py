@@ -1,12 +1,12 @@
 """Profile pathway overhead."""
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
 def count_delay_buffers():
     """Count total delay buffers in the brain."""
-    config = GlobalConfig(device="cpu", dt_ms=1.0)
+    config = BrainConfig(device="cpu", dt_ms=1.0)
     brain = BrainBuilder.preset("default", config)
 
     total_buffers = 0

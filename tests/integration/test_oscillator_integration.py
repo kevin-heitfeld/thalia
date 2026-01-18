@@ -16,7 +16,7 @@ import math
 import pytest
 import torch
 
-from thalia.config import GlobalConfig, LayerSizeCalculator
+from thalia.config import BrainConfig, LayerSizeCalculator
 from thalia.core.brain_builder import BrainBuilder
 
 
@@ -24,15 +24,15 @@ class TestOscillatorManagerIntegration:
     """Test OscillatorManager integration in DynamicBrain."""
 
     @pytest.fixture
-    def global_config(self):
-        """Create test global config with theta frequency."""
-        return GlobalConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0)
+    def brain_config(self):
+        """Create test brain config with theta frequency."""
+        return BrainConfig(device="cpu", dt_ms=1.0, theta_frequency_hz=8.0)
 
     @pytest.fixture
-    def simple_brain(self, global_config):
+    def simple_brain(self, brain_config):
         """Create simple brain for testing."""
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component(
                 "cortex",

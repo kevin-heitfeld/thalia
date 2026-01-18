@@ -4,13 +4,13 @@ import time
 
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
 def profile_forward_pass():
     """Profile a single forward pass to find bottlenecks."""
-    config = GlobalConfig(device="cpu", dt_ms=1.0)
+    config = BrainConfig(device="cpu", dt_ms=1.0)
     brain = BrainBuilder.preset("default", config)
 
     # Warm-up
@@ -30,14 +30,14 @@ def profile_forward_pass():
     print(f"Throughput: {100/elapsed:.1f} timesteps/sec")
 
     # Check component counts
-    print(f"\nBrain structure:")
+    print("\nBrain structure:")
     print(f"  Components: {len(brain.components)}")
     print(f"  Connections: {len(brain.connections)}")
     print(f"  Component names: {list(brain.components.keys())}")
 
     # Check spike counts
     spike_counts = brain.get_spike_counts()
-    print(f"\nSpike activity over 100 timesteps:")
+    print("\nSpike activity over 100 timesteps:")
     for comp_name, count in sorted(spike_counts.items()):
         print(f"  {comp_name}: {count} spikes")
 

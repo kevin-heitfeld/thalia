@@ -224,11 +224,11 @@ class TestGrowthMixinCreateNewWeights:
             )
             assert cuda_weights.device.type == "cuda"
 
-    def test_integration_with_grow_input(self, region):
-        """Test that _create_new_weights produces correct dimensions for grow_input."""
+    def test_integration_with_grow_source(self, region):
+        """Test that _create_new_weights produces correct dimensions for grow_source."""
         n_new = 20
 
-        # Create new weight columns (typical grow_input pattern)
+        # Create new weight columns (typical grow_source pattern)
         new_cols = region._create_new_weights(
             n_output=region.n_output,
             n_input=n_new,

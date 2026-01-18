@@ -30,7 +30,7 @@ import pathlib
 
 import torch
 
-from thalia.config import BrainConfig, GlobalConfig, RegionSizes, ThaliaConfig
+from thalia.config import BrainConfig, RegionSizes, ThaliaConfig
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 
@@ -170,11 +170,12 @@ def create_minimal_thalia_config(
 
     Example:
         >>> config = create_minimal_thalia_config(input_size=64, cortex_size=128)
-        >>> brain = BrainBuilder.preset("default", config.global_)
+        >>> brain = BrainBuilder.preset("default", config.brain)
     """
     config = ThaliaConfig(
-        global_=GlobalConfig(device=device, dt_ms=dt_ms),
         brain=BrainConfig(
+            device=device,
+            dt_ms=dt_ms,
             sizes=RegionSizes(
                 input_size=input_size,
                 thalamus_size=thalamus_size,
@@ -221,7 +222,7 @@ def create_test_brain(device: str = "cpu", **config_overrides) -> "DynamicBrain"
         "striatum_actions": config.brain.sizes.n_actions,
     }
 
-    brain = BrainBuilder.preset("default", global_config=config.global_, **preset_overrides)
+    brain = BrainBuilder.preset("default", brain_config=config.brain, **preset_overrides)
 
     # If input_size was explicitly set in config, update thalamus to match
     # (thalamus_from_relay defaults to relay_size = input_size, but tests may want different)

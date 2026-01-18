@@ -12,7 +12,7 @@ Run with: pytest tests/unit/test_architecture_fixes_2025_12_21.py -v
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
@@ -21,7 +21,7 @@ class TestDopamineProjectionSpecificity:
 
     def test_striatum_receives_full_dopamine(self):
         """Striatum should receive 100% dopamine (dense VTA/SNc projection)."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         # Deliver reward to generate dopamine signal
@@ -45,7 +45,7 @@ class TestDopamineProjectionSpecificity:
 
     def test_hippocampus_receives_minimal_dopamine(self):
         """Hippocampus should receive only 10% dopamine (minimal projection)."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         # Deliver strong reward
@@ -70,7 +70,7 @@ class TestDopamineProjectionSpecificity:
 
     def test_striatum_dopamine_exceeds_hippocampus(self):
         """Striatum should receive 10x more dopamine than hippocampus."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         # Deliver reward
@@ -96,7 +96,7 @@ class TestV2WeightPlacement:
 
     def test_cortex_internal_weights_in_synaptic_weights(self):
         """All LayeredCortex weights should be in synaptic_weights dict."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         cortex = brain.components["cortex"]
@@ -124,7 +124,7 @@ class TestV2WeightPlacement:
 
     def test_cortex_aliases_point_to_synaptic_weights(self):
         """All weights should be accessible via synaptic_weights dict (v2.0 pattern)."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         cortex = brain.components["cortex"]
@@ -142,7 +142,7 @@ class TestV2WeightPlacement:
 
     def test_cortex_weights_require_grad(self):
         """All synaptic weights should be trainable."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         cortex = brain.components["cortex"]
@@ -154,7 +154,7 @@ class TestV2WeightPlacement:
 
     def test_cortex_learning_updates_synaptic_weights(self):
         """Plasticity should update weights in synaptic_weights dict."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
 
         cortex = brain.components["cortex"]
@@ -187,7 +187,7 @@ class TestEnhancements:
 
     def test_layer_specific_dopamine_cortex(self):
         """Enhancement #1: Verify layer-specific dopamine in cortex."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
         cortex = brain.components["cortex"]
 
@@ -213,7 +213,7 @@ class TestEnhancements:
 
     def test_hippocampus_weight_migration(self):
         """Enhancement #2: Verify hippocampus internal weights in synaptic_weights."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
+        config = BrainConfig(dt_ms=1.0, device="cpu")
         brain = BrainBuilder.preset("default", config)
         hippocampus = brain.components["hippocampus"]
 

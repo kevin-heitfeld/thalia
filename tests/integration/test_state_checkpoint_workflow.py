@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 from thalia.pathways.axonal_projection import AxonalProjection
 from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
@@ -44,18 +44,18 @@ def temp_checkpoint_dir():
 
 
 @pytest.fixture
-def global_config(device):
-    """Global configuration for test brains."""
-    return GlobalConfig(
+def brain_config(device):
+    """Brain configuration for test brains."""
+    return BrainConfig(
         device=device,
         dt_ms=1.0,
     )
 
 
 @pytest.fixture
-def simple_brain(global_config, device):
+def simple_brain(brain_config, device):
     """Create a brain with all regions using default preset."""
-    brain = BrainBuilder.preset("default", global_config)
+    brain = BrainBuilder.preset("default", brain_config)
     return brain
 
 
@@ -71,7 +71,7 @@ def sample_input(device):
 
 
 def test_full_brain_checkpoint_save_load(
-    simple_brain, sample_input, temp_checkpoint_dir, global_config, device
+    simple_brain, sample_input, temp_checkpoint_dir, brain_config, device
 ):
     """Test complete brain checkpoint cycle preserves all state.
 
@@ -95,8 +95,8 @@ def test_full_brain_checkpoint_save_load(
     torch.save(checkpoint_data, checkpoint_path)
 
     # Create new brain and load checkpoint
-    # Note: brain.config is SimpleNamespace, use global_config instead
-    brain2 = BrainBuilder.preset("default", global_config)
+    # Note: brain.config is SimpleNamespace, use brain_config instead
+    brain2 = BrainBuilder.preset("default", brain_config)
     loaded_data = torch.load(checkpoint_path, weights_only=False)
     brain2.load_full_state(loaded_data)
 
@@ -202,7 +202,7 @@ def test_region_isolation(simple_brain, sample_input, device):
         assert state is not None, f"Region {region_name} should have valid state"
 
 
-def test_checkpoint_with_pathways(global_config, device, temp_checkpoint_dir):
+def test_checkpoint_with_pathways(brain_config, device, temp_checkpoint_dir):
     """Test pathway delay buffers preserved across checkpoint.
 
     Verifies that in-flight spikes in pathway delay buffers are
@@ -268,7 +268,7 @@ def test_checkpoint_with_pathways(global_config, device, temp_checkpoint_dir):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_device_transfer_cpu_to_cuda(global_config, sample_input, temp_checkpoint_dir):
+def test_device_transfer_cpu_to_cuda(brain_config, sample_input, temp_checkpoint_dir):
     """Test checkpoint save on CPU, load on CUDA.
 
     Verifies device transfer works correctly:
@@ -278,7 +278,7 @@ def test_device_transfer_cpu_to_cuda(global_config, sample_input, temp_checkpoin
     4. Values preserved exactly
     """
     # Create brain on CPU
-    cpu_config = GlobalConfig(device="cpu", dt_ms=1.0)
+    cpu_config = BrainConfig(device="cpu", dt_ms=1.0)
     cpu_brain = BrainBuilder.preset("default", cpu_config)
 
     # Run simulation on CPU
@@ -292,7 +292,7 @@ def test_device_transfer_cpu_to_cuda(global_config, sample_input, temp_checkpoin
     torch.save(cpu_checkpoint, checkpoint_path)
 
     # Create brain on CUDA
-    cuda_config = GlobalConfig(device="cuda", dt_ms=1.0)
+    cuda_config = BrainConfig(device="cuda", dt_ms=1.0)
     cuda_brain = BrainBuilder.preset("default", cuda_config)
 
     # Load checkpoint
@@ -385,9 +385,9 @@ def test_partial_state_load(device, temp_checkpoint_dir):
 # =====================================================================
 
 
-def test_empty_brain_checkpoint(global_config, temp_checkpoint_dir, device):
+def test_empty_brain_checkpoint(brain_config, temp_checkpoint_dir, device):
     """Test checkpoint of brain immediately after creation (no run)."""
-    brain = BrainBuilder.preset("default", global_config)
+    brain = BrainBuilder.preset("default", brain_config)
 
     # Save without running
     checkpoint_path = temp_checkpoint_dir / "empty_checkpoint.pt"
@@ -395,7 +395,7 @@ def test_empty_brain_checkpoint(global_config, temp_checkpoint_dir, device):
     torch.save(checkpoint, checkpoint_path)
 
     # Load into new brain
-    brain2 = BrainBuilder.preset("default", global_config)
+    brain2 = BrainBuilder.preset("default", brain_config)
     loaded = torch.load(checkpoint_path, weights_only=False)
     brain2.load_full_state(loaded)
 

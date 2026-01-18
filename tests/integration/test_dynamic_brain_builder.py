@@ -12,7 +12,7 @@ Tests end-to-end functionality:
 import pytest
 import torch
 
-from thalia.config import GlobalConfig, LayerSizeCalculator
+from thalia.config import BrainConfig, LayerSizeCalculator
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.pathways.axonal_projection import AxonalProjection
@@ -27,9 +27,9 @@ def device():
 
 
 @pytest.fixture
-def global_config(device):
-    """Create GlobalConfig for testing."""
-    return GlobalConfig(device=device, dt_ms=1.0, theta_frequency_hz=8.0)
+def brain_config(device):
+    """Create BrainConfig for testing."""
+    return BrainConfig(device=device, dt_ms=1.0, theta_frequency_hz=8.0)
 
 
 @pytest.fixture
@@ -43,10 +43,10 @@ def input_data(device):
 class TestDynamicBrainIntegration:
     """Integration tests for DynamicBrain."""
 
-    def test_simple_brain_creation_and_execution(self, device, global_config):
+    def test_simple_brain_creation_and_execution(self, device, brain_config):
         """Test creating and executing a simple custom brain."""
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(32)

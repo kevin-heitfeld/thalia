@@ -110,7 +110,7 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
     once converted to spikes, the brain processes it like any other modality.
 
     Usage:
-        brain = BrainBuilder.preset("default", config.global_)
+        brain = BrainBuilder.preset("default", config.brain)
         lang_interface = LanguageBrainInterface(brain, LanguageInterfaceConfig())
 
         # Process text
@@ -144,12 +144,12 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
         """
         # Extract language interface config from ThaliaConfig
         interface_config = LanguageInterfaceConfig(
-            vocab_size=config.global_.vocab_size,
+            vocab_size=config.brain.vocab_size,
             n_timesteps=config.language.encoding.n_timesteps,
-            sparsity=config.language.encoding.get_sparsity(config.global_),
+            sparsity=config.language.encoding.get_sparsity(config.brain),
             max_seq_len=config.language.position.max_positions,
             brain_input_size=config.brain.sizes.input_size,
-            device=config.global_.device,
+            device=config.brain.device,
         )
 
         return cls(brain, interface_config)

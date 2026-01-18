@@ -33,7 +33,11 @@ class TestCerebellum(RegionTestBase):
         else:
             # Classic cerebellum (purkinje_size is output)
             purkinje_size = kwargs.pop("purkinje_size", kwargs.pop("n_output", 50))
-            sizes = {"input_size": input_size, "purkinje_size": purkinje_size}
+            sizes = {
+                "input_size": input_size,
+                "purkinje_size": purkinje_size,
+                "granule_size": 0,  # Not used in classic mode
+            }
 
         # Extract device
         device = kwargs.pop("device", "cpu")
@@ -261,6 +265,36 @@ class TestCerebellum(RegionTestBase):
                 assert (
                     0.0 <= granule_activity <= 0.3
                 ), f"Expected sparse granule activity, got {granule_activity}"
+
+    def test_grow_input(self):
+        """Override for Cerebellum - uses single 'default' source that grows."""
+        # Use classic (non-enhanced) mode for simpler testing
+        input_size = 100
+        purkinje_size = 50
+        params = {
+            "input_size": input_size,
+            "purkinje_size": purkinje_size,
+            "use_enhanced_microcircuit": False,  # Classic mode
+            "device": "cpu",
+            "dt_ms": 1.0,
+        }
+        region = self.create_region(**params)
+
+        original_input = params["input_size"]
+        n_new = 20
+
+        # Cerebellum uses a single "default" source - grow it
+        new_total_size = original_input + n_new
+        region.grow_source("default", new_size=new_total_size)
+
+        # Verify source size updated
+        assert region.input_sources["default"] == new_total_size
+        assert region.input_size == new_total_size
+
+        # Verify forward pass works with new source size
+        input_dict = {"default": torch.rand(new_total_size, device=region.device) > 0.5}
+        output = region.forward(input_dict)
+        assert output.shape[0] == self._get_region_output_size(region)
 
     def test_purkinje_complex_spike(self):
         """Test Purkinje cells can generate complex spikes."""

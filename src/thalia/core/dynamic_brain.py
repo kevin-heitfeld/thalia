@@ -35,7 +35,7 @@ import torch.nn as nn
 
 from thalia.components.coding import compute_firing_rate
 from thalia.coordination.growth import GrowthEvent, GrowthManager
-from thalia.coordination.oscillator import OSCILLATOR_DEFAULTS, OscillatorManager
+from thalia.coordination.oscillator import OscillatorManager
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.diagnostics import (
     BrainSystemDiagnostics,
@@ -65,7 +65,7 @@ from thalia.typing import (
 )
 
 if TYPE_CHECKING:
-    from thalia.config import GlobalConfig
+    from thalia.config.brain_config import BrainConfig
     from thalia.diagnostics.health_monitor import HealthReport
     from thalia.managers.component_registry import ComponentRegistry
 
@@ -100,7 +100,7 @@ class DynamicBrain(nn.Module):
             ("cortex", "hippocampus"): AxonalProjection(...),
         }
 
-        brain = DynamicBrain(components, connections, global_config)
+        brain = DynamicBrain(components, connections, brain_config)
 
     Supports:
         - Custom user regions/pathways (via ComponentRegistry)
@@ -113,7 +113,7 @@ class DynamicBrain(nn.Module):
         self,
         components: Dict[str, LearnableComponent],
         connections: Dict[Tuple[str, str], LearnableComponent],
-        global_config: "GlobalConfig",
+        brain_config: "BrainConfig",
         connection_specs: Optional[Dict[Tuple[str, str], Any]] = None,
     ):
         """Initialize DynamicBrain from component graph.
@@ -121,16 +121,17 @@ class DynamicBrain(nn.Module):
         Args:
             components: Dict mapping component names to instances
             connections: Dict mapping (source, target) tuples to pathways
-            global_config: Global configuration (device, dt_ms, etc.)
+            brain_config: Brain configuration (device, dt_ms, oscillators, etc.)
             connection_specs: Optional dict with source_port/target_port info per connection
         """
         super().__init__()
 
-        self.global_config = global_config
-        self.device = torch.device(global_config.device)
+        self.brain_config = brain_config
+        self.device = torch.device(brain_config.device)
+        self.dt_ms = brain_config.dt_ms  # Cache for fast access
 
         # =================================================================
-        # DISABLE GRADIENTS GLOBALLY (biologically-plausible local learning)
+        # DISABLE GRADIENTS (biologically-plausible local learning)
         # =================================================================
         # Thalia uses local learning rules (STDP, BCM, Hebbian, three-factor)
         # that do NOT require backpropagation. Disabling gradients provides:
@@ -139,12 +140,12 @@ class DynamicBrain(nn.Module):
         # - Explicit biological constraint
         #
         # Exception: Metacognition module re-enables with torch.enable_grad()
-        if not global_config.enable_gradients:
+        if not brain_config.enable_gradients:
             torch.set_grad_enabled(False)
 
         # Minimal config for checkpoint compatibility
         # Note: Sizes will be added after components are known
-        self.config = SimpleNamespace(device=global_config.device)
+        self.config = SimpleNamespace(device=brain_config.device)
 
         # Store components as nn.ModuleDict for proper parameter tracking
         self.components = nn.ModuleDict(components)
@@ -178,7 +179,7 @@ class DynamicBrain(nn.Module):
             connections=self.connections,
             topology=self._topology,
             device=self.device,
-            dt_ms=self.global_config.dt_ms,
+            dt_ms=self.dt_ms,
         )
 
         # =================================================================
@@ -187,25 +188,15 @@ class DynamicBrain(nn.Module):
         # Rhythmic coordination via all brain oscillations (delta, theta, alpha, beta, gamma, ripple)
         # Provides theta-driven encoding/retrieval, gamma feature binding, cross-frequency coupling
 
-        # Get frequencies from config if available, otherwise use defaults
-        delta_freq = getattr(self.global_config, "delta_frequency_hz", OSCILLATOR_DEFAULTS["delta"])
-        theta_freq = getattr(self.global_config, "theta_frequency_hz", OSCILLATOR_DEFAULTS["theta"])
-        alpha_freq = getattr(self.global_config, "alpha_frequency_hz", OSCILLATOR_DEFAULTS["alpha"])
-        beta_freq = getattr(self.global_config, "beta_frequency_hz", OSCILLATOR_DEFAULTS["beta"])
-        gamma_freq = getattr(self.global_config, "gamma_frequency_hz", OSCILLATOR_DEFAULTS["gamma"])
-        ripple_freq = getattr(
-            self.global_config, "ripple_frequency_hz", OSCILLATOR_DEFAULTS["ripple"]
-        )
-
         self.oscillators = OscillatorManager(
-            dt_ms=self.global_config.dt_ms,
-            device=self.global_config.device,
-            delta_freq=delta_freq,
-            theta_freq=theta_freq,
-            alpha_freq=alpha_freq,
-            beta_freq=beta_freq,
-            gamma_freq=gamma_freq,
-            ripple_freq=ripple_freq,
+            dt_ms=self.dt_ms,
+            device=self.device,
+            delta_freq=brain_config.delta_frequency_hz,
+            theta_freq=brain_config.theta_frequency_hz,
+            alpha_freq=brain_config.alpha_frequency_hz,
+            beta_freq=brain_config.beta_frequency_hz,
+            gamma_freq=brain_config.gamma_frequency_hz,
+            ripple_freq=brain_config.ripple_frequency_hz,
             couplings=None,  # Use default couplings (theta-gamma, etc.)
         )
 
@@ -233,7 +224,7 @@ class DynamicBrain(nn.Module):
 
         # GPU-friendly spike tracking: accumulate on GPU, sync only when needed
         self._spike_tensors: SourceOutputs = {
-            name: torch.tensor(0, dtype=torch.int64, device=self.global_config.device)
+            name: torch.tensor(0, dtype=torch.int64, device=self.device)
             for name in self.components.keys()
         }
 
@@ -316,11 +307,8 @@ class DynamicBrain(nn.Module):
         self.mental_simulation: Optional[MentalSimulationCoordinator] = None
         self.dyna_planner: Optional[DynaPlanner] = None
 
-        # Check if planning is enabled (either direct flag or via brain config)
-        planning_enabled = getattr(self.global_config, "use_model_based_planning", False) or (
-            hasattr(self.global_config, "brain")
-            and getattr(self.global_config.brain, "use_model_based_planning", False)
-        )
+        # Check if planning is enabled (use_model_based_planning comes from brain_config)
+        planning_enabled = getattr(brain_config, "use_model_based_planning", False)
 
         if planning_enabled:
             # Check that required components exist
@@ -354,7 +342,7 @@ class DynamicBrain(nn.Module):
 
         # Initialize criticality monitor (optional, enabled by config)
         self.criticality_monitor: Optional[CriticalityMonitor] = None
-        criticality_enabled = getattr(self.global_config, "monitor_criticality", False)
+        criticality_enabled = getattr(brain_config, "monitor_criticality", False)
 
         if criticality_enabled:
             # CriticalityMonitor doesn't need component sizes - it tracks spike counts directly
@@ -637,7 +625,7 @@ class DynamicBrain(nn.Module):
         # Convert sensory_input to input_data dict format and detect mode
         sequence_mode = False
         input_sequences: Dict[str, List[torch.Tensor]] = {}
-        dt_ms = self.global_config.dt_ms
+        dt_ms = self.dt_ms  # Use cached value for fast access
 
         if sensory_input is not None:
             if isinstance(sensory_input, dict):
@@ -765,7 +753,7 @@ class DynamicBrain(nn.Module):
             self._broadcast_oscillator_phases()
 
         # Update final time
-        self._current_time += n_timesteps * self.global_config.dt_ms
+        self._current_time += n_timesteps * self.dt_ms
 
         # OPTIMIZATION: Sync spike counts from GPU only once at end
         for comp_name, spike_tensor in self._spike_tensors.items():
@@ -799,7 +787,7 @@ class DynamicBrain(nn.Module):
         corticothalamic interactions, not a central oscillator.
         """
         # Advance oscillators
-        self.oscillators.advance(dt_ms=self.global_config.dt_ms)
+        self.oscillators.advance(dt_ms=self.dt_ms)
 
         # Get all phases and signals
         phases = self.oscillators.get_phases()
@@ -1143,14 +1131,12 @@ class DynamicBrain(nn.Module):
         cognitive_load = self._compute_cognitive_load()
 
         # Update neuromodulator systems
-        self.neuromodulator_manager.vta.update(
-            dt_ms=self.global_config.dt_ms, intrinsic_reward=intrinsic_reward
-        )
+        self.neuromodulator_manager.vta.update(dt_ms=self.dt_ms, intrinsic_reward=intrinsic_reward)
         self.neuromodulator_manager.locus_coeruleus.update(
-            dt_ms=self.global_config.dt_ms, uncertainty=uncertainty
+            dt_ms=self.dt_ms, uncertainty=uncertainty
         )
         self.neuromodulator_manager.nucleus_basalis.update(
-            dt_ms=self.global_config.dt_ms, prediction_error=prediction_error
+            dt_ms=self.dt_ms, prediction_error=prediction_error
         )
 
         # Update PFC cognitive load for temporal discounting (Phase 3)
@@ -1784,9 +1770,7 @@ class DynamicBrain(nn.Module):
 
         # Initialize GPU-friendly spike tracking tensor
         if hasattr(self, "_spike_tensors"):
-            self._spike_tensors[name] = torch.tensor(
-                0, dtype=torch.int64, device=self.global_config.device
-            )
+            self._spike_tensors[name] = torch.tensor(0, dtype=torch.int64, device=self.device)
 
         # Invalidate cached execution order
         self._execution_order = None
@@ -2153,7 +2137,7 @@ class DynamicBrain(nn.Module):
             DynamicBrain's components are stored as regions in the checkpoint format.
         """
         state: Dict[str, Any] = {
-            "global_config": self.global_config,
+            "brain_config": self.brain_config,
             "current_time": self._current_time,
             "topology": self._topology,
             "regions": {},  # Use "regions" key for CheckpointManager compatibility

@@ -71,12 +71,12 @@ Usage:
         CurriculumStage,
     )
     from thalia.core.brain_builder import BrainBuilder
-    from thalia.config import GlobalConfig
+    from thalia.config import BrainConfig
     from thalia.config.curriculum_growth import get_curriculum_growth_config
 
     # Initialize brain
-    global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-    brain = BrainBuilder.preset("default", global_config)
+    brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+    brain = BrainBuilder.preset("default", brain_config)
 
     # Initialize trainer
     trainer = CurriculumTrainer(

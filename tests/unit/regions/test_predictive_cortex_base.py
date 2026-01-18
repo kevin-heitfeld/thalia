@@ -135,7 +135,7 @@ class TestPredictiveCortex(RegionTestBase):
         assert region.l23_size + region.l5_size > 0
 
     def test_grow_input(self):
-        """Test per-source input growth - OVERRIDE for PredictiveCortex."""
+        """Test per-source input growth via add_input_source - OVERRIDE for PredictiveCortex."""
         params = self.get_default_params()
         region = self.create_region(**params)
 

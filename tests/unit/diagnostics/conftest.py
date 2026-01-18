@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 
 
 @pytest.fixture
@@ -13,9 +13,9 @@ def device():
 
 
 @pytest.fixture
-def global_config(device):
-    """Global configuration for brain."""
-    return GlobalConfig(
+def brain_config(device):
+    """Brain configuration for testing."""
+    return BrainConfig(
         device=str(device),
         dt_ms=1.0,
     )
