@@ -37,7 +37,7 @@ Usage:
     from thalia.language import LanguageBrainInterface
 
     # Create brain with language interface
-    brain = BrainBuilder.preset("default", global_config)
+    brain = BrainBuilder.preset("default", brain_config)
     lang_interface = LanguageBrainInterface(brain)
 
     # Process text through the brain

@@ -40,7 +40,7 @@ Example:
     ```python
     from thalia.core.dynamic_brain import DynamicBrain
 
-    brain = BrainBuilder.preset("default", global_config)
+    brain = BrainBuilder.preset("default", brain_config)
 
     # Mental simulation uses EXISTING regions (no separate world model!)
     # PFC holds simulated state, hippocampus predicts next, striatum evaluates

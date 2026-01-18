@@ -74,9 +74,9 @@ def measure_oscillation_frequency(
 class TestL6abDefaultBrain:
     """Integration tests for L6a/L6b split in default brain."""
 
-    def test_brain_builder_creates_l6ab_pathways(self, global_config, device):
+    def test_brain_builder_creates_l6ab_pathways(self, brain_config, device):
         """Test that BrainBuilder.preset('default') creates L6a and L6b."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Check cortex has L6a and L6b
         cortex = brain.components["cortex"]
@@ -99,9 +99,9 @@ class TestL6abDefaultBrain:
         assert thalamus.n_relay > 0
         assert thalamus.n_relay == thalamus.relay_size  # Contract: matches relay_size
 
-    def test_l6ab_port_routing(self, global_config, device):
+    def test_l6ab_port_routing(self, brain_config, device):
         """Test that cortex provides separate l6a and l6b port outputs."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
 
         device_obj = torch.device(device)
@@ -127,9 +127,9 @@ class TestL6abDefaultBrain:
         # Outputs should have different sizes (60/40 split)
         assert l6a_output.shape != l6b_output.shape
 
-    def test_l6ab_multi_source_pathway(self, global_config, device):
+    def test_l6ab_multi_source_pathway(self, brain_config, device):
         """Test that L6a and L6b are merged into multi-source pathway."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Check for multi-source pathways to thalamus
         thalamus_pathways = [
@@ -148,9 +148,9 @@ class TestL6abDefaultBrain:
         # Just verify pathways exist
         assert has_multi_source or len(thalamus_pathways) >= 1
 
-    def test_l6ab_forward_pass_integration(self, global_config, device):
+    def test_l6ab_forward_pass_integration(self, brain_config, device):
         """Test complete forward pass with L6a/L6b feedback loops."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
 
@@ -192,9 +192,9 @@ class TestL6abDefaultBrain:
         # L6 activity may be sparse/zero with default parameters
         print(f"L6a: {l6a_active}, L6b: {l6b_active}, Relay: {relay_active}, TRN: {trn_active}")
 
-    def test_pathway_timing_configuration(self, global_config, device):
+    def test_pathway_timing_configuration(self, brain_config, device):
         """Test that L6a and L6b have correct delay configuration."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
 
         # Check internal delays (L2/3 → L6a/L6b)
@@ -208,9 +208,9 @@ class TestL6abDefaultBrain:
         # Verify L6a is slower (type I inhibitory)
         assert cortex.config.l6a_to_trn_delay_ms > cortex.config.l6b_to_relay_delay_ms
 
-    def test_l6a_to_trn_pathway(self, global_config, device):
+    def test_l6a_to_trn_pathway(self, brain_config, device):
         """Test that L6a spikes modulate TRN activity."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
 
@@ -241,9 +241,9 @@ class TestL6abDefaultBrain:
         assert hasattr(thalamus, "trn_neurons")
         assert thalamus.n_trn > 0
 
-    def test_l6b_to_relay_pathway(self, global_config, device):
+    def test_l6b_to_relay_pathway(self, brain_config, device):
         """Test that L6b spikes modulate relay activity."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
 
@@ -276,14 +276,14 @@ class TestL6abDefaultBrain:
         assert thalamus.n_relay > 0
 
     @pytest.mark.slow
-    def test_dual_gamma_band_generation(self, global_config, device):
+    def test_dual_gamma_band_generation(self, brain_config, device):
         """Test that L6a and L6b can generate distinct gamma frequency bands.
 
         Note: This test may show no clear oscillations with default parameters.
         Gamma oscillations require sustained recurrent drive and may need
         tuning of connection strengths, delays, and network dynamics.
         """
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
 
         device_obj = torch.device(device)
@@ -338,9 +338,9 @@ class TestL6abDefaultBrain:
         else:
             print("⚠️  No L6 activity (may need stronger drive or non-zero delays)")
 
-    def test_diagnostics_include_l6ab(self, global_config, device):
+    def test_diagnostics_include_l6ab(self, brain_config, device):
         """Test that diagnostics report includes L6a and L6b metrics."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
 
         device_obj = torch.device(device)

@@ -85,6 +85,10 @@ class MentalSimulationCoordinator:
         self.cortex = cortex
         self.config = config or SimulationConfig()
 
+        # Track state structure for extracting PFC portion
+        # State structure: [cortex_output, hippo_CA1, PFC_spikes]
+        self._pfc_size = pfc.n_output if hasattr(pfc, "n_output") else 300
+
     def simulate_rollout(
         self,
         current_state: torch.Tensor,
@@ -246,16 +250,30 @@ class MentalSimulationCoordinator:
                 next_state = weighted_prediction / total_weight
             else:
                 # No good matches - use PFC prediction alone
-                next_state = self.pfc.predict_next_state(
-                    current, action, n_actions=self.striatum.n_actions
+                # Extract PFC portion from full state (last _pfc_size dims)
+                pfc_state = (
+                    current[-self._pfc_size :] if current.shape[0] > self._pfc_size else current
                 )
+                pfc_prediction = self.pfc.predict_next_state(
+                    pfc_state, action, n_actions=self.striatum.n_actions
+                )
+                # Reconstruct full state by replacing PFC portion
+                next_state = current.clone()
+                next_state[-self._pfc_size :] = pfc_prediction
         else:
             # No similar experiences - use PFC prediction
-            next_state = self.pfc.predict_next_state(
-                current, action, n_actions=self.striatum.n_actions
+            # Extract PFC portion from full state (last _pfc_size dims)
+            pfc_state = current[-self._pfc_size :] if current.shape[0] > self._pfc_size else current
+            pfc_prediction = self.pfc.predict_next_state(
+                pfc_state, action, n_actions=self.striatum.n_actions
             )
+            # Reconstruct full state by replacing PFC portion
+            next_state = current.clone()
+            next_state[-self._pfc_size :] = pfc_prediction
 
-        # Add simulation noise
+        # Add simulation noise (convert to float if needed for bool spikes)
+        if next_state.dtype == torch.bool:
+            next_state = next_state.float()
         noise = torch.randn_like(next_state) * self.config.simulation_noise
         next_state = next_state + noise
 
@@ -304,7 +322,8 @@ class MentalSimulationCoordinator:
         for action in actions:
             # Simple priority: use striatum's evaluation
             # In full implementation, would simulate one step for each action
-            value = self.striatum.evaluate_state(state, goal_context)
+            # Note: goal_context is embedded in state tensor by caller
+            value = self.striatum.evaluate_state(state)
             priorities[action] = value
         return priorities
 
@@ -343,7 +362,7 @@ class MentalSimulationCoordinator:
         available_actions = list(range(n_actions))
 
         # Use plan_best_action for efficient tree search
-        best_action, best_rollout = self.plan_best_action(
+        best_action, _best_rollout = self.plan_best_action(
             current_state=state,
             available_actions=available_actions,
             goal_context=goal_context,
@@ -379,7 +398,8 @@ class MentalSimulationCoordinator:
             best_value = float("-inf")
 
             for action in range(self.striatum.n_actions):
-                value = self.striatum.evaluate_state(next_state, goal_context)
+                # NOTE: goal_context is embedded in next_state tensor by caller
+                value = self.striatum.evaluate_state(next_state)
                 if value > best_value:
                     best_value = value
                     best_action = action

@@ -920,14 +920,32 @@ class DynamicBrain(nn.Module):
 
         # Use mental simulation if requested and available
         if use_planning and self.mental_simulation is not None:
-            # Get current state from PFC
+            # Get current state - construct full concatenated state matching store_experience format
             current_state = None
             goal_context = None
 
+            # Build full state: [cortex_L23+L5, hippocampus, PFC]
+            cortex_out = None
+            if "cortex" in self.components:
+                cortex = self._get_component("cortex")
+                if hasattr(cortex, "state") and cortex.state:
+                    l23 = getattr(cortex.state, "l23_spikes", None)
+                    l5 = getattr(cortex.state, "l5_spikes", None)
+                    if l23 is not None and l5 is not None:
+                        cortex_out = torch.cat([l23, l5], dim=-1)
+
+            hippo_out = None
+            if "hippocampus" in self.components:
+                hippo = self._get_component("hippocampus")
+                if hasattr(hippo, "state") and hippo.state:
+                    hippo_out = getattr(hippo.state, "ca1_spikes", None)
+
+            pfc_out = None
+            goal_context = None
             if "pfc" in self.components:
                 pfc = self._get_component("pfc")
                 if hasattr(pfc, "state") and pfc.state is not None:
-                    current_state = pfc.state.spikes  # type: ignore[union-attr]
+                    pfc_out = pfc.state.spikes  # type: ignore[union-attr]
 
                 # Get goal context if available
                 if hasattr(pfc, "goal_manager") and pfc.goal_manager is not None:
@@ -935,6 +953,18 @@ class DynamicBrain(nn.Module):
                     if len(active_goals) > 0:  # type: ignore[arg-type]
                         # Use top goal as context
                         goal_context = active_goals[0].representation  # type: ignore[union-attr,index]
+
+            # Concatenate available state components (skip None components)
+            state_parts = []
+            if cortex_out is not None:
+                state_parts.append(cortex_out.view(-1))
+            if hippo_out is not None:
+                state_parts.append(hippo_out.view(-1))
+            if pfc_out is not None:
+                state_parts.append(pfc_out.view(-1))
+
+            if len(state_parts) > 0:
+                current_state = torch.cat(state_parts)
 
             if current_state is not None:
                 # Use tree search to find best action

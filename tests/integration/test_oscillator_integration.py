@@ -174,11 +174,11 @@ class TestOscillatorManagerIntegration:
         theta_phase = simple_brain.oscillators.theta.phase
         assert 0.0 <= theta_phase < 0.5  # Should be near 0
 
-    def test_theta_frequency_from_config(self, global_config):
+    def test_theta_frequency_from_config(self, brain_config):
         """Test that theta frequency comes from config."""
         # Config has theta_frequency_hz=8.0
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("input", "thalamic_relay", input_size=64, relay_size=64, trn_size=0)
             .build()
         )

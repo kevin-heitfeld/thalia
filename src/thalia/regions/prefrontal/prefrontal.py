@@ -1239,7 +1239,8 @@ class Prefrontal(NeuralRegion):
                 prediction = state_projection * action_modulation
             else:
                 # Fallback: simple recurrent prediction
-                prediction = self.rec_weights @ current_state
+                # Convert bool spikes to float for matrix multiplication
+                prediction = self.rec_weights @ current_state.float()
 
         # Apply nonlinearity (tanh to keep bounded)
         prediction = torch.tanh(prediction)

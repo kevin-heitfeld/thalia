@@ -95,9 +95,11 @@ class HippocampusMemoryComponent(MemoryComponent):
         )
 
         # Retrieve similar episodes (pattern completion)
-        similar_episodes = memory.retrieve_similar(
-            query_pattern=partial_cue,
-            k=5,  # Top 5 matches
+        similar_episodes = memory.retrieve_memories(
+            query_state=partial_cue,       # Partial cue pattern for retrieval
+            query_action=optional_action,  # if filtering by action
+            k=5,                           # Top 5 matches
+            similarity_threshold=0.2,      # Minimum similarity
         )
 
         # Sample for replay
@@ -183,9 +185,9 @@ class HippocampusMemoryComponent(MemoryComponent):
     def retrieve_memories(
         self,
         query_state: torch.Tensor,
+        query_action: Optional[int] = None,
         k: int = 5,
         similarity_threshold: float = 0.0,
-        query_action: Optional[int] = None,
         **kwargs,
     ) -> List[Dict[str, Any]]:
         """Retrieve K most similar episodes from memory.

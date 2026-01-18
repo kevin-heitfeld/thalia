@@ -263,7 +263,7 @@ class MemoryComponent(BaseManager["NeuralComponentConfig"]):
         """Retrieve relevant memories.
 
         Args:
-            **kwargs: Query parameters (n, priority_threshold, similarity, etc.)
+            **kwargs: Query parameters
 
         Returns:
             Retrieved memories (format depends on implementation)

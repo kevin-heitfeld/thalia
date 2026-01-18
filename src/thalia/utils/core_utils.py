@@ -97,6 +97,12 @@ def cosine_similarity_safe(
         >>> sim = cosine_similarity_safe(pattern1, pattern2)
         >>> # For batched: sim has shape [batch_size]
     """
+    # Convert bool tensors to float (binary spikes → 0.0/1.0)
+    if a.dtype == torch.bool:
+        a = a.float()
+    if b.dtype == torch.bool:
+        b = b.float()
+
     # Handle 1D vectors
     if a.dim() == 1 and b.dim() == 1:
         norm_a: torch.Tensor = a.norm() + eps

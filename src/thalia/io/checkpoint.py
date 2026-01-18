@@ -50,6 +50,9 @@ def _convert_to_json_serializable(obj: Any) -> Any:
     """Recursively convert objects to JSON-serializable types."""
     if isinstance(obj, Enum):
         return obj.value
+    elif isinstance(obj, torch.device):
+        # Convert torch.device to string representation
+        return {"_type": "torch.device", "_value": str(obj)}
     elif is_dataclass(obj):
         # Preserve dataclass type information for reconstruction
         return {
@@ -67,8 +70,11 @@ def _convert_to_json_serializable(obj: Any) -> Any:
 def _convert_from_json(obj: Any) -> Any:
     """Recursively reconstruct objects from JSON-serializable types."""
     if isinstance(obj, dict):
+        # Check if this is a torch.device
+        if obj.get("_type") == "torch.device":
+            return torch.device(obj["_value"])
         # Check if this is a serialized dataclass
-        if "_dataclass" in obj and "_fields" in obj:
+        elif "_dataclass" in obj and "_fields" in obj:
             # Reconstruct the dataclass
             module_name, class_name = obj["_dataclass"].rsplit(".", 1)
             module = __import__(module_name, fromlist=[class_name])
@@ -681,6 +687,46 @@ class BrainCheckpoint:
         }
 
 
+def _serialize_value(value: Any, writer: BinaryWriter) -> Any:
+    """Recursively serialize a single value (tensor, dict, list, or primitive).
+
+    Args:
+        value: Value to serialize
+        writer: Binary writer
+
+    Returns:
+        JSON-serializable representation
+    """
+    if isinstance(value, torch.Tensor):
+        # Encode tensor inline
+        tensor_offset = writer.tell()
+        tensor_bytes = encode_tensor(value, writer.file)
+        return {
+            "_type": "tensor",
+            "_offset": tensor_offset,
+            "_bytes": tensor_bytes,
+        }
+    elif isinstance(value, dict):
+        # Recursively serialize nested dicts
+        return {k: _serialize_value(v, writer) for k, v in value.items()}
+    elif isinstance(value, (list, tuple)):
+        # Handle lists and tuples
+        return [_serialize_value(item, writer) for item in value]
+    elif is_dataclass(value) or isinstance(value, Enum) or isinstance(value, torch.device):
+        # Convert special types to JSON-serializable form
+        return _convert_to_json_serializable(value)
+    elif hasattr(value, "__dict__") and not isinstance(value, (str, int, float, bool, type(None))):
+        # Object with attributes - serialize its __dict__
+        return {
+            "_type": "object_dict",
+            "_class": f"{value.__class__.__module__}.{value.__class__.__name__}",
+            "_dict": _serialize_value(value.__dict__, writer),
+        }
+    else:
+        # Plain JSON-serializable value (int, float, str, bool, None)
+        return value
+
+
 def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) -> Dict[str, Any]:
     """Serialize region state, encoding tensors inline.
 
@@ -691,56 +737,23 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
     Returns:
         JSON dict with tensor references
     """
-    json_dict = {}
-
-    for key, value in region_state.items():
-        if isinstance(value, torch.Tensor):
-            # Encode tensor inline
-            tensor_offset = writer.tell()
-            tensor_bytes = encode_tensor(value, writer.file)
-
-            # Store reference in JSON
-            json_dict[key] = {
-                "_type": "tensor",
-                "_offset": tensor_offset,
-                "_bytes": tensor_bytes,
-            }
-        elif isinstance(value, dict):
-            # Recursively serialize nested dicts
-            json_dict[key] = _serialize_region_state(value, writer)
-        elif isinstance(value, list):
-            # Handle lists (e.g., replay buffer)
-            json_dict[key] = _serialize_list(value, writer)  # type: ignore[assignment]
-        elif is_dataclass(value) or isinstance(value, Enum):
-            # Convert dataclass or enum to JSON-serializable form
-            json_dict[key] = _convert_to_json_serializable(value)
-        else:
-            # Plain JSON-serializable value
-            json_dict[key] = value
-
-    return json_dict
+    return _serialize_value(region_state, writer)
 
 
-def _serialize_list(lst: list, writer: BinaryWriter) -> list:
-    """Serialize list, handling tensors."""
+def _deserialize_list(lst: list, file, device: str) -> list:
+    """Deserialize list, handling tensors."""
     result = []
 
     for item in lst:
-        if isinstance(item, torch.Tensor):
-            tensor_offset = writer.tell()
-            tensor_bytes = encode_tensor(item, writer.file)
-            result.append(
-                {
-                    "_type": "tensor",
-                    "_offset": tensor_offset,
-                    "_bytes": tensor_bytes,
-                }
-            )
-        elif isinstance(item, dict):
-            serialized_dict = _serialize_region_state(item, writer)
-            result.append(serialized_dict)  # type: ignore[arg-type]
+        if isinstance(item, dict):
+            if item.get("_type") == "tensor":
+                # Decode tensor - seek and read
+                file.seek(item["_offset"])
+                result.append(decode_tensor(file, device))
+            else:
+                result.append(_deserialize_region_state(item, file, device))
         elif isinstance(item, list):
-            result.append(_serialize_list(item, writer))  # type: ignore[arg-type]
+            result.append(_deserialize_list(item, file, device))
         else:
             result.append(item)
 
@@ -780,23 +793,3 @@ def _deserialize_region_state(json_dict: Dict[str, Any], file, device: str) -> D
             state[key] = value
 
     return state
-
-
-def _deserialize_list(lst: list, file, device: str) -> list:
-    """Deserialize list, handling tensors."""
-    result = []
-
-    for item in lst:
-        if isinstance(item, dict):
-            if item.get("_type") == "tensor":
-                # Decode tensor - seek and read
-                file.seek(item["_offset"])
-                result.append(decode_tensor(file, device))
-            else:
-                result.append(_deserialize_region_state(item, file, device))
-        elif isinstance(item, list):
-            result.append(_deserialize_list(item, file, device))
-        else:
-            result.append(item)
-
-    return result

@@ -67,19 +67,19 @@ class TestClockDrivenPerformance:
         assert timesteps_per_sec > 100, f"Too slow: {timesteps_per_sec:.1f} timesteps/sec"
 
     @pytest.mark.slow
-    def test_benchmark_minimal_brain_10000_steps(self, global_config):
+    def test_benchmark_minimal_brain_10000_steps(self, brain_config):
         """Benchmark 10000 timesteps of minimal brain (fewer components)."""
-        brain = BrainBuilder.preset("minimal", global_config)
+        brain = BrainBuilder.preset("minimal", brain_config)
 
         # Warm-up
-        sensory_spikes = torch.rand(64, device=global_config.device) > 0.5
+        sensory_spikes = torch.rand(64, device=brain_config.device) > 0.5
         brain.forward({"input": sensory_spikes}, n_timesteps=10)
         brain.reset_state()
 
         # Timed run
         start = time.perf_counter()
         for _ in range(10):
-            sensory_spikes = torch.rand(64, device=global_config.device) > 0.5
+            sensory_spikes = torch.rand(64, device=brain_config.device) > 0.5
             brain.forward({"input": sensory_spikes}, n_timesteps=1000)
         elapsed = time.perf_counter() - start
 

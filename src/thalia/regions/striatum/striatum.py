@@ -3489,9 +3489,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             This is the NEW state management API (Phase 3.2).
             For legacy checkpoint format, use get_full_state().
         """
-        # Get D1/D2 pathway states (opaque dicts)
-        d1_pathway_state = self.d1_pathway.get_state()
-        d2_pathway_state = self.d2_pathway.get_state()
+        # Get D1/D2 pathway states (only if pathways are properly linked with actual weights)
+        # Pathways without parent link or weights will return None
+        d1_pathway_state = None
+        d2_pathway_state = None
+
+        if (
+            self.d1_pathway._parent_striatum_ref is not None
+            and self.d1_pathway._weight_source in self.synaptic_weights
+        ):
+            d1_pathway_state = self.d1_pathway.get_state()
+
+        if (
+            self.d2_pathway._parent_striatum_ref is not None
+            and self.d2_pathway._weight_source in self.synaptic_weights
+        ):
+            d2_pathway_state = self.d2_pathway.get_state()
 
         # Get exploration manager state
         exploration_manager_state = (
@@ -3662,11 +3675,19 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Restore neuron membrane state
         if state.membrane is not None:
             # Split concatenated membrane into D1 and D2 parts
-            if self.d1_pathway.neurons is not None and hasattr(self.d1_pathway.neurons, "membrane"):
+            if (
+                self.d1_pathway.neurons is not None
+                and hasattr(self.d1_pathway.neurons, "membrane")
+                and self.d1_pathway.neurons.membrane is not None
+            ):
                 d1_membrane = state.membrane[: self.d1_size].to(self.device)
                 self.d1_pathway.neurons.membrane.data = d1_membrane
 
-            if self.d2_pathway.neurons is not None and hasattr(self.d2_pathway.neurons, "membrane"):
+            if (
+                self.d2_pathway.neurons is not None
+                and hasattr(self.d2_pathway.neurons, "membrane")
+                and self.d2_pathway.neurons.membrane is not None
+            ):
                 d2_membrane = state.membrane[self.d1_size : self.d1_size + self.d2_size].to(
                     self.device
                 )

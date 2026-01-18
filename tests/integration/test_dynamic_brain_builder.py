@@ -68,13 +68,14 @@ class TestDynamicBrainIntegration:
 
         assert "cortex" in result["outputs"]
         # LayeredCortex outputs both L2/3 and L5 layers concatenated
-        # n_output=32 → L2/3=48 (1.5x) + L5=32 (1.0x) = 80 total
-        assert result["outputs"]["cortex"].shape == (80,)
+        # With L2/3:L5 = 2:1 ratio (biological default):
+        # n_output=32 → L2/3=21 (32*2/3) + L5=10 (32*1/3) = 31 total
+        assert result["outputs"]["cortex"].shape == (31,)
 
-    def test_three_region_chain(self, device, global_config):
+    def test_three_region_chain(self, device, brain_config):
         """Test creating a 3-region chain: A -> B -> C."""
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("region_a", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component(
                 "region_b", "layered_cortex", **LayerSizeCalculator().cortex_from_output(64)
@@ -95,13 +96,13 @@ class TestDynamicBrainIntegration:
         assert "region_b" in result["outputs"]
         # Note: region_c may be None if region_b (cortex) doesn't spike
         if result["outputs"]["region_c"] is not None:
-            # LayeredCortex: n_output=16 -> L2/3=24 + L5=16 = 40 total
-            assert result["outputs"]["region_c"].shape == (40,)
+            # LayeredCortex: n_output=16 → L2/3=10 (16*2/3) + L5=5 (16*1/3) = 15 total
+            assert result["outputs"]["region_c"].shape == (15,)
 
-    def test_diamond_topology(self, device, global_config):
+    def test_diamond_topology(self, device, brain_config):
         """Test diamond topology: A -> B, C -> D."""
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("source", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component(
                 "branch1", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
@@ -126,13 +127,13 @@ class TestDynamicBrainIntegration:
         assert len(result["outputs"]) == 4
         # Note: sink may be None if branch1/branch2 (cortex) don't spike
         if result["outputs"]["sink"] is not None:
-            # LayeredCortex: n_output=8 -> L2/3=12 + L5=8 = 20 total
-            assert result["outputs"]["sink"].shape == (20,)
+            # LayeredCortex: n_output=8 → L2/3=5 (8*2/3) + L5=2 (8*1/3) = 7 total
+            assert result["outputs"]["sink"].shape == (7,)
 
-    def test_dynamic_component_addition(self, device, global_config):
+    def test_dynamic_component_addition(self, device, brain_config):
         """Test adding components dynamically after brain creation."""
         brain = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("input", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .build()
         )
@@ -174,9 +175,9 @@ class TestDynamicBrainIntegration:
 class TestPresetArchitectures:
     """Integration tests for preset brain architectures."""
 
-    def test_minimal_preset_execution(self, device, global_config):
+    def test_minimal_preset_execution(self, device, brain_config):
         """Test minimal preset builds and executes."""
-        brain = BrainBuilder.preset("minimal", global_config)
+        brain = BrainBuilder.preset("minimal", brain_config)
 
         assert isinstance(brain, DynamicBrain)
 
@@ -194,9 +195,9 @@ class TestPresetArchitectures:
         assert "process" in result["outputs"]
         assert "output" in result["outputs"]
 
-    def test_default_preset_execution(self, device, global_config):
+    def test_default_preset_execution(self, device, brain_config):
         """Test default preset builds and executes."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         assert isinstance(brain, DynamicBrain)
 
@@ -220,9 +221,9 @@ class TestPresetArchitectures:
         for region_name in expected_regions:
             assert region_name in result["outputs"], f"Missing output from: {region_name}"
 
-    def test_preset_with_modifications(self, device, global_config):
+    def test_preset_with_modifications(self, device, brain_config):
         """Test building from preset with custom modifications."""
-        builder = BrainBuilder.preset_builder("default", global_config)
+        builder = BrainBuilder.preset_builder("default", brain_config)
         builder.add_component(
             "custom_region", "prefrontal", input_size=256, n_neurons=64
         )  # Custom PFC region
@@ -246,33 +247,33 @@ class TestPresetArchitectures:
 class TestBuilderValidation:
     """Test error handling and validation in BrainBuilder."""
 
-    def test_invalid_component_type(self, device, global_config):
+    def test_invalid_component_type(self, device, brain_config):
         """Test error when using invalid component type."""
         with pytest.raises(KeyError):
-            BrainBuilder(global_config).add_component(
+            BrainBuilder(brain_config).add_component(
                 "test", "invalid_region_type", n_input=32, n_output=16
             ).build()
 
-    def test_connection_to_nonexistent_component(self, device, global_config):
+    def test_connection_to_nonexistent_component(self, device, brain_config):
         """Test error when connecting to non-existent component."""
         with pytest.raises((ValueError, KeyError)):
-            BrainBuilder(global_config).add_component(
+            BrainBuilder(brain_config).add_component(
                 "input", "thalamic_relay", n_input=32, n_output=32
             ).connect("input", "nonexistent").build()
 
-    def test_invalid_preset(self, device, global_config):
+    def test_invalid_preset(self, device, brain_config):
         """Test error with invalid preset name."""
         with pytest.raises(KeyError):
-            BrainBuilder.preset("invalid_preset_name", global_config)
+            BrainBuilder.preset("invalid_preset_name", brain_config)
 
 
 class TestSaveAndLoad:
     """Test saving and loading brain specifications."""
 
-    def test_save_and_load_brain_spec(self, device, global_config, tmp_path):
+    def test_save_and_load_brain_spec(self, device, brain_config, tmp_path):
         """Test saving and loading brain specification."""
         original_builder = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("input", "thalamic_relay", input_size=32, relay_size=32, trn_size=0)
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
@@ -285,7 +286,7 @@ class TestSaveAndLoad:
         original_builder.save_spec(str(spec_path))
 
         # Load spec and build
-        loaded_builder = BrainBuilder.load_spec(str(spec_path), global_config)
+        loaded_builder = BrainBuilder.load_spec(str(spec_path), brain_config)
         loaded_brain = loaded_builder.build()
 
         # Verify structure matches
@@ -300,9 +301,9 @@ class TestSaveAndLoad:
 class TestRLInterface:
     """Test EventDrivenBrain-compatible RL interface (Phase 1.6.2)."""
 
-    def test_select_action_basic(self, device, global_config):
+    def test_select_action_basic(self, device, brain_config):
         """Test basic action selection after forward pass."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Forward pass to generate striatum activity
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -316,9 +317,9 @@ class TestRLInterface:
         assert 0 <= action < brain.components["striatum"].n_actions
         assert 0.0 <= confidence <= 1.0
 
-    def test_select_action_exploration(self, device, global_config):
+    def test_select_action_exploration(self, device, brain_config):
         """Test exploration vs exploitation in action selection."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         input_data = {"thalamus": torch.randn(128, device=device)}
 
@@ -339,9 +340,9 @@ class TestRLInterface:
         assert all(0 <= a < brain.components["striatum"].n_actions for a in exploratory_actions)
         assert all(0 <= a < brain.components["striatum"].n_actions for a in exploit_actions)
 
-    def test_deliver_reward_basic(self, device, global_config):
+    def test_deliver_reward_basic(self, device, brain_config):
         """Test reward delivery after action selection."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Complete RL cycle
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -353,9 +354,9 @@ class TestRLInterface:
         brain.deliver_reward(external_reward=-1.0)
         brain.deliver_reward(external_reward=0.0)
 
-    def test_rl_episode_loop(self, device, global_config):
+    def test_rl_episode_loop(self, device, brain_config):
         """Test complete multi-step RL episode."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         n_steps = 5
         actions = []
@@ -384,10 +385,10 @@ class TestRLInterface:
         assert len(rewards) == n_steps
         assert all(isinstance(a, int) for a in actions)
 
-    def test_rl_without_striatum_raises(self, device, global_config):
+    def test_rl_without_striatum_raises(self, device, brain_config):
         """Test that RL methods raise error if no striatum present."""
         # Build brain without striatum (minimal preset has no striatum)
-        brain = BrainBuilder.preset("minimal", global_config)
+        brain = BrainBuilder.preset("minimal", brain_config)
 
         input_data = {"input": torch.randn(64, device=device)}
         brain.forward(input_data, n_timesteps=10)
@@ -399,14 +400,14 @@ class TestRLInterface:
         with pytest.raises(ValueError, match="Striatum component not found"):
             brain.deliver_reward(external_reward=1.0)
 
-    def test_deliver_reward_without_action_allowed(self, device, global_config):
+    def test_deliver_reward_without_action_allowed(self, device, brain_config):
         """Test that deliver_reward works without prior select_action().
 
         Both DynamicBrain and EventDrivenBrain allow deliver_reward() without
         prior select_action() for streaming/continuous learning scenarios.
         The brain simply uses None/_last_action which may be None initially.
         """
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Forward pass but no action selection
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -420,9 +421,9 @@ class TestRLInterface:
 class TestNeuromodulationAndConsolidation:
     """Test neuromodulation and consolidation features (Phase 1.6.3)."""
 
-    def test_neuromodulator_systems_initialized(self, device, global_config):
+    def test_neuromodulator_systems_initialized(self, device, brain_config):
         """Test that neuromodulator systems are properly initialized."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Check neuromodulator manager exists
         assert hasattr(brain, "neuromodulator_manager")
@@ -438,9 +439,9 @@ class TestNeuromodulationAndConsolidation:
         assert brain.neuromodulator_manager.locus_coeruleus is not None
         assert brain.neuromodulator_manager.nucleus_basalis is not None
 
-    def test_update_neuromodulators(self, device, global_config):
+    def test_update_neuromodulators(self, device, brain_config):
         """Test neuromodulator update and broadcasting."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Run a forward pass first to initialize state
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -454,9 +455,9 @@ class TestNeuromodulationAndConsolidation:
         assert isinstance(current_da, float)
         assert -10.0 <= current_da <= 10.0  # Reasonable range
 
-    def test_neuromodulator_broadcast_to_components(self, device, global_config):
+    def test_neuromodulator_broadcast_to_components(self, device, brain_config):
         """Test that neuromodulators are broadcast to components."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Run a forward pass first to initialize state
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -475,18 +476,18 @@ class TestNeuromodulationAndConsolidation:
                 # Dopamine should have been broadcast
                 assert striatum.state.dopamine >= 0.0
 
-    def test_consolidate_requires_hippocampus(self, device, global_config):
+    def test_consolidate_requires_hippocampus(self, device, brain_config):
         """Test that consolidate raises error without hippocampus."""
         # Build brain without hippocampus (minimal preset)
-        brain = BrainBuilder.preset("minimal", global_config)
+        brain = BrainBuilder.preset("minimal", brain_config)
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="Hippocampus component required"):
             brain.consolidate(n_cycles=1)
 
-    def test_consolidate_basic(self, device, global_config):
+    def test_consolidate_basic(self, device, brain_config):
         """Test basic consolidation functionality."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # First, add some experiences by running forward passes
         for _ in range(3):
@@ -516,9 +517,9 @@ class TestNeuromodulationAndConsolidation:
 class TestDiagnosticsAndGrowth:
     """Test diagnostics and growth features (Phase 1.6.4)."""
 
-    def test_get_diagnostics_basic(self, device, global_config):
+    def test_get_diagnostics_basic(self, device, brain_config):
         """Test basic diagnostics collection."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Run forward pass to generate activity
         input_data = {"thalamus": torch.randn(128, device=device)}
@@ -538,9 +539,9 @@ class TestDiagnosticsAndGrowth:
             assert component_name in diagnostics["components"]
             assert isinstance(diagnostics["components"][component_name], dict)
 
-    def test_check_growth_needs(self, device, global_config):
+    def test_check_growth_needs(self, device, brain_config):
         """Test growth needs detection."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Run some activity to generate metrics
         for _ in range(5):
@@ -561,9 +562,9 @@ class TestDiagnosticsAndGrowth:
             assert "growth_reason" in metrics
             assert isinstance(metrics["growth_recommended"], bool)
 
-    def test_auto_grow_basic(self, device, global_config):
+    def test_auto_grow_basic(self, device, brain_config):
         """Test basic auto-growth functionality."""
-        brain = BrainBuilder.preset("minimal", global_config)
+        brain = BrainBuilder.preset("minimal", brain_config)
 
         # Get initial sizes
         initial_sizes = {
@@ -587,9 +588,9 @@ class TestDiagnosticsAndGrowth:
                 old_size = initial_sizes[component_name]
                 assert new_size == old_size + neurons_added
 
-    def test_check_growth_needs_structure(self, device, global_config):
+    def test_check_growth_needs_structure(self, device, brain_config):
         """Test structure of growth needs report."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         report = brain.check_growth_needs()
 
@@ -610,10 +611,10 @@ class TestStateManagement:
     """Test state save/load functionality (Phase 1.6.5)."""
 
     @pytest.fixture
-    def simple_brain(self, device, global_config):
+    def simple_brain(self, device, brain_config):
         """Create a simple brain for state testing."""
         return (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
@@ -637,7 +638,7 @@ class TestStateManagement:
         state = brain.get_full_state()
 
         # Check top-level keys
-        assert "global_config" in state
+        assert "brain_config" in state
         assert "current_time" in state
         assert "topology" in state
         # DynamicBrain uses "regions" key for CheckpointManager compatibility
@@ -771,10 +772,10 @@ class TestStateManagement:
             abs(restored_da - original_da) < 1e-6
         ), f"Dopamine level not restored: {restored_da} != {original_da}"
 
-    def test_state_topology_preserved(self, device, global_config):
+    def test_state_topology_preserved(self, device, brain_config):
         """Test that topology information is preserved through save/load."""
         brain1 = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
@@ -793,7 +794,7 @@ class TestStateManagement:
 
         # Load state into new brain
         brain2 = (
-            BrainBuilder(global_config)
+            BrainBuilder(brain_config)
             .add_component("thalamus", "thalamic_relay", input_size=10, relay_size=10, trn_size=0)
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)

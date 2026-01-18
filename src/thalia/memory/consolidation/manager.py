@@ -288,7 +288,8 @@ class ConsolidationManager:
         pfc_state = state[cortex_size + hippo_size :]
 
         # Reactivate pattern in striatum
-        # Note: Striatum expects 1D input (ADR-005), no batch dimension
+        # Striatum expects Dict[str, Tensor] (multi-source architecture)
+        # For consolidation replay, use generic source name
         striatum_input = torch.cat(
             [
                 cortex_state,
@@ -297,7 +298,7 @@ class ConsolidationManager:
             ],
             dim=-1,
         )
-        _ = self.striatum.forward(striatum_input)
+        _ = self.striatum.forward({"consolidation": striatum_input})
 
         # Set action and deliver reward (triggers learning!)
         last_action_holder[0] = action

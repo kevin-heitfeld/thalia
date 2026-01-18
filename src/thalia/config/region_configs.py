@@ -1100,7 +1100,7 @@ class LayeredCortexConfig(NeuralComponentConfig):
         >>> calc = LayerSizeCalculator()
         >>> cortex_sizes = calc.cortex_from_scale(scale_factor=128)
         >>>
-        >>> builder = BrainBuilder(global_config)
+        >>> builder = BrainBuilder(brain_config)
         >>> builder.add_component("cortex", "cortex", **cortex_sizes)
         >>> brain = builder.build()
 

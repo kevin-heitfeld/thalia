@@ -2745,7 +2745,7 @@ class TrisynapticHippocampus(NeuralRegion):
             Uses cosine similarity in state space. For more sophisticated
             retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
         """
-        results: List[Dict[str, Any]] = self.memory.retrieve_similar(  # type: ignore[attr-defined]
+        results: List[Dict[str, Any]] = self.memory.retrieve_memories(  # type: ignore[attr-defined]
             query_state=query_state,
             query_action=query_action,
             k=k,

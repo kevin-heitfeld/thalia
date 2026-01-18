@@ -27,9 +27,9 @@ def brain_config():
 class TestMultiSourceWeightStructure:
     """Test that multi-source weight structure is correctly initialized."""
 
-    def test_separate_d1_d2_weights_per_source(self, global_config):
+    def test_separate_d1_d2_weights_per_source(self, brain_config):
         """Test that each source has separate D1 and D2 weight matrices."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -71,9 +71,9 @@ class TestMultiSourceWeightStructure:
             hippo.n_output,
         )
 
-    def test_eligibility_traces_per_source(self, global_config):
+    def test_eligibility_traces_per_source(self, brain_config):
         """Test that eligibility traces are tracked per source-pathway."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -115,10 +115,10 @@ class TestMultiSourceWeightStructure:
             == striatum.synaptic_weights["cortex:l5_d2"].shape
         )
 
-    def test_stp_modules_per_source(self, global_config):
+    def test_stp_modules_per_source(self, brain_config):
         """Test that STP modules are created per source-pathway."""
-        global_config.stp_enabled = True
-        builder = BrainBuilder(global_config)
+        brain_config.stp_enabled = True
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -147,9 +147,9 @@ class TestMultiSourceWeightStructure:
 class TestMultiSourceForwardPass:
     """Test forward pass with multi-source inputs."""
 
-    def test_forward_accepts_dict_inputs(self, global_config):
+    def test_forward_accepts_dict_inputs(self, brain_config):
         """Test that striatum forward accepts Dict[str, Tensor] inputs."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -180,9 +180,9 @@ class TestMultiSourceForwardPass:
         # Output should be D1 + D2 spikes concatenated
         assert output.shape[0] == striatum.d1_size + striatum.d2_size
 
-    def test_forward_integrates_all_sources(self, global_config):
+    def test_forward_integrates_all_sources(self, brain_config):
         """Test that forward pass integrates currents from all sources."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -224,9 +224,9 @@ class TestMultiSourceForwardPass:
 class TestMultiSourceLearning:
     """Test that learning works correctly with multi-source inputs."""
 
-    def test_eligibility_updates_per_source(self, global_config):
+    def test_eligibility_updates_per_source(self, brain_config):
         """Test that eligibility traces update separately per source."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -279,9 +279,9 @@ class TestMultiSourceLearning:
         )
         assert hippo_unchanged, "Hippocampus eligibility should not update when only cortex spikes"
 
-    def test_source_specific_tau(self, global_config):
+    def test_source_specific_tau(self, brain_config):
         """Test that different sources use different eligibility tau values."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -310,9 +310,9 @@ class TestMultiSourceLearning:
         # Hippocampal inputs should have faster traces (300ms)
         assert hippo_tau == 300.0
 
-    def test_learning_applies_to_all_sources(self, global_config):
+    def test_learning_applies_to_all_sources(self, brain_config):
         """Test that deliver_reward applies learning to all source-pathways."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(
@@ -359,9 +359,9 @@ class TestMultiSourceLearning:
 class TestMultiSourceGrowth:
     """Test that growth API works with multi-source architecture."""
 
-    def test_grow_source_expands_correct_weights(self, global_config):
+    def test_grow_source_expands_correct_weights(self, brain_config):
         """Test that grow_source expands both D1 and D2 weights for a specific source."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
         builder.add_component(

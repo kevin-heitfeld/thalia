@@ -28,9 +28,9 @@ def brain_config(device):
 
 
 @pytest.fixture
-def brain_with_multi_eligibility(global_config):
+def brain_with_multi_eligibility(brain_config):
     """Create brain with multi-timescale eligibility enabled."""
-    builder = BrainBuilder(global_config)
+    builder = BrainBuilder(brain_config)
 
     # Add components with multi-timescale eligibility enabled
     builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
@@ -245,9 +245,9 @@ class TestSingleTimescaleMode:
     """Test that single-timescale mode still works (backward compatibility)."""
 
     @pytest.fixture
-    def brain_single_timescale(self, global_config):
+    def brain_single_timescale(self, brain_config):
         """Create brain with single-timescale eligibility."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         # Add components with single-timescale (default)
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)

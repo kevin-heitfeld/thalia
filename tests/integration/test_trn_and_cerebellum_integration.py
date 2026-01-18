@@ -31,9 +31,9 @@ def brain_config(device):
 
 
 @pytest.fixture
-def enhanced_cerebellum_brain(global_config, device):
+def enhanced_cerebellum_brain(brain_config, device):
     """Brain with enhanced cerebellum for testing."""
-    builder = BrainBuilder(global_config)
+    builder = BrainBuilder(brain_config)
 
     # Add components with proper sizes
     builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
@@ -68,10 +68,10 @@ def enhanced_cerebellum_brain(global_config, device):
 class TestL6TRNFeedbackIntegration:
     """Integration tests for complete L6→TRN feedback loop."""
 
-    def test_default_brain_with_l6(self, global_config):
+    def test_default_brain_with_l6(self, brain_config):
         """Test default preset includes L6→TRN pathway."""
         # Create brain with default preset (includes L6→TRN)
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Contract: brain should have necessary components
         assert "cortex" in brain.components, "Brain should have cortex"
@@ -84,10 +84,10 @@ class TestL6TRNFeedbackIntegration:
         assert cortex.l6a_size > 0, "L6a should have neurons"
         assert cortex.l6b_size > 0, "L6b should have neurons"
 
-    def test_end_to_end_attention_loop(self, global_config, device):
+    def test_end_to_end_attention_loop(self, brain_config, device):
         """Test complete attention loop: thalamus→cortex→L6→TRN→thalamus."""
         # Create brain
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Create sensory input with spatial structure
         # Channels 0-63: high activity (attended), 64-127: low activity (unattended)
@@ -114,10 +114,10 @@ class TestL6TRNFeedbackIntegration:
                 l6_spikes.shape[0] == total_l6_size
             ), "L6 spikes should match total L6 size (L6a + L6b)"
 
-    def test_l6_affects_thalamic_relay(self, global_config, device):
+    def test_l6_affects_thalamic_relay(self, brain_config, device):
         """Test that L6 feedback measurably affects thalamic relay."""
         # Create brain
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         sensory_input = torch.rand(128, device=device) > 0.8
 
@@ -141,7 +141,7 @@ class TestL6TRNFeedbackIntegration:
             assert activity_std >= 0, "Relay activity should vary over time"
 
     @pytest.mark.slow
-    def test_gamma_oscillation_emergence(self, global_config, device):
+    def test_gamma_oscillation_emergence(self, brain_config, device):
         """Test that feedback loop timing supports gamma oscillations (~40 Hz)."""
         # Gamma cycle: ~25ms (40 Hz)
         # Feedback loop: thalamus→cortex (5-8ms) + L2/3→L6 (2ms) + L6→TRN (10ms) + TRN→relay (3-5ms)
@@ -149,7 +149,7 @@ class TestL6TRNFeedbackIntegration:
 
         from thalia.diagnostics.oscillation_detection import measure_oscillation
 
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
         cortex = brain.components["cortex"]
 
         # Note: Gamma oscillator disabled by default (should emerge from L6→TRN loop)
@@ -193,9 +193,9 @@ class TestL6TRNFeedbackIntegration:
         elif 50 < freq <= 60:
             print("   Slightly fast (may need longer TRN delays)")
 
-    def test_spatial_attention_modulation(self, global_config, device):
+    def test_spatial_attention_modulation(self, brain_config, device):
         """Test that L6 enables spatial attention (channel-specific modulation)."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Create two input patterns: attended vs unattended
         attended_input = torch.zeros(128, dtype=torch.bool, device=device)
@@ -278,9 +278,9 @@ class TestEnhancedCerebellumIntegration:
             cerebellum.granule_layer.neurons.membrane is not None
         ), "Granule layer should be active after processing"
 
-    def test_granule_layer_in_brain_context(self, global_config, device):
+    def test_granule_layer_in_brain_context(self, brain_config, device):
         """Test granule layer expansion works in full brain."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
         builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)
         builder.add_component(
             "cerebellum",
@@ -315,10 +315,10 @@ class TestEnhancedCerebellumIntegration:
 class TestMultiRegionCoordination:
     """Integration tests for multi-region coordination with L6 and enhanced cerebellum."""
 
-    def test_full_sensorimotor_loop(self, global_config, device):
+    def test_full_sensorimotor_loop(self, brain_config, device):
         """Test complete sensorimotor loop with L6 feedback and enhanced cerebellum."""
         # Build brain with all components
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Contract: should have key regions
         required_regions = ["thalamus", "cortex", "striatum"]
@@ -343,9 +343,9 @@ class TestMultiRegionCoordination:
 
         assert l6_spikes is not None, "L6 should be active after processing"
 
-    def test_learning_with_feedback_and_cerebellum(self, global_config, device):
+    def test_learning_with_feedback_and_cerebellum(self, brain_config, device):
         """Test learning in system with both L6 feedback and enhanced cerebellum."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         # Add components with proper sizes (pass parameters directly)
         # Note: L6 size must match thalamus n_input for feedback pathway
@@ -398,9 +398,9 @@ class TestMultiRegionCoordination:
 class TestSystemRobustness:
     """Tests for system robustness with new features."""
 
-    def test_reset_state_with_l6(self, global_config, device):
+    def test_reset_state_with_l6(self, brain_config, device):
         """Test brain reset works with L6 layer."""
-        brain = BrainBuilder.preset("default", global_config)
+        brain = BrainBuilder.preset("default", brain_config)
 
         # Run some timesteps
         sensory_input = torch.rand(128, device=device) > 0.8
@@ -424,9 +424,9 @@ class TestSystemRobustness:
                     cortex.l6b_neurons.membrane == cortex.l6b_neurons.config.v_reset
                 ).all(), "L6b neurons should be reset"
 
-    def test_checkpoint_with_enhanced_features(self, global_config, device):
+    def test_checkpoint_with_enhanced_features(self, brain_config, device):
         """Test checkpointing works with L6 and enhanced cerebellum."""
-        builder = BrainBuilder(global_config)
+        builder = BrainBuilder(brain_config)
 
         # Add components with proper sizes (pass parameters directly)
         builder.add_component("thalamus", "thalamus", input_size=128, relay_size=128, trn_size=0)

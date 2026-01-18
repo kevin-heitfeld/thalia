@@ -45,6 +45,7 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 from __future__ import annotations
 
 import warnings
+import weakref
 from typing import TYPE_CHECKING, Any, Dict
 
 import torch
@@ -381,11 +382,16 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         if "stp_modules" in pathway_state and hasattr(s, "stp_modules"):
             for key, stp_state in pathway_state["stp_modules"].items():
                 if key in s.stp_modules:
+                    # Initialize STP state if needed (in case reset_state() wasn't called)
                     if stp_state["u"] is not None:
-                        assert s.stp_modules[key].u is not None
+                        if s.stp_modules[key].u is None:
+                            # STP module exists but state not initialized - do it now
+                            s.stp_modules[key].reset_state()
                         s.stp_modules[key].u.data = stp_state["u"].to(s.device)  # type: ignore[union-attr]
                     if stp_state["x"] is not None:
-                        assert s.stp_modules[key].x is not None
+                        if s.stp_modules[key].x is None:
+                            # STP module exists but state not initialized - do it now
+                            s.stp_modules[key].reset_state()
                         s.stp_modules[key].x.data = stp_state["x"].to(s.device)  # type: ignore[union-attr]
 
         # Restore input source tracking
@@ -454,6 +460,21 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             if delay_state["d2_delay_buffer"] is not None:
                 s._d2_delay_buffer = delay_state["d2_delay_buffer"].to(s.device)
                 s._d2_delay_ptr = delay_state["d2_delay_ptr"]
+
+        # 10. RE-LINK PATHWAYS TO PARENT AFTER STATE RESTORATION
+        # Pathways need weak references to access weights from parent's synaptic_weights dict
+        if pathway_state["synaptic_weights"]:
+            # Get first D1 and D2 source keys
+            d1_keys = [k for k in pathway_state["synaptic_weights"].keys() if k.endswith("_d1")]
+            d2_keys = [k for k in pathway_state["synaptic_weights"].keys() if k.endswith("_d2")]
+
+            if d1_keys and s.d1_pathway._parent_striatum_ref is None:
+                s.d1_pathway._parent_striatum_ref = weakref.ref(s)
+                s.d1_pathway._weight_source = d1_keys[0]
+
+            if d2_keys and s.d2_pathway._parent_striatum_ref is None:
+                s.d2_pathway._parent_striatum_ref = weakref.ref(s)
+                s.d2_pathway._weight_source = d2_keys[0]
 
     # =========================================================================
     # NEUROMORPHIC FORMAT (Phase 2) - Neuron-Centric Checkpoints

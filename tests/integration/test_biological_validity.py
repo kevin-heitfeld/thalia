@@ -19,6 +19,7 @@ import torch
 from thalia.config import (
     HippocampusConfig,
     LayeredCortexConfig,
+    LayerSizeCalculator,
     StriatumConfig,
     ThalamicRelayConfig,
 )
@@ -45,8 +46,6 @@ class TestEligibilityTraceDecay:
 
     def test_eligibility_decays_exponentially(self, striatum_config):
         """Verify eligibility traces decay with e^(-t/tau) after checkpoint load."""
-        from thalia.config import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -99,8 +98,6 @@ class TestEligibilityTraceDecay:
 
     def test_eligibility_no_sudden_jumps(self, striatum_config):
         """Verify no discontinuities in eligibility at checkpoint boundary."""
-        from thalia.config import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -230,8 +227,6 @@ class TestNeuromodulatorBounds:
 
     def test_dopamine_stays_in_valid_range(self, striatum_config):
         """Verify dopamine levels stay in [0, 1.5] range."""
-        from thalia.config import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -257,8 +252,6 @@ class TestNeuromodulatorBounds:
 
     def test_neuromodulators_preserved_in_checkpoint(self, striatum_config):
         """Verify all neuromodulator levels preserved across checkpoint."""
-        from thalia.config import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.striatum_from_actions(n_actions=2, neurons_per_action=6)
         sizes["input_size"] = 50
@@ -418,12 +411,13 @@ class TestCA3PersistentActivity:
 
     def test_ca3_persistent_activity_preserved(self, hippocampus_config):
         """Verify CA3 attractor state preserved across checkpoint."""
-        from thalia.config import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.hippocampus_from_input(ec_input_size=20)
         sizes["input_size"] = 20
         hippocampus = TrisynapticHippocampus(hippocampus_config, sizes, "cpu")
+
+        # Set encoding mode (ACh high) to enable persistent activity accumulation
+        hippocampus.set_neuromodulators(acetylcholine=1.0)
 
         # Activate CA3 pattern via strong input
         for _ in range(10):
@@ -457,8 +451,6 @@ class TestCA3PersistentActivity:
 
     def test_ca3_pattern_not_reset(self, hippocampus_config):
         """Verify CA3 pattern doesn't reset to zero at checkpoint."""
-        from thalia.config import LayerSizeCalculator
-
         calc = LayerSizeCalculator()
         sizes = calc.hippocampus_from_input(ec_input_size=20)
         sizes["input_size"] = 20
