@@ -567,25 +567,6 @@ class PredictiveCortex(NeuralRegion):
         # Pass through to inner cortex (where alpha gating is implemented)
         self.cortex.set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes)
 
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow input dimension by delegating to base LayeredCortex.
-
-        When an upstream region grows its output, this method expands the
-        cortex's input dimension to accommodate the larger input size.
-
-        Args:
-            n_new: Number of input neurons to add
-            initialization: Weight initialization strategy
-            sparsity: Sparsity for new connections
-        """
-        # Delegate to base LayeredCortex
-        self.cortex.grow_input(n_new, initialization, sparsity)
-
     def grow_output(
         self,
         n_new: int,

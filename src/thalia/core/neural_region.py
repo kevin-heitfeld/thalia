@@ -489,26 +489,84 @@ class NeuralRegion(
         """
         # Default: no oscillators, subclasses override if needed
 
-    def grow_input(
+    def grow_source(
         self,
-        n_new: int,
+        source_name: str,
+        new_size: int,
         initialization: str = "sparse_random",
-        sparsity: float = 0.1,
+        sparsity: float = 0.2,
+        weight_scale: float = 0.3,
     ) -> None:
-        """Grow component's input dimension.
+        """Grow input size for a specific source (expands weight columns).
 
-        For NeuralRegion, this adds columns to existing synaptic weight matrices.
+        **Multi-Source Architecture**: Each input source has its own weight matrix.
+        This method expands the input dimension (columns) for a specific source
+        while preserving existing learned weights.
+
+        When upstream regions grow their output, call this method to expand the
+        corresponding input weights.
 
         Args:
-            n_new: Number of input neurons to add
-            initialization: Weight init strategy
-            sparsity: Connection sparsity for new inputs
+            source_name: Name of source to grow (e.g., "thalamus", "cortex:l5")
+            new_size: New total size for this source's input dimension
+            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
+            sparsity: Connection sparsity for new weights (0.0-1.0)
+            weight_scale: Initial weight scale for new connections
+
+        Raises:
+            KeyError: If source not found in synaptic_weights
+
+        Example:
+            >>> # Thalamus grows from 128 to 148 neurons
+            >>> thalamus.grow_output(20)
+            >>> # Update cortex weights for thalamic input
+            >>> cortex.grow_source("thalamus", new_size=148)
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__}.grow_input() not yet implemented. "
-            f"Regions typically grow inputs by growing specific sources. "
-            f"Override this method if your region supports generic input growth."
-        )
+        if source_name not in self.synaptic_weights:
+            raise KeyError(
+                f"Source '{source_name}' not found in synaptic_weights. "
+                f"Available sources: {list(self.synaptic_weights.keys())}"
+            )
+
+        old_weights = self.synaptic_weights[source_name]
+        old_n_input = old_weights.shape[1]
+        n_new = new_size - old_n_input
+
+        if n_new <= 0:
+            return  # No growth needed
+
+        # Initialize new input columns
+        if initialization == "xavier":
+            new_cols = WeightInitializer.xavier(
+                n_output=self.n_neurons,
+                n_input=n_new,
+                gain=weight_scale,
+                device=self.device,
+            )
+        elif initialization == "uniform":
+            new_cols = WeightInitializer.uniform(
+                n_output=self.n_neurons,
+                n_input=n_new,
+                low=0.0,
+                high=weight_scale,
+                device=self.device,
+            )
+        else:  # sparse_random (default)
+            new_cols = WeightInitializer.sparse_random(
+                n_output=self.n_neurons,
+                n_input=n_new,
+                sparsity=sparsity,
+                scale=weight_scale,
+                device=self.device,
+            )
+
+        # Concatenate new columns to existing weights
+        expanded_weights = torch.cat([old_weights, new_cols], dim=1)
+        self.synaptic_weights[source_name] = nn.Parameter(expanded_weights)
+
+        # Update input_sources tracking
+        self.input_sources[source_name] = new_size
+        self.n_input = sum(self.input_sources.values())
 
     def grow_output(
         self,

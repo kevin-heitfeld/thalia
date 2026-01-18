@@ -1248,43 +1248,6 @@ class ThalamicRelay(NeuralRegion):
             "region_specific": region_specific,
         }
 
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow thalamus input dimension when upstream region grows.
-
-        Expands input weight matrices by adding columns to accept larger input.
-
-        Args:
-            n_new: Number of input neurons to add
-            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
-            sparsity: Connection sparsity for new input neurons (if sparse_random)
-
-        Example:
-            >>> # Sensory pathway grows from 784 → 804 neurons
-            >>> sensory_pathway.grow_output(20)
-            >>> # Thalamus must expand input dimension
-            >>> thalamus.grow_input(20)
-        """
-        old_n_input = self.input_size
-        new_n_input = old_n_input + n_new
-
-        # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)
-        # Expand input_to_trn [n_trn, input] → [n_trn, input+n_new]
-        self.input_to_trn.data = self._grow_weight_matrix_cols(
-            self.input_to_trn.data, n_new, initializer=initialization, sparsity=sparsity
-        )
-
-        # Phase 2: Auto-grow registered STP modules
-        self._auto_grow_registered_components("input", n_new)
-
-        # Rebuild center-surround filter with new input size
-        self.input_size = new_n_input
-        self._build_center_surround_filter()
-
     def grow_output(
         self,
         n_new: int,

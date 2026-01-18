@@ -698,11 +698,15 @@ class BrainBuilder:
                     source_key = f"{source_name}:{source_port}" if source_port else source_name
 
                     # Skip if input source already registered (avoid duplicate registration)
-                    if (
-                        hasattr(target_comp, "input_sources")
-                        and source_key in target_comp.input_sources  # type: ignore[operator]
-                    ):
-                        continue
+                    # Striatum creates _d1 and _d2 variants, so check for those
+                    if hasattr(target_comp, "input_sources"):
+                        d1_key = f"{source_key}_d1"
+                        d2_key = f"{source_key}_d2"
+                        if (
+                            d1_key in target_comp.input_sources  # type: ignore[operator]
+                            or d2_key in target_comp.input_sources  # type: ignore[operator]
+                        ):
+                            continue
 
                     # Call striatum-specific method (creates D1/D2 weights)
                     target_comp.add_input_source_striatum(source_key, n_input=source_size)  # type: ignore[operator]
@@ -791,7 +795,23 @@ class BrainBuilder:
         # Register input sources on target component (biologically accurate multi-source synapses)
         # Each source (thalamus, hippocampus, etc.) gets independent weights at target dendrites
         target_comp = components[target_name]
-        if hasattr(target_comp, "add_input_source"):
+
+        # Check for striatum-specific initialization FIRST
+        if hasattr(target_comp, "add_input_source_striatum"):
+            for spec in target_specs:
+                source_size = self._get_pathway_source_size(
+                    components[spec.source], spec.source_port
+                )
+                # Source name for weight identification (uses port if specified)
+                source_identifier = (
+                    f"{spec.source}:{spec.source_port}" if spec.source_port else spec.source
+                )
+                # Register this source with striatum-specific method (creates D1/D2 weights)
+                target_comp.add_input_source_striatum(  # type: ignore[attr-defined]
+                    source_name=source_identifier,
+                    n_input=source_size,
+                )
+        elif hasattr(target_comp, "add_input_source"):
             for spec in target_specs:
                 source_size = self._get_pathway_source_size(
                     components[spec.source], spec.source_port

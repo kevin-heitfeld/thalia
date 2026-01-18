@@ -640,90 +640,6 @@ class MultimodalIntegration(NeuralRegion):
         if "neuron_state" in state and hasattr(self.neurons, "load_state"):
             self.neurons.load_state(state["neuron_state"])
 
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.2,
-    ) -> None:
-        """Grow multimodal integration input dimension.
-
-        Expands input weight matrices for all modalities proportionally.
-
-        Args:
-            n_new: Total number of input neurons to add across all modalities
-            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
-            sparsity: Connection sparsity for new input neurons (if sparse_random)
-
-        Note:
-            Growth is distributed across modalities based on their current ratios.
-        """
-        # Calculate growth per modality based on current ratios
-        total_input = (
-            self.config.visual_input_size
-            + self.config.auditory_input_size
-            + self.config.language_input_size
-        )
-
-        if total_input == 0:
-            # Edge case: no input configured yet, distribute evenly
-            visual_growth = n_new // 3
-            auditory_growth = n_new // 3
-            language_growth = n_new - visual_growth - auditory_growth
-        else:
-            visual_ratio = self.config.visual_input_size / total_input
-            auditory_ratio = self.config.auditory_input_size / total_input
-            language_ratio = self.config.language_input_size / total_input
-
-            visual_growth = int(n_new * visual_ratio)
-            auditory_growth = int(n_new * auditory_ratio)
-            language_growth = n_new - visual_growth - auditory_growth  # Remainder goes to language
-
-        # Expand visual input weights
-        if visual_growth > 0:
-            self.visual_input_weights = self._grow_weight_matrix_cols(
-                self.visual_input_weights,
-                visual_growth,
-                initializer=initialization,
-                sparsity=sparsity,
-            )
-
-        # Expand auditory input weights
-        if auditory_growth > 0:
-            self.auditory_input_weights = self._grow_weight_matrix_cols(
-                self.auditory_input_weights,
-                auditory_growth,
-                initializer=initialization,
-                sparsity=sparsity,
-            )
-
-        # Expand language input weights
-        if language_growth > 0:
-            self.language_input_weights = self._grow_weight_matrix_cols(
-                self.language_input_weights,
-                language_growth,
-                initializer=initialization,
-                sparsity=sparsity,
-            )
-
-        # Update config
-        new_visual_size = self.config.visual_input_size + visual_growth
-        new_auditory_size = self.config.auditory_input_size + auditory_growth
-        new_language_size = self.config.language_input_size + language_growth
-
-        self.config = replace(
-            self.config,
-            visual_input_size=new_visual_size,
-            auditory_input_size=new_auditory_size,
-            language_input_size=new_language_size,
-        )
-        self.multisensory_config = replace(
-            self.multisensory_config,
-            visual_input_size=new_visual_size,
-            auditory_input_size=new_auditory_size,
-            language_input_size=new_language_size,
-        )
-
     def grow_output(
         self,
         n_new: int,
@@ -762,10 +678,6 @@ class MultimodalIntegration(NeuralRegion):
         integration_growth = n_new - visual_growth - auditory_growth - language_growth
 
         # Update pool sizes
-        old_visual = self.visual_pool_size
-        old_auditory = self.auditory_pool_size
-        old_language = self.language_pool_size
-
         self.visual_pool_size += visual_growth
         self.auditory_pool_size += auditory_growth
         self.language_pool_size += language_growth

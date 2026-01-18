@@ -1118,44 +1118,6 @@ class Prefrontal(NeuralRegion):
             self.rec_weights.data.fill_diagonal_(cfg.recurrent_strength)  # Maintain self-excitation
             self.rec_weights.data.clamp_(0.0, 1.0)
 
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
-    ) -> None:
-        """Grow prefrontal input dimension when upstream region grows.
-
-        Expands input weight matrix columns to accept larger input.
-
-        Args:
-            n_new: Number of input neurons to add
-            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
-            sparsity: Connection sparsity for new input neurons (if sparse_random)
-        """
-        old_n_input = self.input_size
-
-        # Use GrowthMixin helper (Architecture Review 2025-12-24, Tier 2.5)
-        self.synaptic_weights["default"].data = self._grow_weight_matrix_cols(
-            self.synaptic_weights["default"].data,
-            n_new,
-            initializer=initialization,
-            sparsity=sparsity,
-        )
-
-        # NOTE: STP auto-growth via Phase 2 registration system:
-        # - stp_feedforward (if enabled): auto-grows via _auto_grow_registered_components('input')
-        # - stp_recurrent: only grows in grow_output() (tracks n_output, not n_input)
-
-        # Update instance variable
-        self.input_size += n_new
-
-        # Auto-grow registered STP modules (Phase 2)
-        self._auto_grow_registered_components("input", n_new)
-
-        # Validate growth completed correctly
-        self._validate_input_growth(old_n_input, n_new)
-
     def grow_output(
         self,
         n_new: int,

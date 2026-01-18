@@ -404,26 +404,6 @@ class TestMultiSourceGrowth:
             new_d2_shape[1] == new_l5_size
         ), f"D2 input should be {new_l5_size}, got {new_d2_shape[1]}"
 
-    def test_grow_input_raises_error(self, global_config):
-        """Test that grow_input raises NotImplementedError directing to grow_source."""
-        builder = BrainBuilder(global_config)
-
-        builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component(
-            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
-        )
-        builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
-
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "striatum", source_port="l5")
-
-        brain = builder.build()
-        striatum = brain.components["striatum"]
-
-        # grow_input should raise NotImplementedError
-        with pytest.raises(NotImplementedError, match="grow_source"):
-            striatum.grow_input(n_new=10)
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

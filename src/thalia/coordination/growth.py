@@ -593,15 +593,44 @@ class GrowthCoordinator:
                 events.append(pathway_event)
 
                 # ============================================================
-                # CRITICAL: Grow target region's input dimension!
+                # CRITICAL: Grow target region's input for this source!
                 # ============================================================
-                # When pathway grows its source (input), the downstream target
-                # region must also expand its input weights to handle the larger
-                # input dimension.
+                # Multi-source architecture (v3.0): Target regions have separate
+                # weight matrices per source. When a source region grows, the
+                # target must expand its weights for that specific source.
                 target_region_name = self._get_pathway_target(pathway_name)
                 if target_region_name and target_region_name in self.brain.components:
                     target_region = self.brain.components[target_region_name]
-                    if hasattr(target_region, "grow_input"):
+                    if hasattr(target_region, "grow_source"):
+                        # Get new total size of source region
+                        source_region = self.brain.components[region_name]
+                        new_source_size = source_region.n_output
+
+                        # Grow target's weights for this source
+                        # Note: source_name might include port (e.g., "cortex:l5")
+                        # For now, use region_name; port-based routing handled elsewhere
+                        target_region.grow_source(
+                            source_name=region_name,
+                            new_size=new_source_size,
+                            initialization=initialization,
+                            sparsity=sparsity,
+                        )
+
+                        # Record region input growth event
+                        region_input_event = GrowthEvent(
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            component_name=target_region_name,
+                            component_type="region",
+                            event_type="grow_source",
+                            n_neurons_added=0,  # No new neurons, just input expansion
+                            n_synapses_added=n_new_neurons * target_region.n_output,
+                            reason=f"Source '{region_name}' expanded by {n_new_neurons}",
+                            metrics_before={},
+                            metrics_after={},
+                        )
+                        events.append(region_input_event)
+                    elif hasattr(target_region, "grow_input"):
+                        # Fallback for regions not yet migrated to multi-source
                         target_region.grow_input(
                             n_new=n_new_neurons,
                             initialization=initialization,
@@ -615,7 +644,7 @@ class GrowthCoordinator:
                             component_type="region",
                             event_type="grow_input",
                             n_neurons_added=0,  # No new neurons, just input expansion
-                            n_synapses_added=n_new_neurons * target_region.config.n_output,
+                            n_synapses_added=n_new_neurons * target_region.n_output,
                             reason=f"Input dimension growth due to {region_name} expansion",
                             metrics_before={},
                             metrics_after={},

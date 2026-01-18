@@ -351,14 +351,22 @@ class RegionTestBase(ABC):
         original_input = self._get_input_size(params)
         n_new = 20
 
-        # Grow input
-        region.grow_input(n_new)
+        # Multi-source architecture: grow a specific test source
+        # First ensure region has a test source (regions may not have sources yet)
+        test_source_name = "test_source"
+        if test_source_name not in region.input_sources:
+            # Add test source for growth testing
+            region.add_input_source(test_source_name, n_input=original_input)
 
-        # Verify config updated
-        assert self._get_region_input_size(region) == original_input + n_new
+        # Grow the test source
+        new_total_size = original_input + n_new
+        region.grow_source(test_source_name, new_size=new_total_size)
 
-        # Verify forward pass works with new input size
-        input_dict = self.get_input_dict(original_input + n_new, device=region.device.type)
+        # Verify source size updated
+        assert region.input_sources[test_source_name] == new_total_size
+
+        # Verify forward pass works with new source size
+        input_dict = {test_source_name: torch.rand(new_total_size, device=region.device) > 0.5}
         output = region.forward(input_dict)
         output_size = self._get_region_output_size(region)
         assert output.shape[0] == output_size
@@ -681,9 +689,7 @@ class RegionTestBase(ABC):
         # Serialize and deserialize
         data = state1.to_dict()
         state_class = type(state1)
-        _state2 = state_class.from_dict(data, device=params["device"])
-
-        # Should not raise errors
+        state_class.from_dict(data, device=params["device"])  # Should not raise errors
         # Verify at least some fields are present
         assert data is not None
         assert len(data) > 0

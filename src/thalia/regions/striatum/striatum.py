@@ -1551,6 +1551,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         new_size: int,
         initialization: str = "xavier",
         sparsity: float = 0.1,
+        weight_scale: float = 0.3,
     ) -> None:
         """Grow input size for a specific source (expands both D1 and D2 weights).
 
