@@ -70,7 +70,12 @@ import torch.nn as nn
 
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
-from thalia.constants.learning import LEARNING_RATE_STDP, WM_NOISE_STD_DEFAULT
+from thalia.config.region_configs import (
+    GoalHierarchyConfig,
+    HyperbolicDiscountingConfig,
+    PrefrontalConfig,
+)
+from thalia.constants.learning import WM_NOISE_STD_DEFAULT
 from thalia.constants.neuromodulation import DA_BASELINE_STANDARD, compute_ne_gain
 from thalia.constants.oscillator import (
     PFC_FEEDFORWARD_GAIN_MIN,
@@ -78,7 +83,6 @@ from thalia.constants.oscillator import (
     PFC_RECURRENT_GAIN_MIN,
     PFC_RECURRENT_GAIN_RANGE,
 )
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.errors import ConfigurationError
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
@@ -88,14 +92,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasisConfig,
 )
 from thalia.managers.component_registry import register_region
-from thalia.regions.prefrontal.checkpoint_manager import PrefrontalCheckpointManager
-from thalia.regions.prefrontal.hierarchy import (
-    Goal,
-    GoalHierarchyConfig,
-    GoalHierarchyManager,
-    HyperbolicDiscounter,
-    HyperbolicDiscountingConfig,
-)
 from thalia.typing import StateDict
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
@@ -103,141 +99,12 @@ from thalia.utils.oscillator_utils import (
     compute_theta_encoding_retrieval,
 )
 
-
-@dataclass
-class PrefrontalConfig(NeuralComponentConfig):
-    """Configuration specific to prefrontal cortex.
-
-    PFC implements DOPAMINE-GATED STDP:
-    - STDP creates eligibility traces from spike timing
-    - Dopamine gates what enters working memory and what gets learned
-    - High DA → update WM and learn new associations
-    - Low DA → maintain WM and protect existing patterns
-
-    **Size Specification** (Semantic-First):
-    - Sizes passed via sizes dict: input_size, n_neurons
-    - Computed at instantiation: output_size (= n_neurons), total_neurons (= n_neurons)
-    - Config contains only behavioral parameters (learning rates, time constants, etc.)
-    """
-
-    # Working memory parameters
-    wm_decay_tau_ms: float = 500.0  # How fast WM decays (slow!)
-    wm_noise_std: float = 0.01  # Noise in WM maintenance
-
-    # Gating parameters
-    gate_threshold: float = 0.5  # DA level to open update gate
-    gate_strength: float = 2.0  # How strongly gating affects updates
-
-    # Dopamine parameters
-    dopamine_tau_ms: float = 100.0  # DA decay time constant
-    dopamine_baseline: float = 0.2  # Tonic DA level
-
-    # Learning rates
-    wm_lr: float = 0.1  # Learning rate for WM update weights
-    rule_lr: float = LEARNING_RATE_STDP  # Learning rate for rule weights
-    # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
-    # and heterosynaptic_ratio (0.3) are inherited from NeuralComponentConfig
-
-    # Recurrent connections for WM maintenance
-    recurrent_strength: float = 0.8  # Self-excitation for persistence
-    recurrent_inhibition: float = 0.2  # Lateral inhibition
-
-    # =========================================================================
-    # SPIKE-FREQUENCY ADAPTATION (SFA)
-    # =========================================================================
-    # PFC pyramidal neurons show adaptation. This helps prevent runaway
-    # activity during sustained working memory maintenance.
-    # Inherited from base, with PFC-specific overrides:
-    adapt_increment: float = 0.2  # Moderate (maintains WM while adapting)
-    adapt_tau: float = 150.0  # Slower decay (longer timescale for WM)
-
-    # =========================================================================
-    # SHORT-TERM PLASTICITY (STP)
-    # =========================================================================
-    # Feedforward connections: Facilitation for temporal filtering
-    stp_feedforward_enabled: bool = True
-    """Enable short-term plasticity on feedforward (input) connections."""
-
-    # Recurrent connections: Depression prevents frozen attractors
-    stp_recurrent_enabled: bool = True
-    """Enable short-term plasticity on recurrent connections."""
-
-    # =========================================================================
-    # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
-    # =========================================================================
-    # Hierarchical goal management and hyperbolic discounting
-    use_hierarchical_goals: bool = True
-    """Enable hierarchical goal structures (Phase 3).
-
-    When True:
-        - Maintains goal hierarchy stack in working memory
-        - Tracks active goals and subgoals
-        - Supports options framework for reusable policies
-        - Requires goal_hierarchy_config
-    """
-
-    goal_hierarchy_config: Optional[GoalHierarchyConfig] = None
-    """Configuration for goal hierarchy manager (Phase 3)."""
-
-    use_hyperbolic_discounting: bool = True
-    """Enable hyperbolic temporal discounting (Phase 3).
-
-    When True:
-        - Hyperbolic (not exponential) discounting of delayed rewards
-        - Context-dependent k parameter (cognitive load, stress, fatigue)
-        - Adaptive k learning from experience
-        - Requires hyperbolic_config
-    """
-
-    hyperbolic_config: Optional[HyperbolicDiscountingConfig] = None
-    """Configuration for hyperbolic discounter (Phase 3)."""
-
-    # =========================================================================
-    # HETEROGENEOUS WORKING MEMORY (Phase 1B Enhancement)
-    # =========================================================================
-    # Biological reality: PFC neurons show heterogeneous maintenance properties
-    # - Stable neurons: Strong recurrence, long time constants (~1-2s)
-    # - Flexible neurons: Weak recurrence, short time constants (~100-200ms)
-    #
-    # This heterogeneity enables:
-    # - Stable neurons: Maintain context/goals over long delays
-    # - Flexible neurons: Rapid updating for new information
-    # - Mixed selectivity: Distributed representations across neuron types
-    #
-    # References:
-    # - Rigotti et al. (2013): Mixed selectivity in prefrontal cortex
-    # - Murray et al. (2017): Stable population coding for working memory
-    # - Wasmuht et al. (2018): Intrinsic neuronal dynamics in PFC
-    use_heterogeneous_wm: bool = False  # Enable heterogeneous WM neurons
-    stability_cv: float = 0.3  # Coefficient of variation for recurrent strength
-    tau_mem_min: float = 100.0  # Minimum membrane time constant (ms) - flexible neurons
-    tau_mem_max: float = 500.0  # Maximum membrane time constant (ms) - stable neurons
-
-    # =========================================================================
-    # D1/D2 DOPAMINE RECEPTOR SUBTYPES (Phase 1B Enhancement)
-    # =========================================================================
-    # Biological reality: PFC has both D1 (excitatory) and D2 (inhibitory) receptors
-    # - D1-dominant neurons (~60%): "Go" pathway, enhance signals with DA
-    # - D2-dominant neurons (~40%): "NoGo" pathway, suppress noise with DA
-    #
-    # This enables:
-    # - D1: Update WM when DA high (new information is important)
-    # - D2: Maintain WM when DA low (protect current state)
-    # - Opponent modulation: D1 and D2 have opposite DA responses
-    #
-    # References:
-    # - Seamans & Yang (2004): D1 and D2 dopamine systems in PFC
-    # - Durstewitz & Seamans (2008): Neurocomputational perspective on PFC
-    # - Cools & D'Esposito (2011): Inverted-U dopamine in working memory
-    use_d1_d2_subtypes: bool = False  # Enable D1/D2 receptor subtypes
-    d1_fraction: float = 0.6  # Fraction of neurons that are D1-dominant (60%)
-    d1_da_gain: float = 0.5  # DA gain for D1 neurons (excitatory, 1.0 + gain*DA)
-    d2_da_gain: float = 0.3  # DA suppression for D2 neurons (inhibitory, 1.0 - gain*DA)
-    d2_output_weight: float = 0.5  # Weight of D2 output in competition (D1 - weight*D2)
-
-    def __post_init__(self) -> None:
-        """Auto-compute output_size and total_neurons from n_neurons."""
-        # Properties handle this now - no manual assignment needed
+from .checkpoint_manager import PrefrontalCheckpointManager
+from .hierarchy import (
+    Goal,
+    GoalHierarchyManager,
+    HyperbolicDiscounter,
+)
 
 
 @dataclass
@@ -355,11 +222,6 @@ class PrefrontalState(BaseRegionState):
         self.update_gate = None
         self.active_rule = None
         self.stp_recurrent_state = None
-
-
-# =============================================================================
-# HETEROGENEOUS WM NEURON SAMPLING (Phase 1B Enhancement)
-# =============================================================================
 
 
 def sample_heterogeneous_wm_neurons(

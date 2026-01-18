@@ -13,10 +13,9 @@ Date: January 16, 2026
 
 from __future__ import annotations
 
-from thalia.regions.thalamus.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
+from .thalamus import ThalamicRelay, ThalamicRelayState
 
 __all__ = [
     "ThalamicRelay",
-    "ThalamicRelayConfig",
     "ThalamicRelayState",
 ]

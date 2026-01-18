@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 import torch
 
-from thalia.config import LayerSizeCalculator
-from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
+from thalia.config import HippocampusConfig, LayerSizeCalculator
+from thalia.regions import TrisynapticHippocampus
 
 
 @pytest.fixture

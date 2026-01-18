@@ -16,9 +16,8 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.config import LayerSizeCalculator
-from thalia.regions.cortex.config import LayeredCortexConfig
-from thalia.regions.cortex.layered_cortex import LayeredCortex
+from thalia.config import LayeredCortexConfig, LayerSizeCalculator
+from thalia.regions import LayeredCortex
 
 
 class TestLayeredCortex(RegionTestBase):

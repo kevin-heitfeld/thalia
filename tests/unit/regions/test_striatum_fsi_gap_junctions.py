@@ -23,8 +23,8 @@ import pytest
 import torch
 
 from thalia.components.gap_junctions import GapJunctionCoupling
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.config import LayerSizeCalculator, StriatumConfig
+from thalia.regions import Striatum
 
 
 @pytest.fixture

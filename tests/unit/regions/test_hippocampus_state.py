@@ -16,10 +16,9 @@ Updated: December 22, 2025 (migrated basic tests to RegionTestBase)
 import pytest
 import torch
 
-from thalia.config import LayerSizeCalculator
+from thalia.config import HippocampusConfig, LayerSizeCalculator
 from thalia.core.region_state import load_region_state, save_region_state
-from thalia.regions.hippocampus import Hippocampus, HippocampusState
-from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.regions import HippocampusState, TrisynapticHippocampus
 
 
 class TestHippocampusStateEdgeCases:
@@ -81,7 +80,7 @@ class TestHippocampusStateEdgeCases:
         calc = LayerSizeCalculator()
         sizes = calc.hippocampus_from_input(10)
         config = HippocampusConfig(stp_enabled=False, dt_ms=1.0)  # STP disabled
-        hippocampus = Hippocampus(config=config, sizes=sizes, device="cpu")
+        hippocampus = TrisynapticHippocampus(config=config, sizes=sizes, device="cpu")
 
         # State with STP, but region has no STP modules
         state = HippocampusState(

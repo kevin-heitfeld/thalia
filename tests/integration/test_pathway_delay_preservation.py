@@ -13,9 +13,9 @@ Date: December 22, 2025
 import pytest
 import torch
 
+from thalia.config import StriatumConfig
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.striatum.config import StriatumConfig
-from thalia.regions.striatum.striatum import Striatum
+from thalia.regions import Striatum
 
 
 class TestAxonalProjectionDelayPreservation:

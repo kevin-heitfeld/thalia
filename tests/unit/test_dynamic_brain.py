@@ -18,12 +18,15 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from thalia.config import BrainConfig
-from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.config import (
+    BrainConfig,
+    LayerSizeCalculator,
+    ThalamicRelayConfig,
+)
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import ComponentSpec, ConnectionSpec, DynamicBrain
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.regions import ThalamicRelay
 
 # ============================================================================
 # Test Helpers

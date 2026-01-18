@@ -12,9 +12,8 @@ import pytest
 import torch
 
 from thalia.components.gap_junctions import GapJunctionCoupling
-from thalia.config import LayerSizeCalculator
-from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState
-from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
+from thalia.config import HippocampusConfig, LayerSizeCalculator
+from thalia.regions.hippocampus import HippocampusState, TrisynapticHippocampus
 
 
 def test_gap_junctions_can_be_disabled():

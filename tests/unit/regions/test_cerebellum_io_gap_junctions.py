@@ -14,8 +14,8 @@ Biology:
 import pytest
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.config import CerebellumConfig, LayerSizeCalculator
+from thalia.regions import Cerebellum
 
 
 def create_test_cerebellum(

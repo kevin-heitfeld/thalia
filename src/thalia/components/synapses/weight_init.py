@@ -24,7 +24,7 @@ Common Patterns in Thalia:
    - Good for: General purpose, symmetric initialization
 
 2. **Uniform** - torch.rand() * scale
-   - Used by: Hippocampus, Striatum
+   - Used by: TrisynapticHippocampus, Striatum
    - Good for: Positive-only weights, bounded initialization
 
 3. **Xavier/Glorot** - Scale by 1/sqrt(fan_in)
@@ -36,7 +36,7 @@ Common Patterns in Thalia:
    - Good for: ReLU activations
 
 5. **Sparse Random** - Random weights with connectivity mask
-   - Used by: Hippocampus trisynaptic circuit
+   - Used by: TrisynapticHippocampus trisynaptic circuit
    - Good for: Biological realism, pattern separation
 
 6. **Topographic** - Gaussian connectivity based on spatial distance

@@ -98,144 +98,24 @@ import torch.nn as nn
 from thalia.components.coding import compute_firing_rate, compute_spike_count
 from thalia.components.gap_junctions import GapJunctionConfig, GapJunctionCoupling
 from thalia.components.neurons import create_relay_neurons, create_trn_neurons
-from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
+from thalia.components.synapses import ShortTermPlasticity, STPConfig, WeightInitializer
+from thalia.config.region_configs import ThalamicRelayConfig
 from thalia.constants.regions import (
-    THALAMUS_ALPHA_GATE_THRESHOLD,
     THALAMUS_ALPHA_SUPPRESSION,
-    THALAMUS_BURST_GAIN,
-    THALAMUS_BURST_SPIKE_COUNT,
-    THALAMUS_BURST_THRESHOLD,
-    THALAMUS_CENTER_EXCITATION,
     THALAMUS_MODE_THRESHOLD,
     THALAMUS_NE_GAIN_SCALE,
     THALAMUS_RELAY_SCALE,
     THALAMUS_RELAY_SPARSITY,
-    THALAMUS_RELAY_STRENGTH,
     THALAMUS_SPATIAL_CENTER_SPARSITY,
-    THALAMUS_SPATIAL_FILTER_WIDTH,
-    THALAMUS_SURROUND_INHIBITION,
     THALAMUS_SURROUND_WIDTH_RATIO,
-    THALAMUS_TONIC_THRESHOLD,
     THALAMUS_TRN_FEEDBACK_SCALE,
     THALAMUS_TRN_FEEDBACK_SPARSITY,
     THALAMUS_TRN_FEEDFORWARD_SPARSITY,
-    THALAMUS_TRN_INHIBITION,
-    THALAMUS_TRN_RECURRENT,
 )
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
 from thalia.utils.input_routing import InputRouter
-
-
-@dataclass
-class ThalamicRelayConfig(NeuralComponentConfig):
-    """Configuration for thalamic relay nucleus.
-
-    Thalamus sits between sensory input and cortex, providing:
-    - Sensory gating (alpha-based suppression)
-    - Mode switching (burst vs tonic)
-    - Gain modulation (norepinephrine)
-    - Spatial filtering
-
-    **Pure Behavioral Configuration**:
-    Contains ONLY behavioral parameters (learning rates, gains, thresholds).
-    Sizes (relay_size, trn_size, input_size) are passed separately at instantiation.
-
-    **Usage**:
-    ```python
-    config = ThalamicRelayConfig(relay_strength=1.5, alpha_suppression_strength=0.3)
-    sizes = LayerSizeCalculator().thalamus_from_relay(relay_size=80)
-    thalamus = ThalamicRelay(config=config, sizes=sizes, device="cpu")
-    ```
-    """
-
-    # Relay parameters
-    relay_strength: float = THALAMUS_RELAY_STRENGTH
-    """Base relay gain (thalamus amplifies weak inputs)."""
-
-    # Mode switching
-    burst_threshold: float = THALAMUS_BURST_THRESHOLD
-    """Membrane potential threshold for burst mode (hyperpolarized)."""
-
-    tonic_threshold: float = THALAMUS_TONIC_THRESHOLD
-    """Membrane potential threshold for tonic mode (depolarized)."""
-
-    burst_spike_count: int = THALAMUS_BURST_SPIKE_COUNT
-    """Number of spikes in a burst (typically 2-5)."""
-
-    burst_gain: float = THALAMUS_BURST_GAIN
-    """Amplification factor for burst mode (alerting signal)."""
-
-    # Attention gating (alpha oscillation)
-    alpha_suppression_strength: float = THALAMUS_ALPHA_SUPPRESSION
-    """How strongly alpha suppresses unattended inputs (0-1)."""
-
-    alpha_gate_threshold: float = THALAMUS_ALPHA_GATE_THRESHOLD
-    """Alpha phase threshold for suppression (0 = trough, π = peak)."""
-
-    trn_inhibition_strength: float = THALAMUS_TRN_INHIBITION
-    """Strength of TRN → relay inhibition."""
-
-    trn_recurrent_strength: float = THALAMUS_TRN_RECURRENT
-    """TRN recurrent inhibition (for oscillations)."""
-
-    # Sensory filtering
-    spatial_filter_width: float = THALAMUS_SPATIAL_FILTER_WIDTH
-    """Gaussian filter width for center-surround (as fraction of input)."""
-
-    center_excitation: float = THALAMUS_CENTER_EXCITATION
-    """Center enhancement in receptive field."""
-
-    surround_inhibition: float = THALAMUS_SURROUND_INHIBITION
-    """Surround suppression in receptive field."""
-
-    # Corticothalamic feedback
-    l6a_to_trn_strength: float = 0.8
-    """Strength of L6a → TRN feedback (inhibitory modulation, type I)."""
-
-    l6b_to_relay_strength: float = 0.6
-    """Strength of L6b → relay feedback (excitatory modulation, type II)."""
-
-    # Internal thalamic delays (critical for gamma oscillation emergence)
-    trn_to_relay_delay_ms: float = 4.0
-    """TRN → relay inhibitory delay (~3-5ms for GABAergic transmission)."""
-
-    relay_to_cortex_delay_ms: float = 2.0
-    """Relay → cortex thalamocortical delay (~2ms, handled by AxonalProjection)."""
-
-    # Gap junctions (TRN interneuron synchronization)
-    gap_junctions_enabled: bool = True
-    """Enable gap junction coupling in TRN for fast synchronization."""
-
-    gap_junction_strength: float = 0.15
-    """Gap junction conductance (biological: 0.05-0.3, Landisman 2002)."""
-
-    # Short-Term Plasticity (STP) - HIGH PRIORITY for sensory gating
-    stp_enabled: bool = True
-    """Enable STP for sensory relay and L6 feedback pathways.
-
-    Biological justification (HIGH PRIORITY):
-    - Sensory relay depression: Filters repetitive stimuli, responds to novelty
-    - L6 feedback depression: Modulates gain control dynamically
-    - CRITICAL for realistic sensory gating and attention
-    - References: Castro-Alamancos (2002), Swadlow & Gusev (2001)
-    """
-
-    stp_sensory_relay_type: STPType = STPType.DEPRESSING_MODERATE
-    """Sensory input → relay depression (U=0.4, moderate).
-
-    Implements novelty detection: Sustained inputs depress, novel stimuli get
-    through. Critical for attention capture and change detection.
-    """
-
-    stp_l6_feedback_type: STPType = STPType.DEPRESSING_STRONG
-    """L6 cortical feedback → relay depression (U=0.7, strong).
-
-    Implements dynamic gain control: Sustained cortical feedback reduces
-    thalamic transmission, enabling efficient filtering.
-    """
 
 
 @dataclass

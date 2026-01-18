@@ -19,8 +19,8 @@ import pytest
 import torch
 
 from tests.utils.test_helpers import generate_sparse_spikes
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.config import LayerSizeCalculator, StriatumConfig
+from thalia.regions import Striatum
 
 
 @pytest.fixture

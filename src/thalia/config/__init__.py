@@ -29,25 +29,6 @@ Date: December 2025
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-# Re-export component configs from core/
-from thalia.core.base.component_config import (
-    LearningComponentConfig,
-    NeuralComponentConfig,
-    PathwayConfig,
-)
-
-if TYPE_CHECKING:
-    # Re-export region configs from canonical locations
-    from thalia.regions.cerebellum import CerebellumConfig
-    from thalia.regions.cortex.config import LayeredCortexConfig
-    from thalia.regions.cortex.predictive_cortex import PredictiveCortexConfig
-    from thalia.regions.cortex.robustness_config import RobustnessConfig
-    from thalia.regions.hippocampus.config import HippocampusConfig
-    from thalia.regions.prefrontal import PrefrontalConfig
-    from thalia.regions.striatum.config import StriatumConfig
-
 from .base import BaseConfig
 from .brain_config import (
     BrainConfig,
@@ -68,6 +49,18 @@ from .learning_config import (
     ModulatedLearningConfig,
     STDPLearningConfig,
 )
+from .region_configs import (
+    CerebellumConfig,
+    GoalHierarchyConfig,
+    HippocampusConfig,
+    HyperbolicDiscountingConfig,
+    LayeredCortexConfig,
+    MultimodalIntegrationConfig,
+    PredictiveCortexConfig,
+    PrefrontalConfig,
+    StriatumConfig,
+    ThalamicRelayConfig,
+)
 from .size_calculator import BiologicalRatios, LayerSizeCalculator
 from .thalia_config import ThaliaConfig, print_config
 from .training_config import TrainingConfig
@@ -83,10 +76,10 @@ from .validation import (
 )
 
 __all__ = [
-    # Main config
+    # Main configs
     "ThaliaConfig",
     "print_config",
-    # Validation
+    # Validation configs
     "validate_thalia_config",
     "validate_brain_config",
     "validate_global_consistency",
@@ -101,25 +94,25 @@ __all__ = [
     "ModulatedLearningConfig",
     "STDPLearningConfig",
     "HebbianLearningConfig",
-    "NeuralComponentConfig",
-    "LearningComponentConfig",
-    "PathwayConfig",
-    # Brain
+    # Brain configs
     "BrainConfig",
     "RegionSizes",
     "CortexType",
     "NeuromodulationConfig",
-    # Training
+    # Training configs
     "TrainingConfig",
-    # Region configs (canonical locations)
+    # Region configs
     "LayeredCortexConfig",
     "PredictiveCortexConfig",
-    "RobustnessConfig",
     "HippocampusConfig",
     "StriatumConfig",
     "PrefrontalConfig",
     "CerebellumConfig",
-    # Language
+    "GoalHierarchyConfig",
+    "HyperbolicDiscountingConfig",
+    "ThalamicRelayConfig",
+    "MultimodalIntegrationConfig",
+    # Language configs
     "LanguageConfig",
     "EncodingConfig",
     "DecodingConfig",
@@ -129,29 +122,3 @@ __all__ = [
     "LayerSizeCalculator",
     "BiologicalRatios",
 ]
-
-
-# Lazy imports for region configs to avoid circular dependencies
-def __getattr__(name: str):
-    """Lazy import region configs to break circular dependencies."""
-    _region_config_map = {
-        "CerebellumConfig": ("thalia.regions.cerebellum", "CerebellumConfig"),
-        "LayeredCortexConfig": ("thalia.regions.cortex.config", "LayeredCortexConfig"),
-        "PredictiveCortexConfig": (
-            "thalia.regions.cortex.predictive_cortex",
-            "PredictiveCortexConfig",
-        ),
-        "RobustnessConfig": ("thalia.regions.cortex.robustness_config", "RobustnessConfig"),
-        "HippocampusConfig": ("thalia.regions.hippocampus.config", "HippocampusConfig"),
-        "PrefrontalConfig": ("thalia.regions.prefrontal", "PrefrontalConfig"),
-        "StriatumConfig": ("thalia.regions.striatum.config", "StriatumConfig"),
-    }
-
-    if name in _region_config_map:
-        module_name, attr_name = _region_config_map[name]
-        import importlib
-
-        module = importlib.import_module(module_name)
-        return getattr(module, attr_name)
-
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

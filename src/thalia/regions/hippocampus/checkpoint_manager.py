@@ -54,14 +54,14 @@ Date: December 13, 2025 (hippocampus neuromorphic checkpoint support)
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Any, Dict
 
 import torch
 
 from thalia.managers import BaseCheckpointManager
 
-if TYPE_CHECKING:
-    from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
+from .memory_component import Episode
+from .trisynaptic import HippocampusState, TrisynapticHippocampus
 
 
 class HippocampusCheckpointManager(BaseCheckpointManager):
@@ -378,8 +378,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         h.weights = h.synaptic_weights["ca3_ca1"]
 
         # Restore episode buffer
-        from thalia.regions.hippocampus.config import Episode
-
         h.episode_buffer = []
         for ep_state in state["episode_buffer"]:
             episode = Episode(
@@ -675,8 +673,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         h = self.hippocampus
 
         # Use the region's native state restoration
-        from thalia.regions.hippocampus.config import HippocampusState
-
         state_obj = HippocampusState.from_dict(state, device=str(h.device))
         h.load_state(state_obj)
 

@@ -16,7 +16,8 @@ Biological validation:
 import pytest
 import torch
 
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.config import CerebellumConfig
+from thalia.regions import Cerebellum
 
 # =====================================================================
 # FIXTURES

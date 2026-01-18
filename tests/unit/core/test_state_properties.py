@@ -18,11 +18,18 @@ import torch
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from thalia.config.size_calculator import LayerSizeCalculator
+from thalia.config import (
+    HippocampusConfig,
+    LayeredCortexConfig,
+    LayerSizeCalculator,
+    StriatumConfig,
+)
 from thalia.core.region_state import BaseRegionState
-from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
-from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.regions import (
+    LayeredCortex,
+    Striatum,
+    TrisynapticHippocampus,
+)
 
 
 def create_test_hippocampus(input_size: int, device: str, **kwargs) -> TrisynapticHippocampus:

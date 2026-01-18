@@ -16,8 +16,8 @@ Biological motivation:
 import pytest
 import torch
 
-from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
+from thalia.config import HippocampusConfig
+from thalia.regions import TrisynapticHippocampus
 
 
 @pytest.fixture

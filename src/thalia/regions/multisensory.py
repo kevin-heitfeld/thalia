@@ -92,72 +92,19 @@ Date: December 12, 2025 (Tier 3 Implementation)
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, Dict, Optional
 
 import torch
 
 from thalia.components.neurons import create_pyramidal_neurons
 from thalia.components.synapses import WeightInitializer
-from thalia.config.learning_config import HebbianLearningConfig
-from thalia.constants.learning import LEARNING_RATE_HEBBIAN_SLOW, SILENCE_DETECTION_THRESHOLD
+from thalia.config.region_configs import MultimodalIntegrationConfig
+from thalia.constants.learning import SILENCE_DETECTION_THRESHOLD
 from thalia.coordination import SinusoidalOscillator
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.learning import create_strategy
 from thalia.managers.component_registry import register_region
-
-
-@dataclass
-class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
-    """Configuration for multimodal integration region.
-
-    Inherits Hebbian learning parameters from HebbianLearningConfig:
-    - learning_rate: Base learning rate for cross-modal plasticity
-    - learning_enabled: Global learning enable/disable
-    - weight_min, weight_max: Weight bounds
-    - decay_rate, sparsity_penalty, use_oja_rule: Hebbian variants
-
-    Args:
-        visual_input_size: Size of visual input
-        auditory_input_size: Size of auditory input
-        language_input_size: Size of language/semantic input
-        visual_pool_ratio: Fraction of neurons for visual (0-1)
-        auditory_pool_ratio: Fraction of neurons for auditory (0-1)
-        language_pool_ratio: Fraction of neurons for language (0-1)
-        integration_pool_ratio: Fraction of neurons for integration (0-1)
-        cross_modal_strength: Strength of cross-modal connections (0-1)
-        within_modal_strength: Strength of within-modal connections (0-1)
-        integration_strength: Strength from pools → integration neurons
-        salience_competition_strength: Winner-take-all competition strength
-    """
-
-    # Input sizes
-    visual_input_size: int = 0
-    auditory_input_size: int = 0
-    language_input_size: int = 0
-
-    # Pool sizes (explicit, computed from ratios via helper)
-    visual_pool_size: int = field(default=0)
-    auditory_pool_size: int = field(default=0)
-    language_pool_size: int = field(default=0)
-    integration_pool_size: int = field(default=0)
-
-    # Connection strengths
-    cross_modal_strength: float = 0.4
-    within_modal_strength: float = 0.6
-    integration_strength: float = 0.8
-    salience_competition_strength: float = 0.5
-
-    # Override default learning rate with region-specific value
-    learning_rate: float = LEARNING_RATE_HEBBIAN_SLOW
-
-    # Gamma synchronization parameters (for cross-modal binding)
-    gamma_freq_hz: float = 40.0  # Gamma frequency for binding (typically 40 Hz)
-    coherence_window: float = 0.785  # ~π/4 radians phase tolerance
-    phase_coupling_strength: float = 0.1  # Mutual phase nudging strength
-    gate_threshold: float = 0.3  # Minimum coherence for binding
-    use_gamma_binding: bool = True  # Enable gamma synchronization
 
 
 @register_region(

@@ -8,8 +8,8 @@ error signals during learning.
 import pytest
 import torch
 
-from thalia.config import LayerSizeCalculator
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.config import CerebellumConfig, LayerSizeCalculator
+from thalia.regions import Cerebellum
 
 
 def create_test_cerebellum(

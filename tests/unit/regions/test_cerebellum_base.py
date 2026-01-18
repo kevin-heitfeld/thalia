@@ -10,8 +10,8 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
+from thalia.config import CerebellumConfig, LayerSizeCalculator
+from thalia.regions import Cerebellum
 
 
 class TestCerebellum(RegionTestBase):

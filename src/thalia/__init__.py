@@ -7,7 +7,7 @@ Quick Start (External Users):
 =============================
 
     from thalia import ThaliaConfig, DynamicBrain
-    from thalia import Striatum, Hippocampus, LayeredCortex
+    from thalia import Striatum, TrisynapticHippocampus, LayeredCortex
     from thalia import ConductanceLIF, WeightInitializer
 
     # Create regions directly
@@ -45,7 +45,18 @@ from thalia.components.synapses.stp_presets import STP_PRESETS, STPPreset, get_s
 from thalia.components.synapses.weight_init import InitStrategy, WeightInitializer
 
 # Configuration
-from thalia.config import BrainConfig, RegionSizes, ThaliaConfig
+# Configuration
+from thalia.config import (
+    BrainConfig,
+    CerebellumConfig,
+    HippocampusConfig,
+    LayeredCortexConfig,
+    PredictiveCortexConfig,
+    PrefrontalConfig,
+    RegionSizes,
+    StriatumConfig,
+    ThaliaConfig,
+)
 
 # Oscillators
 from thalia.coordination.oscillator import (
@@ -92,17 +103,11 @@ from thalia.neuromodulation.systems.vta import (
 # Brain Regions
 from thalia.regions import (
     Cerebellum,
-    CerebellumConfig,
-    Hippocampus,
-    HippocampusConfig,
     LayeredCortex,
-    LayeredCortexConfig,
     PredictiveCortex,
-    PredictiveCortexConfig,
     Prefrontal,
-    PrefrontalConfig,
     Striatum,
-    StriatumConfig,
+    TrisynapticHippocampus,
 )
 
 # Type Aliases (for better type hints)
@@ -174,7 +179,7 @@ __all__ = [
     "CerebellumConfig",
     "Prefrontal",
     "PrefrontalConfig",
-    "Hippocampus",
+    "TrisynapticHippocampus",
     "HippocampusConfig",
     # Core Components
     "ConductanceLIF",

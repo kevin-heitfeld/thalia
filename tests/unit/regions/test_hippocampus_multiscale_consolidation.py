@@ -22,7 +22,8 @@ References:
 import pytest
 import torch
 
-from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
+from thalia.config import HippocampusConfig
+from thalia.regions import TrisynapticHippocampus
 
 # =====================================================================
 # FIXTURES

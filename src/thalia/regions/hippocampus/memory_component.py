@@ -7,16 +7,42 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import torch
 
+from thalia.config.region_configs import HippocampusConfig
 from thalia.core.region_components import MemoryComponent
 from thalia.managers.base_manager import ManagerContext
 from thalia.utils.core_utils import cosine_similarity_safe
 
-if TYPE_CHECKING:
-    from thalia.regions.hippocampus.config import Episode, HippocampusConfig
+
+@dataclass
+class Episode:
+    """An episode stored in episodic memory for replay.
+
+    Episodes are stored with priority for experience replay,
+    where more important episodes (high reward, correct trials)
+    are replayed more frequently.
+
+    Episodes can store either:
+    - A single state (traditional): Just the activity pattern at decision time
+    - A sequence (extended): List of states from each gamma slot during encoding
+
+    During sleep replay, sequences are replayed time-compressed using
+    the gamma oscillator to drive slot-by-slot reactivation.
+    """
+
+    state: torch.Tensor  # Activity pattern at decision time (or final state)
+    action: int  # Selected action
+    reward: float  # Received reward
+    correct: bool  # Whether the action was correct
+    context: Optional[torch.Tensor] = None  # Context/cue pattern
+    metadata: Optional[Dict[str, Any]] = None  # Additional info
+    priority: float = 1.0  # Replay priority
+    timestamp: int = 0  # When this episode occurred
+    sequence: Optional[List[torch.Tensor]] = None  # Sequence of states for gamma-driven replay
 
 
 class HippocampusMemoryComponent(MemoryComponent):
@@ -119,7 +145,7 @@ class HippocampusMemoryComponent(MemoryComponent):
             sequence: Optional CA3 pattern sequence
             **kwargs: Additional parameters
         """
-        from thalia.regions.hippocampus.config import Episode
+        from thalia.regions.hippocampus.state import Episode
 
         cfg = self.config
 

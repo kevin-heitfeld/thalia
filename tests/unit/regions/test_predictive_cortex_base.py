@@ -15,8 +15,8 @@ Date: January 9, 2026
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
+from thalia.config import LayerSizeCalculator, PredictiveCortexConfig
+from thalia.regions import PredictiveCortex
 
 
 class TestPredictiveCortex(RegionTestBase):

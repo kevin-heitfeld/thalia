@@ -35,7 +35,7 @@ Usage Example:
 ==============
 ```python
 # Create region and capture state
-region = Hippocampus(config)
+region = TrisynapticHippocampus(config)
 state = region.get_state()  # Returns HippocampusState instance
 
 # Save to checkpoint
@@ -48,25 +48,6 @@ region.load_state(loaded_state)
 # Device transfer
 cpu_state = transfer_state(gpu_state, device="cpu")
 ```
-
-Migration Strategy:
-===================
-Phase 1 (this file): Foundation
-- RegionState protocol
-- Utility functions
-- Type hints and validation
-
-Phase 2: Migrate existing states (one at a time)
-- Phase 2.1: PrefrontalState (simple, no STP)
-- Phase 2.2: ThalamicRelayState (with STP)
-- Phase 2.3: HippocampusState (with STP)
-- Phase 2.4: LayeredCortexState (complex, with STP)
-
-Phase 3: Complex regions
-- Phase 3.1: CerebellumState (with STP)
-- Phase 3.2: StriatumState (D1/D2, eligibility, STP)
-
-See: docs/design/state-management-refactoring-plan.md
 
 Author: Thalia Project
 Date: December 2025

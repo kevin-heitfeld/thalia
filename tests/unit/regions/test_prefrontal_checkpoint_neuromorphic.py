@@ -3,7 +3,8 @@
 import pytest
 import torch
 
-from thalia.regions.prefrontal import Prefrontal, PrefrontalCheckpointManager, PrefrontalConfig
+from thalia.config import PrefrontalConfig
+from thalia.regions.prefrontal import Prefrontal, PrefrontalCheckpointManager
 
 
 def create_test_prefrontal(input_size: int, n_neurons: int, device: str, **kwargs) -> Prefrontal:

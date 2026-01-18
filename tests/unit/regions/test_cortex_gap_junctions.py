@@ -10,8 +10,8 @@ Tests verify:
 import pytest
 import torch
 
-from thalia.regions.cortex.config import LayeredCortexConfig, LayeredCortexState
-from thalia.regions.cortex.layered_cortex import LayeredCortex
+from thalia.config import LayeredCortexConfig
+from thalia.regions.cortex import LayeredCortex, LayeredCortexState
 
 
 def test_gap_junctions_can_be_disabled():

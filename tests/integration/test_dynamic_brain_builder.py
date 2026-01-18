@@ -12,12 +12,15 @@ Tests end-to-end functionality:
 import pytest
 import torch
 
-from thalia.config import BrainConfig, LayerSizeCalculator
+from thalia.config import (
+    BrainConfig,
+    LayeredCortexConfig,
+    LayerSizeCalculator,
+)
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.cortex import LayeredCortex
-from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions import LayeredCortex
 
 
 @pytest.fixture

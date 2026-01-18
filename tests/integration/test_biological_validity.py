@@ -16,10 +16,18 @@ import numpy as np
 import pytest
 import torch
 
-from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-from thalia.regions.hippocampus import HippocampusConfig, TrisynapticHippocampus
-from thalia.regions.striatum import Striatum, StriatumConfig
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config import (
+    HippocampusConfig,
+    LayeredCortexConfig,
+    StriatumConfig,
+    ThalamicRelayConfig,
+)
+from thalia.regions import (
+    LayeredCortex,
+    Striatum,
+    ThalamicRelay,
+    TrisynapticHippocampus,
+)
 
 
 class TestEligibilityTraceDecay:

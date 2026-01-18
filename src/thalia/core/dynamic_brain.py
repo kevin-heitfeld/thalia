@@ -92,7 +92,7 @@ class DynamicBrain(nn.Module):
         components = {
             "thalamus": ThalamicRelay(config),
             "cortex": LayeredCortex(config),
-            "hippocampus": Hippocampus(config),
+            "hippocampus": TrisynapticHippocampus(config),
         }
 
         connections = {

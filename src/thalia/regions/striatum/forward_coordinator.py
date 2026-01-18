@@ -56,6 +56,8 @@ from typing import TYPE_CHECKING, Optional
 import torch
 import torch.nn as nn
 
+from thalia.components.neurons.neuron import ConductanceLIF
+from thalia.config.region_configs import StriatumConfig
 from thalia.constants.neuromodulation import compute_ne_gain
 from thalia.constants.neuron import (
     BASELINE_EXCITATION_SCALE,
@@ -69,12 +71,9 @@ from thalia.neuromodulation.mixin import validate_finite
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
 if TYPE_CHECKING:
-    from thalia.components.neurons.neuron import ConductanceLIF
-
-    from .config import StriatumConfig
-    from .d1_pathway import D1Pathway
-    from .d2_pathway import D2Pathway
-    from .homeostasis_component import StriatumHomeostasisComponent
+    from thalia.regions.striatum.d1_pathway import D1Pathway
+    from thalia.regions.striatum.d2_pathway import D2Pathway
+    from thalia.regions.striatum.homeostasis_component import StriatumHomeostasisComponent
 
 
 class ForwardPassCoordinator:

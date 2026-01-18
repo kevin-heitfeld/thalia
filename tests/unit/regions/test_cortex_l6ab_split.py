@@ -13,8 +13,8 @@ Tests:
 import pytest
 import torch
 
-from thalia.regions.cortex.config import LayeredCortexConfig
-from thalia.regions.cortex.layered_cortex import LayeredCortex
+from thalia.config import LayeredCortexConfig
+from thalia.regions import LayeredCortex
 
 
 @pytest.fixture

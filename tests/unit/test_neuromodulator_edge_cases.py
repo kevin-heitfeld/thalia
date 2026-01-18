@@ -19,10 +19,17 @@ Priority: P0 (Critical)
 import pytest
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
-from thalia.regions.striatum import Striatum, StriatumConfig
+from thalia.config import (
+    HippocampusConfig,
+    LayerSizeCalculator,
+    PrefrontalConfig,
+    StriatumConfig,
+)
+from thalia.regions import (
+    Prefrontal,
+    Striatum,
+    TrisynapticHippocampus,
+)
 
 
 @pytest.fixture
@@ -55,7 +62,7 @@ def create_test_striatum(
 
 def create_test_hippocampus(
     input_size: int = 40, output_size: int = 30, device: str = "cpu", **kwargs
-) -> Hippocampus:
+) -> TrisynapticHippocampus:
     """Create Hippocampus for testing with new (config, sizes, device) pattern."""
     sizes = {
         "input_size": input_size,
@@ -65,7 +72,7 @@ def create_test_hippocampus(
         "ca1_size": int(output_size * 0.2),
     }
     config = HippocampusConfig(device=device, **kwargs)
-    return Hippocampus(config, sizes, device)
+    return TrisynapticHippocampus(config, sizes, device)
 
 
 def create_test_prefrontal(

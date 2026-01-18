@@ -28,11 +28,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 import torch
 
-from thalia.constants.exploration import DEFAULT_EPSILON_EXPLORATION
+if TYPE_CHECKING:
+    from thalia.config.region_configs import GoalHierarchyConfig, HyperbolicDiscountingConfig
 
 
 class GoalStatus(Enum):
@@ -130,29 +131,6 @@ class Goal:
             return all(g.status == GoalStatus.COMPLETED for g in self.subgoals)
 
         return False  # Primitive goals need explicit termination
-
-
-@dataclass
-class GoalHierarchyConfig:
-    """Configuration for goal hierarchy manager."""
-
-    max_depth: int = 4  # Maximum hierarchy depth (0=actions, 4=high-level)
-    max_active_goals: int = 5  # Limit on parallel goals (working memory constraint)
-
-    # Goal selection
-    use_value_based_selection: bool = True  # Select high-value goals
-    epsilon_exploration: float = DEFAULT_EPSILON_EXPLORATION  # Explore low-value goals sometimes
-
-    # Goal dynamics
-    goal_persistence: float = 0.9  # Resist goal switching (stability)
-    deadline_pressure_scale: float = 0.1  # Boost value as deadline approaches
-
-    # Options
-    enable_option_learning: bool = True  # Learn reusable policies
-    option_discovery_threshold: float = 0.8  # Success rate to cache option
-
-    # Device
-    device: str = "cpu"
 
 
 class GoalHierarchyManager:
@@ -393,28 +371,6 @@ class GoalHierarchyManager:
     def advance_time(self):
         """Advance internal timestep counter."""
         self.current_timestep += 1
-
-
-@dataclass
-class HyperbolicDiscountingConfig:
-    """Configuration for hyperbolic discounting."""
-
-    # Base discounting
-    base_k: float = 0.01  # Base hyperbolic discount rate
-    k_min: float = 0.001  # Minimum k (most patient)
-    k_max: float = 0.20  # Maximum k (most impulsive)
-
-    # Context modulation
-    cognitive_load_scale: float = 0.5  # How much load affects k
-    stress_scale: float = 0.3  # How much stress affects k
-    fatigue_scale: float = 0.2  # How much fatigue affects k
-
-    # Learning
-    learn_k: bool = True  # Adapt k based on outcomes
-    k_learning_rate: float = 0.01  # Step size for k adaptation
-
-    # Device
-    device: str = "cpu"
 
 
 class HyperbolicDiscounter:

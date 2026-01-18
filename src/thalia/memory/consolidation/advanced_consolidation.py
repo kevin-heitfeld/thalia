@@ -100,7 +100,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from thalia.regions.hippocampus.config import Episode
+from thalia.regions.hippocampus import Episode
 
 # ============================================================================
 # Configuration

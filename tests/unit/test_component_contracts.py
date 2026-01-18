@@ -16,8 +16,8 @@ since growth APIs and behavior vary significantly between components.
 import pytest
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config import LayerSizeCalculator, ThalamicRelayConfig
+from thalia.regions import ThalamicRelay
 
 
 # Component factories - only using simple components that share contracts

@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 import torch
 
-from thalia.config import BrainConfig
+from thalia.config import BrainConfig, PrefrontalConfig
 from thalia.core.brain_builder import BrainBuilder
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+from thalia.regions import Prefrontal
 
 # =====================================================================
 # FIXTURES

@@ -49,14 +49,12 @@ delegating action selection logic to this specialized module.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 
+from thalia.config.region_configs import StriatumConfig
 from thalia.constants.exploration import SOFTMAX_TEMPERATURE_DEFAULT
-
-if TYPE_CHECKING:
-    from thalia.regions.striatum.config import StriatumConfig
 
 
 class ActionSelectionMixin:

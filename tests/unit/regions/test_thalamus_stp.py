@@ -13,10 +13,9 @@ import numpy as np
 import pytest
 import torch
 
-from thalia.components.synapses import ShortTermPlasticity
-from thalia.components.synapses.stp import STPType
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.components.synapses import ShortTermPlasticity, STPType
+from thalia.config import LayerSizeCalculator, ThalamicRelayConfig
+from thalia.regions import ThalamicRelay
 
 
 @pytest.fixture

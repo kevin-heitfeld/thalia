@@ -56,14 +56,13 @@ Date: December 13, 2025 (prefrontal neuromorphic checkpoint support)
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Any, Dict
 
 import torch
 
 from thalia.managers import BaseCheckpointManager
 
-if TYPE_CHECKING:
-    from thalia.regions.prefrontal.prefrontal import Prefrontal
+from .prefrontal import Prefrontal
 
 
 class PrefrontalCheckpointManager(BaseCheckpointManager):

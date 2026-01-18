@@ -15,6 +15,7 @@ Date: December 11, 2025
 import pytest
 import torch
 
+from thalia.config import PrefrontalConfig
 from thalia.core.errors import ConfigurationError
 from thalia.learning import (
     BCMStrategy,
@@ -30,7 +31,7 @@ from thalia.learning import (
     ThreeFactorConfig,
     ThreeFactorStrategy,
 )
-from thalia.regions import Prefrontal, PrefrontalConfig
+from thalia.regions import Prefrontal
 
 
 class TestLearningStrategyBasics:

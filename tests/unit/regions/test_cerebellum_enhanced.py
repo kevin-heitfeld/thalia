@@ -16,11 +16,13 @@ Tests:
 import pytest
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig
-from thalia.regions.cerebellum.deep_nuclei import DeepCerebellarNuclei
-from thalia.regions.cerebellum.granule_layer import GranuleCellLayer
-from thalia.regions.cerebellum.purkinje_cell import EnhancedPurkinjeCell
+from thalia.config import CerebellumConfig, LayerSizeCalculator
+from thalia.regions.cerebellum import (
+    Cerebellum,
+    DeepCerebellarNuclei,
+    EnhancedPurkinjeCell,
+    GranuleCellLayer,
+)
 
 
 @pytest.fixture

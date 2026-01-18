@@ -6,9 +6,8 @@ Tests that neuron birth timestamps are properly tracked and recorded in checkpoi
 
 import pytest
 
-from thalia.regions.hippocampus.config import HippocampusConfig
-from thalia.regions.hippocampus.trisynaptic import TrisynapticHippocampus
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+from thalia.config import HippocampusConfig, PrefrontalConfig
+from thalia.regions import Prefrontal, TrisynapticHippocampus
 
 
 def create_test_prefrontal(

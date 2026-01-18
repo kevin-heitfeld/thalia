@@ -11,8 +11,8 @@ import pytest
 import torch
 
 from thalia.components.synapses import WeightInitializer
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig
+from thalia.config import LayerSizeCalculator, ThalamicRelayConfig
+from thalia.regions import ThalamicRelay
 
 
 def create_test_thalamus(

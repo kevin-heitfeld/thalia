@@ -10,7 +10,8 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig
+from thalia.config import PrefrontalConfig
+from thalia.regions import Prefrontal
 
 
 class TestPrefrontal(RegionTestBase):

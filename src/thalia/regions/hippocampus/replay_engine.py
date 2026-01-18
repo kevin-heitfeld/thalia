@@ -29,15 +29,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 
 from thalia.constants.time import SECONDS_PER_MS, TAU
 
-if TYPE_CHECKING:
-    from thalia.regions.hippocampus.config import Episode
+from .memory_component import Episode
 
 
 class ReplayMode(Enum):

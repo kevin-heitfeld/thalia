@@ -9,30 +9,19 @@ This package provides the trisynaptic hippocampus (DG→CA3→CA2→CA1) with:
 
 Usage:
     from thalia.regions.hippocampus import (
-        TrisynapticHippocampus,  # or: Hippocampus
+        TrisynapticHippocampus,
         Episode,
     )
 """
 
 from __future__ import annotations
 
-from .config import (
-    Episode,
-    HippocampusConfig,
-    HippocampusState,
-)
+from .memory_component import Episode
 from .replay_engine import ReplayConfig, ReplayEngine, ReplayMode
-
-# Import main class from package
-from .trisynaptic import TrisynapticHippocampus
-
-# Preferred alias
-Hippocampus = TrisynapticHippocampus
+from .trisynaptic import HippocampusState, TrisynapticHippocampus
 
 __all__ = [
-    # Primary names (preferred)
-    "Hippocampus",
-    "HippocampusConfig",
+    "TrisynapticHippocampus",
     "HippocampusState",
     "Episode",
     "ReplayEngine",

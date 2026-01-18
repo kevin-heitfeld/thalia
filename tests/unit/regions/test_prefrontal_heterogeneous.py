@@ -17,11 +17,8 @@ Biological validation:
 import pytest
 import torch
 
-from thalia.regions.prefrontal import (
-    Prefrontal,
-    PrefrontalConfig,
-    sample_heterogeneous_wm_neurons,
-)
+from thalia.config import PrefrontalConfig
+from thalia.regions.prefrontal import Prefrontal, sample_heterogeneous_wm_neurons
 
 # =====================================================================
 # FIXTURES

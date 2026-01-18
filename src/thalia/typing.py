@@ -274,7 +274,7 @@ class StriatumDiagnostics(BaseDiagnostics):
 
 
 class HippocampusDiagnostics(BaseDiagnostics):
-    """Extended diagnostics for Hippocampus (trisynaptic) region.
+    """Extended diagnostics for TrisynapticHippocampus region.
 
     Includes DG/CA3/CA1 subregion metrics and memory statistics.
 

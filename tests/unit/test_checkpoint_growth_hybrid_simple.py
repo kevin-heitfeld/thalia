@@ -7,9 +7,8 @@ Tests automatic format selection and loading for Striatum region.
 import pytest
 import torch
 
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.striatum import Striatum
-from thalia.regions.striatum.config import StriatumConfig
+from thalia.config import LayerSizeCalculator, StriatumConfig
+from thalia.regions import Striatum
 
 
 @pytest.fixture

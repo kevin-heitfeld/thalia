@@ -8,11 +8,6 @@ This module provides utilities for transient inhibition and temporal buffering:
    - Sharpens temporal precision of responses
    - Enables clean separation between stimuli
 
-2. **TemporalIntegrationLayer**: Models EC layer II/III for cortex→hippocampus
-   - Integrates sparse cortex spikes over time (~100ms)
-   - Provides stable representation for hippocampal pattern completion
-   - Acts as buffer with slow membrane dynamics
-
 Note:
     Previously named "FeedforwardInhibition", which was confusing since
     canonical feedforward inhibition refers to interneuron-mediated lateral
@@ -27,7 +22,6 @@ References:
 
 from __future__ import annotations
 
-import math
 from typing import Optional
 
 import torch
@@ -143,121 +137,6 @@ class StimulusGating:
         return self._current_inhibition
 
 
-class TemporalIntegrationLayer:
-    """
-    Temporal integration layer between cortex and hippocampus.
-
-    This models the entorhinal cortex (EC) layer II/III, which has slow
-    membrane dynamics that integrate cortical input over ~100ms (roughly
-    one theta cycle) before projecting to hippocampus.
-
-    Problem this solves:
-        Cortex L2/3 output is sparse and temporally variable (1-8 spikes
-        per timestep, different neurons each time). The hippocampus NMDA
-        mechanism needs consistent patterns to detect coincidence.
-
-    Solution:
-        1. Accumulate cortex spikes over time (leaky integration)
-        2. Convert to stable firing rate representation
-        3. Re-encode as consistent spike pattern
-        4. Hippocampus sees the same pattern each timestep
-
-    Biological basis:
-        - EC layer II stellate cells have slow membrane τ (~50-100ms)
-        - Grid cells and other EC neurons show persistent activity
-        - EC serves as a buffer between cortex and hippocampus
-
-    Example:
-        integrator = TemporalIntegrationLayer(n_neurons=96, tau=50.0)
-
-        for t in range(n_timesteps):
-            cortex_spikes = cortex.forward(input)
-            # Get stable representation for hippocampus
-            stable_input = integrator.integrate(cortex_spikes)
-            hippo_out = hippocampus.forward(stable_input)
-    """
-
-    def __init__(
-        self,
-        n_neurons: int,
-        tau: float = 50.0,
-        threshold: float = 0.5,
-        gain: float = 2.0,
-        device: torch.device = torch.device("cpu"),
-    ):
-        """
-        Initialize temporal integration layer.
-
-        Args:
-            n_neurons: Number of neurons to integrate
-            tau: Integration time constant in ms (higher = more smoothing)
-            threshold: Threshold for spike generation from rate
-            gain: Gain factor for rate-to-spike conversion
-            device: Torch device
-        """
-        self.n_neurons = n_neurons
-        self.tau = tau
-        self.threshold = threshold
-        self.gain = gain
-        self.device = device
-
-        # Leaky integration trace (accumulates spikes over time)
-        self._trace: Optional[torch.Tensor] = None
-
-    def integrate(
-        self,
-        spikes: torch.Tensor,
-        dt_ms: float = 1.0,
-    ) -> torch.Tensor:
-        """
-        Integrate spike input and produce stable output pattern.
-
-        The output is a consistent spike pattern where the SAME neurons
-        fire each timestep (based on accumulated activity), rather than
-        the variable pattern from raw cortex output.
-
-        Args:
-            spikes: Input spike pattern [n_neurons] (1D)
-            dt_ms: Timestep in ms (defaults to 1.0ms if not specified)
-
-        Returns:
-            Integrated spike pattern [n_neurons] (1D)
-        """
-        # Ensure 1D input
-        if spikes.dim() != 1:
-            spikes = spikes.squeeze()
-
-        assert spikes.dim() == 1, f"ThetaModulation expects 1D input, got shape {spikes.shape}"
-
-        # Initialize trace if needed
-        if self._trace is None:
-            self._trace = torch.zeros(self.n_neurons, device=self.device)
-
-        # Leaky integration: trace = trace * decay + new_spikes
-        decay = math.exp(-dt_ms / self.tau)
-        self._trace = self._trace * decay + spikes.float()
-
-        # Convert rate (trace) to spikes
-        # Higher trace = higher probability of spiking
-        # Use gain to control overall firing rate
-        rate = self._trace * self.gain
-
-        # Threshold to get consistent spike pattern
-        # Neurons with accumulated activity above threshold spike
-        output_spikes = (rate > self.threshold).float()
-
-        return output_spikes
-
-    def get_rate(self) -> Optional[torch.Tensor]:
-        """Get current integration trace (for debugging)."""
-        return self._trace.clone() if self._trace is not None else None
-
-    def reset_state(self) -> None:
-        """Reset integration state (for hard episode boundaries only)."""
-        self._trace = None
-
-
 __all__ = [
     "StimulusGating",
-    "TemporalIntegrationLayer",
 ]

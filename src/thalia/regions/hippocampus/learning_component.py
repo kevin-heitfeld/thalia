@@ -7,11 +7,12 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
+from thalia.config.region_configs import HippocampusConfig
 from thalia.constants.architecture import (
     ACTIVITY_HISTORY_DECAY,
     ACTIVITY_HISTORY_INCREMENT,
@@ -24,8 +25,7 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
 )
 from thalia.managers.base_manager import ManagerContext
 
-if TYPE_CHECKING:
-    from thalia.regions.hippocampus.config import HippocampusConfig, HippocampusState
+from .trisynaptic import HippocampusState
 
 
 class HippocampusLearningComponent(LearningComponent):

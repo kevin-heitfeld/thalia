@@ -9,21 +9,20 @@ Standardized component following the region_components pattern.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
 from thalia.components.synapses import WeightInitializer
+from thalia.config.region_configs import StriatumConfig
 from thalia.constants.learning import LEARNING_RATE_STRIATUM_PFC_MODULATION
 from thalia.constants.neuron import WEIGHT_INIT_SCALE_SMALL
 from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
 
-if TYPE_CHECKING:
-    from thalia.regions.striatum.config import StriatumConfig
-    from thalia.regions.striatum.d1_pathway import D1Pathway
-    from thalia.regions.striatum.d2_pathway import D2Pathway
+from .d1_pathway import D1Pathway
+from .d2_pathway import D2Pathway
 
 
 class StriatumLearningComponent(LearningComponent):

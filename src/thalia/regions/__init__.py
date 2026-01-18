@@ -74,55 +74,36 @@ Biological References:
 
 from __future__ import annotations
 
-from thalia.core.base.component_config import NeuralComponentConfig
-from thalia.core.component_state import NeuralComponentState
-from thalia.core.learning_rules import LearningRule
-from thalia.managers.component_registry import register_region
-from thalia.regions.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
-from thalia.regions.cortex import LayeredCortex, LayeredCortexConfig
-from thalia.regions.cortex.predictive_cortex import PredictiveCortex, PredictiveCortexConfig
-from thalia.regions.hippocampus import (
-    Hippocampus,
-    HippocampusConfig,
-    HippocampusState,
-)
-from thalia.regions.prefrontal import Prefrontal, PrefrontalConfig, PrefrontalState
-from thalia.regions.stimulus_gating import StimulusGating
-from thalia.regions.striatum import Striatum, StriatumConfig
-from thalia.regions.thalamus import ThalamicRelay, ThalamicRelayConfig, ThalamicRelayState
+from .cerebellum import Cerebellum, CerebellumState
+from .cortex import LayeredCortex, PredictiveCortex
+from .hippocampus import HippocampusState, TrisynapticHippocampus
+from .multisensory import MultimodalIntegration
+from .prefrontal import Prefrontal, PrefrontalState
+from .stimulus_gating import StimulusGating
+from .striatum import Striatum, StriatumState
+from .thalamus import ThalamicRelay, ThalamicRelayState
 
 __all__ = [
-    # Base classes (from core modules)
-    "LearningRule",
-    "NeuralComponentConfig",
-    "NeuralComponentState",
-    # Registration decorator (unified with ComponentRegistry)
-    "register_region",
-    # Cortex (LayeredCortex with L4→L2/3→L5)
-    "LayeredCortex",
-    "LayeredCortexConfig",
-    # Predictive Cortex (with predictive coding)
-    "PredictiveCortex",
-    "PredictiveCortexConfig",
     # Cerebellum
     "Cerebellum",
-    "CerebellumConfig",
     "CerebellumState",
-    # Striatum
-    "Striatum",
-    "StriatumConfig",
+    # Cortex
+    "LayeredCortex",
+    "PredictiveCortex",
+    # Hippocampus
+    "TrisynapticHippocampus",
+    "HippocampusState",
+    # Multisensory Integration
+    "MultimodalIntegration",
     # Prefrontal
     "Prefrontal",
-    "PrefrontalConfig",
     "PrefrontalState",
-    # Hippocampus (trisynaptic circuit: DG→CA3→CA1)
-    "Hippocampus",
-    "HippocampusConfig",
-    "HippocampusState",
-    # Thalamus (sensory relay and gating)
-    "ThalamicRelay",
-    "ThalamicRelayConfig",
-    "ThalamicRelayState",
-    # Theta dynamics
+    # Stimulus Gating
     "StimulusGating",
+    # Striatum
+    "Striatum",
+    "StriatumState",
+    # Thalamus
+    "ThalamicRelay",
+    "ThalamicRelayState",
 ]

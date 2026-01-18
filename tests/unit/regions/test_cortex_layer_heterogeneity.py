@@ -17,9 +17,8 @@ Biological validation:
 import pytest
 import torch
 
-from thalia.config import LayerSizeCalculator
-from thalia.regions.cortex import LayeredCortex
-from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.config import LayeredCortexConfig, LayerSizeCalculator
+from thalia.regions import LayeredCortex
 
 # =====================================================================
 # FIXTURES

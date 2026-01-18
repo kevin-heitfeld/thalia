@@ -58,12 +58,12 @@ import torch
 import torch.nn as nn
 
 from thalia.components.coding.spike_coding import CodingStrategy
-from thalia.config import SequenceMemoryConfig
+from thalia.config import HippocampusConfig, SequenceMemoryConfig
 from thalia.constants.neuron import WEIGHT_INIT_SCALE_RECURRENT
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.mixins import ConfigurableMixin, DiagnosticCollectorMixin
-from thalia.regions.hippocampus import Hippocampus, HippocampusConfig
+from thalia.regions import TrisynapticHippocampus
 from thalia.utils.core_utils import cosine_similarity_safe
 
 
@@ -158,7 +158,7 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
             "ca2_size": config.n_neurons // 2,  # type: ignore[attr-defined]
             "ca1_size": config.n_neurons,  # type: ignore[attr-defined]
         }
-        self.hippocampus = Hippocampus(hippo_config, hippo_sizes, config.device)  # type: ignore[attr-defined]
+        self.hippocampus = TrisynapticHippocampus(hippo_config, hippo_sizes, config.device)  # type: ignore[attr-defined]
 
         # Get CA3 size for association weights
         self.ca3_size = self.hippocampus.ca3_size

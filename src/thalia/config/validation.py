@@ -271,29 +271,6 @@ def validate_brain_config(brain_config: "BrainConfig") -> List[str]:
             )
 
     # =========================================================================
-    # Sensory pathway dimensions
-    # =========================================================================
-    # Visual pathway: depends on input encoding
-    # Audio pathway: depends on audio features
-    # Language pathway: depends on embedding dimension
-    # These are validated dynamically during pathway creation
-
-    # =========================================================================
-    # Inter-region pathway dimensions
-    # =========================================================================
-    # Cortex → Hippocampus: cortex L2/3 output → hippocampus input
-    cortex_l23_size = sizes.cortex_l23_size
-    hippo_input = sizes.hippocampus_size  # Hippocampus uses n_input from config
-
-    # Cortex → Striatum: cortex L5 output → striatum input
-    cortex_l5_size = sizes.cortex_l5_size
-    striatum_input = sizes.input_size  # Striatum input matches sensory input
-
-    # Hippocampus → PFC: hippocampus output → PFC input
-    hippo_output = sizes.hippocampus_size
-    pfc_input = sizes.pfc_size
-
-    # =========================================================================
     # Region size constraints
     # =========================================================================
     if sizes.n_actions < 1:

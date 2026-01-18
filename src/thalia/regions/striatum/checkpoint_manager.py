@@ -45,14 +45,13 @@ Date: December 9, 2025 (extracted during striatum refactoring)
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Dict
+from typing import Any, Dict
 
 import torch
 
 from thalia.managers import BaseCheckpointManager
 
-if TYPE_CHECKING:
-    from thalia.regions.striatum.striatum import Striatum
+from .striatum import Striatum
 
 
 class StriatumCheckpointManager(BaseCheckpointManager):

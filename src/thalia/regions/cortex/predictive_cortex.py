@@ -74,42 +74,20 @@ Date: December 2025
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.constants.learning import LEARNING_RATE_PRECISION
+from thalia.config.region_configs import PredictiveCortexConfig
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.managers.component_registry import register_region
-from thalia.regions.cortex.layered_cortex import LayeredCortex, LayeredCortexConfig
+from thalia.regions.cortex.layered_cortex import LayeredCortex
 from thalia.regions.cortex.predictive_coding import (
     PredictiveCodingConfig,
     PredictiveCodingLayer,
 )
-
-
-@dataclass
-class PredictiveCortexConfig(LayeredCortexConfig):
-    """Configuration for predictive cortex.
-
-    Extends LayeredCortexConfig with predictive coding parameters.
-    """
-
-    # Predictive coding parameters
-    prediction_enabled: bool = True
-    prediction_tau_ms: float = 50.0  # Slow predictions (NMDA-like)
-    error_tau_ms: float = 5.0  # Fast errors (AMPA-like)
-    prediction_learning_rate: float = 0.01
-
-    # Precision (attention) parameters
-    use_precision_weighting: bool = True
-    initial_precision: float = 1.0
-    precision_learning_rate: float = LEARNING_RATE_PRECISION
-
-    # Note: Gamma attention inherited from LayeredCortex base class (always enabled)
-    # Configure width via gamma_attention_width
 
 
 @dataclass
@@ -1036,98 +1014,3 @@ class PredictiveCortex(NeuralRegion):
     def output_size(self) -> int:
         """Total output size (L2/3 + L5)."""
         return self.l23_size + self.l5_size
-
-
-# =============================================================================
-# MULTI-AREA PREDICTIVE HIERARCHY
-# =============================================================================
-
-
-class PredictiveHierarchy(nn.Module):
-    """
-    Multi-area cortical hierarchy with bidirectional predictions.
-
-    Each area predicts the errors from the area below, creating
-    increasingly abstract representations as you go up.
-
-    This is the full implementation of hierarchical predictive coding:
-    - V1 → V2 → V4 → IT (ventral stream analog)
-    - Each area predicts the errors from below
-    - Top-down predictions flow back down
-
-    Information flow:
-    =================
-
-    Area 3 (most abstract)
-        ↑ errors        ↓ predictions
-    Area 2
-        ↑ errors        ↓ predictions
-    Area 1 (concrete)
-        ↑ errors        ↓ predictions
-    Sensory Input
-    """
-
-    def __init__(
-        self,
-        area_sizes: list[int],
-        base_config: Optional[PredictiveCortexConfig] = None,
-    ):
-        super().__init__()
-
-        n_areas = len(area_sizes) - 1
-
-        if base_config is None:
-            base_config = PredictiveCortexConfig()
-
-        self.areas = nn.ModuleList()
-
-        for i in range(n_areas):
-            area_config = PredictiveCortexConfig(
-                prediction_enabled=True,
-                device=base_config.device,
-            )
-            self.areas.append(PredictiveCortex(area_config))
-
-        self.n_areas = n_areas
-
-    def reset_state(self) -> None:
-        """Reset all areas."""
-        for area_module in self.areas:
-            area = cast(PredictiveCortex, area_module)
-            area.reset_state()
-
-    def forward(
-        self,
-        sensory_input: torch.Tensor,
-    ) -> Tuple[torch.Tensor, list[PredictiveCortexState]]:
-        """
-        Process through hierarchy.
-
-        Args:
-            sensory_input: Raw sensory input [batch, input_size]
-
-        Returns:
-            output: Highest-level output
-            states: States from each area
-        """
-        states = []
-        current = sensory_input
-
-        # Bottom-up pass
-        for area in self.areas:
-            output, state = area(current)
-            states.append(state)
-            current = output
-
-        return current, states
-
-    def get_total_free_energy(self) -> float:
-        """Sum of free energy across all areas."""
-        total = 0.0
-        for area_module in self.areas:
-            area = cast(PredictiveCortex, area_module)
-            if hasattr(area, "prediction_layer") and area.prediction_layer is not None:
-                free_energy_tensor = area.prediction_layer.get_free_energy()
-                if free_energy_tensor is not None:
-                    total += free_energy_tensor.item()
-        return total

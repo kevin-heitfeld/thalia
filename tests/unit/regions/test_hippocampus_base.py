@@ -10,9 +10,8 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 import torch
 
 from tests.utils.region_test_base import RegionTestBase
-from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.regions.hippocampus import Hippocampus
-from thalia.regions.hippocampus.config import HippocampusConfig
+from thalia.config import HippocampusConfig, LayerSizeCalculator
+from thalia.regions import TrisynapticHippocampus
 
 
 class TestHippocampus(RegionTestBase):
@@ -44,7 +43,7 @@ class TestHippocampus(RegionTestBase):
         # Remaining kwargs are behavioral config
         config = HippocampusConfig(**kwargs)
 
-        return Hippocampus(config=config, sizes=size_params, device=device)
+        return TrisynapticHippocampus(config=config, sizes=size_params, device=device)
 
     def get_default_params(self):
         """Return default hippocampus parameters."""

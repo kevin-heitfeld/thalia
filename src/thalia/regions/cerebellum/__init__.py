@@ -16,16 +16,15 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from thalia.regions.cerebellum.cerebellum import Cerebellum, CerebellumConfig, CerebellumState
-from thalia.regions.cerebellum.deep_nuclei import DeepCerebellarNuclei
-from thalia.regions.cerebellum.granule_layer import GranuleCellLayer
-from thalia.regions.cerebellum.purkinje_cell import EnhancedPurkinjeCell
+from .cerebellum import Cerebellum, CerebellumState
+from .deep_nuclei import DeepCerebellarNuclei
+from .granule_layer import GranuleCellLayer
+from .purkinje_cell import EnhancedPurkinjeCell
 
 __all__ = [
+    "Cerebellum",
+    "CerebellumState",
+    "DeepCerebellarNuclei",
     "GranuleCellLayer",
     "EnhancedPurkinjeCell",
-    "DeepCerebellarNuclei",
-    "Cerebellum",
-    "CerebellumConfig",
-    "CerebellumState",
 ]

@@ -70,8 +70,8 @@ from thalia.components.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
 )
-from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
-from thalia.config.learning_config import ErrorCorrectiveLearningConfig
+from thalia.components.synapses import ShortTermPlasticity, STPConfig, WeightInitializer
+from thalia.config.region_configs import CerebellumConfig
 from thalia.constants.neuromodulation import (
     ACH_BASELINE,
     DA_BASELINE_STANDARD,
@@ -85,7 +85,6 @@ from thalia.constants.neuron import (
     V_RESET_STANDARD,
     V_THRESHOLD_STANDARD,
 )
-from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.core.component_state import NeuralComponentState
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
@@ -103,167 +102,6 @@ from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 from .deep_nuclei import DeepCerebellarNuclei
 from .granule_layer import GranuleCellLayer
 from .purkinje_cell import EnhancedPurkinjeCell
-
-
-@dataclass
-class CerebellumConfig(NeuralComponentConfig, ErrorCorrectiveLearningConfig):
-    """Configuration specific to cerebellar regions.
-
-    The cerebellum implements ERROR-CORRECTIVE learning through:
-    1. Parallel fiber → Purkinje cell connections (learned)
-    2. Climbing fiber error signals from inferior olive
-    3. LTD when climbing fiber active with parallel fiber
-
-    Key biological features:
-    - Error signal triggers immediate learning (not delayed like RL)
-    - Can learn arbitrary input-output mappings quickly
-    - Uses eligibility traces for temporal credit assignment
-
-    Inherits from NeuralComponentConfig (structural) then ErrorCorrectiveLearningConfig (behavioral):
-    - learning_rate_ltp: LTP rate (default 0.01)
-    - learning_rate_ltd: LTD rate (default 0.01)
-    - error_threshold: Minimum error (default 0.01)
-    - use_eligibility_traces: Enable traces (default True)
-    - eligibility_tau_ms: Trace decay (default 20.0)
-
-    **Size Specification** (Semantic-First):
-    - Sizes passed via sizes dict: input_size, granule_size, purkinje_size
-    - Computed at instantiation: output_size (= purkinje_size), total_neurons (granule + purkinje or just purkinje)
-    - Config contains only behavioral parameters (learning rates, circuit flags, etc.)
-    """
-
-    # Temporal processing
-    temporal_window_ms: float = 10.0  # Window for coincidence detection
-
-    # Cerebellum uses weaker heterosynaptic competition for faster convergence:
-    heterosynaptic_ratio: float = 0.2  # Override base (0.3) - weaker competition
-
-    # Input trace parameters
-    input_trace_tau_ms: float = 20.0  # Input trace decay
-
-    # =========================================================================
-    # ENHANCED MICROCIRCUIT (optional, for increased biological detail)
-    # =========================================================================
-    # When enabled, uses granule→Purkinje→DCN circuit instead of direct
-    # parallel fiber→Purkinje mapping. Provides:
-    # - 4× sparse expansion in granule layer (pattern separation)
-    # - Dendritic computation in Purkinje cells (complex/simple spikes)
-    # - DCN integration (Purkinje sculpts tonic output)
-    use_enhanced_microcircuit: bool = True
-
-    granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
-    purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
-
-    # =========================================================================
-    # SHORT-TERM PLASTICITY (STP) - CRITICAL FOR CEREBELLAR TIMING
-    # =========================================================================
-    # Biologically, cerebellar synapses show distinct STP properties that are
-    # CRITICAL for temporal processing and motor timing:
-    #
-    # 1. PARALLEL FIBERS→PURKINJE: DEPRESSING (U=0.5-0.7)
-    #    - Implements temporal high-pass filter
-    #    - Fresh inputs signal new patterns
-    #    - Sustained inputs fade → cerebellum detects CHANGES, not steady-state
-    #    - Enables sub-millisecond timing discrimination
-    #    - WITHOUT THIS: Cerebellar timing precision COLLAPSES
-    #
-    # 2. MOSSY FIBERS→GRANULE CELLS: FACILITATING (U=0.15-0.25)
-    #    - Burst detection for sparse coding
-    #    - Amplifies repeated mossy fiber activity
-    #    - Enhances pattern separation in granule layer
-    #
-    # 3. CLIMBING FIBERS→PURKINJE: RELIABLE (U≈0.9, minimal STP)
-    #    - Error signal must be unambiguous
-    #    - No adaptation - every climbing fiber spike matters
-    #
-    # References:
-    # - Dittman et al. (2000): Nature 403:530-534 - Classic PF→Purkinje STP paper
-    # - Atluri & Regehr (1996): Delayed release at granule cell synapses
-    # - Isope & Barbour (2002): Facilitation at mossy fiber synapses
-    #
-    # BIOLOGICAL IMPORTANCE: This is perhaps the MOST important STP in the brain
-    # for motor learning and timing. The cerebellar cortex is the brain's master
-    # clock, and STP is essential for its temporal precision.
-    stp_enabled: bool = True
-    stp_pf_purkinje_type: STPType = STPType.DEPRESSING  # Parallel fiber depression
-    stp_mf_granule_type: STPType = STPType.FACILITATING  # Mossy fiber facilitation
-
-    # =========================================================================
-    # GAP JUNCTIONS (Inferior Olive Synchronization)
-    # =========================================================================
-    # Inferior olive (IO) neurons are electrically coupled via gap junctions,
-    # creating synchronized complex spikes across multiple Purkinje cells.
-    # This coordination is critical for motor learning and timing precision.
-    #
-    # Biology:
-    # - IO neurons form one of the densest gap junction networks in the brain
-    # - Synchronization time: <1ms (ultra-fast electrical coupling)
-    # - Functional role: Coordinates learning across multiple cerebellar modules
-    # - Complex spikes arrive synchronously at related Purkinje cells
-    #
-    # References:
-    # - Llinás & Yarom (1981): Electrophysiology of IO gap junctions
-    # - De Zeeuw et al. (1998): Gap junctions in IO create synchronous climbing fiber activity
-    # - Leznik & Llinás (2005): Role of gap junctions in IO oscillations
-    # - Schweighofer et al. (1999): Computational role of IO synchronization
-    gap_junctions_enabled: bool = True
-    """Enable gap junction coupling in inferior olive neurons."""
-
-    gap_junction_strength: float = 0.18
-    """Gap junction conductance for IO neurons (biological: 0.1-0.3, IO has stronger coupling)."""
-
-    gap_junction_threshold: float = 0.20
-    """Connectivity threshold for gap junction coupling (shared error patterns)."""
-
-    gap_junction_max_neighbors: int = 12
-    """Maximum gap junction neighbors per IO neuron (biological: 6-15, IO is densely coupled)."""
-
-    # =========================================================================
-    # COMPLEX SPIKE DYNAMICS (Phase 2B Enhancement)
-    # =========================================================================
-    # Climbing fibers trigger complex spikes in Purkinje cells - bursts of 2-7
-    # spikes with very short inter-spike intervals (1-2ms). These bursts encode
-    # ERROR MAGNITUDE: larger errors → longer bursts → more calcium influx.
-    #
-    # This provides GRADED ERROR SIGNALING instead of binary (error/no-error),
-    # enabling more nuanced learning: small errors trigger small corrections,
-    # large errors trigger large corrections.
-    #
-    # Biological Evidence:
-    # - Mathy et al. (2009): Complex spikes have 2-7 spikelets per burst
-    # - Davie et al. (2008): Number of spikelets correlates with error magnitude
-    # - Najafi & Medina (2013): Graded complex spikes enable graded learning
-    # - Yang & Lisberger (2014): Complex spike amplitude predicts learning rate
-    #
-    # Mechanism:
-    # 1. Climbing fiber error → complex spike burst (not single spike)
-    # 2. Each spikelet triggers dendritic calcium influx (~0.2 units)
-    # 3. Total calcium = n_spikes × ca2_per_spike
-    # 4. LTD magnitude ∝ total calcium (graded learning)
-    #
-    # Example:
-    # - Small error (0.2): 3 spikes → Ca²⁺ = 0.6 → small LTD
-    # - Large error (0.8): 6 spikes → Ca²⁺ = 1.2 → large LTD
-    #
-    # References:
-    # - Mathy et al. (2009): Nature Neuroscience 12:1378-1387
-    # - Najafi & Medina (2013): J. Neuroscience 33:15825-15840
-    # - Yang & Lisberger (2014): Neuron 82:1389-1401
-    # - Davie et al. (2008): Nature Neuroscience 11:838-848
-    use_complex_spike_bursts: bool = False
-    """Enable complex spike burst dynamics (graded error signaling)."""
-
-    min_complex_spike_count: int = 2
-    """Minimum spikelets per complex spike burst (biological: 2-3)."""
-
-    max_complex_spike_count: int = 7
-    """Maximum spikelets per complex spike burst (biological: 5-8)."""
-
-    complex_spike_isi_ms: float = 1.5
-    """Inter-spike interval within burst (biological: 1-2ms, very fast)."""
-
-    ca2_per_spikelet: float = 0.2
-    """Calcium influx per spikelet (arbitrary units, scaled for learning)."""
 
 
 @dataclass

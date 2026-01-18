@@ -24,10 +24,7 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.neurons import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
-)
+from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.constants.neuron import (
     E_EXCITATORY,
     E_INHIBITORY,
