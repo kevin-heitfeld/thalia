@@ -227,25 +227,5 @@ class GranuleCellLayer(nn.Module):
         # Expand granule neurons
         self.granule_neurons.grow(n_new)
 
-    def grow_input(self, n_new: int) -> None:
-        """Grow input dimension (mossy fibers).
-
-        Args:
-            n_new: Number of new mossy fiber inputs to add
-        """
-        old_n_input = self.n_input
-        self.n_input = old_n_input + n_new
-
-        # Add columns to mossy→granule weights
-        new_weights = WeightInitializer.sparse_random(
-            n_output=self.n_granule,
-            n_input=n_new,
-            sparsity=0.05,
-            device=self.device,
-        )
-        self.mossy_to_granule = nn.Parameter(
-            torch.cat([self.mossy_to_granule.data, new_weights], dim=1)
-        )
-
 
 __all__ = ["GranuleCellLayer"]

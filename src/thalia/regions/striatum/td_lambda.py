@@ -187,46 +187,6 @@ class TDLambdaTraces:
         self.traces = self.traces.to(device)
         return self
 
-    def grow_input(self, n_new: int) -> None:
-        """Grow input dimension by adding columns to eligibility traces.
-
-        Expands trace matrix to accommodate new input neurons from upstream
-        regions (e.g., cortex growing its output). Existing traces are preserved
-        to maintain credit assignment for learned state-action pairs.
-
-        Args:
-            n_new: Number of new input neurons to add
-
-        Effects:
-            - self.n_input increases by n_new
-            - self.traces expands from [n_output, n_input] to [n_output, n_input+n_new]
-            - Old traces preserved (existing credit assignment maintained)
-            - New columns initialized to zero (no credit yet for new inputs)
-
-        Example:
-            >>> traces = TDLambdaTraces(n_output=16, n_input=128, device=device)
-            >>> traces.traces[0, 10] = 0.8  # Some existing credit
-            >>> traces.grow_input(32)  # Cortex grew by 32 neurons
-            >>> assert traces.n_input == 160
-            >>> assert traces.traces[0, 10] == 0.8  # Old trace preserved
-            >>> assert traces.traces[0, 150] == 0.0  # New trace zero
-
-        Note:
-            Called automatically when upstream region grows:
-            >>> cortex.grow_output(32)
-            >>> striatum.grow_input(32)  # Calls td_lambda.grow_input(32)
-        """
-        old_traces = self.traces
-        self.n_input = self.n_input + n_new
-
-        # Create new traces with expanded input dimension
-        self.traces = torch.zeros(self.n_output, self.n_input, device=self.device)
-
-        # Copy old traces (preserve existing credit assignment)
-        self.traces[:, : old_traces.shape[1]] = old_traces
-
-        # New columns initialized to zero (no credit yet for new inputs)
-
     def reset_state(self) -> None:
         """Reset traces to zero (between episodes)."""
         self.traces.zero_()
@@ -303,38 +263,6 @@ class TDLambdaLearner:
         self.device = device
         self.traces.to(device)
         return self
-
-    def grow_input(self, n_new: int) -> None:
-        """Grow input dimension to accommodate upstream region growth.
-
-        Delegates to the underlying TDLambdaTraces instance to expand
-        eligibility trace matrices. Maintains existing credit assignment
-        for learned state-action pairs.
-
-        Args:
-            n_new: Number of new input neurons to add
-
-        Effects:
-            - self.n_input increases by n_new
-            - self.traces.n_input increases by n_new
-            - Eligibility traces expand from [n_output, n_input] to [n_output, n_input+n_new]
-
-        Example:
-            >>> manager = TDLambdaManager(n_output=16, n_input=128, device=device)
-            >>> # Upstream cortex grows:
-            >>> cortex.grow_output(32)
-            >>> # Striatum propagates growth:
-            >>> manager.grow_input(32)
-            >>> assert manager.n_input == 160
-            >>> assert manager.traces.n_input == 160
-
-        Note:
-            This is typically called from the parent Striatum region's
-            grow_input() method during developmental growth or curriculum
-            progression.
-        """
-        self.n_input = self.n_input + n_new
-        self.traces.grow_input(n_new)
 
     def update_eligibility(
         self,

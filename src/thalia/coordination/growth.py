@@ -629,27 +629,6 @@ class GrowthCoordinator:
                             metrics_after={},
                         )
                         events.append(region_input_event)
-                    elif hasattr(target_region, "grow_input"):
-                        # Fallback for regions not yet migrated to multi-source
-                        target_region.grow_input(
-                            n_new=n_new_neurons,
-                            initialization=initialization,
-                            sparsity=sparsity,
-                        )
-
-                        # Record region input growth event
-                        region_input_event = GrowthEvent(
-                            timestamp=datetime.now(timezone.utc).isoformat(),
-                            component_name=target_region_name,
-                            component_type="region",
-                            event_type="grow_input",
-                            n_neurons_added=0,  # No new neurons, just input expansion
-                            n_synapses_added=n_new_neurons * target_region.n_output,
-                            reason=f"Input dimension growth due to {region_name} expansion",
-                            metrics_before={},
-                            metrics_after={},
-                        )
-                        events.append(region_input_event)
 
         # 5. Record coordinated growth in history
         coordinated_event = {

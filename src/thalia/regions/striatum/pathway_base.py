@@ -28,7 +28,6 @@ from thalia.components.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
 )
-from thalia.components.synapses import WeightInitializer
 from thalia.constants.neuron import (
     E_EXCITATORY,
     E_INHIBITORY,
@@ -355,45 +354,6 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         # 3. Update config and grow neurons using efficient in-place growth (ConductanceLIF)
         self.config.n_output = new_n_output
         self.neurons.grow_neurons(n_new_neurons)
-
-    def grow_input(self, n_new_inputs: int) -> None:
-        """
-        Expand input dimension when upstream regions grow.
-
-        NOTE: Does NOT update self.config.total_input - that's handled by the parent
-        region (Striatum). Internal pathways just expand their weight matrices.
-
-        Weight initialization uses Xavier uniform (region default for striatum pathways).
-
-        Args:
-            n_new_inputs: Number of input neurons to add
-
-        Example:
-            >>> # When cortex grows from 128→148 neurons:
-            >>> cortex.grow_output(20)  # cortex adds 20 neurons
-            >>> cortex_to_striatum.grow_source('cortex', 148)  # pathway resizes
-            >>> striatum.grow_input(20)  # Calls d1/d2.grow_input(20)
-        """
-        # Strategy: Create new columns by initializing new [n_output, n_new_inputs] block
-        # Always use Xavier initialization (striatum pathway default)
-        new_cols = (
-            WeightInitializer.xavier(
-                n_output=self.config.n_output,
-                n_input=n_new_inputs,
-                gain=0.2,
-                device=self.device,
-            )
-            * self.config.w_max
-        )
-
-        # Concatenate along input dimension (columns)
-        expanded = torch.cat([self.weights.data, new_cols], dim=1)
-        self.weights.data = expanded
-
-        # Reset eligibility traces (new dimensions)
-        self.learning_strategy.reset_state()
-
-        # NOTE: Config is NOT updated here - parent region (Striatum) manages config
 
     def get_state(self) -> StriatumPathwayState:
         """Get pathway state for checkpointing.

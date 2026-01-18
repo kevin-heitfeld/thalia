@@ -213,55 +213,6 @@ class AfferentSynapses(nn.Module):
 
         return metrics
 
-    def grow_input(self, n_new: int) -> None:
-        """Grow synaptic layer to accept more afferent inputs.
-
-        When an upstream region grows output neurons, this region must grow
-        its afferent synapses to receive the additional axons.
-
-        Args:
-            n_new: Number of new input axons to add
-
-        Example:
-            # Cortex grew from 128 to 148 neurons (+20)
-            # Striatum must grow input to receive 20 more axons
-            striatum.afferent_synapses.grow_input(n_new=20)
-            # weights: [70, 224] → [70, 244]
-        """
-        old_n_inputs = self.config.n_inputs
-        new_n_inputs = old_n_inputs + n_new
-
-        # Create expanded weight matrix
-        from thalia.components.synapses.weight_init import WeightInitializer
-
-        new_weights = torch.zeros(
-            self.config.n_neurons,
-            new_n_inputs,
-            device=self.device,
-        )
-
-        # Copy old weights (preserve existing synapses)
-        new_weights[:, :old_n_inputs] = self.weights.data
-
-        # Initialize new weights (for new inputs)
-        new_weights[:, old_n_inputs:] = WeightInitializer.gaussian(
-            n_output=self.config.n_neurons,
-            n_input=n_new,
-            mean=0.3,
-            std=0.1,
-            device=self.device,
-        )
-
-        # Replace parameter
-        self.weights = nn.Parameter(new_weights)
-
-        # Update config
-        self.config.n_inputs = new_n_inputs
-
-        # Grow STP if enabled
-        if self.stp is not None:
-            self.stp.grow(n_new)
-
     def grow_output(self, n_new: int) -> None:
         """Grow synaptic layer for more post-synaptic neurons.
 
