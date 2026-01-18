@@ -262,7 +262,6 @@ class TrisynapticHippocampus(NeuralRegion):
             neuron_config=None,  # We create custom neurons for each layer
             default_learning_rule="hebbian",  # Hippocampus uses Hebbian learning
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # Override n_output: hippocampus outputs only CA1 activity
@@ -454,7 +453,6 @@ class TrisynapticHippocampus(NeuralRegion):
         manager_context = ManagerContext(
             device=self.device,
             n_output=self.ca3_size,
-            dt_ms=config.dt_ms,
             metadata={"ca3_size": self.ca3_size},
         )
 

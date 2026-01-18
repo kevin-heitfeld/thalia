@@ -134,26 +134,6 @@ class ConductanceLIFConfig(BaseNeuronConfig):
         """Effective membrane time constant."""
         return self.C_m / self.g_L
 
-    @property
-    def g_E_decay(self) -> float:
-        """Excitatory conductance decay factor per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_E)).item())
-
-    @property
-    def g_I_decay(self) -> float:
-        """Inhibitory conductance decay factor per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_I)).item())
-
-    @property
-    def adapt_decay(self) -> float:
-        """Adaptation conductance decay factor per timestep."""
-        return float(torch.exp(torch.tensor(-self.dt_ms / self.tau_adapt)).item())
-
-    @property
-    def ref_steps(self) -> int:
-        """Refractory period in timesteps."""
-        return int(self.tau_ref / self.dt_ms)
-
 
 class ConductanceLIF(nn.Module):
     """Conductance-based Leaky Integrate-and-Fire neuron.
@@ -184,7 +164,7 @@ class ConductanceLIF(nn.Module):
         ...     tau_E=5.0,  # Fast excitation
         ...     tau_I=10.0, # Slower inhibition
         ... )
-        >>> neuron = ConductanceLIF(n_neurons=100, config=config)
+        >>> neuron = ConductanceLIF(n_neurons=100, config=config, device='cpu')
         >>> neuron.reset_state()
         >>>
         >>> # Input conductances, not currents!
@@ -220,9 +200,12 @@ class ConductanceLIF(nn.Module):
             torch.full((n_neurons,), self.config.v_threshold, dtype=torch.float32, device=device),
         )
         self.register_buffer("v_reset", torch.tensor(self.config.v_reset, device=device))
-        self.register_buffer("g_E_decay", torch.tensor(self.config.g_E_decay, device=device))
-        self.register_buffer("g_I_decay", torch.tensor(self.config.g_I_decay, device=device))
-        self.register_buffer("adapt_decay", torch.tensor(self.config.adapt_decay, device=device))
+
+        # Cached decay factors (computed via update_temporal_parameters)
+        self.register_buffer("_g_E_decay", torch.tensor(1.0, device=device))
+        self.register_buffer("_g_I_decay", torch.tensor(1.0, device=device))
+        self.register_buffer("_adapt_decay", torch.tensor(1.0, device=device))
+        self._dt_ms: Optional[float] = None  # Tracks current dt
 
         # State variables
         self.membrane: Optional[torch.Tensor] = None
@@ -230,6 +213,41 @@ class ConductanceLIF(nn.Module):
         self.g_I: Optional[torch.Tensor] = None  # Inhibitory conductance
         self.g_adapt: Optional[torch.Tensor] = None  # Adaptation conductance
         self.refractory: Optional[torch.Tensor] = None
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update decay factors for new timestep.
+
+        Called by brain when dt changes. Recomputes cached decay factors
+        for conductances based on new dt and time constants.
+
+        Args:
+            dt_ms: New timestep in milliseconds
+
+        Note:
+            Uses register_buffer to ensure decay factors are moved with model
+            and included in state_dict for checkpointing.
+        """
+        self._dt_ms = dt_ms
+
+        device = self._g_E_decay.device
+
+        # Recompute excitatory conductance decay: exp(-dt / tau_E)
+        self._g_E_decay: torch.Tensor = torch.tensor(
+            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_E)).item()),
+            device=device,
+        )
+
+        # Recompute inhibitory conductance decay: exp(-dt / tau_I)
+        self._g_I_decay = torch.tensor(
+            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_I)).item()),
+            device=device,
+        )
+
+        # Recompute adaptation conductance decay: exp(-dt / tau_adapt)
+        self._adapt_decay = torch.tensor(
+            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_adapt)).item()),
+            device=device,
+        )
 
     def reset_state(self) -> None:
         """Reset neuron state to resting potential.
@@ -319,18 +337,25 @@ class ConductanceLIF(nn.Module):
         self.refractory = (self.refractory - 1).clamp_(min=0)  # type: ignore[assignment]
         not_refractory = self.refractory == 0
 
+        # Check that temporal parameters have been initialized
+        if self._dt_ms is None:
+            raise RuntimeError(
+                "ConductanceLIF.update_temporal_parameters() must be called before forward(). "
+                "This should be done automatically by DynamicBrain._broadcast_temporal_update()."
+            )
+
         # Update synaptic conductances (in-place decay + add input)
         assert self.g_E is not None, "g_E must be initialized"
         assert self.g_I is not None, "g_I must be initialized"
-        self.g_E.mul_(self.g_E_decay).add_(g_exc_input)  # type: ignore[union-attr, arg-type]
+        self.g_E.mul_(self._g_E_decay).add_(g_exc_input)  # type: ignore[union-attr, arg-type]
         if g_inh_input is not None:
-            self.g_I.mul_(self.g_I_decay).add_(g_inh_input)  # type: ignore[union-attr, arg-type]
+            self.g_I.mul_(self._g_I_decay).add_(g_inh_input)  # type: ignore[union-attr, arg-type]
         else:
-            self.g_I.mul_(self.g_I_decay)  # type: ignore[union-attr, arg-type]
+            self.g_I.mul_(self._g_I_decay)  # type: ignore[union-attr, arg-type]
 
         # Decay adaptation conductance (in-place) - handle None case
         if self.g_adapt is not None:
-            self.g_adapt.mul_(self.adapt_decay)  # type: ignore[union-attr, arg-type]
+            self.g_adapt.mul_(self._adapt_decay)  # type: ignore[union-attr, arg-type]
         else:
             # Initialize if missing (can happen after loading old checkpoints)
             assert self.membrane is not None, "membrane must be initialized"
@@ -352,7 +377,8 @@ class ConductanceLIF(nn.Module):
 
         # Effective time constant: τ_eff = C_m / g_total
         # V(t+dt) = V_inf + (V(t) - V_inf) * exp(-dt * g_total / C_m)
-        decay_factor = torch.exp((-self.config.dt_ms / self.C_m) * g_total)  # type: ignore[operator]
+        assert self._dt_ms is not None, "dt_ms must be set via update_temporal_parameters"
+        decay_factor = torch.exp((-self._dt_ms / self.C_m) * g_total)  # type: ignore[operator]
 
         # Update membrane for non-refractory neurons
         # Fused: new_V = V_inf + (V - V_inf) * decay = V_inf * (1 - decay) + V * decay
@@ -375,9 +401,12 @@ class ConductanceLIF(nn.Module):
         # This avoids creating intermediate tensors
         if spikes.any():
             self.membrane = torch.where(spikes, self.v_reset, self.membrane)  # type: ignore[assignment, arg-type]
+            # Compute refractory steps from dt_ms
+            assert self._dt_ms is not None, "dt_ms must be set"
+            ref_steps = int(self.config.tau_ref / self._dt_ms)
             self.refractory = torch.where(
                 spikes,
-                self.config.ref_steps,
+                ref_steps,
                 self.refractory,  # scalar broadcasts  # type: ignore[arg-type]
             )
             # Increment adaptation for spiking neurons (need float for arithmetic)
@@ -461,7 +490,7 @@ class ConductanceLIF(nn.Module):
             n_new: Number of neurons to add
 
         Example:
-            >>> neurons = ConductanceLIF(n_neurons=100, config=config)
+            >>> neurons = ConductanceLIF(n_neurons=100, config=config, device='cpu')
             >>> neurons.reset_state()
             >>> # ... training ...
             >>> neurons.grow_neurons(20)  # Now 120 neurons, old state preserved

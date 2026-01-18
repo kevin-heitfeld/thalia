@@ -100,13 +100,12 @@ class GranuleCellLayer(nn.Module):
             tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
             tau_E=1.0,  # ms, fast excitatory conductance decay
             tau_I=2.0,  # ms, fast inhibitory conductance decay
-            dt_ms=dt_ms,  # Timestep in milliseconds
         )
         self.granule_neurons = ConductanceLIF(
             n_neurons=self.n_granule,
             config=granule_config,
+            device=device,
         )
-        self.granule_neurons.to(device)
 
     @property
     def weights(self) -> nn.Parameter:

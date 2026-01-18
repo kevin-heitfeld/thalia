@@ -61,9 +61,9 @@ class BaseNeuronConfig(BaseConfig):
             Duration during which neuron cannot fire after a spike.
             Biological range: 1-5ms depending on neuron type
 
-        dt_ms: Simulation timestep in milliseconds (default: 1.0)
-            Used to compute decay factors and refractory steps.
-            Should match the global simulation timestep.
+        Note: dt_ms removed (Phase 2 refactoring)
+            Decay factors are now computed via update_temporal_parameters()
+            called by the brain when dt changes.
     """
 
     tau_mem: float = TAU_MEM_STANDARD  # Membrane time constant (ms)
@@ -71,4 +71,3 @@ class BaseNeuronConfig(BaseConfig):
     v_reset: float = V_RESET_STANDARD  # Reset after spike
     v_threshold: float = V_THRESHOLD_STANDARD  # Spike threshold
     tau_ref: float = TAU_REF_STANDARD  # Refractory period (ms)
-    dt_ms: float = 1.0  # Simulation timestep (ms)

@@ -250,7 +250,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             n_neurons=total_neurons,  # Use actual total (d1+d2)
             default_learning_rule="three_factor",  # Dopamine-modulated
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # Store n_output for NeuralRegion interface
@@ -339,7 +338,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         exploration_context = ManagerContext(
             device=self.device,
             n_output=self.n_actions,
-            dt_ms=config.dt_ms,
         )
         self.exploration = StriatumExplorationComponent(
             config=exploration_config,
@@ -459,7 +457,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             device=self.device,
             n_input=self.input_size,
             n_output=self.n_actions,
-            dt_ms=config.dt_ms,
         )
 
         # Create learning manager (will access weights via parent methods)
@@ -523,7 +520,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             homeostasis_context = ManagerContext(
                 device=self.device,
                 n_output=self.n_actions,
-                dt_ms=config.dt_ms,
                 metadata={
                     "neurons_per_action": self.neurons_per_action,
                     "d1_size": self.d1_size,
@@ -2215,14 +2211,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             E_I=E_INHIBITORY,
             tau_E=5.0,
             tau_I=5.0,
-            dt_ms=self.config.dt_ms,
             tau_ref=2.0,
             tau_adapt=100.0,  # Adaptation time constant
             adapt_increment=0.1,  # Enable spike-frequency adaptation
         )
         total_msn_neurons = self.d1_size + self.d2_size
-        neurons = ConductanceLIF(n_neurons=total_msn_neurons, config=neuron_config)
-        neurons.to(self.device)
+        neurons = ConductanceLIF(
+            n_neurons=total_msn_neurons,
+            config=neuron_config,
+            device=self.device,
+        )
         return neurons
 
     def _create_d2_neurons(self) -> ConductanceLIF:
@@ -2250,14 +2248,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             E_I=E_INHIBITORY,
             tau_E=5.0,
             tau_I=5.0,
-            dt_ms=self.config.dt_ms,
             tau_ref=2.0,
             tau_adapt=100.0,  # Adaptation time constant
             adapt_increment=0.1,  # Enable spike-frequency adaptation
         )
         total_msn_neurons = self.d1_size + self.d2_size
-        neurons = ConductanceLIF(n_neurons=total_msn_neurons, config=neuron_config)
-        neurons.to(self.device)
+        neurons = ConductanceLIF(
+            n_neurons=total_msn_neurons,
+            config=neuron_config,
+            device=self.device,
+        )
         return neurons
 
     # endregion

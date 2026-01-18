@@ -105,14 +105,13 @@ class DeepCerebellarNuclei(nn.Module):
             tau_mem=20.0,  # ms, longer integration for irregular firing
             tau_E=3.0,  # ms, excitatory conductance decay
             tau_I=8.0,  # ms, inhibitory conductance decay (slower for sustained effect)
-            dt_ms=dt_ms,  # Timestep in milliseconds
             noise_std=0.5,  # mV, membrane noise to break synchrony
         )
         self.dcn_neurons = ConductanceLIF(
             n_neurons=n_output,
             config=dcn_config,
+            device=device,
         )
-        self.dcn_neurons.to(device)
 
         # HETEROGENEOUS tonic excitation to break pathological synchrony
         # Real DCN neurons have different baseline excitabilities
@@ -301,8 +300,8 @@ class DeepCerebellarNuclei(nn.Module):
         self.dcn_neurons = ConductanceLIF(
             n_neurons=self.n_output,
             config=old_config,
+            device=self.device,
         )
-        self.dcn_neurons.to(self.device)
 
     def grow_input(self, n_new: int, source: str = "purkinje") -> None:
         """Grow input dimension from Purkinje or mossy fibers.

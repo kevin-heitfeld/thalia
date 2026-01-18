@@ -60,8 +60,7 @@ class MockRegion(StateLoadingMixin):
 
         # Create neurons
         config = ConductanceLIFConfig()
-        self.neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
-        self.neurons.to(device)
+        self.neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         self.neurons.reset_state()  # Initialize state tensors
 
         # Learning traces

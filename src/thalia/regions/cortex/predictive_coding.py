@@ -268,7 +268,6 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             tau_E=5.0,  # Fast excitatory
             tau_I=10.0,  # Fast inhibitory
             v_threshold=0.5,  # Lower threshold for sensitive error detection
-            dt_ms=config.dt_ms,
         )
         self.error_neurons = ConductanceLIF(config.n_input, error_config, device=device)
 
@@ -278,7 +277,6 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
             tau_E=10.0,  # Slower excitatory for temporal integration
             tau_I=15.0,
             v_threshold=1.0,
-            dt_ms=config.dt_ms,
         )
         self.prediction_neurons = ConductanceLIF(config.n_input, pred_config, device=device)
 

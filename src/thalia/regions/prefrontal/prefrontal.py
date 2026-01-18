@@ -637,7 +637,6 @@ class Prefrontal(NeuralRegion):
             ),
             default_learning_rule="stdp",
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # Override neurons to add STP (NeuralRegion creates basic neurons)
@@ -704,7 +703,6 @@ class Prefrontal(NeuralRegion):
                 a_minus=config.a_minus,
                 tau_plus=config.tau_plus_ms,
                 tau_minus=config.tau_minus_ms,
-                dt_ms=config.dt_ms,
                 w_min=config.w_min,
                 w_max=config.w_max,
             ),
@@ -775,8 +773,7 @@ class Prefrontal(NeuralRegion):
             adapt_increment=cfg.adapt_increment,  # SFA enabled!
             tau_adapt=cfg.adapt_tau,
         )
-        neurons = ConductanceLIF(self.n_neurons, neuron_config)
-        neurons.to(self.device)
+        neurons = ConductanceLIF(self.n_neurons, neuron_config, device=self.device)
 
         # =====================================================================
         # APPLY HETEROGENEOUS MEMBRANE TIME CONSTANTS (Phase 1B)

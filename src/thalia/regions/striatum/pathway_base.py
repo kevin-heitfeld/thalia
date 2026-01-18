@@ -225,11 +225,13 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             E_I=self.config.e_inhibitory,
             tau_E=5.0,  # AMPA/NMDA time constant (ms)
             tau_I=5.0,  # GABA time constant (ms)
-            dt_ms=1.0,
             tau_ref=2.0,  # Refractory period (ms)
         )
-        neurons = ConductanceLIF(n_neurons=self.config.n_output, config=neuron_config)
-        neurons.to(self.device)
+        neurons = ConductanceLIF(
+            n_neurons=self.config.n_output,
+            config=neuron_config,
+            device=self.device,
+        )
         return neurons
 
     def forward(

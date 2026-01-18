@@ -373,7 +373,6 @@ class PredictiveCortex(NeuralRegion):
             neuron_config=None,  # Managed by inner cortex
             default_learning_rule=None,  # Managed by inner cortex
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # =====================================================================

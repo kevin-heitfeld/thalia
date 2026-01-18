@@ -163,7 +163,7 @@ class NeuralRegion(
 
         # Create neuron population
         neuron_cfg = neuron_config or ConductanceLIFConfig()
-        self.neurons = ConductanceLIF(n_neurons, neuron_cfg)
+        self.neurons = ConductanceLIF(n_neurons, neuron_cfg, device=self.device)
 
         # Synaptic weights: one weight matrix per input source
         # Structure: {"thalamus": [n_neurons, 128], "hippocampus": [n_neurons, 200], ...}

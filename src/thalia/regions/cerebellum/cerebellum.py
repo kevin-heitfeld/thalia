@@ -558,7 +558,6 @@ class Cerebellum(NeuralRegion):
         super().__init__(
             n_neurons=self.purkinje_size,
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # Initialize default input source (multi-source architecture)
@@ -586,7 +585,6 @@ class Cerebellum(NeuralRegion):
                 expansion_factor=self.granule_size / self._total_input_size,
                 sparsity=self.config.granule_sparsity,
                 device=device,
-                dt_ms=config.dt_ms,
             )
 
             # Enhanced Purkinje cells (one per output neuron)
@@ -597,7 +595,6 @@ class Cerebellum(NeuralRegion):
                         n_parallel_fibers=self.granule_layer.n_granule,
                         n_dendrites=self.config.purkinje_n_dendrites,
                         device=device,
-                        dt_ms=config.dt_ms,
                     )
                     for _ in range(self.purkinje_size)
                 ]
@@ -609,7 +606,6 @@ class Cerebellum(NeuralRegion):
                 n_purkinje=self.purkinje_size,
                 n_mossy=self._total_input_size,
                 device=device,
-                dt_ms=config.dt_ms,
             )
 
             # Update weight dimensions for granule layer expansion
@@ -852,8 +848,11 @@ class Cerebellum(NeuralRegion):
             tau_E=3.0,  # Faster excitatory for precise timing
             tau_I=8.0,  # Faster inhibitory for precise timing
         )
-        neurons = ConductanceLIF(n_neurons=self.purkinje_size, config=neuron_config)
-        neurons.to(self.device)
+        neurons = ConductanceLIF(
+            n_neurons=self.purkinje_size,
+            config=neuron_config,
+            device=self.device,
+        )
         return neurons
 
     def grow_output(
@@ -1109,8 +1108,6 @@ class Cerebellum(NeuralRegion):
         input_gain = 0.7 + 0.3 * encoding_mod  # 0.7-1.0
         # Note: retrieval_mod could be used for output gain if needed for motor commands
 
-        dt = self.config.dt_ms
-
         # =====================================================================
         # ENHANCED MICROCIRCUIT PATHWAY (if enabled)
         # =====================================================================
@@ -1196,7 +1193,6 @@ class Cerebellum(NeuralRegion):
         self._trace_manager.update_traces(
             input_spikes=effective_input,  # Use granule spikes if enhanced
             output_spikes=output_spikes,
-            dt_ms=dt,
         )
 
         # Compute STDP weight change direction (raw LTP/LTD without combining)
@@ -1210,7 +1206,7 @@ class Cerebellum(NeuralRegion):
 
         # Accumulate into eligibility trace (with decay)
         if isinstance(stdp_dw, torch.Tensor):
-            self._trace_manager.accumulate_eligibility(stdp_dw, dt_ms=dt)
+            self._trace_manager.accumulate_eligibility(stdp_dw)
 
         # Store output (NeuralRegion pattern - no state.t tracking)
         self.output_spikes = output_spikes

@@ -90,13 +90,12 @@ class EnhancedPurkinjeCell(nn.Module):
             tau_mem=15.0,  # ms, slower integration for complex computation
             tau_E=2.0,  # ms, excitatory conductance decay
             tau_I=5.0,  # ms, inhibitory conductance decay (strong inhibition)
-            dt_ms=dt_ms,  # Timestep in milliseconds
         )
         self.soma_neurons = ConductanceLIF(
             n_neurons=1,
             config=soma_config,
+            device=device,
         )
-        self.soma_neurons.to(device)
 
         # Complex spike state
         self.last_complex_spike_time: int = -1000

@@ -434,7 +434,6 @@ class ThalamicRelay(NeuralRegion):
         super().__init__(
             n_neurons=self.relay_size,
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # Store config

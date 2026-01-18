@@ -194,7 +194,6 @@ class MultimodalIntegration(NeuralRegion):
             neuron_config=None,  # Created manually below
             default_learning_rule="hebbian",
             device=config.device,
-            dt_ms=config.dt_ms,
         )
         self.config = config
         self.multisensory_config = config  # Store for growth methods
@@ -334,11 +333,9 @@ class MultimodalIntegration(NeuralRegion):
         if config.use_gamma_binding:
             self.visual_gamma = SinusoidalOscillator(
                 frequency_hz=config.gamma_freq_hz,
-                dt_ms=config.dt_ms,
             )
             self.auditory_gamma = SinusoidalOscillator(
                 frequency_hz=config.gamma_freq_hz,
-                dt_ms=config.dt_ms,
             )
             self._last_coherence = 0.0
         else:

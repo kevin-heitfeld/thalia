@@ -105,7 +105,7 @@ Date: December 2025
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -149,7 +149,6 @@ from thalia.learning.rules.strategies import LearningStrategy
 from thalia.managers.component_registry import register_region
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.utils.core_utils import clamp_weights, ensure_1d, initialize_phase_preferences
-from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import (
     compute_ach_recurrent_suppression,
     compute_theta_encoding_retrieval,
@@ -292,7 +291,6 @@ class LayeredCortex(NeuralRegion):
         super().__init__(
             n_neurons=total_neurons,
             device=device,
-            dt_ms=config.dt_ms,
         )
 
         # Override n_output to match actual forward() return size
@@ -323,7 +321,6 @@ class LayeredCortex(NeuralRegion):
                 a_minus=config.a_minus,
                 tau_plus=config.tau_plus_ms,
                 tau_minus=config.tau_minus_ms,
-                dt_ms=config.dt_ms,
                 w_min=config.w_min,
                 w_max=config.w_max,
             )
