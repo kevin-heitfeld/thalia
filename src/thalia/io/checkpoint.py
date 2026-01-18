@@ -67,8 +67,60 @@ def _convert_to_json_serializable(obj: Any) -> Any:
         return obj
 
 
+def _deserialize_value(value: Any, file, device: str) -> Any:
+    """Recursively deserialize a value, handling tensors, dataclasses, and other types.
+
+    Args:
+        value: Value to deserialize (dict, list, or primitive)
+        file: Binary file handle (for tensor deserialization)
+        device: Device to load tensors to
+
+    Returns:
+        Deserialized value
+    """
+    if isinstance(value, dict):
+        # Check if this is a tensor reference
+        if value.get("_type") == "tensor":
+            file.seek(value["_offset"])
+            return decode_tensor(file, device)
+        # Check if this is a torch.device
+        elif value.get("_type") == "torch.device":
+            return torch.device(value["_value"])
+        # Check if this is a serialized dataclass
+        elif value.get("_dataclass") is not None:
+            # Reconstruct the dataclass with tensor support
+            module_name, class_name = value["_dataclass"].rsplit(".", 1)
+            module = __import__(module_name, fromlist=[class_name])
+            dataclass_type = getattr(module, class_name)
+            fields = {k: _deserialize_value(v, file, device) for k, v in value["_fields"].items()}
+            return dataclass_type(**fields)
+        # Check if this is an object_dict
+        elif value.get("_type") == "object_dict":
+            # For now, just return the deserialized dict
+            # Full object reconstruction would require class instantiation
+            return _deserialize_value(value["_dict"], file, device)
+        else:
+            # Regular dict - recursively deserialize
+            return {k: _deserialize_value(v, file, device) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [_deserialize_value(item, file, device) for item in value]
+    else:
+        # Primitive value (int, float, str, bool, None)
+        return value
+
+
 def _convert_from_json(obj: Any) -> Any:
-    """Recursively reconstruct objects from JSON-serializable types."""
+    """Recursively reconstruct objects from JSON-serializable types (NO tensor support).
+
+    NOTE: This function is kept for backward compatibility but should not be used
+    for deserializing state that may contain tensors. Use _deserialize_value instead.
+
+    Args:
+        obj: Object to convert
+
+    Returns:
+        Converted object
+    """
     if isinstance(obj, dict):
         # Check if this is a torch.device
         if obj.get("_type") == "torch.device":
@@ -712,9 +764,18 @@ def _serialize_value(value: Any, writer: BinaryWriter) -> Any:
     elif isinstance(value, (list, tuple)):
         # Handle lists and tuples
         return [_serialize_value(item, writer) for item in value]
-    elif is_dataclass(value) or isinstance(value, Enum) or isinstance(value, torch.device):
-        # Convert special types to JSON-serializable form
-        return _convert_to_json_serializable(value)
+    elif is_dataclass(value):
+        # Serialize dataclass with tensors properly handled
+        return {
+            "_dataclass": f"{value.__class__.__module__}.{value.__class__.__name__}",
+            "_fields": {k: _serialize_value(v, writer) for k, v in asdict(value).items()},  # type: ignore[arg-type]
+        }
+    elif isinstance(value, Enum):
+        # Enums are simple - just return the value
+        return value.value
+    elif isinstance(value, torch.device):
+        # Convert torch.device to string representation
+        return {"_type": "torch.device", "_value": str(value)}
     elif hasattr(value, "__dict__") and not isinstance(value, (str, int, float, bool, type(None))):
         # Object with attributes - serialize its __dict__
         return {
@@ -737,25 +798,17 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
     Returns:
         JSON dict with tensor references
     """
-    return _serialize_value(region_state, writer)
+    result: Any = _serialize_value(region_state, writer)
+    return result
 
 
 def _deserialize_list(lst: list, file, device: str) -> list:
-    """Deserialize list, handling tensors."""
+    """Deserialize list, handling tensors and nested structures."""
     result = []
 
     for item in lst:
-        if isinstance(item, dict):
-            if item.get("_type") == "tensor":
-                # Decode tensor - seek and read
-                file.seek(item["_offset"])
-                result.append(decode_tensor(file, device))
-            else:
-                result.append(_deserialize_region_state(item, file, device))
-        elif isinstance(item, list):
-            result.append(_deserialize_list(item, file, device))
-        else:
-            result.append(item)
+        # Use unified deserialization
+        result.append(_deserialize_value(item, file, device))
 
     return result
 
@@ -774,22 +827,7 @@ def _deserialize_region_state(json_dict: Dict[str, Any], file, device: str) -> D
     state = {}
 
     for key, value in json_dict.items():
-        if isinstance(value, dict):
-            if value.get("_type") == "tensor":
-                # Decode tensor - seek and read
-                file.seek(value["_offset"])
-                state[key] = decode_tensor(file, device)
-            elif value.get("_dataclass") is not None:
-                # Reconstruct dataclass
-                state[key] = _convert_from_json(value)
-            else:
-                # Recursively deserialize nested dict
-                state[key] = _deserialize_region_state(value, file, device)
-        elif isinstance(value, list):
-            # Handle lists
-            state[key] = _deserialize_list(value, file, device)
-        else:
-            # Plain value
-            state[key] = value
+        # Use unified deserialization that handles all types
+        state[key] = _deserialize_value(value, file, device)
 
     return state
