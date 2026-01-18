@@ -610,6 +610,42 @@ class BrainComponentBase(ABC):
     def dtype(self) -> torch.dtype:
         """Data type for floating point tensors. REQUIRED."""
 
+    # =========================================================================
+    # Temporal Dynamics (REQUIRED for adaptive dt)
+    # =========================================================================
+
+    @abstractmethod
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """
+        Update component's temporal dynamics for new timestep.
+
+        Called by brain when dt_ms changes. Components should:
+        - Recompute decay factors (e.g., g_E_decay, g_I_decay)
+        - Update phase increments (oscillators)
+        - Resize delay buffers if needed
+        - Propagate update to sub-components (neurons, STP, learning strategies)
+
+        REQUIRED for all components to support adaptive dt.
+        Default implementation available in BrainComponentMixin.
+
+        Args:
+            dt_ms: New timestep in milliseconds
+
+        Example:
+            def update_temporal_parameters(self, dt_ms: float) -> None:
+                # Update neuron decay factors
+                if hasattr(self, 'neurons'):
+                    self.neurons.update_temporal_parameters(dt_ms)
+
+                # Update STP decay factors
+                if hasattr(self, 'stp'):
+                    self.stp.update_temporal_parameters(dt_ms)
+
+                # Update learning strategy trace decay
+                for strategy in self.strategies.values():
+                    strategy.update_temporal_parameters(dt_ms)
+        """
+
 
 # =============================================================================
 # Mixin with Default Implementations
@@ -701,6 +737,35 @@ class BrainComponentMixin:
         self._oscillator_signals = signals or {}
         self._oscillator_theta_slot = theta_slot
         self._coupled_amplitudes = coupled_amplitudes or {}
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Default: propagate to neurons, STP, and learning strategies if they exist.
+
+        This provides a sensible default that works for most components.
+        Override if custom temporal update logic is needed.
+
+        Args:
+            dt_ms: New timestep in milliseconds
+        """
+        # Update neurons if present
+        if hasattr(self, "neurons") and hasattr(self.neurons, "update_temporal_parameters"):
+            self.neurons.update_temporal_parameters(dt_ms)
+
+        # Update STP if present
+        if hasattr(self, "stp") and hasattr(self.stp, "update_temporal_parameters"):
+            self.stp.update_temporal_parameters(dt_ms)
+
+        # Update learning strategies if present
+        if hasattr(self, "strategies"):
+            for strategy in self.strategies.values():
+                if hasattr(strategy, "update_temporal_parameters"):
+                    strategy.update_temporal_parameters(dt_ms)
+
+        # Update single learning strategy if present
+        if hasattr(self, "learning_strategy") and hasattr(
+            self.learning_strategy, "update_temporal_parameters"
+        ):
+            self.learning_strategy.update_temporal_parameters(dt_ms)
 
     # =========================================================================
     # Convenience properties for accessing individual oscillator phases

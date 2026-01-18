@@ -1058,3 +1058,39 @@ class OscillatorManager:
         self._enabled = state.get(
             "enabled", {name: True for name in ["delta", "theta", "alpha", "beta", "gamma"]}
         )
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update oscillator phase increments for new timestep.
+
+        Called by brain when dt_ms changes during adaptive timestep adjustment.
+        Updates all oscillators to maintain correct phase advancement rate.
+
+        Args:
+            dt_ms: New timestep in milliseconds
+
+        Example:
+            # Speed up replay 10x
+            brain.set_timestep(10.0)
+            # Oscillators automatically adjust phase increments
+        """
+        self.dt_ms = dt_ms
+
+        # Update all oscillators
+        # Each oscillator's config.dt_ms will be updated, which affects phase increment
+        self.delta.config.dt_ms = dt_ms
+        self.delta._update_phase_increment()
+
+        self.theta.config.dt_ms = dt_ms
+        self.theta._update_phase_increment()
+
+        self.alpha.config.dt_ms = dt_ms
+        self.alpha._update_phase_increment()
+
+        self.beta.config.dt_ms = dt_ms
+        self.beta._update_phase_increment()
+
+        self.gamma.config.dt_ms = dt_ms
+        self.gamma._update_phase_increment()
+
+        self.ripple.config.dt_ms = dt_ms
+        self.ripple._update_phase_increment()

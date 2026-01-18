@@ -357,6 +357,13 @@ class DynamicBrain(nn.Module):
         self._registry: Optional[ComponentRegistry] = None
         """Component registry reference (for component type lookup)"""
 
+        # =================================================================
+        # INITIALIZE TEMPORAL PARAMETERS (Phase 1)
+        # =================================================================
+        # Broadcast dt_ms to all components for initial setup
+        # Components compute decay factors, phase increments, etc.
+        self._broadcast_temporal_update()
+
     def _get_component(self, name: str) -> NeuralRegion:
         """Type-safe accessor for components from ModuleDict.
 
@@ -440,6 +447,73 @@ class DynamicBrain(nn.Module):
                 return self._theta.frequency_hz
 
         return ThetaWrapper(self.oscillators.theta)
+
+    def set_timestep(self, new_dt_ms: float) -> None:
+        """Change simulation timestep adaptively during training.
+
+        Updates dt_ms and propagates temporal parameter updates to:
+        - All components (neurons, STP, learning strategies)
+        - Oscillator manager (phase increments)
+        - Pathway manager (delay buffers)
+
+        Use cases:
+        - Memory replay: 10x speedup (dt=10ms) during consolidation
+        - Critical learning: Slow down to 0.1ms for precise timing
+        - Energy efficiency: Larger dt when dynamics are stable
+
+        Args:
+            new_dt_ms: New timestep in milliseconds (must be positive)
+
+        Raises:
+            ValueError: If new_dt_ms <= 0
+
+        Example:
+            # Speed up replay 10x
+            brain.set_timestep(10.0)
+            brain.forward(replay_input)
+
+            # Restore normal speed
+            brain.set_timestep(1.0)
+        """
+        if new_dt_ms <= 0:
+            raise ValueError(f"dt_ms must be positive, got {new_dt_ms}")
+
+        # Update brain dt
+        self.dt_ms = new_dt_ms
+        self.brain_config.dt_ms = new_dt_ms
+
+        # Broadcast to all components and subsystems
+        self._broadcast_temporal_update()
+
+    def _broadcast_temporal_update(self) -> None:
+        """Notify all components and subsystems of dt change.
+
+        Called by:
+        - __init__() to initialize temporal parameters
+        - set_timestep() when dt changes during simulation
+
+        Propagates update to:
+        - Components (neurons, STP, learning strategies via update_temporal_parameters)
+        - Oscillator manager (phase increments)
+        - Pathway manager (delay buffers)
+        """
+        # Update all components
+        for component in self.components.values():
+            if hasattr(component, "update_temporal_parameters"):
+                component.update_temporal_parameters(self.dt_ms)
+
+        # Update all connections/pathways
+        for pathway in self.connections.values():
+            if hasattr(pathway, "update_temporal_parameters"):
+                pathway.update_temporal_parameters(self.dt_ms)
+
+        # Update oscillator manager
+        if hasattr(self, "oscillators") and hasattr(self.oscillators, "update_temporal_parameters"):
+            self.oscillators.update_temporal_parameters(self.dt_ms)
+
+        # Update pathway manager
+        if hasattr(self, "pathway_manager"):
+            self.pathway_manager.dt_ms = self.dt_ms
 
     def measure_phase_locking(self) -> float:
         """Measure gamma-theta phase locking.

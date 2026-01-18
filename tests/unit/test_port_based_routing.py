@@ -345,7 +345,7 @@ class TestMultipleInputPorts:
         brain = builder.build()
 
         cortex = brain.components["cortex"]
-        thalamus = brain.components["thalamus"]
+        # thalamus = brain.components["thalamus"]
 
         # Cortex should have received inputs from both sources
         # Check thalamus → feedforward connection
@@ -427,7 +427,7 @@ class TestMultipleInputPorts:
 
         cortex = brain.components["cortex"]
         hippo = brain.components["hippocampus"]
-        pfc = brain.components["pfc"]
+        # pfc = brain.components["pfc"]
         striatum = brain.components["striatum"]
 
         # Striatum should have D1 and D2 weights for each source
