@@ -85,7 +85,7 @@ class TestConnectionSpecPorts:
 class TestBrainBuilderPortBasedConnections:
     """Test BrainBuilder with port-based connections."""
 
-    def test_(self, brain_config):
+    def test_connect_with_source_port(self, brain_config):
         """Test connecting with source port specification."""
         builder = BrainBuilder(brain_config)
 
@@ -124,7 +124,7 @@ class TestBrainBuilderPortBasedConnections:
         pathway = brain.connections[("cortex", "hippocampus")]
         assert hasattr(pathway, "forward")  # Valid pathway exists
 
-    def test_(self, brain_config):
+    def test_connect_with_target_port(self, brain_config):
         """Test connecting with target port specification."""
         builder = BrainBuilder(brain_config)
 
@@ -146,7 +146,7 @@ class TestBrainBuilderPortBasedConnections:
         conn = builder._connections[0]
         assert conn.target_port == "top_down"
 
-    def test_(self, brain_config):
+    def test_connect_with_both_ports(self, brain_config):
         """Test connecting with both source and target ports."""
         builder = BrainBuilder(brain_config)
 
@@ -176,7 +176,7 @@ class TestBrainBuilderPortBasedConnections:
         assert conn.source_port == "l5"
         assert conn.target_port == "cortical_input"
 
-    def test_(self, brain_config):
+    def test_multiple_connections_to_target(self, brain_config):
         """Test multiple connections to same target using different ports."""
         builder = BrainBuilder(brain_config)
 
@@ -217,7 +217,7 @@ class TestBrainBuilderPortBasedConnections:
 class TestLayerSpecificCorticalRouting:
     """Test layer-specific cortical output routing (L2/3 vs L5)."""
 
-    def test_(self, brain_config):
+    def test_l23_output_routes_to_hippocampus(self, brain_config):
         """Test that cortex L2/3 output routes to hippocampus."""
         builder = BrainBuilder(brain_config)
 
@@ -249,7 +249,7 @@ class TestLayerSpecificCorticalRouting:
     @pytest.mark.skip(
         reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
     )
-    def test_(self, brain_config):
+    def test_l5_output_routes_to_striatum(self, brain_config):
         """Test that cortex L5 output routes to striatum with D1/D2 separation."""
         builder = BrainBuilder(brain_config)
 
@@ -288,7 +288,7 @@ class TestLayerSpecificCorticalRouting:
         assert striatum.synaptic_weights["cortex:l5_d1"].shape[0] == striatum.d1_size
         assert striatum.synaptic_weights["cortex:l5_d2"].shape[0] == striatum.d2_size
 
-    def test_(self, brain_config):
+    def test_dual_output_routing(self, brain_config):
         """Test cortex routing L2/3 to one target and L5 to another with D1/D2 separation."""
         builder = BrainBuilder(brain_config)
 
@@ -326,7 +326,7 @@ class TestLayerSpecificCorticalRouting:
 class TestMultipleInputPorts:
     """Test components with multiple named input ports."""
 
-    def test_(self, brain_config):
+    def test_cortex_feedforward_and_topdown(self, brain_config):
         """Test cortex receiving both feedforward and top-down inputs."""
         builder = BrainBuilder(brain_config)
 
@@ -356,7 +356,7 @@ class TestMultipleInputPorts:
         # Check PFC → top_down connection
         assert "pfc:top_down" in cortex.synaptic_weights or "pfc" in cortex.synaptic_weights
 
-    def test_(self, brain_config):
+    def test_hippocampus_multiple_inputs(self, brain_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""
         builder = BrainBuilder(brain_config)
 
@@ -393,7 +393,7 @@ class TestMultipleInputPorts:
     @pytest.mark.skip(
         reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
     )
-    def test_(self, brain_config):
+    def test_striatum_multiple_sources(self, brain_config):
         """Test striatum receiving inputs from cortex, hippocampus, and PFC with D1/D2 separation."""
         builder = BrainBuilder(brain_config)
 
@@ -453,7 +453,7 @@ class TestMultipleInputPorts:
 class TestPortBasedForwardPass:
     """Test forward pass with port-based routing."""
 
-    def test_(self, brain_config):
+    def test_forward_with_layer_routing(self, brain_config):
         """Test that forward pass routes layer-specific outputs correctly."""
         builder = BrainBuilder(brain_config)
 
@@ -497,7 +497,7 @@ class TestPortBasedForwardPass:
 class TestBackwardCompatibility:
     """Test that port-based routing maintains backward compatibility."""
 
-    def test_(self, brain_config):
+    def test_backward_compatible_no_ports(self, brain_config):
         """Test that existing code without ports continues to work."""
         builder = BrainBuilder(brain_config)
 
@@ -521,7 +521,7 @@ class TestBackwardCompatibility:
         assert "thalamus" in cortex.synaptic_weights
         assert cortex.synaptic_weights["thalamus"].shape[1] == thalamus.relay_size
 
-    def test_(self, brain_config):
+    def test_mixing_port_and_traditional(self, brain_config):
         """Test mixing port-based and traditional connections."""
         builder = BrainBuilder(brain_config)
 
