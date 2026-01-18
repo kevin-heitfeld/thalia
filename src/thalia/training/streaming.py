@@ -280,7 +280,7 @@ class StreamingTrainer:
         self,
         brain: DynamicBrain,
         config: StreamConfig,
-        checkpoint_dir: str | Path = "checkpoints/streaming",
+        checkpoint_dir: str | Path = "checkpoints",
         evaluator: Optional[Callable[[DynamicBrain], Dict[str, float]]] = None,
     ):
         """Initialize streaming trainer.
@@ -343,7 +343,7 @@ class StreamingTrainer:
         sample_count = 0
 
         if verbose:
-            print(f"🌊 Starting streaming training...")
+            print("🌊 Starting streaming training...")
             print(f"   Replay: {'enabled' if self.config.enable_replay else 'disabled'}")
             print(f"   Checkpoints: every {self.config.checkpoint_frequency:,} samples")
             print(f"   Evaluation: every {self.config.eval_frequency:,} samples")

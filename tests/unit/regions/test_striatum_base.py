@@ -8,8 +8,6 @@ Date: December 22, 2025 (Tier 3.4 implementation)
 Updated: December 2025 (Phase 1 migration to (config, sizes, device) pattern)
 """
 
-from typing import Any, Dict
-
 import torch
 
 from tests.utils.region_test_base import RegionTestBase

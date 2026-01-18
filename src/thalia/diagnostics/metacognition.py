@@ -22,13 +22,6 @@ from typing import Any, Dict, Optional, Tuple, cast
 import torch
 import torch.nn as nn
 
-from thalia.constants.architecture import (
-    METACOG_ABSTENTION_STAGE1,
-    METACOG_ABSTENTION_STAGE2,
-    METACOG_ABSTENTION_STAGE3,
-    METACOG_CALIBRATION_LR,
-)
-
 
 class MetacognitiveStage(Enum):
     """Developmental stages of metacognitive ability."""
@@ -48,13 +41,13 @@ class MetacognitiveMonitorConfig:
     stage: MetacognitiveStage = MetacognitiveStage.TODDLER
 
     # Stage-specific abstention thresholds
-    threshold_stage1: float = METACOG_ABSTENTION_STAGE1  # Binary threshold
-    threshold_stage2: float = METACOG_ABSTENTION_STAGE2  # Low confidence threshold
-    threshold_stage3: float = METACOG_ABSTENTION_STAGE3  # Uncertainty threshold
-    threshold_stage4: float = METACOG_ABSTENTION_STAGE2  # Calibrated threshold (same as stage2)
+    threshold_stage1: float = 0.5  # Binary threshold
+    threshold_stage2: float = 0.3  # Low confidence threshold
+    threshold_stage3: float = 0.4  # Uncertainty threshold
+    threshold_stage4: float = 0.3  # Calibrated threshold (same as stage2)
 
     # Calibration learning
-    calibration_lr: float = METACOG_CALIBRATION_LR
+    calibration_lr: float = 0.01
     use_dopamine_gating: bool = True
 
     device: str = "cpu"

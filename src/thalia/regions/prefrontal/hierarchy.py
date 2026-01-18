@@ -33,7 +33,6 @@ from typing import Any, Callable, Dict, List, Optional
 import torch
 
 from thalia.constants.exploration import DEFAULT_EPSILON_EXPLORATION
-from thalia.constants.regions import PREFRONTAL_PATIENCE_MIN
 
 
 class GoalStatus(Enum):
@@ -402,7 +401,7 @@ class HyperbolicDiscountingConfig:
 
     # Base discounting
     base_k: float = 0.01  # Base hyperbolic discount rate
-    k_min: float = PREFRONTAL_PATIENCE_MIN  # Minimum k (most patient)
+    k_min: float = 0.001  # Minimum k (most patient)
     k_max: float = 0.20  # Maximum k (most impulsive)
 
     # Context modulation

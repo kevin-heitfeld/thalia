@@ -369,7 +369,7 @@ class ShortTermPlasticity(nn.Module):
                         device=u_device,  # type: ignore[arg-type]
                         dtype=torch.float32,
                     )
-                    x_device = self.X.device  # type: ignore[union-attr]
+                    x_device = self.x.device  # type: ignore[union-attr]
                     new_x = torch.ones(
                         shape_2d,
                         device=x_device,  # type: ignore[arg-type]
@@ -379,8 +379,8 @@ class ShortTermPlasticity(nn.Module):
                     self.x = torch.cat([self.x, new_x], dim=0)
                 else:
                     # Add new elements: [old_n_pre] → [new_n_pre]
-                    u_device_1d = self.U.device  # type: ignore[union-attr]
-                    x_device_1d = self.X.device  # type: ignore[union-attr]
+                    u_device_1d = self.u.device  # type: ignore[union-attr]
+                    x_device_1d = self.x.device  # type: ignore[union-attr]
                     new_u = torch.full(
                         (n_new,),
                         self.config.U,
@@ -405,8 +405,8 @@ class ShortTermPlasticity(nn.Module):
             if self.u is not None and self.x is not None:
                 if self.per_synapse:
                     # Add new columns: [n_pre, old_n_post] → [n_pre, new_n_post]
-                    u_device_post = self.U.device  # type: ignore[union-attr]
-                    x_device_post = self.X.device  # type: ignore[union-attr]
+                    u_device_post = self.u.device  # type: ignore[union-attr]
+                    x_device_post = self.x.device  # type: ignore[union-attr]
                     new_u = torch.full(
                         (self.n_pre, n_new),
                         self.config.U,

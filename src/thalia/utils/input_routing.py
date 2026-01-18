@@ -108,7 +108,7 @@ class InputRouter:
             # Try each alias in order
             resolved_tensor = None
             for alias in aliases:
-                if alias in inputs:
+                if isinstance(inputs, dict) and alias in inputs:
                     resolved_tensor = inputs[alias]
                     break
 
@@ -118,7 +118,9 @@ class InputRouter:
                     resolved_tensor = defaults[canonical_name]
                 elif canonical_name in required:
                     # Required port missing with no default
-                    available_keys = list(inputs.keys())
+                    available_keys = (
+                        list(inputs.keys()) if isinstance(inputs, dict) else ["<tensor>"]
+                    )
                     raise ValueError(
                         f"{component_name}.forward: Required port '{canonical_name}' not found. "
                         f"Tried aliases: {aliases}. Available keys: {available_keys}"
@@ -145,7 +147,7 @@ class InputRouter:
         when empty dict provided, returns zeros of size n_input.
 
         Args:
-            inputs: Dict of named inputs mapping source names to tensors
+            inputs: Dict of named inputs mapping source names to tensors (MUST be a dict)
             component_name: Name of component for error messages
             n_input: Expected input size (required for empty dict handling)
             device: Device for zero tensor creation (required for empty dict)
@@ -157,12 +159,19 @@ class InputRouter:
             >>> input_spikes = InputRouter.concatenate_sources(
             ...     {"cortex": cortex_spikes, "hippocampus": hippo_spikes}
             ... )
-            >>> # Zero-input execution (clock-driven)
             >>> input_spikes = InputRouter.concatenate_sources(
             ...     {}, n_input=128, device=device
             ... )
         """
-        if not inputs:
+        # Validate that inputs is a dictionary, not a tensor
+        if not isinstance(inputs, dict):
+            raise TypeError(
+                f"{component_name}.forward: inputs must be a Dict[str, Tensor], "
+                f"got {type(inputs)}. If you have a single tensor, wrap it in a dict like "
+                f"{{'source_name': tensor}}"
+            )
+
+        if len(inputs) == 0:
             # Empty input: return zeros for clock-driven execution
             if n_input is None or device is None:
                 raise ValueError(
@@ -170,4 +179,18 @@ class InputRouter:
                     f"for zero-input execution (clock-driven architecture)"
                 )
             return torch.zeros(n_input, dtype=torch.bool, device=device)
-        return torch.cat(list(inputs.values()), dim=0)
+
+        # Convert all values to dense tensors if any are sparse to avoid mixing
+        values = []
+        for v in inputs.values():
+            # Ensure v is a tensor (not None or other types)
+            if not isinstance(v, torch.Tensor):
+                raise TypeError(
+                    f"{component_name}.forward: input value must be a tensor, got {type(v)}"
+                )
+            if v.is_sparse:
+                values.append(v.to_dense())
+            else:
+                values.append(v)
+
+        return torch.cat(values, dim=0)

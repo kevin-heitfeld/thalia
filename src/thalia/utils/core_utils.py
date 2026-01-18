@@ -10,6 +10,7 @@ Date: December 2025
 
 from __future__ import annotations
 
+import math
 from typing import Union
 
 import torch
@@ -206,13 +207,7 @@ def initialize_phase_preferences(
         >>> # Use:
         >>> from thalia.utils.core_utils import initialize_phase_preferences
         >>> phase_prefs = initialize_phase_preferences(100, device=device)
-
-    See Also:
-        - `regulation.learning_constants.PHASE_RANGE_2PI`: The 2π constant
-        - Used in: LayeredCortex (L2/3 phase preferences), ThalamicRelay
     """
-    import math
-
     device = torch.device(device) if isinstance(device, str) else device
     return torch.rand(n_neurons, device=device) * (2 * math.pi)
 

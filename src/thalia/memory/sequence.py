@@ -59,6 +59,7 @@ import torch.nn as nn
 
 from thalia.components.coding.spike_coding import CodingStrategy
 from thalia.config import SequenceMemoryConfig
+from thalia.constants.neuron import WEIGHT_INIT_SCALE_RECURRENT
 from thalia.language.encoder import SpikeEncoder, SpikeEncoderConfig
 from thalia.language.position import OscillatoryPositionEncoder, PositionEncoderConfig
 from thalia.mixins import ConfigurableMixin, DiagnosticCollectorMixin
@@ -168,7 +169,6 @@ class SequenceMemory(ConfigurableMixin, nn.Module, DiagnosticCollectorMixin):
         # Association weights: next-token prediction
         # These learn which CA3 patterns predict which next CA3 patterns
         from thalia.components.synapses.weight_init import WeightInitializer
-        from thalia.constants.learning import WEIGHT_INIT_SCALE_RECURRENT
 
         self.association_weights = nn.Parameter(
             WeightInitializer.gaussian(

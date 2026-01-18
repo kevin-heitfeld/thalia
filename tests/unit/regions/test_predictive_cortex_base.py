@@ -36,8 +36,19 @@ class TestPredictiveCortex(RegionTestBase):
         return PredictiveCortex(config=config, sizes=sizes, device=device)
 
     def _get_region_input_size(self, region):
-        """Get input size from PredictiveCortex region instance."""
-        return region.input_size
+        """Get effective input size from multi-source weights.
+
+        With multi-source architecture, there's no single input_size.
+        Return total size from first registered source or L4 size as fallback.
+        """
+        # Multi-source architecture: return size from first source, or fallback to L4
+        cortex = region.cortex
+        if cortex.input_sources:
+            # Return size of first registered source
+            first_source = list(cortex.input_sources.keys())[0]
+            return cortex.input_sources[first_source]
+        # Fallback: L4 size (no external inputs yet)
+        return cortex.l4_size
 
     def _get_region_output_size(self, region):
         """Get output size from PredictiveCortex region instance."""
@@ -98,6 +109,49 @@ class TestPredictiveCortex(RegionTestBase):
         }
 
     # =========================================================================
+    # OVERRIDE BASE CLASS TESTS (multi-source architecture)
+    # =========================================================================
+
+    def test_initialization(self):
+        """Test region initializes correctly - OVERRIDE for PredictiveCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Verify layer sizes exist (multi-source architecture - no single input_size)
+        assert region.l4_size > 0
+        assert region.l23_size > 0
+        assert region.l5_size > 0
+        # PredictiveCortex output is L2/3 + L5
+        assert region.l23_size + region.l5_size > 0
+
+    def test_initialization_minimal(self):
+        """Test minimal initialization - OVERRIDE for PredictiveCortex."""
+        params = self.get_min_params()
+        region = self.create_region(**params)
+
+        # Verify layer sizes exist (multi-source architecture - no single input_size)
+        assert region.l4_size > 0
+        # PredictiveCortex output is L2/3 + L5
+        assert region.l23_size + region.l5_size > 0
+
+    def test_grow_input(self):
+        """Test per-source input growth - OVERRIDE for PredictiveCortex."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Multi-source architecture: add a new source
+        source_name = "test_source"
+        n_new = 10
+
+        # Add input source to inner cortex
+        region.cortex.add_input_source(source_name, n_new, learning_rule="bcm")
+
+        # Verify source was added
+        assert source_name in region.cortex.input_sources
+        assert region.cortex.input_sources[source_name] == n_new
+        assert source_name in region.cortex.synaptic_weights
+
+    # =========================================================================
     # PREDICTIVE CORTEX-SPECIFIC TESTS (not provided by base class)
     # =========================================================================
 
@@ -124,7 +178,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward pass
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         output = region.forward(input_spikes)
 
         # Verify output shape (L2/3 + L5 dual output pathways)
@@ -145,7 +199,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run multiple forward passes to allow precision to adapt
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -162,7 +216,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Consistent input pattern
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
 
         # Get initial error
         region.forward(input_spikes)
@@ -189,7 +243,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Bottom-up input
-        input_spikes = torch.zeros(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.zeros(params["input_size"], device=region.device)}
 
         # Top-down modulation (PFC attention)
         top_down = torch.ones(params["l23_size"], device=region.device)
@@ -214,7 +268,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward to generate state
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         region.forward(input_spikes)
 
         # Get full state
@@ -236,7 +290,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Strong input (should create large errors initially)
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         region.forward(input_spikes)
 
         # Verify L2/3 (error neurons) are active
@@ -253,7 +307,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         region.forward(input_spikes)
 
         # Verify L5 and L6 (prediction neurons) exist
@@ -272,7 +326,7 @@ class TestPredictiveCortex(RegionTestBase):
         region = self.create_region(**params)
 
         # Run forward passes
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         for _ in range(10):
             region.forward(input_spikes)
 
@@ -293,7 +347,7 @@ class TestPredictiveCortex(RegionTestBase):
         region.set_oscillator_phases(phases={"gamma": 0.0}, signals={"gamma": 1.0})
 
         # Run forward
-        input_spikes = torch.ones(params["input_size"], device=region.device)
+        input_spikes = {"input": torch.ones(params["input_size"], device=region.device)}
         output = region.forward(input_spikes)
 
         # Should work without errors

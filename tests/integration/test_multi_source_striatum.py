@@ -15,7 +15,7 @@ import pytest
 import torch
 
 from thalia.config import GlobalConfig
-from thalia.core.dynamic_brain import BrainBuilder
+from thalia.core.brain_builder import BrainBuilder
 
 
 @pytest.fixture

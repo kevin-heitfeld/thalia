@@ -290,7 +290,7 @@ class TestNoNegativeSpikes:
 
         for _ in range(100):
             sensory_input = torch.rand(30) > 0.8
-            relay_spikes = thalamus.forward(sensory_input)
+            relay_spikes = thalamus.forward({"input": sensory_input})
 
             assert (relay_spikes >= 0).all(), f"Negative relay spikes: {relay_spikes.min():.3f}"
             assert (relay_spikes <= 1).all(), f"Relay spikes > 1: {relay_spikes.max():.3f}"
@@ -302,7 +302,7 @@ class TestNoNegativeSpikes:
 
         # Run simulation
         for _ in range(50):
-            thalamus.forward(torch.rand(30) > 0.8)
+            thalamus.forward({"input": torch.rand(30) > 0.8})
 
         # Save and load
         state = thalamus.get_state()
@@ -311,7 +311,7 @@ class TestNoNegativeSpikes:
 
         # Continue - still no negative spikes
         for _ in range(50):
-            relay_spikes = thalamus2.forward(torch.rand(30) > 0.8)
+            relay_spikes = thalamus2.forward({"input": torch.rand(30) > 0.8})
 
             assert (
                 relay_spikes >= 0

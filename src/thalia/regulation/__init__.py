@@ -1,11 +1,4 @@
-"""
-Regulation Constants.
-
-Constants and utilities for homeostasis, learning, exploration, and normalization.
-
-NOTE: Constants have been fully consolidated to thalia.constants module.
-Import constants directly from thalia.constants.<submodule> instead.
-"""
+"""Regulation components for Thalia."""
 
 from __future__ import annotations
 

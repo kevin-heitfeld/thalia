@@ -37,7 +37,7 @@ Usage:
 
         def get_checkpoint_metadata(self) -> Dict[str, Any]:
             return {
-                "version": "2.0.0",
+                "version": "1.0.0",
                 "n_neurons": self.n_neurons,
                 "architecture": "layered_cortex",
             }
@@ -89,7 +89,7 @@ class Checkpointable(Protocol):
     **Metadata Dict Structure**:
 
     The metadata dict returned by `get_checkpoint_metadata()` should contain:
-    - `version`: Semantic version string (e.g., "2.0.0")
+    - `version`: Semantic version string (e.g., "1.0.0")
     - `architecture`: Component architecture identifier
     - `n_neurons`: Number of neurons (if applicable)
     - Additional component-specific metadata
@@ -116,7 +116,7 @@ class Checkpointable(Protocol):
 
         def get_checkpoint_metadata(self) -> Dict[str, Any]:
             return {
-                "version": "2.0.0",
+                "version": "1.0.0",
                 "architecture": "my_region",
                 "n_neurons": self.n_neurons,
                 "created_at": self._creation_timestamp,
@@ -183,7 +183,7 @@ class Checkpointable(Protocol):
 
         Returns:
             Dict containing:
-            - `version`: Semantic version (e.g., "2.0.0")
+            - `version`: Semantic version (e.g., "1.0.0")
             - `architecture`: Component type identifier
             - `n_neurons`: Number of neurons (if applicable)
             - Additional component-specific metadata
@@ -198,7 +198,7 @@ class Checkpointable(Protocol):
         >>> meta = region.get_checkpoint_metadata()
         >>> meta
         {
-            'version': '2.0.0',
+            'version': '1.0.0',
             'architecture': 'layered_cortex',
             'n_neurons': 500,
             'layers': ['l4', 'l23', 'l5', 'l6'],
@@ -226,7 +226,7 @@ class CheckpointableWithNeuromorphic(Checkpointable, Protocol):
     ```python
     {
         "format": "neuromorphic",
-        "version": "2.0.0",
+        "version": "1.0.0",
         "neurons": [
             {
                 "id": "region_neuron_0_step1000",
@@ -276,7 +276,7 @@ class CheckpointableWithNeuromorphic(Checkpointable, Protocol):
             Dict with format:
             {
                 "format": "neuromorphic",
-                "version": "2.0.0",
+                "version": "1.0.0",
                 "neurons": [
                     {
                         "id": unique neuron identifier,

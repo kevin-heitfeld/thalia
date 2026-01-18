@@ -78,7 +78,6 @@ import torch
 
 from thalia.constants.regions import (
     STRIATUM_GAMMA,
-    STRIATUM_TD_ACCUMULATING,
     STRIATUM_TD_LAMBDA,
     STRIATUM_TD_MIN_TRACE,
 )
@@ -100,7 +99,7 @@ class TDLambdaConfig:
     # Whether to use accumulating traces (True) or replacing traces (False)
     # Accumulating: e(t) = γλe(t-1) + ∇V(t)
     # Replacing: e(t) = max(γλe(t-1), ∇V(t))
-    accumulating: bool = STRIATUM_TD_ACCUMULATING
+    accumulating: bool = True
 
     # Device
     device: str = "cpu"

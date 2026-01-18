@@ -788,6 +788,26 @@ class BrainBuilder:
             target_name=target_name,  # NEW: enables per-target delay selection
         )
 
+        # Register input sources on target component (biologically accurate multi-source synapses)
+        # Each source (thalamus, hippocampus, etc.) gets independent weights at target dendrites
+        target_comp = components[target_name]
+        if hasattr(target_comp, "add_input_source"):
+            for spec in target_specs:
+                source_size = self._get_pathway_source_size(
+                    components[spec.source], spec.source_port
+                )
+                # Source name for weight identification (uses port if specified)
+                source_identifier = (
+                    f"{spec.source}:{spec.source_port}" if spec.source_port else spec.source
+                )
+                # Register this source with target component
+                # Each source will have separate synaptic weights
+                target_comp.add_input_source(
+                    source_name=source_identifier,
+                    n_input=source_size,
+                    learning_rule="bcm",  # Default learning rule (can be customized later)
+                )
+
         return projection
 
     def _get_pathway_target_size(

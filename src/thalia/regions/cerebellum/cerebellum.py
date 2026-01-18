@@ -867,8 +867,8 @@ class Cerebellum(NeuralRegion):
         # 1. EXPAND WEIGHTS using base helper (classic pathway only)
         # =====================================================================
         if not self.use_enhanced:
-            self.weights = self._expand_weights(
-                current_weights=self.weights,  # type: ignore[arg-type]
+            self.synaptic_weights["default"].data = self._expand_weights(
+                current_weights=self.synaptic_weights["default"].data,  # type: ignore[arg-type]
                 n_new=n_new,
                 initialization=initialization,
                 sparsity=sparsity,
@@ -1058,9 +1058,9 @@ class Cerebellum(NeuralRegion):
                 pf_efficacy = self.stp_pf_purkinje(input_spikes.float())  # [n_input, n_output]
                 # Transpose to match weight shape [n_output, n_input]
                 # Modulate synaptic weights by STP efficacy
-                effective_weights = self.weights * pf_efficacy.T
+                effective_weights = self.synaptic_weights["default"] * pf_efficacy.T
             else:
-                effective_weights = self.weights
+                effective_weights = self.synaptic_weights["default"]
 
             # 1D matmul: weights[n_output, n_input] @ input[n_input] → [n_output]
             g_exc = (effective_weights @ input_spikes.float()) * input_gain
@@ -1296,21 +1296,26 @@ class Cerebellum(NeuralRegion):
         # For classic cerebellum, update global weights
         if not self.use_enhanced:
             # Classic pathway: update global weights
-            old_weights = self.weights.clone()
-            self.weights.data = clamp_weights(
-                self.weights + dw, self.config.w_min, self.config.w_max, inplace=False
+            old_weights = self.synaptic_weights["default"].clone()
+            self.synaptic_weights["default"].data = clamp_weights(
+                self.synaptic_weights["default"] + dw,
+                self.config.w_min,
+                self.config.w_max,
+                inplace=False,
             )
 
             # Synaptic scaling for homeostasis using UnifiedHomeostasis
             if cfg.homeostasis_enabled:
-                self.weights.data = self.homeostasis.normalize_weights(self.weights, dim=1)
+                self.synaptic_weights["default"].data = self.homeostasis.normalize_weights(
+                    self.synaptic_weights["default"], dim=1
+                )
 
-            actual_dw = self.weights - old_weights
+            actual_dw = self.synaptic_weights["default"] - old_weights
         else:
             # Enhanced: Per-Purkinje cell dendritic learning (biologically accurate)
             # Each Purkinje cell learns its own parallel fiber→dendrite synaptic weights
             # This implements the classical LTD mechanism (Ito, 2001)
-            actual_dw = torch.zeros_like(self.weights)
+            actual_dw = torch.zeros_like(self.synaptic_weights["default"])
 
             # Get granule spikes (stored during forward pass)
             if not hasattr(self, "last_effective_input"):
@@ -1455,9 +1460,12 @@ class Cerebellum(NeuralRegion):
         old_n_input = self.input_size
         new_n_input = old_n_input + n_new
 
-        # Expand self.weights [n_output, input] → [n_output, input+n_new]
-        self.weights.data = self._grow_weight_matrix_cols(
-            self.weights.data, n_new, initializer=initialization, sparsity=sparsity
+        # Expand self.synaptic_weights["default"] [n_output, input] → [n_output, input+n_new]
+        self.synaptic_weights["default"].data = self._grow_weight_matrix_cols(
+            self.synaptic_weights["default"].data,
+            n_new,
+            initializer=initialization,
+            sparsity=sparsity,
         )
 
         # Determine trace manager input size (depends on pathway)
@@ -1536,7 +1544,7 @@ class Cerebellum(NeuralRegion):
         plasticity = None
         if cfg.learning_enabled:
             plasticity = compute_plasticity_metrics(
-                weights=self.weights.data,
+                weights=self.synaptic_weights["default"].data,
                 learning_rate=cfg.learning_rate_ltp,  # Use LTP rate (primary)
             )
             # Add LTD rate as well
@@ -1544,7 +1552,7 @@ class Cerebellum(NeuralRegion):
 
         # Compute health metrics
         health_tensors = {
-            "weights": self.weights.data,
+            "weights": self.synaptic_weights["default"].data,
         }
         if self.input_trace is not None:
             health_tensors["input_trace"] = self.input_trace

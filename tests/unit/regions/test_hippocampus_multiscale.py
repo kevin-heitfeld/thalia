@@ -337,7 +337,7 @@ def test_integration_with_forward_pass(hippocampus, small_hippocampus_sizes):
 
     # Multiple forward passes (simulate encoding)
     for _ in range(10):
-        output = hippocampus(input_pattern)
+        output = hippocampus({"ec": input_pattern})
 
     # Weights should have changed due to learning
     assert not torch.allclose(hippocampus.synaptic_weights["ca3_ca3"].data, initial_ca3_weights)

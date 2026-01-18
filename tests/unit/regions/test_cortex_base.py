@@ -94,8 +94,10 @@ class TestLayeredCortex(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Verify size stored on instance (not config)
-        assert region.input_size == self._get_input_size(params)
+        # Verify layer sizes exist (multi-source architecture - no single input_size)
+        assert region.l4_size > 0
+        assert region.l23_size > 0
+        assert region.l5_size > 0
         # LayeredCortex output is L2/3 + L5
         assert region.l23_size + region.l5_size > 0
 
@@ -104,8 +106,8 @@ class TestLayeredCortex(RegionTestBase):
         params = self.get_min_params()
         region = self.create_region(**params)
 
-        # Verify size stored on instance
-        assert region.input_size == self._get_input_size(params)
+        # Verify layer sizes exist (multi-source architecture - no single input_size)
+        assert region.l4_size > 0
         # LayeredCortex output is L2/3 + L5
         assert region.l23_size + region.l5_size > 0
 
@@ -185,28 +187,29 @@ class TestLayeredCortex(RegionTestBase):
         assert new_output == original_output + n_new
 
     def test_grow_input(self):
-        """Test input growth - OVERRIDE for LayeredCortex."""
+        """Test per-source input growth - OVERRIDE for LayeredCortex."""
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        original_input = region.input_size
-        original_output = region.l23_size + region.l5_size
+        # Multi-source architecture: add a new source
+        source_name = "test_source"
         n_new = 10
 
-        region.grow_input(n_new)
+        # Add input source
+        region.add_input_source(source_name, n_new, learning_rule="bcm")
 
-        # Verify input grew, output unchanged
-        assert region.input_size == original_input + n_new
-        new_output = region.l23_size + region.l5_size
-        assert new_output == original_output
+        # Verify source was added
+        assert source_name in region.input_sources
+        assert region.input_sources[source_name] == n_new
+        assert source_name in region.synaptic_weights
 
-        # Test forward pass with new input size
-        new_input_size = region.input_size
-        input_spikes = torch.zeros(new_input_size, device=region.device)
-        output = region.forward({"input": input_spikes})
+        # Test forward pass with new source works
+        test_input = {source_name: torch.ones(n_new, device=region.device)}
+        output = region.forward(test_input)
 
-        # Verify output shape unchanged
-        assert output.shape[0] == original_output
+        # Verify output shape is sum of L2/3 and L5 sizes
+        expected_output = region.l23_size + region.l5_size
+        assert output.shape[0] == expected_output
 
     def test_growth_preserves_state(self):
         """Test growth preserves state - OVERRIDE for LayeredCortex."""
@@ -290,14 +293,19 @@ class TestLayeredCortex(RegionTestBase):
             assert state.l6b_spikes.shape[0] == params["l6b_size"]
 
     def test_stdp_traces_updated(self):
-        """Test STDP traces updated during forward pass."""
+        """Test STDP traces updated during forward pass - OVERRIDE for LayeredCortex."""
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Run multiple forward passes
-        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
+        # Multi-source architecture: must add input source first
+        source_name = "input"
+        input_size = self._get_input_size(params)
+        region.add_input_source(source_name, input_size, learning_rule="bcm")
+
+        # Run multiple forward passes with actual input
+        input_spikes = torch.ones(input_size, device=region.device)
         for _ in range(5):
-            region.forward({"input": input_spikes})
+            region.forward({source_name: input_spikes})
 
         # Verify STDP traces exist and are non-zero
         state = region.get_state()

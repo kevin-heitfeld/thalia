@@ -81,7 +81,7 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         Args:
             hippocampus: The TrisynapticHippocampus instance to manage
         """
-        super().__init__(format_version="2.0.0")
+        super().__init__(format_version="1.0.0")
         self.hippocampus = hippocampus
 
     # =========================================================================

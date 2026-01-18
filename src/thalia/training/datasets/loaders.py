@@ -38,10 +38,6 @@ import torch
 import torch.nn as nn
 
 from thalia.constants.task import (
-    DATASET_WEIGHT_GAZE,
-    DATASET_WEIGHT_MNIST,
-    DATASET_WEIGHT_PHONOLOGY,
-    DATASET_WEIGHT_TEMPORAL,
     REWARD_SCALE_PREDICTION,
     SENSORIMOTOR_WEIGHT_MANIPULATION,
     SENSORIMOTOR_WEIGHT_MOTOR_CONTROL,
@@ -479,10 +475,10 @@ class PhonologyConfig:
         if self.task_probabilities is None:
             # Default task distribution (per curriculum strategy)
             self.task_probabilities = {
-                "mnist": DATASET_WEIGHT_MNIST,  # Visual foundation
-                "temporal": DATASET_WEIGHT_TEMPORAL,  # Sequence learning
-                "phonology": DATASET_WEIGHT_PHONOLOGY,  # Phoneme discrimination
-                "gaze_following": DATASET_WEIGHT_GAZE,  # Social attention
+                "mnist": 0.4,  # Visual foundation
+                "temporal": 0.2,  # Sequence learning
+                "phonology": 0.3,  # Phoneme discrimination
+                "gaze_following": 0.1,  # Social attention
             }
 
 

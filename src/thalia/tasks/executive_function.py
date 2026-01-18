@@ -30,7 +30,6 @@ from thalia.constants.task import (
     FEATURE_INCREMENT_INTERACTION,
     FEATURE_NOISE_MATCH,
     STIMULUS_STRENGTH_HIGH,
-    WEIGHT_INIT_SCALE_SMALL,
 )
 from thalia.tasks.stimulus_utils import (
     create_random_stimulus,
@@ -222,18 +221,14 @@ class ExecutiveFunctionTasks:
         """Generate target stimulus (e.g., green circle)."""
         # Pattern: High values in first half of dimensions
         stimulus = create_zero_stimulus(dim, device)
-        stimulus[: dim // 2] = (
-            STIMULUS_STRENGTH_HIGH + torch.randn(dim // 2, device=device) * WEIGHT_INIT_SCALE_SMALL
-        )
+        stimulus[: dim // 2] = STIMULUS_STRENGTH_HIGH + torch.randn(dim // 2, device=device) * 0.01
         return torch.clamp(stimulus, 0, 1)
 
     def _generate_distractor_stimulus(self, dim: int, device: torch.device) -> torch.Tensor:
         """Generate distractor stimulus (e.g., red square)."""
         # Pattern: High values in second half of dimensions
         stimulus = create_zero_stimulus(dim, device)
-        stimulus[dim // 2 :] = (
-            STIMULUS_STRENGTH_HIGH + torch.randn(dim // 2, device=device) * WEIGHT_INIT_SCALE_SMALL
-        )
+        stimulus[dim // 2 :] = STIMULUS_STRENGTH_HIGH + torch.randn(dim // 2, device=device) * 0.01
         return torch.clamp(stimulus, 0, 1)
 
     def evaluate_go_no_go(

@@ -107,7 +107,7 @@ class TestParallelFiberDepression:
 
         outputs = []
         for _ in range(20):
-            output = cerebellum.forward(input_spikes)
+            output = cerebellum.forward({"input": input_spikes})
             outputs.append(output.sum().item())
 
         # Output should decrease over time (depression)
@@ -138,14 +138,14 @@ class TestParallelFiberDepression:
 
         # Present pattern A repeatedly (depresses)
         for _ in range(15):
-            cerebellum.forward(pattern_a)
+            cerebellum.forward({"input": pattern_a})
 
         # Get response to sustained pattern A
-        output_a = cerebellum.forward(pattern_a)
+        output_a = cerebellum.forward({"input": pattern_a})
         activity_a = output_a.sum().item()
 
         # Present novel pattern B
-        output_b = cerebellum.forward(pattern_b)
+        output_b = cerebellum.forward({"input": pattern_b})
         activity_b = output_b.sum().item()
 
         # Novel pattern should get stronger transmission
@@ -174,13 +174,13 @@ class TestParallelFiberDepression:
         # Phase 1: Sustained pattern A
         sustained_outputs = []
         for _ in range(10):
-            output = cerebellum.forward(pattern_a)
+            output = cerebellum.forward({"input": pattern_a})
             sustained_outputs.append(output.sum().item())
 
         # Phase 2: Switch to pattern B (change)
         change_outputs = []
         for _ in range(5):
-            output = cerebellum.forward(pattern_b)
+            output = cerebellum.forward({"input": pattern_b})
             change_outputs.append(output.sum().item())
 
         # Response to change should be stronger than sustained
@@ -220,8 +220,8 @@ class TestParallelFiberDepression:
         no_stp_outputs = []
 
         for _ in range(15):
-            stp_out = cerebellum_stp.forward(pattern)
-            no_stp_out = cerebellum_no_stp.forward(pattern)
+            stp_out = cerebellum_stp.forward({"input": pattern})
+            no_stp_out = cerebellum_no_stp.forward({"input": pattern})
             stp_outputs.append(stp_out.sum().item())
             no_stp_outputs.append(no_stp_out.sum().item())
 
@@ -301,17 +301,17 @@ class TestSTPStateManagement:
 
         # Depress the synapses
         for _ in range(15):
-            cerebellum.forward(pattern)
+            cerebellum.forward({"input": pattern})
 
         # Get depressed response
-        output_before_reset = cerebellum.forward(pattern)
+        output_before_reset = cerebellum.forward({"input": pattern})
         activity_before = output_before_reset.sum().item()
 
         # Reset
         cerebellum.reset_state()
 
         # Test again (should be like first presentation)
-        output_after_reset = cerebellum.forward(pattern)
+        output_after_reset = cerebellum.forward({"input": pattern})
         activity_after = output_after_reset.sum().item()
 
         # Activity should be higher after reset (depression cleared)
@@ -399,15 +399,15 @@ class TestBiologicalPlausibility:
 
         # Present A-A-A-A-A (sustained)
         for _ in range(5):
-            cerebellum.forward(pattern_a)
+            cerebellum.forward({"input": pattern_a})
 
-        output_a_sustained = cerebellum.forward(pattern_a)
+        output_a_sustained = cerebellum.forward({"input": pattern_a})
 
         # Present A-wait-B (change after 5ms gap)
         for _ in range(5):
-            cerebellum.forward(torch.zeros(20, dtype=torch.bool))
+            cerebellum.forward({"input": torch.zeros(20, dtype=torch.bool)})
 
-        output_b_after_gap = cerebellum.forward(pattern_b)
+        output_b_after_gap = cerebellum.forward({"input": pattern_b})
 
         # Different temporal contexts should produce different responses
         # This tests temporal precision at ~5ms scale

@@ -22,6 +22,9 @@ from thalia.training.curriculum.stage_manager import (
     TrainingResult,
 )
 
+CHECKPOINT_DIR = "temp/test_checkpoints/regression"
+
+
 # ============================================================================
 # Mock Task Loader
 # ============================================================================
@@ -95,7 +98,7 @@ def test_stage_task_loader_caching():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -132,7 +135,7 @@ def test_stage_task_loader_not_cached_on_failure():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -159,7 +162,7 @@ def test_run_regression_test_basic():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -207,7 +210,7 @@ def test_run_regression_test_no_cached_loader():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -225,7 +228,7 @@ def test_disable_and_restore_plasticity():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -264,7 +267,7 @@ def test_backward_compatibility_with_regression():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -314,7 +317,7 @@ def test_backward_compatibility_detects_forgetting():
 
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 
@@ -355,7 +358,7 @@ def test_multiple_stage_regression():
     brain = MockBrain()
     trainer = CurriculumTrainer(
         brain=brain,
-        checkpoint_dir="test_checkpoints",
+        checkpoint_dir=CHECKPOINT_DIR,
         verbose=False,
     )
 

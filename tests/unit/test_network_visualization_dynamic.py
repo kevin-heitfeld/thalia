@@ -27,7 +27,7 @@ def small_test_brain(device):
     brain = create_test_brain(
         device=str(device),
         dt_ms=1.0,
-        input_size=10,
+        input_size=20,  # Match thalamus relay size for 1:1 relay
         thalamus_size=20,
         cortex_size=30,
         hippocampus_size=40,
@@ -247,7 +247,7 @@ def test_visualization_after_forward_pass(tmp_path, small_test_brain, device):
     from thalia.visualization.network_graph import export_topology_to_graphviz
 
     # Run forward pass through real brain
-    input_spikes = torch.zeros(10, device=device)  # 10 input neurons
+    input_spikes = torch.zeros(20, device=device)  # 20 input neurons (matches thalamus_size)
     input_spikes[0] = 1.0  # Single spike on first neuron
     input_spikes[5] = 1.0  # Single spike on sixth neuron
 

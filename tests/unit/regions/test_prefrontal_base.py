@@ -225,7 +225,7 @@ class TestPrefrontal(RegionTestBase):
         # Context 1: Strong input on first half
         context1 = torch.zeros(self._get_input_size(params), device=region.device)
         context1[: self._get_input_size(params) // 2] = 1.0
-        region.forward(context1)
+        region.forward({"default": context1})
         state1 = region.get_state()
 
         # Reset
@@ -234,7 +234,7 @@ class TestPrefrontal(RegionTestBase):
         # Context 2: Strong input on second half
         context2 = torch.zeros(self._get_input_size(params), device=region.device)
         context2[self._get_input_size(params) // 2 :] = 1.0
-        region.forward(context2)
+        region.forward({"default": context2})
         state2 = region.get_state()
 
         # States should differ (context-sensitive)

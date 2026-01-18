@@ -284,7 +284,6 @@ class LayeredCortex(NeuralRegion):
         self.l5_size = sizes["l5_size"]
         self.l6a_size = sizes["l6a_size"]  # L6a → TRN pathway
         self.l6b_size = sizes["l6b_size"]  # L6b → relay pathway
-        self.input_size = sizes.get("input_size", 0)  # May be 0 (inferred by builder)
 
         # Total neurons across all 5 layers
         total_neurons = self.l4_size + self.l23_size + self.l5_size + self.l6a_size + self.l6b_size
@@ -379,8 +378,9 @@ class LayeredCortex(NeuralRegion):
         self._l23_activity_history: Optional[torch.Tensor] = None
 
         # Homeostasis for synaptic scaling and intrinsic plasticity
+        # Weight budget computed from total L4 synaptic connections (across all sources)
         homeostasis_config = UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * self.input_size,
+            weight_budget=config.weight_budget * self.l4_size,  # Based on L4 capacity
             w_min=config.w_min,
             w_max=config.w_max,
             soft_normalization=config.soft_normalization,
@@ -397,9 +397,10 @@ class LayeredCortex(NeuralRegion):
         self._init_gamma_attention()
 
     def _initialize_weights(self) -> torch.Tensor:
-        """Placeholder - real weights in _init_weights."""
-        actual_out = cast(int, self._actual_output)
-        return nn.Parameter(torch.zeros(actual_out, self.input_size))
+        """Placeholder - real weights in _init_weights per source."""
+        # Weights are created per-source via add_input_source()
+        # No single default weight matrix
+        return nn.Parameter(torch.zeros(1, 1))  # Dummy for base class
 
     def _create_neurons(self):
         """Placeholder - neurons created in _init_layers."""
@@ -630,21 +631,10 @@ class LayeredCortex(NeuralRegion):
         # target = threshold / (n_active * strength) ≈ 1.0 / (n_active * strength)
         # We initialize to mean ≈ target, with some variance for diversity
 
-        # Input → L4: positive excitatory weights (EXTERNAL - moved to synaptic_weights)
-        w_scale_input = 1.0 / max(1, int(self.input_size * 0.15))  # Assume 15% input sparsity
-        input_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l4_size,
-                n_input=self.input_size,
-                mean=0.0,
-                std=w_scale_input,
-                device=device,
-            )
-        )
-        # Register external input source (NeuralRegion pattern)
-        # Directly register in dicts without add_input_source to avoid device issues
-        self.synaptic_weights["input"] = nn.Parameter(input_weights)
-        self.input_sources["input"] = self.input_size
+        # Input weights: Registered per-source via add_input_source() when connections are made
+        # Each source (thalamus, hippocampus, etc.) has separate weights at L4 dendrites
+        # This is biologically accurate: different input sources synapse on different dendritic branches
+        # BrainBuilder calls add_input_source() for each connection during brain construction
 
         # L4 → L2/3: positive excitatory weights (AT L2/3 DENDRITES)
         w_scale_l4_l23 = 1.0 / expected_active_l4
@@ -736,9 +726,6 @@ class LayeredCortex(NeuralRegion):
         # They will be created and managed by the thalamus component
         # because TRN is part of thalamic circuitry.
         # The brain's connection system will wire L6 spikes to thalamus input.
-
-        # Main weights reference (for compatibility with base class)
-        self.weights = self.synaptic_weights["input"]
 
         # Note: Learning strategies (STDP+BCM) are created in __init__ as
         # self.bcm_l4, self.bcm_l23, self.bcm_l5 composite strategies
@@ -906,15 +893,19 @@ class LayeredCortex(NeuralRegion):
         new_l6a_size = old_l6a_size + l6a_growth
         new_l6b_size = old_l6b_size + l6b_growth
 
-        # 1. Expand input→L4 weights [l4, input]
-        # Add rows for new L4 neurons using helper
-        expanded_input = self._grow_weight_matrix_rows(
-            self.synaptic_weights["input"].data,
-            l4_growth,
-            initializer=initialization,
-            sparsity=sparsity,
-        )
-        self.synaptic_weights["input"] = nn.Parameter(expanded_input)
+        # 1. Expand input→L4 weights for all registered sources [l4, input_size]
+        # Multi-source architecture: expand each source's weights independently
+        for source_name in list(self.synaptic_weights.keys()):
+            # Only expand weights that connect to L4 (input sources)
+            # Skip inter-layer weights like "l4_l23", "l23_recurrent", etc.
+            if source_name in self.input_sources:
+                expanded_input = self._grow_weight_matrix_rows(
+                    self.synaptic_weights[source_name].data,
+                    l4_growth,
+                    initializer=initialization,
+                    sparsity=sparsity,
+                )
+                self.synaptic_weights[source_name] = nn.Parameter(expanded_input)
 
         # 2. Expand L4→L2/3 weights [l23, l4]
         # Add rows for new L2/3 neurons, columns for new L4 neurons
@@ -1081,6 +1072,9 @@ class LayeredCortex(NeuralRegion):
             self.l6b_size, "L6b", self.device, **l6b_overrides
         )
 
+        # Update n_output to reflect new output layer sizes (L2/3 + L5)
+        self.n_output = self.l23_size + self.l5_size
+
         # 6. Update STP module to match L2/3 growth
         self.stp_l23_recurrent = ShortTermPlasticity(
             n_pre=new_l23_size,
@@ -1149,57 +1143,48 @@ class LayeredCortex(NeuralRegion):
                 f"Use grow_layer('output', n) to grow L2/3 + L5 proportionally."
             )
 
-    def grow_input(
+    def add_input_source(
         self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
+        source_name: str,
+        n_input: int,
+        learning_rule: Optional[str] = ...,  # type: ignore
+        sparsity: float = 0.2,
+        weight_scale: float = 0.3,
     ) -> None:
-        """Grow cortex input dimension when upstream region grows.
+        """Add synaptic weights for a new input source (LayeredCortex override).
 
-        When an upstream region (e.g., thalamus, sensory pathway) adds neurons,
-        this method expands the cortex's input weights to accommodate the larger
-        input dimension.
-
-        This is the CRITICAL missing piece that enables full dynamic growth!
+        LayeredCortex receives inputs at L4, so weights must be sized [l4_size, n_input]
+        instead of [total_neurons, n_input] like base NeuralRegion.
 
         Args:
-            n_new: Number of input neurons to add
-            initialization: Weight init strategy ('sparse_random', 'xavier', 'uniform')
-            sparsity: Connection sparsity for new input neurons (if sparse_random)
+            source_name: Name of source region (e.g., "thalamus", "hippocampus")
+            n_input: Number of neurons in source region
+            learning_rule: Plasticity rule for these synapses (default: use bcm_l4)
+            sparsity: Connection sparsity (0.0 = dense, 1.0 = no connections)
+            weight_scale: Initial weight scale (mean synaptic strength)
 
-        Example:
-            >>> # Visual pathway grows from 784 → 804 neurons
-            >>> visual_pathway.grow_output(20)
-            >>> # Cortex must expand input dimension
-            >>> cortex.grow_input(20)  # w_input_l4: [l4, 784] → [l4, 804]
-
-        Implementation:
-            Expands w_input_l4 weight matrix by adding COLUMNS:
-            - Old: [l4_size, old_n_input]
-            - New: [l4_size, old_n_input + n_new]
-            - Preserves existing learned weights in left columns
-            - Initializes new input weights small to avoid disruption
+        Raises:
+            ValueError: If source_name already exists
         """
-        old_n_input = self.input_size
-        new_n_input = old_n_input + n_new
+        if source_name in self.input_sources:
+            raise ValueError(f"Input source '{source_name}' already exists")
 
-        # Expand input→L4 weights [l4, input] → [l4, input+n_new]
-        # Add COLUMNS for new input neurons
-        self.synaptic_weights["input"] = nn.Parameter(
-            self._grow_weight_matrix_cols(
-                self.synaptic_weights["input"].data,
-                n_new,
-                initializer=initialization,
-                sparsity=sparsity,
-            )
+        # Create weight matrix [l4_size, n_input] - L4 receives all inputs
+        # Biologically: External inputs synapse on L4 neurons (thalamocortical, etc.)
+        weights = WeightInitializer.sparse_random(
+            n_output=self.l4_size,  # L4 size, not total neurons
+            n_input=n_input,
+            sparsity=sparsity,
+            weight_scale=weight_scale,
+            device=self.device,
         )
 
-        # Update input size (structural parameter - no longer in config)
-        self.input_size = new_n_input
+        # Register as parameter
+        self.synaptic_weights[source_name] = nn.Parameter(weights)
+        self.input_sources[source_name] = n_input
 
-        # Validate growth completed correctly
-        self._validate_input_growth(old_n_input, n_new)
+        # Update total n_input for tracking
+        self.n_input = sum(self.input_sources.values())
 
     # endregion
 
@@ -1228,15 +1213,13 @@ class LayeredCortex(NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
-        # Concatenate all input sources in consistent order
-        # Common sources: thalamus (feedforward), hippocampus (memory), cerebellum (predictions), pfc (top-down)
-        # Supports zero-input execution for clock-driven architecture
-        input_spikes = InputRouter.concatenate_sources(
-            inputs,
-            component_name="LayeredCortex",
-            n_input=self.input_size,
-            device=self.device,
-        )
+        # Validate inputs is a dict (required for multi-source architecture)
+        if not isinstance(inputs, dict):
+            raise TypeError(
+                f"LayeredCortex.forward: inputs must be a Dict[str, Tensor], "
+                f"got {type(inputs)}. If you have a single tensor, wrap it in a dict like "
+                f'{{"source_name": tensor}}'
+            )
 
         # Get timestep from config for temporal dynamics
         dt = self.config.dt_ms
@@ -1245,16 +1228,6 @@ class LayeredCortex(NeuralRegion):
         # encoding_mod: high at theta peak (0°), low at trough (180°)
         # retrieval_mod: low at theta peak, high at trough
         encoding_mod, retrieval_mod = compute_theta_encoding_retrieval(self._theta_phase)
-
-        # ADR-005: Expect 1D tensors (no batch dimension)
-        assert input_spikes.dim() == 1, (
-            f"LayeredCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}. "
-            f"Thalia uses single-brain architecture with no batch dimension."
-        )
-        assert input_spikes.shape[0] == self.input_size, (
-            f"LayeredCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but input_size={self.input_size}. Check that input matches cortex config."
-        )
 
         if top_down is not None:
             assert (
@@ -1300,16 +1273,34 @@ class LayeredCortex(NeuralRegion):
             # Store for diagnostics (alpha_suppression only)
             self.state.alpha_suppression = alpha_suppression
 
-        # Apply alpha suppression to input (early gating)
-        gated_input_spikes = input_spikes * alpha_suppression
-
         # L4: Input processing with conductance-based neurons
-        # Compute excitatory conductance from input (using synaptic_weights)
-        # Dense matmul for all inputs
-        l4_g_exc = (
-            torch.matmul(self.synaptic_weights["input"], gated_input_spikes.float())
-            * cfg.input_to_l4_strength
-        )
+        # BIOLOGICALLY CORRECT: Sum conductances from each input source separately
+        # Each source (thalamus, hippocampus, etc.) has independent synaptic weights
+        # This matches real cortical dendrites where different sources synapse on different branches
+        l4_g_exc = torch.zeros(self.l4_size, device=self.device)
+
+        for source_name, source_spikes in inputs.items():
+            # Skip if source not registered (shouldn't happen but defensive)
+            if source_name not in self.synaptic_weights:
+                continue
+
+            # Apply alpha suppression to each source (early gating)
+            gated_spikes = source_spikes * alpha_suppression
+
+            # ADR-005: Validate 1D tensor per source
+            assert gated_spikes.dim() == 1, (
+                f"LayeredCortex.forward: Expected 1D {source_name} input (ADR-005), "
+                f"got shape {gated_spikes.shape}. "
+                f"Thalia uses single-brain architecture with no batch dimension."
+            )
+
+            # Compute excitatory conductance from this source
+            weights = self.synaptic_weights[source_name]
+            source_g_exc = torch.matmul(weights, gated_spikes.float())
+            l4_g_exc += source_g_exc
+
+        # Apply global scaling and theta modulation
+        l4_g_exc = l4_g_exc * cfg.input_to_l4_strength
         l4_g_exc = l4_g_exc * (L4_INPUT_ENCODING_SCALE + L4_INPUT_ENCODING_SCALE * encoding_mod)
 
         # Inhibitory conductance: ~25% of excitatory (4:1 E/I ratio)
@@ -1380,7 +1371,18 @@ class LayeredCortex(NeuralRegion):
         )
 
         # Stimulus gating (transient inhibition - always enabled)
-        ffi = self.stimulus_gating.compute(input_spikes, return_tensor=False)
+        # Compute total input activity from all sources
+        # Use l4_size as consistent representation for gating (biological: gating happens at L4)
+        if inputs:
+            # Sum activity across all sources and distribute over l4 neurons
+            total_activity = sum(s.float().sum() for s in inputs.values())
+            # Normalize by l4_size to get average activity per neuron
+            gating_input = torch.full(
+                (self.l4_size,), total_activity / self.l4_size, device=self.device
+            )
+        else:
+            gating_input = torch.zeros(self.l4_size, device=self.device)
+        ffi = self.stimulus_gating.compute(gating_input, return_tensor=False)
         raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
         self.state.ffi_strength = min(1.0, raw_ffi / self.stimulus_gating.max_inhibition)
         ffi_suppression = 1.0 - self.state.ffi_strength * cfg.ffi_strength
@@ -1676,8 +1678,8 @@ class LayeredCortex(NeuralRegion):
 
         self.state.spikes = l5_spikes
 
-        # Store input for plasticity
-        self.state.input_spikes = input_spikes
+        # Store per-source inputs for plasticity
+        self.state.source_inputs = inputs
 
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity()
@@ -1803,7 +1805,13 @@ class LayeredCortex(NeuralRegion):
         Note:
             Timestep (dt_ms) is obtained from self.config for temporal dynamics
         """
-        if self.state.l4_spikes is None or self.state.input_spikes is None:
+        # Early exit if no activity yet
+        if self.state.l4_spikes is None:
+            return
+
+        # Get per-source inputs (biologically accurate multi-source learning)
+        source_inputs = getattr(self.state, "source_inputs", {})
+        if not source_inputs:
             return
 
         cfg = self.config
@@ -1846,25 +1854,35 @@ class LayeredCortex(NeuralRegion):
         l4_spikes = ensure_1d(self.state.l4_spikes)
         l23_spikes = ensure_1d(self.state.l23_spikes) if self.state.l23_spikes is not None else None
         l5_spikes = ensure_1d(self.state.l5_spikes) if self.state.l5_spikes is not None else None
-        input_spikes = ensure_1d(self.state.input_spikes)
+
+        # Get per-source inputs (biologically accurate multi-source learning)
+        source_inputs = getattr(self.state, "source_inputs", {})
 
         total_change = 0.0
 
         # Use STDP+BCM composite strategies for proper spike-timing-dependent learning
-        # Input → L4 (using synaptic_weights) - L4-specific dopamine
-        if self.bcm_l4 is not None:
+        # Per-source learning: Each input source (thalamus, hippocampus, etc.) learns independently
+        # This is biologically accurate: synapses from different sources can have different learning rates
+        if self.bcm_l4 is not None and l4_spikes is not None:
             # L4 learning rate with layer-specific dopamine
             l4_lr = base_lr * (1.0 + l4_dopamine)
-            updated_weights, _ = self.bcm_l4.compute_update(
-                weights=self.synaptic_weights["input"].data,
-                pre=input_spikes,
-                post=l4_spikes,
-                learning_rate=l4_lr,
-            )
-            dw = updated_weights - self.synaptic_weights["input"].data
-            self.synaptic_weights["input"].data.copy_(updated_weights)
-            clamp_weights(self.synaptic_weights["input"].data, cfg.w_min, cfg.w_max)
-            total_change += dw.abs().mean().item()
+
+            for source_name, source_spikes in source_inputs.items():
+                # Skip if this source doesn't have weights (shouldn't happen)
+                if source_name not in self.synaptic_weights:
+                    continue
+
+                source_spikes = ensure_1d(source_spikes)
+                updated_weights, _ = self.bcm_l4.compute_update(
+                    weights=self.synaptic_weights[source_name].data,
+                    pre=source_spikes,
+                    post=l4_spikes,
+                    learning_rate=l4_lr,
+                )
+                dw = updated_weights - self.synaptic_weights[source_name].data
+                self.synaptic_weights[source_name].data.copy_(updated_weights)
+                clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
+                total_change += dw.abs().mean().item()
 
         # L4 → L2/3 - L2/3-specific dopamine
         if l23_spikes is not None and self.bcm_l23 is not None:
@@ -2055,8 +2073,13 @@ class LayeredCortex(NeuralRegion):
                 weights=self.synaptic_weights["l23_recurrent"].data,
                 learning_rate=cfg.learning_rate,
             )
-            # Add other pathway statistics
-            plasticity["input_l4_mean"] = float(self.synaptic_weights["input"].data.mean().item())  # type: ignore[typeddict-item]
+            # Add per-source input weight statistics (multi-source architecture)
+            for source_name in self.input_sources:
+                if source_name in self.synaptic_weights:
+                    key = f"{source_name}_l4_mean"
+                    plasticity[key] = float(self.synaptic_weights[source_name].data.mean().item())  # type: ignore[typeddict-item]
+
+            # Add inter-layer pathway statistics
             plasticity["l4_l23_mean"] = float(self.synaptic_weights["l4_l23"].data.mean().item())  # type: ignore[typeddict-item]
             plasticity["l23_l5_mean"] = float(self.synaptic_weights["l23_l5"].data.mean().item())  # type: ignore[typeddict-item]
             plasticity["l23_l6a_mean"] = float(self.synaptic_weights["l23_l6a"].data.mean().item())  # type: ignore[typeddict-item]

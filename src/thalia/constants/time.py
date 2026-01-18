@@ -5,10 +5,8 @@ Time conversion constants for spike-based simulations.
 This module defines constants for converting between milliseconds and seconds,
 which is common in neuroscience simulations (timesteps in ms, frequencies in Hz).
 
-Consolidated from utils/time_constants.py.
-
 Author: Thalia Project
-Date: January 16, 2026 (Architecture Review Tier 1.2)
+Date: January 16, 2026
 """
 
 from __future__ import annotations

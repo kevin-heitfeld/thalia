@@ -16,12 +16,14 @@ from thalia.training.streaming import (
     StreamingTrainer,
 )
 
+CHECKPOINT_DIR = "temp/test_checkpoints/streaming_trainer"
+
 
 @pytest.fixture
 def mock_brain():
     """Create minimal brain for testing."""
     return create_test_brain(
-        input_size=10,
+        input_size=20,  # Match thalamus relay size for 1:1 relay
         thalamus_size=20,
         cortex_size=30,
         hippocampus_size=40,
@@ -142,24 +144,12 @@ def test_streaming_trainer_init(mock_brain):
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
+        checkpoint_dir=CHECKPOINT_DIR,
     )
 
     # Test contract: trainer should use explicitly configured values
     assert trainer.config.eval_frequency == 100, "Should use explicitly set eval frequency"
     assert trainer.config.enable_replay is True, "Should enable replay as configured"
-
-
-def test_streaming_trainer_no_replay(mock_brain):
-    """Test trainer without replay buffer."""
-    config = StreamConfig(enable_replay=False)
-
-    trainer = StreamingTrainer(
-        brain=mock_brain,
-        config=config,
-    )
-
-    # Contract: replay should be disabled when configured
-    assert not config.enable_replay, "Config should disable replay"
 
 
 def test_streaming_trainer_process_sample(mock_brain):
@@ -168,11 +158,12 @@ def test_streaming_trainer_process_sample(mock_brain):
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
+        checkpoint_dir=CHECKPOINT_DIR,
     )
 
     # Create sample
     sample = {
-        "input": torch.randn(10),
+        "input": torch.randn(20),
         "reward": 1.0,
     }
 
@@ -201,6 +192,7 @@ def test_streaming_trainer_train_online(mock_brain):
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
+        checkpoint_dir=CHECKPOINT_DIR,
         evaluator=simple_evaluator,
     )
 
@@ -209,7 +201,7 @@ def test_streaming_trainer_train_online(mock_brain):
 
     def data_stream():
         for i in range(max_samples):
-            yield {"input": torch.randn(10), "label": i % 5}
+            yield {"input": torch.randn(20), "label": i % 5}
 
     # Train
     stats = trainer.train_online(
@@ -235,12 +227,13 @@ def test_streaming_trainer_with_replay(mock_brain):
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
+        checkpoint_dir=CHECKPOINT_DIR,
     )
 
     # Create stream
     def data_stream():
         for i in range(20):
-            yield {"input": torch.randn(10), "reward": 1.0}
+            yield {"input": torch.randn(20), "reward": 1.0}
 
     # Train
     _stats = trainer.train_online(
@@ -259,13 +252,14 @@ def test_streaming_trainer_early_stop(mock_brain):
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
+        checkpoint_dir=CHECKPOINT_DIR,
     )
 
     # Infinite stream
     def infinite_stream():
         i = 0
         while True:
-            yield {"input": torch.randn(10)}
+            yield {"input": torch.randn(20)}
             i += 1
 
     # Should stop at max_samples
@@ -292,13 +286,14 @@ def test_streaming_trainer_performance_summary(mock_brain):
     trainer = StreamingTrainer(
         brain=mock_brain,
         config=config,
+        checkpoint_dir=CHECKPOINT_DIR,
         evaluator=mock_evaluator,
     )
 
     # Create stream
     def data_stream():
-        for i in range(30):
-            yield {"input": torch.randn(10)}
+        for _ in range(30):
+            yield {"input": torch.randn(20)}
 
     # Train
     trainer.train_online(

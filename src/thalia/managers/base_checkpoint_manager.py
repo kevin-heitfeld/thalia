@@ -69,7 +69,7 @@ class BaseCheckpointManager(ABC):
     Usage:
         class MyRegionCheckpointManager(BaseCheckpointManager):
             def __init__(self, region):
-                super().__init__(format_version="2.0.0")
+                super().__init__(format_version="1.0.0")
                 self.region = region
 
             def collect_state(self) -> Dict[str, Any]:
@@ -124,7 +124,7 @@ class BaseCheckpointManager(ABC):
                 ...
     """
 
-    def __init__(self, format_version: str = "2.0.0"):
+    def __init__(self, format_version: str = "1.0.0"):
         """Initialize base checkpoint manager.
 
         Args:

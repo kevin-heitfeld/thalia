@@ -55,7 +55,7 @@ def test_component_reset_contract(component_factory, input_size):
 
     # Run forward to dirty state
     test_input = create_spike_input(input_size)
-    _ = component(test_input)
+    _ = component({"input": test_input})
 
     # Reset
     component.reset_state()
@@ -70,7 +70,7 @@ def test_component_reset_contract(component_factory, input_size):
             assert torch.abs(membrane).max() < 0.5, "Membrane not near rest after reset"
 
     # Can run forward again without issues
-    output = component(test_input)
+    output = component({"input": test_input})
     assert output is not None, "Forward failed after reset"
     assert not torch.isnan(output.float()).any(), "Output contains NaN"
 
@@ -93,7 +93,7 @@ def test_component_forward_contract(component_factory, input_size, expected_outp
     component = component_factory()
     input_spikes = create_spike_input(input_size)
 
-    output = component(input_spikes)
+    output = component({"input": input_spikes})
 
     # Shape contract
     assert (
@@ -176,7 +176,7 @@ def test_component_handles_empty_dict_input(component_factory, input_size):
     zero_input = torch.zeros(input_size, dtype=torch.bool)
 
     # Should not crash with minimal input
-    output = component(zero_input)
+    output = component({"input": zero_input})
 
     # Contract: valid output
     assert output is not None, "Component should handle zero input"

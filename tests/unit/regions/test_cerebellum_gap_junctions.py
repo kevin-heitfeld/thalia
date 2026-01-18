@@ -64,7 +64,7 @@ class TestCerebellumGapJunctions:
         # Forward pass to initialize weights
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
         input_spikes[:10] = 1.0
-        output = cerebellum(input_spikes)
+        output = cerebellum({"input": input_spikes})
 
         # Store initial weights
         initial_weights = cerebellum.purkinje_cells[0].pf_synaptic_weights.clone()
@@ -116,7 +116,7 @@ class TestCerebellumGapJunctions:
         # Forward pass
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
         input_spikes[:10] = 1.0
-        output = cerebellum(input_spikes)
+        output = cerebellum({"input": input_spikes})
 
         # Create error with high variability
         target = torch.rand(32, device=torch.device("cpu"))

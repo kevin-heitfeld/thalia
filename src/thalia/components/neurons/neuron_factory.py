@@ -47,8 +47,6 @@ from thalia.constants.neuron import (
     E_LEAK,
     FAST_SPIKING_INTERNEURON,
     G_LEAK_STANDARD,
-    TAU_EXCITATORY_CONDUCTANCE,
-    TAU_INHIBITORY_CONDUCTANCE,
     TAU_MEM_FAST,
     TAU_MEM_STANDARD,
     TAU_REF_FAST,
@@ -260,8 +258,8 @@ def create_relay_neurons(
         E_I=E_INHIBITORY,
         g_L=G_LEAK_STANDARD,
         tau_mem=TAU_MEM_STANDARD,
-        tau_E=TAU_EXCITATORY_CONDUCTANCE,  # Fast excitatory (sensory input)
-        tau_I=TAU_INHIBITORY_CONDUCTANCE,  # Slower inhibitory (from TRN)
+        tau_E=TAU_SYN_EXCITATORY,  # Fast excitatory (sensory input)
+        tau_I=TAU_SYN_INHIBITORY,  # Slower inhibitory (from TRN)
         **overrides,
     )
     neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)

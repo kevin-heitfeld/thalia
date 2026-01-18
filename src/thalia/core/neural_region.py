@@ -184,9 +184,7 @@ class NeuralRegion(
         self,
         source_name: str,
         n_input: int,
-        learning_rule: Optional[
-            str
-        ] = None,  # None = use default, explicit None via kwarg = no learning
+        learning_rule=...,  # Sentinel for default
         sparsity: float = 0.2,
         weight_scale: float = 0.3,
     ) -> None:
@@ -200,7 +198,7 @@ class NeuralRegion(
             n_input: Number of neurons in source region
             learning_rule: Plasticity rule for these synapses
                           ... (default) = use region's default_learning_rule
-                          None = explicitly disable learning for this source
+                          None = explicitly disable learning
                           str = specific rule ("stdp", "bcm", "hebbian", "three_factor")
             sparsity: Connection sparsity (0.0 = dense, 1.0 = no connections)
             weight_scale: Initial weight scale (mean synaptic strength)
@@ -231,7 +229,7 @@ class NeuralRegion(
         self.n_input = sum(self.input_sources.values())
 
         # Create plasticity rule based on learning_rule parameter
-        # ... (default sentinel) → use region's default_learning_rule
+        # ... (sentinel) → use region's default_learning_rule
         # None → explicitly disable learning
         # str → use specific rule
         if learning_rule is ...:
@@ -292,28 +290,25 @@ class NeuralRegion(
             g_exc = torch.matmul(weights, input_spikes.float())
             g_exc_total += g_exc
 
-            # Apply plasticity if learning enabled and not frozen
+        # Integrate in neuron soma (could add inhibition here)
+        # Simple version: excitation only
+        g_inh = torch.zeros(self.n_neurons, device=device)
+        output_spikes, _ = self.neurons(g_exc_total, g_inh)
+
+        # Apply plasticity AFTER computing output spikes (local learning requires both pre and post)
+        for source_name, input_spikes in inputs.items():
             if self.plasticity_enabled and source_name in self.plasticity_rules:
                 plasticity = self.plasticity_rules[source_name]
 
                 # Compute weight update (local learning rule)
                 new_weights, _ = plasticity.compute_update(
-                    weights=weights,
+                    weights=self.synaptic_weights[source_name],
                     pre=input_spikes,
-                    post=(
-                        self.output_spikes
-                        if self.output_spikes is not None
-                        else torch.zeros(self.n_neurons, device=device)
-                    ),
+                    post=output_spikes,
                 )
 
                 # Update synaptic weights in-place
                 self.synaptic_weights[source_name].data = new_weights
-
-        # Integrate in neuron soma (could add inhibition here)
-        # Simple version: excitation only
-        g_inh = torch.zeros(self.n_neurons, device=device)
-        output_spikes, _ = self.neurons(g_exc_total, g_inh)
 
         # Store state for next learning update
         self.output_spikes = output_spikes

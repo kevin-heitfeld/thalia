@@ -2,10 +2,7 @@
 """
 Neuron Constants - Membrane time constants, thresholds, refractory periods.
 
-Consolidated from components/neurons/neuron_constants.py and utils/time_constants.py.
-
-This module defines biologically-motivated constants for neuron parameters,
-eliminating magic numbers scattered throughout the codebase.
+This module defines biologically-motivated constants for neuron parameters.
 
 Biological Basis:
 =================
@@ -37,7 +34,7 @@ References:
 - Johnston & Wu (1994): Foundations of Cellular Neurophysiology
 
 Author: Thalia Project
-Date: January 16, 2026 (Architecture Review Tier 1.2 - Full Consolidation)
+Date: January 16, 2026
 """
 
 from __future__ import annotations
@@ -80,16 +77,6 @@ Used for slowly-adapting neurons, some CA1 pyramidal cells.
 Provides longer temporal integration for pattern completion.
 """
 
-# Aliases for backward compatibility
-TAU_MEMBRANE_MS = TAU_MEM_STANDARD
-"""Alias for TAU_MEM_STANDARD."""
-
-TAU_MEMBRANE_FAST_MS = TAU_MEM_FAST
-"""Alias for TAU_MEM_FAST."""
-
-TAU_MEMBRANE_SLOW_MS = TAU_MEM_SLOW
-"""Alias for TAU_MEM_SLOW."""
-
 # =============================================================================
 # SYNAPTIC TIME CONSTANTS (milliseconds)
 # =============================================================================
@@ -106,53 +93,6 @@ TAU_SYN_INHIBITORY = 10.0
 
 GABA_A receptor kinetics. Fast inhibition.
 Slightly slower than AMPA for temporal precision.
-"""
-
-TAU_SYN_NMDA = 100.0
-"""NMDA receptor time constant (ms).
-
-Slow excitatory transmission, critical for learning.
-Voltage-dependent Mg2+ block enables coincidence detection.
-"""
-
-TAU_SYN_GABA_B = 150.0
-"""GABA_B receptor time constant (ms).
-
-Slow inhibition, modulatory effects.
-G-protein coupled, affects excitability over hundreds of ms.
-"""
-
-# Aliases for backward compatibility and clarity
-TAU_EXCITATORY_CONDUCTANCE = TAU_SYN_EXCITATORY
-"""Excitatory conductance decay time constant (ms).
-
-Alias for TAU_SYN_EXCITATORY. Used in conductance-based neuron models
-to determine how quickly excitatory conductance decays after synaptic input.
-"""
-
-TAU_INHIBITORY_CONDUCTANCE = TAU_SYN_INHIBITORY
-"""Inhibitory conductance decay time constant (ms).
-
-Alias for TAU_SYN_INHIBITORY. Used in conductance-based neuron models
-to determine how quickly inhibitory conductance decays after synaptic input.
-"""
-
-TAU_SYNAPTIC_FAST_MS = 2.0
-"""Fast synaptic time constant for AMPA receptors (2ms).
-
-Alternative value used in some configurations. Faster than TAU_SYN_EXCITATORY.
-"""
-
-TAU_SYNAPTIC_SLOW_MS = 10.0
-"""Slow synaptic time constant for NMDA receptors (10ms).
-
-Alternative value used in some configurations. Faster than TAU_SYN_NMDA.
-"""
-
-TAU_SYNAPTIC_GABA_MS = 5.0
-"""GABAergic inhibitory synaptic time constant (5ms).
-
-Alternative value used in some configurations. Faster than TAU_SYN_INHIBITORY.
 """
 
 # =============================================================================
@@ -185,19 +125,6 @@ Longer refractory period limits maximum firing rate and enforces
 longer inter-spike intervals for proper temporal coding.
 """
 
-# Aliases for backward compatibility
-REFRACTORY_PERIOD_MS = 2.0
-"""Absolute refractory period after spike (2ms).
-
-Legacy value. Use TAU_REF_STANDARD for new code.
-"""
-
-REFRACTORY_PERIOD_RELATIVE_MS = 5.0
-"""Relative refractory period (5ms total).
-
-Legacy value indicating total refractory period including relative phase.
-"""
-
 # =============================================================================
 # MEMBRANE CAPACITANCE (normalized units)
 # =============================================================================
@@ -210,9 +137,6 @@ tau_mem = C_mem / g_leak
 
 Normalized to 1.0 for simplicity. Biological value ~1 μF/cm².
 """
-
-# Alias for clarity in code
-C_MEM_STANDARD = MEMBRANE_CAPACITANCE_STANDARD
 
 # =============================================================================
 # VOLTAGE THRESHOLDS AND POTENTIALS (normalized units)
@@ -241,28 +165,6 @@ Equilibrium potential with no input.
 Normalized to 0.0 as reference point.
 Biological equivalent: ~-70mV for pyramidal neurons.
 """
-
-# =============================================================================
-# SPIKE DETECTION THRESHOLDS
-# =============================================================================
-
-SPIKE_DETECTION_THRESHOLD = 0.5
-"""Binary spike detection threshold.
-
-Used to convert continuous values to binary spikes.
-Values > 0.5 are considered spikes (1), values <= 0.5 are not (0).
-Common in temporal coding and rate-to-spike conversion.
-"""
-
-SPIKE_ACTIVITY_THRESHOLD = 0.5
-"""Threshold for neuron activity detection.
-
-Used in diagnostics to count "active" neurons (those that spiked).
-A spike value > 0.5 indicates the neuron was active in that timestep.
-"""
-
-SPIKE_RATE_NORMALIZATION_FACTOR = 1000.0
-"""Convert spike rate to Hz: rate_hz = spike_rate * 1000.0 / dt_ms."""
 
 # =============================================================================
 # REVERSAL POTENTIALS (Conductance-Based Models, normalized)
@@ -320,33 +222,6 @@ Used for some hippocampal and prefrontal neurons.
 # ADAPTATION PARAMETERS
 # =============================================================================
 
-TAU_ADAPT_STANDARD = 100.0
-"""Standard adaptation time constant (ms).
-
-Controls decay of spike-frequency adaptation current.
-Enables neurons to reduce firing with sustained input.
-"""
-
-ADAPT_INCREMENT_NONE = 0.0
-"""No adaptation (default).
-
-Set adapt_increment to 0 to disable spike-frequency adaptation.
-"""
-
-ADAPT_INCREMENT_MODERATE = 0.05
-"""Moderate adaptation increment.
-
-After each spike, adaptation current increases by this amount.
-Moderate adaptation for typical pyramidal neurons.
-"""
-
-ADAPT_INCREMENT_STRONG = 0.10
-"""Strong adaptation increment.
-
-Strong spike-frequency adaptation for CA3 pyramidal neurons.
-Prevents runaway recurrent excitation in attractor networks.
-"""
-
 ADAPT_INCREMENT_CORTEX_L23 = 0.30
 """Very strong adaptation for cortical L2/3 pyramidal neurons.
 
@@ -398,73 +273,15 @@ Used for PFC modulation weights and other fine-tuning connections.
 Prevents overwhelming initial connectivity.
 """
 
-WEIGHT_INIT_SCALE_MODERATE = 0.2
-"""Moderate weight initialization scale.
+WEIGHT_INIT_SCALE_RECURRENT = 0.01
+"""Weight initialization scale for recurrent/associative connections."""
 
-Standard scale for most weight initializations in regions.
-Balances initial activity without saturation.
-"""
-
-WEIGHT_INIT_SCALE_SPARSITY_DEFAULT = 0.3
-"""Default sparsity for sparse connectivity.
-
-Typical sparse connectivity ratio (30% connected).
-Balances computational efficiency with biological realism.
-"""
-
-# =============================================================================
-# TASK & TRAINING PARAMETERS
-# =============================================================================
-
-SPIKE_PROBABILITY_LOW = 0.1
-"""Low spike probability threshold.
-
-Used for conservative motor output or exploration.
-Typical for early learning phases.
-"""
-
-SPIKE_PROBABILITY_MEDIUM = 0.15
-"""Medium spike probability threshold.
-
-Balanced threshold for standard task performance.
-"""
-
-SPIKE_PROBABILITY_HIGH = 0.2
-"""High spike probability threshold.
-
-Used for confident motor output or high-activity phases.
-"""
-
-PROPRIOCEPTION_NOISE_SCALE = 0.05
-"""Proprioceptive feedback noise scale.
-
-Realistic sensory noise in position/velocity feedback.
-Based on psychophysical measurements of proprioceptive accuracy.
-"""
-
-DECISION_THRESHOLD_DEFAULT = 0.5
-"""Default decision threshold (normalized).
-
-Midpoint threshold for binary decisions.
-Standard value for balanced sensitivity.
-"""
-
-STIMULUS_STRENGTH_HIGH = 0.8
-"""High stimulus strength.
-
-Strong sensory input, near-maximal activation.
-Used for salient or superthreshold stimuli.
-"""
+WEIGHT_INIT_SCALE_PREDICTIVE = 0.1
+"""Weight initialization scale for predictive coding pathways."""
 
 # =============================================================================
 # NEUROMODULATOR GAIN PARAMETERS
 # =============================================================================
-
-NE_MAX_GAIN = 1.5
-"""Maximum norepinephrine gain multiplier.
-
-Used to scale responsiveness during high arousal states.
-"""
 
 TONIC_D1_GAIN_SCALE = 0.5
 """Tonic dopamine modulation of D1 pathway gain.
@@ -517,50 +334,8 @@ Results in 0.84-1.2 range when theta_baseline_mod ∈ [0.7, 1.0]
 """
 
 # =============================================================================
-# LEARNING THRESHOLD PARAMETERS
-# =============================================================================
-
-INTRINSIC_LEARNING_THRESHOLD = 0.3
-"""Intrinsic reward threshold for learning.
-
-Minimum absolute intrinsic reward to trigger learning updates.
-Used to filter out noise and focus learning on significant events.
-Biological basis: Requires sufficient novelty/surprise signal.
-"""
-
-MATCH_THRESHOLD = 0.5
-"""Pattern match threshold.
-
-Used for pattern completion and recognition tasks.
-Values above this threshold indicate successful pattern match.
-"""
-
-# =============================================================================
-# PHASE AND OSCILLATION CONSTANTS
-# =============================================================================
-
-TAU = 2.0 * math.pi
-"""Full circle in radians (τ ≈ 6.283185307179586).
-
-Tau (τ) represents one complete turn, making circle mathematics more intuitive.
-"""
-
-TWO_PI = TAU  # Alias for compatibility
-"""Alias for TAU. Use TAU for new code."""
-
-# =============================================================================
 # CONVENIENCE PRESETS
 # =============================================================================
-
-# Standard pyramidal neuron (cortex, hippocampus)
-STANDARD_PYRAMIDAL = {
-    "tau_mem": TAU_MEM_STANDARD,
-    "v_rest": V_REST_STANDARD,
-    "v_reset": V_RESET_STANDARD,
-    "v_threshold": V_THRESHOLD_STANDARD,
-    "tau_ref": TAU_REF_STANDARD,
-    "g_leak": G_LEAK_STANDARD,
-}
 
 # Fast-spiking interneuron (parvalbumin+)
 FAST_SPIKING_INTERNEURON = {
@@ -570,16 +345,6 @@ FAST_SPIKING_INTERNEURON = {
     "v_threshold": V_THRESHOLD_STANDARD,
     "tau_ref": TAU_REF_FAST,
     "g_leak": G_LEAK_FAST,
-}
-
-# Slowly-adapting neuron (some hippocampal cells)
-SLOW_ADAPTING = {
-    "tau_mem": TAU_MEM_SLOW,
-    "v_rest": V_REST_STANDARD,
-    "v_reset": V_RESET_STANDARD,
-    "v_threshold": V_THRESHOLD_STANDARD,
-    "tau_ref": TAU_REF_SLOW,
-    "g_leak": G_LEAK_SLOW,
 }
 
 # =============================================================================
@@ -594,33 +359,17 @@ __all__ = [
     "TAU_MEM_STANDARD",
     "TAU_MEM_FAST",
     "TAU_MEM_SLOW",
-    "TAU_MEMBRANE_MS",
-    "TAU_MEMBRANE_FAST_MS",
-    "TAU_MEMBRANE_SLOW_MS",
     # Refractory periods
     "TAU_REF_STANDARD",
     "TAU_REF_FAST",
     "TAU_REF_SLOW",
-    "REFRACTORY_PERIOD_MS",
-    "REFRACTORY_PERIOD_RELATIVE_MS",
     # Synaptic time constants
     "TAU_SYN_EXCITATORY",
     "TAU_SYN_INHIBITORY",
-    "TAU_SYN_NMDA",
-    "TAU_SYN_GABA_B",
-    "TAU_EXCITATORY_CONDUCTANCE",
-    "TAU_INHIBITORY_CONDUCTANCE",
-    "TAU_SYNAPTIC_FAST_MS",
-    "TAU_SYNAPTIC_SLOW_MS",
-    "TAU_SYNAPTIC_GABA_MS",
     # Voltage thresholds
     "V_THRESHOLD_STANDARD",
     "V_RESET_STANDARD",
     "V_REST_STANDARD",
-    # Spike detection
-    "SPIKE_DETECTION_THRESHOLD",
-    "SPIKE_ACTIVITY_THRESHOLD",
-    "SPIKE_RATE_NORMALIZATION_FACTOR",
     # Reversal potentials
     "E_LEAK",
     "E_EXCITATORY",
@@ -630,12 +379,7 @@ __all__ = [
     "G_LEAK_FAST",
     "G_LEAK_SLOW",
     "MEMBRANE_CAPACITANCE_STANDARD",
-    "C_MEM_STANDARD",
     # Adaptation parameters
-    "TAU_ADAPT_STANDARD",
-    "ADAPT_INCREMENT_NONE",
-    "ADAPT_INCREMENT_MODERATE",
-    "ADAPT_INCREMENT_STRONG",
     "ADAPT_INCREMENT_CORTEX_L23",
     # Noise parameters
     "NOISE_STD_NONE",
@@ -643,17 +387,9 @@ __all__ = [
     "NOISE_STD_MODERATE",
     # Weight initialization
     "WEIGHT_INIT_SCALE_SMALL",
-    "WEIGHT_INIT_SCALE_MODERATE",
-    "WEIGHT_INIT_SCALE_SPARSITY_DEFAULT",
-    # Task parameters
-    "SPIKE_PROBABILITY_LOW",
-    "SPIKE_PROBABILITY_MEDIUM",
-    "SPIKE_PROBABILITY_HIGH",
-    "PROPRIOCEPTION_NOISE_SCALE",
-    "DECISION_THRESHOLD_DEFAULT",
-    "STIMULUS_STRENGTH_HIGH",
+    "WEIGHT_INIT_SCALE_RECURRENT",
+    "WEIGHT_INIT_SCALE_PREDICTIVE",
     # Neuromodulator gains
-    "NE_MAX_GAIN",
     "TONIC_D1_GAIN_SCALE",
     # Theta modulation
     "THETA_BASELINE_MIN",
@@ -661,14 +397,6 @@ __all__ = [
     "THETA_CONTRAST_MIN",
     "THETA_CONTRAST_RANGE",
     "BASELINE_EXCITATION_SCALE",
-    # Learning thresholds
-    "INTRINSIC_LEARNING_THRESHOLD",
-    "MATCH_THRESHOLD",
-    # Phase constants
-    "TAU",
-    "TWO_PI",
     # Convenience presets
-    "STANDARD_PYRAMIDAL",
     "FAST_SPIKING_INTERNEURON",
-    "SLOW_ADAPTING",
 ]

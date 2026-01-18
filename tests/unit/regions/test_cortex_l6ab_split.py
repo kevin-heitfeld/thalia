@@ -135,14 +135,17 @@ class TestL6abSplit:
         l6a_size = cortex_config_l6ab.l6a_size
         l6b_size = cortex_config_l6ab.l6b_size
 
+        # Multi-source architecture: add input source first
+        cortex.add_input_source("input", n_input, learning_rule="bcm")
+
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True  # Activate some inputs
 
         cortex.reset_state()
 
-        # Run several timesteps
+        # Run several timesteps (pass as dict)
         for _ in range(10):
-            _ = cortex(sensory_input)
+            _ = cortex({"input": sensory_input})
 
         # Check that L6a spikes are generated
         assert cortex.state.l6a_spikes is not None
@@ -181,11 +184,14 @@ class TestL6abSplit:
         l6a_size = cortex_config_l6ab.l6a_size
         l6b_size = cortex_config_l6ab.l6b_size
 
+        # Multi-source architecture: add input source first
+        cortex.add_input_source("input", n_input, learning_rule="bcm")
+
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True
 
         cortex.reset_state()
-        _ = cortex(sensory_input)
+        _ = cortex({"input": sensory_input})
 
         # Get L6a output via port
         l6a_output = cortex.get_output("l6a")
@@ -234,14 +240,18 @@ class TestL6abSplit:
         cortex = LayeredCortex(config=cortex_config_l6ab, sizes=cortex_sizes, device=str(device))
 
         n_input = cortex_config_l6ab.n_input
+
+        # Multi-source architecture: add input source first
+        cortex.add_input_source("input", n_input, learning_rule="bcm")
+
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True
 
         cortex.reset_state()
 
-        # Generate some activity
+        # Generate some activity (pass as dict)
         for _ in range(5):
-            _ = cortex(sensory_input)
+            _ = cortex({"input": sensory_input})
 
         # Reset state
         cortex.reset_state()
@@ -252,7 +262,7 @@ class TestL6abSplit:
 
         # Behavioral test: After reset, forward pass should work cleanly
         # without accumulated delays affecting output
-        output_after_reset = cortex(sensory_input)
+        output_after_reset = cortex({"input": sensory_input})
 
         # Contract: Reset should produce valid output without delay artifacts
         assert output_after_reset.dtype == torch.bool, "Output should be bool (ADR-004)"

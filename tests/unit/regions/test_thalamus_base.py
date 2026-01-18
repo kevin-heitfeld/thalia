@@ -83,7 +83,7 @@ class TestThalamus(RegionTestBase):
 
         # Sensory input
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        output = region.forward(input_spikes)
+        output = region.forward({"input": input_spikes})
 
         # Should relay to cortex (output size = relay_size)
         assert output.shape[0] == region.relay_size
@@ -98,7 +98,7 @@ class TestThalamus(RegionTestBase):
 
         # Forward pass
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Check TRN activity
         state = region.get_state()
@@ -121,7 +121,7 @@ class TestThalamus(RegionTestBase):
             assert output.shape[0] == region.n_output
         else:
             # Just verify forward works
-            output = region.forward(input_spikes)
+            output = region.forward({"input": input_spikes})
             assert output.shape[0] == region.n_output
 
     def test_burst_firing_mode(self):
@@ -133,14 +133,16 @@ class TestThalamus(RegionTestBase):
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
 
         # First pass (could be tonic mode)
-        output1 = region.forward(input_spikes)
+        output1 = region.forward({"input": input_spikes})
 
         # Multiple passes (state-dependent mode switching)
         for _ in range(10):
-            region.forward(torch.zeros(self._get_input_size(params), device=region.device))
+            region.forward(
+                {"input": torch.zeros(self._get_input_size(params), device=region.device)}
+            )
 
         # Second pass (might be in burst mode)
-        output2 = region.forward(input_spikes)
+        output2 = region.forward({"input": input_spikes})
 
         # Both should produce valid outputs
         assert output1.shape == output2.shape
@@ -155,7 +157,7 @@ class TestThalamus(RegionTestBase):
             # Run forward passes
             input_spikes = torch.zeros(self._get_input_size(params), device=region.device)
             for _ in range(20):
-                region.forward(input_spikes)
+                region.forward({"input": input_spikes})
 
             # Alpha phase should be present
             assert hasattr(region, "_alpha_phase")
@@ -167,14 +169,14 @@ class TestThalamus(RegionTestBase):
 
         # Strong sensory input
         strong_input = torch.ones(self._get_input_size(params), device=region.device)
-        output_strong = region.forward(strong_input)
+        output_strong = region.forward({"input": strong_input})
 
         # Reset
         region.reset_state()
 
         # Weak sensory input (gated)
         weak_input = torch.ones(self._get_input_size(params), device=region.device) * 0.1
-        output_weak = region.forward(weak_input)
+        output_weak = region.forward({"input": weak_input})
 
         # Strong input should produce more relay activity
         assert (
@@ -230,7 +232,7 @@ class TestThalamus(RegionTestBase):
 
         # Multiple passes to allow spindle generation
         for _ in range(50):
-            output = region.forward(low_input)
+            output = region.forward({"input": low_input})
 
         # Spindles would be visible as oscillatory bursts
         # (Detailed spindle detection would require spectral analysis)
@@ -246,7 +248,7 @@ class TestThalamus(RegionTestBase):
         sensory_input = torch.ones(self._get_input_size(params), device=region.device)
 
         # Forward with sensory input
-        output = region.forward(sensory_input)
+        output = region.forward({"input": sensory_input})
 
         # Should relay sensory input
         assert output.shape[0] == region.n_output

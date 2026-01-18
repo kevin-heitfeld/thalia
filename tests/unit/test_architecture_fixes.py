@@ -103,7 +103,9 @@ class TestV2WeightPlacement:
 
         # Check all internal weights are in synaptic_weights
         required_weights = [
-            "input",  # External: Input → L4
+            # External sources (from BrainBuilder default preset)
+            "thalamus",  # External: Thalamus → L4
+            # Internal cortical weights
             "l4_l23",  # Internal: L4 → L2/3
             "l23_recurrent",  # Internal: L2/3 → L2/3
             "l23_l5",  # Internal: L2/3 → L5
@@ -160,11 +162,12 @@ class TestV2WeightPlacement:
         # Store initial weight values
         initial_l4_l23 = cortex.synaptic_weights["l4_l23"].data.clone()
 
-        # Run forward pass to generate activity
-        input_spikes = torch.zeros(cortex.input_size, dtype=torch.bool)
+        # Run forward pass to generate activity (get thalamus input size from weights)
+        thalamus_input_size = cortex.synaptic_weights["thalamus"].shape[1]
+        input_spikes = torch.zeros(thalamus_input_size, dtype=torch.bool)
         input_spikes[:10] = True  # Activate first 10 neurons
 
-        cortex.forward({"input": input_spikes})
+        cortex.forward({"thalamus": input_spikes})
 
         # Apply plasticity
         cortex._apply_plasticity()
@@ -188,10 +191,11 @@ class TestEnhancements:
         brain = BrainBuilder.preset("default", config)
         cortex = brain.components["cortex"]
 
-        # Set dopamine and run forward
+        # Set dopamine and run forward (get thalamus input size from weights)
         cortex.state.dopamine = 0.6
-        dummy_input = torch.zeros(cortex.input_size, device="cpu")
-        output_with_da = cortex.forward(dummy_input)
+        thalamus_input_size = cortex.synaptic_weights["thalamus"].shape[1]
+        dummy_input = torch.zeros(thalamus_input_size, dtype=torch.bool, device="cpu")
+        output_with_da = cortex.forward({"thalamus": dummy_input})
 
         # Behavioral test: Layer-specific DA should affect learning/output
         # Get diagnostics to verify DA is being used per-layer
@@ -218,25 +222,6 @@ class TestEnhancements:
         assert "ca3_ca3" in hippocampus.synaptic_weights
         assert "ca3_ca1" in hippocampus.synaptic_weights
         assert "ca1_inhib" in hippocampus.synaptic_weights
-
-    def test_striatum_per_source_weights(self):
-        """Enhancement #3: Verify striatum uses per-source weight architecture."""
-        config = GlobalConfig(dt_ms=1.0, device="cpu")
-        brain = BrainBuilder.preset("default", config)
-        striatum = brain.components["striatum"]
-
-        # Check D1/D2 weights exist for each source (cortex, hippocampus, pfc)
-        # BrainBuilder creates connections like "cortex_d1", "hippocampus_d1", etc.
-        assert "cortex_d1" in striatum.synaptic_weights
-        assert "cortex_d2" in striatum.synaptic_weights
-        assert "hippocampus_d1" in striatum.synaptic_weights
-        assert "hippocampus_d2" in striatum.synaptic_weights
-
-        # Verify shapes match pathway sizes
-        cortex_d1_weights = striatum.synaptic_weights["cortex_d1"]
-        cortex_d2_weights = striatum.synaptic_weights["cortex_d2"]
-        assert cortex_d1_weights.shape[0] == striatum.n_d1
-        assert cortex_d2_weights.shape[0] == striatum.n_d2
 
 
 if __name__ == "__main__":

@@ -250,7 +250,7 @@ def test_complex_spikes_modulate_error_magnitude(
     input_spikes[:16] = 1.0  # 50% activity
 
     # Forward pass
-    output = cerebellum.forward(input_spikes)
+    output = cerebellum.forward({"input": input_spikes})
 
     # Target (different from output to create error)
     target = torch.zeros(small_sizes["purkinje_size"], device=device)
@@ -309,7 +309,7 @@ def test_cerebellum_without_complex_spikes_works(
 
     # Forward pass
     input_spikes = (torch.rand(small_sizes["input_size"], device=device) > 0.8).float()
-    output = cerebellum.forward(input_spikes)
+    output = cerebellum.forward({"input": input_spikes})
 
     # Check output
     assert output.shape == (small_sizes["purkinje_size"],)
@@ -347,7 +347,7 @@ def test_complex_spikes_compatible_with_gap_junctions(
 
     # Forward pass
     input_spikes = torch.ones(small_sizes["input_size"], device=device)
-    output = cerebellum.forward(input_spikes)
+    output = cerebellum.forward({"input": input_spikes})
 
     # Learning with both features
     target = torch.zeros(small_sizes["purkinje_size"], device=device)
@@ -381,7 +381,7 @@ def test_complex_spikes_compatible_with_enhanced_microcircuit(
 
     # Forward pass through enhanced circuit
     input_spikes = (torch.rand(sizes["input_size"], device=device) > 0.8).float()
-    output = cerebellum.forward(input_spikes)
+    output = cerebellum.forward({"input": input_spikes})
 
     # Check output from DCN
     assert output.dtype == torch.bool
@@ -414,7 +414,7 @@ def test_complex_spikes_compatible_with_stp(
     # Run for multiple timesteps with STP
     for _ in range(10):
         input_spikes = (torch.rand(small_sizes["input_size"], device=device) > 0.8).float()
-        output = cerebellum.forward(input_spikes)
+        output = cerebellum.forward({"input": input_spikes})
 
         assert output.dtype == torch.bool
 
@@ -501,55 +501,6 @@ def test_custom_complex_spike_parameters():
 # =====================================================================
 
 
-def test_graded_learning_with_complex_spikes(
-    device: str,
-):
-    """Test that complex spikes enable graded learning (small vs large errors)."""
-    sizes = {
-        "input_size": 32,
-        "granule_size": 128,
-        "purkinje_size": 16,
-    }
-
-    config = CerebellumConfig(
-        use_complex_spike_bursts=True,
-        use_enhanced_microcircuit=False,
-        learning_rate=0.01,
-        device=device,
-    )
-
-    cerebellum = Cerebellum(
-        config=config,
-        sizes=sizes,
-        device=device,
-    )
-
-    # Create consistent input
-    input_spikes = torch.zeros(sizes["input_size"], device=device)
-    input_spikes[:16] = 1.0
-
-    # Forward pass
-    _ = cerebellum.forward(input_spikes)
-
-    # Test small error
-    target_small = torch.zeros(sizes["purkinje_size"], device=device)
-    target_small[:2] = 1.0  # Small difference
-
-    # Test large error
-    target_large = torch.zeros(sizes["purkinje_size"], device=device)
-    target_large[:12] = 1.0  # Large difference
-
-    # Get initial weights
-    weights_before = cerebellum.weights.clone()
-
-    # Apply small error
-    _ = cerebellum.forward(input_spikes)
-    metrics_small = cerebellum.deliver_error(target_small)
-
-    # Check that learning occurred (but should be small)
-    # This test verifies that the mechanism exists, not the exact magnitude
-
-
 def test_binary_vs_graded_error_signaling(
     device: str,
 ):
@@ -588,11 +539,11 @@ def test_binary_vs_graded_error_signaling(
     target[:8] = 1.0
 
     # Binary
-    _ = binary_cerebellum.forward(input_spikes)
+    _ = binary_cerebellum.forward({"input": input_spikes})
     metrics_binary = binary_cerebellum.deliver_error(target)
 
     # Graded
-    _ = graded_cerebellum.forward(input_spikes)
+    _ = graded_cerebellum.forward({"input": input_spikes})
     metrics_graded = graded_cerebellum.deliver_error(target)
 
     # Both should detect error

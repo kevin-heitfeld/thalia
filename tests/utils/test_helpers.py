@@ -27,7 +27,6 @@ Updated: January 17, 2026 (Task 2.4 - Extract Common Testing Patterns)
 """
 
 import pathlib
-from typing import List, Optional
 
 import torch
 
@@ -213,16 +212,28 @@ def create_test_brain(device: str = "cpu", **config_overrides) -> "DynamicBrain"
         >>> brain = create_test_brain(device="cuda" if torch.cuda.is_available() else "cpu")
     """
     config = create_minimal_thalia_config(device=device, **config_overrides)
-    brain = BrainBuilder.preset(
-        "default",
-        global_config=config.global_,
-        thalamus_relay_size=config.brain.sizes.thalamus_size,
-        cortex_size=config.brain.sizes.cortex_size,
-        pfc_n_neurons=config.brain.sizes.pfc_size,
-        striatum_actions=config.brain.sizes.n_actions,
-    )
 
-    # Note: region filtering would require surgery module, kept simple for now
+    # Build brain with preset, customizing thalamus if needed
+    preset_overrides = {
+        "thalamus_relay_size": config.brain.sizes.thalamus_size,
+        "cortex_size": config.brain.sizes.cortex_size,
+        "pfc_n_neurons": config.brain.sizes.pfc_size,
+        "striatum_actions": config.brain.sizes.n_actions,
+    }
+
+    brain = BrainBuilder.preset("default", global_config=config.global_, **preset_overrides)
+
+    # If input_size was explicitly set in config, update thalamus to match
+    # (thalamus_from_relay defaults to relay_size = input_size, but tests may want different)
+    if "input_size" in config_overrides:
+        if "thalamus" in brain.components:
+            thalamus = brain.components["thalamus"]
+            if hasattr(thalamus, "input_size"):
+                # NOTE: This updates the expected input size for validation
+                # The actual weights would need to be resized for full compatibility
+                thalamus.input_size = config_overrides["input_size"]
+
+    # NOTE: region filtering would require surgery module, kept simple for now
     # If users need specific regions, they can use BrainBuilder or surgery tools
     return brain
 

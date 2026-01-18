@@ -15,16 +15,8 @@ Biological Rationale:
 - Explains impulsivity, action timing, and reaction time variability
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 import torch
-
-# Add project root to path for test imports
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from tests.utils.test_helpers import generate_sparse_spikes
 from thalia.config.size_calculator import LayerSizeCalculator

@@ -8,7 +8,7 @@ Usage:
 ======
     # Import from specific category
     from thalia.constants.learning import LEARNING_RATE_STDP
-    from thalia.constants.neuron import TAU_MEMBRANE_MS
+    from thalia.constants.neuron import TAU_MEM_STANDARD
     from thalia.constants.oscillator import THETA_ENCODING_PHASE_SCALE
 
     # Or import entire category
@@ -18,7 +18,6 @@ Categories:
 ===========
 - architecture: Expansion factors, capacity ratios
 - exploration: Epsilon-greedy, UCB, softmax parameters
-- homeostasis: Target firing rates, metabolic budgets
 - learning: Learning rates, eligibility traces, STDP windows
 - neuromodulation: Dopamine, acetylcholine, norepinephrine parameters
 - neuron: Membrane time constants, thresholds, refractory periods
@@ -39,7 +38,6 @@ from __future__ import annotations
 # Re-export all constants for convenience
 from thalia.constants.architecture import *
 from thalia.constants.exploration import *
-from thalia.constants.homeostasis import *
 from thalia.constants.learning import *
 from thalia.constants.neuromodulation import *
 from thalia.constants.neuron import *
@@ -55,7 +53,6 @@ __all__ = [
     # Submodules
     "architecture",
     "exploration",
-    "homeostasis",
     "learning",
     "neuromodulation",
     "neuron",

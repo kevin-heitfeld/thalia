@@ -10,7 +10,7 @@ Tests verify:
 import pytest
 import torch
 
-from thalia.regions.cortex.config import LayeredCortexConfig
+from thalia.regions.cortex.config import LayeredCortexConfig, LayeredCortexState
 from thalia.regions.cortex.layered_cortex import LayeredCortex
 
 
@@ -84,7 +84,7 @@ def test_gap_junction_improves_synchrony():
     # Run simulation
     n_steps = 50
     for _ in range(n_steps):
-        cortex.forward(input_pattern)
+        cortex.forward({"input": input_pattern})
 
         # Collect gap junction coupling current if available
         if cortex.state.l23_membrane is not None and cortex.gap_junctions_l23 is not None:
@@ -136,9 +136,13 @@ def test_gap_junction_state_management():
     # Before first forward, state is empty (lazy initialization)
     assert cortex.state.l23_membrane is None
 
+    # Multi-source architecture: add input source first
+    input_size = sizes["input_size"]
+    cortex.add_input_source("input", input_size, learning_rule="bcm")
+
     # After forward pass, l23_membrane should be initialized and updated
-    input_spikes = torch.ones(cortex.input_size, device=cortex.device)
-    cortex.forward(input_spikes)
+    input_spikes = torch.ones(input_size, device=cortex.device)
+    cortex.forward({"input": input_spikes})
 
     assert cortex.state.l23_membrane is not None
     assert cortex.state.l23_membrane.shape == (cortex.l23_size,)
@@ -159,9 +163,13 @@ def test_gap_junction_state_serialization():
     cfg = LayeredCortexConfig(gap_junctions_enabled=True)
     cortex = LayeredCortex(config=cfg, sizes=sizes, device="cpu")
 
+    # Multi-source architecture: add input source first
+    input_size = sizes["input_size"]
+    cortex.add_input_source("input", input_size, learning_rule="bcm")
+
     # Run forward to populate l23_membrane
-    input_spikes = torch.ones(cortex.input_size, device=cortex.device)
-    cortex.forward(input_spikes)
+    input_spikes = torch.ones(input_size, device=cortex.device)
+    cortex.forward({"input": input_spikes})
 
     # Get state
     state = cortex.get_state()
@@ -172,8 +180,6 @@ def test_gap_junction_state_serialization():
     assert "l23_membrane" in state_dict
 
     # Create new state from dict
-    from thalia.regions.cortex.config import LayeredCortexState
-
     restored_state = LayeredCortexState.from_dict(state_dict, device=cortex.device)
     assert restored_state.l23_membrane is not None
     assert torch.allclose(restored_state.l23_membrane, state.l23_membrane)

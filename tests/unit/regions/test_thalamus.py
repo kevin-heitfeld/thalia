@@ -9,14 +9,6 @@ Tests:
 - Center-surround spatial filtering
 """
 
-import sys
-from pathlib import Path
-
-# Add project root to path for test imports
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 import pytest
 import torch
 
@@ -83,7 +75,7 @@ def test_thalamus_forward(thalamus, device):
     )  # 20% firing rate, [n_input], bool
 
     # Forward pass
-    output = thalamus(input_spikes)
+    output = thalamus({"input": input_spikes})
 
     # Contract: output shape and type
     assert output.shape == (thalamus.n_relay,), "Output should be 1D with n_relay neurons"
@@ -111,13 +103,13 @@ def test_thalamus_alpha_gating(thalamus, device):
 
     # Test at alpha trough (phase=0) - weak suppression
     thalamus.set_oscillator_phases(phases={"alpha": 0.0}, signals={"alpha": 1.0})
-    output_trough = thalamus(input_spikes)
+    output_trough = thalamus({"input": input_spikes})
     firing_rate_trough = output_trough.float().mean().item()  # ADR-004: convert bool
 
     # Reset and test at alpha peak (phase=π) - strong suppression
     thalamus.reset_state()
     thalamus.set_oscillator_phases(phases={"alpha": 3.14159}, signals={"alpha": 1.0})
-    output_peak = thalamus(input_spikes)
+    output_peak = thalamus({"input": input_spikes})
     firing_rate_peak = output_peak.float().mean().item()  # ADR-004: convert bool
 
     # Peak should have HIGHER firing (less suppression) than trough
@@ -136,7 +128,7 @@ def test_thalamus_burst_vs_tonic(thalamus):
 
     # Run for several timesteps to build up mode state
     for _ in range(10):
-        output = thalamus(weak_input)
+        output = thalamus({"input": weak_input})
 
     # Strong input should lead to depolarization → tonic mode (ADR-004/005)
     # Create dense input
@@ -146,7 +138,7 @@ def test_thalamus_burst_vs_tonic(thalamus):
 
     thalamus.reset_state()
     for _ in range(10):
-        output = thalamus(strong_input)
+        output = thalamus({"input": strong_input})
 
 
 def test_thalamus_trn_inhibition(thalamus):
@@ -155,10 +147,10 @@ def test_thalamus_trn_inhibition(thalamus):
     input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5)  # [n_input], bool
 
     # First pass - no TRN activity yet
-    output1 = thalamus(input_spikes)
+    output1 = thalamus({"input": input_spikes})
 
     # Second pass - TRN should now be active
-    output2 = thalamus(input_spikes)
+    output2 = thalamus({"input": input_spikes})
 
     # Contract: TRN should be active with strong input
     trn_active = thalamus.state.trn_spikes.sum().item() > 0
@@ -177,12 +169,12 @@ def test_thalamus_norepinephrine_modulation(thalamus):
 
     # Low arousal (low NE)
     thalamus.set_neuromodulators(norepinephrine=0.0)
-    output_low = thalamus(input_spikes)
+    output_low = thalamus({"input": input_spikes})
 
     # High arousal (high NE)
     thalamus.reset_state()
     thalamus.set_neuromodulators(norepinephrine=1.0)
-    output_high = thalamus(input_spikes)
+    output_high = thalamus({"input": input_spikes})
 
     # High NE should increase gain (ADR-004: convert bool for mean)
     assert output_high.float().mean() >= output_low.float().mean()
@@ -195,13 +187,13 @@ def test_thalamus_reset(thalamus):
     )  # [n_input], bool (ADR-004/005)
 
     # Run forward
-    thalamus(input_spikes)
+    thalamus({"input": input_spikes})
 
     # Reset
     thalamus.reset_state()
 
     # Behavioral contract: after reset, forward pass should work normally
-    output = thalamus(input_spikes)
+    output = thalamus({"input": input_spikes})
     assert output.dtype == torch.bool
     assert output.shape == (thalamus.n_relay,)
     assert not torch.isnan(thalamus.state.relay_membrane).any()
@@ -213,7 +205,7 @@ def test_thalamus_diagnostics(thalamus):
         thalamus.input_size, firing_rate=0.2
     )  # [n_input], bool (ADR-004/005)
 
-    thalamus(input_spikes)
+    thalamus({"input": input_spikes})
 
     diag = thalamus.get_diagnostics()
 
@@ -231,7 +223,7 @@ def test_thalamus_diagnostics(thalamus):
 def test_thalamus_silent_input(thalamus, device):
     """Test thalamus handles completely silent input (edge case)."""
     input_spikes = torch.zeros(thalamus.input_size, device=device, dtype=torch.bool)
-    output = thalamus(input_spikes)
+    output = thalamus({"input": input_spikes})
 
     # Contract: valid output
     assert output.shape == (thalamus.n_relay,)
@@ -250,7 +242,7 @@ def test_thalamus_silent_input(thalamus, device):
 def test_thalamus_saturated_input(thalamus, device):
     """Test thalamus handles saturated input (edge case)."""
     input_spikes = torch.ones(thalamus.input_size, device=device, dtype=torch.bool)
-    output = thalamus(input_spikes)
+    output = thalamus({"input": input_spikes})
 
     # Contract: TRN is recruited with high input
     # Note: In single timestep, TRN may not fully inhibit yet
@@ -266,7 +258,7 @@ def test_thalamus_repeated_forward_maintains_valid_state(thalamus, device):
     input_spikes = generate_sparse_spikes(thalamus.input_size, firing_rate=0.5, device=str(device))
 
     for _ in range(100):
-        output = thalamus(input_spikes)
+        output = thalamus({"input": input_spikes})
 
     # Invariants after many operations
     assert not torch.isnan(thalamus.state.relay_membrane).any(), "No NaN"
@@ -302,7 +294,7 @@ def test_thalamus_extreme_norepinephrine(thalamus, norepinephrine):
     thalamus.set_neuromodulators(norepinephrine=norepinephrine)
 
     # Forward pass should not crash
-    output = thalamus(input_spikes)
+    output = thalamus({"input": input_spikes})
 
     # Contract: valid output regardless of NE value
     assert output.dtype == torch.bool

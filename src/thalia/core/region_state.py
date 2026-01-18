@@ -274,7 +274,9 @@ def load_region_state(
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
 
-    state_dict = torch.load(path, map_location=device)
+    # PyTorch 2.6 changed default to weights_only=True, but we need to load custom state classes
+    # This is safe for our own checkpoints
+    state_dict = torch.load(path, map_location=device, weights_only=False)
     return state_class.from_dict(state_dict, device=device)
 
 

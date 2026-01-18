@@ -277,7 +277,7 @@ def test_forward_pass_works_without_heterogeneity(
     input_spikes = (torch.rand(input_size, device=device) > 0.8).float()
 
     # Forward pass should work
-    output = cortex.forward(input_spikes)
+    output = cortex.forward({"input": input_spikes})
 
     # Check output shape (L2/3 + L5 concatenated)
     expected_size = small_layer_sizes["l23_size"] + small_layer_sizes["l5_size"]
@@ -307,7 +307,7 @@ def test_forward_pass_with_heterogeneous_layers(
 
     for _ in range(20):
         input_spikes = (torch.rand(input_size, device=device) > 0.8).float()
-        output = cortex.forward(input_spikes)
+        output = cortex.forward({"input": input_spikes})
 
         # Check output shape
         expected_size = small_layer_sizes["l23_size"] + small_layer_sizes["l5_size"]
@@ -340,7 +340,7 @@ def test_layer_specific_dynamics_observable(
     l5_activity_sum = 0.0
 
     for _ in range(50):
-        cortex.forward(strong_input)
+        cortex.forward({"input": strong_input})
 
         # Accumulate layer activity
         if cortex.state.l4_spikes is not None:
@@ -526,7 +526,7 @@ def test_heterogeneity_compatible_with_gap_junctions(
     # Forward pass should work
     input_size = small_layer_sizes["input_size"]
     input_spikes = (torch.rand(input_size, device=device) > 0.8).float()
-    output = cortex.forward(input_spikes)
+    output = cortex.forward({"input": input_spikes})
 
     assert output.shape[0] == small_layer_sizes["l23_size"] + small_layer_sizes["l5_size"]
 
@@ -558,6 +558,6 @@ def test_heterogeneity_compatible_with_bcm(
     input_size = small_layer_sizes["input_size"]
     for _ in range(10):
         input_spikes = (torch.rand(input_size, device=device) > 0.8).float()
-        output = cortex.forward(input_spikes)
+        output = cortex.forward({"input": input_spikes})
 
         assert output.dtype == torch.bool

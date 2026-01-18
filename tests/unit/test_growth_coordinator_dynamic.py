@@ -12,7 +12,7 @@ def test_growth_coordinator_initialization():
     """GrowthCoordinator should initialize and track growth history."""
     brain = Mock()
     brain.pathway_manager = Mock()
-    brain.regions = {}
+    brain.components = {}  # Changed from brain.regions to brain.components
 
     coordinator = GrowthCoordinator(brain)
 
@@ -24,7 +24,7 @@ def test_growth_coordinator_initialization():
 def test_coordinate_growth_missing_region():
     """Should raise KeyError for missing region."""
     brain = Mock()
-    brain.regions = {}
+    brain.components = {}  # Changed from brain.regions to brain.components
     brain.pathway_manager = Mock()
 
     coordinator = GrowthCoordinator(brain)

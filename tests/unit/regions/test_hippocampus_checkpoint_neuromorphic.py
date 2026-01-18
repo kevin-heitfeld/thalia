@@ -44,7 +44,7 @@ class TestHippocampusNeuromorphic:
         state = small_hippocampus.checkpoint_manager.get_neuromorphic_state()
 
         assert state["format"] == "neuromorphic"
-        assert state["format_version"] == "2.0.0"
+        assert state["format_version"] == "1.0.0"
         assert "neurons" in state
         assert "episode_buffer" in state
         assert "learning_state" in state

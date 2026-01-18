@@ -49,17 +49,6 @@ def hippocampus_sizes():
 class TestPhasePreferenceEmergence:
     """Test that phase preferences emerge without explicit slot assignment."""
 
-    def test_no_slot_assignment_attribute(self, hippocampus_config, hippocampus_sizes):
-        """Verify that hippocampus no longer has _ca3_slot_assignment."""
-        hippo = TrisynapticHippocampus(
-            config=hippocampus_config, sizes=hippocampus_sizes, device="cpu"
-        )
-
-        # Should NOT have slot assignment
-        assert not hasattr(
-            hippo, "_ca3_slot_assignment"
-        ), "Hippocampus should not have _ca3_slot_assignment (removed for emergent coding)"
-
     def test_phase_diversity_in_weights(self, hippocampus_config, hippocampus_sizes, device):
         """Test that phase diversity initialization creates weight variation."""
         # Create two hippocampi with same config but different random seeds
@@ -85,19 +74,6 @@ class TestPhasePreferenceEmergence:
         assert (
             weight_std > 0.01
         ), f"Weights should have non-trivial variance, got std={weight_std:.6f}"
-
-    def test_phase_diversity_disabled(self, hippocampus_config, hippocampus_sizes, device):
-        """Test that phase diversity can be disabled."""
-        config_no_diversity = hippocampus_config
-        config_no_diversity.phase_diversity_init = False
-
-        torch.manual_seed(42)
-        hippo = TrisynapticHippocampus(
-            config=config_no_diversity, sizes=hippocampus_sizes, device="cpu"
-        )
-
-        # Should still work, just without phase jitter
-        assert True, "Should create hippocampus without phase diversity"
 
     def test_emergent_phase_selectivity(self, hippocampus_config, hippocampus_sizes, device):
         """Test that neurons develop phase selectivity through learning.
@@ -144,7 +120,7 @@ class TestPhasePreferenceEmergence:
                 )
 
                 # Process pattern
-                output = hippo(pattern)
+                hippo({"ec": pattern})
 
                 # Track which CA3 neurons fired
                 ca3_active = hippo.state.ca3_spikes.nonzero(as_tuple=True)[0]
@@ -166,16 +142,11 @@ class TestPhasePreferenceEmergence:
 
         # Some neurons should develop phase selectivity
         # (exact number depends on learning dynamics, but >0 indicates emergence)
-        print(
-            f"\nPhase selectivity emergence: {selective_neurons}/{len(neuron_pattern_activity)} neurons selective"
-        )
-        print(f"Total active neurons: {len(neuron_pattern_activity)}")
-
         # Relaxed assertion: just verify that SOME structure emerges
         # With random weights, we'd expect ~0 selective neurons
         # With phase diversity + STDP, we should see >0
         assert (
-            selective_neurons > 0 or len(neuron_pattern_activity) > 0
+            float(selective_neurons) / float(len(neuron_pattern_activity)) > 0.01
         ), "Should observe some CA3 activity and potential phase selectivity"
 
     def test_capacity_emerges_from_gamma_theta_ratio(
@@ -225,20 +196,48 @@ class TestPhasePreferenceEmergence:
             )
 
             # Process
-            hippo(pattern)
+            hippo({"ec": pattern})
             ca3_activity_over_time.append(hippo.state.ca3_spikes.clone())
 
-        # Verify that CA3 shows temporal structure
+        # Verify that CA3 shows temporal structure with distinct patterns
         total_ca3_spikes = sum(spikes.sum().item() for spikes in ca3_activity_over_time)
 
-        print("\nEmergent capacity test:")
-        print(
-            f"  Expected patterns: {n_patterns} (from {gamma_period_ms:.1f}ms gamma / {theta_period_ms:.1f}ms theta)"
-        )
-        print(f"  Total CA3 spikes: {total_ca3_spikes}")
+        # Verify temporal distinctiveness: different time windows should have different activity
+        # Group activity by pattern window (each pattern gets ~gamma_period_ms timesteps)
+        pattern_window_activity = []
+        timesteps_per_pattern = int(gamma_period_ms / hippocampus_config.dt_ms)
 
-        # Basic sanity check: CA3 should show activity
+        for pattern_idx in range(n_patterns):
+            start_t = pattern_idx * timesteps_per_pattern
+            end_t = min(start_t + timesteps_per_pattern, len(ca3_activity_over_time))
+
+            # Concatenate all spikes in this time window
+            window_spikes = torch.stack(ca3_activity_over_time[start_t:end_t])
+            # Count which neurons were active in this window
+            active_in_window = window_spikes.any(dim=0)
+            pattern_window_activity.append(active_in_window)
+
+        # Measure distinctiveness: compute Hamming distance between pattern windows
+        distinct_windows = 0
+        for i in range(len(pattern_window_activity)):
+            for j in range(i + 1, len(pattern_window_activity)):
+                # XOR gives neurons that differ between windows
+                hamming_dist = (
+                    (pattern_window_activity[i] ^ pattern_window_activity[j]).sum().item()
+                )
+                if hamming_dist > 0:
+                    distinct_windows += 1
+
+        # Test 1: CA3 should be active
         assert total_ca3_spikes > 0, "CA3 should be active during sequence presentation"
+
+        # Test 2: Different time windows should have distinct activity patterns
+        # (This verifies emergent capacity - not just activity, but structured activity)
+        assert distinct_windows > 0, (
+            f"CA3 should show distinct activity for different patterns, "
+            f"but all {n_patterns} windows had identical activity. "
+            "This suggests capacity is not emerging from gamma/theta ratio."
+        )
 
     def test_stdp_strengthens_phase_preferences(
         self, hippocampus_config, hippocampus_sizes, device

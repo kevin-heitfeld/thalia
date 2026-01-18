@@ -313,14 +313,14 @@ class TestLayerSpecificCorticalRouting:
         hippo = brain.components["hippocampus"]
         striatum = brain.components["striatum"]
 
-        # Hippocampus receives L2/3 size
-        assert hippo.input_size == cortex.l23_size
+        # Hippocampus receives L2/3 from cortex (via multi-source input dict)
+        # Note: input_size is now per-source, not a single attribute
+        assert "cortex:l23" in hippo.synaptic_weights
+        assert hippo.synaptic_weights["cortex:l23"].shape[1] == cortex.l23_size
 
-        # Striatum has D1 and D2 weights for cortex:l5 source
-        assert "cortex:l5_d1" in striatum.synaptic_weights
-        assert "cortex:l5_d2" in striatum.synaptic_weights
-        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
-        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
+        # Striatum receives L5 from cortex (D1/D2 separation is internal)
+        assert "cortex:l5" in striatum.synaptic_weights
+        assert striatum.synaptic_weights["cortex:l5"].shape[1] == cortex.l5_size
 
 
 class TestMultipleInputPorts:
@@ -347,9 +347,14 @@ class TestMultipleInputPorts:
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
 
-        # Cortex input_size should only count feedforward, not top_down
-        # (top_down is separate parameter in forward())
-        assert cortex.input_size == thalamus.relay_size  # Dimension compatibility
+        # Cortex should have received inputs from both sources
+        # Check thalamus → feedforward connection
+        assert (
+            "thalamus:feedforward" in cortex.synaptic_weights
+            or "thalamus" in cortex.synaptic_weights
+        )
+        # Check PFC → top_down connection
+        assert "pfc:top_down" in cortex.synaptic_weights or "pfc" in cortex.synaptic_weights
 
     def test_hippocampus_cortical_and_entorhinal_inputs(self, global_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""
@@ -510,10 +515,11 @@ class TestBackwardCompatibility:
         assert "thalamus" in brain.components
         assert "cortex" in brain.components
 
-        # Should infer sizes correctly (dimension compatibility)
+        # Should have proper connection (cortex receives from thalamus)
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
-        assert cortex.input_size == thalamus.relay_size
+        assert "thalamus" in cortex.synaptic_weights
+        assert cortex.synaptic_weights["thalamus"].shape[1] == thalamus.relay_size
 
     def test_mixed_ports_and_no_ports_connections(self, global_config):
         """Test mixing port-based and traditional connections."""

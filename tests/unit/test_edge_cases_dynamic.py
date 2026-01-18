@@ -27,7 +27,7 @@ def test_brain(device):
     return create_test_brain(
         device=str(device),
         dt_ms=1.0,
-        input_size=10,
+        input_size=20,  # Match thalamus relay size for 1:1 relay
         thalamus_size=20,
         cortex_size=30,
         hippocampus_size=40,
@@ -42,7 +42,7 @@ class TestSilentInput:
     def test_brain_handles_silent_input(self, test_brain, device):
         """Brain should handle zero spikes without crashing."""
         # All zeros (no spikes)
-        silent_input = torch.zeros(10, dtype=torch.bool, device=device)
+        silent_input = torch.zeros(20, dtype=torch.bool, device=device)
 
         # Should not crash
         result = test_brain.forward(silent_input, n_timesteps=5)
@@ -58,7 +58,7 @@ class TestSilentInput:
 
     def test_brain_survives_extended_silence(self, test_brain, device):
         """Brain should remain stable with prolonged silent input."""
-        silent_input = torch.zeros(10, dtype=torch.bool, device=device)
+        silent_input = torch.zeros(20, dtype=torch.bool, device=device)
 
         # Run 100 steps of silence
         for _ in range(100):
@@ -74,7 +74,7 @@ class TestSaturatedInput:
     def test_brain_handles_saturated_input(self, test_brain, device):
         """Brain should handle all spikes without overflow."""
         # All ones (maximum spikes)
-        saturated_input = torch.ones(10, dtype=torch.bool, device=device)
+        saturated_input = torch.ones(20, dtype=torch.bool, device=device)
 
         # Should not crash or overflow
         result = test_brain.forward(saturated_input, n_timesteps=5)
@@ -84,7 +84,7 @@ class TestSaturatedInput:
 
     def test_brain_survives_extended_saturation(self, test_brain, device):
         """Brain should remain stable with prolonged saturated input."""
-        saturated_input = torch.ones(10, dtype=torch.bool, device=device)
+        saturated_input = torch.ones(20, dtype=torch.bool, device=device)
 
         # Run 100 steps of saturation
         for step in range(100):
@@ -135,7 +135,7 @@ class TestNumericalStability:
         for step in range(1000):
             # Vary sparsity from 5% to 50%
             sparsity = 0.05 + (step % 10) * 0.045
-            input_pattern = torch.rand(10, device=device) > (1.0 - sparsity)
+            input_pattern = torch.rand(20, device=device) > (1.0 - sparsity)
 
             _ = test_brain.forward(input_pattern, n_timesteps=1)
 
@@ -166,7 +166,7 @@ class TestNumericalStability:
         for _ in range(100):
             # Completely random patterns (varying sparsity)
             sparsity = torch.rand(1).item() * 0.9 + 0.05  # 5% to 95%
-            input_pattern = torch.rand(10, device=device) > (1.0 - sparsity)
+            input_pattern = torch.rand(20, device=device) > (1.0 - sparsity)
 
             result = test_brain.forward(input_pattern, n_timesteps=1)
             assert "spike_counts" in result, "Result should contain spike_counts"
@@ -178,7 +178,7 @@ class TestResetBehavior:
     def test_brain_reset_clears_state(self, test_brain, device):
         """Reset should clear all accumulated state."""
         # Run brain to build up state
-        active_input = torch.ones(10, dtype=torch.bool, device=device)
+        active_input = torch.ones(20, dtype=torch.bool, device=device)
         for _ in range(50):
             test_brain.forward(active_input, n_timesteps=1)
 
@@ -186,13 +186,13 @@ class TestResetBehavior:
         test_brain.reset_state()
 
         # After reset, silent input should produce minimal activity
-        silent_input = torch.zeros(10, dtype=torch.bool, device=device)
+        silent_input = torch.zeros(20, dtype=torch.bool, device=device)
         result_after_reset = test_brain.forward(silent_input, n_timesteps=5)
         assert "spike_counts" in result_after_reset, "Result should contain spike_counts"
 
     def test_brain_multiple_resets(self, test_brain, device):
         """Brain should handle multiple resets without issues."""
-        input_pattern = torch.rand(10, device=device) > 0.8
+        input_pattern = torch.rand(20, device=device) > 0.8
 
         for _ in range(10):
             # Run some steps

@@ -133,8 +133,8 @@ class PredictiveCortexState(BaseRegionState):
     l6a_spikes: Optional[torch.Tensor] = None
     l6b_spikes: Optional[torch.Tensor] = None
 
-    # Store original input for learning
-    input_spikes: Optional[torch.Tensor] = None
+    # Multi-source inputs for learning (dict mapping source names to spike tensors)
+    source_inputs: Optional[Dict[str, torch.Tensor]] = None
 
     # Predictive coding
     prediction: Optional[torch.Tensor] = None
@@ -168,8 +168,8 @@ class PredictiveCortexState(BaseRegionState):
                 "l5_spikes": self.l5_spikes,
                 "l6a_spikes": self.l6a_spikes,
                 "l6b_spikes": self.l6b_spikes,
-                # Input
-                "input_spikes": self.input_spikes,
+                # Multi-source inputs
+                "source_inputs": self.source_inputs,
                 # Predictive coding
                 "prediction": self.prediction,
                 "error": self.error,
@@ -219,8 +219,16 @@ class PredictiveCortexState(BaseRegionState):
             l5_spikes=transfer_tensor(data.get("l5_spikes")),
             l6a_spikes=transfer_tensor(data.get("l6a_spikes")),
             l6b_spikes=transfer_tensor(data.get("l6b_spikes")),
-            # Input
-            input_spikes=transfer_tensor(data.get("input_spikes")),
+            # Multi-source inputs (backwards compat: also check old "input_spikes")
+            source_inputs=(
+                {k: transfer_tensor(v) for k, v in data["source_inputs"].items()}
+                if "source_inputs" in data and data["source_inputs"] is not None
+                else (
+                    {"input": transfer_tensor(data["input_spikes"])}
+                    if "input_spikes" in data and data["input_spikes"] is not None
+                    else None
+                )
+            ),
             # Predictive coding
             prediction=transfer_tensor(data.get("prediction")),
             error=transfer_tensor(data.get("error")),
@@ -373,13 +381,10 @@ class PredictiveCortex(NeuralRegion):
         # =====================================================================
         self.cortex = LayeredCortex(config=config, sizes=sizes, device=device)
 
-        # Set our weights to delegate to cortex
-        # Note: LayeredCortex manages its own neurons internally (l4_neurons, l23_neurons, l5_neurons)
-        # so we don't expose a top-level neurons attribute
-        self.weights = self.cortex.weights
+        # NOTE: LayeredCortex uses multi-source architecture - weights stored in synaptic_weights dict
+        # No single "weights" attribute - each source has independent weights
 
         # Get layer sizes from cortex (verify our calculations)
-        self.input_size = self.cortex.input_size
         self.l4_size = self.cortex.l4_size
         self.l23_size = self.cortex.l23_size
         self.l5_size = self.cortex.l5_size
@@ -502,7 +507,9 @@ class PredictiveCortex(NeuralRegion):
             l6a_spikes=self.cortex.state.l6a_spikes,
             l6b_spikes=self.cortex.state.l6b_spikes,
             # Input and predictive coding state
-            input_spikes=self.state.input_spikes if hasattr(self.state, "input_spikes") else None,
+            source_inputs=(
+                self.state.source_inputs if hasattr(self.state, "source_inputs") else None
+            ),
         )
 
     def set_neuromodulators(
@@ -579,9 +586,6 @@ class PredictiveCortex(NeuralRegion):
         # Delegate to base LayeredCortex
         self.cortex.grow_input(n_new, initialization, sparsity)
 
-        # Update our cached input_size to match
-        self.input_size = self.cortex.input_size
-
     def grow_output(
         self,
         n_new: int,
@@ -644,7 +648,7 @@ class PredictiveCortex(NeuralRegion):
 
     def forward(  # type: ignore[override]
         self,
-        input_spikes: torch.Tensor,
+        inputs: Dict[str, torch.Tensor],
         top_down: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
@@ -652,7 +656,7 @@ class PredictiveCortex(NeuralRegion):
         Process input through predictive cortex (ADR-005: 1D tensors).
 
         Args:
-            input_spikes: Input spike pattern [n_input] (1D) or dict of inputs
+            inputs: Multi-source input spikes - dict mapping source names to spike tensors [n_input] (1D)
             top_down: Optional top-down modulation from higher areas [l23_size] (1D)
                       NOTE: This is for L2/3 modulation, NOT L4 prediction!
             **kwargs: Additional arguments for compatibility
@@ -663,19 +667,19 @@ class PredictiveCortex(NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
-        # Handle dict inputs (pass through to LayeredCortex which will concatenate)
-        if not isinstance(input_spikes, torch.Tensor):
-            # Dict input - let LayeredCortex handle extraction and concatenation
-            return self.cortex.forward(input_spikes, top_down=top_down)
+        # Validate inputs is a dict (required for multi-source architecture)
+        if not isinstance(inputs, dict):
+            raise TypeError(
+                f"PredictiveCortex.forward: inputs must be a Dict[str, Tensor], "
+                f'got {type(inputs)}. Wrap single tensor in dict like {{"source_name": tensor}}'
+            )
 
-        # ADR-005: Expect 1D tensors
-        assert (
-            input_spikes.dim() == 1
-        ), f"PredictiveCortex.forward: Expected 1D input (ADR-005), got shape {input_spikes.shape}"
-        assert input_spikes.shape[0] == self.cortex.input_size, (
-            f"PredictiveCortex.forward: input_spikes has shape {input_spikes.shape} "
-            f"but input_size={self.cortex.input_size}."
-        )
+        # Validate all input tensors are 1D (ADR-005)
+        for source_name, source_spikes in inputs.items():
+            assert (
+                source_spikes.dim() == 1
+            ), f"PredictiveCortex.forward: Expected 1D input for source '{source_name}' (ADR-005), got shape {source_spikes.shape}"
+
         if top_down is not None:
             assert (
                 top_down.dim() == 1
@@ -695,8 +699,9 @@ class PredictiveCortex(NeuralRegion):
         # STEP 1: Standard feedforward through cortex
         # =====================================================================
         # Pass through to the base LayeredCortex (computes theta modulation internally)
+        # Multi-source inputs handled natively by LayeredCortex
         cortex_output = self.cortex.forward(
-            input_spikes,
+            inputs,
             top_down=top_down,
         )
 
@@ -709,8 +714,8 @@ class PredictiveCortex(NeuralRegion):
         l6b_output = self.cortex.state.l6b_spikes
         l6_output = self.cortex.get_l6_spikes()  # Combined L6a + L6b
 
-        # Store in state (including original input for learning)
-        state.input_spikes = input_spikes
+        # Store in state (including original inputs dict for learning)
+        state.source_inputs = inputs
         state.l4_spikes = l4_output
         state.l23_spikes = l23_output
         state.l5_spikes = l5_output

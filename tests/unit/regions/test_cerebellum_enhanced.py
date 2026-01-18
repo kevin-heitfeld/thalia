@@ -482,7 +482,7 @@ class TestEnhancedCerebellumIntegration:
         mossy_spikes = torch.rand(128, device=device) > 0.8
 
         # Forward pass
-        output = cerebellum_enhanced(mossy_spikes)
+        output = cerebellum_enhanced({"input": mossy_spikes})
 
         # Contract: output should be valid
         assert output.dtype == torch.bool, "Output should be bool (ADR-004)"
@@ -501,10 +501,10 @@ class TestEnhancedCerebellumIntegration:
         mossy_spikes = torch.rand(128, device=device) > 0.8
 
         # Classic forward
-        classic_output = cerebellum_classic(mossy_spikes)
+        classic_output = cerebellum_classic({"input": mossy_spikes})
 
         # Enhanced forward
-        enhanced_output = cerebellum_enhanced(mossy_spikes)
+        enhanced_output = cerebellum_enhanced({"input": mossy_spikes})
 
         # Contract: both should produce valid outputs
         assert (
@@ -520,7 +520,7 @@ class TestEnhancedCerebellumIntegration:
         target = torch.rand(64, device=device) > 0.5
 
         # Forward pass
-        output = cerebellum_enhanced(mossy_spikes)
+        output = cerebellum_enhanced({"input": mossy_spikes})
 
         # Deliver error signal
         metrics = cerebellum_enhanced.deliver_error(target)
@@ -536,7 +536,7 @@ class TestEnhancedCerebellumIntegration:
         # Run some timesteps
         for _ in range(5):
             mossy_spikes = torch.rand(128, device=device) > 0.8
-            cerebellum_enhanced(mossy_spikes)
+            cerebellum_enhanced({"input": mossy_spikes})
 
         # Get checkpoint
         state = cerebellum_enhanced.get_full_state()
@@ -655,7 +655,7 @@ class TestBackwardCompatibility:
         # Run classic cerebellum
         for _ in range(10):
             mossy_spikes = torch.rand(128, device=device) > 0.8
-            output = cerebellum_classic(mossy_spikes)
+            output = cerebellum_classic({"input": mossy_spikes})
 
             assert output.shape == (64,), "Classic output should be correct shape"
             assert output.dtype == torch.bool, "Classic output should be bool"
@@ -700,8 +700,8 @@ class TestBackwardCompatibility:
         # Run both
         for _ in range(5):
             mossy_spikes = torch.rand(128, device=device) > 0.8
-            cerebellum_classic(mossy_spikes)
-            cerebellum_enhanced(mossy_spikes)
+            cerebellum_classic({"input": mossy_spikes})
+            cerebellum_enhanced({"input": mossy_spikes})
 
         # Get checkpoints
         classic_state = cerebellum_classic.get_full_state()

@@ -1,11 +1,10 @@
 """
 Region-Specific Constants - Thalamus and striatum parameters.
 
-Consolidated from regulation/region_constants.py.
 These are specialized constants for specific brain region implementations.
 
 Author: Thalia Project
-Date: January 16, 2026 (Architecture Review Tier 1.2 - Complete Migration)
+Date: January 16, 2026
 """
 
 from __future__ import annotations
@@ -97,9 +96,6 @@ THALAMUS_TRN_FEEDFORWARD_SPARSITY = 0.3
 THALAMUS_SPATIAL_CENTER_SPARSITY = 0.2
 """Sparsity for center-surround spatial filters (20% for local receptive fields)."""
 
-THALAMUS_SPATIAL_CENTER_SCALE = 0.15
-"""Weight scale for center-surround connections (subtle spatial filtering)."""
-
 # =============================================================================
 # STRIATUM - TD(λ) LEARNING PARAMETERS
 # =============================================================================
@@ -112,19 +108,6 @@ STRIATUM_GAMMA = 0.99
 
 STRIATUM_TD_MIN_TRACE = 1e-6
 """Minimum eligibility trace value (below this, traces are zeroed)."""
-
-STRIATUM_TD_ACCUMULATING = True
-"""Whether to use accumulating (True) or replacing (False) traces."""
-
-STRIATUM_RELAY_THRESHOLD = 0.5
-"""Threshold for converting continuous activations to spikes (values > 0.5)."""
-
-# =============================================================================
-# PREFRONTAL CORTEX - GOAL HIERARCHY
-# =============================================================================
-
-PREFRONTAL_PATIENCE_MIN = 0.001
-"""Minimum patience parameter (k_min) for goal hierarchy hyperbolic discounting."""
 
 
 __all__ = [
@@ -149,11 +132,7 @@ __all__ = [
     "THALAMUS_TRN_FEEDBACK_SCALE",
     "THALAMUS_TRN_FEEDFORWARD_SPARSITY",
     "THALAMUS_SPATIAL_CENTER_SPARSITY",
-    "THALAMUS_SPATIAL_CENTER_SCALE",
     "STRIATUM_TD_LAMBDA",
     "STRIATUM_GAMMA",
     "STRIATUM_TD_MIN_TRACE",
-    "STRIATUM_TD_ACCUMULATING",
-    "STRIATUM_RELAY_THRESHOLD",
-    "PREFRONTAL_PATIENCE_MIN",
 ]

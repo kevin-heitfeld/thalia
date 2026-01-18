@@ -108,7 +108,7 @@ class TestSensoryRelayDepression:
 
         outputs = []
         for _ in range(20):
-            output = thalamus.forward(input_spikes)
+            output = thalamus.forward({"input": input_spikes})
             outputs.append(output.sum().item())
 
         # Output should decrease over time (depression)
@@ -136,7 +136,7 @@ class TestSensoryRelayDepression:
 
         # Present pattern A repeatedly (depresses)
         for _ in range(15):
-            thalamus.forward(pattern_a)
+            thalamus.forward({"input": pattern_a})
 
         # Measure STP efficacy directly (more reliable than neuron output)
         # Reset neuron state but keep STP history
@@ -202,8 +202,8 @@ class TestSensoryRelayDepression:
         no_stp_outputs = []
 
         for _ in range(15):
-            stp_out = thalamus_stp.forward(pattern)
-            no_stp_out = thalamus_no_stp.forward(pattern)
+            stp_out = thalamus_stp.forward({"input": pattern})
+            no_stp_out = thalamus_no_stp.forward({"input": pattern})
             stp_outputs.append(stp_out.sum().item())
             no_stp_outputs.append(no_stp_out.sum().item())
 

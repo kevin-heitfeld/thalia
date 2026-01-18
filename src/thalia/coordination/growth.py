@@ -477,10 +477,10 @@ class GrowthCoordinator:
             KeyError: If region_name not found in brain
             AttributeError: If region doesn't support growth
         """
-        if region_name not in self.brain.regions:
+        if region_name not in self.brain.components:
             raise KeyError(f"Region '{region_name}' not found in brain")
 
-        region = self.brain.regions[region_name]
+        region = self.brain.components[region_name]
         events = []
 
         # 1. Grow the region itself
@@ -599,8 +599,8 @@ class GrowthCoordinator:
                 # region must also expand its input weights to handle the larger
                 # input dimension.
                 target_region_name = self._get_pathway_target(pathway_name)
-                if target_region_name and target_region_name in self.brain.regions:
-                    target_region = self.brain.regions[target_region_name]
+                if target_region_name and target_region_name in self.brain.components:
+                    target_region = self.brain.components[target_region_name]
                     if hasattr(target_region, "grow_input"):
                         target_region.grow_input(
                             n_new=n_new_neurons,

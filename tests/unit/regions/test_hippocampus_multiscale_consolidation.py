@@ -204,7 +204,7 @@ def test_fast_trace_accumulates_with_learning(
 
     # Run encoding for several timesteps
     for _ in range(20):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     # Check that fast trace has accumulated
     fast_trace_norm = hpc._ca3_ca3_fast.abs().sum().item()
@@ -229,7 +229,7 @@ def test_fast_trace_decays_over_time(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(50):  # More timesteps to build stronger trace
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     initial_fast = hpc._ca3_ca3_fast.abs().sum().item()
     assert initial_fast > 0.01, "Should have built up trace"
@@ -240,7 +240,7 @@ def test_fast_trace_decays_over_time(
 
     zero_input = torch.zeros(small_sizes["input_size"], device=device)
     for _ in range(200):  # Decay for 200ms
-        hpc.forward(zero_input)
+        hpc.forward({"ec": zero_input})
 
     final_fast = hpc._ca3_ca3_fast.abs().sum().item()
 
@@ -278,7 +278,7 @@ def test_fast_trace_decay_timescale(
     hpc.set_neuromodulators(acetylcholine=0.1)
 
     for _ in range(100):  # 100 timesteps @ 1ms = 100ms
-        hpc.forward(zero_input)
+        hpc.forward({"ec": zero_input})
 
     # After 1 tau, should decay to ~37% (1/e ≈ 0.368)
     final_value = hpc._ca3_ca3_fast.mean().item()
@@ -310,7 +310,7 @@ def test_slow_trace_accumulates_via_consolidation(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(30):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     # Check that slow trace has started to accumulate
     slow_trace_norm = hpc._ca3_ca3_slow.abs().sum().item()
@@ -341,7 +341,7 @@ def test_slow_trace_persists_longer_than_fast(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(50):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     initial_fast = hpc._ca3_ca3_fast.abs().sum().item()
     initial_slow = hpc._ca3_ca3_slow.abs().sum().item()
@@ -352,7 +352,7 @@ def test_slow_trace_persists_longer_than_fast(
 
     zero_input = torch.zeros(small_sizes["input_size"], device=device)
     for _ in range(200):  # 200ms
-        hpc.forward(zero_input)
+        hpc.forward({"ec": zero_input})
 
     final_fast = hpc._ca3_ca3_fast.abs().sum().item()
     final_slow = hpc._ca3_ca3_slow.abs().sum().item()
@@ -390,7 +390,7 @@ def test_slow_trace_decay_timescale(
     hpc.set_neuromodulators(acetylcholine=0.1)
 
     for _ in range(1000):  # 1000 timesteps @ 1ms = 1000ms
-        hpc.forward(zero_input)
+        hpc.forward({"ec": zero_input})
 
     # After 1 tau, should decay to ~37% (1/e ≈ 0.368)
     final_value = hpc._ca3_ca3_slow.abs().mean().item()
@@ -424,7 +424,7 @@ def test_consolidation_transfers_fast_to_slow(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(20):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     initial_slow = hpc._ca3_ca3_slow.abs().sum().item()
 
@@ -434,7 +434,7 @@ def test_consolidation_transfers_fast_to_slow(
 
     zero_input = torch.zeros(small_sizes["input_size"], device=device)
     for _ in range(50):
-        hpc.forward(zero_input)
+        hpc.forward({"ec": zero_input})
 
     final_slow = hpc._ca3_ca3_slow.abs().sum().item()
 
@@ -473,7 +473,7 @@ def test_consolidation_rate_controls_transfer_speed(
     hpc_slow.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(50):
-        hpc_slow.forward(input_pattern)
+        hpc_slow.forward({"ec": input_pattern})
 
     slow_transfer = hpc_slow._ca3_ca3_slow.abs().sum().item()
 
@@ -483,7 +483,7 @@ def test_consolidation_rate_controls_transfer_speed(
     hpc_fast.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(50):
-        hpc_fast.forward(input_pattern)
+        hpc_fast.forward({"ec": input_pattern})
 
     fast_transfer = hpc_fast._ca3_ca3_slow.abs().sum().item()
 
@@ -512,7 +512,7 @@ def test_consolidation_preserves_fast_trace_structure(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(30):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     # Let consolidation happen
     hpc.set_oscillator_phases({"theta": 3.14, "gamma": 0.0})
@@ -520,7 +520,7 @@ def test_consolidation_preserves_fast_trace_structure(
 
     zero_input = torch.zeros(small_sizes["input_size"], device=device)
     for _ in range(100):
-        hpc.forward(zero_input)
+        hpc.forward({"ec": zero_input})
 
     # Check that slow trace has similar structure to fast trace
     # (correlation should be positive)
@@ -565,7 +565,7 @@ def test_combined_learning_uses_both_traces(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(50):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     final_weights = hpc.synaptic_weights["ca3_ca3"].data
 
@@ -641,7 +641,7 @@ def test_standard_learning_without_multiscale(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(30):
-        hpc.forward(input_pattern)
+        hpc.forward({"ec": input_pattern})
 
     final_weights = hpc.synaptic_weights["ca3_ca3"].data
 
@@ -672,8 +672,8 @@ def test_forward_pass_compatible_both_modes(
     # Both should process input successfully
     input_pattern = torch.ones(small_sizes["input_size"], device=device)
 
-    output_multi = hpc_multi.forward(input_pattern)
-    output_standard = hpc_standard.forward(input_pattern)
+    output_multi = hpc_multi.forward({"ec": input_pattern})
+    output_standard = hpc_standard.forward({"ec": input_pattern})
 
     # Both should produce valid outputs
     assert output_multi.dtype == torch.bool
@@ -789,7 +789,7 @@ def test_multiscale_compatible_with_theta_modulation(
 
     input_pattern = torch.ones(small_sizes["input_size"], device=device)
     for _ in range(20):
-        output = hpc.forward(input_pattern)
+        output = hpc.forward({"ec": input_pattern})
         assert output.dtype == torch.bool
 
     # Check that traces accumulated
@@ -815,7 +815,7 @@ def test_multiscale_compatible_with_replay(
     hpc.set_neuromodulators(acetylcholine=0.8)
 
     for _ in range(10):
-        hpc.forward(pattern1)
+        hpc.forward({"ec": pattern1})
 
     # Check that traces accumulated (consolidation happens automatically)
     assert hpc._ca3_ca3_fast.abs().sum() > 0.01, "Fast trace should accumulate"

@@ -87,9 +87,9 @@ class TestCerebellum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # Forward pass
+        # Forward pass (use dict input)
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Verify granule layer exists and expands representation
         expected_granules = int(
@@ -112,7 +112,7 @@ class TestCerebellum(RegionTestBase):
 
         # Forward pass
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
-        output = region.forward(input_spikes)
+        output = region.forward({"input": input_spikes})
 
         # Output should match Purkinje cell count
         assert output.shape[0] == self._get_region_output_size(region)
@@ -134,11 +134,11 @@ class TestCerebellum(RegionTestBase):
         # Check if region accepts error signal
         if "error_signal" in region.forward.__code__.co_varnames:
             error = torch.ones(self._get_region_output_size(region), device=region.device) * 0.5
-            output = region.forward(input_spikes, error_signal=error)
+            output = region.forward({"input": input_spikes}, error_signal=error)
             assert output.shape[0] == self._get_region_output_size(region)
         else:
             # Just verify forward works without error
-            output = region.forward(input_spikes)
+            output = region.forward({"input": input_spikes})
             assert output.shape[0] == self._get_region_output_size(region)
 
     def test_parallel_fiber_plasticity(self):
@@ -159,7 +159,7 @@ class TestCerebellum(RegionTestBase):
                 # Multiple forward passes with consistent input
                 input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
                 for _ in range(100):
-                    region.forward(input_spikes)
+                    region.forward({"input": input_spikes})
 
                 # Weights should change (LTD/LTP applied)
                 for source_name in region.synaptic_weights:
@@ -179,7 +179,7 @@ class TestCerebellum(RegionTestBase):
 
         # Forward pass
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Check if basket cell activity is tracked
         state = region.get_state()
@@ -195,7 +195,7 @@ class TestCerebellum(RegionTestBase):
 
         # Forward pass
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Check if Golgi cell activity is tracked
         state = region.get_state()
@@ -218,7 +218,7 @@ class TestCerebellum(RegionTestBase):
             else:
                 input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
 
-            output = region.forward(input_spikes)
+            output = region.forward({"input": input_spikes})
             assert output.shape[0] == self._get_region_output_size(region)
 
         # Cerebellum should have processed temporal pattern
@@ -231,13 +231,13 @@ class TestCerebellum(RegionTestBase):
 
         # Simulate motor command
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
-        output1 = region.forward(input_spikes)
+        output1 = region.forward({"input": input_spikes})
 
         # Continue with more trials
         for _ in range(20):
-            region.forward(input_spikes)
+            region.forward({"input": input_spikes})
 
-        output2 = region.forward(input_spikes)
+        output2 = region.forward({"input": input_spikes})
 
         # Output should be consistent after learning
         # (Exact comparison depends on learning dynamics)
@@ -250,7 +250,7 @@ class TestCerebellum(RegionTestBase):
 
         # Dense input
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device) * 0.8
-        region.forward(input_spikes)
+        region.forward({"input": input_spikes})
 
         # Check granule cell activity
         state = region.get_state()
@@ -270,7 +270,7 @@ class TestCerebellum(RegionTestBase):
         # Forward passes
         input_spikes = torch.ones(self._get_region_input_size(region), device=region.device)
         for _ in range(10):
-            region.forward(input_spikes)
+            region.forward({"input": input_spikes})
 
         # Check if complex spike state exists
         state = region.get_state()

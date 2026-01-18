@@ -1898,24 +1898,27 @@ class DynamicBrain(nn.Module):
             start = a * neurons_per
             end = start + neurons_per
 
-            # Safe access to weights (might be None)
-            if (
-                hasattr(striatum, "d1_pathway")
-                and hasattr(striatum.d1_pathway, "weights")
-                and striatum.d1_pathway.weights is not None
-            ):
-                d1_mean = striatum.d1_pathway.weights[start:end].mean().item()  # type: ignore[index]
-            else:
-                d1_mean = 0.0
+            # Safe access to weights (might not be linked yet)
+            d1_mean = 0.0
+            d2_mean = 0.0
 
-            if (
-                hasattr(striatum, "d2_pathway")
-                and hasattr(striatum.d2_pathway, "weights")
-                and striatum.d2_pathway.weights is not None
-            ):
-                d2_mean = striatum.d2_pathway.weights[start:end].mean().item()  # type: ignore[index]
-            else:
-                d2_mean = 0.0
+            if hasattr(striatum, "d1_pathway"):
+                try:
+                    weights = striatum.d1_pathway.weights
+                    if weights is not None:
+                        d1_mean = weights[start:end].mean().item()  # type: ignore[index]
+                except RuntimeError:
+                    # Pathway not linked yet - skip
+                    pass
+
+            if hasattr(striatum, "d2_pathway"):
+                try:
+                    weights = striatum.d2_pathway.weights
+                    if weights is not None:
+                        d2_mean = weights[start:end].mean().item()  # type: ignore[index]
+                except RuntimeError:
+                    # Pathway not linked yet - skip
+                    pass
 
             d1_per_action.append(d1_mean)
             d2_per_action.append(d2_mean)

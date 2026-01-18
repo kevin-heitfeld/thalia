@@ -58,7 +58,7 @@ class TestThalamusL6abFeedback:
 
         # Forward with both feedback sources
         _ = thalamus(
-            sensory,
+            {"input": sensory},
             l6a_feedback=l6a_feedback,
             l6b_feedback=l6b_feedback,
         )
@@ -87,7 +87,7 @@ class TestThalamusL6abFeedback:
 
         thalamus.reset_state()
 
-        _ = thalamus(sensory, l6a_feedback=l6a_feedback)
+        _ = thalamus({"input": sensory}, l6a_feedback=l6a_feedback)
 
         # TRN should receive L6a input and generate output
         assert thalamus.state.trn_spikes is not None
@@ -110,7 +110,7 @@ class TestThalamusL6abFeedback:
 
         thalamus.reset_state()
 
-        _ = thalamus(sensory, l6b_feedback=l6b_feedback)
+        _ = thalamus({"input": sensory}, l6b_feedback=l6b_feedback)
 
         # Relay should receive L6b input and generate output
         assert thalamus.state.relay_spikes is not None
@@ -131,7 +131,7 @@ class TestThalamusL6abFeedback:
         thalamus.reset_state()
 
         # Forward without feedback
-        _ = thalamus(sensory)
+        _ = thalamus({"input": sensory})
 
         # Should still function (default feedforward processing)
         assert thalamus.state.relay_spikes is not None
@@ -154,7 +154,7 @@ class TestThalamusL6abFeedback:
         thalamus.reset_state()
         baseline_activity = []
         for _ in range(20):
-            _ = thalamus(sensory)
+            _ = thalamus({"input": sensory})
             relay_spikes = thalamus.state.relay_spikes.sum().item()
             baseline_activity.append(relay_spikes)
 
@@ -167,7 +167,7 @@ class TestThalamusL6abFeedback:
         thalamus.reset_state()
         l6a_activity = []
         for _ in range(20):
-            _ = thalamus(sensory, l6a_feedback=l6a_feedback)
+            _ = thalamus({"input": sensory}, l6a_feedback=l6a_feedback)
             relay_spikes = thalamus.state.relay_spikes.sum().item()
             l6a_activity.append(relay_spikes)
 
@@ -180,7 +180,7 @@ class TestThalamusL6abFeedback:
         thalamus.reset_state()
         l6b_activity = []
         for _ in range(20):
-            _ = thalamus(sensory, l6b_feedback=l6b_feedback)
+            _ = thalamus({"input": sensory}, l6b_feedback=l6b_feedback)
             relay_spikes = thalamus.state.relay_spikes.sum().item()
             l6b_activity.append(relay_spikes)
 

@@ -3,8 +3,6 @@ Neuromodulation systems and management.
 
 This module provides neuromodulator systems (VTA, locus coeruleus, nucleus basalis)
 and management infrastructure for global neuromodulatory signals.
-
-NOTE: Import constants directly from thalia.constants.neuromodulation.
 """
 
 from __future__ import annotations

@@ -44,8 +44,8 @@ from thalia.constants.neuron import (
     E_LEAK,
     G_LEAK_STANDARD,
     MEMBRANE_CAPACITANCE_STANDARD,
-    TAU_EXCITATORY_CONDUCTANCE,
-    TAU_INHIBITORY_CONDUCTANCE,
+    TAU_SYN_EXCITATORY,
+    TAU_SYN_INHIBITORY,
 )
 
 # =============================================================================
@@ -118,8 +118,8 @@ class ConductanceLIFConfig(BaseNeuronConfig):
     E_I: float = E_INHIBITORY  # Inhibitory (≈ -70mV, below rest)
 
     # Synaptic time constants
-    tau_E: float = TAU_EXCITATORY_CONDUCTANCE  # Excitatory (AMPA-like)
-    tau_I: float = TAU_INHIBITORY_CONDUCTANCE  # Inhibitory (GABA_A-like)
+    tau_E: float = TAU_SYN_EXCITATORY  # Excitatory (AMPA-like)
+    tau_I: float = TAU_SYN_INHIBITORY  # Inhibitory (GABA_A-like)
 
     # Adaptation (conductance-based)
     tau_adapt: float = 100.0

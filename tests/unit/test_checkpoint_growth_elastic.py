@@ -235,14 +235,22 @@ class TestElasticTensorMetadata:
                 abs(actual_size - expected_membrane_size) <= 1
             ), f"Membrane potential size {actual_size} should be ~{expected_membrane_size} (n_active//2)"
 
-        # Pathway neurons should also match active size
+        # Pathway neurons should also match active size (half of total for each pathway)
         for pathway_key in ["d1_state", "d2_state"]:
             if pathway_key in loaded["pathway_state"]:
                 pathway_state = loaded["pathway_state"][pathway_key]
-                if "neurons" in pathway_state and pathway_state["neurons"] is not None:
-                    neurons_state = pathway_state["neurons"]
-                    if "membrane" in neurons_state and neurons_state["membrane"] is not None:
-                        assert neurons_state["membrane"].shape[0] == n_active
+                # StriatumPathwayState is a dataclass, not a dict
+                if (
+                    hasattr(pathway_state, "neuron_membrane")
+                    and pathway_state.neuron_membrane is not None
+                ):
+                    # Each pathway (D1 or D2) has half the neurons
+                    expected_pathway_size = n_active // 2
+                    actual_pathway_size = pathway_state.neuron_membrane.shape[0]
+                    # Due to odd numbers, check within 1
+                    assert (
+                        abs(actual_pathway_size - expected_pathway_size) <= 1
+                    ), f"Pathway {pathway_key} neuron_membrane size {actual_pathway_size} should be ~{expected_pathway_size} (n_active//2)"
 
     def test_zero_capacity_raises_error(self, base_config, device):
         """Creating region with zero capacity should raise error."""

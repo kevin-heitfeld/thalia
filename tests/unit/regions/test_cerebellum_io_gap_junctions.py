@@ -84,7 +84,7 @@ def test_io_membrane_synchronization():
     target[5:10] = 1.0  # Strong positive error for neurons 5-9
 
     # Run forward pass
-    output = cerebellum(input_spikes)
+    output = cerebellum({"input": input_spikes})
 
     # Deliver error signal (triggers gap junction synchronization)
     cerebellum.deliver_error(target=target, output_spikes=output)
@@ -130,7 +130,7 @@ def test_error_sign_preservation():
     target[20:25] = 0.0  # Negative error if these neurons fire
 
     # Run forward (may produce spikes in 20:25 region)
-    output = cerebellum(input_spikes)
+    output = cerebellum({"input": input_spikes})
 
     # Deliver error
     cerebellum.deliver_error(target=target, output_spikes=output)
@@ -157,7 +157,7 @@ def test_io_gap_junction_state_serialization():
     input_spikes[15:25] = True
     target = torch.ones(50, device=device) * 0.5
 
-    output = cerebellum(input_spikes)
+    output = cerebellum({"input": input_spikes})
     cerebellum.deliver_error(target=target, output_spikes=output)
 
     # Get state
@@ -201,7 +201,7 @@ def test_io_gap_junction_reset_state():
     input_spikes[10:20] = True
     target = torch.ones(50, device=device) * 0.5
 
-    output = cerebellum(input_spikes)
+    output = cerebellum({"input": input_spikes})
     cerebellum.deliver_error(target=target, output_spikes=output)
 
     # Verify io_membrane is non-zero via state
@@ -246,9 +246,13 @@ def test_io_coupling_strength_scaling():
     # Use same random seed for consistent weights
     device = cerebellum_weak.device
     torch.manual_seed(42)
-    cerebellum_weak.weights.data = torch.rand_like(cerebellum_weak.weights.data) * 0.5
+    cerebellum_weak.synaptic_weights["default"].data = (
+        torch.rand_like(cerebellum_weak.synaptic_weights["default"].data) * 0.5
+    )
     torch.manual_seed(42)
-    cerebellum_strong.weights.data = torch.rand_like(cerebellum_strong.weights.data) * 0.5
+    cerebellum_strong.synaptic_weights["default"].data = (
+        torch.rand_like(cerebellum_strong.synaptic_weights["default"].data) * 0.5
+    )
 
     # Same input and target
     input_spikes = torch.zeros(100, dtype=torch.bool, device=device)
@@ -257,10 +261,10 @@ def test_io_coupling_strength_scaling():
     target[10:15] = 1.0
 
     # Run both
-    output_weak = cerebellum_weak(input_spikes)
+    output_weak = cerebellum_weak({"input": input_spikes})
     cerebellum_weak.deliver_error(target=target, output_spikes=output_weak)
 
-    output_strong = cerebellum_strong(input_spikes)
+    output_strong = cerebellum_strong({"input": input_spikes})
     cerebellum_strong.deliver_error(target=target, output_spikes=output_strong)
 
     # Strong coupling should produce more uniform io_membrane distribution
@@ -307,7 +311,7 @@ def test_io_gap_junctions_with_enhanced_microcircuit():
     mossy_fiber_input[20:30] = True
     target = torch.ones(50, device=device) * 0.3
 
-    output = cerebellum(mossy_fiber_input)
+    output = cerebellum({"input": mossy_fiber_input})
     cerebellum.deliver_error(target=target, output_spikes=output)
 
     # Should produce io_membrane state - verify via checkpoint API

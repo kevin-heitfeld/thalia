@@ -33,7 +33,7 @@ class TestPurkinjePerDendriteLearning:
         # Forward pass to initialize weights
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
         input_spikes[:10] = 1.0
-        output = cerebellum(input_spikes)
+        output = cerebellum({"input": input_spikes})
 
         # Store initial weights from first Purkinje cell
         initial_weights = cerebellum.purkinje_cells[0].pf_synaptic_weights.clone()
@@ -72,7 +72,7 @@ class TestPurkinjePerDendriteLearning:
         # Create input pattern
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
         input_spikes[:40] = 1.0
-        output = cerebellum(input_spikes)
+        output = cerebellum({"input": input_spikes})
 
         # Store initial weights
         initial_weights = cerebellum.purkinje_cells[0].pf_synaptic_weights.clone()
@@ -105,7 +105,7 @@ class TestPurkinjePerDendriteLearning:
 
         input_spikes = torch.zeros(64, device=torch.device("cpu"))
         input_spikes[:20] = 1.0
-        output = cerebellum(input_spikes)
+        output = cerebellum({"input": input_spikes})
 
         initial_weights = cerebellum.purkinje_cells[0].pf_synaptic_weights.clone()
 
@@ -138,7 +138,7 @@ class TestPurkinjePerDendriteLearning:
         # Multiple learning iterations with large errors
         for _ in range(10):
             input_spikes = torch.rand(64, device=torch.device("cpu"))
-            output = cerebellum(input_spikes)
+            output = cerebellum({"input": input_spikes})
             target = torch.rand(32, device=torch.device("cpu"))
             cerebellum.deliver_error(target, output)
 
@@ -163,7 +163,7 @@ class TestPurkinjePerDendriteLearning:
 
         # Forward pass
         input_spikes = torch.rand(64, device=torch.device("cpu"))
-        output = cerebellum(input_spikes)
+        output = cerebellum({"input": input_spikes})
 
         # Store initial weights for multiple cells
         initial_weights = [

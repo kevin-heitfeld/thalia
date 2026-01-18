@@ -1365,9 +1365,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         expanded_2d_d1 = self._expand_state_tensors(
             cast(dict[str, torch.Tensor], state_2d_d1), n_new_d1
         )
-        self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
+        if "d1_eligibility" in expanded_2d_d1:
+            self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
         if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
-            self.td_lambda_d1.traces.traces = expanded_2d_d1["td_lambda_d1_traces"]
+            if "td_lambda_d1_traces" in expanded_2d_d1:
+                self.td_lambda_d1.traces.traces = expanded_2d_d1["td_lambda_d1_traces"]
             self.td_lambda_d1.traces.n_output = self.d1_size
             self.td_lambda_d1.n_actions = self.n_actions
 
@@ -1390,9 +1392,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         expanded_2d_d2 = self._expand_state_tensors(
             cast(dict[str, torch.Tensor], state_2d_d2), n_new_d2
         )
-        self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
+        if "d2_eligibility" in expanded_2d_d2:
+            self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
         if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
-            self.td_lambda_d2.traces.traces = expanded_2d_d2["td_lambda_d2_traces"]
+            if "td_lambda_d2_traces" in expanded_2d_d2:
+                self.td_lambda_d2.traces.traces = expanded_2d_d2["td_lambda_d2_traces"]
             self.td_lambda_d2.traces.n_output = self.d2_size
             self.td_lambda_d2.n_actions = self.n_actions
 
@@ -2951,13 +2955,29 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         d2_per_action: list[float] = []
         net_per_action: list[float] = []
 
-        for action in range(self.n_actions):
-            pop_slice = self._get_action_population_indices(action)
-            d1_mean = self.d1_pathway.weights[pop_slice, :].mean().item()
-            d2_mean = self.d2_pathway.weights[pop_slice, :].mean().item()
-            d1_per_action.append(d1_mean)
-            d2_per_action.append(d2_mean)
-            net_per_action.append(d1_mean - d2_mean)
+        # Check if pathways are linked (have access to weights)
+        pathways_linked = False
+        try:
+            _ = self.d1_pathway.weights
+            _ = self.d2_pathway.weights
+            pathways_linked = True
+        except RuntimeError:
+            # Pathways not linked yet - skip weight-dependent diagnostics
+            pass
+
+        if pathways_linked:
+            for action in range(self.n_actions):
+                pop_slice = self._get_action_population_indices(action)
+                d1_mean = self.d1_pathway.weights[pop_slice, :].mean().item()
+                d2_mean = self.d2_pathway.weights[pop_slice, :].mean().item()
+                d1_per_action.append(d1_mean)
+                d2_per_action.append(d2_mean)
+                net_per_action.append(d1_mean - d2_mean)
+        else:
+            # Fill with zeros if pathways not linked
+            d1_per_action = [0.0] * self.n_actions
+            d2_per_action = [0.0] * self.n_actions
+            net_per_action = [0.0] * self.n_actions
 
         # Accumulated votes (current trial) - from state_tracker
         d1_votes, d2_votes = self.state_tracker.get_accumulated_votes()
@@ -2978,28 +2998,46 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             total_neurons=self.n_neurons,
         )
 
-        # Compute plasticity metrics for D1 pathway (representative)
-        plasticity = compute_plasticity_metrics(
-            weights=self.d1_pathway.weights,
-            learning_rate=self.config.learning_rate,
-        )
-        # Add D2 and NET statistics
-        plasticity["d2_weight_mean"] = float(self.d2_pathway.weights.mean().item())  # type: ignore[typeddict-item]
-        plasticity["d2_weight_std"] = float(self.d2_pathway.weights.std().item())  # type: ignore[typeddict-item]
-        net_weights = self.d1_pathway.weights - self.d2_pathway.weights
-        plasticity["net_weight_mean"] = float(net_weights.mean().item())  # type: ignore[typeddict-item]
-        plasticity["net_weight_std"] = float(net_weights.std().item())  # type: ignore[typeddict-item]
+        # Compute plasticity and health metrics (only if pathways linked)
+        if pathways_linked:
+            # Compute plasticity metrics for D1 pathway (representative)
+            plasticity = compute_plasticity_metrics(
+                weights=self.d1_pathway.weights,
+                learning_rate=self.config.learning_rate,
+            )
+            # Add D2 and NET statistics
+            plasticity["d2_weight_mean"] = float(self.d2_pathway.weights.mean().item())  # type: ignore[typeddict-item]
+            plasticity["d2_weight_std"] = float(self.d2_pathway.weights.std().item())  # type: ignore[typeddict-item]
+            net_weights = self.d1_pathway.weights - self.d2_pathway.weights
+            plasticity["net_weight_mean"] = float(net_weights.mean().item())  # type: ignore[typeddict-item]
+            plasticity["net_weight_std"] = float(net_weights.std().item())  # type: ignore[typeddict-item]
 
-        # Compute health metrics
-        health = compute_health_metrics(
-            state_tensors={
-                "d1_weights": self.d1_pathway.weights,
-                "d2_weights": self.d2_pathway.weights,
-                "d1_eligibility": self.d1_pathway.eligibility,
-                "d2_eligibility": self.d2_pathway.eligibility,
-            },
-            firing_rate=activity.get("firing_rate", 0.0),
-        )
+            # Compute health metrics
+            health = compute_health_metrics(
+                state_tensors={
+                    "d1_weights": self.d1_pathway.weights,
+                    "d2_weights": self.d2_pathway.weights,
+                    "d1_eligibility": self.d1_pathway.eligibility,
+                    "d2_eligibility": self.d2_pathway.eligibility,
+                },
+                firing_rate=activity.get("firing_rate", 0.0),
+            )
+        else:
+            # Minimal diagnostics if pathways not linked
+            plasticity = {
+                "weight_mean": 0.0,
+                "weight_std": 0.0,
+                "weight_range": 0.0,
+                "d2_weight_mean": 0.0,
+                "d2_weight_std": 0.0,
+                "net_weight_mean": 0.0,
+                "net_weight_std": 0.0,
+            }
+            health = {
+                "is_healthy": True,
+                "firing_rate_healthy": True,
+                "weight_distribution_healthy": True,
+            }
 
         # Neuromodulator metrics
         neuromodulators = {

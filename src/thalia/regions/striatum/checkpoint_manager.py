@@ -72,7 +72,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
         Args:
             striatum: The Striatum instance to manage
         """
-        super().__init__(format_version="2.0.0")
+        super().__init__(format_version="1.0.0")
         self.striatum = striatum
 
     def collect_state(self) -> Dict[str, Any]:

@@ -35,7 +35,7 @@ def test_brain(device):
     brain = create_test_brain(
         device=str(device),
         dt_ms=1.0,
-        input_size=100,
+        input_size=200,  # Match thalamus relay size for 1:1 relay
         thalamus_size=200,
         cortex_size=300,
         hippocampus_size=150,

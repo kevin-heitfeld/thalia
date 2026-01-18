@@ -98,7 +98,7 @@ Usage:
             success_criteria={
                 'reaching_accuracy': PERFORMANCE_GOOD,
                 'manipulation_success': 0.85,
-                'prediction_error': PREDICTION_ERROR_SMALL,
+                'prediction_error': 0.05,
             },
         ),
     )
