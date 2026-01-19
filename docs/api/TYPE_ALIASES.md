@@ -1,16 +1,16 @@
 # Type Aliases Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all type aliases used in Thalia for clearer type hints.
 
-Total: 15 type aliases
+Total: 14 type aliases
 
 ## Type Aliases by Category
 
-###
+### 
 
 #### `BatchData`
 
@@ -47,16 +47,6 @@ Total: 15 type aliases
 **Definition**: `Dict[Tuple[str, str], 'NeuralRegion']`
 
 **Description**: Maps (source, target) pairs to pathway instances.  Example: connections: ConnectionGraph = { ("thalamus", "cortex"): thalamic_pathway, ("cortex", "striatum"): corticostriatal_pathway, }
-
-**Source**: [`thalia/typing.py`](../../src/thalia/typing.py)
-
----
-
-#### `DiagnosticsDict`
-
-**Definition**: `Dict[str, Any]`
-
-**Description**: Component health and performance metrics.  **DEPRECATED**: Use specific TypedDict subclasses below for better type safety.  Example: diagnostics: DiagnosticsDict = { "firing_rate": 5.2, "weight_mean": 0.35, "weight_std": 0.12, "sparsity": 0.15, }
 
 **Source**: [`thalia/typing.py`](../../src/thalia/typing.py)
 
@@ -163,3 +153,4 @@ Total: 15 type aliases
 **Source**: [`thalia/typing.py`](../../src/thalia/typing.py)
 
 ---
+

@@ -241,7 +241,7 @@ class HippocampusMemoryComponent(MemoryComponent):
         similarities.sort(key=lambda x: x["similarity"], reverse=True)
         return similarities[:k]
 
-    def sample_prioritized(self, n: int) -> List[Episode]:
+    def sample_episodes_prioritized(self, n: int) -> List[Episode]:
         """Sample episodes with probability proportional to priority.
 
         Args:

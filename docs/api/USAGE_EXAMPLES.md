@@ -1,7 +1,7 @@
 # Usage Examples
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs usage examples extracted from docstrings and training scripts.
@@ -75,3 +75,4 @@ stdp_cfg = STDPConfig(learning_rate=0.002, a_plus=0.02)
 ```
 
 ---
+

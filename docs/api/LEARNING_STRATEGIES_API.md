@@ -1,7 +1,7 @@
 # Learning Strategies API
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all learning strategy factory functions available in Thalia.
@@ -45,7 +45,7 @@ graph LR
 
 ## 📚 Factory Functions
 
-### [``create_cerebellum_strategy()``](../../src/thalia/learning/strategy_registry.py#L543)
+### [``create_cerebellum_strategy()``](../../src/thalia/learning/strategy_registry.py#L526)
 
 **Returns**: `LearningStrategy`
 
@@ -71,7 +71,7 @@ graph LR
 
 ---
 
-### [``create_cortex_strategy()``](../../src/thalia/learning/strategy_registry.py#L359)
+### [``create_cortex_strategy()``](../../src/thalia/learning/strategy_registry.py#L368)
 
 **Returns**: `LearningStrategy`
 
@@ -100,7 +100,7 @@ graph LR
 
 ---
 
-### [``create_hippocampus_strategy()``](../../src/thalia/learning/strategy_registry.py#L433)
+### [``create_hippocampus_strategy()``](../../src/thalia/learning/strategy_registry.py#L424)
 
 **Returns**: `LearningStrategy`
 
@@ -129,7 +129,7 @@ graph LR
 
 ---
 
-### [``create_strategy()``](../../src/thalia/learning/rules/strategies.py#L1042)
+### [``create_strategy()``](../../src/thalia/learning/rules/strategies.py#L1108)
 
 **Returns**: `BaseStrategy`
 
@@ -151,7 +151,7 @@ strategy = create_strategy('stdp', a_plus=0.02, a_minus=0.02)
 
 ---
 
-### [``create_striatum_strategy()``](../../src/thalia/learning/strategy_registry.py#L495)
+### [``create_striatum_strategy()``](../../src/thalia/learning/strategy_registry.py#L484)
 
 **Returns**: `LearningStrategy`
 
@@ -200,3 +200,4 @@ strategy = create_strategy('stdp', a_plus=0.02, a_minus=0.02)
 - **Time constants**: Match biological ranges (10-100ms for STDP)
 - **Modulator sensitivity**: Tune based on task reward structure
 - **Testing**: Always validate with curriculum training stages
+

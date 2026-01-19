@@ -46,15 +46,11 @@ from thalia.core.neural_region import NeuralRegion
 from thalia.core.protocols.component import LearnableComponent
 from thalia.diagnostics import CriticalityMonitor, HealthMonitor
 from thalia.io.checkpoint_manager import CheckpointManager
-from thalia.memory.consolidation.manager import ConsolidationManager
+from thalia.replay import UnifiedReplayCoordinator
+from thalia.regions.hippocampus.replay_engine import ReplayEngine, ReplayConfig
+from thalia.memory.consolidation import SleepStageController
 from thalia.neuromodulation.manager import NeuromodulatorManager
 from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
-from thalia.planning import (
-    DynaConfig,
-    DynaPlanner,
-    MentalSimulationCoordinator,
-    SimulationConfig,
-)
 from thalia.stimuli.base import StimulusPattern
 from thalia.typing import (
     CheckpointMetadata,
@@ -213,7 +209,7 @@ class DynamicBrain(nn.Module):
         self._last_action: Optional[int] = None
         self._last_confidence: Optional[float] = None
 
-        # Mutable container for shared last_action state (needed by ConsolidationManager)
+        # Mutable container for shared last_action state (needed by UnifiedReplayCoordinator)
         self._last_action_container: List[Optional[int]] = [None]
 
         # =================================================================
@@ -253,18 +249,30 @@ class DynamicBrain(nn.Module):
         self._growth_history: List[Any] = []  # List[GrowthEvent] from coordination.growth
 
         # =================================================================
-        # CONSOLIDATION MANAGER (Phase 1.7.4)
+        # UNIFIED REPLAY COORDINATOR (Phase 2 - Replaces ConsolidationManager)
         # =================================================================
-        # Manages memory consolidation and offline replay
+        # Manages all replay types: sleep consolidation, immediate replay,
+        # forward planning, and background planning
         # Initialize if brain has required components (hippocampus, striatum, cortex, pfc)
-        self.consolidation_manager = None
+        self.consolidation_manager = None  # Kept for compatibility
 
         if all(comp in self.components for comp in ["hippocampus", "striatum", "cortex", "pfc"]):
-            self.consolidation_manager = ConsolidationManager(
+            # Create ReplayEngine and SleepStageController
+            replay_config = ReplayConfig(
+                compression_factor=5.0,
+                awake_compression=10.0,
+                sleep_compression=5.0,
+            )
+            replay_engine = ReplayEngine(replay_config)
+            sleep_controller = SleepStageController()
+
+            self.consolidation_manager = UnifiedReplayCoordinator(
                 hippocampus=self._get_component("hippocampus"),
                 striatum=self._get_component("striatum"),
                 cortex=self._get_component("cortex"),
                 pfc=self._get_component("pfc"),
+                replay_engine=replay_engine,
+                sleep_controller=sleep_controller,
                 config=self.config,
                 deliver_reward_fn=self.deliver_reward,
             )
@@ -302,38 +310,6 @@ class DynamicBrain(nn.Module):
             brain=self,
             default_compression="zstd",  # Default compression format
         )
-
-        # =================================================================
-        # PLANNING SYSTEMS (Phase 1.7.5)
-        # =================================================================
-        # Mental simulation and Dyna planning for model-based RL
-        self.mental_simulation: Optional[MentalSimulationCoordinator] = None
-        self.dyna_planner: Optional[DynaPlanner] = None
-
-        # Check if planning is enabled (use_model_based_planning comes from brain_config)
-        planning_enabled = getattr(brain_config, "use_model_based_planning", False)
-
-        if planning_enabled:
-            # Check that required components exist
-            if all(
-                name in self.components for name in ["pfc", "hippocampus", "striatum", "cortex"]
-            ):
-                # Create mental simulation coordinator
-                self.mental_simulation = MentalSimulationCoordinator(
-                    pfc=self._get_component("pfc"),
-                    hippocampus=self._get_component("hippocampus"),
-                    striatum=self._get_component("striatum"),
-                    cortex=self._get_component("cortex"),
-                    config=SimulationConfig(),
-                )
-
-                # Create Dyna planner for background planning
-                self.dyna_planner = DynaPlanner(
-                    coordinator=self.mental_simulation,
-                    striatum=self._get_component("striatum"),
-                    hippocampus=self._get_component("hippocampus"),
-                    config=DynaConfig(),
-                )
 
         # =================================================================
         # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
@@ -885,10 +861,10 @@ class DynamicBrain(nn.Module):
         Compatible with EventDrivenBrain RL interface. Uses striatum to
         select actions based on accumulated evidence.
 
-        If use_planning=True and model-based planning is enabled:
-        - Uses MentalSimulationCoordinator for tree search
+        If use_planning=True and UnifiedReplayCoordinator is available:
+        - Uses forward planning to simulate action outcomes
         - Returns best action from simulated rollouts
-        - Falls back to striatum if planning disabled
+        - Falls back to striatum if planning unavailable
 
         Args:
             explore: Whether to allow exploration (epsilon-greedy)
@@ -921,8 +897,8 @@ class DynamicBrain(nn.Module):
 
         striatum = self._get_component("striatum")
 
-        # Use mental simulation if requested and available
-        if use_planning and self.mental_simulation is not None:
+        # Use unified replay coordinator for forward planning if requested and available
+        if use_planning and self.consolidation_manager is not None:
             # Get current state - construct full concatenated state matching store_experience format
             current_state = None
             goal_context = None
@@ -970,11 +946,17 @@ class DynamicBrain(nn.Module):
                 current_state = torch.cat(state_parts)
 
             if current_state is not None:
-                # Use tree search to find best action
-                action = self.mental_simulation.search(
-                    state=current_state,
-                    n_simulations=10,
+                # Use forward planning to find best action
+                # Plan for all available actions
+                striatum = self._get_component("striatum")
+                n_actions = getattr(striatum, "n_actions", 2)
+                available_actions = list(range(n_actions))
+
+                action = self.consolidation_manager.plan_action(
+                    current_state=current_state,
+                    available_actions=available_actions,
                     goal_context=goal_context,
+                    depth=10,
                 )
 
                 # Store for deliver_reward
@@ -1095,35 +1077,20 @@ class DynamicBrain(nn.Module):
                 last_action_holder=self._last_action_container,
             )
 
-        # Trigger background planning (Dyna) after real experience
-        if self.dyna_planner is not None:
-            current_state = None
-            next_state = None
-
-            # Get current and next states from PFC
+        # Trigger background planning after real experience (via UnifiedReplayCoordinator)
+        if self.consolidation_manager is not None:
+            # Get goal context from PFC if available
+            goal_context = None
             if "pfc" in self.components:
                 pfc = self._get_component("pfc")
                 if hasattr(pfc, "state") and pfc.state is not None:
-                    next_state = pfc.state.spikes  # type: ignore[union-attr]
-                    # Current state would need to be saved from before action
-                    # For now, use same state (limitation: need state history)
-                    current_state = next_state
+                    goal_context = pfc.state.spikes  # type: ignore[union-attr]
 
-            if (
-                current_state is not None
-                and next_state is not None
-                and self._last_action is not None
-            ):
-                goal_context = current_state
-
-                self.dyna_planner.process_real_experience(
-                    state=current_state,  # type: ignore[arg-type]
-                    action=self._last_action,
-                    reward=total_reward,
-                    next_state=next_state,  # type: ignore[arg-type]
-                    done=False,
-                    goal_context=goal_context,  # type: ignore[arg-type]
-                )
+            # Run background planning to strengthen value estimates
+            self.consolidation_manager.background_planning(
+                n_simulations=5,  # Default planning depth
+                goal_context=goal_context,
+            )
 
         # Sync last_action to container for consolidation manager
         if self._last_action is not None:
@@ -1521,14 +1488,20 @@ class DynamicBrain(nn.Module):
         if self._last_action is not None:
             self._last_action_container[0] = self._last_action
 
-        # Delegate to consolidation manager if available
+        # Delegate to unified replay coordinator if available
         if self.consolidation_manager is not None:
-            return self.consolidation_manager.consolidate(
+            # Use new sleep_consolidation() API
+            stats = self.consolidation_manager.sleep_consolidation(
                 n_cycles=n_cycles,
                 batch_size=batch_size,
-                verbose=verbose,
-                last_action_holder=self._last_action_container,
             )
+
+            # Add verbose logging if requested
+            if verbose:
+                print(f"Consolidation complete: {stats['cycles_completed']} cycles, "
+                      f"{stats['total_replayed']} episodes replayed")
+
+            return stats
 
         # Fallback: simplified consolidation without manager
         # This path is used when brain doesn't have all required components
@@ -2195,11 +2168,14 @@ class DynamicBrain(nn.Module):
         # Neuromodulator diagnostics
         diagnostics["neuromodulators"] = self.neuromodulator_manager.get_diagnostics()
 
-        # Planning diagnostics (if enabled)
-        if self.mental_simulation is not None:
-            diagnostics["planning"] = {
-                "mental_simulation_enabled": True,
-                "dyna_enabled": self.dyna_planner is not None,
+        # Unified replay coordinator diagnostics (if enabled)
+        if self.consolidation_manager is not None:
+            diagnostics["replay"] = {
+                "unified_replay_enabled": True,
+                "sleep_consolidation": True,
+                "immediate_replay": True,
+                "forward_planning": True,
+                "background_planning": True,
             }
 
         # Criticality diagnostics (if enabled)

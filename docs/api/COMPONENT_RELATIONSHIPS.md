@@ -1,7 +1,7 @@
 # Component Relationships
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document shows how components connect in preset brain architectures.
@@ -75,3 +75,4 @@ graph TB
 ```
 
 ---
+

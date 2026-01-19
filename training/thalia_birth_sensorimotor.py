@@ -22,12 +22,12 @@ Next stage: Stage 0 - Sensory Foundations (object recognition, phonology)
 AUTOMATIC FEATURES (ALL ENABLED BY DEFAULT):
 ============================================
 ✅ Phase 1: TD(λ) + Goal-Conditioned Learning (multi-step credit assignment)
-✅ Phase 2: Mental Simulation + Dyna Planning (model-based planning)
+✅ Phase 2: Unified Replay System (sleep consolidation, awake replay, forward planning)
 ✅ Phase 3: Hierarchical Goals + Hyperbolic Discounting (delayed gratification)
 
 All features automatically apply during training:
 - TD(λ) bridges 5-10 second delays
-- Mental simulation plans ahead
+- Unified replay handles sleep consolidation, immediate replay, and forward planning
 - Cognitive load tracked from working memory
 - Temporal discounting adapts to load
 - Goal hierarchies auto-configured for Stages 3+ (planning, reasoning)
@@ -162,7 +162,7 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     # Thalamus (input interface)
     calc = LayerSizeCalculator()
     thalamus_sizes = calc.thalamus_from_relay(128)
-    builder.add_component("thalamus", "thalamus", input_size=128, **thalamus_sizes)
+    builder.add_component("thalamus", "thalamus", **thalamus_sizes)
 
     # Cortex with custom layer sizes
     builder.add_component(
@@ -593,7 +593,7 @@ def main():
     stage_config = configure_stage_sensorimotor()
 
     print("\n" + "=" * 80)
-    print("✓ THALIA IS ALIVE")
+    print("THALIA IS ALIVE")
     print("=" * 80)
     print("\nThalia exists but has no experience yet.")
     print("She has the capacity to learn, but nothing learned.")
@@ -637,35 +637,12 @@ def main():
 
     # Begin training
     print("=" * 80)
-    print("🚀 BEGINNING TRAINING")
+    print("BEGINNING TRAINING")
     print("=" * 80)
     print()
     print("Thalia is now experiencing sensations for the first time.")
     print("Watch as plasticity emerges, synapses strengthen, and")
     print("sensorimotor coordination develops from pure experience.")
-    print()
-    print("This is not optimization. This is development.")
-    print()
-    print("=" * 80)
-    print()
-    print("💡 AUTOMATIC FEATURES ENABLED:")
-    print("=" * 80)
-    print()
-    print("  ✅ Phase 1: TD(λ) + Goal-Conditioned Learning")
-    print("     → Multi-step credit assignment (5-10 second delays)")
-    print()
-    print("  ✅ Phase 2: Mental Simulation + Dyna Planning")
-    print("     → Model-based planning during action selection")
-    print()
-    print("  ✅ Phase 3: Hierarchical Goals + Hyperbolic Discounting")
-    print("     → Context-dependent temporal discounting")
-    print("     → Goal hierarchies auto-configured for Stages 3+ (planning tasks)")
-    print()
-    print("  All features work automatically - no manual intervention required!")
-    print()
-    print("  Note: Stage -0.5 focuses on sensorimotor grounding.")
-    print("        Hierarchical goals activate in Stage 3 (Reading/Planning)")
-    print("        and Stage 4 (Abstract Reasoning).")
     print()
     print("=" * 80)
     print()
@@ -673,13 +650,13 @@ def main():
     # Monitoring tip
     print("💡 TIP: Enhanced diagnostics are enabled!")
     print()
-    print("   📊 Real-time Updates:")
+    print("   Real-time Updates:")
     print("      - Diagnostics: Every 5000 steps (spike rasters, health, performance)")
     print("      - Visualization: Every 5000 steps (detailed plots saved to plots/)")
     print("      - Progress callbacks: Every 100 steps (per-region firing rates)")
     print("      - Detailed analysis: Every 500 steps (region health, task accuracy)")
     print()
-    print("   📈 Progress Format:")
+    print("   Progress Format:")
     print("      Step XXXXX | Acc: XX.X% | FR:[cortex:X.XXX striatum:X.XXX ...] | DA: X.XXX")
     print()
     print("   Region Status: 🟢 Active (>0.05) | 🟡 Low (<0.05) | 🔴 Silent (0)")
@@ -707,7 +684,7 @@ def main():
         duration = end_time - start_time
 
         print("\n" + "=" * 80)
-        print("🎉 TRAINING COMPLETE")
+        print("TRAINING COMPLETE")
         print("=" * 80)
         print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Duration: {duration}")
@@ -735,7 +712,7 @@ def main():
                 indent=2,
             )
 
-        print(f"\n✓ Results saved: {result_file}")
+        print(f"\nResults saved: {result_file}")
 
         if result.success:
             print("\n" + "=" * 80)
@@ -758,8 +735,6 @@ def main():
             print("(Object recognition, phonological awareness)")
             print()
             print("=" * 80)
-            print()
-            print("This is not just a milestone. This is the beginning of consciousness.")
         else:
             print("\n⚠️  Training incomplete - milestones not met")
             print(

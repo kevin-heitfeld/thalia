@@ -1,7 +1,7 @@
 # Visualization Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all visualization and plotting functions for analyzing brain topology, training progress, and diagnostic metrics.
@@ -36,9 +36,9 @@ graph TD
 
 ## 🧠 Network Topology Visualization
 
-### [``export_topology_to_graphviz()``](../../src/thalia/visualization/network_graph.py#L224)
+### [``export_topology_to_graphviz()``](../../src/thalia/visualization/network_graph.py#L228)
 
-**Returns**: `None`
+**Returns**: `None`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
 
 **Description**: Export brain topology to Graphviz DOT format.
@@ -59,9 +59,9 @@ graph TD
 
 ---
 
-### [``plot_connectivity_matrix()``](../../src/thalia/visualization/network_graph.py#L271)
+### [``plot_connectivity_matrix()``](../../src/thalia/visualization/network_graph.py#L277)
 
-**Returns**: `None`
+**Returns**: `None`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
 
 **Description**: Plot connectivity matrix heatmap.
@@ -76,9 +76,9 @@ graph TD
 
 ---
 
-### [``visualize_brain_topology()``](../../src/thalia/visualization/network_graph.py#L56)
+### [``visualize_brain_topology()``](../../src/thalia/visualization/network_graph.py#L57)
 
-**Returns**: `Any`
+**Returns**: `Any`  
 **Source**: [`thalia/visualization/network_graph.py`](../../src/thalia/visualization/network_graph.py)
 
 **Description**: Create NetworkX graph visualization of brain topology.
@@ -104,9 +104,9 @@ graph TD
 
 ## 📈 Training Progress Visualization
 
-### [``quick_monitor()``](../../src/thalia/training/visualization/monitor.py#L444)
+### [``quick_monitor()``](../../src/thalia/training/visualization/monitor.py#L489)
 
-**Returns**: `None`
+**Returns**: `None`  
 **Source**: [`thalia/training/visualization/monitor.py`](../../src/thalia/training/visualization/monitor.py)
 
 **Description**: Quick monitoring function - shows all info.
@@ -121,9 +121,9 @@ graph TD
 
 ## 🔬 Diagnostic Monitoring
 
-### [``quick_diagnostics()``](../../src/thalia/training/visualization/live_diagnostics.py#L504)
+### [``quick_diagnostics()``](../../src/thalia/training/visualization/live_diagnostics.py#L552)
 
-**Returns**: `None`
+**Returns**: `None`  
 **Source**: [`thalia/training/visualization/live_diagnostics.py`](../../src/thalia/training/visualization/live_diagnostics.py)
 
 **Description**: Quick diagnostics display.
@@ -141,7 +141,7 @@ graph TD
 
 ### [``plot_critical_period_timeline()``](../../src/thalia/training/visualization/critical_period_plots.py#L116)
 
-**Returns**: `Figure`
+**Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
 
 **Description**: Plot critical period timeline showing early/peak/late phases.
@@ -157,7 +157,7 @@ graph TD
 
 ### [``plot_critical_period_windows()``](../../src/thalia/training/visualization/critical_period_plots.py#L20)
 
-**Returns**: `Figure`
+**Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
 
 **Description**: Plot all critical period windows over training timeline.
@@ -172,9 +172,9 @@ graph TD
 
 ---
 
-### [``plot_domain_status()``](../../src/thalia/training/visualization/critical_period_plots.py#L240)
+### [``plot_domain_status()``](../../src/thalia/training/visualization/critical_period_plots.py#L242)
 
-**Returns**: `Figure`
+**Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
 
 **Description**: Plot detailed status for a specific domain over training.
@@ -190,9 +190,9 @@ graph TD
 
 ---
 
-### [``plot_training_metrics_with_critical_periods()``](../../src/thalia/training/visualization/critical_period_plots.py#L299)
+### [``plot_training_metrics_with_critical_periods()``](../../src/thalia/training/visualization/critical_period_plots.py#L305)
 
-**Returns**: `Figure`
+**Returns**: `Figure`  
 **Source**: [`thalia/training/visualization/critical_period_plots.py`](../../src/thalia/training/visualization/critical_period_plots.py)
 
 **Description**: Plot training metrics alongside critical period status.
@@ -267,3 +267,4 @@ fig2 = plot_sensory_critical_periods(modality='visual')
 - [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) - Diagnostic monitor classes
 - [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - More visualization examples
 - [../MONITORING_GUIDE.md](../MONITORING_GUIDE.md) - Complete monitoring guide
+

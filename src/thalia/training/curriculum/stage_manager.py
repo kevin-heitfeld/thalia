@@ -163,7 +163,7 @@ from thalia.diagnostics import (
 )
 from thalia.io import CheckpointManager
 from thalia.learning.critical_periods import CriticalPeriodGating
-from thalia.memory.consolidation.consolidation import (
+from thalia.memory.consolidation import (
     MemoryPressureDetector,
     SleepStageController,
 )

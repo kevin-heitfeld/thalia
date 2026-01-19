@@ -1,7 +1,7 @@
 # Checkpoint Format Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 > **📚 For complete binary format specification, version compatibility, and implementation details, see [checkpoint_format.md](../design/checkpoint_format.md)**
@@ -28,15 +28,8 @@ The checkpoint is a dictionary with these top-level keys returned by `DynamicBra
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `global_config` | `Any` | Global configuration |
-| `current_time` | `Any` | Current simulation time |
-| `topology` | `Any` | Brain topology graph |
-| `regions` | `Dict[str, Any]` | All region states |
 | `pathways` | `Dict[str, Any]` | All pathway states |
 | `oscillators` | `Dict[str, Any]` | Oscillator states |
-| `neuromodulators` | `Dict[str, Any]` | Neuromodulator levels |
-| `config` | `Dict[str, Any]` | Brain configuration |
-| `growth_history` | `List[Any]` | Growth event log |
 
 **Source**: [`thalia/core/dynamic_brain.py`](../../src/thalia/core/dynamic_brain.py)
 
@@ -104,3 +97,4 @@ if not is_valid:
 - **[Checkpoint Format Specification](../design/checkpoint_format.md)** - Complete binary format details, byte layouts, compression algorithms
 - **[Curriculum Strategy](../design/curriculum_strategy.md)** - Training stages and checkpoint usage in curriculum training
 - **[GETTING_STARTED_CURRICULUM](../GETTING_STARTED_CURRICULUM.md)** - Tutorial including checkpoint management
+

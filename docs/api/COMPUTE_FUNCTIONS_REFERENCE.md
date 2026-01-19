@@ -1,14 +1,14 @@
 # Compute Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all `compute_*` utility functions that implement biological computations throughout the Thalia codebase.
 
-Total: **11** compute functions
+Total: **5** compute functions
 
-![Functions](https://img.shields.io/badge/Functions-11-blue) ![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ![Utils](https://img.shields.io/badge/Category-Utilities-green)
+![Functions](https://img.shields.io/badge/Functions-5-blue) ![Biological](https://img.shields.io/badge/Type-Biologically--Grounded-orange) ![Utils](https://img.shields.io/badge/Category-Utilities-green)
 
 ## 📋 Quick Reference by Category
 
@@ -16,7 +16,7 @@ Total: **11** compute functions
 |----------|-----------|----------|
 | **Oscillator** | 5 | Phase-based modulation and coupling |
 | **Neuromodulation** | 0 | Dopamine, ACh effect computation |
-| **Sizing** | 6 | Region size calculations |
+| **Sizing** | 0 | Region size calculations |
 
 ## 🔬 Function Categories
 
@@ -36,7 +36,7 @@ graph LR
 
 ### [``compute_ach_recurrent_suppression()``](../../src/thalia/utils/oscillator_utils.py#L78)
 
-**Returns**: `float`
+**Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute ACh-mediated suppression of recurrent connections.
@@ -61,9 +61,9 @@ Biological Basis:
 
 ---
 
-### [``compute_learning_rate_modulation()``](../../src/thalia/utils/oscillator_utils.py#L216)
+### [``compute_learning_rate_modulation()``](../../src/thalia/utils/oscillator_utils.py#L215)
 
-**Returns**: `float`
+**Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute gamma-modulated learning rate.
@@ -90,9 +90,9 @@ Biological Basis:
 
 ---
 
-### [``compute_oscillator_modulated_gain()``](../../src/thalia/utils/oscillator_utils.py#L177)
+### [``compute_oscillator_modulated_gain()``](../../src/thalia/utils/oscillator_utils.py#L176)
 
-**Returns**: `float`
+**Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Generic function for oscillator-modulated gain computation.
@@ -115,7 +115,7 @@ Biological Basis:
 
 ### [``compute_theta_encoding_retrieval()``](../../src/thalia/utils/oscillator_utils.py#L33)
 
-**Returns**: `tuple[float, float]`
+**Returns**: `tuple[float, float]`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute theta-phase encoding/retrieval modulation.
@@ -140,9 +140,9 @@ Biological Basis:
 
 ---
 
-### [``compute_theta_gamma_coupling_gate()``](../../src/thalia/utils/oscillator_utils.py#L128)
+### [``compute_theta_gamma_coupling_gate()``](../../src/thalia/utils/oscillator_utils.py#L127)
 
-**Returns**: `float`
+**Returns**: `float`  
 **Source**: [`thalia/utils/oscillator_utils.py`](../../src/thalia/utils/oscillator_utils.py)
 
 **Description**: Compute theta-gamma cross-frequency coupling gating.
@@ -166,105 +166,6 @@ Biological Basis:
 ```python
 >>> assert coupling < 0.1
 ```
-
----
-
-## 📏 Region Sizing Functions
-
-### [``compute_cerebellum_sizes()``](../../src/thalia/config/region_sizes.py#L208)
-
-**Returns**: `dict`
-**Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
-
-**Description**: Compute cerebellum layer sizes.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `purkinje_size` | `int` | `-` |
-| `granule_expansion` | `float` | `4.0` |
-
----
-
-### [``compute_cortex_layer_sizes()``](../../src/thalia/config/region_sizes.py#L53)
-
-**Returns**: `dict`
-**Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
-
-**Description**: Compute cortex layer sizes from input size.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `input_size` | `int` | `-` |
-
----
-
-### [``compute_hippocampus_sizes()``](../../src/thalia/config/region_sizes.py#L17)
-
-**Returns**: `dict`
-**Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
-
-**Description**: Compute hippocampus layer sizes from EC input size.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `ec_input_size` | `int` | `-` |
-
----
-
-### [``compute_multisensory_sizes()``](../../src/thalia/config/region_sizes.py#L177)
-
-**Returns**: `dict`
-**Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
-
-**Description**: Compute multisensory pool sizes.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `total_size` | `int` | `-` |
-| `visual_ratio` | `float` | `0.3` |
-| `auditory_ratio` | `float` | `0.3` |
-| `language_ratio` | `float` | `0.2` |
-
----
-
-### [``compute_striatum_sizes()``](../../src/thalia/config/region_sizes.py#L91)
-
-**Returns**: `dict`
-**Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
-
-**Description**: Compute explicit striatum pathway sizes.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `n_actions` | `int` | `-` |
-| `neurons_per_action` | `int` | `10` |
-| `d1_d2_ratio` | `float` | `0.5` |
-
----
-
-### [``compute_thalamus_sizes()``](../../src/thalia/config/region_sizes.py#L136)
-
-**Returns**: `dict`
-**Source**: [`thalia/config/region_sizes.py`](../../src/thalia/config/region_sizes.py)
-
-**Description**: Compute thalamus layer sizes.
-
-**Parameters**:
-
-| Parameter | Type | Default |
-|-----------|------|----------|
-| `relay_size` | `int` | `-` |
-| `trn_ratio` | `float` | `0.3` |
 
 ---
 
@@ -309,3 +210,4 @@ encoding_bias = compute_acetylcholine_effect(ach_level)
 - [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) - Biological constants used by compute functions
 - [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Regions that use these functions
 - [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) - Real-world usage examples
+

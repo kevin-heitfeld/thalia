@@ -1,7 +1,7 @@
 # Diagnostics Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all diagnostic monitor classes for system health and performance monitoring.
@@ -26,7 +26,7 @@ graph LR
 
 ## 🔍 Monitor Classes
 
-### [``CriticalityMonitor``](../../src/thalia/diagnostics/criticality.py#L112)
+### [``CriticalityMonitor``](../../src/thalia/diagnostics/criticality.py#L114)
 
 **Source**: [`thalia/diagnostics/criticality.py`](../../src/thalia/diagnostics/criticality.py)
 
@@ -34,15 +34,15 @@ graph LR
 
 **Key Methods**:
 
-- [`reset_state()`](../../src/thalia/diagnostics/criticality.py#L142)
-- [`update(spikes)`](../../src/thalia/diagnostics/criticality.py#L149)
-- [`get_branching_ratio()`](../../src/thalia/diagnostics/criticality.py#L250)
-- [`get_weight_scaling()`](../../src/thalia/diagnostics/criticality.py#L254)
-- [`get_state()`](../../src/thalia/diagnostics/criticality.py#L264)
+- [`reset_state()`](../../src/thalia/diagnostics/criticality.py#L144)
+- [`update(spikes)`](../../src/thalia/diagnostics/criticality.py#L151)
+- [`get_branching_ratio()`](../../src/thalia/diagnostics/criticality.py#L251)
+- [`get_weight_scaling()`](../../src/thalia/diagnostics/criticality.py#L255)
+- [`get_state()`](../../src/thalia/diagnostics/criticality.py#L265)
 
 ---
 
-### [``HealthMonitor``](../../src/thalia/diagnostics/health_monitor.py#L152)
+### [``HealthMonitor``](../../src/thalia/diagnostics/health_monitor.py#L157)
 
 **Source**: [`thalia/diagnostics/health_monitor.py`](../../src/thalia/diagnostics/health_monitor.py)
 
@@ -50,13 +50,13 @@ graph LR
 
 **Key Methods**:
 
-- [`check_health(diagnostics)`](../../src/thalia/diagnostics/health_monitor.py#L190)
-- [`get_trend_summary()`](../../src/thalia/diagnostics/health_monitor.py#L406)
-- [`reset_history()`](../../src/thalia/diagnostics/health_monitor.py#L433)
+- [`check_health(diagnostics)`](../../src/thalia/diagnostics/health_monitor.py#L198)
+- [`get_trend_summary()`](../../src/thalia/diagnostics/health_monitor.py#L434)
+- [`reset_history()`](../../src/thalia/diagnostics/health_monitor.py#L461)
 
 ---
 
-### [``MetacognitiveMonitor``](../../src/thalia/diagnostics/metacognition.py#L222)
+### [``MetacognitiveMonitor``](../../src/thalia/diagnostics/metacognition.py#L208)
 
 **Source**: [`thalia/diagnostics/metacognition.py`](../../src/thalia/diagnostics/metacognition.py)
 
@@ -64,15 +64,15 @@ graph LR
 
 **Key Methods**:
 
-- [`estimate_confidence(population_activity)`](../../src/thalia/diagnostics/metacognition.py#L253)
-- [`should_abstain(confidence)`](../../src/thalia/diagnostics/metacognition.py#L323)
-- [`calibrate(population_activity, actual_correct, dopamine)`](../../src/thalia/diagnostics/metacognition.py#L351)
-- [`set_stage(stage)`](../../src/thalia/diagnostics/metacognition.py#L388)
-- [`get_stage()`](../../src/thalia/diagnostics/metacognition.py#L392)
+- [`estimate_confidence(population_activity)`](../../src/thalia/diagnostics/metacognition.py#L239)
+- [`should_abstain(confidence)`](../../src/thalia/diagnostics/metacognition.py#L303)
+- [`calibrate(population_activity, actual_correct, dopamine)`](../../src/thalia/diagnostics/metacognition.py#L331)
+- [`set_stage(stage)`](../../src/thalia/diagnostics/metacognition.py#L364)
+- [`get_stage()`](../../src/thalia/diagnostics/metacognition.py#L368)
 
 ---
 
-### [``OscillatorHealthMonitor``](../../src/thalia/diagnostics/oscillator_health.py#L164)
+### [``OscillatorHealthMonitor``](../../src/thalia/diagnostics/oscillator_health.py#L168)
 
 **Source**: [`thalia/diagnostics/oscillator_health.py`](../../src/thalia/diagnostics/oscillator_health.py)
 
@@ -80,11 +80,11 @@ graph LR
 
 **Key Methods**:
 
-- [`check_health(phases, frequencies, amplitudes, signals, couplings)`](../../src/thalia/diagnostics/oscillator_health.py#L194)
-- [`reset_history()`](../../src/thalia/diagnostics/oscillator_health.py#L441)
-- [`get_oscillator_statistics(oscillator)`](../../src/thalia/diagnostics/oscillator_health.py#L448)
-- [`compute_phase_coherence(region1_phases, region2_phases, oscillator)`](../../src/thalia/diagnostics/oscillator_health.py#L484)
-- [`compute_region_pair_coherence(region_phases, region_pairs, oscillators)`](../../src/thalia/diagnostics/oscillator_health.py#L536)
+- [`check_health(phases, frequencies, amplitudes, signals, couplings)`](../../src/thalia/diagnostics/oscillator_health.py#L198)
+- [`reset_history()`](../../src/thalia/diagnostics/oscillator_health.py#L490)
+- [`get_oscillator_statistics(oscillator)`](../../src/thalia/diagnostics/oscillator_health.py#L497)
+- [`compute_phase_coherence(region1_phases, region2_phases, oscillator)`](../../src/thalia/diagnostics/oscillator_health.py#L533)
+- [`compute_region_pair_coherence(region_phases, region_pairs, oscillators)`](../../src/thalia/diagnostics/oscillator_health.py#L585)
 
 ---
 
@@ -111,3 +111,4 @@ graph LR
 - Store history for trend analysis
 - Use thresholds to trigger adaptive responses
 - Log detailed diagnostics only when issues detected
+

@@ -1,7 +1,7 @@
 # Protocols Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all Protocol classes defining interfaces for duck-typed components in Thalia.
@@ -10,7 +10,7 @@ Total: 8 protocols
 
 ## Protocol Classes
 
-### [``BrainComponent``](../../src/thalia/core/protocols/component.py#L43)
+### [``BrainComponent``](../../src/thalia/core/protocols/component.py#L44)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
@@ -127,7 +127,7 @@ def learn(input_spikes: torch.Tensor, output_spikes: torch.Tensor):
 
 ---
 
-### [``NeuralComponentProtocol``](../../src/thalia/core/protocols/neural.py#L204)
+### [``NeuralComponentProtocol``](../../src/thalia/core/protocols/neural.py#L205)
 
 **Runtime Checkable**: ❌ No (static type checking only)
 
@@ -175,3 +175,4 @@ def set_weights(weights: torch.Tensor):
 ```
 
 ---
+

@@ -1,7 +1,7 @@
 # Dependency Graph
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document visualizes the dependency relationships between Thalia modules.
@@ -183,3 +183,4 @@ from thalia.diagnostics import HealthMonitor
 2. **Registry**: Use `ComponentRegistry` for dynamic lookup
 3. **Dependency Injection**: Pass dependencies through constructors
 4. **Type hints**: Use string literals for forward references
+

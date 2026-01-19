@@ -1,7 +1,7 @@
 # Datasets Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all dataset classes and factory functions for curriculum training stages.
@@ -30,7 +30,7 @@ graph LR
 
 ## Dataset Classes
 
-### [``GrammarDataset``](../../src/thalia/datasets/grammar.py#L196)
+### [``GrammarDataset``](../../src/thalia/datasets/grammar.py#L251)
 
 **Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
@@ -38,7 +38,7 @@ graph LR
 
 ---
 
-### [``PhonologicalDataset``](../../src/thalia/datasets/phonology.py#L290)
+### [``PhonologicalDataset``](../../src/thalia/datasets/phonology.py#L346)
 
 **Source**: [`thalia/datasets/phonology.py`](../../src/thalia/datasets/phonology.py)
 
@@ -48,7 +48,7 @@ graph LR
 
 ---
 
-### [``ReadingDataset``](../../src/thalia/datasets/reading.py#L265)
+### [``ReadingDataset``](../../src/thalia/datasets/reading.py#L269)
 
 **Source**: [`thalia/datasets/reading.py`](../../src/thalia/datasets/reading.py)
 
@@ -85,7 +85,7 @@ graph LR
 
 ### Stage 1 (Visual)
 
-#### [``create_stage1_cifar_datasets()``](../../src/thalia/datasets/cifar_wrapper.py#L374)
+#### [``create_stage1_cifar_datasets()``](../../src/thalia/datasets/cifar_wrapper.py#L379)
 
 **Source**: [`thalia/datasets/cifar_wrapper.py`](../../src/thalia/datasets/cifar_wrapper.py)
 
@@ -104,7 +104,7 @@ graph LR
 
 ### Stage 2 (Grammar)
 
-#### [``create_stage2_grammar_dataset()``](../../src/thalia/datasets/grammar.py#L526)
+#### [``create_stage2_grammar_dataset()``](../../src/thalia/datasets/grammar.py#L584)
 
 **Source**: [`thalia/datasets/grammar.py`](../../src/thalia/datasets/grammar.py)
 
@@ -123,7 +123,7 @@ graph LR
 
 ### Stage 3 (Reading)
 
-#### [``create_stage3_reading_dataset()``](../../src/thalia/datasets/reading.py#L601)
+#### [``create_stage3_reading_dataset()``](../../src/thalia/datasets/reading.py#L611)
 
 **Source**: [`thalia/datasets/reading.py`](../../src/thalia/datasets/reading.py)
 
@@ -155,3 +155,4 @@ graph LR
 ⚠️ **Language mismatch**: Verify `Language` enum for multilingual datasets
 
 ⚠️ **Insufficient timesteps**: Use at least 50-100 timesteps for temporal data
+

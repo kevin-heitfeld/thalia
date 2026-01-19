@@ -1,12 +1,12 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
 
-Total: 47 enumerations
+Total: 48 enumerations
 
 ## 📑 Table of Contents
 
@@ -15,7 +15,7 @@ Jump to category:
 - [Thalia/Components](#thaliacomponents) (3 enums)
 - [Thalia/Config](#thaliaconfig) (5 enums)
 - [Thalia/Constants](#thaliaconstants) (1 enums)
-- [Thalia/Core](#thaliacore) (1 enums)
+- [Thalia/Core](#thaliacore) (2 enums)
 - [Thalia/Datasets](#thaliadatasets) (8 enums)
 - [Thalia/Decision Making](#thaliadecision-making) (1 enums)
 - [Thalia/Diagnostics](#thaliadiagnostics) (5 enums)
@@ -25,7 +25,8 @@ Jump to category:
 - [Thalia/Learning](#thalialearning) (1 enums)
 - [Thalia/Memory](#thaliamemory) (1 enums)
 - [Thalia/Pathways](#thaliapathways) (1 enums)
-- [Thalia/Regions](#thaliaregions) (5 enums)
+- [Thalia/Regions](#thaliaregions) (4 enums)
+- [Thalia/Replay](#thaliareplay) (1 enums)
 - [Thalia/Tasks](#thaliatasks) (4 enums)
 - [Thalia/Training](#thaliatraining) (7 enums)
 
@@ -33,7 +34,7 @@ Jump to category:
 
 ### Thalia/Components
 
-#### [``CodingStrategy``](../../src/thalia/components/coding/spike_coding.py#L37) (Enum)
+#### [``CodingStrategy``](../../src/thalia/components/coding/spike_coding.py#L35) (Enum)
 
 Spike coding strategies (shared across encoders/decoders).
 
@@ -51,7 +52,7 @@ Spike coding strategies (shared across encoders/decoders).
 
 ---
 
-#### [``InitStrategy``](../../src/thalia/components/synapses/weight_init.py#L81) (Enum)
+#### [``InitStrategy``](../../src/thalia/components/synapses/weight_init.py#L82) (Enum)
 
 Weight initialization strategies.
 
@@ -94,7 +95,7 @@ Predefined synapse types based on Markram et al. (1998) classification.
 
 ### Thalia/Config
 
-#### [``CortexType``](../../src/thalia/config/brain_config.py#L38) (Enum)
+#### [``CortexType``](../../src/thalia/config/brain_config.py#L42) (Enum)
 
 Types of cortex implementation.
 
@@ -127,7 +128,7 @@ Curriculum stages matching main training plan.
 
 ---
 
-#### [``DecodingType``](../../src/thalia/config/language_config.py#L30) (Enum)
+#### [``DecodingType``](../../src/thalia/config/language_config.py#L31) (Enum)
 
 Types of spike decoding strategies.
 
@@ -158,7 +159,7 @@ Types of spike encoding strategies.
 
 ---
 
-#### [``RegionType``](../../src/thalia/config/brain_config.py#L29) (Enum)
+#### [``RegionType``](../../src/thalia/config/brain_config.py#L32) (Enum)
 
 Types of brain regions.
 
@@ -176,7 +177,7 @@ Types of brain regions.
 
 ### Thalia/Constants
 
-#### [``AttentionStage``](../../src/thalia/constants/training.py#L214) (Enum)
+#### [``AttentionStage``](../../src/thalia/constants/training.py#L128) (Enum)
 
 Developmental stages of attention control.
 
@@ -227,9 +228,34 @@ Verbosity levels for diagnostics.
 
 ---
 
+#### [``LearningRule``](../../src/thalia/core/learning_rules.py#L23) (Enum)
+
+Types of learning rules used in different brain regions.
+
+These represent biologically-plausible learning mechanisms, each with
+distinct computational properties and use cases.
+
+**Source**: [`thalia/core/learning_rules.py`](../../src/thalia/core/learning_rules.py)
+
+**Members**:
+
+- `HEBBIAN` — Basic Hebbian: Δw ∝ pre × post
+- `STDP` — Spike-Timing Dependent Plasticity
+- `BCM` — Bienenstock-Cooper-Munro with sliding threshold
+- `ERROR_CORRECTIVE` — Delta rule: Δw ∝ pre × (target - actual)
+- `PERCEPTRON` — Binary error correction
+- `THREE_FACTOR` — Δw ∝ eligibility × dopamine
+- `ACTOR_CRITIC` — Policy gradient with value function
+- `REWARD_MODULATED_STDP` — Δw ∝ STDP_eligibility × dopamine (striatum uses D1/D2 variant)
+- `ONE_SHOT` — Single-exposure learning
+- `THETA_PHASE` — Phase-dependent encoding/retrieval
+- `PREDICTIVE_STDP` — Δw ∝ STDP × prediction_error (three-factor)
+
+---
+
 ### Thalia/Datasets
 
-#### [``AgreementType``](../../src/thalia/datasets/grammar.py#L45) (Enum)
+#### [``AgreementType``](../../src/thalia/datasets/grammar.py#L47) (Enum)
 
 Subject-verb agreement types.
 
@@ -242,7 +268,7 @@ Subject-verb agreement types.
 
 ---
 
-#### [``GrammarRule``](../../src/thalia/datasets/grammar.py#L35) (Enum)
+#### [``GrammarRule``](../../src/thalia/datasets/grammar.py#L36) (Enum)
 
 Types of grammar rules to test.
 
@@ -273,7 +299,7 @@ Supported languages for grammar tasks.
 
 ---
 
-#### [``Language``](../../src/thalia/datasets/phonology.py#L29) (Enum)
+#### [``Language``](../../src/thalia/datasets/phonology.py#L30) (Enum)
 
 Supported languages for phonological training.
 
@@ -317,7 +343,7 @@ Types of sequential patterns.
 
 ---
 
-#### [``PhonemeCategory``](../../src/thalia/datasets/phonology.py#L36) (Enum)
+#### [``PhonemeCategory``](../../src/thalia/datasets/phonology.py#L38) (Enum)
 
 Phoneme categories for discrimination tasks (multi-language).
 
@@ -360,7 +386,7 @@ Phoneme categories for discrimination tasks (multi-language).
 
 ---
 
-#### [``ReadingTask``](../../src/thalia/datasets/reading.py#L34) (Enum)
+#### [``ReadingTask``](../../src/thalia/datasets/reading.py#L35) (Enum)
 
 Types of reading tasks.
 
@@ -429,7 +455,7 @@ Types of network health issues.
 
 ---
 
-#### [``IssueSeverity``](../../src/thalia/diagnostics/health_monitor.py#L62) (Enum)
+#### [``IssueSeverity``](../../src/thalia/diagnostics/health_monitor.py#L63) (Enum)
 
 Severity levels for health issues.
 
@@ -446,7 +472,7 @@ Values represent severity scores (0-100, higher = worse).
 
 ---
 
-#### [``MetacognitiveStage``](../../src/thalia/diagnostics/metacognition.py#L33) (Enum)
+#### [``MetacognitiveStage``](../../src/thalia/diagnostics/metacognition.py#L26) (Enum)
 
 Developmental stages of metacognitive ability.
 
@@ -498,7 +524,7 @@ Spike encoding strategies for proprioception.
 
 ### Thalia/Io
 
-#### [``DType``](../../src/thalia/io/tensor_encoding.py#L32) (IntEnum)
+#### [``DType``](../../src/thalia/io/tensor_encoding.py#L33) (IntEnum)
 
 Supported data types.
 
@@ -565,11 +591,11 @@ Types of social cues.
 
 ### Thalia/Memory
 
-#### [``SleepStage``](../../src/thalia/memory/consolidation/consolidation.py#L108) (Enum)
+#### [``SleepStage``](../../src/thalia/memory/consolidation.py#L108) (Enum)
 
 Sleep stages during consolidation.
 
-**Source**: [`thalia/memory/consolidation/consolidation.py`](../../src/thalia/memory/consolidation/consolidation.py)
+**Source**: [`thalia/memory/consolidation.py`](../../src/thalia/memory/consolidation.py)
 
 **Members**:
 
@@ -580,7 +606,7 @@ Sleep stages during consolidation.
 
 ### Thalia/Pathways
 
-#### [``Modality``](../../src/thalia/pathways/sensory_pathways.py#L119) (Enum)
+#### [``Modality``](../../src/thalia/pathways/sensory_pathways.py#L131) (Enum)
 
 Sensory modalities.
 
@@ -598,7 +624,7 @@ Sensory modalities.
 
 ### Thalia/Regions
 
-#### [``ErrorType``](../../src/thalia/regions/cortex/predictive_coding.py#L92) (Enum)
+#### [``ErrorType``](../../src/thalia/regions/cortex/predictive_coding.py#L93) (Enum)
 
 Types of prediction errors.
 
@@ -628,7 +654,7 @@ Status of a goal in the hierarchy.
 
 ---
 
-#### [``HERStrategy``](../../src/thalia/regions/hippocampus/hindsight_relabeling.py#L36) (Enum)
+#### [``HERStrategy``](../../src/thalia/regions/hippocampus/hindsight_relabeling.py#L38) (Enum)
 
 Strategy for selecting hindsight goals.
 
@@ -643,39 +669,93 @@ Strategy for selecting hindsight goals.
 
 ---
 
-#### [``LearningRule``](../../src/thalia/regions/base.py#L24) (Enum)
-
-Types of learning rules used in different brain regions.
-
-**Source**: [`thalia/regions/base.py`](../../src/thalia/regions/base.py)
-
-**Members**:
-
-- `HEBBIAN` — Basic Hebbian: Δw ∝ pre × post
-- `STDP` — Spike-Timing Dependent Plasticity
-- `BCM` — Bienenstock-Cooper-Munro with sliding threshold
-- `ERROR_CORRECTIVE` — Delta rule: Δw ∝ pre × (target - actual)
-- `PERCEPTRON` — Binary error correction
-- `THREE_FACTOR` — Δw ∝ eligibility × dopamine
-- `ACTOR_CRITIC` — Policy gradient with value function
-- `REWARD_MODULATED_STDP` — Δw ∝ STDP_eligibility × dopamine (striatum uses D1/D2 variant)
-- `ONE_SHOT` — Single-exposure learning
-- `THETA_PHASE` — Phase-dependent encoding/retrieval
-- `PREDICTIVE_STDP` — Δw ∝ STDP × prediction_error (three-factor)
-
----
-
 #### [``ReplayMode``](../../src/thalia/regions/hippocampus/replay_engine.py#L42) (Enum)
 
 Replay execution mode.
+
+**Biological Context**:
+- AWAKE_FORWARD: Planning at choice points (prospection)
+- AWAKE_REVERSE: Immediate credit assignment after reward
+- SLEEP_REVERSE: Systems consolidation during sleep
 
 **Source**: [`thalia/regions/hippocampus/replay_engine.py`](../../src/thalia/regions/hippocampus/replay_engine.py)
 
 **Members**:
 
-- `SEQUENCE` — Gamma-driven sequence replay
-- `SINGLE` — Single-state replay (fallback)
-- `RIPPLE` — Sharp-wave ripple replay
+- `AWAKE_FORWARD` — Planning/prospection
+- `AWAKE_REVERSE` — Immediate credit assignment
+- `SLEEP_REVERSE` — Systems consolidation
+
+---
+
+### Thalia/Replay
+
+#### [``ReplayContext``](../../src/thalia/replay/contexts.py#L13) (Enum)
+
+Biological context for hippocampal replay.
+
+The same hippocampal CA3→CA1 circuitry produces different replay modes
+depending on behavioral state and neuromodulatory context. These contexts
+map to distinct neuroscience findings:
+
+**SLEEP_CONSOLIDATION** (Sleep, offline)
+- Timing: During sleep/offline periods
+- Direction: Reverse (credit assignment)
+- Trigger: Spontaneous (CA3 driven)
+- ACh level: Low (0.1) - enables spontaneous CA3 replay
+- NE level: Low (0.1) - reduces noise
+- DA level: Moderate (0.3) - available for learning
+- Compression: 5x (slow, thorough consolidation)
+- Target: Hippocampus → cortex transfer (systems consolidation)
+- Biology: Sharp-wave ripples during slow-wave sleep (Buzsáki 2015)
+
+**AWAKE_IMMEDIATE** (Post-reward, online)
+- Timing: Immediately after reward/surprise
+- Direction: Reverse (credit assignment)
+- Trigger: Reward/surprise driven
+- ACh level: High (0.8) - encoding mode
+- NE level: Elevated (0.6) - arousal
+- DA level: High (0.9) - reward signal
+- Compression: 10x (fast, focused on recent)
+- Target: Rapid credit assignment to recent actions
+- Biology: Reverse replay during theta troughs (Foster & Wilson 2006)
+
+**FORWARD_PLANNING** (Choice points, online)
+- Timing: At decision/choice points
+- Direction: Forward (prospection)
+- Trigger: Goal-directed (PFC driven)
+- ACh level: High (0.8) - goal-directed retrieval
+- NE level: Moderate (0.5) - attention
+- DA level: Moderate (0.5) - evaluation
+- Compression: 10-20x (fast simulation)
+- Target: Action selection via outcome prediction
+- Biology: Forward replay in VTE behavior (Pfeiffer & Foster 2013)
+
+**BACKGROUND_PLANNING** (Idle moments, online)
+- Timing: During awake idle moments
+- Direction: Mixed (forward/reverse)
+- Trigger: Opportunistic (sampling driven)
+- ACh level: Moderate (0.6) - partial CA3 release
+- NE level: Low (0.3) - idle state
+- DA level: Moderate (0.4) - value updates
+- Compression: Variable
+- Target: Value refinement, policy improvement
+- Biology: Default mode network activity (Dyna-like, Sutton 1990)
+
+References:
+- Buzsáki (2015): Hippocampal sharp wave-ripple
+- Foster & Wilson (2006): Reverse replay in awake state
+- Pfeiffer & Foster (2013): Forward replay to remembered goals
+- Sutton (1990): Dyna architecture for planning
+
+**Source**: [`thalia/replay/contexts.py`](../../src/thalia/replay/contexts.py)
+
+**Members**:
+
+- `SLEEP_CONSOLIDATION` — 'sleep'
+- `AWAKE_IMMEDIATE` — 'awake_immediate'
+- `FORWARD_PLANNING` — 'forward_plan'
+- `BACKGROUND_PLANNING` — 'background'
 
 ---
 
@@ -699,7 +779,7 @@ Basic movement directions.
 
 ---
 
-#### [``SensorimotorTaskType``](../../src/thalia/tasks/sensorimotor.py#L44) (Enum)
+#### [``SensorimotorTaskType``](../../src/thalia/tasks/sensorimotor.py#L43) (Enum)
 
 Types of sensorimotor tasks.
 
@@ -714,7 +794,7 @@ Types of sensorimotor tasks.
 
 ---
 
-#### [``StimulusType``](../../src/thalia/tasks/executive_function.py#L56) (Enum)
+#### [``StimulusType``](../../src/thalia/tasks/executive_function.py#L57) (Enum)
 
 Stimulus categories for Go/No-Go.
 
@@ -795,7 +875,7 @@ Logging levels for curriculum training.
 
 ---
 
-#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L185) (IntEnum)
+#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L190) (IntEnum)
 
 Priority levels for cognitive mechanisms.
 
@@ -825,7 +905,7 @@ Types of noise that can be scheduled.
 
 ---
 
-#### [``PhonologyTaskType``](../../src/thalia/training/datasets/loaders.py#L434) (Enum)
+#### [``PhonologyTaskType``](../../src/thalia/training/datasets/loaders.py#L448) (Enum)
 
 Task types for phonology stage.
 
@@ -840,7 +920,7 @@ Task types for phonology stage.
 
 ---
 
-#### [``TaskType``](../../src/thalia/training/datasets/loaders.py#L108) (Enum)
+#### [``TaskType``](../../src/thalia/training/datasets/loaders.py#L105) (Enum)
 
 Task types for sensorimotor stage.
 
@@ -854,3 +934,4 @@ Task types for sensorimotor stage.
 - `PREDICTION` — 'prediction'
 
 ---
+

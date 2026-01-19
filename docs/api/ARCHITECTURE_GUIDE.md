@@ -1,7 +1,7 @@
 # Architecture Guide
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 This guide provides architectural diagrams and design patterns for the Thalia framework.
@@ -64,12 +64,12 @@ graph TB
 graph LR
     Input["Input Data"]
     Encoding["Spike Encoding"]
-    Thalamus["Thalamus<br/>(relay)"]
+    Thalamus["Thalamus<br/>(relay)"]  
     Cortex["Cortex<br/>(processing)"]
     Hippo["Hippocampus<br/>(memory)"]
     Striatum["Striatum<br/>(action)"]
     Output["Output Spikes"]
-    Dopamine["Dopamine<br/>(reward)"]
+    Dopamine["Dopamine<br/>(reward)"]  
 
     Input --> Encoding
     Encoding --> Thalamus
@@ -242,3 +242,4 @@ graph TD
 - [DEPENDENCY_GRAPH.md](DEPENDENCY_GRAPH.md) - Module dependency structure
 - [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) - Learning rule selection
 - [API_INDEX.md](API_INDEX.md) - Complete component index
+

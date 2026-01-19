@@ -1,7 +1,7 @@
 # API Index
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-16 21:25:28
+> Last updated: 2026-01-19 05:37:19
 > Generated from: `scripts/generate_api_docs.py`
 
 Comprehensive searchable index of all Thalia API components.
@@ -13,20 +13,20 @@ Comprehensive searchable index of all Thalia API components.
 | **Regions** | 8 | [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) |
 | **Pathways** | 4 | [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) |
 | **Learning Strategies** | 5 | [LEARNING_STRATEGIES_API.md](LEARNING_STRATEGIES_API.md) |
-| **Configurations** | 3 | [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) |
+| **Configurations** | 0 | [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) |
 | **Datasets** | 8 | [DATASETS_REFERENCE.md](DATASETS_REFERENCE.md) |
 | **Monitors** | 4 | [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md) |
 | **Mixins** | 4 | [MIXINS_REFERENCE.md](MIXINS_REFERENCE.md) |
 | **Exceptions** | 6 | [EXCEPTIONS_REFERENCE.md](EXCEPTIONS_REFERENCE.md) |
 | **Constants** | 0 | [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) |
 | **Protocols** | 8 | [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) |
-| **Type Aliases** | 15 | [TYPE_ALIASES.md](TYPE_ALIASES.md) |
-| **Enumerations** | 47 | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |
+| **Type Aliases** | 14 | [TYPE_ALIASES.md](TYPE_ALIASES.md) |
+| **Enumerations** | 48 | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |
 | **State Classes** | 8 | [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) |
 | **Neuron Factories** | 5 | [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) |
-| **Compute Functions** | 11 | [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md) |
+| **Compute Functions** | 5 | [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md) |
 | **Visualization Functions** | 9 | [VISUALIZATION_REFERENCE.md](VISUALIZATION_REFERENCE.md) |
-| **Total Components** | **32** | - |
+| **Total Components** | **29** | - |
 
 ## 🔤 Alphabetical Index
 
@@ -70,7 +70,6 @@ Comprehensive searchable index of all Thalia API components.
 
 - **HealthMonitor** (Monitor) → [DIAGNOSTICS_REFERENCE.md](DIAGNOSTICS_REFERENCE.md)
 - **hippocampus** (Region) → [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md)
-- **HippocampusConfig** (Config) → [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)
 
 ### I
 
@@ -79,7 +78,6 @@ Comprehensive searchable index of all Thalia API components.
 ### L
 
 - **language** (Pathway) → [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md)
-- **LayeredCortexConfig** (Config) → [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)
 
 ### M
 
@@ -108,7 +106,6 @@ Comprehensive searchable index of all Thalia API components.
 ### S
 
 - **striatum** (Region) → [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md)
-- **StriatumConfig** (Config) → [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)
 
 ### T
 
@@ -159,9 +156,6 @@ Comprehensive searchable index of all Thalia API components.
 
 ### Configuration
 
-- `HippocampusConfig` → [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)
-- `LayeredCortexConfig` → [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)
-- `StriatumConfig` → [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md)
 
 ### Utilities
 
@@ -196,3 +190,4 @@ Comprehensive searchable index of all Thalia API components.
 - **Cerebellum**: `cerebellum`
 - **Thalamus**: `thalamus`
 - **Prefrontal**: `prefrontal`
+

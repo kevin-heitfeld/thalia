@@ -7,24 +7,12 @@ hippocampal circuit for sequence and context memory.
 Components:
 - SequenceMemory: Token sequence storage and recall
 - ContextBuffer: Working memory for recent context
-- EpisodicStore: Long-term episodic memory storage
 - Consolidation: Memory pressure detection and sleep-based replay
-- Advanced Consolidation: Schema extraction, semantic reorganization, interference resolution
 """
 
 from __future__ import annotations
 
-from thalia.memory.consolidation.advanced_consolidation import (
-    InterferenceResolution,
-    InterferenceResolutionConfig,
-    Schema,
-    SchemaExtractionConfig,
-    SchemaExtractionConsolidation,
-    SemanticReorganization,
-    SemanticReorganizationConfig,
-    run_advanced_consolidation,
-)
-from thalia.memory.consolidation.consolidation import (
+from .consolidation import (
     ConsolidationMetrics,
     ConsolidationSnapshot,
     ConsolidationTrigger,
@@ -35,14 +23,8 @@ from thalia.memory.consolidation.consolidation import (
     SleepStageConfig,
     SleepStageController,
 )
-from thalia.memory.context import (
-    ContextBuffer,
-    ContextBufferConfig,
-)
-from thalia.memory.sequence import (
-    SequenceContext,
-    SequenceMemory,
-)
+from .context import ContextBuffer, ContextBufferConfig
+from .sequence import SequenceContext, SequenceMemory
 
 __all__ = [
     "SequenceMemory",
@@ -59,13 +41,4 @@ __all__ = [
     "ConsolidationSnapshot",
     "ConsolidationTrigger",
     "ConsolidationTriggerConfig",
-    # Advanced Consolidation
-    "SchemaExtractionConsolidation",
-    "SchemaExtractionConfig",
-    "Schema",
-    "SemanticReorganization",
-    "SemanticReorganizationConfig",
-    "InterferenceResolution",
-    "InterferenceResolutionConfig",
-    "run_advanced_consolidation",
 ]

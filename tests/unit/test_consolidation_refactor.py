@@ -1,15 +1,17 @@
 """
-Tests for biologically accurate consolidation refactoring (Phase 1).
+Tests for UnifiedReplayCoordinator integration (Phases 2 & 3).
 
 This module tests that:
-1. ConsolidationManager uses normal hippocampus/cortex pathways (not 'consolidation')
-2. Hippocampus consolidation mode enables CA3→CA1 replay
-3. Episode indices are tracked for replay cuing
-4. Normal synaptic weights are modified during consolidation
-5. No special 'consolidation' weights exist in striatum
+1. UnifiedReplayCoordinator is properly initialized in DynamicBrain
+2. Sleep consolidation works through the unified API
+3. Immediate replay is triggered after rewards
+4. Forward planning works for action selection
+5. Background planning updates values during idle time
+6. No special 'consolidation' weights exist in striatum
 
 Author: Thalia Project
 Date: January 2026
+Updated: January 19, 2026 (Phase 3 - Unified replay system)
 """
 
 import weakref
@@ -19,7 +21,6 @@ import torch
 
 from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
-from thalia.memory.consolidation.manager import ConsolidationManager
 
 
 @pytest.fixture
@@ -69,13 +70,24 @@ def minimal_brain(device):
     return brain
 
 
-class TestConsolidationRefactor:
-    """Test suite for Phase 1 consolidation refactoring."""
+class TestUnifiedReplayIntegration:
+    """Test suite for UnifiedReplayCoordinator integration in DynamicBrain."""
+
+    def test_coordinator_initialized(self, minimal_brain):
+        """Test that UnifiedReplayCoordinator is initialized in DynamicBrain."""
+        manager = minimal_brain.consolidation_manager
+        assert manager is not None, "UnifiedReplayCoordinator should be initialized"
+
+        # Check it has replay engine and sleep controller
+        assert hasattr(manager, "replay_engine"), "Should have replay_engine"
+        assert hasattr(manager, "sleep_controller"), "Should have sleep_controller"
+        assert manager.replay_engine is not None, "Replay engine should be initialized"
+        assert manager.sleep_controller is not None, "Sleep controller should be initialized"
 
     def test_brain_reference_storage(self, minimal_brain):
-        """Test that consolidation manager stores weak reference to brain."""
+        """Test that coordinator stores weak reference to brain."""
         manager = minimal_brain.consolidation_manager
-        assert manager is not None, "ConsolidationManager should be initialized"
+        assert manager is not None, "UnifiedReplayCoordinator should be initialized"
 
         # Check brain reference is set
         assert manager._brain_ref is not None, "Brain reference should be set"
@@ -112,92 +124,59 @@ class TestConsolidationRefactor:
             d2_key = f"{source}_d2"
             assert d2_key in weight_keys, f"Missing normal source: {d2_key}"
 
-    def test_validation_rejects_consolidation_weights(self, minimal_brain):
-        """Test that validation method catches consolidation weights if they exist."""
-        manager = minimal_brain.consolidation_manager
-        striatum = minimal_brain.components["striatum"]
-
-        # Manually inject a bad "consolidation" weight to test validation
-        bad_weight = torch.zeros(32, 128, device=minimal_brain.device)
-        striatum.synaptic_weights["consolidation_d1"] = torch.nn.Parameter(bad_weight)
-
-        # Validation should raise ValueError
-        with pytest.raises(ValueError, match="consolidation.*weights"):
-            manager._validate_striatum_sources()
-
-        # Clean up
-        del striatum.synaptic_weights["consolidation_d1"]
-
-    def test_episode_index_tracked_in_storage(self, minimal_brain):
-        """Test that episode indices are tracked in stored experiences."""
+    def test_sleep_consolidation_api(self, minimal_brain):
+        """Test that sleep_consolidation() works through the public API."""
         manager = minimal_brain.consolidation_manager
         hippocampus = minimal_brain.components["hippocampus"]
 
-        # Get episode index before storing (for replay cuing)
-        episode_index = len(hippocampus.memory.episode_buffer)
-
-        # Store a few experiences
-        for i in range(3):
-            manager.store_experience(
-                action=i % 2,
-                reward=1.0 if i == 2 else 0.0,
-                last_action_holder=[None],
-            )
-
-        # Check that episodes have metadata with episode_index
-        episodes = hippocampus.memory.episode_buffer
-        assert len(episodes) == 3, "Should have stored 3 episodes"
-
-        for idx, episode in enumerate(episodes):
-            assert hasattr(episode, "metadata"), f"Episode {idx} should have metadata"
-            if episode.metadata:
-                assert (
-                    "episode_index" in episode.metadata
-                ), f"Episode {idx} should have episode_index in metadata"
-
-    def test_hippocampus_cue_replay_called(self, minimal_brain, monkeypatch):
-        """Test that _replay_experience calls hippocampus.cue_replay with episode index."""
-        manager = minimal_brain.consolidation_manager
-        hippocampus = minimal_brain.components["hippocampus"]
-
-        # Track calls to cue_replay
-        cue_replay_calls = []
-
-        def mock_cue_replay(episode_index):
-            cue_replay_calls.append(episode_index)
-            # Also need to set the internal state
-            hippocampus._replay_cue = episode_index
-
-        monkeypatch.setattr(hippocampus, "cue_replay", mock_cue_replay)
-
-        # Store an experience with episode index
-        experience = {
-            "action": 1,
-            "reward": 1.0,
-            "state": torch.randn(256, device=minimal_brain.device),
-            "metadata": {"episode_index": 5},
-        }
-
-        # Replay the experience
-        stats = {"experiences_learned": 0}
-        manager._replay_experience(experience, [None], stats)
-
-        # Verify cue_replay was called with correct index
-        assert len(cue_replay_calls) == 1, "cue_replay should be called once"
-        assert cue_replay_calls[0] == 5, "Should call cue_replay with episode_index=5"
-
-    def test_normal_weights_modified_during_consolidation(self, minimal_brain):
-        """Test that normal synaptic weights are modified during consolidation."""
-        striatum = minimal_brain.components["striatum"]
-        manager = minimal_brain.consolidation_manager
-
-        # Store some experiences first
+        # Store some experiences through hippocampus (simulate training)
         for i in range(5):
-            manager.store_experience(
-                action=i % 2,
-                reward=1.0 if i % 2 == 0 else 0.0,
-                last_action_holder=[None],
+            # Simulate experience storage via hippocampus memory
+            state = torch.randn(256, device=minimal_brain.device)
+            action = i % 2
+            reward = 1.0 if i == 4 else 0.0
+
+            # Store in hippocampus episodic memory
+            hippocampus.memory.store_episode(
+                state=state,
+                action=action,
+                reward=reward,
             )
+
+        # Run sleep consolidation (should not crash)
+        try:
+            result = manager.sleep_consolidation(
+                n_cycles=2,
+                experiences_per_cycle=2,
+                verbose=False,
+            )
+            # Check result structure
+            assert "total_replayed" in result, "Should return replay stats"
+            assert isinstance(result["total_replayed"], int), "Should count replays"
+        except Exception as e:
+            pytest.fail(f"sleep_consolidation() raised unexpected exception: {e}")
+
+    def test_immediate_replay_api(self, minimal_brain):
+        """Test that immediate_replay() works through the public API."""
+        manager = minimal_brain.consolidation_manager
+        hippocampus = minimal_brain.components["hippocampus"]
+
+        # Store an experience
+        state = torch.randn(256, device=minimal_brain.device)
+        hippocampus.memory.store_episode(
+            state=state,
+            action=1,
+            reward=1.0,
+        )
+
+        # Trigger immediate replay (should not crash)
+        try:
+            manager.immediate_replay(
+                n_replays=3,
+                reward_received=1.0,
+            )
+        except Exception as e:
+            pytest.fail(f"immediate_replay() raised unexpected exception: {e}")
 
         # Get initial weights (hippocampus_d1 and cortex:l5_d1)
         hippo_d1_before = striatum.synaptic_weights["hippocampus_d1"].clone()
