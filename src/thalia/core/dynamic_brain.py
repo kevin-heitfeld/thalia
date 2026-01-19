@@ -249,10 +249,20 @@ class DynamicBrain(nn.Module):
         self._growth_history: List[Any] = []  # List[GrowthEvent] from coordination.growth
 
         # =================================================================
-        # UNIFIED REPLAY COORDINATOR (Phase 2 - Replaces ConsolidationManager)
+        # UNIFIED REPLAY COORDINATOR (DEPRECATED - Phase 2)
         # =================================================================
-        # Manages all replay types: sleep consolidation, immediate replay,
-        # forward planning, and background planning
+        # **DEPRECATED**: UnifiedReplayCoordinator is deprecated in favor of
+        # spontaneous replay (Phase 2 Emergent RL). Kept for backward compatibility.
+        #
+        # Use brain.consolidate() instead, which triggers spontaneous replay via
+        # acetylcholine modulation (no explicit coordinator needed).
+        #
+        # This will be removed in a future release after all tests are migrated.
+        #
+        # OLD: Manages all replay types: sleep consolidation, immediate replay,
+        #      forward planning, and background planning
+        # NEW: Spontaneous replay via CA3 attractor dynamics + synaptic tagging
+        #
         # Initialize if brain has required components (hippocampus, striatum, cortex, pfc)
         self.consolidation_manager = None  # Kept for compatibility
 
@@ -1454,57 +1464,46 @@ class DynamicBrain(nn.Module):
 
     def consolidate(
         self,
-        n_cycles: int = 5,
-        batch_size: int = 32,
+        duration_ms: float = 5000.0,
         verbose: bool = False,
+        n_cycles: Optional[int] = None,
+        batch_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Perform memory consolidation (replay) automatically.
+        """Trigger memory consolidation via spontaneous replay (emergent, biologically-accurate).
 
-        This simulates sleep/offline replay where hippocampus replays stored
-        episodes to strengthen cortical representations. Each replayed experience
-        triggers actual learning via dopamine delivery.
+        No explicit coordination - just set acetylcholine low and run brain forward.
+        Hippocampus spontaneously replays high-priority patterns via sharp-wave ripples.
 
-        Biologically accurate consolidation:
-        1. Sample experiences from hippocampal memory
-        2. Replay state through brain (reactivate patterns)
-        3. Deliver stored reward → dopamine → striatum learning
-        4. HER automatically augments if enabled
+        Biological mechanism (Phase 2 - Emergent RL):
+        1. Lower acetylcholine (0.1) → sleep/rest mode
+        2. Hippocampus CA3 spontaneously reactivates stored patterns
+        3. Replay probability ∝ synaptic tag strength (Frey-Morris tagging)
+        4. Ripples occur at ~1-3 Hz during low ACh
+        5. Restore acetylcholine (0.7) → awake/encoding mode
 
-        This is why consolidation works: replayed experiences trigger the SAME
-        learning signals as real experiences, strengthening action values offline.
+        This replaces explicit UnifiedReplayCoordinator with emergent replay.
 
         Args:
-            n_cycles: Number of replay cycles to run
-            batch_size: Number of experiences per cycle
-            verbose: Whether to print progress
+            duration_ms: Consolidation duration in milliseconds (default 5000ms = 5 seconds)
+            verbose: Whether to print ripple statistics
+            n_cycles: DEPRECATED (kept for backward compatibility, ignored)
+            batch_size: DEPRECATED (kept for backward compatibility, ignored)
 
         Returns:
-            Dict with consolidation statistics
+            Dict with consolidation statistics:
+                - ripples: Number of sharp-wave ripples detected
+                - duration_ms: Total consolidation duration
+                - ripple_rate_hz: Ripples per second
 
         Raises:
             ValueError: If hippocampus not present in brain
+
+        Example:
+            # Consolidate for 10 seconds
+            stats = brain.consolidate(duration_ms=10000, verbose=True)
+            # Output: "Consolidation: 23 ripples in 10000ms (2.3 Hz)"
         """
-        # Sync last_action to container before consolidation
-        if self._last_action is not None:
-            self._last_action_container[0] = self._last_action
-
-        # Delegate to unified replay coordinator if available
-        if self.consolidation_manager is not None:
-            # Use new sleep_consolidation() API
-            stats = self.consolidation_manager.sleep_consolidation(
-                n_cycles=n_cycles,
-                batch_size=batch_size,
-            )
-
-            # Add verbose logging if requested
-            if verbose:
-                print(f"Consolidation complete: {stats['cycles_completed']} cycles, "
-                      f"{stats['total_replayed']} episodes replayed")
-
-            return stats
-
-        # Fallback: simplified consolidation without manager
-        # This path is used when brain doesn't have all required components
+        # Check for hippocampus
         if "hippocampus" not in self.components:
             raise ValueError(
                 "Hippocampus component required for consolidation. "
@@ -1513,77 +1512,46 @@ class DynamicBrain(nn.Module):
 
         hippocampus = self._get_component("hippocampus")
 
-        # Check for consolidation support (either HER or standard replay)
-        has_her_replay = hasattr(hippocampus, "sample_her_replay_batch")
-        has_standard_replay = hasattr(hippocampus, "sample_replay_batch")
-
-        if not has_her_replay and not has_standard_replay:
+        # Check that hippocampus supports spontaneous replay
+        if not hasattr(hippocampus, "set_acetylcholine"):
             raise AttributeError(
-                f"Hippocampus ({type(hippocampus).__name__}) does not support consolidation. "
-                f"Ensure hippocampus implements sample_her_replay_batch() or sample_replay_batch()."
+                f"Hippocampus ({type(hippocampus).__name__}) does not support spontaneous replay. "
+                f"Ensure hippocampus implements set_acetylcholine() method (Phase 2 emergent RL)."
             )
 
-        stats = {
-            "cycles_completed": 0,
-            "total_replayed": 0,
-            "experiences_learned": 0,
-            "her_enabled": has_her_replay,
+        # Sync last_action to container before consolidation
+        if self._last_action is not None:
+            self._last_action_container[0] = self._last_action
+
+        # Enter consolidation mode (low acetylcholine)
+        hippocampus.set_acetylcholine(0.1)
+
+        # Run brain forward - replay happens automatically
+        n_timesteps = int(duration_ms / self.dt_ms)
+        ripple_count = 0
+
+        for _ in range(n_timesteps):
+            self.forward(None)  # No sensory input during sleep
+
+            # Count ripples (if hippocampus state has ripple_detected)
+            if hasattr(hippocampus, "state") and hippocampus.state is not None:
+                if hasattr(hippocampus.state, "ripple_detected") and hippocampus.state.ripple_detected:
+                    ripple_count += 1
+
+        # Return to encoding mode (high acetylcholine)
+        hippocampus.set_acetylcholine(0.7)
+
+        # Compute ripple rate
+        ripple_rate_hz = ripple_count / (duration_ms / 1000.0) if duration_ms > 0 else 0.0
+
+        if verbose:
+            print(f"Consolidation: {ripple_count} ripples in {duration_ms}ms ({ripple_rate_hz:.2f} Hz)")
+
+        return {
+            "ripples": ripple_count,
+            "duration_ms": duration_ms,
+            "ripple_rate_hz": ripple_rate_hz,
         }
-
-        # Enter consolidation mode if HER enabled
-        if has_her_replay and hasattr(hippocampus, "enter_consolidation_mode"):
-            hippocampus.enter_consolidation_mode()  # type: ignore[operator]
-            if verbose:
-                her_diag = hippocampus.get_her_diagnostics()  # type: ignore[operator]
-                print(
-                    f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions"
-                )
-
-        # Run replay cycles
-        for cycle in range(n_cycles):
-            # Sample replay batch from hippocampal memory
-            if has_her_replay:
-                # HER-enabled hippocampus (preferred)
-                batch = hippocampus.sample_her_replay_batch(batch_size=batch_size)  # type: ignore[operator]
-            else:
-                # Standard replay
-                batch = hippocampus.sample_replay_batch(batch_size=batch_size)  # type: ignore[operator]
-
-            if not batch:
-                if verbose:
-                    print(f"  Cycle {cycle + 1}/{n_cycles}: No experiences to replay")
-            else:
-                stats["total_replayed"] += len(batch)
-
-                # Replay each experience
-                for experience in batch:
-                    # Replay state through brain
-                    state = experience.get("state")
-                    if state is not None:
-                        self.forward({"thalamus": state}, n_timesteps=5)
-
-                    # Deliver stored reward for learning
-                    reward = experience.get("reward", 0.0)
-                    action = experience.get("action")
-
-                    if action is not None and "striatum" in self.components:
-                        self._last_action_container[0] = action
-                        self.deliver_reward(external_reward=reward)
-                        stats["experiences_learned"] += 1
-
-                if verbose:
-                    print(
-                        f"  Cycle {cycle + 1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned"
-                    )
-
-            # Increment cycle count regardless of batch size
-            stats["cycles_completed"] += 1
-
-        # Exit consolidation mode if HER enabled
-        if has_her_replay and hasattr(hippocampus, "exit_consolidation_mode"):
-            hippocampus.exit_consolidation_mode()  # type: ignore[operator]
-
-        return stats
 
     # =========================================================================
     # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)

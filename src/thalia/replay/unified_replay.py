@@ -1,4 +1,30 @@
-"""Unified Replay Coordinator - Single System for All Replay Types.
+"""Unified Replay Coordinator - DEPRECATED.
+
+**DEPRECATION NOTICE (January 2026 - Phase 2 Emergent RL)**:
+This module is deprecated and will be removed in a future release.
+
+Explicit replay coordination has been replaced by spontaneous replay
+via biologically-accurate mechanisms (Phase 2 - Emergent RL):
+- Spontaneous replay: CA3 attractor dynamics + synaptic tagging
+- Sharp-wave ripples: Acetylcholine-gated (no explicit triggering)
+- Priority: Frey-Morris synaptic tags (no explicit Episode.priority)
+- Consolidation: Just set ACh low and run forward() (no coordinator)
+
+**Migration Guide**:
+Instead of:
+```python
+coordinator = UnifiedReplayCoordinator(...)
+stats = coordinator.sleep_consolidation(n_cycles=5, batch_size=32)
+```
+
+Use:
+```python
+# Spontaneous replay during low acetylcholine
+brain.consolidate(duration_ms=5000, verbose=True)
+# Hippocampus automatically replays high-priority patterns
+```
+
+See: docs/design/emergent_rl_migration.md for full migration details.
 
 This module provides a unified coordinator that replaces separate
 ConsolidationManager, MentalSimulationCoordinator, and DynaPlanner
@@ -14,6 +40,7 @@ Date: January 2026
 
 from __future__ import annotations
 
+import warnings
 import weakref
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
@@ -26,9 +53,21 @@ from thalia.replay.contexts import ReplayContext
 if TYPE_CHECKING:
     from thalia.core.dynamic_brain import DynamicBrain
 
+# Issue deprecation warning when module is imported
+warnings.warn(
+    "UnifiedReplayCoordinator is deprecated (Phase 2 Emergent RL). "
+    "Use brain.consolidate() with spontaneous replay instead. "
+    "See docs/design/emergent_rl_migration.md for migration guide.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 class UnifiedReplayCoordinator:
     """Unified coordination for all hippocampal replay types.
+
+    **DEPRECATED**: Use brain.consolidate() with spontaneous replay instead.
+    This class will be removed in a future release (Phase 2 Emergent RL).
 
     Replaces separate ConsolidationManager, MentalSimulationCoordinator,
     and DynaPlanner with a single biologically-grounded system.
@@ -42,37 +81,14 @@ class UnifiedReplayCoordinator:
     - Oscillatory coordination (theta vs ripple)
     - Replay direction (forward, reverse, mixed)
 
-    **Usage**:
+    **Usage** (DEPRECATED):
     ```python
-    # Initialize coordinator
-    coordinator = UnifiedReplayCoordinator(
-        hippocampus=brain.components["hippocampus"],
-        striatum=brain.components["striatum"],
-        cortex=brain.components["cortex"],
-        pfc=brain.components["pfc"],
-        replay_engine=replay_engine,
-        sleep_controller=sleep_controller,
-        config=brain.config,
-        deliver_reward_fn=brain.deliver_reward,
-    )
-    coordinator.set_brain_reference(brain)
-
-    # Sleep consolidation (offline)
+    # OLD (deprecated):
+    coordinator = UnifiedReplayCoordinator(...)
     stats = coordinator.sleep_consolidation(n_cycles=50, batch_size=32)
 
-    # Immediate replay (post-reward)
-    coordinator.immediate_replay(episode_index=42, surprise_level=0.8)
-
-    # Forward planning (choice point)
-    action = coordinator.plan_action(
-        current_state=state,
-        available_actions=[0, 1, 2],
-        goal_context=goal,
-        depth=3,
-    )
-
-    # Background planning (idle moments)
-    coordinator.background_planning(n_simulations=10, goal_context=goal)
+    # NEW (Phase 2):
+    stats = brain.consolidate(duration_ms=5000, verbose=True)
     ```
 
     **Architecture**:
@@ -102,6 +118,8 @@ class UnifiedReplayCoordinator:
     ):
         """Initialize unified replay coordinator.
 
+        **DEPRECATED**: This class is deprecated. Use brain.consolidate() instead.
+
         Args:
             hippocampus: Hippocampus region (memory storage/retrieval)
             striatum: Striatum region (value evaluation)
@@ -112,6 +130,15 @@ class UnifiedReplayCoordinator:
             config: Brain configuration (SimpleNamespace)
             deliver_reward_fn: Callback to deliver reward during replay
         """
+        # Issue deprecation warning
+        warnings.warn(
+            "UnifiedReplayCoordinator is deprecated (Phase 2 Emergent RL). "
+            "Use brain.consolidate() with spontaneous replay instead. "
+            "This class will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         # Core components
         self.hippocampus = hippocampus
         self.striatum = striatum

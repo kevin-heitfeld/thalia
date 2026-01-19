@@ -157,7 +157,6 @@ from .homeostasis_component import HomeostasisManagerConfig, StriatumHomeostasis
 from .learning_component import StriatumLearningComponent
 from .pathway_base import StriatumPathwayConfig
 from .state_tracker import StriatumStateTracker
-from .td_lambda import TDLambdaConfig, TDLambdaLearner
 
 
 @dataclass
@@ -857,38 +856,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # TD(λ) extends temporal credit assignment from ~1 second to 5-10 seconds
         # by combining eligibility traces with multi-step returns.
         #
-        # When enabled, replaces basic eligibility traces with TD(λ) traces that
-        # accumulate with factor (γλ) instead of simple exponential decay.
-
-        # Type annotations for optional TD(λ) learners
-        self.td_lambda_d1: Optional[TDLambdaLearner]
-        self.td_lambda_d2: Optional[TDLambdaLearner]
-
-        if self.config.use_td_lambda:
-            td_config = TDLambdaConfig(
-                lambda_=self.config.td_lambda,
-                gamma=self.config.td_gamma,
-                accumulating=self.config.td_lambda_accumulating,
-                device=self.config.device,
-            )
-
-            # Create TD(λ) learner for D1 and D2 pathways
-            # Each pathway has its own separate TD(λ) learner
-            # D1 learner: sized for d1_size neurons
-            # D2 learner: sized for d2_size neurons
-            self.td_lambda_d1 = TDLambdaLearner(
-                n_actions=self.d1_size,  # D1 pathway neurons only
-                n_input=self.input_size,
-                config=td_config,
-            )
-            self.td_lambda_d2 = TDLambdaLearner(
-                n_actions=self.d2_size,  # D2 pathway neurons only
-                n_input=self.input_size,
-                config=td_config,
-            )
-        else:
-            self.td_lambda_d1 = None
-            self.td_lambda_d2 = None
+        # TD(λ) REMOVED in Phase 3 (Emergent RL Migration)
+        # Striatum now uses pure three-factor learning (STDP + eligibility + dopamine)
+        # Multi-step credit assignment emerges from eligibility trace dynamics, not TD errors
+        # See: docs/design/emergent_rl_migration.md
 
         # =====================================================================
         # SHORT-TERM PLASTICITY (STP)
@@ -1671,8 +1642,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         state_2d_d1 = {
             "d1_eligibility": self.d1_pathway.eligibility,
         }
-        if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
-            state_2d_d1["td_lambda_d1_traces"] = self.td_lambda_d1.traces.traces
+        # TD(λ) removed in Phase 3 - no traces to save
 
         # Filter out None values before expansion
         state_2d_d1 = {k: v for k, v in state_2d_d1.items() if v is not None}
@@ -1681,11 +1651,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
         if "d1_eligibility" in expanded_2d_d1:
             self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
-        if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
-            if "td_lambda_d1_traces" in expanded_2d_d1:
-                self.td_lambda_d1.traces.traces = expanded_2d_d1["td_lambda_d1_traces"]
-            self.td_lambda_d1.traces.n_output = self.d1_size
-            self.td_lambda_d1.n_actions = self.n_actions
+        # TD(λ) removed in Phase 3 - no traces to restore
 
         # Expand multi-source D1 eligibility traces
         if hasattr(self, "_eligibility_d1"):
@@ -1698,8 +1664,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         state_2d_d2 = {
             "d2_eligibility": self.d2_pathway.eligibility,
         }
-        if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
-            state_2d_d2["td_lambda_d2_traces"] = self.td_lambda_d2.traces.traces
+        # TD(λ) removed in Phase 3 - no traces to save
 
         # Filter out None values before expansion
         state_2d_d2 = {k: v for k, v in state_2d_d2.items() if v is not None}
@@ -1708,11 +1673,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
         if "d2_eligibility" in expanded_2d_d2:
             self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
-        if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
-            if "td_lambda_d2_traces" in expanded_2d_d2:
-                self.td_lambda_d2.traces.traces = expanded_2d_d2["td_lambda_d2_traces"]
-            self.td_lambda_d2.traces.n_output = self.d2_size
-            self.td_lambda_d2.n_actions = self.n_actions
+        # TD(λ) removed in Phase 3 - no traces to restore
 
         # Expand multi-source D2 eligibility traces
         if hasattr(self, "_eligibility_d2"):
@@ -2073,28 +2034,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             for src in unique_sources
         )
 
-        # Grow TD(λ) traces to match new input_size
-        if self.td_lambda_d1 is not None:
-            old_n_input = self.td_lambda_d1.traces.traces.shape[1]
-            if self.input_size > old_n_input:
-                n_new_inputs = self.input_size - old_n_input
-                # Expand traces [n_output, n_input]
-                new_cols = torch.zeros(self.d1_size, n_new_inputs, device=self.device)
-                self.td_lambda_d1.traces.traces = torch.cat(
-                    [self.td_lambda_d1.traces.traces, new_cols], dim=1
-                )
-                self.td_lambda_d1.traces.n_input = self.input_size
-
-        if self.td_lambda_d2 is not None:
-            old_n_input = self.td_lambda_d2.traces.traces.shape[1]
-            if self.input_size > old_n_input:
-                n_new_inputs = self.input_size - old_n_input
-                # Expand traces [n_output, n_input]
-                new_cols = torch.zeros(self.d2_size, n_new_inputs, device=self.device)
-                self.td_lambda_d2.traces.traces = torch.cat(
-                    [self.td_lambda_d2.traces.traces, new_cols], dim=1
-                )
-                self.td_lambda_d2.traces.n_input = self.input_size
+        # TD(λ) removed in Phase 3 - no traces to expand
 
         # Grow STP modules for this source (Phase 5)
         if self.config.stp_enabled:
@@ -3405,19 +3345,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.value_estimates is not None:
             value_estimates = self.value_estimates.tolist()
 
-        # TD(λ) diagnostics (if enabled)
-        td_lambda_state = {}
-        if self.td_lambda_d1 is not None:
-            td_lambda_state = {
-                "td_lambda_enabled": True,
-                "lambda": self.td_lambda_d1.config.lambda_,
-                "gamma": self.td_lambda_d1.config.gamma,
-                "d1_td_lambda": self.td_lambda_d1.get_diagnostics(),  # type: ignore[union-attr]
-                "d2_td_lambda": self.td_lambda_d2.get_diagnostics(),  # type: ignore[union-attr]
-            }
-        else:
-            td_lambda_state = {"td_lambda_enabled": False}
-
         # Exploration state - from state_tracker
         exploration_state = {
             "exploring": self.state_tracker.exploring,
@@ -3451,8 +3378,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             "ucb": ucb_state,
             # Value estimates
             "value_estimates": value_estimates,
-            # TD(λ) state
-            "td_lambda": td_lambda_state,
         }
 
         # Return as dict (DiagnosticsDict is a TypedDict, not a class)
