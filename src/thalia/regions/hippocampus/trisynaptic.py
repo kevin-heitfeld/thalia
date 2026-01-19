@@ -85,7 +85,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -128,11 +128,6 @@ from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasisConfig,
 )
 from thalia.managers.component_registry import register_region
-from thalia.regions.hippocampus.hindsight_relabeling import (
-    HERConfig,
-    HERStrategy,
-    HippocampalHERIntegration,
-)
 from thalia.regions.stimulus_gating import StimulusGating
 from thalia.utils.core_utils import clamp_weights, cosine_similarity_safe
 from thalia.utils.input_routing import InputRouter
@@ -705,26 +700,6 @@ class TrisynapticHippocampus(NeuralRegion):
         # This replaces hard resets with biologically-realistic theta-aligned resets
         self._pending_theta_reset: bool = False
 
-        # =====================================================================
-        # HINDSIGHT EXPERIENCE REPLAY (HER)
-        # =====================================================================
-        # Goal relabeling for multi-goal learning
-        self.her_integration: Optional[HippocampalHERIntegration]
-
-        if config.use_her:
-            her_config = HERConfig(
-                strategy=HERStrategy[config.her_strategy.upper()],
-                k_hindsight=config.her_k_hindsight,
-                replay_ratio=config.her_replay_ratio,
-                goal_dim=self.ca1_size,  # Use CA1 size (output layer) as goal dimension
-                goal_tolerance=config.her_goal_tolerance,
-                buffer_size=config.her_buffer_size,
-                device=config.device,
-            )
-            self.her_integration = HippocampalHERIntegration(her_config)
-        else:
-            self.her_integration = None
-
         # State
         self.state: HippocampusState = HippocampusState()  # type: ignore[assignment]
 
@@ -1065,8 +1040,6 @@ class TrisynapticHippocampus(NeuralRegion):
             norepinephrine=norepinephrine,
         )
 
-    # region Growth and Neurogenesis
-
     def grow_output(
         self,
         n_new: int,
@@ -1358,10 +1331,6 @@ class TrisynapticHippocampus(NeuralRegion):
                 f"Direct growth of {layer_name} not yet supported. "
                 f"Use grow_layer('CA1', n) to grow all layers proportionally."
             )
-
-    # endregion
-
-    # region Forward Pass (DG→CA3→CA1)
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update temporal parameters when brain timestep changes.
@@ -2646,10 +2615,6 @@ class TrisynapticHippocampus(NeuralRegion):
             # Lower excitability → higher threshold (subtract negative offset)
             self._ca3_threshold_offset = (1.0 - excitability_mod).clamp(-0.5, 0.5)
 
-    # endregion
-
-    # region Episodic Memory
-
     def get_state(self) -> HippocampusState:
         """Get current state with STP state capture.
 
@@ -2680,46 +2645,6 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ec_ca1.load_state(state.stp_ec_ca1_state)  # type: ignore[arg-type]
         if self.stp_ca3_recurrent is not None and state.stp_ca3_recurrent_state is not None:
             self.stp_ca3_recurrent.load_state(state.stp_ca3_recurrent_state)  # type: ignore[arg-type]
-
-    def add_her_experience(
-        self,
-        state: torch.Tensor,
-        action: int,
-        next_state: torch.Tensor,
-        goal: torch.Tensor,
-        reward: float,
-        done: bool,
-        achieved_goal: Optional[torch.Tensor] = None,
-    ) -> None:
-        """Add experience to HER buffer for goal-conditioned learning.
-
-        Args:
-            state: Current state (CA3 pattern or cortex output)
-            action: Action taken
-            next_state: Resulting state
-            goal: Intended goal (from PFC working memory)
-            reward: Reward received
-            done: Episode terminated?
-            achieved_goal: What was actually achieved (if None, uses next_state)
-        """
-        if self.her_integration is None:
-            return
-
-        # If achieved_goal not provided, use CA1 output as proxy
-        if achieved_goal is None:
-            achieved_goal = (
-                self.state.ca1_spikes if self.state.ca1_spikes is not None else next_state
-            )
-
-        self.her_integration.add_experience(
-            state=state,
-            action=action,
-            next_state=next_state,
-            goal=goal,
-            reward=reward,
-            done=done,
-            achieved_goal=achieved_goal,
-        )
 
     # =========================================================================
     # CONSOLIDATION MODE (Phase 1: Biologically-Accurate Sleep Replay)
@@ -2781,40 +2706,6 @@ class TrisynapticHippocampus(NeuralRegion):
             norepinephrine=0.5,  # MODERATE: Maintains arousal
             dopamine=0.5,  # MODERATE: Available for learning
         )
-
-        # Exit HER consolidation if available
-        if self.her_integration is not None:
-            self.her_integration.exit_consolidation()
-
-    def sample_her_replay_batch(self, batch_size: int = 32) -> List:
-        """Sample batch of experiences for HER replay learning.
-
-        Returns mix of real and hindsight-relabeled experiences.
-        Only returns data during consolidation mode.
-
-        Args:
-            batch_size: Number of transitions to sample
-
-        Returns:
-            List of EpisodeTransition objects (real + hindsight mix)
-        """
-        if self.her_integration is None:
-            return []
-
-        return self.her_integration.replay_for_learning(batch_size)
-
-    def get_her_diagnostics(self) -> Dict[str, Any]:
-        """Get HER system diagnostics."""
-        if self.her_integration is None:
-            return {"her_enabled": False}
-
-        diagnostics = self.her_integration.get_diagnostics()
-        diagnostics["her_enabled"] = True
-        return diagnostics
-
-    # endregion
-
-    # region Diagnostics and Health Monitoring
 
     def set_training_step(self, step: int) -> None:
         """Update the current training step for neurogenesis tracking.
@@ -2958,7 +2849,6 @@ class TrisynapticHippocampus(NeuralRegion):
                 "current_strength": state.ffi_strength,
             },
             "episode_buffer_size": len(self.episode_buffer),
-            "her": self.get_her_diagnostics(),
         }
 
         # Synaptic tagging diagnostics (Phase 1: Emergent RL Migration)
@@ -3010,5 +2900,3 @@ class TrisynapticHippocampus(NeuralRegion):
             for name, weights in state["synaptic_weights"].items():
                 if name in self.synaptic_weights:
                     self.synaptic_weights[name].data = weights.to(self.device)
-
-    # endregion

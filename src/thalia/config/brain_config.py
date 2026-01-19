@@ -471,16 +471,6 @@ class BrainConfig:
     neurons_per_action: int = 10
     """Number of neurons per action when use_population_coding=True."""
 
-    # Phase 2: Model-based planning
-    use_model_based_planning: bool = True
-    """Enable mental simulation for action selection (Phase 2).
-
-    When True:
-        - select_action() uses MentalSimulationCoordinator for tree search
-        - deliver_reward() triggers DynaPlanner background planning
-        - Requires: PFC.predict_next_state, Hippocampus.retrieve_similar, Striatum.evaluate_state
-    """
-
     # =========================================================================
     # Auto-growth (optional capacity expansion)
     # =========================================================================

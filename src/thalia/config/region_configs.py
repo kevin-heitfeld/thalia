@@ -309,18 +309,6 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     phase_jitter_std_ms: float = 5.0  # Std dev of timing jitter (0-10ms)
 
     # =========================================================================
-    # HINDSIGHT EXPERIENCE REPLAY (HER)
-    # =========================================================================
-    # Enable goal relabeling for multi-goal learning.
-    # "What if my actual outcome WAS my goal?" → learn from every episode
-    use_her: bool = True  # Enable hindsight experience replay
-    her_k_hindsight: int = 4  # Number of hindsight goals per real experience
-    her_replay_ratio: float = 0.8  # Fraction of replays that are hindsight
-    her_strategy: str = "future"  # "future", "final", "episode", or "random"
-    her_goal_tolerance: float = 0.1  # Distance threshold for goal achievement
-    her_buffer_size: int = 1000  # Maximum episodes to store
-
-    # =========================================================================
     # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
     # =========================================================================
     # Biological reality: Memory consolidation operates over multiple timescales
