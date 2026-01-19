@@ -150,6 +150,7 @@ from thalia.utils.oscillator_utils import (
 from .checkpoint_manager import HippocampusCheckpointManager
 from .memory_component import Episode, HippocampusMemoryComponent
 from .replay_engine import ReplayConfig, ReplayEngine, ReplayMode
+from .synaptic_tagging import SynapticTagging
 
 
 @dataclass
@@ -687,6 +688,19 @@ class TrisynapticHippocampus(NeuralRegion):
             config=config,
             context=manager_context,
         )
+
+        # Synaptic tagging for emergent priority (Phase 1: Emergent RL Migration)
+        # Tags mark recently-active synapses for consolidation
+        # Replaces explicit Episode.priority with biological tagging mechanism
+        if config.theta_gamma_enabled:
+            self.synaptic_tagging = SynapticTagging(
+                n_neurons=self.ca3_size,
+                device=device,
+                tag_decay=0.95,  # ~20 timestep lifetime
+                tag_threshold=0.1,
+            )
+        else:
+            self.synaptic_tagging = None  # type: ignore[assignment]
 
         # Feedback inhibition state - tracks recent CA3 activity
         self._ca3_activity_trace: Optional[torch.Tensor] = None
@@ -1993,6 +2007,18 @@ class TrisynapticHippocampus(NeuralRegion):
             dW = effective_lr * torch.outer(ca3_activity, ca3_activity)
 
             # =========================================================
+            # SYNAPTIC TAGGING (Phase 1: Emergent RL Migration)
+            # =========================================================
+            # Update synaptic tags based on spike coincidence
+            # Tags mark recently-active synapses for potential consolidation
+            # Replaces explicit Episode.priority with emergent biological mechanism
+            if self.synaptic_tagging is not None:
+                self.synaptic_tagging.update_tags(
+                    pre_spikes=ca3_activity,
+                    post_spikes=ca3_activity,
+                )
+
+            # =========================================================
             # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
             # =========================================================
             # Synapses to inactive postsynaptic neurons get weakened when
@@ -2499,6 +2525,24 @@ class TrisynapticHippocampus(NeuralRegion):
             self._sequence_position += 1
             # Oscillators advance centrally in Brain, so we just track position here.
             # The position is used for diagnostics and can be reset by new_trial().
+
+        # =====================================================================
+        # DOPAMINE-GATED CONSOLIDATION (Phase 1: Emergent RL Migration)
+        # =====================================================================
+        # Apply dopamine-gated consolidation to tagged synapses
+        # High dopamine (reward) → strong consolidation of tagged synapses
+        # This is the "capture" part of synaptic tagging and capture
+        if self.synaptic_tagging is not None:
+            dopamine_level = self.state.dopamine if self.state is not None else 0.0
+            if dopamine_level > 0.1:
+                # Consolidate tagged synapses proportional to dopamine
+                current_weights = self.synaptic_weights["ca3_ca3"]
+                new_weights = self.synaptic_tagging.consolidate_tagged_synapses(
+                    weights=current_weights,
+                    dopamine=dopamine_level,
+                    learning_rate=self.config.learning_rate * 0.5,  # Half of base LR
+                )
+                self.synaptic_weights["ca3_ca3"].data = new_weights
 
         # Axonal delays are handled by AxonalProjection pathways, not within regions
         # Ensure bool output (CA1 neurons already return bool from Phase 1)
@@ -3226,6 +3270,10 @@ class TrisynapticHippocampus(NeuralRegion):
             "episode_buffer_size": len(self.episode_buffer),
             "her": self.get_her_diagnostics(),
         }
+
+        # Synaptic tagging diagnostics (Phase 1: Emergent RL Migration)
+        if self.synaptic_tagging is not None:
+            region_specific["synaptic_tagging"] = self.synaptic_tagging.get_diagnostics()
 
         # Return in standardized format
         return {
