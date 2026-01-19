@@ -1334,7 +1334,7 @@ class Prefrontal(NeuralRegion):
             raise ConfigurationError("Emergent goals not enabled.")
 
         # Compute value as dot product with learned value weights
-        return torch.sum(goal_pattern * self.emergent_goals.value_weights).item()
+        return float(torch.sum(goal_pattern * self.emergent_goals.value_weights).item())
 
     def reset_goal_tags(self) -> None:
         """Reset synaptic tags for goal patterns.

@@ -267,7 +267,8 @@ class NBackTask:
         dopamine_signal = 0.8 * excitability  # High when gamma peaks
 
         # Forward through prefrontal with encoding
-        self.prefrontal.forward(stimulus, dopamine_signal=dopamine_signal, dt_ms=self.config.dt_ms)
+        # Note: dt_ms is handled internally by prefrontal region
+        self.prefrontal.forward(stimulus, dopamine_signal=dopamine_signal)
 
         # Note: Oscillators are advanced by brain, not here
 

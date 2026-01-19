@@ -3535,8 +3535,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.exploration.load_state(state.exploration_manager_state)  # type: ignore[arg-type]
 
         # Restore value/RPE (optional)
-        if state.value_estimates is not None and hasattr(self, "value_estimates"):
-            self.value_estimates.data = state.value_estimates.to(self.device)  # type: ignore[union-attr]
+        if state.value_estimates is not None and hasattr(self, "value_estimates"):  # type: ignore[attr-defined]
+            self.value_estimates.data = state.value_estimates.to(self.device)  # type: ignore[union-attr,attr-defined]
         if state.last_rpe is not None:
             self.state_tracker._last_rpe = state.last_rpe
         if state.last_expected is not None:

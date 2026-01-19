@@ -187,6 +187,7 @@ class LayeredCortexState(BaseRegionState):
 
     # Input stored for continuous plasticity
     input_spikes: Optional[torch.Tensor] = None
+    source_inputs: Optional[Dict[str, torch.Tensor]] = None
 
     # Per-layer spike states (6 layers)
     l4_spikes: Optional[torch.Tensor] = None

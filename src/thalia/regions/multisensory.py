@@ -286,9 +286,9 @@ class MultimodalIntegration(NeuralRegion):
             )
             self._last_coherence = 0.0
         else:
-            self.visual_gamma = None
-            self.auditory_gamma = None
-            self._last_coherence = None
+            self.visual_gamma = None  # type: ignore[assignment]
+            self.auditory_gamma = None  # type: ignore[assignment]
+            self._last_coherence = None  # type: ignore[assignment]
 
         # =====================================================================
         # LEARNING
@@ -302,7 +302,7 @@ class MultimodalIntegration(NeuralRegion):
                 decay_rate=config.hebbian_decay,
             )
         else:
-            self.hebbian_strategy = None
+            self.hebbian_strategy = None  # type: ignore[assignment]
 
         # =====================================================================
         # STATE
@@ -333,7 +333,7 @@ class MultimodalIntegration(NeuralRegion):
         # Reset neurons
         self.neurons.reset_state()
 
-    def forward(
+    def forward(  # type: ignore[override]
         self,
         visual_input: Optional[torch.Tensor] = None,
         auditory_input: Optional[torch.Tensor] = None,

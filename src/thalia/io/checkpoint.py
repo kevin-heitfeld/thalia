@@ -766,7 +766,7 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
     Returns:
         JSON dict with tensor references
     """
-    result: Any = _serialize_value(region_state, writer)
+    result: Dict[str, Any] = _serialize_value(region_state, writer)  # type: ignore[assignment]
     return result
 
 
