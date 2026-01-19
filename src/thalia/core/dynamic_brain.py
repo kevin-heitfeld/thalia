@@ -291,6 +291,9 @@ class DynamicBrain(nn.Module):
             if output_size is not None:
                 self.consolidation_manager.set_cortex_output_size(int(output_size))
 
+            # Set brain reference for full-architecture replay (Phase 1.7.4)
+            self.consolidation_manager.set_brain_reference(self)
+
         # =================================================================
         # CHECKPOINT MANAGER (Phase 1.7.4)
         # =================================================================
