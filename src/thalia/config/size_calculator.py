@@ -376,39 +376,35 @@ class LayerSizeCalculator:
 
         Pattern: Population coding with D1/D2 opponent pathways.
 
-        **IMPORTANT**: D1 and D2 pathways always get equal neuron counts.
-        If neurons_per_action is odd, it will be rounded down to nearest even number.
+        **ARCHITECTURE**: Each action has neurons in BOTH D1 and D2 pathways.
+        - D1 pathway: n_actions × neurons_per_action (Go signals)
+        - D2 pathway: n_actions × neurons_per_action (NoGo signals)
+        - Total neurons: 2 × n_actions × neurons_per_action
 
         Args:
             n_actions: Number of discrete actions
-            neurons_per_action: Neurons per action (default: 10 for noise reduction)
-                Must be even for symmetric D1/D2 splits.
+            neurons_per_action: Neurons per action per pathway (default: 10)
 
         Returns:
             Dictionary with keys:
-            - d1_size: D1 (Go pathway) size
-            - d2_size: D2 (NoGo pathway) size
+            - d1_size: D1 (Go pathway) size = n_actions × neurons_per_action
+            - d2_size: D2 (NoGo pathway) size = n_actions × neurons_per_action
             - n_actions: Number of actions (same as parameter)
-            - neurons_per_action: Adjusted neurons per action (even number)
+            - neurons_per_action: Neurons per action per pathway
             - output_size: D1 + D2 (both pathways output spikes)
             - total_neurons: D1 + D2
 
         Example:
             >>> calc = LayerSizeCalculator()
             >>> sizes = calc.striatum_from_actions(n_actions=4, neurons_per_action=10)
-            >>> sizes['d1_size']  # 20 (4 actions * 5 neurons)
-            >>> sizes['d2_size']  # 20 (4 actions * 5 neurons)
-            >>> sizes['output_size']  # 40 (20 + 20)
+            >>> sizes['d1_size']  # 40 (4 actions × 10 neurons)
+            >>> sizes['d2_size']  # 40 (4 actions × 10 neurons)
+            >>> sizes['output_size']  # 80 (40 + 40)
         """
-        # Ensure even number for symmetric D1/D2 split
-        if neurons_per_action < 2:
-            neurons_per_action = 2
-        elif neurons_per_action % 2 != 0:
-            neurons_per_action = neurons_per_action + 1  # Round up to even
-
-        neurons_per_pathway = neurons_per_action // 2
-        d1_size = n_actions * neurons_per_pathway
-        d2_size = n_actions * neurons_per_pathway
+        # Each pathway gets full neuron allocation per action
+        # This allows each action to have independent Go/NoGo populations
+        d1_size = n_actions * neurons_per_action
+        d2_size = n_actions * neurons_per_action
 
         return {
             "d1_size": d1_size,
