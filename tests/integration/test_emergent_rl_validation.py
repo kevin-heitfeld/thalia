@@ -61,8 +61,9 @@ def emergent_rl_brain():
         striatum = brain.components["striatum"]
         # Enable eligibility traces (Phase 3)
         striatum.config.eligibility_tau_ms = 1000.0  # 1 second decay
-        # Disable exploration for deterministic tests
-        striatum.config.ucb_exploration = False
+        # Enable UCB exploration for action discovery
+        striatum.config.ucb_exploration = True
+        striatum.config.ucb_coefficient = 2.0  # Exploration bonus
         striatum.config.softmax_action_selection = False
 
     # Configure hippocampus for replay (Phase 2)

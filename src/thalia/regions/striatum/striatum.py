@@ -2842,13 +2842,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         source-pathway combination separately using their respective eligibility traces.
 
         Args:
-            reward: Raw reward signal (for adaptive exploration tracking only)
+            reward: Reward signal (+1 for reward, -1 for punishment, 0 for neutral)
 
         Returns:
             Metrics dict with dopamine level and weight changes per source.
         """
-        # Use dopamine from forward_coordinator (set via set_neuromodulators)
-        da_level = self.forward_coordinator._tonic_dopamine
+        # Convert reward to phasic dopamine signal
+        # Positive reward → dopamine burst above baseline
+        # Negative reward → dopamine dip below baseline
+        # This modulates learning via three-factor rule: Δw = eligibility × DA × lr
+        tonic_baseline = self.forward_coordinator._tonic_dopamine
+        da_level = tonic_baseline + reward  # Phasic = tonic + reward signal
 
         # Store for diagnostics
         self._last_rpe = da_level
