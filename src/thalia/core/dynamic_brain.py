@@ -911,14 +911,14 @@ class DynamicBrain(nn.Module):
     def deliver_reward(self, external_reward: Optional[float] = None) -> None:
         """Deliver reward signal for learning.
 
-        Compatible with EventDrivenBrain RL interface. Updates striatum
-        with reward prediction error for TD learning.
+        **Phase 5 Migration**: Simplified reward delivery - no explicit RPE computation.
+        Dopamine-modulated learning happens purely via eligibility traces in striatum.
 
-        The brain acts as VTA (ventral tegmental area):
-        1. Combines external reward with intrinsic reward (if computed)
-        2. Gets expected value from striatum for the action taken
-        3. Computes reward prediction error (RPE = reward - expected)
-        4. Broadcasts dopamine signal (normalized RPE) to striatum
+        Compatible with EventDrivenBrain RL interface. The brain broadcasts reward
+        as dopamine signal to striatum, which uses three-factor learning
+        (STDP + eligibility + dopamine) for synaptic updates.
+
+        Action values emerge from D1-D2 synaptic weight competition - no Q-values!
 
         Args:
             external_reward: Task-based reward value (typically -1 to +1),
@@ -960,11 +960,12 @@ class DynamicBrain(nn.Module):
             total_reward = max(-2.0, min(2.0, total_reward))
 
         # Deliver reward to striatum for learning (only if action was selected)
-        # Note: Match EventDrivenBrain's permissive behavior - allow deliver_reward()
-        # without prior select_action() for streaming/continuous learning scenarios
+        # NOTE: Permissive behavior - allow deliver_reward() without prior
+        # select_action() for streaming/continuous learning scenarios
         if hasattr(self, "_last_action") and self._last_action is not None:
-            # Note: striatum.deliver_reward(reward) uses dopamine from VTA via set_dopamine()
-            # The actual RPE computation and dopamine-gated learning happens inside striatum
+            # Direct dopamine delivery, no RPE computation
+            # Striatum uses three-factor learning: eligibility × dopamine → weight change
+            # Action values emerge from D1-D2 weight balance (no explicit Q-values)
             if hasattr(striatum, "deliver_reward"):
                 striatum.deliver_reward(reward=total_reward)  # type: ignore[operator]
             else:
@@ -1340,19 +1341,17 @@ class DynamicBrain(nn.Module):
         n_cycles: Optional[int] = None,
         batch_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Trigger memory consolidation via spontaneous replay (emergent, biologically-accurate).
+        """Trigger memory consolidation via spontaneous replay.
 
         No explicit coordination - just set acetylcholine low and run brain forward.
         Hippocampus spontaneously replays high-priority patterns via sharp-wave ripples.
 
-        Biological mechanism (Phase 2 - Emergent RL):
+        Biological mechanism:
         1. Lower acetylcholine (0.1) → sleep/rest mode
         2. Hippocampus CA3 spontaneously reactivates stored patterns
         3. Replay probability ∝ synaptic tag strength (Frey-Morris tagging)
         4. Ripples occur at ~1-3 Hz during low ACh
         5. Restore acetylcholine (0.7) → awake/encoding mode
-
-        This replaces explicit UnifiedReplayCoordinator with emergent replay.
 
         Args:
             duration_ms: Consolidation duration in milliseconds (default 5000ms = 5 seconds)
@@ -1387,7 +1386,7 @@ class DynamicBrain(nn.Module):
         if not hasattr(hippocampus, "set_acetylcholine"):
             raise AttributeError(
                 f"Hippocampus ({type(hippocampus).__name__}) does not support spontaneous replay. "
-                f"Ensure hippocampus implements set_acetylcholine() method (Phase 2 emergent RL)."
+                f"Ensure hippocampus implements set_acetylcholine() method."
             )
 
         # Sync last_action to container before consolidation

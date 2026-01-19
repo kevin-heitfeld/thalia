@@ -233,10 +233,10 @@ class StriatumState(BaseRegionState):
     """Exploration manager state (action counts, uncertainties, etc.)."""
 
     # ========================================================================
-    # VALUE ESTIMATES AND RPE (Reward Prediction Error)
+    # VALUE ESTIMATES REMOVED (Emergent from D1-D2 competition)
     # ========================================================================
-    value_estimates: Optional[torch.Tensor] = None
-    """Learned value estimates [n_actions] (if RPE enabled)."""
+    # value_estimates field removed - action values now emerge from D1-D2 weights
+    # RPE tracking variables kept for compatibility with learning diagnostics
 
     last_rpe: Optional[float] = None
     """Last computed reward prediction error."""
@@ -289,7 +289,7 @@ class StriatumState(BaseRegionState):
     # ========================================================================
     # SHORT-TERM PLASTICITY (STP)
     # ========================================================================
-    # Per-source STP modules (Phase 5)
+    # Per-source STP modules
     stp_modules_state: Dict[str, Dict[str, Optional[torch.Tensor]]] = field(default_factory=dict)
     """Per-source STP states. Keys are source-pathway names (e.g., 'cortex:l5_d1'),
     values are dicts with 'u' and 'x' tensors."""
@@ -322,8 +322,7 @@ class StriatumState(BaseRegionState):
             "last_uncertainty": self.last_uncertainty,
             "last_exploration_prob": self.last_exploration_prob,
             "exploration_manager_state": self.exploration_manager_state,
-            # Value/RPE
-            "value_estimates": self.value_estimates,
+            # RPE tracking (no value_estimates, just diagnostic fields)
             "last_rpe": self.last_rpe,
             "last_expected": self.last_expected,
             # Goal modulation
@@ -384,8 +383,7 @@ class StriatumState(BaseRegionState):
             last_uncertainty=data.get("last_uncertainty"),
             last_exploration_prob=data.get("last_exploration_prob"),
             exploration_manager_state=data.get("exploration_manager_state"),
-            # Value/RPE
-            value_estimates=to_device(data.get("value_estimates")),
+            # RPE tracking (no value_estimates)
             last_rpe=data.get("last_rpe"),
             last_expected=data.get("last_expected"),
             # Goal modulation
@@ -455,8 +453,6 @@ class StriatumState(BaseRegionState):
         self.last_exploration_prob = None
 
         # Reset value/RPE
-        if self.value_estimates is not None:
-            self.value_estimates.zero_()
         self.last_rpe = None
         self.last_expected = None
 
@@ -486,8 +482,8 @@ class StriatumState(BaseRegionState):
 class Striatum(NeuralRegion, ActionSelectionMixin):
     """Striatal region with three-factor reinforcement learning.
 
-    **Phase 2 Migration**: Now inherits from NeuralRegion with biologically-accurate
-    synaptic weight placement at target dendrites (not in axonal pathways).
+    Inherits from NeuralRegion with biologically-accurate synaptic
+    weight placement at target dendrites (not in axonal pathways).
 
     Implements dopamine-modulated learning:
     - Eligibility traces tag recently active synapses
@@ -558,7 +554,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         total_neurons = self.d1_size + self.d2_size
 
         # =====================================================================
-        # INITIALIZE NEURAL REGION (Phase 2)
+        # INITIALIZE NEURAL REGION
         # =====================================================================
         # NeuralRegion handles synaptic weights per-source in synaptic_weights dict
         # D1/D2 pathways will be neuron populations only (no weights)
@@ -573,12 +569,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.n_output = total_neurons
 
         # =====================================================================
-        # MULTI-SOURCE ELIGIBILITY TRACES (Phase 3 + Phase 1 Enhancement)
+        # MULTI-SOURCE ELIGIBILITY TRACES
         # =====================================================================
         # Per-source-pathway eligibility traces for multi-source learning
         # Structure: {"source_d1": tensor, "source_d2": tensor, ...}
         #
-        # Phase 1 Enhancement: Multi-timescale eligibility traces
+        # Multi-timescale eligibility traces
         # Biology: Synaptic tags (eligibility) exist at multiple timescales:
         # - Fast traces (~500ms): Immediate coincidence detection (STDP-like)
         # - Slow traces (~60s): Consolidated long-term tags for delayed reward
@@ -603,7 +599,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self._source_eligibility_tau: Dict[str, float] = {}
 
         # =====================================================================
-        # ELASTIC TENSOR CAPACITY TRACKING (Phase 1 - Growth Support)
+        # ELASTIC TENSOR CAPACITY TRACKING
         # =====================================================================
         # Track active vs total capacity for elastic tensor checkpoint format
         # n_neurons_active: Number of neurons currently in use (total projection neurons)
@@ -618,7 +614,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.n_neurons_capacity = self.n_neurons_active
 
         # =====================================================================
-        # NEUROMORPHIC ID TRACKING (Phase 2 - Neuron-Centric Format)
+        # NEUROMORPHIC ID TRACKING
         # =====================================================================
         # Assign persistent IDs to neurons for ID-based checkpoint format
         # IDs persist across resets and growth events
@@ -877,7 +873,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.stp_modules = {}
 
         # =====================================================================
-        # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
+        # GOAL-CONDITIONED VALUES
         # =====================================================================
         # Enable PFC goal context to modulate striatal action values via gating.
         # Biology: PFC working memory → Striatum modulation (Miller & Cohen 2001)
@@ -914,21 +910,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.pfc_modulation_d2 = None
 
         # =====================================================================
-        # REWARD PREDICTION ERROR (RPE) - Value Estimates
+        # RPE TRACKING (No explicit Q-values, only dopamine signal)
         # =====================================================================
-        # Track expected value per action for computing prediction error.
-        # DA = actual_reward - expected_reward
-        # This prevents runaway winners (high expectation → small surprise)
-
-        # Type annotation for optional value estimates
-        self.value_estimates: Optional[torch.Tensor]
-
-        if self.config.rpe_enabled:
-            self.value_estimates = torch.full(
-                (self.n_actions,), self.config.rpe_initial_value, device=self.device
-            )
-        else:
-            self.value_estimates = None
+        # Removed value_estimates tensor.
+        # Action values now emerge from D1-D2 competition (net_votes).
+        # No explicit Q-value storage needed.
+        #
+        # Biology: Striatum doesn't store explicit "expected values".
+        # Action preferences emerge from D1 vs D2 synaptic weight balance.
+        # Dopamine modulates learning, not computed TD errors.
 
         # Initialize tracking variables (also reset in reset_state)
         self._last_rpe = 0.0
@@ -1061,92 +1051,60 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         return action
 
     # =========================================================================
-    # VALUE ESTIMATION (for centralized RPE computation in Brain/VTA)
+    # VALUE ESTIMATION
     # =========================================================================
-
-    def get_expected_value(self, action: Optional[int] = None) -> float:
-        """Get expected value for an action (used by Brain for RPE computation).
-
-        The striatum maintains value estimates for each action as "Q-values".
-        The Brain (acting as VTA) queries these to compute reward prediction error:
-            RPE = actual_reward - expected_value
-
-        Args:
-            action: Action index to get value for. If None, uses last_action.
-
-        Returns:
-            Expected value for the action. Returns 0.0 if:
-            - rpe_enabled is False (no value tracking)
-            - action is None and no last_action recorded
-            - action index is out of range
-        """
-        if self.value_estimates is None:
-            return 0.0
-
-        if action is None:
-            action = self.last_action
-
-        if action is None or action < 0 or action >= self.n_actions:
-            return 0.0
-
-        return float(self.value_estimates[action].item())
-
-    def update_value_estimate(self, action: int, reward: float) -> None:
-        """Update value estimate for an action towards actual reward.
-
-        Called by Brain after computing RPE, to update the Q-value:
-            V(a) ← V(a) + α * (reward - V(a))
-
-        Args:
-            action: Action index to update
-            reward: Actual reward received
-        """
-        if self.value_estimates is None:
-            return
-
-        if action < 0 or action >= self.n_actions:
-            return
-
-        cfg = self.config
-        self.value_estimates[action] = self.value_estimates[action] + cfg.rpe_learning_rate * (
-            reward - self.value_estimates[action]
-        )
+    # Removed get_expected_value() and update_value_estimate().
+    # Action values now emerge purely from D1-D2 synaptic weight competition.
+    # No explicit Q-value storage or TD updates.
+    #
+    # Biology: Striatum doesn't store explicit "expected values".
+    # Action preferences emerge from balance of:
+    #   - D1 (Go) pathway weights: Strengthened by reward (dopamine burst)
+    #   - D2 (NoGo) pathway weights: Strengthened by punishment (dopamine dip)
+    #   - Action value = NET activity (D1 - D2) during selection
 
     def evaluate_state(
         self,
         state: torch.Tensor,
     ) -> float:
         """
-        Evaluate state quality using learned action values.
+        Evaluate state quality using D1-D2 weight competition.
 
-        For Phase 2 model-based planning: predicts how good a simulated state is
-        by computing the maximum Q-value (best action value) from that state.
+        No explicit Q-values. Action values emerge from D1-D2 weight balance.
+        For planning: compute how "good" a simulated state is by checking which
+        action has strongest D1-D2 NET weight difference.
 
-        Uses existing value estimates to evaluate states during mental simulation.
-        If goal-conditioning is enabled, modulates values based on PFC component of state.
-
-        Biology: Striatum represents action values (Q-values) learned through
-        dopaminergic reinforcement. During planning, these values can evaluate
-        simulated future states (Daw et al., 2011).
+        Biology: Striatum doesn't store cached Q-values. Action preferences emerge
+        from synaptic weight balance. To evaluate a state:
+        1. Compute D1 vs D2 activation strength for each action
+        2. NET value = D1_weights - D2_weights (averaged over neurons)
+        3. Best action value = max(NET values)
 
         Args:
-            state: State to evaluate [n_input] (1D, ADR-005)
+            state: State to evaluate [n_input] (1D)
                    Format: [cortex_l5 | hippocampus | pfc] (concatenated)
 
         Returns:
-            state_value: Maximum action value (best Q-value) from this state
-
-        Note:
-            This is a simplified evaluator using cached Q-values. In full
-            implementation, would process state through forward() to get
-            D1-D2 competition values.
+            state_value: Maximum emergent action value (D1-D2 NET) from weights
         """
-        if self.value_estimates is None:
-            # No value estimates available, return neutral value
+        # Compute action values from D1-D2 weight difference
+        # Get weights for first source (primary cortical input)
+        # NOTE: This assumes weights are linked (pathways initialized)
+        try:
+            d1_weights = self.d1_pathway.weights  # [d1_size, n_input]
+            d2_weights = self.d2_pathway.weights  # [d2_size, n_input]
+        except RuntimeError:
+            # Pathways not linked yet (early initialization)
             return 0.0
 
-        # Get all action values
-        action_values = self.value_estimates.clone()
+        # Compute average NET weight per action (D1 - D2 balance)
+        action_values = torch.zeros(self.n_actions, device=self.device)
+        for action in range(self.n_actions):
+            d1_slice = self._get_action_population_indices(action)
+            d2_slice = self._get_action_population_indices(action)
+            d1_mean = d1_weights[d1_slice, :].mean()
+            d2_mean = d2_weights[d2_slice, :].mean()
+            action_values[action] = d1_mean - d2_mean
 
         # If goal conditioning enabled, extract PFC component from state and modulate values
         if (
@@ -1197,7 +1155,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         return float(action_values.max().item())
 
     # =========================================================================
-    # SYNAPTIC WEIGHT INITIALIZATION (Phase 2 - Option B)
+    # SYNAPTIC WEIGHT INITIALIZATION
     # =========================================================================
 
     def add_input_source_striatum(
@@ -1276,11 +1234,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.learning.add_source_eligibility_traces(source_name, n_input)
 
         # =====================================================================
-        # CREATE STP MODULES FOR SOURCE-PATHWAY (Phase 5 + Phase 1 Enhancement)
+        # CREATE STP MODULES FOR SOURCE-PATHWAY
         # =====================================================================
         # Each source-pathway gets its own STP module with source-specific config.
         # Biology: Different input pathways have different short-term dynamics.
-        # Phase 1 Enhancement: Heterogeneous STP enables per-synapse parameter variability.
+        # Heterogeneous STP enables per-synapse parameter variability.
         if self.config.stp_enabled:
             # Determine STP type based on source name
             if "cortex" in source_name or "cortical" in source_name:
@@ -1294,7 +1252,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
             # Create STP configs (heterogeneous if enabled)
             if self.config.heterogeneous_stp:
-                # Phase 1 Enhancement: Sample per-synapse STP parameters from distributions
+                # Sample per-synapse STP parameters from distributions
                 # Biology: 10-fold variability in U within same pathway (Dobrunz & Stevens 1997)
                 # D1 pathway: Create list of per-synapse STP configs
                 d1_configs = create_heterogeneous_stp_configs(
@@ -1475,7 +1433,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         return [key[:-3] for key in self.synaptic_weights.keys() if key.endswith("_d2")]
 
     # =========================================================================
-    # NEUROMORPHIC ID MANAGEMENT (Phase 2)
+    # NEUROMORPHIC ID MANAGEMENT
     # =========================================================================
 
     def _initialize_neuron_ids(self) -> None:
@@ -1562,7 +1520,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         new_n_neurons = old_n_neurons + n_new_neurons
 
         # =====================================================================
-        # 0. ASSIGN NEURON IDS TO NEW NEURONS (Phase 2 - Neuromorphic)
+        # 0. ASSIGN NEURON IDS TO NEW NEURONS
         # =====================================================================
         # Generate IDs for new neurons before creating them
         # Half D1, half D2 to maintain balance
@@ -1611,7 +1569,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.forward_coordinator.d2_size = self.d2_size
         self.forward_coordinator.n_actions = self.n_actions
 
-        # Update elastic tensor capacity tracking (Phase 1)
+        # Update elastic tensor capacity tracking
         self.n_neurons_active = new_n_neurons
         # Check if we need to expand capacity
         if self.n_neurons_active > self.n_neurons_capacity:
@@ -1739,12 +1697,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Expand exploration manager (handles action_counts and other exploration state)
         self.exploration.grow(self.n_actions)
-
-        # Value estimates for new actions (start at 0)
-        if hasattr(self, "value_estimates") and self.value_estimates is not None:
-            self.value_estimates = torch.cat(
-                [self.value_estimates, torch.zeros(n_new, device=self.device)], dim=0
-            )
 
         # RPE traces for new actions (only if rpe_trace is enabled)
         if self.rpe_trace is not None:
@@ -2204,7 +2156,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - D1 and D2 have different post-synaptic spike patterns
         - Dopamine modulation (applied later) differs between pathways
 
-        Phase 1 Enhancement: Multi-timescale eligibility (optional)
+        Multi-timescale eligibility (optional)
         When use_multiscale_eligibility is enabled:
         - Fast traces (~500ms): Immediate coincidence detection
         - Slow traces (~60s): Consolidated long-term tags
@@ -2508,7 +2460,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     def _consolidate_inputs(self, inputs: SourceOutputs) -> torch.Tensor:
         """Convert Dict inputs to concatenated tensor for internal processing.
 
-        **Phase 2 Method**: Applies synaptic weights per-source and concatenates.
+        Applies synaptic weights per-source and concatenates.
         This preserves the internal logic which expects concatenated inputs.
 
         Args:
@@ -2638,7 +2590,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     ) -> torch.Tensor:
         """Process input and select action using SEPARATE D1/D2 populations.
 
-        **Phase 2 Changes**: Now accepts Dict[str, Tensor] instead of concatenated tensor.
+        Now accepts Dict[str, Tensor] instead of concatenated tensor.
         Synaptic weights are applied per-source at target dendrites (biologically accurate).
 
         BIOLOGICAL ARCHITECTURE:
@@ -2909,7 +2861,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Apply learning per source-pathway using eligibility traces
         # Three-factor rule: Δw = eligibility × dopamine × learning_rate
-        # Phase 1 Enhancement: Combined eligibility = fast + α*slow (if multi-timescale enabled)
+        # Combined eligibility = fast + α*slow (if multi-timescale enabled)
         d1_total_ltp = 0.0
         d1_total_ltd = 0.0
         d2_total_ltp = 0.0
@@ -2919,7 +2871,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, "_eligibility_d1"):
             for source_key, eligibility in self._eligibility_d1.items():
                 if source_key in self.synaptic_weights:
-                    # Phase 1: Use combined eligibility if multi-timescale enabled
+                    # Use combined eligibility if multi-timescale enabled
                     if self.config.use_multiscale_eligibility:
                         # Combined eligibility = fast + α*slow
                         # Biology: Fast traces for immediate learning, slow traces for delayed reward
@@ -2955,7 +2907,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, "_eligibility_d2"):
             for source_key, eligibility in self._eligibility_d2.items():
                 if source_key in self.synaptic_weights:
-                    # Phase 1: Use combined eligibility if multi-timescale enabled
+                    # Use combined eligibility if multi-timescale enabled
                     if self.config.use_multiscale_eligibility:
                         # Combined eligibility = fast + α*slow
                         fast_trace = self._eligibility_d2_fast.get(source_key, eligibility)
@@ -3013,12 +2965,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         Returns:
             Metrics dict with weight changes
         """
-        # Update value estimate for counterfactual action
-        if self.value_estimates is not None and 0 <= action < self.n_actions:
-            cf_lr = self.config.rpe_learning_rate * counterfactual_scale
-            self.value_estimates[action] = self.value_estimates[action] + cf_lr * (
-                reward - self.value_estimates[action]
-            )
+        # No explicit value_estimates to update (emergent from D1-D2)
+        # Counterfactual learning handled by eligibility trace modulation only
 
         # Delegate to learning manager
         # Pass the actually chosen action and the counterfactual action as alternate
@@ -3083,7 +3031,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.d1_pathway.reset_state()
         self.d2_pathway.reset_state()
 
-        # Reset multi-source eligibility traces (Phase 3)
+        # Reset multi-source eligibility traces
         if hasattr(self, "_eligibility_d1"):
             for key in self._eligibility_d1:
                 self._eligibility_d1[key].zero_()
@@ -3265,11 +3213,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             ),
         }
 
-        # Value estimates (if RPE enabled)
-        value_estimates = None
-        if self.value_estimates is not None:
-            value_estimates = self.value_estimates.tolist()
-
         # Exploration state - from state_tracker
         exploration_state = {
             "exploring": self.state_tracker.exploring,
@@ -3301,8 +3244,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             # Exploration
             "exploration": exploration_state,
             "ucb": ucb_state,
-            # Value estimates
-            "value_estimates": value_estimates,
         }
 
         # Return as dict (DiagnosticsDict is a TypedDict, not a class)
@@ -3427,12 +3368,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             last_uncertainty=self.state_tracker._last_uncertainty,
             last_exploration_prob=self.state_tracker._last_exploration_prob,
             exploration_manager_state=exploration_manager_state,  # type: ignore[arg-type]
-            # Value/RPE (optional)
-            value_estimates=(
-                self.value_estimates.detach().clone()
-                if hasattr(self, "value_estimates") and self.value_estimates is not None
-                else None
-            ),
+            # RPE tracking (no value_estimates)
             last_rpe=(
                 self.state_tracker._last_rpe if hasattr(self.state_tracker, "_last_rpe") else None
             ),
@@ -3477,7 +3413,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 else False
             ),
             homeostasis_manager_state=homeostasis_manager_state,
-            # STP state (per-source, Phase 5)
+            # STP state (per-source)
             stp_modules_state=(
                 {
                     key: {
@@ -3573,7 +3509,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if state.last_expected is not None:
             self.state_tracker._last_expected = state.last_expected
 
-        # Restore STP state (per-source, Phase 5)
+        # Restore STP state (per-source)
         if (
             hasattr(state, "stp_modules_state")
             and state.stp_modules_state
