@@ -645,7 +645,9 @@ class TrisynapticHippocampus(NeuralRegion):
         self._ca3_ca1_delay_buffer: Optional[torch.Tensor] = None
         self._ca3_ca1_delay_ptr: int = 0
 
-        # Episode buffer for sleep consolidation
+        # Episode buffer for sleep consolidation - DEPRECATED (Phase 4)
+        # Memory is now stored in CA3 synaptic weights via Hebbian learning
+        # Kept for backward compatibility during Phase 4 migration
         self.episode_buffer: List[Episode] = []
 
         # =====================================================================
@@ -1479,9 +1481,9 @@ class TrisynapticHippocampus(NeuralRegion):
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
             - Consolidation mode: Spontaneous CA3→CA1 replay during sleep (sharp-wave ripples)
         """
-        assert isinstance(inputs, dict), (
-            f"TrisynapticHippocampus.forward: inputs must be a dict mapping source names to spike tensors, got {type(inputs)}"
-        )
+        assert isinstance(
+            inputs, dict
+        ), f"TrisynapticHippocampus.forward: inputs must be a dict mapping source names to spike tensors, got {type(inputs)}"
 
         # =====================================================================
         # CONSOLIDATION MODE: Spontaneous CA3→CA1 Replay (Sharp-Wave Ripples)
@@ -2772,6 +2774,19 @@ class TrisynapticHippocampus(NeuralRegion):
     ) -> None:
         """Store an episode in episodic memory for later replay.
 
+        **DEPRECATED (Phase 4)**: This method is deprecated as part of the emergent
+        RL migration. Memory storage now happens automatically through CA3 Hebbian
+        learning during forward() passes. No explicit episode storage needed!
+
+        **Migration Path**:
+        - OLD: `hippocampus.store_episode(state=..., action=..., reward=...)`
+        - NEW: Just run `hippocampus.forward(inputs)` - Hebbian learning stores patterns
+
+        Pattern storage is now emergent:
+        - CA3 recurrent weights store patterns (autoassociative memory)
+        - Synaptic tags mark recently-active synapses (Phase 1)
+        - Dopamine gates consolidation (three-factor learning)
+
         Priority is computed based on reward magnitude and correctness.
 
         **AUTOMATIC HER INTEGRATION**: If use_her=True and goal/achieved_goal
@@ -2792,6 +2807,16 @@ class TrisynapticHippocampus(NeuralRegion):
             achieved_goal: (HER) What was actually achieved (CA1 output)
             done: (HER) Whether episode terminated
         """
+        import warnings
+
+        warnings.warn(
+            "store_episode() is deprecated (Phase 4). "
+            "Memory storage now happens automatically via CA3 Hebbian learning during forward(). "
+            "See temp/emergent_rl_migration.md Phase 4 for migration guide.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         # Get current CA3 pattern from state (if available)
         ca3_pattern = None
         if self.state.ca3_spikes is not None:
@@ -2855,6 +2880,19 @@ class TrisynapticHippocampus(NeuralRegion):
     ) -> List[Dict[str, Any]]:
         """Retrieve K most similar past experiences from episodic memory.
 
+        **DEPRECATED (Phase 4)**: This method is deprecated as part of the emergent
+        RL migration. Pattern retrieval now happens through CA3 attractor dynamics,
+        not similarity search in an episode buffer.
+
+        **Migration Path**:
+        - OLD: `results = hippocampus.retrieve_similar(query_state=partial_cue, k=5)`
+        - NEW: `output = hippocampus.forward({"ec": partial_cue})  # CA3 attractor completes pattern`
+
+        Pattern completion is now emergent:
+        - CA3 attractor dynamics complete partial cues
+        - Recurrent connections retrieve full patterns
+        - No explicit similarity computation needed
+
         For Phase 2 model-based planning: provides outcome predictions based
         on similar past experiences. Uses pattern completion capability of
         hippocampus to predict what will happen next.
@@ -2883,6 +2921,16 @@ class TrisynapticHippocampus(NeuralRegion):
             Uses cosine similarity in state space. For more sophisticated
             retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
         """
+        import warnings
+
+        warnings.warn(
+            "retrieve_similar() is deprecated (Phase 4). "
+            "Pattern retrieval now uses CA3 attractor dynamics via forward(). "
+            "See temp/emergent_rl_migration.md Phase 4 for migration guide.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         results: List[Dict[str, Any]] = self.memory.retrieve_memories(  # type: ignore[attr-defined]
             query_state=query_state,
             query_action=query_action,

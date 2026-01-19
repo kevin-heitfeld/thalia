@@ -851,17 +851,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.homeostasis = None
 
         # =====================================================================
-        # TD(λ) - MULTI-STEP CREDIT ASSIGNMENT (Phase 1 Enhancement)
-        # =====================================================================
-        # TD(λ) extends temporal credit assignment from ~1 second to 5-10 seconds
-        # by combining eligibility traces with multi-step returns.
-        #
-        # TD(λ) REMOVED in Phase 3 (Emergent RL Migration)
-        # Striatum now uses pure three-factor learning (STDP + eligibility + dopamine)
-        # Multi-step credit assignment emerges from eligibility trace dynamics, not TD errors
-        # See: docs/design/emergent_rl_migration.md
-
-        # =====================================================================
         # SHORT-TERM PLASTICITY (STP)
         # =====================================================================
         # Initialize STP modules for cortical and thalamic input pathways.
@@ -1642,7 +1631,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         state_2d_d1 = {
             "d1_eligibility": self.d1_pathway.eligibility,
         }
-        # TD(λ) removed in Phase 3 - no traces to save
 
         # Filter out None values before expansion
         state_2d_d1 = {k: v for k, v in state_2d_d1.items() if v is not None}
@@ -1651,7 +1639,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
         if "d1_eligibility" in expanded_2d_d1:
             self.d1_pathway.eligibility = expanded_2d_d1["d1_eligibility"]
-        # TD(λ) removed in Phase 3 - no traces to restore
 
         # Expand multi-source D1 eligibility traces
         if hasattr(self, "_eligibility_d1"):
@@ -1664,7 +1651,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         state_2d_d2 = {
             "d2_eligibility": self.d2_pathway.eligibility,
         }
-        # TD(λ) removed in Phase 3 - no traces to save
 
         # Filter out None values before expansion
         state_2d_d2 = {k: v for k, v in state_2d_d2.items() if v is not None}
@@ -1673,7 +1659,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
         if "d2_eligibility" in expanded_2d_d2:
             self.d2_pathway.eligibility = expanded_2d_d2["d2_eligibility"]
-        # TD(λ) removed in Phase 3 - no traces to restore
 
         # Expand multi-source D2 eligibility traces
         if hasattr(self, "_eligibility_d2"):
@@ -2034,14 +2019,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             for src in unique_sources
         )
 
-        # TD(λ) removed in Phase 3 - no traces to expand
-
-        # Grow STP modules for this source (Phase 5)
+        # Grow STP modules for this source
         if self.config.stp_enabled:
             # Grow D1 STP module
             if d1_key in self.stp_modules:
                 # STP modules need to expand n_pre dimension
-                # Note: ShortTermPlasticity doesn't have a grow method, so recreate
+                # NOTE: ShortTermPlasticity doesn't have a grow method, so recreate
                 old_stp = self.stp_modules[d1_key]
                 new_stp_d1 = ShortTermPlasticity(
                     n_pre=new_size,
@@ -2616,37 +2599,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         return current
 
-    def _apply(self, fn, recurse: bool = True):
-        """Override _apply to handle non-parameter tensors in TD-lambda learners.
-
-        This is called by .to(), .cpu(), .cuda(), etc. to transfer all tensors.
-        We need to explicitly transfer TD-lambda traces since they're not nn.Parameters.
-
-        Args:
-            fn: Function to apply (e.g., lambda t: t.cuda())
-            recurse: Whether to apply recursively (inherited from nn.Module)
-
-        Returns:
-            Self after applying function
-        """
-        # Apply to all nn.Module parameters and buffers
-        super()._apply(fn, recurse)
-
-        # Transfer TD-lambda learners (not nn.Modules, so need manual transfer)
-        if hasattr(self, "td_lambda_d1") and self.td_lambda_d1 is not None:
-            # Extract device from function by applying to a dummy tensor
-            dummy = torch.zeros(1)
-            new_device = fn(dummy).device
-            self.td_lambda_d1.to(new_device)
-
-        if hasattr(self, "td_lambda_d2") and self.td_lambda_d2 is not None:
-            # Extract device from function by applying to a dummy tensor
-            dummy = torch.zeros(1)
-            new_device = fn(dummy).device
-            self.td_lambda_d2.to(new_device)
-
-        return self
-
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update temporal parameters when brain timestep changes.
 
@@ -2915,28 +2867,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Pass inputs dict to eligibility update (multi-source aware)
         self._update_d1_d2_eligibility_all(inputs, d1_spikes, d2_spikes)
 
-        # UPDATE TD(λ) ELIGIBILITY (if enabled)
-        # TD(λ) traces accumulate with factor (γλ) instead of simple decay,
-        # enabling credit assignment over longer delays (5-10 seconds)
-        if self.td_lambda_d1 is not None:
-            # Accumulate all source spikes (TD-lambda needs combined input)
-            combined_input = torch.zeros(self.input_size, device=self.device)
-            offset = 0
-            for source_name, source_spikes in inputs.items():
-                source_size = source_spikes.shape[0]
-                combined_input[offset : offset + source_size] = source_spikes.float()
-                offset += source_size
-
-            # Update TD(λ) eligibility for D1 pathway
-            # Note: We update for ALL neurons here; masking to chosen action
-            # happens in deliver_reward() using last_action
-            d1_gradient = torch.outer(d1_spikes.float(), combined_input)
-            self.td_lambda_d1.traces.update(d1_gradient)
-
-            # Update TD(λ) eligibility for D2 pathway
-            d2_gradient = torch.outer(d2_spikes.float(), combined_input)
-            self.td_lambda_d2.traces.update(d2_gradient)  # type: ignore[union-attr]
-
         # Update recent spikes and trial activity via state_tracker
         self.state_tracker.update_recent_spikes(d1_spikes, d2_spikes, decay=0.9)
         self.state_tracker.update_trial_activity(d1_spikes, d2_spikes)
@@ -3160,11 +3090,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if hasattr(self, "_eligibility_d2"):
             for key in self._eligibility_d2:
                 self._eligibility_d2[key].zero_()
-
-        # Reset TD(λ) traces if enabled
-        if self.td_lambda_d1 is not None:
-            self.td_lambda_d1.reset_episode()  # type: ignore[union-attr]
-            self.td_lambda_d2.reset_episode()  # type: ignore[union-attr]
 
         # Reset D1/D2 pathway delay buffers
         # Keep buffers allocated (for efficiency) but reset pointers to beginning
@@ -3411,7 +3336,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             StriatumState instance with all current state
 
         Note:
-            This is the NEW state management API (Phase 3.2).
+            This is the NEW state management API.
             For legacy checkpoint format, use get_full_state().
         """
         # Get D1/D2 pathway states (only if pathways are properly linked with actual weights)
@@ -3588,7 +3513,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             state: StriatumState instance to restore
 
         Note:
-            This is the NEW state management API (Phase 3.2).
+            This is the NEW state management API.
             For legacy checkpoint format, use load_full_state().
         """
         # Restore D1/D2 pathway states

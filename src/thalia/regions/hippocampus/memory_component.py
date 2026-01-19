@@ -1,7 +1,31 @@
 """
-Hippocampus Memory Component
+Hippocampus Memory Component - DEPRECATED (Phase 4: Emergent RL Migration)
 
-Manages episodic memory buffer for experience storage, retrieval, and prioritized sampling.
+**THIS MODULE IS DEPRECATED AND WILL BE REMOVED**
+
+As of Phase 4 of the emergent RL migration (January 19, 2026), explicit episode
+buffers are being removed in favor of biologically-accurate memory storage:
+
+**OLD (Explicit Episode Buffer)**:
+- Episodes stored in Python list
+- Explicit Episode dataclass with metadata
+- Similarity-based retrieval
+
+**NEW (Emergent Memory)**:
+- Memory IS the synaptic weights (CA3 recurrent connections)
+- Pattern storage via Hebbian learning during forward()
+- Pattern retrieval via CA3 attractor dynamics
+- Priority via synaptic tagging (Phase 1)
+
+**Migration Path**:
+If your code uses:
+- `Episode` dataclass → Remove (no longer needed)
+- `hippocampus.memory.episode_buffer` → Use CA3 weights directly
+- `store_episode()` → Just run `forward()`, Hebbian learning stores patterns
+- `retrieve_memories()` → Use `forward()` with partial cue, CA3 completes pattern
+
+See: `temp/emergent_rl_migration.md` Phase 4 for details.
+
 Standardized component following the region_components pattern.
 """
 
@@ -9,6 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+import warnings
 
 import torch
 
@@ -17,10 +42,24 @@ from thalia.core.region_components import MemoryComponent
 from thalia.managers.base_manager import ManagerContext
 from thalia.utils.core_utils import cosine_similarity_safe
 
+# Emit deprecation warning when module is imported
+warnings.warn(
+    "HippocampusMemoryComponent is deprecated as of Phase 4 (Emergent RL Migration). "
+    "Memory storage now uses CA3 synaptic weights (Hebbian learning), not explicit episodes. "
+    "See temp/emergent_rl_migration.md for migration guide.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 @dataclass
 class Episode:
     """An episode stored in episodic memory for replay.
+
+    **DEPRECATED**: This dataclass is deprecated as of Phase 4 (Emergent RL Migration).
+    Memory storage now uses CA3 synaptic weights, not explicit Episode objects.
+
+    See temp/emergent_rl_migration.md Phase 4 for migration details.
 
     Episodes are stored with priority for experience replay,
     where more important episodes (high reward, correct trials)
@@ -53,6 +92,19 @@ class Episode:
 
 class HippocampusMemoryComponent(MemoryComponent):
     """Manages episodic memory buffer for hippocampus.
+
+    **DEPRECATED**: This class is deprecated as of Phase 4 (Emergent RL Migration).
+
+    Memory storage now uses CA3 synaptic weights (Hebbian learning during forward()),
+    not explicit episode buffers. Pattern retrieval uses CA3 attractor dynamics,
+    not similarity search.
+
+    **Migration Guide**:
+    - Pattern storage: Just run `hippocampus.forward()` - Hebbian learning stores patterns
+    - Pattern retrieval: Run `forward()` with partial cue - CA3 attractor completes it
+    - Priority: Use synaptic tagging (Phase 1) - tags mark recently-active synapses
+
+    See `temp/emergent_rl_migration.md` Phase 4 for detailed migration steps.
 
     This component implements the episodic memory buffer that stores experiences
     for offline replay, pattern completion, and consolidation to cortex.
@@ -121,12 +173,23 @@ class HippocampusMemoryComponent(MemoryComponent):
     def __init__(self, config: HippocampusConfig, context: ManagerContext):
         """Initialize hippocampus memory component.
 
+        **DEPRECATED**: Memory component is deprecated (Phase 4).
+        Use CA3 synaptic weights for storage instead.
+
         Args:
             config: Hippocampus configuration
             context: Manager context (device, dimensions, etc.)
         """
         super().__init__(config, context)
         self.episode_buffer: List[Episode] = []
+
+        # Emit runtime warning
+        warnings.warn(
+            "HippocampusMemoryComponent.__init__() called - this component is deprecated. "
+            "Memory storage now uses CA3 synaptic weights (Hebbian learning).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def store_memory(
         self,
