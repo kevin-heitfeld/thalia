@@ -167,7 +167,6 @@ from thalia.memory.consolidation import (
     MemoryPressureDetector,
     SleepStageController,
 )
-from thalia.regions.prefrontal import Goal
 from thalia.training.curriculum.curriculum import (
     InterleavedCurriculumSampler,
     SpacedRepetitionScheduler,
@@ -181,6 +180,7 @@ from thalia.training.curriculum.noise_scheduler import (
 from thalia.training.curriculum.safety_system import CurriculumSafetySystem
 from thalia.training.curriculum.stage_monitoring import InterventionType
 from thalia.training.visualization.live_diagnostics import LiveDiagnostics
+
 
 # ============================================================================
 # Cognitive Load Monitoring
@@ -813,9 +813,10 @@ class CurriculumTrainer:
             if self.verbose:
                 print(f"🛡️ Safety system active for Stage {stage.value}")
 
+        # TODO Phase 2: Replace goal hierarchies with example-driven training
         # Setup goal hierarchies for stages that need them (3+)
-        if stage in [CurriculumStage.READING, CurriculumStage.ABSTRACT]:
-            self._setup_stage_goal_hierarchies(stage)
+        # if stage in [CurriculumStage.READING, CurriculumStage.ABSTRACT]:
+        #     self._setup_stage_goal_hierarchies(stage)
 
         # Initialize result tracking
         result = TrainingResult(stage=stage, success=False)

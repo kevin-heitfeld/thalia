@@ -63,18 +63,14 @@ When to Use:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
-from thalia.config.region_configs import (
-    GoalHierarchyConfig,
-    HyperbolicDiscountingConfig,
-    PrefrontalConfig,
-)
+from thalia.config.region_configs import PrefrontalConfig
 from thalia.constants.learning import WM_NOISE_STD_DEFAULT
 from thalia.constants.neuromodulation import DA_BASELINE_STANDARD, compute_ne_gain
 from thalia.constants.oscillator import (
@@ -101,11 +97,6 @@ from thalia.utils.oscillator_utils import (
 
 from .checkpoint_manager import PrefrontalCheckpointManager
 from .goal_emergence import EmergentGoalSystem
-from .hierarchy import (
-    Goal,
-    GoalHierarchyManager,
-    HyperbolicDiscounter,
-)
 
 
 @dataclass
@@ -601,13 +592,10 @@ class Prefrontal(NeuralRegion):
         self.to(self.device)
 
         # =====================================================================
-        # PHASE 3: EMERGENT HIERARCHICAL GOALS
+        # EMERGENT HIERARCHICAL GOALS (Biologically Plausible)
         # =====================================================================
-        # Emergent goals: Goals emerge from WM patterns, not explicit objects
-        # Replaces old GoalHierarchyManager with biologically-plausible dynamics
+        # Goals emerge from WM patterns - no symbolic Goal objects
         self.emergent_goals: Optional[EmergentGoalSystem] = None
-        self.goal_manager: Optional[GoalHierarchyManager] = None  # DEPRECATED - to be removed
-        self.discounter: Optional[HyperbolicDiscounter] = None  # DEPRECATED - to be removed
 
         if config.use_hierarchical_goals:
             # Split neurons into abstract (rostral PFC) and concrete (caudal PFC)
@@ -621,15 +609,6 @@ class Prefrontal(NeuralRegion):
                 n_concrete=n_concrete,
                 device=str(self.device),
             )
-
-            # Keep old system temporarily for backward compatibility during migration
-            gh_config = config.goal_hierarchy_config or GoalHierarchyConfig()
-            self.goal_manager = GoalHierarchyManager(gh_config)
-
-            # Hyperbolic discounting (DEPRECATED)
-            if config.use_hyperbolic_discounting:
-                hd_config = config.hyperbolic_config or HyperbolicDiscountingConfig()
-                self.discounter = HyperbolicDiscounter(hd_config)
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create conductance-based LIF neurons with slow dynamics and SFA.
@@ -1279,146 +1258,6 @@ class Prefrontal(NeuralRegion):
             },
             custom_metrics=custom,
         )
-
-    # =========================================================================
-    # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
-    # =========================================================================
-
-    def set_goal_hierarchy(self, root_goal: Goal) -> None:
-        """
-        Set the top-level goal for hierarchical planning.
-
-        Phase 3 functionality: Enables goal decomposition and hierarchical control.
-
-        Args:
-            root_goal: Top-level goal to achieve
-
-        Raises:
-            ValueError: If hierarchical goals not enabled
-
-        Example:
-            essay_goal = Goal(goal_id=0, name="write_essay", level=3)
-            pfc.set_goal_hierarchy(essay_goal)
-        """
-        if self.goal_manager is None:
-            raise ConfigurationError(
-                "Hierarchical goals not enabled. Set use_hierarchical_goals=True in config."
-            )
-        self.goal_manager.set_root_goal(root_goal)
-
-    def push_goal(self, goal: Goal) -> None:
-        """
-        Push a goal onto the active goal stack.
-
-        Phase 3 functionality: Activates a goal for pursuit.
-
-        Args:
-            goal: Goal to activate
-
-        Raises:
-            ValueError: If hierarchical goals not enabled
-
-        Example:
-            subgoal = Goal(goal_id=1, name="research_topic", level=2)
-            pfc.push_goal(subgoal)
-        """
-        if self.goal_manager is None:
-            raise ConfigurationError("Hierarchical goals not enabled.")
-        self.goal_manager.push_goal(goal)
-
-    def get_active_goals(self) -> List[Goal]:
-        """
-        Get list of currently active goals.
-
-        Phase 3 functionality: Returns all goals in the working memory stack.
-
-        Returns:
-            List of active goals (empty list if none or manager disabled)
-
-        Example:
-            goals = pfc.get_active_goals()
-            print(f"Working on {len(goals)} goals")
-        """
-        if self.goal_manager is None:
-            return []
-        return self.goal_manager.active_goals.copy()
-
-    def decompose_current_goal(self, state: torch.Tensor) -> List[Goal]:
-        """
-        Decompose current goal into subgoals based on state.
-
-        Phase 3 functionality: Enables hierarchical planning.
-
-        Args:
-            state: Current state for context-dependent decomposition
-
-        Returns:
-            List of subgoals (empty if no current goal or manager disabled)
-
-        Example:
-            state = pfc.state.spikes.float()
-            subgoals = pfc.decompose_current_goal(state)
-            for sg in subgoals:
-                pfc.push_goal(sg)
-        """
-        if self.goal_manager is None:
-            return []
-
-        current_goal = self.goal_manager.get_current_goal()
-        if current_goal is None:
-            return []
-
-        return self.goal_manager.decompose_goal(current_goal, state)
-
-    def update_cognitive_load(self, load: float) -> None:
-        """
-        Update cognitive load (affects temporal discounting).
-
-        Phase 3 functionality: Higher load increases impulsivity (higher k).
-
-        Args:
-            load: Cognitive load level (0-1)
-
-        Example:
-            # High working memory load
-            pfc.update_cognitive_load(0.8)
-            # Now temporal discounting will be steeper (more impulsive)
-        """
-        if self.discounter is not None:
-            self.discounter.update_context(cognitive_load=load)
-
-    def evaluate_delayed_reward(self, reward: float, delay: int) -> float:
-        """
-        Discount delayed reward (hyperbolic or exponential).
-
-        Phase 3 functionality: If hyperbolic discounting enabled, uses
-        context-dependent k parameter. Otherwise falls back to exponential.
-
-        Args:
-            reward: Reward magnitude
-            delay: Delay in timesteps
-
-        Returns:
-            Discounted value of delayed reward
-
-        Example:
-            # Under low cognitive load, patient
-            pfc.update_cognitive_load(0.1)
-            v1 = pfc.evaluate_delayed_reward(10.0, 100)
-
-            # Under high cognitive load, impulsive
-            pfc.update_cognitive_load(0.9)
-            v2 = pfc.evaluate_delayed_reward(10.0, 100)
-
-            assert v2 < v1  # More discounting when loaded
-        """
-        if self.discounter is not None:
-            # Hyperbolic discounting with context
-            return self.discounter.discount(reward, delay)
-        else:
-            # Fallback: Exponential discounting
-            gamma = 0.99
-            return reward * (gamma**delay)
 
     # =========================================================================
     # EMERGENT GOAL SYSTEM (NEW - Biologically Plausible)
