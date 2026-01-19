@@ -2863,8 +2863,31 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         correct = reward > 0
         self.exploration.update_performance(reward, correct)
 
+        # Get last action for action-specific learning
+        # Only the selected action's neurons should have their weights updated
+        last_action = self.state_tracker.last_action
+        if last_action is None:
+            # No action was selected, cannot apply learning
+            return {
+                "d1_ltp": 0.0,
+                "d1_ltd": 0.0,
+                "d2_ltp": 0.0,
+                "d2_ltd": 0.0,
+                "net_change": 0.0,
+                "dopamine": da_level,
+            }
+
+        # Create action mask for selected action's neurons
+        # Only these neurons participated in the action, so only their synapses should learn
+        action_mask_d1 = torch.zeros(self.d1_size, 1, device=self.device)
+        action_mask_d2 = torch.zeros(self.d2_size, 1, device=self.device)
+
+        action_indices = self._get_action_population_indices(last_action)
+        action_mask_d1[action_indices, :] = 1.0
+        action_mask_d2[action_indices, :] = 1.0
+
         # Apply learning per source-pathway using eligibility traces
-        # Three-factor rule: Δw = eligibility × dopamine × learning_rate
+        # Three-factor rule: Δw = eligibility × dopamine × learning_rate × ACTION_MASK
         # Combined eligibility = fast + α*slow (if multi-timescale enabled)
         d1_total_ltp = 0.0
         d1_total_ltd = 0.0
@@ -2890,8 +2913,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         # Single-timescale mode: use standard eligibility
                         combined_eligibility = eligibility
 
+                    # CRITICAL: Apply action mask to only update selected action's neurons
+                    masked_eligibility = combined_eligibility * action_mask_d1
+
                     # Compute weight update: Δw = eligibility × dopamine × lr
-                    weight_update = combined_eligibility * da_level * self.config.stdp_lr
+                    weight_update = masked_eligibility * da_level * self.config.stdp_lr
 
                     # Apply update with weight bounds
                     new_weights = torch.clamp(
@@ -2925,8 +2951,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         # Single-timescale mode: use standard eligibility
                         combined_eligibility = eligibility
 
+                    # CRITICAL: Apply action mask to only update selected action's neurons
+                    masked_eligibility = combined_eligibility * action_mask_d2
+
                     # Compute weight update with INVERTED dopamine
-                    weight_update = combined_eligibility * (-da_level) * self.config.stdp_lr
+                    weight_update = masked_eligibility * (-da_level) * self.config.stdp_lr
 
                     # Apply update with weight bounds
                     new_weights = torch.clamp(
