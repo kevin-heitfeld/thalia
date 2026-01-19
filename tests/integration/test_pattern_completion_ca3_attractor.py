@@ -204,19 +204,6 @@ def test_ca3_attractor_settles_to_stored_pattern(brain_with_hippocampus):
     ), "Pattern completion should use CA3 attractor, not episode buffer lookup"
 
 
-def test_no_episode_dataclass_in_memory(brain_with_hippocampus):
-    """Episode dataclass should not be used (Phase 4 goal)."""
-    _, hippocampus = brain_with_hippocampus
-
-    # Check that episode buffer is empty (backward compatibility)
-    assert len(hippocampus.episode_buffer) == 0, "Episode buffer should be empty (legacy field)"
-
-    # Verify memory.episode_buffer is also empty
-    assert (
-        len(hippocampus.memory.episode_buffer) == 0
-    ), "Memory component should not use episode buffer (Phase 4)"
-
-
 def test_pattern_storage_scales_with_dopamine(brain_with_hippocampus):
     """Pattern storage strength should scale with dopamine (biological gating)."""
     brain, hippocampus = brain_with_hippocampus

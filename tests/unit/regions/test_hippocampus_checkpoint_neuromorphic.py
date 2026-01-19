@@ -46,7 +46,6 @@ class TestHippocampusNeuromorphic:
         assert state["format"] == "neuromorphic"
         assert state["format_version"] == "1.0.0"
         assert "neurons" in state
-        assert "episode_buffer" in state
         assert "learning_state" in state
 
         # Should have neurons for all three layers

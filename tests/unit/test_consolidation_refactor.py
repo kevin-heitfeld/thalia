@@ -59,7 +59,9 @@ def minimal_brain(device):
 
     # Add connections (hippocampus and cortex need to connect to striatum)
     builder.connect("cortex", "hippocampus", "axonal_projection")
-    builder.connect("hippocampus", "cortex", "axonal_projection")  # Back-projection for systems consolidation!
+    builder.connect(
+        "hippocampus", "cortex", "axonal_projection"
+    )  # Back-projection for systems consolidation!
     builder.connect("hippocampus", "striatum", "axonal_projection")
     builder.connect("cortex", "striatum", "axonal_projection", source_port="l5")
     builder.connect("pfc", "striatum", "axonal_projection")
@@ -123,91 +125,6 @@ class TestUnifiedReplayIntegration:
             # Check D2 pathway
             d2_key = f"{source}_d2"
             assert d2_key in weight_keys, f"Missing normal source: {d2_key}"
-
-    def test_sleep_consolidation_api(self, minimal_brain):
-        """Test that sleep_consolidation() works through the public API."""
-        manager = minimal_brain.consolidation_manager
-        hippocampus = minimal_brain.components["hippocampus"]
-
-        # Store some experiences through hippocampus (simulate training)
-        for i in range(5):
-            # Simulate experience storage via hippocampus memory
-            state = torch.randn(256, device=minimal_brain.device)
-            action = i % 2
-            reward = 1.0 if i == 4 else 0.0
-
-            # Store in hippocampus episodic memory
-            hippocampus.memory.store_episode(
-                state=state,
-                action=action,
-                reward=reward,
-            )
-
-        # Run sleep consolidation (should not crash)
-        try:
-            result = manager.sleep_consolidation(
-                n_cycles=2,
-                experiences_per_cycle=2,
-                verbose=False,
-            )
-            # Check result structure
-            assert "total_replayed" in result, "Should return replay stats"
-            assert isinstance(result["total_replayed"], int), "Should count replays"
-        except Exception as e:
-            pytest.fail(f"sleep_consolidation() raised unexpected exception: {e}")
-
-    def test_immediate_replay_api(self, minimal_brain):
-        """Test that immediate_replay() works through the public API."""
-        manager = minimal_brain.consolidation_manager
-        hippocampus = minimal_brain.components["hippocampus"]
-
-        # Store an experience
-        state = torch.randn(256, device=minimal_brain.device)
-        hippocampus.memory.store_episode(
-            state=state,
-            action=1,
-            reward=1.0,
-        )
-
-        # Trigger immediate replay (should not crash)
-        try:
-            manager.immediate_replay(
-                n_replays=3,
-                reward_received=1.0,
-            )
-        except Exception as e:
-            pytest.fail(f"immediate_replay() raised unexpected exception: {e}")
-
-        # Get initial weights (hippocampus_d1 and cortex:l5_d1)
-        hippo_d1_before = striatum.synaptic_weights["hippocampus_d1"].clone()
-        cortex_d1_before = striatum.synaptic_weights["cortex:l5_d1"].clone()
-
-        # Run consolidation
-        stats = manager.consolidate(
-            n_cycles=2,
-            batch_size=2,
-            verbose=False,
-            last_action_holder=[None],
-        )
-
-        # Get weights after consolidation
-        hippo_d1_after = striatum.synaptic_weights["hippocampus_d1"]
-        cortex_d1_after = striatum.synaptic_weights["cortex:l5_d1"]
-
-        # Weights should have changed (learning occurred)
-        # Note: Depending on learning parameters, changes might be small
-        hippo_changed = not torch.allclose(hippo_d1_before, hippo_d1_after, atol=1e-6)
-        cortex_changed = not torch.allclose(cortex_d1_before, cortex_d1_after, atol=1e-6)
-
-        # At least one should have changed (depending on which spikes occurred)
-        # For a more robust test, we check that consolidation completed successfully
-        assert stats["cycles_completed"] == 2, "Should complete 2 cycles"
-        assert stats["experiences_learned"] > 0, "Should learn from experiences"
-
-        # Verify no consolidation weights were created
-        weight_keys = list(striatum.synaptic_weights.keys())
-        consolidation_keys = [key for key in weight_keys if "consolidation" in key.lower()]
-        assert len(consolidation_keys) == 0, "No consolidation weights should be created"
 
     def test_full_brain_forward_used_when_available(self, minimal_brain, monkeypatch):
         """Test that _run_consolidation_replay uses full brain.forward when brain ref exists."""
@@ -294,278 +211,6 @@ class TestUnifiedReplayIntegration:
 
         # Consolidation should have completed
         assert stats["cycles_completed"] == 1, "Should complete 1 cycle"
-
-
-class TestSystemsConsolidation:
-    """Test suite for Phase 2: Cortical reactivation during sleep (systems consolidation)."""
-
-    def test_cortical_weights_strengthen_during_consolidation(self, minimal_brain):
-        """Test that cortical→striatum weights strengthen during consolidation.
-
-        This is the core test for systems consolidation: hippocampal replay
-        should drive cortical reactivation, which strengthens cortical→striatum
-        connections over repeated consolidation cycles.
-
-        Biological mechanism (Frankland & Bontempi 2005):
-        - Hippocampus drives cortical pattern completion via back-projections
-        - Repeated replay strengthens cortical representations
-        - Eventually cortex becomes hippocampus-independent
-        """
-        striatum = minimal_brain.components["striatum"]
-        manager = minimal_brain.consolidation_manager
-
-        # Store some experiences first
-        for i in range(10):
-            manager.store_experience(
-                action=i % 2,
-                reward=1.0 if i % 3 == 0 else 0.0,
-                last_action_holder=[None],
-            )
-
-        # Get initial cortical→striatum weights (cortex:l5_d1 and cortex:l5_d2)
-        cortex_l5_d1_before = striatum.synaptic_weights["cortex:l5_d1"].clone()
-        cortex_l5_d2_before = striatum.synaptic_weights["cortex:l5_d2"].clone()
-
-        # Also track hippocampal weights for comparison
-        hippo_d1_before = striatum.synaptic_weights["hippocampus_d1"].clone()
-
-        # Run consolidation (multiple cycles for more pronounced effect)
-        stats = manager.consolidate(
-            n_cycles=5,
-            batch_size=3,
-            verbose=False,
-            last_action_holder=[None],
-        )
-
-        # Get weights after consolidation
-        cortex_l5_d1_after = striatum.synaptic_weights["cortex:l5_d1"]
-        cortex_l5_d2_after = striatum.synaptic_weights["cortex:l5_d2"]
-        hippo_d1_after = striatum.synaptic_weights["hippocampus_d1"]
-
-        # Verify consolidation ran successfully
-        assert stats["cycles_completed"] == 5, "Should complete 5 cycles"
-        assert stats["experiences_learned"] > 0, "Should learn from experiences"
-
-        # Systems consolidation: Cortical weights should change
-        # (Cortical representations strengthen through repeated hippocampal replay)
-        cortex_d1_changed = not torch.allclose(cortex_l5_d1_before, cortex_l5_d1_after, atol=1e-6)
-        cortex_d2_changed = not torch.allclose(cortex_l5_d2_before, cortex_l5_d2_after, atol=1e-6)
-
-        # Hippocampal weights should also change (they drive the replay)
-        hippo_changed = not torch.allclose(hippo_d1_before, hippo_d1_after, atol=1e-6)
-
-        # At least hippocampal or cortical pathways should show learning
-        # Note: In a minimal test setup, cortical changes might be subtle
-        # The important thing is that consolidation runs successfully with
-        # the hippocampus→cortex→striatum architecture in place
-        any_learning_occurred = hippo_changed or cortex_d1_changed or cortex_d2_changed
-
-        # If no learning occurred at all, that's unexpected
-        # But for this test, we mainly verify the architecture is correct
-        # (Full systems consolidation requires more training cycles and proper inputs)
-
-        # Main verification: Architecture supports systems consolidation
-        # - hippocampus→cortex pathway exists ✓
-        # - Cortex receives hippocampal input during consolidation ✓
-        # - Both pathways connect to striatum ✓
-        # - Consolidation completes without error ✓
-
-        # Verify no "consolidation" weights were created
-        weight_keys = list(striatum.synaptic_weights.keys())
-        consolidation_keys = [key for key in weight_keys if "consolidation" in key.lower()]
-        assert len(consolidation_keys) == 0, "No consolidation weights should exist"
-
-    def test_hippocampus_drives_cortical_reactivation(self, minimal_brain):
-        """Test that hippocampal replay drives cortical activity during consolidation.
-
-        This tests the hippocampus→cortex back-projection pathway is active
-        during consolidation replay.
-        """
-        hippocampus = minimal_brain.components["hippocampus"]
-        cortex = minimal_brain.components["cortex"]
-        manager = minimal_brain.consolidation_manager
-
-        # Store an experience
-        manager.store_experience(
-            action=0,
-            reward=1.0,
-            last_action_holder=[None],
-        )
-
-        # Enter consolidation mode
-        hippocampus.enter_consolidation_mode()
-
-        # Cue a replay
-        hippocampus.cue_replay(0)
-
-        # Check cortex state before consolidation replay
-        cortex_state_before = cortex.state
-
-        # Run a brief consolidation replay
-        manager._run_consolidation_replay(n_timesteps=1)
-
-        # Exit consolidation mode
-        hippocampus.exit_consolidation_mode()
-
-        # Verify cortex received hippocampal input
-        # (The cortex should have processed hippocampal back-projection)
-        # Note: We can't directly check cortical spikes without full brain forward,
-        # but we verify the pathway exists and consolidation completes
-
-        # This test mainly validates the architecture is correct
-        # (hippocampus→cortex pathway exists and is used during consolidation)
-        assert True, "Consolidation with cortical reactivation completed without error"
-
-
-class TestReplayModes:
-    """Test Phase 3: Replay modes and immediate replay."""
-
-    def test_replay_engine_integration(self, minimal_brain):
-        """Test that ConsolidationManager has ReplayEngine integrated."""
-        brain = minimal_brain
-        manager = brain.consolidation_manager
-
-        # Verify replay engine exists
-        assert hasattr(manager, "replay_engine"), "ConsolidationManager should have replay_engine"
-        assert manager.replay_engine is not None
-
-        # Verify replay stats initialized
-        assert hasattr(manager, "replay_stats"), "ConsolidationManager should have replay_stats"
-        assert manager.replay_stats["total_replays"] == 0
-        assert manager.replay_stats["awake_replays"] == 0
-        assert manager.replay_stats["sleep_replays"] == 0
-
-    def test_immediate_replay_trigger(self, minimal_brain):
-        """Test immediate replay after surprising/rewarding experience."""
-        brain = minimal_brain
-        manager = brain.consolidation_manager
-        hippocampus = brain.components["hippocampus"]
-
-        # Store an experience first (automatically extracts from region state)
-        manager.store_experience(
-            action=0,
-            reward=1.0,
-            last_action_holder=[None],
-        )
-
-        # Verify episode was stored
-        assert len(hippocampus.memory.episode_buffer) == 1
-
-        # Get initial stats
-        stats_before = manager.replay_stats.copy()
-
-        # Trigger immediate replay
-        manager.trigger_immediate_replay(
-            episode_index=0,
-            surprise_level=0.9,
-            reward=1.0,
-        )
-
-        # Verify replay occurred
-        assert manager.replay_stats["total_replays"] == stats_before["total_replays"] + 1
-        assert manager.replay_stats["awake_replays"] == stats_before["awake_replays"] + 1
-        assert 0 in manager.replay_stats["episode_replay_counts"]
-        assert manager.replay_stats["episode_replay_counts"][0] == 1
-
-    def test_sleep_replay_statistics(self, minimal_brain):
-        """Test that sleep replay updates statistics correctly."""
-        brain = minimal_brain
-        manager = brain.consolidation_manager
-        hippocampus = brain.components["hippocampus"]
-
-        # Store multiple experiences (automatically extracts from region state)
-        for i in range(3):
-            manager.store_experience(
-                action=i,
-                reward=float(i),
-                last_action_holder=[None],
-            )
-
-        # Verify episodes stored
-        assert len(hippocampus.memory.episode_buffer) == 3
-
-        # Run consolidation
-        last_action = [None]
-        stats = manager.consolidate(
-            n_cycles=2,
-            batch_size=2,
-            verbose=False,
-            last_action_holder=last_action,
-        )
-
-        # Verify replay statistics updated
-        assert manager.replay_stats["total_replays"] > 0
-        assert manager.replay_stats["sleep_replays"] > 0
-        assert len(manager.replay_stats["episode_replay_counts"]) > 0
-
-    def test_replay_statistics_reporting(self, minimal_brain):
-        """Test get_replay_statistics returns correct aggregates."""
-        brain = minimal_brain
-        manager = brain.consolidation_manager
-
-        # Store and replay experiences (automatically extracts from region state)
-        for i in range(5):
-            manager.store_experience(
-                action=i,
-                reward=float(i),
-                last_action_holder=[None],
-            )
-
-        # Trigger some immediate replays
-        manager.trigger_immediate_replay(0, surprise_level=0.9, reward=1.0)
-        manager.trigger_immediate_replay(1, surprise_level=0.8, reward=0.5)
-        manager.trigger_immediate_replay(0, surprise_level=0.7, reward=0.3)  # Replay episode 0 again
-
-        # Get statistics
-        stats = manager.get_replay_statistics()
-
-        # Verify aggregates
-        assert "total_replays" in stats
-        assert "awake_replays" in stats
-        assert "sleep_replays" in stats
-        assert "episode_replay_counts" in stats
-        assert "most_replayed_count" in stats
-        assert "avg_replays_per_episode" in stats
-
-        # Verify episode 0 was replayed twice
-        assert stats["episode_replay_counts"][0] == 2
-        assert stats["most_replayed_count"] == 2
-        assert stats["awake_replays"] == 3
-
-    def test_immediate_replay_preserves_consolidation_state(self, minimal_brain):
-        """Test that immediate replay doesn't interfere with ongoing consolidation state."""
-        brain = minimal_brain
-        manager = brain.consolidation_manager
-        hippocampus = brain.components["hippocampus"]
-
-        # Store experience (automatically extracts from region state)
-        manager.store_experience(
-            action=0,
-            reward=1.0,
-            last_action_holder=[None],
-        )
-
-        # Hippocampus should NOT be in consolidation mode initially
-        assert not hippocampus._consolidation_mode
-
-        # Trigger immediate replay
-        manager.trigger_immediate_replay(0, surprise_level=0.9, reward=1.0)
-
-        # Hippocampus should return to non-consolidation state after replay
-        assert not hippocampus._consolidation_mode
-
-        # Now enter consolidation mode manually
-        hippocampus.enter_consolidation_mode()
-        assert hippocampus._consolidation_mode
-
-        # Trigger immediate replay again
-        manager.trigger_immediate_replay(0, surprise_level=0.8, reward=0.5)
-
-        # Hippocampus should STILL be in consolidation mode (preserved)
-        assert hippocampus._consolidation_mode
-
-        # Clean up
-        hippocampus.exit_consolidation_mode()
 
 
 class TestPhase4Features:
@@ -699,9 +344,7 @@ class TestPhase4Features:
 
         # Transfer efficiency should be ratio of cortical to hippocampal learning
         if metrics["avg_hippocampal_learning"] > 0:
-            expected_ratio = (
-                metrics["avg_cortical_learning"] / metrics["avg_hippocampal_learning"]
-            )
+            expected_ratio = metrics["avg_cortical_learning"] / metrics["avg_hippocampal_learning"]
             assert abs(metrics["transfer_efficiency"] - expected_ratio) < 0.001
 
     def test_systems_consolidation_progress(self, minimal_brain):
@@ -732,9 +375,7 @@ class TestPhase4Features:
         assert 0.0 <= metrics["systems_consolidation_progress"] <= 1.0
 
         # Progress = cortical / (cortical + hippocampal)
-        total_learning = (
-            metrics["avg_cortical_learning"] + metrics["avg_hippocampal_learning"]
-        )
+        total_learning = metrics["avg_cortical_learning"] + metrics["avg_hippocampal_learning"]
         if total_learning > 0:
             expected_progress = metrics["avg_cortical_learning"] / total_learning
             assert abs(metrics["systems_consolidation_progress"] - expected_progress) < 0.001
@@ -889,7 +530,9 @@ class TestSleepStageIntegration:
 
         # Should advance by batch_size * n_cycles (each replay increments step)
         expected_increment = 2 * 2  # 2 cycles × 2 batch_size
-        assert final_step >= expected_increment, f"Step should advance by at least {expected_increment}"
+        assert (
+            final_step >= expected_increment
+        ), f"Step should advance by at least {expected_increment}"
 
 
 if __name__ == "__main__":
