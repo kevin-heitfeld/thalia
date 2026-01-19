@@ -589,5 +589,177 @@ class TestReplayModes:
         hippocampus.exit_consolidation_mode()
 
 
+class TestPhase4Features:
+    """Test Phase 4: HER integration, quality metrics, and PFC consolidation."""
+
+    def test_her_uses_normal_pathways(self, minimal_brain):
+        """Test that HER relabeling works with normal pathways (not consolidation weights)."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+        striatum = brain.components["striatum"]
+
+        # Store some experiences
+        for i in range(5):
+            manager.store_experience(
+                action=i % 2,
+                reward=float(i % 3 == 0),  # Sparse rewards
+                last_action_holder=[None],
+            )
+
+        # Run consolidation (would use HER if enabled)
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=2,
+            batch_size=3,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Verify NO consolidation weights exist
+        if hasattr(striatum, "synaptic_weights"):
+            assert "consolidation_d1" not in striatum.synaptic_weights
+            assert "consolidation_d2" not in striatum.synaptic_weights
+
+            # Verify normal weights exist
+            assert "hippocampus_d1" in striatum.synaptic_weights
+            assert "hippocampus_d2" in striatum.synaptic_weights
+
+    def test_consolidation_quality_metrics(self, minimal_brain):
+        """Test that consolidation quality metrics are tracked correctly."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store experiences
+        for i in range(5):
+            manager.store_experience(
+                action=i % 2,
+                reward=1.0 if i >= 3 else 0.0,
+                last_action_holder=[None],
+            )
+
+        # Run consolidation
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=3,
+            batch_size=2,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Get quality metrics
+        metrics = manager.get_consolidation_quality_metrics()
+
+        # Verify metrics structure
+        assert "avg_cortical_learning" in metrics
+        assert "avg_hippocampal_learning" in metrics
+        assert "transfer_efficiency" in metrics
+        assert "avg_replay_effectiveness" in metrics
+        assert "systems_consolidation_progress" in metrics
+        assert "n_consolidation_cycles" in metrics
+
+        # Verify metrics have reasonable values
+        assert metrics["n_consolidation_cycles"] > 0
+        assert metrics["avg_replay_effectiveness"] >= 0.0
+
+    def test_quality_metrics_track_learning(self, minimal_brain):
+        """Test that quality metrics track actual learning progress."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store rewarded experiences
+        for i in range(10):
+            manager.store_experience(
+                action=i % 2,
+                reward=1.0,  # All rewarded for strong learning signal
+                last_action_holder=[None],
+            )
+
+        # Get metrics before consolidation
+        metrics_before = manager.get_consolidation_quality_metrics()
+        cycles_before = metrics_before["n_consolidation_cycles"]
+
+        # Run consolidation
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=5,
+            batch_size=3,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Get metrics after consolidation
+        metrics_after = manager.get_consolidation_quality_metrics()
+
+        # Verify metrics updated
+        assert metrics_after["n_consolidation_cycles"] > cycles_before
+        assert metrics_after["avg_replay_effectiveness"] > 0.0
+
+    def test_transfer_efficiency_computation(self, minimal_brain):
+        """Test that transfer efficiency correctly measures cortical vs hippocampal learning."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store experiences and run consolidation
+        for i in range(5):
+            manager.store_experience(
+                action=i % 2,
+                reward=1.0,
+                last_action_holder=[None],
+            )
+
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=2,
+            batch_size=3,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Get metrics
+        metrics = manager.get_consolidation_quality_metrics()
+
+        # Transfer efficiency should be ratio of cortical to hippocampal learning
+        if metrics["avg_hippocampal_learning"] > 0:
+            expected_ratio = (
+                metrics["avg_cortical_learning"] / metrics["avg_hippocampal_learning"]
+            )
+            assert abs(metrics["transfer_efficiency"] - expected_ratio) < 0.001
+
+    def test_systems_consolidation_progress(self, minimal_brain):
+        """Test that systems consolidation progress tracks shift to cortical learning."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store and consolidate experiences
+        for i in range(8):
+            manager.store_experience(
+                action=i % 2,
+                reward=0.5,
+                last_action_holder=[None],
+            )
+
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=4,
+            batch_size=2,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Get metrics
+        metrics = manager.get_consolidation_quality_metrics()
+
+        # Systems consolidation progress should be between 0 and 1
+        assert 0.0 <= metrics["systems_consolidation_progress"] <= 1.0
+
+        # Progress = cortical / (cortical + hippocampal)
+        total_learning = (
+            metrics["avg_cortical_learning"] + metrics["avg_hippocampal_learning"]
+        )
+        if total_learning > 0:
+            expected_progress = metrics["avg_cortical_learning"] / total_learning
+            assert abs(metrics["systems_consolidation_progress"] - expected_progress) < 0.001
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

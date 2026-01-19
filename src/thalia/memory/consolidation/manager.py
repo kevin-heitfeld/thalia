@@ -96,6 +96,14 @@ class ConsolidationManager:
             "episode_replay_counts": {},  # episode_index -> count
         }
 
+        # Phase 4: Consolidation quality metrics
+        self.quality_metrics: Dict[str, Any] = {
+            "cortical_weight_changes": [],  # Track cortical learning strength
+            "hippocampal_weight_changes": [],  # Track hippocampal learning strength
+            "transfer_efficiency": [],  # Ratio of cortical to hippocampal learning
+            "replay_effectiveness": [],  # Reward signal during replay
+        }
+
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""
         self._cortex_output_size = size
@@ -374,6 +382,91 @@ class ConsolidationManager:
 
         return stats
 
+    def get_consolidation_quality_metrics(self) -> Dict[str, Any]:
+        """Get metrics about consolidation quality and effectiveness.
+
+        Returns:
+            Dictionary with quality metrics including:
+            - cortical_learning: Average cortical weight changes
+            - hippocampal_learning: Average hippocampal weight changes
+            - transfer_efficiency: Ratio of cortical to hippocampal learning
+            - replay_effectiveness: Average reward during replay
+            - systems_consolidation_progress: How much learning has shifted to cortex
+        """
+        metrics = {}
+
+        # Average weight changes
+        if self.quality_metrics["cortical_weight_changes"]:
+            metrics["avg_cortical_learning"] = sum(
+                self.quality_metrics["cortical_weight_changes"]
+            ) / len(self.quality_metrics["cortical_weight_changes"])
+        else:
+            metrics["avg_cortical_learning"] = 0.0
+
+        if self.quality_metrics["hippocampal_weight_changes"]:
+            metrics["avg_hippocampal_learning"] = sum(
+                self.quality_metrics["hippocampal_weight_changes"]
+            ) / len(self.quality_metrics["hippocampal_weight_changes"])
+        else:
+            metrics["avg_hippocampal_learning"] = 0.0
+
+        # Transfer efficiency (cortical learning / hippocampal learning)
+        if metrics["avg_hippocampal_learning"] > 0:
+            metrics["transfer_efficiency"] = (
+                metrics["avg_cortical_learning"] / metrics["avg_hippocampal_learning"]
+            )
+        else:
+            metrics["transfer_efficiency"] = 0.0
+
+        # Replay effectiveness
+        if self.quality_metrics["replay_effectiveness"]:
+            metrics["avg_replay_effectiveness"] = sum(
+                self.quality_metrics["replay_effectiveness"]
+            ) / len(self.quality_metrics["replay_effectiveness"])
+        else:
+            metrics["avg_replay_effectiveness"] = 0.0
+
+        # Systems consolidation progress (0-1, higher = more cortical-dependent)
+        total_learning = (
+            metrics["avg_cortical_learning"] + metrics["avg_hippocampal_learning"]
+        )
+        if total_learning > 0:
+            metrics["systems_consolidation_progress"] = (
+                metrics["avg_cortical_learning"] / total_learning
+            )
+        else:
+            metrics["systems_consolidation_progress"] = 0.0
+
+        # Include raw data counts
+        metrics["n_consolidation_cycles"] = len(self.quality_metrics["cortical_weight_changes"])
+
+        return metrics
+
+    def _track_consolidation_quality(self, reward: float) -> None:
+        """Track consolidation quality metrics during replay.
+
+        Args:
+            reward: Reward signal during this replay
+        """
+        # Track replay effectiveness
+        self.quality_metrics["replay_effectiveness"].append(reward)
+
+        # Track weight changes if striatum has synaptic weights
+        if hasattr(self.striatum, "synaptic_weights"):
+            # Measure hippocampal pathway learning
+            if "hippocampus_d1" in self.striatum.synaptic_weights:
+                hippo_weights = self.striatum.synaptic_weights["hippocampus_d1"]
+                # Store magnitude of weights as proxy for learning
+                hippo_strength = hippo_weights.abs().mean().item()
+                self.quality_metrics["hippocampal_weight_changes"].append(hippo_strength)
+
+            # Measure cortical pathway learning
+            if "cortex:l5_d1" in self.striatum.synaptic_weights:
+                cortex_weights = self.striatum.synaptic_weights["cortex:l5_d1"]
+                # Store magnitude of weights as proxy for learning
+                cortex_strength = cortex_weights.abs().mean().item()
+                self.quality_metrics["cortical_weight_changes"].append(cortex_strength)
+
     def _replay_experience(
         self,
         experience: Dict[str, Any],
@@ -442,6 +535,9 @@ class ConsolidationManager:
         if episode_index not in self.replay_stats["episode_replay_counts"]:
             self.replay_stats["episode_replay_counts"][episode_index] = 0
         self.replay_stats["episode_replay_counts"][episode_index] += 1
+
+        # Track consolidation quality metrics (Phase 4)
+        self._track_consolidation_quality(reward)
 
     def _run_consolidation_replay(
         self,
