@@ -761,5 +761,157 @@ class TestPhase4Features:
             assert abs(metrics["systems_consolidation_progress"] - expected_progress) < 0.001
 
 
+class TestSleepStageIntegration:
+    """Test suite for sleep stage (NREM/REM) integration."""
+
+    def test_sleep_controller_initialization(self, minimal_brain):
+        """Test that ConsolidationManager initializes SleepStageController."""
+        manager = minimal_brain.consolidation_manager
+
+        # Verify sleep_controller exists
+        assert hasattr(manager, "sleep_controller"), "Should have sleep_controller"
+        assert manager.sleep_controller is not None, "SleepStageController should be initialized"
+
+        # Verify consolidation step tracking
+        assert hasattr(manager, "_consolidation_step"), "Should track consolidation step"
+        assert manager._consolidation_step == 0, "Should start at step 0"
+
+        # Verify replay stats include stage tracking
+        assert "nrem_replays" in manager.replay_stats, "Should track NREM replays"
+        assert "rem_replays" in manager.replay_stats, "Should track REM replays"
+
+    def test_sleep_stage_cycling(self, minimal_brain):
+        """Test that sleep stages cycle through NREM/REM correctly."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store experiences
+        for i in range(10):
+            manager.store_experience(
+                action=i % 2,
+                reward=0.5,
+                last_action_holder=[None],
+            )
+
+        # Run consolidation with enough cycles to trigger stage changes
+        # Default: 5000 NREM + 2000 REM = 7000 steps per cycle
+        # batch_size=2 → each cycle replays 2 experiences
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=5,
+            batch_size=2,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Check stage info
+        stage_info = manager.get_sleep_stage_info()
+
+        assert "current_stage" in stage_info, "Should have current_stage"
+        assert stage_info["current_stage"] in ["NREM", "REM"], "Stage should be NREM or REM"
+        assert "consolidation_step" in stage_info, "Should track step"
+        assert stage_info["consolidation_step"] > 0, "Should have advanced steps"
+        assert "progress_in_stage" in stage_info, "Should track progress"
+        assert 0.0 <= stage_info["progress_in_stage"] <= 1.0, "Progress should be 0-1"
+
+    def test_nrem_rem_replay_counts(self, minimal_brain):
+        """Test that NREM and REM replays are tracked separately."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store experiences
+        for i in range(8):
+            manager.store_experience(
+                action=i % 2,
+                reward=0.3,
+                last_action_holder=[None],
+            )
+
+        # Run consolidation
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=3,
+            batch_size=2,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Check stage-specific replay counts
+        stats = manager.get_replay_statistics()
+
+        assert "nrem_replays" in stats, "Should track NREM replays"
+        assert "rem_replays" in stats, "Should track REM replays"
+
+        # Total replays should equal sum of NREM + REM (minus awake replays)
+        sleep_replays = stats.get("sleep_replays", 0)
+        stage_replays = stats["nrem_replays"] + stats["rem_replays"]
+        assert stage_replays == sleep_replays, "NREM + REM should equal sleep replays"
+
+    def test_get_sleep_stage_info_contents(self, minimal_brain):
+        """Test that get_sleep_stage_info returns complete information."""
+        manager = minimal_brain.consolidation_manager
+
+        # Get info before any consolidation
+        stage_info = manager.get_sleep_stage_info()
+
+        # Verify all expected keys present
+        expected_keys = [
+            "current_stage",
+            "consolidation_step",
+            "progress_in_stage",
+            "cycle_complete",
+            "nrem_replays",
+            "rem_replays",
+            "nrem_duration",
+            "rem_duration",
+        ]
+
+        for key in expected_keys:
+            assert key in stage_info, f"Should have {key} in sleep stage info"
+
+        # Verify initial values
+        assert stage_info["current_stage"] == "NREM", "Should start in NREM"
+        assert stage_info["consolidation_step"] == 0, "Should start at step 0"
+        assert stage_info["progress_in_stage"] == 0.0, "Should start at 0% progress"
+        assert stage_info["cycle_complete"] is False, "No cycle completed yet"
+        assert stage_info["nrem_replays"] == 0, "No NREM replays yet"
+        assert stage_info["rem_replays"] == 0, "No REM replays yet"
+        assert stage_info["nrem_duration"] == 5000, "Default NREM duration"
+        assert stage_info["rem_duration"] == 2000, "Default REM duration"
+
+    def test_stage_progress_advances_during_consolidation(self, minimal_brain):
+        """Test that consolidation_step advances during consolidation cycles."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store experiences
+        for i in range(6):
+            manager.store_experience(
+                action=i % 2,
+                reward=0.2,
+                last_action_holder=[None],
+            )
+
+        # Get initial step
+        initial_step = manager._consolidation_step
+
+        # Run consolidation
+        last_action = [None]
+        manager.consolidate(
+            n_cycles=2,
+            batch_size=2,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Verify step advanced
+        final_step = manager._consolidation_step
+        assert final_step > initial_step, "Consolidation step should advance during replay"
+
+        # Should advance by batch_size * n_cycles (each replay increments step)
+        expected_increment = 2 * 2  # 2 cycles × 2 batch_size
+        assert final_step >= expected_increment, f"Step should advance by at least {expected_increment}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

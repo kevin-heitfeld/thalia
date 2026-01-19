@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
+from thalia.memory.consolidation.consolidation import SleepStage, SleepStageController, SleepStageConfig
 from thalia.regions.hippocampus.replay_engine import ReplayConfig, ReplayEngine, ReplayMode
 
 if TYPE_CHECKING:
@@ -93,6 +94,8 @@ class ConsolidationManager:
             "total_replays": 0,
             "awake_replays": 0,
             "sleep_replays": 0,
+            "nrem_replays": 0,  # Sleep stage tracking
+            "rem_replays": 0,   # Sleep stage tracking
             "episode_replay_counts": {},  # episode_index -> count
         }
 
@@ -103,6 +106,16 @@ class ConsolidationManager:
             "transfer_efficiency": [],  # Ratio of cortical to hippocampal learning
             "replay_effectiveness": [],  # Reward signal during replay
         }
+
+        # Sleep stage enhancement: NREM/REM cycling
+        sleep_stage_config = SleepStageConfig(
+            nrem_duration=5000,  # ~90 min in real life (compressed)
+            rem_duration=2000,   # ~30 min in real life (compressed)
+            nrem_replay_speed=10.0,  # 10× compression during NREM
+            rem_replay_speed=20.0,   # 20× compression during REM
+        )
+        self.sleep_controller = SleepStageController(sleep_stage_config)
+        self._consolidation_step = 0  # Track position in sleep cycle
 
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""
@@ -179,6 +192,33 @@ class ConsolidationManager:
             stats["avg_replays_per_episode"] = sum(counts) / len(counts)
 
         return stats
+
+    def get_sleep_stage_info(self) -> Dict[str, Any]:
+        """Get current sleep stage information and statistics.
+
+        Returns:
+            Dictionary with:
+            - current_stage: Current sleep stage ("NREM" or "REM")
+            - consolidation_step: Current step in consolidation cycle
+            - progress_in_stage: Progress through current stage (0-1)
+            - cycle_complete: Whether a full NREM/REM cycle is complete
+            - nrem_replays: Total NREM replays
+            - rem_replays: Total REM replays
+            - nrem_duration: NREM cycle duration
+            - rem_duration: REM cycle duration
+        """
+        current_stage = self.sleep_controller.get_current_stage(self._consolidation_step)
+
+        return {
+            "current_stage": current_stage.value,
+            "consolidation_step": self._consolidation_step,
+            "progress_in_stage": self.sleep_controller.get_progress_in_stage(self._consolidation_step),
+            "cycle_complete": self.sleep_controller.is_cycle_complete(self._consolidation_step),
+            "nrem_replays": self.replay_stats["nrem_replays"],
+            "rem_replays": self.replay_stats["rem_replays"],
+            "nrem_duration": self.sleep_controller.config.nrem_duration,
+            "rem_duration": self.sleep_controller.config.rem_duration,
+        }
 
     def _validate_striatum_sources(self) -> None:
         """Ensure striatum uses normal pathway weights (not consolidation weights).
@@ -291,16 +331,23 @@ class ConsolidationManager:
         verbose: bool,
         last_action_holder: Any,  # Mutable reference to coordinator's _last_action
     ) -> Dict[str, Any]:
-        """Perform memory consolidation (replay) cycles.
+        """Perform memory consolidation (replay) cycles with NREM/REM alternation.
 
         Simulates sleep/offline replay where hippocampus replays stored
-        episodes to strengthen cortical representations.
+        episodes to strengthen cortical representations. Now includes
+        biologically realistic NREM/REM cycling.
+
+        **Sleep Stage Cycling**:
+        - NREM (slow-wave sleep): Hippocampus → Cortex transfer, slower replay
+        - REM: Cortical reorganization, faster replay
+        - Cycles alternate with 5000 NREM + 2000 REM steps (configurable)
 
         Biologically accurate consolidation:
         1. Sample experiences from hippocampal memory
         2. Replay state through brain (reactivate patterns)
         3. Deliver stored reward → dopamine → striatum learning
         4. HER automatically augments if enabled
+        5. Sleep stage modulates replay speed and neuromodulation
 
         Args:
             n_cycles: Number of replay cycles to run
@@ -309,7 +356,7 @@ class ConsolidationManager:
             last_action_holder: Mutable reference to coordinator's _last_action
 
         Returns:
-            Dict with consolidation statistics
+            Dict with consolidation statistics including sleep stage info
         """
         # Validate striatum doesn't have consolidation weights
         self._validate_striatum_sources()
@@ -337,8 +384,19 @@ class ConsolidationManager:
                     f"  HER: {her_diag['n_episodes']} episodes, {her_diag['n_transitions']} transitions"
                 )
 
-        # Run replay cycles
+        # Run replay cycles with sleep stage tracking
         for cycle in range(n_cycles):
+            # Determine current sleep stage
+            current_stage = self.sleep_controller.get_current_stage(self._consolidation_step)
+
+            # Set oscillator frequencies for current stage (if brain has oscillator_manager)
+            brain = self._brain_ref() if self._brain_ref else None
+            if brain and hasattr(brain, 'oscillator_manager'):
+                brain.oscillator_manager.set_sleep_stage(current_stage.value)
+
+            # Track stage-specific replays
+            stage_name = current_stage.value  # "NREM" or "REM"
+
             if (
                 hasattr(self.hippocampus, "her_integration")
                 and self.hippocampus.her_integration is not None
@@ -350,11 +408,14 @@ class ConsolidationManager:
 
                     # Replay each experience and trigger learning
                     for experience in batch:
-                        self._replay_experience(experience, last_action_holder, stats)
+                        self._replay_experience(experience, last_action_holder, stats, current_stage)
+                        self._consolidation_step += 1  # Advance step for each replay
 
                     if verbose:
+                        progress = self.sleep_controller.get_progress_in_stage(self._consolidation_step)
                         print(
-                            f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(batch)} experiences, {stats['experiences_learned']} learned"
+                            f"  Cycle {cycle+1}/{n_cycles} ({stage_name}, {progress*100:.1f}%): "
+                            f"Replayed {len(batch)} experiences, {stats['experiences_learned']} learned"
                         )
             else:
                 # Sample normal episodic replay
@@ -364,11 +425,14 @@ class ConsolidationManager:
 
                     # Replay each episode and trigger learning
                     for episode in episodes:
-                        self._replay_experience(episode, last_action_holder, stats)
+                        self._replay_experience(episode, last_action_holder, stats, current_stage)
+                        self._consolidation_step += 1  # Advance step for each replay
 
                     if verbose:
+                        progress = self.sleep_controller.get_progress_in_stage(self._consolidation_step)
                         print(
-                            f"  Cycle {cycle+1}/{n_cycles}: Replayed {len(episodes)} episodes, {stats['experiences_learned']} learned"
+                            f"  Cycle {cycle+1}/{n_cycles} ({stage_name}, {progress*100:.1f}%): "
+                            f"Replayed {len(episodes)} episodes, {stats['experiences_learned']} learned"
                         )
 
             stats["cycles_completed"] += 1
@@ -379,6 +443,11 @@ class ConsolidationManager:
             and self.hippocampus.her_integration is not None
         ):
             self.hippocampus.exit_consolidation_mode()
+
+        # Restore awake oscillator frequencies
+        brain = self._brain_ref() if self._brain_ref else None
+        if brain and hasattr(brain, 'oscillator_manager'):
+            brain.oscillator_manager.set_sleep_stage("AWAKE")
 
         return stats
 
@@ -472,6 +541,7 @@ class ConsolidationManager:
         experience: Dict[str, Any],
         last_action_holder: Any,
         stats: Dict[str, Any],
+        sleep_stage: SleepStage = SleepStage.NREM,
     ) -> None:
         """Replay experience using biologically accurate consolidation.
 
@@ -481,6 +551,7 @@ class ConsolidationManager:
         3. Both hippocampus and cortex drive striatum via normal pathways
         4. Learning modifies SAME synapses used during wake
         5. Axonal delays preserved (biologically realistic timing)
+        6. Sleep stage modulates replay characteristics (NREM vs REM)
 
         **No special 'consolidation' weights needed!**
 
@@ -488,6 +559,7 @@ class ConsolidationManager:
             experience: Experience dict or Episode dataclass with state, action, reward
             last_action_holder: Mutable reference to coordinator's _last_action
             stats: Statistics dict to update
+            sleep_stage: Current sleep stage (NREM or REM)
         """
         # Handle both dict and dataclass (Episode) formats
         if hasattr(experience, "action"):
@@ -514,6 +586,9 @@ class ConsolidationManager:
         self.hippocampus.cue_replay(episode_index)
 
         # Execute brain forward pass (consolidation replay)
+        # Mode depends on sleep stage: NREM uses standard reverse replay
+        replay_mode = ReplayMode.SLEEP_REVERSE
+
         # - Hippocampus forward() spontaneously retrieves CA3→CA1 pattern
         # - CA1 output routes through AxonalProjection to cortex and striatum
         # - Striatum receives: {"hippocampus": ca1_spikes, "cortex:l5": l5_spikes}
@@ -521,7 +596,7 @@ class ConsolidationManager:
         # - Axonal delays preserved (biologically realistic timing)
         self._run_consolidation_replay(
             n_timesteps=10,
-            mode=ReplayMode.SLEEP_REVERSE,
+            mode=replay_mode,
         )  # Brief replay window
 
         # Set action and deliver reward (triggers dopamine-gated learning!)
@@ -529,9 +604,16 @@ class ConsolidationManager:
         self._deliver_reward(external_reward=reward)
         stats["experiences_learned"] += 1
 
-        # Update replay statistics
+        # Update replay statistics (stage-specific tracking)
         self.replay_stats["total_replays"] += 1
         self.replay_stats["sleep_replays"] += 1
+
+        # Track stage-specific replays
+        if sleep_stage == SleepStage.NREM:
+            self.replay_stats["nrem_replays"] += 1
+        else:  # REM
+            self.replay_stats["rem_replays"] += 1
+
         if episode_index not in self.replay_stats["episode_replay_counts"]:
             self.replay_stats["episode_replay_counts"][episode_index] = 0
         self.replay_stats["episode_replay_counts"][episode_index] += 1
