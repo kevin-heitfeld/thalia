@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Dict
 
 import torch
 
+from thalia.regions.hippocampus.replay_engine import ReplayConfig, ReplayEngine, ReplayMode
+
 if TYPE_CHECKING:
     from thalia.core.dynamic_brain import DynamicBrain
 
@@ -77,6 +79,23 @@ class ConsolidationManager:
         )
         self._pfc_size = getattr(config, "pfc_size", None) or getattr(pfc, "n_output", 64)
 
+        # Phase 3: Replay engine integration
+        replay_config = ReplayConfig(
+            compression_factor=5.0,
+            awake_compression=10.0,  # Faster replay for immediate credit assignment
+            sleep_compression=5.0,   # Standard compression for sleep consolidation
+            mode=ReplayMode.SLEEP_REVERSE,
+        )
+        self.replay_engine = ReplayEngine(replay_config)
+
+        # Phase 3: Replay statistics tracking
+        self.replay_stats: Dict[str, Any] = {
+            "total_replays": 0,
+            "awake_replays": 0,
+            "sleep_replays": 0,
+            "episode_replay_counts": {},  # episode_index -> count
+        }
+
     def set_cortex_output_size(self, size: int) -> None:
         """Set cortex output size (L23+L5 combined, needed for state reconstruction)."""
         self._cortex_output_size = size
@@ -91,6 +110,67 @@ class ConsolidationManager:
             brain: DynamicBrain instance to store reference to
         """
         self._brain_ref = weakref.ref(brain)
+
+    def trigger_immediate_replay(
+        self,
+        episode_index: int,
+        surprise_level: float = 1.0,
+        reward: float = 0.0,
+    ) -> None:
+        """Trigger immediate awake replay after surprising/rewarding experience.
+
+        **Biological context**: Awake replay occurs during theta troughs,
+        immediately after surprising or rewarding events (Foster & Wilson 2006).
+        This enables rapid credit assignment and memory strengthening.
+
+        Args:
+            episode_index: Index of episode to replay
+            surprise_level: Surprise/saliency (0-1, higher = more important)
+            reward: Reward magnitude (for prioritization)
+        """
+        # Enter consolidation mode for replay
+        was_in_consolidation = getattr(self.hippocampus, "_consolidation_mode", False)
+        if not was_in_consolidation:
+            self.hippocampus.enter_consolidation_mode()
+
+        try:
+            # Cue hippocampus for replay
+            self.hippocampus.cue_replay(episode_index)
+
+            # Execute awake reverse replay (credit assignment)
+            # Use shorter window for immediate replay (5 timesteps vs 10 for sleep)
+            self._run_consolidation_replay(
+                n_timesteps=5,
+                mode=ReplayMode.AWAKE_REVERSE,
+            )
+
+            # Update statistics
+            self.replay_stats["total_replays"] += 1
+            self.replay_stats["awake_replays"] += 1
+            if episode_index not in self.replay_stats["episode_replay_counts"]:
+                self.replay_stats["episode_replay_counts"][episode_index] = 0
+            self.replay_stats["episode_replay_counts"][episode_index] += 1
+
+        finally:
+            # Restore original consolidation state
+            if not was_in_consolidation:
+                self.hippocampus.exit_consolidation_mode()
+
+    def get_replay_statistics(self) -> Dict[str, Any]:
+        """Get replay statistics for monitoring.
+
+        Returns:
+            Dictionary with replay counts and per-episode frequencies
+        """
+        stats = self.replay_stats.copy()
+
+        # Add episode replay frequency analysis
+        if stats["episode_replay_counts"]:
+            counts = list(stats["episode_replay_counts"].values())
+            stats["most_replayed_count"] = max(counts)
+            stats["avg_replays_per_episode"] = sum(counts) / len(counts)
+
+        return stats
 
     def _validate_striatum_sources(self) -> None:
         """Ensure striatum uses normal pathway weights (not consolidation weights).
@@ -346,24 +426,40 @@ class ConsolidationManager:
         # - Striatum receives: {"hippocampus": ca1_spikes, "cortex:l5": l5_spikes}
         # - Learning uses NORMAL synaptic weights (hippocampus_d1/d2, cortex:l5_d1/d2)
         # - Axonal delays preserved (biologically realistic timing)
-        self._run_consolidation_replay(n_timesteps=10)  # Brief replay window
+        self._run_consolidation_replay(
+            n_timesteps=10,
+            mode=ReplayMode.SLEEP_REVERSE,
+        )  # Brief replay window
 
         # Set action and deliver reward (triggers dopamine-gated learning!)
         last_action_holder[0] = action
         self._deliver_reward(external_reward=reward)
         stats["experiences_learned"] += 1
 
-    def _run_consolidation_replay(self, n_timesteps: int = 10) -> None:
+        # Update replay statistics
+        self.replay_stats["total_replays"] += 1
+        self.replay_stats["sleep_replays"] += 1
+        if episode_index not in self.replay_stats["episode_replay_counts"]:
+            self.replay_stats["episode_replay_counts"][episode_index] = 0
+        self.replay_stats["episode_replay_counts"][episode_index] += 1
+
+    def _run_consolidation_replay(
+        self,
+        n_timesteps: int = 10,
+        mode: ReplayMode = ReplayMode.SLEEP_REVERSE,
+    ) -> None:
         """Execute consolidation replay through full brain architecture.
 
         Uses complete brain forward pass to preserve:
         - Axonal delays (AxonalProjection pathways)
         - Multi-region interactions (hippocampus→cortex→striatum)
         - Normal synaptic routing (no special cases)
-        - Biological timing (time-compressed 10x but delays preserved)
+        - Biological timing (time-compressed but delays preserved)
+        - Mode-specific behavior (awake vs sleep replay)
 
         Args:
             n_timesteps: Number of timesteps for replay window (time-compressed)
+            mode: Replay mode (AWAKE_REVERSE, SLEEP_REVERSE, etc.)
         """
         # Get brain reference
         brain = self._brain_ref() if self._brain_ref else None

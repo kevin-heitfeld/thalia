@@ -438,5 +438,156 @@ class TestSystemsConsolidation:
         assert True, "Consolidation with cortical reactivation completed without error"
 
 
+class TestReplayModes:
+    """Test Phase 3: Replay modes and immediate replay."""
+
+    def test_replay_engine_integration(self, minimal_brain):
+        """Test that ConsolidationManager has ReplayEngine integrated."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Verify replay engine exists
+        assert hasattr(manager, "replay_engine"), "ConsolidationManager should have replay_engine"
+        assert manager.replay_engine is not None
+
+        # Verify replay stats initialized
+        assert hasattr(manager, "replay_stats"), "ConsolidationManager should have replay_stats"
+        assert manager.replay_stats["total_replays"] == 0
+        assert manager.replay_stats["awake_replays"] == 0
+        assert manager.replay_stats["sleep_replays"] == 0
+
+    def test_immediate_replay_trigger(self, minimal_brain):
+        """Test immediate replay after surprising/rewarding experience."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+        hippocampus = brain.components["hippocampus"]
+
+        # Store an experience first (automatically extracts from region state)
+        manager.store_experience(
+            action=0,
+            reward=1.0,
+            last_action_holder=[None],
+        )
+
+        # Verify episode was stored
+        assert len(hippocampus.memory.episode_buffer) == 1
+
+        # Get initial stats
+        stats_before = manager.replay_stats.copy()
+
+        # Trigger immediate replay
+        manager.trigger_immediate_replay(
+            episode_index=0,
+            surprise_level=0.9,
+            reward=1.0,
+        )
+
+        # Verify replay occurred
+        assert manager.replay_stats["total_replays"] == stats_before["total_replays"] + 1
+        assert manager.replay_stats["awake_replays"] == stats_before["awake_replays"] + 1
+        assert 0 in manager.replay_stats["episode_replay_counts"]
+        assert manager.replay_stats["episode_replay_counts"][0] == 1
+
+    def test_sleep_replay_statistics(self, minimal_brain):
+        """Test that sleep replay updates statistics correctly."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+        hippocampus = brain.components["hippocampus"]
+
+        # Store multiple experiences (automatically extracts from region state)
+        for i in range(3):
+            manager.store_experience(
+                action=i,
+                reward=float(i),
+                last_action_holder=[None],
+            )
+
+        # Verify episodes stored
+        assert len(hippocampus.memory.episode_buffer) == 3
+
+        # Run consolidation
+        last_action = [None]
+        stats = manager.consolidate(
+            n_cycles=2,
+            batch_size=2,
+            verbose=False,
+            last_action_holder=last_action,
+        )
+
+        # Verify replay statistics updated
+        assert manager.replay_stats["total_replays"] > 0
+        assert manager.replay_stats["sleep_replays"] > 0
+        assert len(manager.replay_stats["episode_replay_counts"]) > 0
+
+    def test_replay_statistics_reporting(self, minimal_brain):
+        """Test get_replay_statistics returns correct aggregates."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+
+        # Store and replay experiences (automatically extracts from region state)
+        for i in range(5):
+            manager.store_experience(
+                action=i,
+                reward=float(i),
+                last_action_holder=[None],
+            )
+
+        # Trigger some immediate replays
+        manager.trigger_immediate_replay(0, surprise_level=0.9, reward=1.0)
+        manager.trigger_immediate_replay(1, surprise_level=0.8, reward=0.5)
+        manager.trigger_immediate_replay(0, surprise_level=0.7, reward=0.3)  # Replay episode 0 again
+
+        # Get statistics
+        stats = manager.get_replay_statistics()
+
+        # Verify aggregates
+        assert "total_replays" in stats
+        assert "awake_replays" in stats
+        assert "sleep_replays" in stats
+        assert "episode_replay_counts" in stats
+        assert "most_replayed_count" in stats
+        assert "avg_replays_per_episode" in stats
+
+        # Verify episode 0 was replayed twice
+        assert stats["episode_replay_counts"][0] == 2
+        assert stats["most_replayed_count"] == 2
+        assert stats["awake_replays"] == 3
+
+    def test_immediate_replay_preserves_consolidation_state(self, minimal_brain):
+        """Test that immediate replay doesn't interfere with ongoing consolidation state."""
+        brain = minimal_brain
+        manager = brain.consolidation_manager
+        hippocampus = brain.components["hippocampus"]
+
+        # Store experience (automatically extracts from region state)
+        manager.store_experience(
+            action=0,
+            reward=1.0,
+            last_action_holder=[None],
+        )
+
+        # Hippocampus should NOT be in consolidation mode initially
+        assert not hippocampus._consolidation_mode
+
+        # Trigger immediate replay
+        manager.trigger_immediate_replay(0, surprise_level=0.9, reward=1.0)
+
+        # Hippocampus should return to non-consolidation state after replay
+        assert not hippocampus._consolidation_mode
+
+        # Now enter consolidation mode manually
+        hippocampus.enter_consolidation_mode()
+        assert hippocampus._consolidation_mode
+
+        # Trigger immediate replay again
+        manager.trigger_immediate_replay(0, surprise_level=0.8, reward=0.5)
+
+        # Hippocampus should STILL be in consolidation mode (preserved)
+        assert hippocampus._consolidation_mode
+
+        # Clean up
+        hippocampus.exit_consolidation_mode()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

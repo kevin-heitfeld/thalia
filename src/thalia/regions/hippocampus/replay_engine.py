@@ -40,8 +40,25 @@ from .memory_component import Episode
 
 
 class ReplayMode(Enum):
-    """Replay execution mode."""
+    """Replay execution mode.
 
+    **Biological Context**:
+    - AWAKE_FORWARD: Planning at choice points (prospection)
+    - AWAKE_REVERSE: Immediate credit assignment after reward
+    - SLEEP_REVERSE: Systems consolidation during sleep
+    - SEQUENCE: Gamma-driven sequence replay (generic)
+    - SINGLE: Single-state replay (fallback)
+    - RIPPLE: Sharp-wave ripple replay (sleep)
+    """
+
+    # Awake replay modes (immediate, during theta troughs)
+    AWAKE_FORWARD = "awake_forward"  # Planning/prospection
+    AWAKE_REVERSE = "awake_reverse"  # Immediate credit assignment
+
+    # Sleep replay modes (consolidation, during sharp-wave ripples)
+    SLEEP_REVERSE = "sleep_reverse"  # Systems consolidation
+
+    # Legacy modes (still supported)
     SEQUENCE = "sequence"  # Gamma-driven sequence replay
     SINGLE = "single"  # Single-state replay (fallback)
     RIPPLE = "ripple"  # Sharp-wave ripple replay
@@ -71,6 +88,11 @@ class ReplayConfig:
     # Pattern processing
     apply_phase_modulation: bool = True  # Apply gamma phase modulation to patterns
     pattern_completion: bool = True  # Run through CA3 for completion
+
+    # Mode-specific parameters
+    awake_compression: float = 10.0  # Time compression for awake replay (10x typical)
+    sleep_compression: float = 5.0  # Time compression for sleep replay (5x typical)
+    reverse_replay: bool = False  # Whether to replay in reverse order
 
 
 @dataclass
@@ -146,11 +168,20 @@ class ReplayEngine(nn.Module):
         episode: Episode,
         pattern_processor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         gamma_phase: float = 0.0,
+        mode: Optional[ReplayMode] = None,
     ) -> ReplayResult:
-        """Replay an episode with time compression.
+        """Replay an episode with time compression and mode-specific behavior.
 
         Uses gamma_phase for fine-grained timing within the theta cycle,
         allowing precise phase-based replay that respects gamma oscillations.
+
+        **Replay Modes**:
+        - AWAKE_FORWARD: Planning/prospection (forward replay)
+        - AWAKE_REVERSE: Immediate credit assignment (reverse replay, 10x compression)
+        - SLEEP_REVERSE: Systems consolidation (reverse replay, 5x compression)
+        - SEQUENCE: Generic gamma-driven sequence replay (forward)
+        - SINGLE: Single-state replay (no sequence)
+        - RIPPLE: Sharp-wave ripple modulated replay (sleep)
 
         Args:
             episode: Episode to replay (contains state or sequence)
@@ -158,10 +189,28 @@ class ReplayEngine(nn.Module):
                                (e.g., lambda p: hippocampus.forward(p, phase=DELAY))
                                If None, patterns are returned as-is
             gamma_phase: Current gamma phase from brain's OscillatorManager (radians [0, 2π])
+            mode: Replay mode (overrides config.mode if provided)
 
         Returns:
             ReplayResult with replayed patterns and metrics
         """
+        # Use provided mode or fall back to config mode
+        active_mode = mode if mode is not None else self.config.mode
+
+        # Set compression factor based on mode
+        if active_mode in (ReplayMode.AWAKE_FORWARD, ReplayMode.AWAKE_REVERSE):
+            compression = self.config.awake_compression
+        elif active_mode == ReplayMode.SLEEP_REVERSE:
+            compression = self.config.sleep_compression
+        else:
+            compression = self.config.compression_factor
+
+        # Determine if sequence should be reversed
+        reverse_sequence = active_mode in (
+            ReplayMode.AWAKE_REVERSE,
+            ReplayMode.SLEEP_REVERSE,
+        )
+
         # Determine replay mode
         if episode.sequence is not None and len(episode.sequence) > 0:
             # Have sequence → use sequence replay
@@ -169,16 +218,22 @@ class ReplayEngine(nn.Module):
                 episode.sequence,
                 pattern_processor,
                 gamma_phase,
+                compression,
+                reverse_sequence,
+                active_mode,
             )
         else:
             # No sequence → single-state replay
-            return self._replay_single(episode.state, pattern_processor)
+            return self._replay_single(episode.state, pattern_processor, active_mode)
 
     def _replay_sequence(
         self,
         sequence: List[torch.Tensor],
         pattern_processor: Optional[Callable],
         gamma_phase: float,
+        compression_factor: float,
+        reverse: bool,
+        mode: ReplayMode,
     ) -> ReplayResult:
         """Replay a sequence using continuous gamma phase modulation.
 
@@ -190,13 +245,20 @@ class ReplayEngine(nn.Module):
             sequence: List of patterns to replay
             pattern_processor: Optional function to process each pattern
             gamma_phase: Current gamma phase in radians [0, 2π]
+            compression_factor: Time compression multiplier
+            reverse: Whether to replay in reverse order
+            mode: Replay mode for diagnostics
         """
         n_patterns = len(sequence)
 
+        # Reverse sequence if needed (for credit assignment)
+        if reverse:
+            sequence = list(reversed(sequence))
+
         # Result tracking
         result = ReplayResult(
-            compression_factor=self.config.compression_factor,
-            mode_used=ReplayMode.SEQUENCE,
+            compression_factor=compression_factor,
+            mode_used=mode,
             sequence_length=n_patterns,
         )
 
@@ -249,8 +311,15 @@ class ReplayEngine(nn.Module):
         self,
         state: torch.Tensor,
         pattern_processor: Optional[Callable],
+        mode: ReplayMode,
     ) -> ReplayResult:
-        """Replay a single state pattern (fallback)."""
+        """Replay a single state pattern (fallback).
+
+        Args:
+            state: State tensor to replay
+            pattern_processor: Optional function to process pattern
+            mode: Replay mode for diagnostics
+        """
         # Ensure 2D
         if state.dim() == 1:
             state = state.unsqueeze(0)
@@ -267,7 +336,7 @@ class ReplayEngine(nn.Module):
             gamma_cycles=0,
             compression_factor=1.0,
             replayed_patterns=[output],
-            mode_used=ReplayMode.SINGLE,
+            mode_used=mode,
             sequence_length=1,
         )
 
