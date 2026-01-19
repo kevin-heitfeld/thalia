@@ -14,10 +14,8 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.synapses import WeightInitializer
 from thalia.config.region_configs import StriatumConfig
 from thalia.constants.learning import LEARNING_RATE_STRIATUM_PFC_MODULATION
-from thalia.constants.neuron import WEIGHT_INIT_SCALE_SMALL
 from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
 
@@ -57,34 +55,12 @@ class StriatumLearningComponent(LearningComponent):
         self.d1_pathway = d1_pathway
         self.d2_pathway = d2_pathway
 
-        # Goal modulation weights (if enabled)
-        if config.use_goal_conditioning:
-            # PFC→D1/D2 modulation matrices [n_actions, pfc_size]
-            # These learn which striatal neurons participate in which goals
-            n_output = context.n_output if context.n_output is not None else 1
-            self.pfc_modulation_d1 = nn.Parameter(
-                WeightInitializer.gaussian(
-                    n_output=n_output,  # n_actions passed via context
-                    n_input=config.pfc_size,
-                    mean=0.0,
-                    std=WEIGHT_INIT_SCALE_SMALL,
-                    device=self.context.device,
-                ),
-                requires_grad=False,
-            )
-            self.pfc_modulation_d2 = nn.Parameter(
-                WeightInitializer.gaussian(
-                    n_output=n_output,  # n_actions passed via context
-                    n_input=config.pfc_size,
-                    mean=0.0,
-                    std=WEIGHT_INIT_SCALE_SMALL,
-                    device=self.context.device,
-                ),
-                requires_grad=False,
-            )
-        else:
-            self.pfc_modulation_d1 = None
-            self.pfc_modulation_d2 = None
+        # Goal modulation weights are now initialized lazily in Striatum.__init__()
+        # when add_input_source_striatum("pfc", n_input) is called.
+        # This enables automatic size inference from the actual PFC connection.
+        # These fields are kept for type compatibility.
+        self.pfc_modulation_d1: Optional[nn.Parameter] = None
+        self.pfc_modulation_d2: Optional[nn.Parameter] = None
 
         # Track last spikes for goal modulation learning
         self._last_d1_spikes: Optional[torch.Tensor] = None
@@ -185,7 +161,7 @@ class StriatumLearningComponent(LearningComponent):
 
             # D1 learning: PFC→D1 connection
             # Reward (DA+) → strengthen connection if D1 neurons fired
-            if dopamine > 0:
+            if dopamine > 0 and self.pfc_modulation_d1 is not None:
                 d1_update = torch.outer(self._last_d1_spikes.float(), goal_context)
                 self.pfc_modulation_d1.data += (
                     LEARNING_RATE_STRIATUM_PFC_MODULATION * dopamine * d1_update
@@ -193,7 +169,7 @@ class StriatumLearningComponent(LearningComponent):
 
             # D2 learning: PFC→D2 connection
             # Reward (DA+) → weaken connection if D2 neurons fired (less NoGo)
-            if dopamine > 0:
+            if dopamine > 0 and self.pfc_modulation_d2 is not None:
                 d2_update = torch.outer(self._last_d2_spikes.float(), goal_context)
                 self.pfc_modulation_d2.data -= (
                     LEARNING_RATE_STRIATUM_PFC_MODULATION * dopamine * d2_update

@@ -314,27 +314,6 @@ class ForwardPassCoordinator:
         d1_exc_gain, d2_exc_gain = self.homeostasis_manager.compute_excitability()
         return d1_gain * d1_exc_gain, d2_gain * d2_exc_gain
 
-    def extract_pfc_context(self, input_spikes: torch.Tensor) -> Optional[torch.Tensor]:
-        """Extract PFC goal context from concatenated input.
-
-        Input format: [cortex_l5 | hippocampus | pfc]
-        PFC is at the end, size determined by config.pfc_size.
-
-        Args:
-            input_spikes: Full input spikes [n_input]
-
-        Returns:
-            PFC context [pfc_size] or None if not available
-        """
-        if not self.config.use_goal_conditioning:
-            return None
-
-        pfc_size = self.config.pfc_size
-        if input_spikes.shape[0] < pfc_size:
-            return None
-
-        return input_spikes[-pfc_size:]
-
     def forward(
         self,
         input_spikes: torch.Tensor,
@@ -394,7 +373,8 @@ class ForwardPassCoordinator:
             d2_activation = d2_msn_activation
 
         # Extract PFC goal context if enabled
-        pfc_goal_context = self.extract_pfc_context(input_spikes)
+        # Direct access from multi-source dict - no size tracking needed
+        pfc_goal_context = input_spikes.get("pfc") if self.config.use_goal_conditioning else None
 
         # Apply theta modulation
         _theta_baseline_mod, theta_contrast_mod, baseline_exc = self.compute_theta_modulation()

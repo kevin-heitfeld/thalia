@@ -881,33 +881,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         #   Δw = eligibility × dopamine × goal_context
 
         # Type annotations for optional PFC modulation
-        self.pfc_modulation_d1: Optional[nn.Parameter]
-        self.pfc_modulation_d2: Optional[nn.Parameter]
-
-        if self.config.use_goal_conditioning:
-            # Initialize PFC → D1 modulation weights [d1_size, pfc_size]
-            self.pfc_modulation_d1 = nn.Parameter(
-                WeightInitializer.sparse_random(
-                    n_output=self.d1_size,  # D1 neurons only
-                    n_input=self.config.pfc_size,
-                    sparsity=0.3,
-                    device=torch.device(self.config.device),
-                ),
-                requires_grad=False,
-            )
-            # Initialize PFC → D2 modulation weights [d2_size, pfc_size]
-            self.pfc_modulation_d2 = nn.Parameter(
-                WeightInitializer.sparse_random(
-                    n_output=self.d2_size,  # D2 neurons only
-                    n_input=self.config.pfc_size,
-                    sparsity=0.3,
-                    device=torch.device(self.config.device),
-                ),
-                requires_grad=False,
-            )
-        else:
-            self.pfc_modulation_d1 = None
-            self.pfc_modulation_d2 = None
+        # NOTE: These are initialized lazily when add_input_source_striatum("pfc", n_input)
+        # is called, enabling automatic size inference from actual PFC connection.
+        self.pfc_modulation_d1: Optional[nn.Parameter] = None
+        self.pfc_modulation_d2: Optional[nn.Parameter] = None
 
         # =====================================================================
         # RPE TRACKING (No explicit Q-values, only dopamine signal)
@@ -1065,7 +1042,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def evaluate_state(
         self,
-        state: torch.Tensor,
+        state: Dict[str, torch.Tensor],
     ) -> float:
         """
         Evaluate state quality using D1-D2 weight competition.
@@ -1081,8 +1058,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         3. Best action value = max(NET values)
 
         Args:
-            state: State to evaluate [n_input] (1D)
-                   Format: [cortex_l5 | hippocampus | pfc] (concatenated)
+            state: Multi-source state inputs {"cortex:l5": spikes, "hippocampus": spikes, "pfc": spikes}
 
         Returns:
             state_value: Maximum emergent action value (D1-D2 NET) from weights
@@ -1106,19 +1082,21 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d2_mean = d2_weights[d2_slice, :].mean()
             action_values[action] = d1_mean - d2_mean
 
-        # If goal conditioning enabled, extract PFC component from state and modulate values
+        # If goal conditioning enabled, extract PFC from multi-source input
         if (
             self.config.use_goal_conditioning
             and hasattr(self, "pfc_modulation_d1")
             and self.pfc_modulation_d1 is not None
         ):
+            # Extract PFC goal context from multi-source dict
+            pfc_goal_context = state.get("pfc")
+            if pfc_goal_context is None:
+                # PFC not provided, skip goal modulation
+                return float(action_values.max().item())
 
-            # Extract PFC component from concatenated state tensor
-            # Format: [cortex_l5 | hippocampus | pfc]
-            pfc_size = self.config.pfc_size
-            pfc_goal_context = state[
-                -pfc_size:
-            ].float()  # Convert to float for matrix multiplication
+            pfc_goal_context = (
+                pfc_goal_context.float()
+            )  # Convert to float for matrix multiplication
 
             # Shape assertion: PFC goal context must match modulation matrix columns
             expected_pfc_size = self.pfc_modulation_d1.shape[1]
@@ -1129,8 +1107,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             )
             assert actual_pfc_size == expected_pfc_size, (
                 f"PFC goal context size mismatch: got {actual_pfc_size}, expected {expected_pfc_size}. "
-                f"pfc_modulation_d1 shape: {self.pfc_modulation_d1.shape}, pfc_goal_context shape: {pfc_goal_context.shape}. "
-                f"Check that config.pfc_size matches actual PFC output size in brain config."
+                f"pfc_modulation_d1 shape: {self.pfc_modulation_d1.shape}, pfc_goal_context shape: {pfc_goal_context.shape}."
             )
 
             # Compute goal modulation for D1 (Go pathway)
@@ -1228,6 +1205,33 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if self.d2_pathway._parent_striatum_ref is None:
             self.d2_pathway._parent_striatum_ref = weakref.ref(self)
             self.d2_pathway._weight_source = d2_key
+
+        # =====================================================================
+        # LAZY PFC MODULATION INITIALIZATION
+        # =====================================================================
+        # If this is the PFC source and goal conditioning is enabled,
+        # initialize PFC modulation weights with dynamically inferred size.
+        if source_name.lower() == "pfc" and self.config.use_goal_conditioning:
+            # Initialize PFC → D1 modulation weights [d1_size, n_input]
+            self.pfc_modulation_d1 = nn.Parameter(
+                WeightInitializer.sparse_random(
+                    n_output=self.d1_size,
+                    n_input=n_input,  # Inferred from actual PFC connection
+                    sparsity=0.3,
+                    device=self.device,
+                ),
+                requires_grad=False,
+            )
+            # Initialize PFC → D2 modulation weights [d2_size, n_input]
+            self.pfc_modulation_d2 = nn.Parameter(
+                WeightInitializer.sparse_random(
+                    n_output=self.d2_size,
+                    n_input=n_input,  # Inferred from actual PFC connection
+                    sparsity=0.3,
+                    device=self.device,
+                ),
+                requires_grad=False,
+            )
 
         # Initialize eligibility traces for source-pathway combinations
         if hasattr(self, "learning") and self.learning is not None:
@@ -1509,23 +1513,26 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             >>> striatum = Striatum(StriatumConfig(n_output=2, neurons_per_action=10))
             >>> # Currently: 2 actions × 10 neurons = 20 total neurons
             >>> striatum.grow_output(n_new=1)  # Add 1 action
-            >>> # Now: 3 actions × 10 neurons = 30 total neurons
+            >>> # Now: 3 actions × 10 neurons/action/pathway × 2 pathways = 60 total neurons
         """
-        # Calculate actual number of neurons to add (population coding)
-        n_new_neurons = n_new * self.neurons_per_action
+        # Calculate actual number of neurons to add PER PATHWAY (population coding)
+        # neurons_per_action means "neurons per action PER PATHWAY"
+        # So we add n_new * neurons_per_action to BOTH D1 and D2
+        n_new_per_pathway = n_new * self.neurons_per_action
+        n_new_neurons_total = 2 * n_new_per_pathway  # Total across both pathways
 
         # OLD: old_n_output = self.config.n_output (ambiguous - could be actions or neurons)
         # NEW: Use explicit pathway sizes to get current neuron count
         old_n_neurons = self.d1_size + self.d2_size
-        new_n_neurons = old_n_neurons + n_new_neurons
+        new_n_neurons = old_n_neurons + n_new_neurons_total
 
         # =====================================================================
         # 0. ASSIGN NEURON IDS TO NEW NEURONS
         # =====================================================================
         # Generate IDs for new neurons before creating them
-        # Half D1, half D2 to maintain balance
-        n_new_d1 = n_new_neurons // 2
-        n_new_d2 = n_new_neurons - n_new_d1
+        # Add same number to both D1 and D2 to maintain balance
+        n_new_d1 = n_new_per_pathway
+        n_new_d2 = n_new_per_pathway
 
         new_d1_ids = self._generate_new_neuron_ids(n_new_d1, pathway_type="d1")
         new_d2_ids = self._generate_new_neuron_ids(n_new_d2, pathway_type="d2")
@@ -1631,7 +1638,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         }
 
         # Expand all 1D state tensors at once
-        expanded_1d = self._expand_state_tensors(state_1d, n_new_neurons)
+        expanded_1d = self._expand_state_tensors(state_1d, n_new_neurons_total)
         self.recent_spikes = expanded_1d["recent_spikes"]
 
         # =====================================================================
@@ -1693,7 +1700,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 5. UPDATE ACTION-RELATED TRACKING (1D per action, not per neuron)
         # =====================================================================
         # Expand state tracker (vote accumulators, recent_spikes, counts)
-        self.state_tracker.grow(n_new, n_new_neurons)
+        self.state_tracker.grow(n_new, n_new_neurons_total)
 
         # Expand exploration manager (handles action_counts and other exploration state)
         self.exploration.grow(self.n_actions)
@@ -3534,9 +3541,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if state.exploration_manager_state is not None and hasattr(self.exploration, "load_state"):
             self.exploration.load_state(state.exploration_manager_state)  # type: ignore[arg-type]
 
-        # Restore value/RPE (optional)
-        if state.value_estimates is not None and hasattr(self, "value_estimates"):  # type: ignore[attr-defined]
-            self.value_estimates.data = state.value_estimates.to(self.device)  # type: ignore[union-attr,attr-defined]
+        # Restore RPE tracking (value_estimates removed - values emerge from D1-D2 competition)
         if state.last_rpe is not None:
             self.state_tracker._last_rpe = state.last_rpe
         if state.last_expected is not None:

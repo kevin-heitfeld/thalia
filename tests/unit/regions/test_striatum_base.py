@@ -100,8 +100,9 @@ class TestStriatum(RegionTestBase):
         # Grow output (adds actions, which adds neurons_per_action neurons per action)
         region.grow_output(n_new_actions)
 
-        # Verify instance variables updated (n_output is total neurons, not actions)
-        expected_total_neurons = (original_n_actions + n_new_actions) * neurons_per_action
+        # Verify instance variables updated (n_output is total neurons for D1+D2 pathways)
+        # n_output = d1_size + d2_size = 2 * (n_actions * neurons_per_action)
+        expected_total_neurons = 2 * (original_n_actions + n_new_actions) * neurons_per_action
         assert region.n_output == expected_total_neurons
         assert region.n_actions == original_n_actions + n_new_actions
 
@@ -200,10 +201,12 @@ class TestStriatum(RegionTestBase):
         params = self.get_default_params()
         region = self.create_region(**params)
 
-        # With population coding, n_output gets expanded
-        # Original: n_actions = 5 actions
-        # Expanded: n_output = (d1_size + d2_size) = 5 * 4 = 20 neurons
-        expected_n_output = params["n_actions"] * params["neurons_per_action"]
+        # With population coding, n_output includes BOTH D1 and D2 pathways
+        # Original: n_actions = 5 actions, neurons_per_action = 4
+        # D1 size: 5 * 4 = 20 neurons
+        # D2 size: 5 * 4 = 20 neurons
+        # Total n_output: d1_size + d2_size = 40 neurons
+        expected_n_output = 2 * params["n_actions"] * params["neurons_per_action"]
         assert region.n_output == expected_n_output
         assert region.input_size == self._get_input_size(params)
 
@@ -213,7 +216,8 @@ class TestStriatum(RegionTestBase):
         region = self.create_region(**params)
 
         # Verify dimensions are correct
-        expected_n_output = params["n_actions"] * params["neurons_per_action"]
+        # n_output = d1_size + d2_size = 2 * (n_actions * neurons_per_action)
+        expected_n_output = 2 * params["n_actions"] * params["neurons_per_action"]
         assert region.n_output == expected_n_output
 
     def test_forward_pass_tensor_input(self):
@@ -420,20 +424,23 @@ class TestStriatum(RegionTestBase):
         """Test goal conditioning from PFC (when enabled)."""
         params = self.get_default_params()
         params["use_goal_conditioning"] = True
-        params["pfc_size"] = 16
         region = self.create_region(**params)
+
+        # Simulate PFC connection (dynamically initializes pfc_modulation weights)
+        pfc_n_output = 16
+        region.add_input_source_striatum("pfc", n_input=pfc_n_output)
 
         # Forward pass
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         region.forward({"default": input_spikes})
 
-        # Check goal modulation weights
+        # Check goal modulation weights (should be initialized after add_input_source)
         state = region.get_state()
         if hasattr(state, "pfc_modulation_d1") and hasattr(state, "pfc_modulation_d2"):
             if state.pfc_modulation_d1 is not None:
                 # Should have modulation weights for D1 neurons × PFC size
                 # D1 has d1_size neurons
-                expected_shape = (region.d1_size, params["pfc_size"])
+                expected_shape = (region.d1_size, pfc_n_output)
                 assert state.pfc_modulation_d1.shape == expected_shape
 
 

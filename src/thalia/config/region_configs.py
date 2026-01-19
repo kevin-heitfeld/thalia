@@ -699,12 +699,11 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     gap_junction_max_neighbors: int = 10  # Biological: 4-12 neighbors
 
     # =========================================================================
-    # GOAL-CONDITIONED VALUES (Phase 1 Week 2-3 Enhancement)
+    # GOAL-CONDITIONED VALUES
     # =========================================================================
     # Enable PFC goal context to modulate striatal action values
     # Biology: PFC → Striatum projections gate action selection by goal context
     use_goal_conditioning: bool = True  # Enable goal-conditioned value learning
-    pfc_size: int = 128  # Size of PFC goal context input (must match PFC n_output)
     goal_modulation_strength: float = 0.5  # How strongly goals modulate values
     goal_modulation_lr: float = (
         LEARNING_RATE_HEBBIAN_SLOW  # Learning rate for PFC → striatum weights

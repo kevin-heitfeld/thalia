@@ -253,35 +253,10 @@ class ThaliaConfig:
             )
 
         # Run specialized validation helpers
-        issues.extend(self.validate_striatum_pfc_sizes())
         issues.extend(self.validate_timing())
         issues.extend(self.validate_sparsity())
         issues.extend(self.validate_neuromodulation())
         issues.extend(self.validate_training_params())
-
-        return issues
-
-    def validate_striatum_pfc_sizes(self) -> List[str]:
-        """Validate that striatum-PFC sizes match when goal conditioning is enabled.
-
-        When use_goal_conditioning=True, the striatum creates PFC modulation weights.
-        The PFC size must match the configured striatum_pfc_size.
-
-        Returns:
-            List of error messages (empty if valid)
-        """
-        issues: List[str] = []
-
-        if self.brain.use_goal_conditioning:
-            striatum_pfc_size = self.brain.striatum_pfc_size
-            actual_pfc_size = self.brain.sizes.pfc_size
-
-            if striatum_pfc_size != actual_pfc_size:
-                issues.append(
-                    f"Goal conditioning enabled but size mismatch: "
-                    f"striatum_pfc_size={striatum_pfc_size} != pfc_size={actual_pfc_size}. "
-                    f"These must match for PFC -> Striatum modulation."
-                )
 
         return issues
 

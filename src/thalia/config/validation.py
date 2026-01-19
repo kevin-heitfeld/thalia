@@ -257,20 +257,6 @@ def validate_brain_config(brain_config: "BrainConfig") -> List[str]:
     sizes = brain_config.sizes
 
     # =========================================================================
-    # CRITICAL: PFC size must match striatum pfc_size for goal conditioning
-    # =========================================================================
-    if brain_config.use_goal_conditioning:
-        pfc_output = sizes.pfc_size
-        striatum_pfc_size = brain_config.striatum.pfc_size
-
-        if striatum_pfc_size != pfc_output:
-            errors.append(
-                f"PFC size mismatch: striatum.pfc_size={striatum_pfc_size} "
-                f"but PFC outputs {pfc_output} dimensions. "
-                f"Set brain_config.striatum.pfc_size = {pfc_output} or adjust sizes.pfc_size"
-            )
-
-    # =========================================================================
     # Region size constraints
     # =========================================================================
     if sizes.n_actions < 1:
