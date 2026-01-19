@@ -377,11 +377,17 @@ class ConsolidationManager:
             # Hippocampus spontaneously generates CA1 spikes from stored memory
             ca1_spikes = self.hippocampus.forward({})  # Consolidation mode
 
-            # Cortex receives hippocampal feedback and pattern completes
-            # (Systems consolidation mechanism - not implemented in this phase)
-            cortex_spikes = self.cortex.forward({})
+            # === SYSTEMS CONSOLIDATION: Cortical reactivation ===
+            # Hippocampal replay DRIVES cortical pattern completion via back-projections
+            # This is the core mechanism of systems consolidation (Frankland & Bontempi 2005):
+            # - Hippocampus provides partial cue (CA1 output)
+            # - Cortex pattern completes based on learned associations
+            # - Repeated replay strengthens cortical representations
+            # - Eventually cortex can retrieve without hippocampus
+            cortex_spikes = self.cortex.forward({"hippocampus": ca1_spikes})
 
             # Striatum receives multi-source input via NORMAL source names
+            # Both hippocampal AND cortical replay drive striatum learning
             striatum_inputs = {
                 "hippocampus": ca1_spikes,
                 "cortex:l5": cortex_spikes.get("l5") if isinstance(cortex_spikes, dict) else cortex_spikes,
