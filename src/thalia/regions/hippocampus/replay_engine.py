@@ -1,5 +1,17 @@
 """Unified Replay Engine - Memory Consolidation via Hippocampal Replay.
 
+**DEPRECATED (Phase 4: Emergent RL Migration)**: This module is deprecated and
+will be removed in a future version.
+
+As of Phase 4 (January 19, 2026), replay now uses spontaneous CA3 attractor
+dynamics instead of explicit episode replay. See SpontaneousReplayGenerator.
+
+**Migration Path**:
+- OLD: ReplayEngine.replay(episode=...)
+- NEW: SpontaneousReplayGenerator (Phase 2) uses CA3 weights directly
+
+Kept for backward compatibility during migration. May be removed in future versions.
+
 Consolidates replay logic used by both sleep systems and hippocampal sequence
 replay into a single, well-tested implementation.
 
@@ -36,7 +48,25 @@ import torch.nn as nn
 
 from thalia.constants.time import SECONDS_PER_MS, TAU
 
-from .memory_component import Episode
+
+# Stub Episode type for backward compatibility during Phase 4 migration
+# This allows replay_engine.py to remain functional while Episode is being phased out
+@dataclass
+class Episode:
+    """DEPRECATED: Stub Episode dataclass for backward compatibility.
+
+    This is a minimal stub to prevent breaking code that still uses ReplayEngine.
+    See memory_component.py (deleted in Phase 4) for original implementation.
+
+    Phase 4 removes explicit episode buffers - memory is now emergent from
+    CA3 synaptic weights via Hebbian learning.
+    """
+
+    state: torch.Tensor
+    sequence: Optional[List[torch.Tensor]] = None
+    action: int = 0
+    reward: float = 0.0
+    correct: bool = False
 
 
 class ReplayMode(Enum):

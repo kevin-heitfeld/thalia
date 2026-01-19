@@ -60,8 +60,6 @@ import torch
 
 from thalia.managers import BaseCheckpointManager
 
-from .memory_component import Episode
-
 if TYPE_CHECKING:
     from .trisynaptic import TrisynapticHippocampus
 
@@ -378,28 +376,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Update weight reference
         h.weights = h.synaptic_weights["ca3_ca1"]
-
-        # Restore episode buffer
-        h.episode_buffer = []
-        for ep_state in state["episode_buffer"]:
-            episode = Episode(
-                state=ep_state["state"].to(h.device),
-                context=(
-                    ep_state["context"].to(h.device) if ep_state["context"] is not None else None
-                ),
-                action=ep_state["action"],
-                reward=ep_state["reward"],
-                correct=ep_state["correct"],
-                metadata=ep_state["metadata"],
-                priority=ep_state["priority"],
-                timestamp=ep_state["timestamp"],
-                sequence=(
-                    [s.to(h.device) for s in ep_state["sequence"]]
-                    if ep_state["sequence"] is not None
-                    else None
-                ),
-            )
-            h.episode_buffer.append(episode)
 
         # Restore learning state
         learning_state = state["learning_state"]

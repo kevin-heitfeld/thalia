@@ -71,7 +71,6 @@ within one theta cycle (~100-150ms). Splitting would:
 4. Duplicate device/config management across files
 
 Components ARE extracted where orthogonal:
-- HippocampusMemoryComponent: Episodic storage/retrieval (shared concern)
 - ReplayEngine: Sequence replay (shared with sleep system)
 - StimulusGating: Stimulus-triggered inhibition (used by multiple regions)
 
@@ -123,14 +122,12 @@ from thalia.core.diagnostics_schema import (
     compute_health_metrics,
     compute_plasticity_metrics,
 )
-from thalia.core.errors import ComponentError
 from thalia.core.neural_region import NeuralRegion
 from thalia.core.region_state import BaseRegionState
 from thalia.learning.homeostasis.synaptic_homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
 )
-from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.regions.hippocampus.hindsight_relabeling import (
     HERConfig,
@@ -148,7 +145,6 @@ from thalia.utils.oscillator_utils import (
 )
 
 from .checkpoint_manager import HippocampusCheckpointManager
-from .memory_component import Episode, HippocampusMemoryComponent
 from .replay_engine import ReplayConfig, ReplayEngine, ReplayMode
 from .synaptic_tagging import SynapticTagging
 
@@ -645,11 +641,6 @@ class TrisynapticHippocampus(NeuralRegion):
         self._ca3_ca1_delay_buffer: Optional[torch.Tensor] = None
         self._ca3_ca1_delay_ptr: int = 0
 
-        # Episode buffer for sleep consolidation - DEPRECATED (Phase 4)
-        # Memory is now stored in CA3 synaptic weights via Hebbian learning
-        # Kept for backward compatibility during Phase 4 migration
-        self.episode_buffer: List[Episode] = []
-
         # =====================================================================
         # CONSOLIDATION MODE (Phase 1: Biologically-Accurate Replay)
         # =====================================================================
@@ -663,13 +654,6 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # MANAGERS: Extract god object logic into focused components
         # =====================================================================
-        # Create manager context for plasticity and episode management
-        manager_context = ManagerContext(
-            device=self.device,
-            n_output=self.ca3_size,
-            metadata={"ca3_size": self.ca3_size},
-        )
-
         # Homeostasis for CA3 recurrent synaptic scaling
         homeostasis_config = UnifiedHomeostasisConfig(
             weight_budget=config.weight_budget * self.ca3_size,
@@ -685,15 +669,9 @@ class TrisynapticHippocampus(NeuralRegion):
         self._ca3_activity_history: Optional[torch.Tensor] = None
         self._ca3_threshold_offset: Optional[torch.Tensor] = None
 
-        # Episode manager: handles episodic memory storage and retrieval
-        self.memory = HippocampusMemoryComponent(
-            config=config,
-            context=manager_context,
-        )
-
         # Synaptic tagging for emergent priority (Phase 1: Emergent RL Migration)
         # Tags mark recently-active synapses for consolidation
-        # Replaces explicit Episode.priority with biological tagging mechanism
+        # Provides biological priority mechanism without explicit Episode objects
         if config.theta_gamma_enabled:
             self.synaptic_tagging = SynapticTagging(
                 n_neurons=self.ca3_size,
@@ -1497,45 +1475,13 @@ class TrisynapticHippocampus(NeuralRegion):
         # - CA3 attractor pattern propagates through Schaffer collaterals to CA1
         # - STP dynamics preserved (biological timing maintained)
         # - CA1 output drives cortical consolidation via back-projections
+
+        # Phase 4: Consolidation mode removed - spontaneous replay now uses
+        # SpontaneousReplayGenerator (Phase 2) not explicit episode buffer
+        # Spontaneous replay happens automatically during low ACh in forward()
         if self._consolidation_mode and self._replay_cue is not None:
-            # CONSOLIDATION: Spontaneous reactivation from CA3
-            # Sharp-wave ripple trigger: CA3 recurrent activity
-
-            # Check if we have episodes to replay
-            if hasattr(self.memory, "episodes") and len(self.memory.episodes) > 0:
-                # Validate episode index
-                if self._replay_cue < len(self.memory.episodes):
-                    episode = self.memory.episodes[self._replay_cue]
-
-                    # Retrieve CA3 attractor pattern from stored episode
-                    # Sharp-wave ripples originate in CA3, not CA1
-                    ca3_pattern = self._extract_ca3_from_episode(episode)
-
-                    # CA3 → CA1 propagation (with Schaffer collateral STP)
-                    # This maintains biological pathway even during replay
-                    if self.stp_schaffer is not None:
-                        # Apply short-term plasticity (depression at high frequency)
-                        efficacy = self.stp_schaffer(ca3_pattern)
-                        ca1_input = (self.synaptic_weights["ca3_ca1"] * efficacy.T) @ ca3_pattern
-                    else:
-                        ca1_input = self.synaptic_weights["ca3_ca1"] @ ca3_pattern
-
-                    # CA1 generates output spikes from CA3 input
-                    ca1_g_exc = F.relu(ca1_input)  # Clamp to positive conductance
-                    ca1_spikes, _ = self.ca1_neurons(ca1_g_exc, g_inh_input=None)
-
-                    # Update state for observers and diagnostics
-                    if self.state:
-                        self.state.ca3_spikes = ca3_pattern
-                        self.state.ca1_spikes = ca1_spikes
-
-                    # Clear replay cue after execution (one-shot replay)
-                    self._replay_cue = None
-
-                    # Return CA1 output for cortical consolidation
-                    return ca1_spikes
-
-            # No valid episode found - clear cue and return silence
+            # Legacy consolidation mode - no longer used
+            # Spontaneous replay is now handled by Phase 2 mechanism
             self._replay_cue = None
             return torch.zeros(self.ca1_size, device=self.device, dtype=torch.bool)
 
@@ -2757,192 +2703,6 @@ class TrisynapticHippocampus(NeuralRegion):
         if self.stp_ca3_recurrent is not None and state.stp_ca3_recurrent_state is not None:
             self.stp_ca3_recurrent.load_state(state.stp_ca3_recurrent_state)  # type: ignore[arg-type]
 
-    def store_episode(
-        self,
-        state: torch.Tensor,
-        action: int,
-        reward: float,
-        correct: bool,
-        context: Optional[torch.Tensor] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        priority_boost: float = 0.0,
-        sequence: Optional[List[torch.Tensor]] = None,
-        # HER parameters (automatic integration)
-        goal: Optional[torch.Tensor] = None,
-        achieved_goal: Optional[torch.Tensor] = None,
-        done: bool = False,
-    ) -> None:
-        """Store an episode in episodic memory for later replay.
-
-        **DEPRECATED (Phase 4)**: This method is deprecated as part of the emergent
-        RL migration. Memory storage now happens automatically through CA3 Hebbian
-        learning during forward() passes. No explicit episode storage needed!
-
-        **Migration Path**:
-        - OLD: `hippocampus.store_episode(state=..., action=..., reward=...)`
-        - NEW: Just run `hippocampus.forward(inputs)` - Hebbian learning stores patterns
-
-        Pattern storage is now emergent:
-        - CA3 recurrent weights store patterns (autoassociative memory)
-        - Synaptic tags mark recently-active synapses (Phase 1)
-        - Dopamine gates consolidation (three-factor learning)
-
-        Priority is computed based on reward magnitude and correctness.
-
-        **AUTOMATIC HER INTEGRATION**: If use_her=True and goal/achieved_goal
-        are provided, this method AUTOMATICALLY calls add_her_experience()
-        to populate the HER buffer. No manual calls needed during training!
-
-        Args:
-            state: Final activity pattern at decision time
-            action: Selected action
-            reward: Received reward
-            correct: Whether the action was correct
-            context: Optional context/cue pattern
-            metadata: Optional additional info
-            priority_boost: Extra priority for this episode
-            sequence: Optional list of CA3 patterns from each gamma slot
-                      during encoding. Enables gamma-driven replay.
-            goal: (HER) What the agent was trying to achieve (PFC working memory)
-            achieved_goal: (HER) What was actually achieved (CA1 output)
-            done: (HER) Whether episode terminated
-        """
-        import warnings
-
-        warnings.warn(
-            "store_episode() is deprecated (Phase 4). "
-            "Memory storage now happens automatically via CA3 Hebbian learning during forward(). "
-            "See temp/emergent_rl_migration.md Phase 4 for migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        # Get current CA3 pattern from state (if available)
-        ca3_pattern = None
-        if self.state.ca3_spikes is not None:
-            ca3_pattern = self.state.ca3_spikes.clone().detach()
-
-        # Delegate to memory component (note: method is store_memory, not store_episode)
-        self.memory.store_memory(
-            state=state,
-            action=action,
-            reward=reward,
-            correct=correct,
-            context=context,
-            metadata=metadata,
-            priority_boost=priority_boost,
-            sequence=sequence,
-            ca3_pattern=ca3_pattern,  # Store CA3 attractor for consolidation replay
-        )
-
-        # =====================================================================
-        # AUTOMATIC HER INTEGRATION
-        # =====================================================================
-        # If HER is enabled AND goal information was provided, automatically
-        # add this experience to the HER buffer. This makes HER completely
-        # automatic during normal brain operation - no manual calls needed!
-        #
-        # HER needs:
-        # - state: Current state (provided)
-        # - action: Action taken (provided)
-        # - next_state: For simplicity, use state (single-step experiences)
-        # - goal: What we were trying to achieve (from PFC)
-        # - achieved_goal: What actually happened (from CA1)
-        # - reward: Reward received (provided)
-        # - done: Episode termination (provided)
-        #
-        # During consolidation, HER will relabel failed attempts as successes
-        # for the goals that were actually achieved, providing sample-efficient
-        # multi-goal learning.
-        # =====================================================================
-        if self.her_integration is not None and goal is not None:
-            self.add_her_experience(
-                state=state.clone(),
-                action=action,
-                next_state=state.clone(),  # Single-step (decision point)
-                goal=goal,
-                reward=reward,
-                done=done,
-                achieved_goal=achieved_goal,
-            )
-
-    def sample_episodes_prioritized(self, n: int) -> List[Episode]:
-        """Sample episodes with probability proportional to priority."""
-        episodes: List[Episode] = self.memory.sample_episodes_prioritized(n)  # type: ignore[attr-defined]
-        return episodes
-
-    def retrieve_similar(
-        self,
-        query_state: torch.Tensor,
-        query_action: Optional[int] = None,
-        k: int = 5,
-        similarity_threshold: float = 0.0,
-    ) -> List[Dict[str, Any]]:
-        """Retrieve K most similar past experiences from episodic memory.
-
-        **DEPRECATED (Phase 4)**: This method is deprecated as part of the emergent
-        RL migration. Pattern retrieval now happens through CA3 attractor dynamics,
-        not similarity search in an episode buffer.
-
-        **Migration Path**:
-        - OLD: `results = hippocampus.retrieve_similar(query_state=partial_cue, k=5)`
-        - NEW: `output = hippocampus.forward({"ec": partial_cue})  # CA3 attractor completes pattern`
-
-        Pattern completion is now emergent:
-        - CA3 attractor dynamics complete partial cues
-        - Recurrent connections retrieve full patterns
-        - No explicit similarity computation needed
-
-        For Phase 2 model-based planning: provides outcome predictions based
-        on similar past experiences. Uses pattern completion capability of
-        hippocampus to predict what will happen next.
-
-        Biology: Hippocampus retrieves similar past episodes during planning
-        and decision-making (Johnson & Redish, 2007). CA3 pattern completion
-        allows partial cues to retrieve full memories.
-
-        Args:
-            query_state: State to find similar experiences for [n] (1D, ADR-005)
-            query_action: Optional action to filter by (boosts similarity)
-            k: Number of similar experiences to retrieve
-            similarity_threshold: Minimum similarity to return (0.0-1.0)
-
-        Returns:
-            similar_episodes: List of dicts with keys:
-                - 'state': Episode state tensor
-                - 'action': Action taken
-                - 'next_state': Resulting state (approximated)
-                - 'reward': Reward received
-                - 'similarity': Cosine similarity score (0.0-1.0)
-                - 'context': Optional context tensor
-                - 'metadata': Optional metadata dict
-
-        Note:
-            Uses cosine similarity in state space. For more sophisticated
-            retrieval, could use CA3 recurrent dynamics or DG-CA3-CA1 circuit.
-        """
-        import warnings
-
-        warnings.warn(
-            "retrieve_similar() is deprecated (Phase 4). "
-            "Pattern retrieval now uses CA3 attractor dynamics via forward(). "
-            "See temp/emergent_rl_migration.md Phase 4 for migration guide.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        results: List[Dict[str, Any]] = self.memory.retrieve_memories(  # type: ignore[attr-defined]
-            query_state=query_state,
-            query_action=query_action,
-            k=k,
-            similarity_threshold=similarity_threshold,
-        )
-        return results
-
-    # =========================================================================
-    # HINDSIGHT EXPERIENCE REPLAY (HER)
-    # =========================================================================
-
     def add_her_experience(
         self,
         state: torch.Tensor,
@@ -3048,58 +2808,6 @@ class TrisynapticHippocampus(NeuralRegion):
         if self.her_integration is not None:
             self.her_integration.exit_consolidation()
 
-    def cue_replay(self, episode_index: int) -> None:
-        """Cue specific episode for replay.
-
-        Simulates spontaneous reactivation of a stored memory during
-        sleep consolidation. The episode index selects which CA3 attractor
-        to activate during the next forward() pass.
-
-        This implements the biological mechanism where specific memories are
-        prioritized for replay based on recency, salience, or reward value.
-
-        Args:
-            episode_index: Index into episodic memory buffer (self.memory.episodes)
-
-        Raises:
-            ValueError: If episode_index is negative
-        """
-        if episode_index < 0:
-            raise ValueError(
-                f"TrisynapticHippocampus.cue_replay: episode_index must be >= 0, "
-                f"got {episode_index}"
-            )
-        self._replay_cue = episode_index
-
-    def _extract_ca3_from_episode(self, episode: Episode) -> torch.Tensor:
-        """Extract CA3 attractor pattern from stored episode.
-
-        Sharp-wave ripples originate in CA3, not CA1. We retrieve the
-        CA3 pattern and let it propagate through CA3→CA1 naturally.
-
-        This maintains biological accuracy during replay: CA3 recurrent
-        activity spontaneously reactivates, then propagates through
-        Schaffer collaterals to CA1 (with STP dynamics preserved).
-
-        Args:
-            episode: Episode from episodic memory
-
-        Returns:
-            CA3 spike pattern [ca3_size]
-
-        Raises:
-            ValueError: If episode does not have a stored CA3 pattern
-        """
-        if episode.ca3_pattern is not None:
-            return episode.ca3_pattern.to(self.device)
-
-        # No CA3 pattern stored - this should not happen with proper implementation
-        raise ValueError(
-            "Episode does not have CA3 pattern stored. "
-            "This indicates store_episode() was called without CA3 state available. "
-            "Ensure CA3 spikes are populated in hippocampus state before storing episodes."
-        )
-
     def sample_her_replay_batch(self, batch_size: int = 32) -> List:
         """Sample batch of experiences for HER replay learning.
 
@@ -3125,70 +2833,6 @@ class TrisynapticHippocampus(NeuralRegion):
         diagnostics = self.her_integration.get_diagnostics()
         diagnostics["her_enabled"] = True
         return diagnostics
-
-    # =========================================================================
-    # GAMMA-DRIVEN SEQUENCE REPLAY
-    # =========================================================================
-
-    def replay_sequence(
-        self,
-        episode: Episode,
-        compression_factor: float = 5.0,
-        dt_ms: float = 1.0,
-    ) -> Dict[str, Any]:
-        """Replay a sequence using gamma oscillator for time-compressed reactivation.
-
-        Now uses unified ReplayEngine for consistent replay across codebase.
-
-        During sleep, sequences that took seconds to encode are replayed in ~100ms.
-        The gamma oscillator drives slot-by-slot reactivation at compressed timing.
-
-        This implements the biological phenomenon where hippocampal sequences
-        are replayed during sharp-wave ripples at 5-20x compression.
-
-        Args:
-            episode: Episode to replay (must have sequence field populated)
-            compression_factor: Time compression (5.0 = 5x faster than encoding)
-            dt_ms: Base time step in ms
-
-        Returns:
-            Dict with replay metrics:
-                - slots_replayed: Number of sequence slots replayed
-                - total_activity: Sum of all reactivated patterns
-                - gamma_cycles: Number of gamma cycles during replay
-                - compression_factor: Actual compression used
-                - replayed_patterns: List of replayed pattern tensors
-        """
-        if self.replay_engine is None:
-            raise ComponentError(
-                "Hippocampus",
-                "Replay engine not available. Set theta_gamma_enabled=True in config.",
-            )
-
-        # Update compression factor if different from config
-        if compression_factor != self.replay_engine.config.compression_factor:
-            self.replay_engine.config.compression_factor = compression_factor
-
-        # Pattern processor: forward through CA3 for pattern completion
-        # Theta modulation computed internally from self._theta_phase
-        def process_pattern(pattern: torch.Tensor) -> torch.Tensor:
-            return self.forward(pattern)
-
-        # Run replay through unified engine, passing gamma phase from brain
-        result = self.replay_engine.replay(
-            episode=episode,
-            pattern_processor=process_pattern,
-            gamma_phase=self._gamma_phase,  # From brain's OscillatorManager
-        )
-
-        # Convert ReplayResult to dict format
-        return {
-            "slots_replayed": result.slots_replayed,
-            "total_activity": result.total_activity,
-            "gamma_cycles": result.gamma_cycles,
-            "compression_factor": result.compression_factor,
-            "replayed_patterns": result.replayed_patterns,
-        }
 
     # endregion
 
