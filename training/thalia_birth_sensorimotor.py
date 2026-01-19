@@ -84,7 +84,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-from thalia.config import BrainConfig, RegionSizes, ThaliaConfig, print_config
+from thalia.config import BrainConfig, ThaliaConfig, print_config
 from thalia.config.curriculum_growth import (
     CurriculumStage,
     get_curriculum_growth_config,
@@ -135,28 +135,19 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     """
     print("[1/4] Creating neural substrate...")
 
-    # Configuration for tracking
+    # Configuration for tracking (timing, device, etc.)
+    # Region sizes are passed directly to BrainBuilder
     brain_config = BrainConfig(
         device=device,
         dt_ms=1.0,
-        sizes=RegionSizes(
-            input_size=128,  # Sensory input (visual + proprioceptive)
-            thalamus_size=128,  # Match input for 1:1 relay
-            cortex_size=320,  # Cortex total output (L2/3 + L5 = 192 + 128)
-            _cortex_l4_size=128,  # L4 input layer
-            _cortex_l23_size=192,  # L2/3 processing layer (cortico-cortical)
-            _cortex_l5_size=128,  # L5 output layer (subcortical)
-            hippocampus_size=64,  # Episodic memory
-            pfc_size=32,  # Working memory
-            n_actions=7,  # Movement directions (L/R/U/D/F/B/STOP)
-        ),
         encoding_timesteps=10,
         delay_timesteps=5,
         test_timesteps=10,
     )
     config = ThaliaConfig(brain=brain_config)
 
-    # Build brain using BrainBuilder with custom layer sizes
+    # Build brain using BrainBuilder with explicit layer sizes
+    # Sizes are specified directly in add_component() calls
     builder = BrainBuilder(brain_config)
 
     # Thalamus (input interface)
@@ -223,11 +214,13 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     else:
         print("  ✓ Neural substrate created on CPU")
 
-    print(f"    - Input: {config.brain.sizes.input_size} dimensions")
-    print(f"    - Cortex: {config.brain.sizes.cortex_size} neurons")
-    print(f"    - Hippocampus: {config.brain.sizes.hippocampus_size} neurons")
-    print(f"    - PFC: {config.brain.sizes.pfc_size} neurons")
-    print(f"    - Actions: {config.brain.sizes.n_actions}")
+    print("  Components:")
+    print("    - Thalamus (sensory relay): 128 relay neurons")
+    print("    - Cortex (processing): L4=128, L2/3=192, L5=128")
+    print("    - Hippocampus (memory): CA1=64 output")
+    print("    - PFC (working memory): 32 neurons")
+    print("    - Striatum (action selection): 7 actions × 15 neurons")
+    print("    - Cerebellum (motor control): 100 Purkinje cells")
 
     return brain, config
 

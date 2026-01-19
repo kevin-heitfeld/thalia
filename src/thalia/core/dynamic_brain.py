@@ -11,13 +11,12 @@ Unlike EventDrivenBrain (hardcoded 6 regions), DynamicBrain supports:
 - Dynamic component addition/removal
 - Plugin architecture for external extensions
 - Clock-driven execution with axonal delays
-- Optional parallel execution across multiple CPU cores
 
 Architecture:
     DynamicBrain = Graph of Components
     - nodes: regions (NeuralRegion), pathways (AxonalProjection), custom modules
     - edges: data flow between components
-    - execution: clock-driven sequential OR parallel via ParallelExecutor
+    - execution: clock-driven sequential
 
 Author: Thalia Project
 Date: December 15, 2025
@@ -79,7 +78,7 @@ class DynamicBrain(nn.Module):
         - components: Dict[name -> LearnableComponent] (nodes)
         - connections: Dict[(source, target) -> Pathway] (edges)
         - topology: Directed graph adjacency list
-        - execution: Topological ordering or parallel
+        - execution: Topological ordering
 
     Example:
         components = {
@@ -732,9 +731,7 @@ class DynamicBrain(nn.Module):
                     # Store sensory input separately (not in output_cache)
                     sensory_inputs_this_timestep[comp_name] = input_t
 
-            # 2. Execute ALL components in parallel using PREVIOUS timestep's outputs
-            # This ensures true parallel execution - all components see the same input state
-            # and execution order doesn't create artificial timing dependencies
+            # 2. Execute all components in execution order
             new_outputs: SourceOutputs = {}
 
             for comp_name in self._get_execution_order():

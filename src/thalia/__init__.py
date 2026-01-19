@@ -53,7 +53,6 @@ from thalia.config import (
     LayeredCortexConfig,
     PredictiveCortexConfig,
     PrefrontalConfig,
-    RegionSizes,
     StriatumConfig,
     ThaliaConfig,
 )
@@ -138,9 +137,9 @@ from thalia.utils.core_utils import clamp_weights
 MANIM_AVAILABLE = False
 
 # Namespaces for topic-level imports
-from thalia import core  # noqa: F401
-from thalia import learning  # noqa: F401
-from thalia import regions  # noqa: F401
+from thalia import core  # noqa: E402, F401
+from thalia import learning  # noqa: E402, F401
+from thalia import regions  # noqa: E402, F401
 
 __all__ = [
     # Version
@@ -148,7 +147,6 @@ __all__ = [
     # Configuration
     "ThaliaConfig",
     "BrainConfig",
-    "RegionSizes",
     # Type Aliases
     "ComponentGraph",
     "ConnectionGraph",

@@ -30,7 +30,7 @@ import pathlib
 
 import torch
 
-from thalia.config import BrainConfig, RegionSizes, ThaliaConfig
+from thalia.config import BrainConfig, ThaliaConfig
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 
@@ -141,12 +141,6 @@ def generate_batch_spikes(
 def create_minimal_thalia_config(
     device: str = "cpu",
     dt_ms: float = 1.0,
-    input_size: int = 10,
-    thalamus_size: int = 20,
-    cortex_size: int = 30,
-    hippocampus_size: int = 40,
-    pfc_size: int = 20,
-    n_actions: int = 5,
     **overrides,
 ) -> "ThaliaConfig":
     """Create minimal ThaliaConfig for testing.
@@ -176,14 +170,6 @@ def create_minimal_thalia_config(
         brain=BrainConfig(
             device=device,
             dt_ms=dt_ms,
-            sizes=RegionSizes(
-                input_size=input_size,
-                thalamus_size=thalamus_size,
-                cortex_size=cortex_size,
-                hippocampus_size=hippocampus_size,
-                pfc_size=pfc_size,
-                n_actions=n_actions,
-            ),
         ),
     )
 
@@ -203,39 +189,20 @@ def create_test_brain(device: str = "cpu", **config_overrides) -> "DynamicBrain"
 
     Args:
         device: Device for computations
-        **config_overrides: Parameters passed to create_minimal_thalia_config()
+        **config_overrides: Size parameters passed to BrainBuilder.preset()
 
     Returns:
         Initialized DynamicBrain instance
 
     Example:
-        >>> brain = create_test_brain(input_size=64, cortex_size=128)
+        >>> brain = create_test_brain(cortex_size=128, pfc_n_neurons=64)
         >>> brain = create_test_brain(device="cuda" if torch.cuda.is_available() else "cpu")
     """
-    config = create_minimal_thalia_config(device=device, **config_overrides)
+    config = create_minimal_thalia_config(device=device)
 
-    # Build brain with preset, customizing thalamus if needed
-    preset_overrides = {
-        "thalamus_relay_size": config.brain.sizes.thalamus_size,
-        "cortex_size": config.brain.sizes.cortex_size,
-        "pfc_n_neurons": config.brain.sizes.pfc_size,
-        "striatum_actions": config.brain.sizes.n_actions,
-    }
+    # Build brain with preset, passing size overrides
+    brain = BrainBuilder.preset("default", brain_config=config.brain, **config_overrides)
 
-    brain = BrainBuilder.preset("default", brain_config=config.brain, **preset_overrides)
-
-    # If input_size was explicitly set in config, update thalamus to match
-    # (thalamus_from_relay defaults to relay_size = input_size, but tests may want different)
-    if "input_size" in config_overrides:
-        if "thalamus" in brain.components:
-            thalamus = brain.components["thalamus"]
-            if hasattr(thalamus, "input_size"):
-                # NOTE: This updates the expected input size for validation
-                # The actual weights would need to be resized for full compatibility
-                thalamus.input_size = config_overrides["input_size"]
-
-    # NOTE: region filtering would require surgery module, kept simple for now
-    # If users need specific regions, they can use BrainBuilder or surgery tools
     return brain
 
 

@@ -133,104 +133,6 @@ class NeuromodulationConfig:
         return "\n".join(lines)
 
 
-@dataclass
-class RegionSizes:
-    """Size configuration for brain regions.
-
-    All sizes are in terms of number of neurons (or output size).
-    Ratios and internal sizes are computed automatically.
-
-    For cortex, you can either:
-    1. Specify cortex_size only (uses default 1.0:1.5:1.0 ratios)
-    2. Specify cortex_size AND explicit layer sizes (cortex_l4_size, cortex_l23_size, cortex_l5_size)
-    """
-
-    input_size: int = 256
-    """Size of input to the brain (e.g., from sensory encoding)."""
-
-    thalamus_size: int = 256
-    """Size of thalamus relay output (typically matches input for 1:1 relay)."""
-
-    cortex_size: int = 128
-    """Output size of cortex. L2/3 and L5 layers will be sized relative to this."""
-
-    # Explicit cortex layer sizes (optional, overrides ratio-based calculation)
-    _cortex_l4_size: Optional[int] = None
-    """Explicit L4 size (if None, computed from cortex_size * 1.0)."""
-
-    _cortex_l23_size: Optional[int] = None
-    """Explicit L2/3 size (if None, computed from cortex_size * 1.5)."""
-
-    _cortex_l5_size: Optional[int] = None
-    """Explicit L5 size (if None, computed from cortex_size * 1.0)."""
-
-    hippocampus_size: int = 64
-    """Output size of hippocampus (CA1 output)."""
-
-    pfc_size: int = 32
-    """Size of prefrontal cortex working memory."""
-
-    n_actions: int = 2
-    """Number of possible actions (for striatum output)."""
-
-    # =========================================================================
-    # DERIVED SIZES (computed properties)
-    # =========================================================================
-
-    @property
-    def cortex_l4_size(self) -> int:
-        """L4 (input layer) size - explicit or computed from cortex_size."""
-        return self._cortex_l4_size if self._cortex_l4_size is not None else self.cortex_size
-
-    @property
-    def cortex_l23_size(self) -> int:
-        """L2/3 (processing layer) size - explicit or computed as 1.5x cortex."""
-        return (
-            self._cortex_l23_size
-            if self._cortex_l23_size is not None
-            else int(self.cortex_size * 1.5)
-        )
-
-    @property
-    def cortex_l5_size(self) -> int:
-        """L5 (output layer) size - explicit or computed from cortex_size."""
-        return self._cortex_l5_size if self._cortex_l5_size is not None else self.cortex_size
-
-    @property
-    def hippocampus_dg_size(self) -> int:
-        """Dentate gyrus size - 5x expansion for pattern separation."""
-        # DG expands from cortex L2/3 input
-        return int(self.cortex_l23_size * 5)
-
-    @property
-    def hippocampus_ca3_size(self) -> int:
-        """CA3 size - 50% of DG for pattern completion."""
-        return int(self.hippocampus_dg_size * 0.5)
-
-    @property
-    def hippocampus_ca1_size(self) -> int:
-        """CA1 size - matches configured hippocampus output."""
-        return self.hippocampus_size
-
-    def summary(self) -> str:
-        """Return formatted summary of region sizes."""
-        lines = [
-            "=== Region Sizes ===",
-            f"  Input: {self.input_size}",
-            f"  Cortex: {self.cortex_size}",
-            f"    L4: {self.cortex_l4_size}",
-            f"    L2/3: {self.cortex_l23_size}",
-            f"    L5: {self.cortex_l5_size}",
-            f"  Hippocampus: {self.hippocampus_size}",
-            f"    DG: {self.hippocampus_dg_size}",
-            f"    CA3: {self.hippocampus_ca3_size}",
-            f"    CA1: {self.hippocampus_ca1_size}",
-            f"  PFC: {self.pfc_size}",
-            f"  Actions: {self.n_actions}",
-        ]
-        return "\n".join(lines)
-
-
 # NOTE: Region-specific configs are now imported from canonical locations.
 # Each region module (hippocampus, striatum, prefrontal, cerebellum) defines
 # its own complete configuration. This eliminates duplication and ensures
@@ -381,48 +283,6 @@ class BrainConfig:
     """Sharp-wave ripple frequency. Range: 100-200 Hz (biological).
     Memory replay during rest/sleep, hippocampal consolidation."""
 
-    # =========================================================================
-    # NEURAL PROPERTIES
-    # =========================================================================
-    vocab_size: int = 50257
-    """Token vocabulary size. Default is GPT-2 size.
-
-    Each brain can have its own vocabulary. If brains communicate,
-    an interface layer handles translation between vocabularies.
-    """
-
-    default_sparsity: float = 0.05
-    """Default target sparsity (fraction of neurons active).
-    Individual regions can override this."""
-
-    w_min: float = 0.0
-    """Minimum weight value. Usually 0 (no negative weights) or small negative."""
-
-    w_max: float = 1.0
-    """Maximum weight value. Prevents runaway potentiation."""
-
-    # =========================================================================
-    # ARCHITECTURE
-    # =========================================================================
-    # Region sizes
-    sizes: RegionSizes = field(default_factory=RegionSizes)
-
-    # Region-specific configs (BEHAVIORAL PARAMS ONLY - no sizes)
-    # Sizes come from RegionSizes and are passed separately during construction
-    cortex: "PredictiveCortexConfig" = field(default_factory=_default_cortex_config)
-    hippocampus: "HippocampusConfig" = field(default_factory=_default_hippocampus_config)
-    striatum: "StriatumConfig" = field(default_factory=_default_striatum_config)
-    pfc: "PrefrontalConfig" = field(default_factory=_default_pfc_config)
-    cerebellum: "CerebellumConfig" = field(default_factory=_default_cerebellum_config)
-
-    # Region type selection (allows swapping implementations)
-    cortex_type: CortexType = CortexType.PREDICTIVE
-    """Which cortex implementation to use. PREDICTIVE (default) enables local error learning, LAYERED for simpler feedforward."""
-
-    # Neuromodulation (dopamine, norepinephrine, acetylcholine)
-    neuromodulation: NeuromodulationConfig = field(default_factory=NeuromodulationConfig)
-    """Dopamine, norepinephrine, acetylcholine configuration."""
-
     # Oscillator configuration
     oscillator_couplings: Optional[List[OscillatorCoupling]] = None
     """Custom cross-frequency couplings (e.g., delta-theta, alpha-gamma).
@@ -450,8 +310,45 @@ class BrainConfig:
     delay_timesteps: int = 10
     test_timesteps: int = 15
 
-    # Execution mode
-    parallel: bool = False
+    # =========================================================================
+    # NEURAL PROPERTIES
+    # =========================================================================
+    vocab_size: int = 50257
+    """Token vocabulary size. Default is GPT-2 size.
+
+    Each brain can have its own vocabulary. If brains communicate,
+    an interface layer handles translation between vocabularies.
+    """
+
+    default_sparsity: float = 0.05
+    """Default target sparsity (fraction of neurons active).
+    Individual regions can override this."""
+
+    w_min: float = 0.0
+    """Minimum weight value. Usually 0 (no negative weights) or small negative."""
+
+    w_max: float = 1.0
+    """Maximum weight value. Prevents runaway potentiation."""
+
+    # =========================================================================
+    # ARCHITECTURE
+    # =========================================================================
+
+    # Region-specific configs (BEHAVIORAL PARAMS ONLY - no sizes)
+    # Sizes are passed directly to BrainBuilder during construction
+    cortex: "PredictiveCortexConfig" = field(default_factory=_default_cortex_config)
+    hippocampus: "HippocampusConfig" = field(default_factory=_default_hippocampus_config)
+    striatum: "StriatumConfig" = field(default_factory=_default_striatum_config)
+    pfc: "PrefrontalConfig" = field(default_factory=_default_pfc_config)
+    cerebellum: "CerebellumConfig" = field(default_factory=_default_cerebellum_config)
+
+    # Region type selection (allows swapping implementations)
+    cortex_type: CortexType = CortexType.PREDICTIVE
+    """Which cortex implementation to use. PREDICTIVE (default) enables local error learning, LAYERED for simpler feedforward."""
+
+    # Neuromodulation (dopamine, norepinephrine, acetylcholine)
+    neuromodulation: NeuromodulationConfig = field(default_factory=NeuromodulationConfig)
+    """Dopamine, norepinephrine, acetylcholine configuration."""
 
     # =========================================================================
     # Goal-conditioned behavior (PFC → Striatum modulation)
@@ -549,8 +446,6 @@ class BrainConfig:
             f"  Sparsity: {self.default_sparsity:.1%}",
             f"  Weights: [{self.w_min}, {self.w_max}]",
             "",
-            self.sizes.summary(),
-            "",
             "--- Region Types ---",
             f"  Cortex: {self.cortex_type.value}",
             "",
@@ -558,27 +453,10 @@ class BrainConfig:
             f"  Encoding: {self.encoding_timesteps} timesteps",
             f"  Delay: {self.delay_timesteps} timesteps",
             f"  Test: {self.test_timesteps} timesteps",
-            f"  Parallel: {self.parallel}",
             "",
             self.neuromodulation.summary(),
         ]
         return "\n".join(lines)
-
-    @property
-    def total_striatum_neurons(self) -> int:
-        """Total neurons in striatum with population coding."""
-        if self.use_population_coding:
-            return self.sizes.n_actions * self.neurons_per_action
-        return self.sizes.n_actions
-
-    @property
-    def striatum_pfc_size(self) -> int:
-        """PFC size that striatum should use for goal conditioning.
-
-        This MUST match sizes.pfc_size when use_goal_conditioning=True.
-        Returns sizes.pfc_size by default for consistency.
-        """
-        return self.sizes.pfc_size
 
     def __post_init__(self):
         """Validate configuration after initialization."""

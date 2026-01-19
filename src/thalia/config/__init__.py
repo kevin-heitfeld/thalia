@@ -34,7 +34,6 @@ from .brain_config import (
     BrainConfig,
     CortexType,
     NeuromodulationConfig,
-    RegionSizes,
 )
 from .language_config import (
     DecodingConfig,
@@ -96,7 +95,6 @@ __all__ = [
     "HebbianLearningConfig",
     # Brain configs
     "BrainConfig",
-    "RegionSizes",
     "CortexType",
     "NeuromodulationConfig",
     # Training configs

@@ -254,28 +254,9 @@ def validate_brain_config(brain_config: "BrainConfig") -> List[str]:
         List of error messages (empty if valid)
     """
     errors: List[str] = []
-    sizes = brain_config.sizes
 
-    # =========================================================================
-    # Region size constraints
-    # =========================================================================
-    if sizes.n_actions < 1:
-        errors.append(f"n_actions must be >= 1, got {sizes.n_actions}")
-
-    if sizes.input_size < 1:
-        errors.append(f"input_size must be >= 1, got {sizes.input_size}")
-
-    if sizes.pfc_size < 1:
-        errors.append(f"pfc_size must be >= 1, got {sizes.pfc_size}")
-
-    if sizes.hippocampus_size < 1:
-        errors.append(f"hippocampus_size must be >= 1, got {sizes.hippocampus_size}")
-
-    if sizes.cortex_l23_size < 1:
-        errors.append(f"cortex_l23_size must be >= 1, got {sizes.cortex_l23_size}")
-
-    if sizes.cortex_l5_size < 1:
-        errors.append(f"cortex_l5_size must be >= 1, got {sizes.cortex_l5_size}")
+    # Note: RegionSizes removed - size validation no longer needed
+    # Sizes are specified in BrainBuilder and validated at construction time
 
     # =========================================================================
     # Population coding constraints
@@ -286,15 +267,6 @@ def validate_brain_config(brain_config: "BrainConfig") -> List[str]:
             errors.append(
                 f"neurons_per_action must be >= 1 when use_population_coding=True, "
                 f"got {neurons_per_action}"
-            )
-
-        # Total striatum neurons = n_actions * neurons_per_action
-        total_neurons = sizes.n_actions * neurons_per_action
-        if total_neurons > 10000:
-            errors.append(
-                f"Striatum total neurons ({total_neurons} = {sizes.n_actions} actions × "
-                f"{neurons_per_action} neurons/action) exceeds reasonable limit (10000). "
-                f"Consider reducing n_actions or neurons_per_action"
             )
 
     return errors

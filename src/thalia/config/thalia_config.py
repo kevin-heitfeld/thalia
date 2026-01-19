@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .brain_config import BrainConfig, RegionSizes
+from .brain_config import BrainConfig
 from .language_config import LanguageConfig
 from .training_config import TrainingConfig
 
@@ -96,12 +96,8 @@ def print_config(
 
     # Brain sizes
     print("\n--- BRAIN SIZES ---")
-    sizes = config.brain.sizes
-    print(f"  Input size: {sizes.input_size}")
-    print(f"  Cortex size: {sizes.cortex_size}")
-    print(f"  Hippocampus size: {sizes.hippocampus_size}")
-    print(f"  PFC size: {sizes.pfc_size}")
-    print(f"  N actions: {sizes.n_actions}")
+    print("  Sizes specified in BrainBuilder.add_component() calls")
+    print("  See training script for architecture-specific sizes")
 
     # Cortex config
     print("\n--- CORTEX ---")
@@ -192,8 +188,7 @@ class ThaliaConfig:
         config = ThaliaConfig(
             brain=BrainConfig(
                 device="cuda",
-                vocab_size=10000,
-                sizes=RegionSizes(cortex_size=256)),
+                vocab_size=10000),
         )
 
         # Show effective configuration
@@ -226,31 +221,8 @@ class ThaliaConfig:
         """
         issues: List[str] = []
 
-        # Check that brain input matches what language encoder will produce
-        expected_input = self.brain.sizes.input_size
-        if self.language.encoding.embedding_dim != expected_input:
-            # This is just informational - embedding_dim is intermediate
-            pass
-
-        # Check position encoding size ratio
-        pos_neurons = int(self.brain.sizes.input_size * self.language.position.size_ratio)
-        if pos_neurons < 16:
-            issues.append(f"Position encoding only has {pos_neurons} neurons - may be too few")
-
-        # Check that sparsity is reasonable for network size
-        if self.brain.default_sparsity * self.brain.sizes.cortex_size < 1:
-            issues.append(
-                f"With sparsity {self.brain.default_sparsity} and cortex_size "
-                f"{self.brain.sizes.cortex_size}, average active neurons < 1"
-            )
-
-        # Check theta period vs timesteps
-        theta_period_timesteps = self.brain.theta_period_ms / self.brain.dt_ms
-        if self.brain.encoding_timesteps > theta_period_timesteps * 2:
-            issues.append(
-                f"Encoding timesteps ({self.brain.encoding_timesteps}) > 2 theta periods "
-                f"({theta_period_timesteps:.1f}) - may have phase ambiguity"
-            )
+        # Note: Brain input size and region sizes are no longer centrally configured.
+        # Size coordination happens through BrainBuilder connections.
 
         # Run specialized validation helpers
         issues.extend(self.validate_timing())
@@ -312,8 +284,6 @@ class ThaliaConfig:
 
         Checks:
         - Default sparsity is in reasonable range (0.01-0.3)
-        - Region-specific sparsities are reasonable
-        - Active neurons > 1 for each region
 
         Returns:
             List of warning messages (empty if valid)
@@ -329,37 +299,6 @@ class ThaliaConfig:
             issues.append(
                 f"default_sparsity={self.brain.default_sparsity} is high - sparse coding benefits reduced"
             )
-
-        # Check active neurons for each region
-        regions = [
-            (
-                "cortex",
-                self.brain.sizes.cortex_size,
-                getattr(self.brain.cortex, "l4_sparsity", self.brain.default_sparsity),
-            ),
-            (
-                "hippocampus",
-                self.brain.sizes.hippocampus_size,
-                getattr(self.brain.hippocampus, "ca1_sparsity", self.brain.default_sparsity),
-            ),
-            (
-                "pfc",
-                self.brain.sizes.pfc_size,
-                getattr(self.brain.pfc, "sparsity", self.brain.default_sparsity),
-            ),
-        ]
-
-        for name, size, sparsity in regions:
-            active = size * sparsity
-            if active < 1:
-                issues.append(
-                    f"{name}: size={size}, sparsity={sparsity:.3f} -> {active:.1f} active neurons. "
-                    f"Need at least 1 active neuron."
-                )
-            elif active < 3:
-                issues.append(
-                    f"{name}: only {active:.1f} active neurons - may be too few for robust coding"
-                )
 
         return issues
 
@@ -534,17 +473,9 @@ class ThaliaConfig:
                 "dt_ms": self.brain.dt_ms,
                 "vocab_size": self.brain.vocab_size,
                 "default_sparsity": self.brain.default_sparsity,
-                "sizes": {
-                    "input_size": self.brain.sizes.input_size,
-                    "cortex_size": self.brain.sizes.cortex_size,
-                    "hippocampus_size": self.brain.sizes.hippocampus_size,
-                    "pfc_size": self.brain.sizes.pfc_size,
-                    "n_actions": self.brain.sizes.n_actions,
-                },
                 "encoding_timesteps": self.brain.encoding_timesteps,
                 "delay_timesteps": self.brain.delay_timesteps,
                 "test_timesteps": self.brain.test_timesteps,
-                "parallel": self.brain.parallel,
             },
             "language": {
                 "encoding": {
@@ -586,15 +517,10 @@ class ThaliaConfig:
         """Create from dictionary."""
         brain_dict = d.get("brain", {})
 
-        sizes_data = brain_dict.get("sizes", {})
-        sizes = RegionSizes(**sizes_data)
-
         brain = BrainConfig(
-            sizes=sizes,
             encoding_timesteps=brain_dict.get("encoding_timesteps", 15),
             delay_timesteps=brain_dict.get("delay_timesteps", 10),
             test_timesteps=brain_dict.get("test_timesteps", 15),
-            parallel=brain_dict.get("parallel", False),
         )
 
         return cls(
@@ -619,32 +545,5 @@ class ThaliaConfig:
             n_timesteps=self.language.encoding.n_timesteps,
             sparsity=self.language.encoding.get_sparsity(self.brain),
             max_seq_len=self.language.position.max_positions,
-            brain_input_size=self.brain.sizes.input_size,
             device=self.brain.device,
-        )
-
-    # =========================================================================
-    # CONVENIENCE FACTORY METHODS
-    # =========================================================================
-
-    @classmethod
-    def minimal(cls, device: str = "cpu") -> ThaliaConfig:
-        """Create minimal configuration for testing.
-
-        Small network sizes for fast testing.
-        """
-        return cls(
-            brain=BrainConfig(
-                device=device,
-                sizes=RegionSizes(
-                    input_size=64,
-                    cortex_size=32,
-                    hippocampus_size=16,
-                    pfc_size=8,
-                    n_actions=2,
-                ),
-                encoding_timesteps=5,
-                delay_timesteps=3,
-                test_timesteps=5,
-            ),
         )

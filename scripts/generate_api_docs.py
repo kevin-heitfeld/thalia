@@ -5018,16 +5018,19 @@ class APIDocGenerator:
             f.write("graph TD\n")
             f.write("    Global[ThaliaConfig<br/>Global settings]\n")
             f.write("    Brain[BrainConfig<br/>Architecture]\n")
-            f.write("    Regions[RegionSizes<br/>Size specs]\n")
-            f.write("    Regional[*RegionConfig<br/>Region-specific]\n\n")
+            f.write("    Regional[*RegionConfig<br/>Region-specific]\n")
+            f.write("    Builder[BrainBuilder<br/>Size specification]\n\n")
 
             f.write("    Global --> Brain\n")
-            f.write("    Brain --> Regions\n")
-            f.write("    Regions --> Regional\n")
+            f.write("    Brain --> Regional\n")
+            f.write("    Builder --> Regional\n")
             f.write("    Regional --> Cortex[LayeredCortexConfig]\n")
             f.write("    Regional --> Hippo[HippocampusConfig]\n")
             f.write("    Regional --> Stri[StriatumConfig]\n")
             f.write("```\n\n")
+            f.write(
+                "**Note**: Region sizes are specified directly in BrainBuilder.add_component() calls.\n\n"
+            )
 
             # Best practices
             f.write("## 💡 Architectural Best Practices\n\n")

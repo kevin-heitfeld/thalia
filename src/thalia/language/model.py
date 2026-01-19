@@ -143,12 +143,13 @@ class LanguageBrainInterface(ConfigurableMixin, nn.Module):
             LanguageBrainInterface instance
         """
         # Extract language interface config from ThaliaConfig
+        # Note: brain_input_size must be obtained from actual brain architecture
         interface_config = LanguageInterfaceConfig(
             vocab_size=config.brain.vocab_size,
             n_timesteps=config.language.encoding.n_timesteps,
             sparsity=config.language.encoding.get_sparsity(config.brain),
             max_seq_len=config.language.position.max_positions,
-            brain_input_size=config.brain.sizes.input_size,
+            brain_input_size=brain.config.input_size,
             device=config.brain.device,
         )
 
