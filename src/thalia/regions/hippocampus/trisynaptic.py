@@ -711,7 +711,7 @@ class TrisynapticHippocampus(NeuralRegion):
                 compression_factor=5.0,
                 phase_window_width=0.5,  # Gaussian width for phase-based selection
                 max_patterns_per_cycle=7,  # Approximate capacity (emergent)
-                mode=ReplayMode.SEQUENCE,
+                mode=ReplayMode.SLEEP_REVERSE,  # Default to sleep consolidation mode
                 apply_phase_modulation=True,
                 pattern_completion=True,
             )

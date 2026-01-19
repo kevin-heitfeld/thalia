@@ -46,9 +46,6 @@ class ReplayMode(Enum):
     - AWAKE_FORWARD: Planning at choice points (prospection)
     - AWAKE_REVERSE: Immediate credit assignment after reward
     - SLEEP_REVERSE: Systems consolidation during sleep
-    - SEQUENCE: Gamma-driven sequence replay (generic)
-    - SINGLE: Single-state replay (fallback)
-    - RIPPLE: Sharp-wave ripple replay (sleep)
     """
 
     # Awake replay modes (immediate, during theta troughs)
@@ -57,11 +54,6 @@ class ReplayMode(Enum):
 
     # Sleep replay modes (consolidation, during sharp-wave ripples)
     SLEEP_REVERSE = "sleep_reverse"  # Systems consolidation
-
-    # Legacy modes (still supported)
-    SEQUENCE = "sequence"  # Gamma-driven sequence replay
-    SINGLE = "single"  # Single-state replay (fallback)
-    RIPPLE = "ripple"  # Sharp-wave ripple replay
 
 
 @dataclass
@@ -83,7 +75,7 @@ class ReplayConfig:
 
     # Replay control
     max_patterns_per_replay: int = 30  # Safety limit for pattern replay
-    mode: ReplayMode = ReplayMode.SEQUENCE
+    mode: ReplayMode = ReplayMode.SLEEP_REVERSE
 
     # Pattern processing
     apply_phase_modulation: bool = True  # Apply gamma phase modulation to patterns
@@ -109,7 +101,7 @@ class ReplayResult:
     replayed_patterns: List[torch.Tensor] = field(default_factory=list)  # type: ignore[assignment]
 
     # Diagnostics
-    mode_used: ReplayMode = ReplayMode.SINGLE
+    mode_used: ReplayMode = ReplayMode.SLEEP_REVERSE
     sequence_length: int = 0
 
     def __post_init__(self):
@@ -121,22 +113,22 @@ class ReplayEngine(nn.Module):
     """Unified engine for memory replay and consolidation.
 
     Provides time-compressed sequence replay with gamma oscillator coordination.
-    Can operate in three modes:
+    Supports multiple biologically-motivated replay modes:
 
-    1. SEQUENCE: Full gamma-driven sequence replay
-       - Uses gamma oscillator to drive slot-by-slot reactivation
-       - Time-compressed (5-20x faster than encoding)
-       - Best for replaying learned sequences
+    1. AWAKE_FORWARD: Planning and prospection
+       - Forward replay at choice points
+       - 10x time compression
+       - Used for model-based decision making
 
-    2. SINGLE: Single-state replay
-       - Replays one pattern without sequence structure
-       - Fallback when no sequence available
-       - Faster, simpler
+    2. AWAKE_REVERSE: Immediate credit assignment
+       - Reverse replay after reward
+       - 10x time compression
+       - Links outcomes to earlier actions
 
-    3. RIPPLE: Sharp-wave ripple modulated replay
-       - Modulates replay by ripple phase
-       - Used in sleep/offline consolidation
-       - Coordinates hippocampus → cortex transfer
+    3. SLEEP_REVERSE: Systems consolidation
+       - Reverse replay during sleep
+       - 5x time compression
+       - Strengthens hippocampus → cortex connections
 
     Example:
         >>> config = ReplayConfig(compression_factor=5.0)
@@ -176,12 +168,9 @@ class ReplayEngine(nn.Module):
         allowing precise phase-based replay that respects gamma oscillations.
 
         **Replay Modes**:
-        - AWAKE_FORWARD: Planning/prospection (forward replay)
+        - AWAKE_FORWARD: Planning/prospection (forward replay, 10x compression)
         - AWAKE_REVERSE: Immediate credit assignment (reverse replay, 10x compression)
         - SLEEP_REVERSE: Systems consolidation (reverse replay, 5x compression)
-        - SEQUENCE: Generic gamma-driven sequence replay (forward)
-        - SINGLE: Single-state replay (no sequence)
-        - RIPPLE: Sharp-wave ripple modulated replay (sleep)
 
         Args:
             episode: Episode to replay (contains state or sequence)
