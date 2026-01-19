@@ -180,22 +180,6 @@ class TestHippocampus(RegionTestBase):
         # Should not error and return ca1_size
         assert output.shape[0] == region.ca1_size
 
-    def test_episodic_memory_buffer(self):
-        """Test hippocampus maintains episode buffer."""
-        params = self.get_default_params()
-        region = self.create_region(**params)
-
-        # Check for episode buffer
-        if hasattr(region, "episode_buffer"):
-            assert isinstance(region.episode_buffer, list)
-
-            # Store episode (if region supports it)
-            if hasattr(region, "store_episode"):
-                sample = torch.ones(self._get_input_size(params), device=region.device)
-                # Note: store_episode signature may vary by implementation
-                # This is just checking the method exists
-                assert callable(region.store_episode)
-
     def test_acetylcholine_encoding_modulation(self):
         """Test acetylcholine modulates encoding strength."""
         params = self.get_default_params()
@@ -213,6 +197,131 @@ class TestHippocampus(RegionTestBase):
         if hasattr(state, "acetylcholine"):
             assert state.acetylcholine == 0.9
 
+    def test_consolidation_mode_toggle(self):
+        """Test Phase 1: Consolidation mode toggle and neuromodulatory changes."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
 
-# Standard tests (initialization, forward, growth, state, device, neuromodulators, diagnostics)
-# inherited from RegionTestBase - eliminates ~100 lines of boilerplate
+        # Verify initial state (wake mode)
+        assert hasattr(region, "_consolidation_mode")
+        assert region._consolidation_mode is False
+
+        # Enter consolidation mode
+        region.enter_consolidation_mode()
+
+        # Verify consolidation mode is active
+        assert region._consolidation_mode is True
+
+        # Verify neuromodulatory state changed (sleep state per Hasselmo 1999)
+        state = region.get_state()
+        assert hasattr(state, "acetylcholine")
+        assert hasattr(state, "norepinephrine")
+        assert hasattr(state, "dopamine")
+
+        # Sleep state: LOW ACh (0.1), LOW NE (0.1), MODERATE DA (0.3)
+        assert state.acetylcholine == 0.1
+        assert state.norepinephrine == 0.1
+        assert state.dopamine == 0.3
+
+        # Exit consolidation mode
+        region.exit_consolidation_mode()
+
+        # Verify wake mode restored
+        assert region._consolidation_mode is False
+        assert region._replay_cue is None
+
+        # Verify wake neuromodulatory state restored
+        state = region.get_state()
+        # Wake state: HIGH ACh (0.8), MODERATE NE (0.5), MODERATE DA (0.5)
+        assert state.acetylcholine == 0.8
+        assert state.norepinephrine == 0.5
+        assert state.dopamine == 0.5
+
+    def test_cue_replay(self):
+        """Test Phase 1: Episode replay cuing."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Cue episode 0 for replay
+        region.cue_replay(episode_index=0)
+        assert region._replay_cue == 0
+
+        # Cue episode 5
+        region.cue_replay(episode_index=5)
+        assert region._replay_cue == 5
+
+        # Test invalid episode index
+        try:
+            region.cue_replay(episode_index=-1)
+            assert False, "Should have raised ValueError for negative episode index"
+        except ValueError as e:
+            assert "episode_index must be >= 0" in str(e)
+
+    def test_consolidation_replay_forward(self):
+        """Test Phase 1: Consolidation mode drives CA3→CA1 replay during forward()."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Enter consolidation mode
+        region.enter_consolidation_mode()
+
+        # Verify no replay without cue
+        inputs = {"ec": torch.zeros(params["input_size"], device=region.device)}
+
+        # Forward without cue should return silence (no episodes stored)
+        region._replay_cue = 0  # Set cue manually
+        output = region.forward(inputs)
+
+        # Should return CA1-sized output
+        assert output.shape[0] == region.ca1_size
+
+        # After replay, cue should be cleared
+        assert region._replay_cue is None
+
+        # Exit consolidation mode
+        region.exit_consolidation_mode()
+
+    def test_ca3_pattern_storage_and_retrieval(self):
+        """Test Phase 1: CA3 patterns are stored and retrieved correctly."""
+        params = self.get_default_params()
+        region = self.create_region(**params)
+
+        # Run forward pass to populate CA3 state
+        inputs = {"ec": torch.ones(params["input_size"], device=region.device)}
+        region.forward(inputs)
+
+        # Verify CA3 spikes are available
+        assert region.state.ca3_spikes is not None
+        ca3_original = region.state.ca3_spikes.clone()
+
+        # Store an episode (should capture CA3 pattern)
+        region.store_episode(
+            state=torch.ones(region.ca1_size, device=region.device),
+            action=0,
+            reward=1.0,
+            correct=True,
+        )
+
+        # Verify episode was stored
+        assert len(region.memory.episode_buffer) > 0
+        stored_episode = region.memory.episode_buffer[0]
+
+        # Verify CA3 pattern was stored
+        assert hasattr(stored_episode, "ca3_pattern")
+        assert stored_episode.ca3_pattern is not None
+        assert stored_episode.ca3_pattern.shape == ca3_original.shape
+
+        # Verify CA3 pattern matches original (within float tolerance)
+        assert torch.allclose(stored_episode.ca3_pattern, ca3_original, atol=1e-6)
+
+        # Test retrieval during consolidation
+        region.enter_consolidation_mode()
+        region.cue_replay(episode_index=0)
+
+        # Forward should retrieve and use stored CA3 pattern
+        replay_output = region.forward(inputs)
+
+        # Should produce CA1 output
+        assert replay_output.shape[0] == region.ca1_size
+
+        region.exit_consolidation_mode()

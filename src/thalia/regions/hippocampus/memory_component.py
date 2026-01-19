@@ -32,6 +32,11 @@ class Episode:
 
     During sleep replay, sequences are replayed time-compressed using
     the gamma oscillator to drive slot-by-slot reactivation.
+
+    **Phase 1 Enhancement (Biologically-Accurate Consolidation):**
+    Sharp-wave ripples originate in CA3, not CA1. We now explicitly store
+    the CA3 attractor pattern so consolidation replay can accurately
+    reproduce the CA3→CA1 pathway dynamics during sleep.
     """
 
     state: torch.Tensor  # Activity pattern at decision time (or final state)
@@ -43,6 +48,7 @@ class Episode:
     priority: float = 1.0  # Replay priority
     timestamp: int = 0  # When this episode occurred
     sequence: Optional[List[torch.Tensor]] = None  # Sequence of states for gamma-driven replay
+    ca3_pattern: Optional[torch.Tensor] = None  # CA3 attractor pattern (for consolidation replay)
 
 
 class HippocampusMemoryComponent(MemoryComponent):
@@ -132,6 +138,7 @@ class HippocampusMemoryComponent(MemoryComponent):
         metadata: Optional[Dict[str, Any]] = None,
         priority_boost: float = 0.0,
         sequence: Optional[List[torch.Tensor]] = None,
+        ca3_pattern: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> None:
         """Store an episode in memory buffer.
@@ -145,6 +152,7 @@ class HippocampusMemoryComponent(MemoryComponent):
             metadata: Optional additional info
             priority_boost: Extra priority
             sequence: Optional CA3 pattern sequence
+            ca3_pattern: CA3 attractor pattern (for consolidation replay)
             **kwargs: Additional parameters
         """
         cfg = self.config
@@ -170,6 +178,7 @@ class HippocampusMemoryComponent(MemoryComponent):
             priority=base_priority,
             timestamp=len(self.episode_buffer),
             sequence=sequence_cloned,
+            ca3_pattern=ca3_pattern.clone().detach() if ca3_pattern is not None else None,
         )
 
         # Buffer management

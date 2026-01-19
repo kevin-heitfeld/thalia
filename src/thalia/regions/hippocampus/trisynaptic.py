@@ -648,6 +648,16 @@ class TrisynapticHippocampus(NeuralRegion):
         self.episode_buffer: List[Episode] = []
 
         # =====================================================================
+        # CONSOLIDATION MODE (Phase 1: Biologically-Accurate Replay)
+        # =====================================================================
+        # Sleep/offline replay state variables
+        # When _consolidation_mode=True, forward() spontaneously reactivates stored
+        # CA3→CA1 patterns from episodic memory (simulates sharp-wave ripples).
+        # Neuromodulatory state changes (ACh ↓) enable CA3 spontaneous reactivation.
+        self._consolidation_mode: bool = False
+        self._replay_cue: Optional[int] = None  # Episode index to replay
+
+        # =====================================================================
         # MANAGERS: Extract god object logic into focused components
         # =====================================================================
         # Create manager context for plasticity and episode management
@@ -1453,7 +1463,65 @@ class TrisynapticHippocampus(NeuralRegion):
             - Feedforward inhibition: Stimulus changes trigger transient inhibition
             - EC layer III: Optional separate input for direct EC→CA1 (biologically
               accurate - EC L3 carries raw sensory info, EC L2 goes through DG)
+            - Consolidation mode: Spontaneous CA3→CA1 replay during sleep (sharp-wave ripples)
         """
+        # =====================================================================
+        # CONSOLIDATION MODE: Spontaneous CA3→CA1 Replay (Sharp-Wave Ripples)
+        # =====================================================================
+        # During sleep consolidation, hippocampus spontaneously reactivates stored
+        # patterns without external input. This simulates sharp-wave ripples where
+        # CA3 recurrent activity triggers CA1 output for cortical replay.
+        #
+        # Biological mechanism (Hasselmo 1999):
+        # - LOW acetylcholine enables CA3 spontaneous reactivation
+        # - CA3 attractor pattern propagates through Schaffer collaterals to CA1
+        # - STP dynamics preserved (biological timing maintained)
+        # - CA1 output drives cortical consolidation via back-projections
+        if self._consolidation_mode and self._replay_cue is not None:
+            # CONSOLIDATION: Spontaneous reactivation from CA3
+            # Sharp-wave ripple trigger: CA3 recurrent activity
+
+            # Check if we have episodes to replay
+            if hasattr(self.memory, "episodes") and len(self.memory.episodes) > 0:
+                # Validate episode index
+                if self._replay_cue < len(self.memory.episodes):
+                    episode = self.memory.episodes[self._replay_cue]
+
+                    # Retrieve CA3 attractor pattern from stored episode
+                    # Sharp-wave ripples originate in CA3, not CA1
+                    ca3_pattern = self._extract_ca3_from_episode(episode)
+
+                    # CA3 → CA1 propagation (with Schaffer collateral STP)
+                    # This maintains biological pathway even during replay
+                    if self.stp_schaffer is not None:
+                        # Apply short-term plasticity (depression at high frequency)
+                        efficacy = self.stp_schaffer(ca3_pattern)
+                        ca1_input = (self.synaptic_weights["ca3_ca1"] * efficacy.T) @ ca3_pattern
+                    else:
+                        ca1_input = self.synaptic_weights["ca3_ca1"] @ ca3_pattern
+
+                    # CA1 generates output spikes from CA3 input
+                    ca1_g_exc = F.relu(ca1_input)  # Clamp to positive conductance
+                    ca1_spikes, _ = self.ca1_neurons(ca1_g_exc, g_inh_input=None)
+
+                    # Update state for observers and diagnostics
+                    if self.state:
+                        self.state.ca3_spikes = ca3_pattern
+                        self.state.ca1_spikes = ca1_spikes
+
+                    # Clear replay cue after execution (one-shot replay)
+                    self._replay_cue = None
+
+                    # Return CA1 output for cortical consolidation
+                    return ca1_spikes
+
+            # No valid episode found - clear cue and return silence
+            self._replay_cue = None
+            return torch.zeros(self.ca1_size, device=self.device, dtype=torch.bool)
+
+        # =====================================================================
+        # NORMAL MODE: Standard Trisynaptic Processing (DG→CA3→CA1)
+        # =====================================================================
         # Route inputs - try common aliases for entorhinal cortex input
         routed = InputRouter.route(
             inputs,
@@ -2660,6 +2728,11 @@ class TrisynapticHippocampus(NeuralRegion):
             achieved_goal: (HER) What was actually achieved (CA1 output)
             done: (HER) Whether episode terminated
         """
+        # Get current CA3 pattern from state (if available)
+        ca3_pattern = None
+        if self.state.ca3_spikes is not None:
+            ca3_pattern = self.state.ca3_spikes.clone().detach()
+
         # Delegate to memory component (note: method is store_memory, not store_episode)
         self.memory.store_memory(
             state=state,
@@ -2670,6 +2743,7 @@ class TrisynapticHippocampus(NeuralRegion):
             metadata=metadata,
             priority_boost=priority_boost,
             sequence=sequence,
+            ca3_pattern=ca3_pattern,  # Store CA3 attractor for consolidation replay
         )
 
         # =====================================================================
@@ -2797,21 +2871,122 @@ class TrisynapticHippocampus(NeuralRegion):
             achieved_goal=achieved_goal,
         )
 
+    # =========================================================================
+    # CONSOLIDATION MODE (Phase 1: Biologically-Accurate Sleep Replay)
+    # =========================================================================
+
     def enter_consolidation_mode(self) -> None:
-        """Enter consolidation/sleep mode for HER replay.
+        """Enter consolidation mode (sleep/offline replay).
 
         During consolidation:
-        - Hippocampus replays stored experiences
-        - Hindsight goals are generated
-        - Both real and hindsight experiences available for learning
+        - Neuromodulators change (acetylcholine ↓, norepinephrine ↓)
+        - CA3 shifts to retrieval mode (pattern completion dominates)
+        - Spontaneous reactivation of stored patterns occurs
+        - Sharp-wave ripples emerge from CA3→CA1
+        - HER (Hindsight Experience Replay) generates hindsight goals
+
+        **Critical Neuromodulation (Hasselmo 1999):**
+        - LOW acetylcholine releases CA3 recurrent (enables spontaneous replay)
+        - LOW norepinephrine reduces noise/distractibility
+        - MODERATE dopamine remains available for learning
+
+        This implements the biological phenomenon where hippocampal sharp-wave
+        ripples during NREM sleep spontaneously reactivate stored patterns for
+        systems consolidation (transfer to cortex).
+
+        References:
+            Hasselmo, M.E. (1999). Neuromodulation: acetylcholine and memory
+                consolidation. Trends in Cognitive Sciences, 3(9), 351-359.
         """
+        # Enable consolidation mode flag for replay logic in forward()
+        self._consolidation_mode = True
+
+        # Sleep neuromodulatory state (Hasselmo 1999)
+        # This is CRITICAL for enabling spontaneous CA3 reactivation
+        self.set_neuromodulators(
+            acetylcholine=0.1,  # LOW: Favors retrieval over encoding
+            norepinephrine=0.1,  # LOW: Reduces noise/distractibility
+            dopamine=0.3,  # MODERATE: Still available for learning
+        )
+
+        # Enable HER consolidation if available
         if self.her_integration is not None:
             self.her_integration.enter_consolidation()
 
     def exit_consolidation_mode(self) -> None:
-        """Exit consolidation mode, return to active learning."""
+        """Exit consolidation mode and return to encoding.
+
+        Restores wake neuromodulatory state for active encoding:
+        - HIGH acetylcholine enables new pattern encoding
+        - MODERATE norepinephrine maintains arousal
+        - MODERATE dopamine available for reward-based learning
+        """
+        # Disable consolidation mode
+        self._consolidation_mode = False
+        self._replay_cue = None
+
+        # Restore wake neuromodulatory state
+        self.set_neuromodulators(
+            acetylcholine=0.8,  # HIGH: Favors encoding
+            norepinephrine=0.5,  # MODERATE: Maintains arousal
+            dopamine=0.5,  # MODERATE: Available for learning
+        )
+
+        # Exit HER consolidation if available
         if self.her_integration is not None:
             self.her_integration.exit_consolidation()
+
+    def cue_replay(self, episode_index: int) -> None:
+        """Cue specific episode for replay.
+
+        Simulates spontaneous reactivation of a stored memory during
+        sleep consolidation. The episode index selects which CA3 attractor
+        to activate during the next forward() pass.
+
+        This implements the biological mechanism where specific memories are
+        prioritized for replay based on recency, salience, or reward value.
+
+        Args:
+            episode_index: Index into episodic memory buffer (self.memory.episodes)
+
+        Raises:
+            ValueError: If episode_index is negative
+        """
+        if episode_index < 0:
+            raise ValueError(
+                f"TrisynapticHippocampus.cue_replay: episode_index must be >= 0, "
+                f"got {episode_index}"
+            )
+        self._replay_cue = episode_index
+
+    def _extract_ca3_from_episode(self, episode: Episode) -> torch.Tensor:
+        """Extract CA3 attractor pattern from stored episode.
+
+        Sharp-wave ripples originate in CA3, not CA1. We retrieve the
+        CA3 pattern and let it propagate through CA3→CA1 naturally.
+
+        This maintains biological accuracy during replay: CA3 recurrent
+        activity spontaneously reactivates, then propagates through
+        Schaffer collaterals to CA1 (with STP dynamics preserved).
+
+        Args:
+            episode: Episode from episodic memory
+
+        Returns:
+            CA3 spike pattern [ca3_size]
+
+        Raises:
+            ValueError: If episode does not have a stored CA3 pattern
+        """
+        if episode.ca3_pattern is not None:
+            return episode.ca3_pattern.to(self.device)
+
+        # No CA3 pattern stored - this should not happen with proper implementation
+        raise ValueError(
+            "Episode does not have CA3 pattern stored. "
+            "This indicates store_episode() was called without CA3 state available. "
+            "Ensure CA3 spikes are populated in hippocampus state before storing episodes."
+        )
 
     def sample_her_replay_batch(self, batch_size: int = 32) -> List:
         """Sample batch of experiences for HER replay learning.

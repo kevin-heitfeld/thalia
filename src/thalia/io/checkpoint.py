@@ -109,38 +109,6 @@ def _deserialize_value(value: Any, file, device: str) -> Any:
         return value
 
 
-def _convert_from_json(obj: Any) -> Any:
-    """Recursively reconstruct objects from JSON-serializable types (NO tensor support).
-
-    NOTE: This function is kept for backward compatibility but should not be used
-    for deserializing state that may contain tensors. Use _deserialize_value instead.
-
-    Args:
-        obj: Object to convert
-
-    Returns:
-        Converted object
-    """
-    if isinstance(obj, dict):
-        # Check if this is a torch.device
-        if obj.get("_type") == "torch.device":
-            return torch.device(obj["_value"])
-        # Check if this is a serialized dataclass
-        elif "_dataclass" in obj and "_fields" in obj:
-            # Reconstruct the dataclass
-            module_name, class_name = obj["_dataclass"].rsplit(".", 1)
-            module = __import__(module_name, fromlist=[class_name])
-            dataclass_type = getattr(module, class_name)
-            fields = {k: _convert_from_json(v) for k, v in obj["_fields"].items()}
-            return dataclass_type(**fields)
-        else:
-            return {k: _convert_from_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_convert_from_json(item) for item in obj]
-    else:
-        return obj
-
-
 class BrainCheckpoint:
     """High-level API for brain checkpoint persistence."""
 
@@ -799,17 +767,6 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
         JSON dict with tensor references
     """
     result: Any = _serialize_value(region_state, writer)
-    return result
-
-
-def _deserialize_list(lst: list, file, device: str) -> list:
-    """Deserialize list, handling tensors and nested structures."""
-    result = []
-
-    for item in lst:
-        # Use unified deserialization
-        result.append(_deserialize_value(item, file, device))
-
     return result
 
 
