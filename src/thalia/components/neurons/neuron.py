@@ -285,6 +285,13 @@ class ConductanceLIF(nn.Module):
             delattr(self, "refractory")
         self.register_buffer("refractory", refractory, persistent=False)
 
+        # Initialize pre-spike membrane (for WTA selection)
+        # This is updated before spike check in forward()
+        membrane_pre_spike = torch.full((self.n_neurons,), self.config.E_L, device=dev, dtype=torch.float32)
+        if hasattr(self, "membrane_pre_spike"):
+            delattr(self, "membrane_pre_spike")
+        self.register_buffer("membrane_pre_spike", membrane_pre_spike, persistent=False)
+
     def adjust_thresholds(
         self, delta: torch.Tensor, min_threshold: float = 0.5, max_threshold: float = 2.0
     ) -> None:
@@ -391,6 +398,11 @@ class ConductanceLIF(nn.Module):
 
         # Apply only to non-refractory neurons
         self.membrane = torch.where(not_refractory, new_membrane, self.membrane)  # type: ignore[assignment, arg-type]
+
+        # Store pre-spike membrane for WTA selection (before reset)
+        # This is needed because post-spike membrane is reset to v_reset,
+        # making it useless for winner-take-all selection
+        self.membrane_pre_spike = self.membrane.clone()  # type: ignore[union-attr]
 
         # Spike generation (bool for biological accuracy and memory efficiency)
         self.v_threshold = torch.tensor(self.v_threshold)  # Ensure it's a Tensor for mypy

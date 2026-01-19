@@ -39,7 +39,7 @@ class TestSynapticTaggingIntegration:
 
         # Process through hippocampus multiple times to build up tags
         for _ in range(5):
-            _ = hippo.forward(input_spikes)
+            _ = hippo.forward({"ec": input_spikes})
 
         # Check if CA3 had any activity
         assert hippo.state.ca3_spikes is not None
@@ -49,13 +49,10 @@ class TestSynapticTaggingIntegration:
         assert hippo.synaptic_tagging is not None
         tag_diag = hippo.synaptic_tagging.get_diagnostics()
 
-        if ca3_active > 0:
-            assert tag_diag["tag_mean"] > 0, \
-                f"Tags should be created during encoding (CA3 active: {ca3_active})"
-            assert tag_diag["tag_nonzero"] > 0, "Should have some nonzero tags"
-        else:
-            # If CA3 wasn't active, tags should be zero (expected)
-            assert tag_diag["tag_mean"] == 0.0, "No tags without CA3 activity"
+        # With the WTA fix, CA3 should be active and tags should be created
+        assert tag_diag["tag_mean"] > 0, \
+            f"Tags should be created during encoding (tag_mean={tag_diag['tag_mean']:.6f})"
+        assert tag_diag["tag_nonzero"] > 0, "Should have some nonzero tags"
 
     def test_tags_influence_replay_probability(self):
         """Patterns with strong tags should be more likely to replay."""
@@ -83,7 +80,7 @@ class TestSynapticTaggingIntegration:
         input_2 = torch.zeros(64, dtype=torch.bool)
         input_2[40:50] = True
         for _ in range(5):
-            _ = hippo.forward(input_2)
+            _ = hippo.forward({"ec": input_2})
 
         # Get replay probabilities
         assert hippo.synaptic_tagging is not None
@@ -118,13 +115,13 @@ class TestSynapticTaggingIntegration:
 
         # Process with LOW dopamine
         hippo.state.dopamine = 0.0
-        _ = hippo.forward(input_spikes)
+        _ = hippo.forward({"ec": input_spikes})
         weights_low_da = hippo.synaptic_weights["ca3_ca3"].data.clone()
 
         # Reset and process with HIGH dopamine
         hippo = TrisynapticHippocampus(config=config, sizes=sizes, device="cpu")
         hippo.state.dopamine = 1.0
-        _ = hippo.forward(input_spikes)
+        _ = hippo.forward({"ec": input_spikes})
         weights_high_da = hippo.synaptic_weights["ca3_ca3"].data.clone()
 
         # High dopamine should produce stronger weights (via consolidation)
@@ -157,7 +154,7 @@ class TestSynapticTaggingIntegration:
         # Create strong tags
         input_spikes = torch.zeros(64, dtype=torch.bool)
         input_spikes[10:30] = True
-        _ = hippo.forward(input_spikes)
+        _ = hippo.forward({"ec": input_spikes})
 
         assert hippo.synaptic_tagging is not None
         initial_tags = hippo.synaptic_tagging.get_diagnostics()["tag_mean"]
@@ -166,7 +163,7 @@ class TestSynapticTaggingIntegration:
         different_input = torch.zeros(64, dtype=torch.bool)
         different_input[40:60] = True
         for _ in range(50):
-            _ = hippo.forward(different_input)
+            _ = hippo.forward({"ec": different_input})
 
         final_tags = hippo.synaptic_tagging.get_diagnostics()["tag_mean"]
 
@@ -194,7 +191,7 @@ class TestSynapticTaggingIntegration:
         # Process some input
         input_spikes = torch.zeros(64, dtype=torch.bool)
         input_spikes[10:30] = True
-        _ = hippo.forward(input_spikes)
+        _ = hippo.forward({"ec": input_spikes})
 
         # Get diagnostics
         diag = hippo.get_diagnostics()
@@ -230,7 +227,7 @@ class TestSynapticTaggingIntegration:
         # Processing should still work
         input_spikes = torch.zeros(64, dtype=torch.bool)
         input_spikes[10:30] = True
-        output = hippo.forward(input_spikes)
+        output = hippo.forward({"ec": input_spikes})
 
         assert output is not None
         assert output.shape[0] == 64  # CA1 size
