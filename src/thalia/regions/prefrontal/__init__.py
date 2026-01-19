@@ -3,18 +3,19 @@ Prefrontal Cortex Module - Working Memory and Goal Management.
 
 This module provides the prefrontal cortex implementation with:
 - Working memory maintenance via recurrent gating
-- Goal hierarchy management
+- Emergent goal representations (NEW - biologically plausible)
+- Goal hierarchy management (DEPRECATED - use emergent_goals)
 - Context-dependent processing
 - Checkpoint management for state persistence
 
 Author: Thalia Project
-Date: January 16, 2026
+Date: January 19, 2026
 """
 
 from __future__ import annotations
 
 from .checkpoint_manager import PrefrontalCheckpointManager
-from .hierarchy import Goal, GoalStatus
+from .goal_emergence import EmergentGoalSystem
 from .prefrontal import (
     Prefrontal,
     PrefrontalState,
@@ -25,7 +26,6 @@ __all__ = [
     "Prefrontal",
     "PrefrontalState",
     "PrefrontalCheckpointManager",
-    "Goal",
-    "GoalStatus",
+    "EmergentGoalSystem",
     "sample_heterogeneous_wm_neurons",
 ]

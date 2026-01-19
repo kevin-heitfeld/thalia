@@ -100,6 +100,7 @@ from thalia.utils.oscillator_utils import (
 )
 
 from .checkpoint_manager import PrefrontalCheckpointManager
+from .goal_emergence import EmergentGoalSystem
 from .hierarchy import (
     Goal,
     GoalHierarchyManager,
@@ -600,17 +601,32 @@ class Prefrontal(NeuralRegion):
         self.to(self.device)
 
         # =====================================================================
-        # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
+        # PHASE 3: EMERGENT HIERARCHICAL GOALS
         # =====================================================================
-        # Initialize goal hierarchy (Phase 3)
-        self.goal_manager: Optional[GoalHierarchyManager] = None
-        self.discounter: Optional[HyperbolicDiscounter] = None
+        # Emergent goals: Goals emerge from WM patterns, not explicit objects
+        # Replaces old GoalHierarchyManager with biologically-plausible dynamics
+        self.emergent_goals: Optional[EmergentGoalSystem] = None
+        self.goal_manager: Optional[GoalHierarchyManager] = None  # DEPRECATED - to be removed
+        self.discounter: Optional[HyperbolicDiscounter] = None  # DEPRECATED - to be removed
 
         if config.use_hierarchical_goals:
+            # Split neurons into abstract (rostral PFC) and concrete (caudal PFC)
+            # This implements the biological rostral-caudal hierarchy
+            n_abstract = int(self.n_neurons * 0.3)  # 30% abstract (long tau, slow)
+            n_concrete = self.n_neurons - n_abstract  # 70% concrete (short tau, fast)
+
+            self.emergent_goals = EmergentGoalSystem(
+                n_wm_neurons=self.n_neurons,
+                n_abstract=n_abstract,
+                n_concrete=n_concrete,
+                device=str(self.device),
+            )
+
+            # Keep old system temporarily for backward compatibility during migration
             gh_config = config.goal_hierarchy_config or GoalHierarchyConfig()
             self.goal_manager = GoalHierarchyManager(gh_config)
 
-            # Hyperbolic discounting
+            # Hyperbolic discounting (DEPRECATED)
             if config.use_hyperbolic_discounting:
                 hd_config = config.hyperbolic_config or HyperbolicDiscountingConfig()
                 self.discounter = HyperbolicDiscounter(hd_config)
@@ -929,6 +945,13 @@ class Prefrontal(NeuralRegion):
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity(input_spikes, output_spikes)  # type: ignore[arg-type]
 
+        # =====================================================================
+        # EMERGENT GOAL SYSTEM: Tag active WM patterns as goals
+        # =====================================================================
+        if self.emergent_goals is not None and self.state.working_memory is not None:
+            # Tag currently active goal patterns (similar to hippocampal synaptic tagging)
+            self.emergent_goals.update_goal_tags(self.state.working_memory)
+
         # Store output (NeuralRegion pattern)
         self.output_spikes = output_spikes
 
@@ -976,6 +999,31 @@ class Prefrontal(NeuralRegion):
             self.rec_weights.data += dW_rec
             self.rec_weights.data.fill_diagonal_(cfg.recurrent_strength)  # Maintain self-excitation
             self.rec_weights.data.clamp_(0.0, 1.0)
+
+        # ======================================================================
+        # EMERGENT GOAL LEARNING: Learn transitions and consolidate values
+        # ======================================================================
+        if self.emergent_goals is not None and self.state.working_memory is not None:
+            # Extract abstract and concrete patterns from WM
+            abstract_pattern = self.state.working_memory[self.emergent_goals.abstract_neurons]
+            concrete_pattern = self.state.working_memory[self.emergent_goals.concrete_neurons]
+
+            # Learn goal transitions via Hebbian association
+            # When abstract pattern A is active and concrete pattern B follows,
+            # strengthen the transition A→B (emergent goal decomposition)
+            if abstract_pattern.sum() > 0.1 and concrete_pattern.sum() > 0.1:
+                self.emergent_goals.learn_transition(
+                    abstract_pattern,
+                    concrete_pattern,
+                    learning_rate=cfg.rule_lr,
+                )
+
+            # Consolidate valuable goal patterns with dopamine
+            # High dopamine → strengthen value associations for tagged goals
+            self.emergent_goals.consolidate_valuable_goals(
+                dopamine=self.state.dopamine,
+                learning_rate=cfg.rule_lr,
+            )
 
     def grow_output(
         self,
@@ -1066,6 +1114,60 @@ class Prefrontal(NeuralRegion):
 
         # 5.6. Phase 2: Auto-grow registered STP modules
         self._auto_grow_registered_components("output", n_new)
+
+        # 5.7. Grow emergent goals system (if enabled)
+        if self.emergent_goals is not None:
+            # Expand goal tags, value weights
+            new_tags = torch.zeros(n_new, device=self.device)
+            self.emergent_goals.goal_tags = torch.cat([self.emergent_goals.goal_tags, new_tags])
+
+            new_values = torch.randn(n_new, device=self.device) * 0.1
+            self.emergent_goals.value_weights = torch.cat(
+                [self.emergent_goals.value_weights, new_values]
+            )
+
+            # Update n_wm_neurons
+            self.emergent_goals.n_wm_neurons = new_n_output
+
+            # Determine how to split new neurons between abstract/concrete
+            # Maintain ~30% abstract, 70% concrete ratio
+            old_abstract = self.emergent_goals.n_abstract
+            old_concrete = self.emergent_goals.n_concrete
+            target_abstract_ratio = 0.3
+
+            new_abstract_total = int(new_n_output * target_abstract_ratio)
+            new_concrete_total = new_n_output - new_abstract_total
+
+            n_new_abstract = new_abstract_total - old_abstract
+            n_new_concrete = new_concrete_total - old_concrete
+
+            # Expand transition weights [n_concrete, n_abstract]
+            if n_new_concrete > 0:
+                # Add rows for new concrete neurons
+                new_concrete_rows = torch.zeros(n_new_concrete, old_abstract, device=self.device)
+                self.emergent_goals.transition_weights = torch.cat(
+                    [self.emergent_goals.transition_weights, new_concrete_rows], dim=0
+                )
+
+            if n_new_abstract > 0:
+                # Add columns for new abstract neurons
+                current_n_concrete = self.emergent_goals.transition_weights.shape[0]
+                new_abstract_cols = torch.zeros(
+                    current_n_concrete, n_new_abstract, device=self.device
+                )
+                self.emergent_goals.transition_weights = torch.cat(
+                    [self.emergent_goals.transition_weights, new_abstract_cols], dim=1
+                )
+
+            # Update neuron counts and indices
+            self.emergent_goals.n_abstract = new_abstract_total
+            self.emergent_goals.n_concrete = new_concrete_total
+            self.emergent_goals.abstract_neurons = torch.arange(
+                new_abstract_total, device=self.device
+            )
+            self.emergent_goals.concrete_neurons = torch.arange(
+                new_abstract_total, new_n_output, device=self.device
+            )
 
         # 6. Update instance variables
         self.n_neurons = new_n_output
@@ -1318,6 +1420,102 @@ class Prefrontal(NeuralRegion):
             gamma = 0.99
             return reward * (gamma**delay)
 
+    # =========================================================================
+    # EMERGENT GOAL SYSTEM (NEW - Biologically Plausible)
+    # =========================================================================
+
+    def get_current_goal_pattern(self) -> torch.Tensor:
+        """Return current working memory pattern (= current goal).
+
+        Goals ARE working memory patterns - no symbolic representation needed.
+
+        Returns:
+            Current WM pattern [n_neurons] representing active goal
+
+        Example:
+            goal_pattern = pfc.get_current_goal_pattern()
+            # This IS the goal - a sustained activity pattern
+        """
+        if self.state.working_memory is None:
+            return torch.zeros(self.n_neurons, device=self.device)
+        return self.state.working_memory
+
+    def predict_next_subgoal(self) -> torch.Tensor:
+        """Predict next subgoal from current abstract WM pattern.
+
+        Uses learned transitions (emergent goal decomposition), not explicit
+        subgoal lists.
+
+        Returns:
+            Predicted concrete subgoal pattern [n_concrete]
+
+        Raises:
+            ConfigurationError: If emergent goals not enabled
+
+        Example:
+            # After training goal hierarchies via examples
+            subgoal = pfc.predict_next_subgoal()
+            # Inject into WM to activate subgoal
+            pfc.state.working_memory[pfc.emergent_goals.concrete_neurons] = subgoal
+        """
+        if self.emergent_goals is None:
+            raise ConfigurationError(
+                "Emergent goals not enabled. Set use_hierarchical_goals=True in config."
+            )
+
+        if self.state.working_memory is None:
+            return torch.zeros(self.emergent_goals.n_concrete, device=self.device)
+
+        # Extract abstract pattern from WM
+        abstract_pattern = self.state.working_memory[self.emergent_goals.abstract_neurons]
+
+        # Predict subgoal via learned transitions
+        return self.emergent_goals.predict_subgoal(abstract_pattern)
+
+    def get_goal_value(self, goal_pattern: torch.Tensor) -> float:
+        """Get learned value for a goal pattern.
+
+        Value is learned from experience with dopamine, not computed explicitly.
+
+        Args:
+            goal_pattern: Goal pattern to evaluate [n_neurons]
+
+        Returns:
+            Estimated value of goal pattern
+
+        Raises:
+            ConfigurationError: If emergent goals not enabled
+
+        Example:
+            pattern = pfc.get_current_goal_pattern()
+            value = pfc.get_goal_value(pattern)
+            print(f"Current goal value: {value:.2f}")
+        """
+        if self.emergent_goals is None:
+            raise ConfigurationError("Emergent goals not enabled.")
+
+        # Compute value as dot product with learned value weights
+        return torch.sum(goal_pattern * self.emergent_goals.value_weights).item()
+
+    def reset_goal_tags(self) -> None:
+        """Reset synaptic tags for goal patterns.
+
+        Useful for starting new episodes or tasks where previous goal
+        history should not influence current goal selection.
+
+        Raises:
+            ConfigurationError: If emergent goals not enabled
+
+        Example:
+            # Start new episode
+            pfc.reset_goal_tags()
+            pfc.reset_state()
+        """
+        if self.emergent_goals is None:
+            raise ConfigurationError("Emergent goals not enabled.")
+
+        self.emergent_goals.reset_tags()
+
     def get_state(self) -> PrefrontalState:
         """Get current state for checkpointing.
 
@@ -1411,6 +1609,7 @@ class Prefrontal(NeuralRegion):
         - region_state: Neuron state, working memory, spikes
         - learning_state: STDP eligibility traces, STP state
         - neuromodulator_state: Dopamine gating state
+        - emergent_goals_state: Emergent goal system state (if enabled)
         - config: Configuration for validation
         """
         state_obj = self.get_state()
@@ -1423,6 +1622,10 @@ class Prefrontal(NeuralRegion):
         }
         if hasattr(self, "rec_weights"):
             state["rec_weights"] = self.rec_weights.detach().clone()
+
+        # Save emergent goals state (if enabled)
+        if self.emergent_goals is not None:
+            state["emergent_goals_state"] = self.emergent_goals.get_state_dict()
 
         return state
 
@@ -1444,3 +1647,7 @@ class Prefrontal(NeuralRegion):
         # Restore recurrent weights
         if "rec_weights" in state and hasattr(self, "rec_weights"):
             self.rec_weights.data = state["rec_weights"].to(self.device)
+
+        # Restore emergent goals state (if enabled)
+        if "emergent_goals_state" in state and self.emergent_goals is not None:
+            self.emergent_goals.load_state_dict(state["emergent_goals_state"])
