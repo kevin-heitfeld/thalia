@@ -71,7 +71,6 @@ within one theta cycle (~100-150ms). Splitting would:
 4. Duplicate device/config management across files
 
 Components ARE extracted where orthogonal:
-- ReplayEngine: Sequence replay (shared with sleep system)
 - StimulusGating: Stimulus-triggered inhibition (used by multiple regions)
 
 See: docs/decisions/adr-011-large-file-justification.md
@@ -145,7 +144,6 @@ from thalia.utils.oscillator_utils import (
 )
 
 from .checkpoint_manager import HippocampusCheckpointManager
-from .replay_engine import ReplayConfig, ReplayEngine, ReplayMode
 from .synaptic_tagging import SynapticTagging
 
 
@@ -690,35 +688,15 @@ class TrisynapticHippocampus(NeuralRegion):
         # =====================================================================
         # Store oscillator values received from brain broadcast
         # These replace the local GammaOscillator instance
-        if config.theta_gamma_enabled:
-            # Storage for broadcast values from brain's OscillatorManager
-            self._theta_phase: float = 0.0
-            self._gamma_phase: float = 0.0
-            self._theta_slot: int = 0
-            self._coupled_amplitudes: Dict[str, float] = {}
 
-            # Replay engine for sequence replay
-            # NOTE: ReplayEngine receives timing via replay() parameters (gamma_phase)
-            # from hippocampus, which gets them from brain's centralized OscillatorManager
-            # Capacity (~5-7 patterns) emerges from gamma/theta ratio (40Hz/8Hz)
-            replay_config = ReplayConfig(
-                compression_factor=5.0,
-                phase_window_width=0.5,  # Gaussian width for phase-based selection
-                max_patterns_per_cycle=7,  # Approximate capacity (emergent)
-                mode=ReplayMode.SLEEP_REVERSE,  # Default to sleep consolidation mode
-                apply_phase_modulation=True,
-                pattern_completion=True,
-            )
-            self.replay_engine = ReplayEngine(replay_config)
+        # Storage for broadcast values from brain's OscillatorManager
+        self._theta_phase: float = 0.0
+        self._gamma_phase: float = 0.0
+        self._theta_slot: int = 0
+        self._coupled_amplitudes: Dict[str, float] = {}
 
-            # Phase preferences EMERGE from synaptic timing diversity + STDP
-            # No explicit slot assignment needed - neurons self-organize!
-        else:
-            self._theta_phase = 0.0
-            self._gamma_phase = 0.0
-            self._theta_slot = 0
-            self._coupled_amplitudes = {}
-            self.replay_engine = None  # type: ignore[assignment]
+        # Phase preferences EMERGE from synaptic timing diversity + STDP
+        # No explicit slot assignment needed - neurons self-organize!
 
         # Track current sequence position for encoding (auto-advances)
         self._sequence_position: int = 0

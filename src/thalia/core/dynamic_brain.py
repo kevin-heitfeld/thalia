@@ -46,9 +46,6 @@ from thalia.core.neural_region import NeuralRegion
 from thalia.core.protocols.component import LearnableComponent
 from thalia.diagnostics import CriticalityMonitor, HealthMonitor
 from thalia.io.checkpoint_manager import CheckpointManager
-from thalia.replay import UnifiedReplayCoordinator
-from thalia.regions.hippocampus.replay_engine import ReplayEngine, ReplayConfig
-from thalia.memory.consolidation import SleepStageController
 from thalia.neuromodulation.manager import NeuromodulatorManager
 from thalia.pathways.dynamic_pathway_manager import DynamicPathwayManager
 from thalia.stimuli.base import StimulusPattern
@@ -264,29 +261,8 @@ class DynamicBrain(nn.Module):
         # NEW: Spontaneous replay via CA3 attractor dynamics + synaptic tagging
         #
         # Initialize if brain has required components (hippocampus, striatum, cortex, pfc)
-        self.consolidation_manager = None  # Kept for compatibility
 
         if all(comp in self.components for comp in ["hippocampus", "striatum", "cortex", "pfc"]):
-            # Create ReplayEngine and SleepStageController
-            replay_config = ReplayConfig(
-                compression_factor=5.0,
-                awake_compression=10.0,
-                sleep_compression=5.0,
-            )
-            replay_engine = ReplayEngine(replay_config)
-            sleep_controller = SleepStageController()
-
-            self.consolidation_manager = UnifiedReplayCoordinator(
-                hippocampus=self._get_component("hippocampus"),
-                striatum=self._get_component("striatum"),
-                cortex=self._get_component("cortex"),
-                pfc=self._get_component("pfc"),
-                replay_engine=replay_engine,
-                sleep_controller=sleep_controller,
-                config=self.config,
-                deliver_reward_fn=self.deliver_reward,
-            )
-
             # Set cortex output size (L23+L5) for state reconstruction
             cortex = self._get_component("cortex")
             output_size = None
@@ -304,13 +280,6 @@ class DynamicBrain(nn.Module):
             # Fallback to n_output
             if output_size is None and hasattr(cortex, "n_output"):
                 output_size = cortex.n_output  # type: ignore[assignment]
-
-            # Apply if we found a size
-            if output_size is not None:
-                self.consolidation_manager.set_cortex_output_size(int(output_size))
-
-            # Set brain reference for full-architecture replay (Phase 1.7.4)
-            self.consolidation_manager.set_brain_reference(self)
 
         # =================================================================
         # CHECKPOINT MANAGER (Phase 1.7.4)
@@ -907,74 +876,6 @@ class DynamicBrain(nn.Module):
 
         striatum = self._get_component("striatum")
 
-        # Use unified replay coordinator for forward planning if requested and available
-        if use_planning and self.consolidation_manager is not None:
-            # Get current state - construct full concatenated state matching store_experience format
-            current_state = None
-            goal_context = None
-
-            # Build full state: [cortex_L23+L5, hippocampus, PFC]
-            cortex_out = None
-            if "cortex" in self.components:
-                cortex = self._get_component("cortex")
-                if hasattr(cortex, "state") and cortex.state:
-                    l23 = getattr(cortex.state, "l23_spikes", None)
-                    l5 = getattr(cortex.state, "l5_spikes", None)
-                    if l23 is not None and l5 is not None:
-                        cortex_out = torch.cat([l23, l5], dim=-1)
-
-            hippo_out = None
-            if "hippocampus" in self.components:
-                hippo = self._get_component("hippocampus")
-                if hasattr(hippo, "state") and hippo.state:
-                    hippo_out = getattr(hippo.state, "ca1_spikes", None)
-
-            pfc_out = None
-            goal_context = None
-            if "pfc" in self.components:
-                pfc = self._get_component("pfc")
-                if hasattr(pfc, "state") and pfc.state is not None:
-                    pfc_out = pfc.state.spikes  # type: ignore[union-attr]
-
-                # Get goal context if available
-                if hasattr(pfc, "goal_manager") and pfc.goal_manager is not None:
-                    active_goals = pfc.goal_manager.active_goals  # type: ignore[union-attr]
-                    if len(active_goals) > 0:  # type: ignore[arg-type]
-                        # Use top goal as context
-                        goal_context = active_goals[0].representation  # type: ignore[union-attr,index]
-
-            # Concatenate available state components (skip None components)
-            state_parts = []
-            if cortex_out is not None:
-                state_parts.append(cortex_out.view(-1))
-            if hippo_out is not None:
-                state_parts.append(hippo_out.view(-1))
-            if pfc_out is not None:
-                state_parts.append(pfc_out.view(-1))
-
-            if len(state_parts) > 0:
-                current_state = torch.cat(state_parts)
-
-            if current_state is not None:
-                # Use forward planning to find best action
-                # Plan for all available actions
-                striatum = self._get_component("striatum")
-                n_actions = getattr(striatum, "n_actions", 2)
-                available_actions = list(range(n_actions))
-
-                action = self.consolidation_manager.plan_action(
-                    current_state=current_state,
-                    available_actions=available_actions,
-                    goal_context=goal_context,
-                    depth=10,
-                )
-
-                # Store for deliver_reward
-                self._last_action = action
-                self._last_confidence = 0.9  # High confidence from planning
-
-                return action, 0.9  # High confidence from planning
-
         # Striatum has finalize_action method for action selection
         if hasattr(striatum, "finalize_action"):
             # Call finalize_action with correct signature (only explore parameter)
@@ -1071,36 +972,6 @@ class DynamicBrain(nn.Module):
                     f"Striatum component ({type(striatum).__name__}) does not have "
                     f"deliver_reward method. Ensure striatum implements RL interface."
                 )
-
-        # Store experience automatically (for replay) via consolidation manager
-        if (
-            self.consolidation_manager is not None
-            and hasattr(self, "_last_action")
-            and self._last_action is not None
-        ):
-            # Sync last_action to container for consolidation manager
-            self._last_action_container[0] = int(self._last_action)  # type: ignore[arg-type]
-
-            self.consolidation_manager.store_experience(
-                action=self._last_action,
-                reward=total_reward,
-                last_action_holder=self._last_action_container,
-            )
-
-        # Trigger background planning after real experience (via UnifiedReplayCoordinator)
-        if self.consolidation_manager is not None:
-            # Get goal context from PFC if available
-            goal_context = None
-            if "pfc" in self.components:
-                pfc = self._get_component("pfc")
-                if hasattr(pfc, "state") and pfc.state is not None:
-                    goal_context = pfc.state.spikes  # type: ignore[union-attr]
-
-            # Run background planning to strengthen value estimates
-            self.consolidation_manager.background_planning(
-                n_simulations=5,  # Default planning depth
-                goal_context=goal_context,
-            )
 
         # Sync last_action to container for consolidation manager
         if self._last_action is not None:
@@ -1535,7 +1406,10 @@ class DynamicBrain(nn.Module):
 
             # Count ripples (if hippocampus state has ripple_detected)
             if hasattr(hippocampus, "state") and hippocampus.state is not None:
-                if hasattr(hippocampus.state, "ripple_detected") and hippocampus.state.ripple_detected:
+                if (
+                    hasattr(hippocampus.state, "ripple_detected")
+                    and hippocampus.state.ripple_detected
+                ):
                     ripple_count += 1
 
         # Return to encoding mode (high acetylcholine)
@@ -1545,7 +1419,9 @@ class DynamicBrain(nn.Module):
         ripple_rate_hz = ripple_count / (duration_ms / 1000.0) if duration_ms > 0 else 0.0
 
         if verbose:
-            print(f"Consolidation: {ripple_count} ripples in {duration_ms}ms ({ripple_rate_hz:.2f} Hz)")
+            print(
+                f"Consolidation: {ripple_count} ripples in {duration_ms}ms ({ripple_rate_hz:.2f} Hz)"
+            )
 
         return {
             "ripples": ripple_count,
@@ -2135,16 +2011,6 @@ class DynamicBrain(nn.Module):
 
         # Neuromodulator diagnostics
         diagnostics["neuromodulators"] = self.neuromodulator_manager.get_diagnostics()
-
-        # Unified replay coordinator diagnostics (if enabled)
-        if self.consolidation_manager is not None:
-            diagnostics["replay"] = {
-                "unified_replay_enabled": True,
-                "sleep_consolidation": True,
-                "immediate_replay": True,
-                "forward_planning": True,
-                "background_planning": True,
-            }
 
         # Criticality diagnostics (if enabled)
         if self.criticality_monitor is not None:

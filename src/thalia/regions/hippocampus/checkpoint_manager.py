@@ -136,9 +136,7 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
             episode_buffer_state.append(ep_state)
 
         # Get oscillator state (hippocampus-specific)
-        oscillator_state = {}
-        if h.replay_engine is not None:
-            oscillator_state["replay_engine"] = h.replay_engine.get_state()
+        oscillator_state: Dict[str, Any] = {}
 
         # Package using base class method with additional hippocampus-specific state
         return self.package_neuromorphic_state(
@@ -170,12 +168,7 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
     def _get_oscillator_state(self) -> Dict[str, Any]:
         """Extract oscillator-related state."""
-        h = self.hippocampus
-        oscillator_state = {}
-
-        if h.replay_engine is not None:
-            oscillator_state["replay_engine"] = h.replay_engine.get_state()
-
+        oscillator_state: Dict[str, Any] = {}
         return oscillator_state
 
     def _get_region_state(self) -> Dict[str, Any]:
@@ -387,11 +380,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
             h.stp_ec_ca1.load_state(learning_state["stp_ec_ca1"])
         if "stp_ca3_recurrent" in learning_state and h.stp_ca3_recurrent is not None:
             h.stp_ca3_recurrent.load_state(learning_state["stp_ca3_recurrent"])
-
-        # Restore oscillator state
-        oscillator_state = state["oscillator_state"]
-        if "replay_engine" in oscillator_state and h.replay_engine is not None:
-            h.replay_engine.load_state(oscillator_state["replay_engine"])
 
         # Restore neuromodulator state
         neuromodulator_state = state["neuromodulator_state"]

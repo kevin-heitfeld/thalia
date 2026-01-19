@@ -5,8 +5,6 @@ This module provides higher-level memory abstractions built on the
 hippocampal circuit for sequence and context memory.
 
 Components:
-- SequenceMemory: Token sequence storage and recall
-- ContextBuffer: Working memory for recent context
 - Consolidation: Memory pressure detection and sleep-based replay
 """
 
@@ -23,14 +21,8 @@ from .consolidation import (
     SleepStageConfig,
     SleepStageController,
 )
-from .context import ContextBuffer, ContextBufferConfig
-from .sequence import SequenceContext, SequenceMemory
 
 __all__ = [
-    "SequenceMemory",
-    "SequenceContext",
-    "ContextBuffer",
-    "ContextBufferConfig",
     # Basic Consolidation
     "MemoryPressureDetector",
     "MemoryPressureConfig",

@@ -24,16 +24,6 @@ class ConfigurableMixin:
 
     Subclasses must define CONFIG_CONVERTER_METHOD which specifies the
     ThaliaConfig method to call to get the component-specific config.
-
-    Usage:
-        class SequenceMemory(ConfigurableMixin):
-            CONFIG_CONVERTER_METHOD = "to_sequence_memory_config"
-
-            def __init__(self, config: SequenceMemoryConfig):
-                ...
-
-        # Automatically provides:
-        memory = SequenceMemory.from_thalia_config(thalia_config)
     """
 
     CONFIG_CONVERTER_METHOD: Optional[str] = None

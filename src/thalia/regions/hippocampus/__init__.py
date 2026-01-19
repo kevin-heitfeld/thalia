@@ -13,13 +13,9 @@ Usage:
 
 from __future__ import annotations
 
-from .replay_engine import ReplayConfig, ReplayEngine, ReplayMode
 from .trisynaptic import HippocampusState, TrisynapticHippocampus
 
 __all__ = [
     "TrisynapticHippocampus",
     "HippocampusState",
-    "ReplayEngine",
-    "ReplayConfig",
-    "ReplayMode",
 ]

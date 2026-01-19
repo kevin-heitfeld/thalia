@@ -50,39 +50,6 @@ for transferring hippocampal memories to neocortex during sleep:
 
    **Evidence**: Dudai (2004) - "The neurobiology of consolidations"
 
-Usage:
-======
-
-    from thalia.memory.consolidation.consolidation import (
-        MemoryPressureDetector,
-        SleepStageController,
-        ConsolidationMetrics,
-        ConsolidationTrigger,
-    )
-
-    # Memory pressure detection
-    detector = MemoryPressureDetector()
-    pressure = detector.calculate_pressure(
-        hippocampus_activity=0.85,
-        pattern_overlap=0.72,
-        retrieval_success=0.88,
-    )
-    should_consolidate = detector.should_trigger_consolidation(pressure)
-
-    # Sleep stage simulation
-    controller = SleepStageController()
-    stage = controller.get_current_stage(consolidation_step=1000)
-    # → 'NREM' (first half of cycle)
-
-    # Consolidation metrics
-    metrics = ConsolidationMetrics()
-    metrics.log_transfer(
-        patterns_replayed=500,
-        cortical_learning_rate=0.03,
-        retrieval_degradation=0.02,
-    )
-    quality = metrics.get_consolidation_quality()
-
 References:
 ===========
 - McClelland et al. (1995): Complementary learning systems
