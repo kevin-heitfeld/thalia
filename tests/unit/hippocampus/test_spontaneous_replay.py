@@ -184,9 +184,10 @@ def test_ach_threshold_boundary(replay_generator):
     replay_generator.reset_state()
 
     # Just below threshold - should trigger
+    # Run longer to ensure probabilistic trigger (5000 timesteps gives ~99.3% chance of >= 1 ripple)
     below_threshold = 0.29
     ripple_count_below = 0
-    for _ in range(500):
+    for _ in range(5000):
         if replay_generator.should_trigger_ripple(below_threshold, dt_ms):
             ripple_count_below += 1
 
@@ -224,13 +225,17 @@ def test_reset_state_clears_timer(replay_generator):
     low_ach = 0.1
     dt_ms = 1.0
 
-    # Advance time beyond refractory period
+    # Advance time beyond refractory period WITHOUT triggering ripples
+    # Use high ACh to prevent probabilistic triggers during time advance
+    high_ach = 0.9  # Above threshold (0.3), so no ripples
     for _ in range(300):
-        replay_generator.should_trigger_ripple(low_ach, dt_ms)
+        replay_generator.should_trigger_ripple(high_ach, dt_ms)
 
-    # Check time advanced
+    # Check time advanced (no ripples should have occurred)
     diag_before = replay_generator.get_diagnostics()
-    assert diag_before["time_since_ripple_ms"] >= 200.0, "Time should have advanced past refractory"
+    assert diag_before["time_since_ripple_ms"] >= 200.0, (
+        f"Time should have advanced past refractory. Got {diag_before['time_since_ripple_ms']:.1f}ms"
+    )
 
     # Reset state
     replay_generator.reset_state()
