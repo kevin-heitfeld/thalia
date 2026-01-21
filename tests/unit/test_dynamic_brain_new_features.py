@@ -20,8 +20,8 @@ def brain():
     return create_test_brain(
         device="cpu",
         dt_ms=1.0,
-        input_size=64,
-        thalamus_size=64,
+        input_size=128,
+        thalamus_size=128,
         cortex_size=128,
         hippocampus_size=64,
         pfc_size=128,  # Match striatum's default pfc_size config (128)
@@ -35,7 +35,7 @@ class TestCounterfactualLearning:
     def test_deliver_reward_with_counterfactual_basic(self, brain):
         """Test basic counterfactual reward delivery."""
         # Run forward pass and select action
-        input_data = {"thalamus": torch.randn(64, device=brain.device)}
+        input_data = {"thalamus": torch.randn(128, device=brain.device)}
         brain.forward(input_data, n_timesteps=10)
         action, _ = brain.select_action(explore=True, use_planning=False)
 
@@ -55,7 +55,7 @@ class TestCounterfactualLearning:
 
     def test_counterfactual_reward_computation(self, brain):
         """Test that counterfactual rewards are computed correctly."""
-        input_data = {"thalamus": torch.randn(64, device=brain.device)}
+        input_data = {"thalamus": torch.randn(128, device=brain.device)}
         brain.forward(input_data, n_timesteps=10)
         brain.select_action(explore=True, use_planning=False)  # Need to select action first
 
@@ -83,7 +83,7 @@ class TestCounterfactualLearning:
 
     def test_counterfactual_scaling(self, brain):
         """Test that counterfactual_scale parameter works."""
-        input_data = {"thalamus": torch.randn(64, device=brain.device)}
+        input_data = {"thalamus": torch.randn(128, device=brain.device)}
 
         # Test with different scales
         for scale in [0.0, 0.5, 1.0]:
@@ -129,14 +129,14 @@ class TestStriatumDiagnostics:
         assert isinstance(diag.d1_per_action, list)
         assert isinstance(diag.d2_per_action, list)
         assert isinstance(diag.net_per_action, list)
-        assert len(diag.d1_per_action) == 4  # n_actions
-        assert len(diag.d2_per_action) == 4
-        assert len(diag.net_per_action) == 4
+        assert len(diag.d1_per_action) == 10  # n_actions (default for BrainBuilder.preset)
+        assert len(diag.d2_per_action) == 10
+        assert len(diag.net_per_action) == 10
 
     def test_striatum_diagnostics_after_action(self, brain):
         """Test diagnostics after action selection."""
         # Select an action
-        input_data = {"thalamus": torch.randn(64, device=brain.device)}
+        input_data = {"thalamus": torch.randn(128, device=brain.device)}
         brain.forward(input_data, n_timesteps=10)
         action, _ = brain.select_action(explore=True, use_planning=False)
 
@@ -164,7 +164,7 @@ class TestHippocampusDiagnostics:
     def test_hippocampus_diagnostics_after_activity(self, brain):
         """Test diagnostics after hippocampus activity."""
         # Run forward passes to generate activity
-        input_data = {"thalamus": torch.randn(64, device=brain.device)}
+        input_data = {"thalamus": torch.randn(128, device=brain.device)}
         for _ in range(5):
             brain.forward(input_data, n_timesteps=10)
 
@@ -198,7 +198,7 @@ class TestStructuredDiagnostics:
         _ = brain.get_structured_diagnostics()  # Verify diagnostics work
 
         # Take action
-        input_data = {"thalamus": torch.randn(64, device=brain.device)}
+        input_data = {"thalamus": torch.randn(128, device=brain.device)}
         brain.forward(input_data, n_timesteps=10)
         action, _ = brain.select_action(explore=True, use_planning=False)
 
@@ -249,7 +249,7 @@ class TestFeatureParity:
 
         for trial in range(3):
             # Forward pass
-            input_data = {"thalamus": torch.randn(64, device=brain.device)}
+            input_data = {"thalamus": torch.randn(128, device=brain.device)}
             brain.forward(input_data, n_timesteps=10)
 
             # Select action

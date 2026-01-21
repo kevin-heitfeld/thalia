@@ -116,7 +116,7 @@ line-length = 100
 target-version = "py310"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
@@ -188,7 +188,7 @@ disable = [
     "unbalanced-tuple-unpacking",   # Often wrong for dataclass fields
 
     # === Import/Module Issues ===
-    "import-error",                 # False positives with namespace packages
+    "import-error",                # False positives with namespace packages
     "no-name-in-module",           # Wrong for torch, numpy submodules
     "cyclic-import",               # Acceptable with TYPE_CHECKING guards
 

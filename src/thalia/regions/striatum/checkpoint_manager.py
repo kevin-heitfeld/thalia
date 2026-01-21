@@ -200,15 +200,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "manager_state": s.exploration.get_state(),
         }
 
-        # 5. VALUE ESTIMATION STATE (if RPE enabled)
-        rpe_state = {}
-        if s.value_estimates is not None:
-            rpe_state = {
-                "value_estimates": s.value_estimates.detach().clone(),
-                "last_rpe": s.state_tracker._last_rpe,
-                "last_expected": s.state_tracker._last_expected,
-            }
-
         # 6. GOAL MODULATION STATE (if enabled)
         goal_state = {}
         if hasattr(s, "pfc_modulation_d1") and s.pfc_modulation_d1 is not None:
@@ -241,7 +232,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             "pathway_state": pathway_state,
             "learning_state": learning_state,
             "exploration_state": exploration_state,
-            "rpe_state": rpe_state,
             "goal_state": goal_state,
             "action_state": action_state,
             "delay_state": delay_state,
@@ -270,10 +260,13 @@ class StriatumCheckpointManager(BaseCheckpointManager):
 
         if "n_neurons_active" in neuron_state and "n_neurons_capacity" in neuron_state:
             # Handle elastic tensor growth/shrinkage using base class utility
+            # With D1/D2 pathways, neurons_per_action applies to EACH pathway
+            # So neurons_per_unit for growth calculation = neurons_per_action * 2
+            neurons_per_unit = s.neurons_per_action * 2  # D1 + D2
             should_grow, n_grow_actions, warning_msg = self.handle_elastic_tensor_growth(
                 checkpoint_active=neuron_state["n_neurons_active"],
                 current_active=s.n_neurons_active,
-                neurons_per_unit=s.neurons_per_action,
+                neurons_per_unit=neurons_per_unit,
                 region_name="Striatum",
             )
 
@@ -891,10 +884,6 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             # Action selection state
             "last_action": s.state_tracker.last_action,
             "recent_spikes": s.state_tracker.recent_spikes.detach().clone(),
-            # Value estimation state (if RPE enabled)
-            "value_estimates": (
-                s.value_estimates.detach().clone() if s.value_estimates is not None else None
-            ),
             "last_rpe": s.state_tracker._last_rpe,
             "last_expected": s.state_tracker._last_expected,
             # Goal modulation state (if enabled)

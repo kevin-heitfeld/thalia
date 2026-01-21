@@ -1294,6 +1294,10 @@ class TrisynapticHippocampus(NeuralRegion):
             # EC→CA2: Only post (CA2) grows, pre (EC input) is fixed
             self.stp_ec_ca2.grow(ca2_growth, target="post")
 
+        # 7.5. Grow synaptic tagging matrix for CA3 recurrent connections
+        if self.synaptic_tagging is not None:
+            self.synaptic_tagging.grow(ca3_growth)
+
         # 8. Update instance variables (sizes no longer in config)
         # self.ca1_size, self.ca2_size, etc. already updated above
         # Update n_output to match new CA1 size
@@ -2684,9 +2688,6 @@ class TrisynapticHippocampus(NeuralRegion):
             dopamine=0.3,  # MODERATE: Still available for learning
         )
 
-        # Enable HER consolidation if available
-        if self.her_integration is not None:
-            self.her_integration.enter_consolidation()
 
     def exit_consolidation_mode(self) -> None:
         """Exit consolidation mode and return to encoding.
@@ -2848,7 +2849,6 @@ class TrisynapticHippocampus(NeuralRegion):
             "ffi": {
                 "current_strength": state.ffi_strength,
             },
-            "episode_buffer_size": len(self.episode_buffer),
         }
 
         # Synaptic tagging diagnostics (Phase 1: Emergent RL Migration)

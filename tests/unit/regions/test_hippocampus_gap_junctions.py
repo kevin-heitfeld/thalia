@@ -70,7 +70,7 @@ def test_gap_junction_creates_coupling():
     # Run simulation
     n_steps = 30
     for _ in range(n_steps):
-        hippo.forward(input_pattern)
+        hippo.forward({"cortex": input_pattern})
 
         # Collect gap junction coupling current if available
         if hippo.state.ca1_membrane is not None and hippo.gap_junctions_ca1 is not None:
@@ -111,7 +111,7 @@ def test_gap_junction_state_management():
 
     # After forward pass, ca1_membrane should be initialized and updated
     input_spikes = torch.ones(sizes["input_size"], device=hippo.device)
-    hippo.forward(input_spikes)
+    hippo.forward({"cortex": input_spikes})
 
     assert hippo.state.ca1_membrane is not None
     assert hippo.state.ca1_membrane.shape == (sizes["ca1_size"],)  # CA1 size
@@ -128,7 +128,7 @@ def test_gap_junction_state_serialization():
 
     # Run forward to populate ca1_membrane
     input_spikes = torch.ones(sizes["input_size"], device=hippo.device)
-    hippo.forward(input_spikes)
+    hippo.forward({"cortex": input_spikes})
 
     # Get state
     state = hippo.get_state()
@@ -184,7 +184,7 @@ def test_gap_junction_integration_with_theta():
 
     gap_currents_recorded = False
     for _ in range(20):
-        hippo.forward(input_pattern)
+        hippo.forward({"cortex": input_pattern})
 
         # Verify gap junctions are working
         if hippo.state.ca1_membrane is not None and hippo.gap_junctions_ca1 is not None:

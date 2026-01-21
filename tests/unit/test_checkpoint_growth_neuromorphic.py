@@ -103,11 +103,11 @@ class TestNeuronIDPersistence:
         neurons = state["neurons"]
 
         # Test contract: should have neurons per action with population coding
-        # D1/D2 split: 5 actions × 10 neurons/action = 50 total, split between pathways
-        expected_neurons = 5 * 10  # 5 actions × 10 neurons/action (25 D1 + 25 D2)
+        # D1/D2 split: 5 actions × 10 neurons/action × 2 pathways = 100 total
+        expected_neurons = 5 * 10 * 2  # 5 actions × 10 neurons/action × 2 pathways (50 D1 + 50 D2)
         assert (
             len(neurons) == expected_neurons
-        ), f"Should have {expected_neurons} neurons (5 actions × 10 neurons/action across D1+D2)"
+        ), f"Should have {expected_neurons} neurons (5 actions × 10 neurons/action × 2 pathways D1+D2)"
 
         # Each should have unique ID
         ids = [n["id"] for n in neurons]
@@ -186,10 +186,10 @@ class TestNeuronIDPersistence:
         state1 = striatum_neuromorphic_population.checkpoint_manager.get_neuromorphic_state()
         ids1 = set(n["id"] for n in state1["neurons"])
         # Test contract: initial state should have correct neuron count
-        initial_expected = 5 * 10  # 5 actions × 10 neurons/action
+        initial_expected = 5 * 10 * 2  # 5 actions × 10 neurons/action × 2 pathways
         assert (
             len(ids1) == initial_expected
-        ), f"Should start with {initial_expected} neurons (5 actions × 10 neurons/action)"
+        ), f"Should start with {initial_expected} neurons (5 actions × 10 neurons/action × 2 pathways)"
 
         # Grow by 2 actions (= 20 neurons with population coding)
         n_new_actions = 2
@@ -205,10 +205,10 @@ class TestNeuronIDPersistence:
 
         # Test contract: should have correct number of new neurons
         new_ids = ids2 - ids1
-        expected_new = n_new_actions * neurons_per_action
+        expected_new = n_new_actions * neurons_per_action * 2  # D1 + D2
         assert (
             len(new_ids) == expected_new
-        ), f"Should have {expected_new} new IDs ({n_new_actions} actions × {neurons_per_action} neurons/action)"
+        ), f"Should have {expected_new} new IDs ({n_new_actions} actions × {neurons_per_action} neurons/action × 2 pathways)"
 
     def test_id_format_includes_creation_step(self, striatum_neuromorphic):
         """Neuron IDs should encode when they were created."""

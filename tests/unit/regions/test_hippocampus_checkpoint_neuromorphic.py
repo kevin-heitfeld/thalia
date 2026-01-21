@@ -166,7 +166,7 @@ def test_hippocampus_extreme_acetylcholine(small_hippocampus, acetylcholine):
     small_hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
 
     # Forward pass should not crash
-    output = small_hippocampus(input_spikes)
+    output = small_hippocampus({"cortex": input_spikes})
 
     # Contract: valid output regardless of ACh value
     assert output.dtype == torch.bool

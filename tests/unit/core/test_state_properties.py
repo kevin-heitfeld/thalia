@@ -306,7 +306,7 @@ class TestMultiRegionIndependence:
 
         # Build up some state
         for _ in range(5):
-            hippocampus.forward(torch.rand(20) > 0.6)
+            hippocampus.forward({"cortex": torch.rand(20) > 0.6})
 
         # Save state AND RNG state
         state = hippocampus.get_state()
@@ -484,7 +484,7 @@ class TestStateConsistency:
 
         # Build up some patterns
         for _ in range(15):
-            hippocampus.forward(torch.rand(20) > 0.6)
+            hippocampus.forward({"cortex": torch.rand(20) > 0.6})
 
         # Save and load
         state = hippocampus.get_state()
@@ -493,7 +493,7 @@ class TestStateConsistency:
 
         # Continue processing - should work smoothly
         for _ in range(10):
-            output = hippocampus2.forward(torch.rand(20) > 0.6)
+            output = hippocampus2.forward({"cortex": torch.rand(20) > 0.6})
             # Hippocampus output is CA1 size (2x input per ratios)
             expected_output = hippocampus2.n_output
             assert output.shape == (

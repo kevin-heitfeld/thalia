@@ -226,8 +226,8 @@ class TestHybridSaveLoad:
         loaded = torch.load(checkpoint_path, weights_only=False)
         assert loaded["format"] == "neuromorphic"
         assert "neurons" in loaded
-        # Should have 50 neurons (5 actions × 10 neurons/action)
-        assert len(loaded["neurons"]) == 50
+        # Should have 100 neurons (5 actions × 10 neurons/action × 2 pathways D1+D2)
+        assert len(loaded["neurons"]) == 100
 
     def test_save_large_creates_elastic(self, large_striatum, tmp_path):
         """Saving large region should create elastic tensor checkpoint."""

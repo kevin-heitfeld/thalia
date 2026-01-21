@@ -178,6 +178,23 @@ class SynapticTagging:
         """
         self.tags.zero_()
 
+    def grow(self, n_new: int) -> None:
+        """Grow tag matrix when neurons are added.
+
+        Args:
+            n_new: Number of new neurons to add (grows both dimensions)
+        """
+        old_size = self.n_neurons
+        new_size = old_size + n_new
+
+        # Expand tag matrix [n_neurons, n_neurons]
+        new_tags = torch.zeros(new_size, new_size, device=self.device)
+        # Copy existing tags to top-left corner
+        new_tags[:old_size, :old_size] = self.tags
+        self.tags = new_tags
+
+        self.n_neurons = new_size
+
     def get_diagnostics(self) -> dict[str, Any]:
         """Get diagnostic information about tag state.
 

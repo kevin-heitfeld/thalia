@@ -149,7 +149,7 @@ def test_hippocampus_handles_valid_acetylcholine_range(acetylcholine, device):
     hippocampus.set_neuromodulators(acetylcholine=acetylcholine)
 
     input_spikes = torch.rand(40, device=device) > 0.8
-    output = hippocampus(input_spikes)
+    output = hippocampus({"cortex": input_spikes})
 
     # Robustness checks
     assert not torch.isnan(output).any(), f"NaN output with acetylcholine={acetylcholine}"
@@ -362,7 +362,7 @@ def test_hippocampus_stable_with_fluctuating_acetylcholine(device):
 
     for t, ach in enumerate(ach_sequence):
         hippocampus.set_neuromodulators(acetylcholine=ach)
-        output = hippocampus(input_spikes)
+        output = hippocampus({"cortex": input_spikes})
 
         assert not torch.isnan(output).any(), f"NaN at timestep {t} with acetylcholine={ach}"
         assert not torch.isinf(
@@ -433,7 +433,7 @@ def test_hippocampus_learning_stable_with_valid_acetylcholine(acetylcholine, dev
     # Run learning
     input_spikes = torch.ones(40, device=device)
     for _ in range(10):
-        output = hippocampus(input_spikes)
+        output = hippocampus({"cortex": input_spikes})
 
         # Output should remain valid throughout learning
         assert not torch.isnan(
@@ -508,7 +508,7 @@ def test_multi_region_neuromodulator_stability(device):
     # Run all regions
     for _ in range(20):
         striatum_out = striatum({"default": torch.rand(50, device=device) > 0.8})
-        hippo_out = hippocampus(torch.rand(40, device=device) > 0.8)
+        hippo_out = hippocampus({"cortex": torch.rand(40, device=device) > 0.8})
         pfc_out = pfc(torch.rand(50, device=device) > 0.8)
 
         # All outputs should be valid

@@ -265,7 +265,7 @@ class TestPhasePreferenceEmergence:
                 theta_slot=0,
                 coupled_amplitudes={"gamma": 1.0},
             )
-            hippo(pattern)
+            hippo({"cortex": pattern})
 
         # Get final weights
         final_weights = hippo.synaptic_weights["ca3_ca3"].data.clone()

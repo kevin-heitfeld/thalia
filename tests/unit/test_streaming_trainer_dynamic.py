@@ -163,7 +163,7 @@ def test_streaming_trainer_process_sample(mock_brain):
 
     # Create sample
     sample = {
-        "input": torch.randn(20),
+        "input": torch.randn(128),
         "reward": 1.0,
     }
 
@@ -201,7 +201,7 @@ def test_streaming_trainer_train_online(mock_brain):
 
     def data_stream():
         for i in range(max_samples):
-            yield {"input": torch.randn(20), "label": i % 5}
+            yield {"input": torch.randn(128), "label": i % 5}
 
     # Train
     stats = trainer.train_online(
@@ -233,7 +233,7 @@ def test_streaming_trainer_with_replay(mock_brain):
     # Create stream
     def data_stream():
         for i in range(20):
-            yield {"input": torch.randn(20), "reward": 1.0}
+            yield {"input": torch.randn(128), "reward": 1.0}
 
     # Train
     _stats = trainer.train_online(
@@ -259,7 +259,7 @@ def test_streaming_trainer_early_stop(mock_brain):
     def infinite_stream():
         i = 0
         while True:
-            yield {"input": torch.randn(20)}
+            yield {"input": torch.randn(128)}
             i += 1
 
     # Should stop at max_samples
@@ -293,7 +293,7 @@ def test_streaming_trainer_performance_summary(mock_brain):
     # Create stream
     def data_stream():
         for _ in range(30):
-            yield {"input": torch.randn(20)}
+            yield {"input": torch.randn(128)}
 
     # Train
     trainer.train_online(

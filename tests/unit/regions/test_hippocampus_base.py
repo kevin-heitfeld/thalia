@@ -79,8 +79,8 @@ class TestHippocampus(RegionTestBase):
         # Provide entorhinal cortex input
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
 
-        # Forward pass
-        output = region.forward(input_spikes)
+        # Forward pass (hippocampus expects dict with source names)
+        output = region.forward({"cortex": input_spikes})
 
         # Verify output is CA1 activity
         assert output.shape[0] == self._get_region_output_size(region)
@@ -104,7 +104,7 @@ class TestHippocampus(RegionTestBase):
         input_spikes = torch.ones(self._get_input_size(params), device=region.device) * 0.8
 
         # Forward pass
-        region.forward(input_spikes)
+        region.forward({"cortex": input_spikes})
 
         # DG should produce sparse output (pattern separation)
         state = region.get_state()
@@ -121,7 +121,7 @@ class TestHippocampus(RegionTestBase):
         # Run forward passes
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
-            region.forward(input_spikes)
+            region.forward({"cortex": input_spikes})
 
         # Verify CA3 recurrent connections exist
         if hasattr(region, "synaptic_weights"):
@@ -137,7 +137,7 @@ class TestHippocampus(RegionTestBase):
 
         # Strong input to trigger persistent activity
         strong_input = torch.ones(self._get_input_size(params), device=region.device)
-        region.forward(strong_input)
+        region.forward({"cortex": strong_input})
 
         # Check for persistent activity state
         state = region.get_state()
@@ -154,7 +154,7 @@ class TestHippocampus(RegionTestBase):
         # Run multiple forward passes
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
         for _ in range(10):
-            region.forward(input_spikes)
+            region.forward({"cortex": input_spikes})
 
         # Verify STP state for mossy fibers
         state = region.get_state()
@@ -175,7 +175,7 @@ class TestHippocampus(RegionTestBase):
         ec_l3_input = torch.ones(self._get_input_size(params), device=region.device)
 
         # Forward with direct EC→CA1
-        output = region.forward(input_spikes, ec_direct_input=ec_l3_input)
+        output = region.forward({"cortex": input_spikes}, ec_direct_input=ec_l3_input)
 
         # Should not error and return ca1_size
         assert output.shape[0] == region.ca1_size
@@ -190,7 +190,7 @@ class TestHippocampus(RegionTestBase):
             region.set_neuromodulators(acetylcholine=0.9)
 
         input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        region.forward(input_spikes)
+        region.forward({"cortex": input_spikes})
 
         # Verify ACh stored in state
         state = region.get_state()
@@ -236,26 +236,6 @@ class TestHippocampus(RegionTestBase):
         assert state.acetylcholine == 0.8
         assert state.norepinephrine == 0.5
         assert state.dopamine == 0.5
-
-    def test_cue_replay(self):
-        """Test Phase 1: Episode replay cuing."""
-        params = self.get_default_params()
-        region = self.create_region(**params)
-
-        # Cue episode 0 for replay
-        region.cue_replay(episode_index=0)
-        assert region._replay_cue == 0
-
-        # Cue episode 5
-        region.cue_replay(episode_index=5)
-        assert region._replay_cue == 5
-
-        # Test invalid episode index
-        try:
-            region.cue_replay(episode_index=-1)
-            assert False, "Should have raised ValueError for negative episode index"
-        except ValueError as e:
-            assert "episode_index must be >= 0" in str(e)
 
     def test_consolidation_replay_forward(self):
         """Test Phase 1: Consolidation mode drives CA3→CA1 replay during forward()."""

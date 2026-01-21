@@ -117,24 +117,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
         neuromodulator_state = self._get_neuromodulator_state()
         region_state = self._get_region_state()
 
-        # Get episode buffer state (hippocampus-specific)
-        episode_buffer_state = []
-        for ep in h.episode_buffer:
-            ep_state = {
-                "state": ep.state.detach().clone(),
-                "context": ep.context.detach().clone() if ep.context is not None else None,
-                "action": ep.action,
-                "reward": ep.reward,
-                "correct": ep.correct,
-                "metadata": ep.metadata,
-                "priority": ep.priority,
-                "timestamp": ep.timestamp,
-                "sequence": (
-                    [s.detach().clone() for s in ep.sequence] if ep.sequence is not None else None
-                ),
-            }
-            episode_buffer_state.append(ep_state)
-
         # Get oscillator state (hippocampus-specific)
         oscillator_state: Dict[str, Any] = {}
 
@@ -145,7 +127,6 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
             neuromodulator_state=neuromodulator_state,
             region_state=region_state,
             additional_state={
-                "episode_buffer": episode_buffer_state,
                 "oscillator_state": oscillator_state,
             },
         )

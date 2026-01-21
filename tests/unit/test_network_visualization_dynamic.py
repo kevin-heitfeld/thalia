@@ -247,7 +247,7 @@ def test_visualization_after_forward_pass(tmp_path, small_test_brain, device):
     from thalia.visualization.network_graph import export_topology_to_graphviz
 
     # Run forward pass through real brain
-    input_spikes = torch.zeros(20, device=device)  # 20 input neurons (matches thalamus_size)
+    input_spikes = torch.zeros(128, device=device)  # 128 input neurons (matches thalamus_size)
     input_spikes[0] = 1.0  # Single spike on first neuron
     input_spikes[5] = 1.0  # Single spike on sixth neuron
 

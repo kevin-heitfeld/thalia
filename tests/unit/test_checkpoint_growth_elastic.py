@@ -129,11 +129,11 @@ class TestElasticTensorMetadata:
         loaded = torch.load(checkpoint_path, weights_only=False)
         neuron_state = loaded["neuron_state"]
 
-        # Should track actual neuron count (actions * neurons_per_action), not just action count
-        expected_active = 5 * 10  # 5 actions * 10 neurons/action
+        # Should track actual neuron count (actions * neurons_per_action * 2 pathways), not just action count
+        expected_active = 5 * 10 * 2  # 5 actions * 10 neurons/action * 2 pathways (D1+D2)
         assert (
             neuron_state["n_neurons_active"] == expected_active
-        ), f"Should have {expected_active} active neurons (5 actions * 10 neurons/action)"
+        ), f"Should have {expected_active} active neurons (5 actions * 10 neurons/action * 2 pathways)"
         # Test contract: capacity should have headroom
         assert (
             neuron_state["n_neurons_capacity"] >= neuron_state["n_neurons_active"] * 1.2
@@ -153,27 +153,27 @@ class TestElasticTensorMetadata:
         region.add_input_source_striatum("default", base_sizes_population["input_size"])
         region.reset_state()
 
-        # Initially 50 neurons (5 actions * 10 neurons/action)
+        # Initially 100 neurons (5 actions * 10 neurons/action * 2 pathways D1+D2)
         initial_actions = 5
         neurons_per_action = 10
-        initial_expected = initial_actions * neurons_per_action
+        initial_expected = initial_actions * neurons_per_action * 2  # D1 + D2
         assert (
             region.n_neurons_active == initial_expected
-        ), f"Should start with {initial_expected} neurons ({initial_actions} actions * {neurons_per_action} neurons/action)"
+        ), f"Should start with {initial_expected} neurons ({initial_actions} actions * {neurons_per_action} neurons/action * 2 pathways)"
 
         # Add 2 more actions (= 20 more neurons with population coding)
         n_new_actions = 2
         region.grow_output(n_new=n_new_actions)
 
-        # Should now have 7 actions * 10 neurons = 70 neurons
+        # Should now have 7 actions * 10 neurons * 2 pathways = 140 neurons
         final_expected_actions = initial_actions + n_new_actions
-        final_expected_neurons = final_expected_actions * neurons_per_action
+        final_expected_neurons = final_expected_actions * neurons_per_action * 2  # D1 + D2
         assert (
             region.n_actions == final_expected_actions
         ), f"Should have {final_expected_actions} actions after growth"
         assert (
             region.n_neurons_active == final_expected_neurons
-        ), f"Should have {final_expected_neurons} neurons ({final_expected_actions} actions * {neurons_per_action} neurons/action)"
+        ), f"Should have {final_expected_neurons} neurons ({final_expected_actions} actions * {neurons_per_action} neurons/action * 2 pathways)"
 
         # Save and reload
         state = region.get_full_state()
