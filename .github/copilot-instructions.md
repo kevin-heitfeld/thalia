@@ -172,7 +172,7 @@ class MyRegion(NeuralRegion):
 ```python
 # Brain and configuration
 from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.config import BrainConfig
 
 # Learning strategies
 from thalia.learning import create_strategy, create_cortex_strategy, create_striatum_strategy
@@ -215,8 +215,7 @@ from thalia.pathways.axonal_projection import AxonalProjection, SourceSpec
 from thalia.utils.delay_buffer import CircularDelayBuffer
 
 # Creating a brain
-brain = BrainBuilder.preset("default", global_config)  # Use presets
-brain = DynamicBrain.from_thalia_config(thalia_config)      # From config
+brain = BrainBuilder.preset("default", brain_config)  # Use presets
 
 # Accessing components
 region = brain.components["cortex"]                     # Get region by name
@@ -275,13 +274,6 @@ Select-String -Path src\* -Pattern "CircularDelayBuffer" -Recurse
 - **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-gated), error-corrective
 - **Neuromodulators**: Dopamine, acetylcholine, norepinephrine (centralized management via NeuromodulatorManager)
 - **Oscillators**: Delta, theta, alpha, beta, gamma with cross-frequency coupling
-
-### Planning & Memory ✅
-- **TD(λ)**: Multi-step credit assignment (`src/thalia/regions/striatum/td_lambda.py`)
-- **Dyna Planning**: Model-based planning (`src/thalia/planning/dyna.py`)
-- **Goal Hierarchy**: Hierarchical goal management (`src/thalia/regions/prefrontal_hierarchy.py`)
-- **Working Memory**: PFC gating and maintenance
-- **Episodic Memory**: Hippocampal one-shot learning
 
 ### Training & Infrastructure ✅
 - **Curriculum Training**: Stage-based developmental training (`src/thalia/training/curriculum/`)

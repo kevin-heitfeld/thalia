@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-19 05:37:19
+> Last updated: 2026-01-23 21:18:02
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 47 modules, 488 exports
+Total: 46 modules, 477 exports
 
 ## 📑 Table of Contents
 
@@ -23,11 +23,11 @@ Quick jump to module:
 - [thalia.neuromodulation](#thalianeuromodulation) | - [thalia.neuromodulation.systems](#thalianeuromodulationsystems) | - [thalia.pathways](#thaliapathways)
 - [thalia.regions](#thaliaregions) | - [thalia.regions.cerebellum](#thaliaregionscerebellum) | - [thalia.regions.cortex](#thaliaregionscortex)
 - [thalia.regions.hippocampus](#thaliaregionshippocampus) | - [thalia.regions.prefrontal](#thaliaregionsprefrontal) | - [thalia.regions.striatum](#thaliaregionsstriatum)
-- [thalia.regions.thalamus](#thaliaregionsthalamus) | - [thalia.regulation](#thaliaregulation) | - [thalia.replay](#thaliareplay)
-- [thalia.stimuli](#thaliastimuli) | - [thalia.surgery](#thaliasurgery) | - [thalia.synapses](#thaliasynapses)
-- [thalia.tasks](#thaliatasks) | - [thalia.training](#thaliatraining) | - [thalia.training.curriculum](#thaliatrainingcurriculum)
-- [thalia.training.datasets](#thaliatrainingdatasets) | - [thalia.training.evaluation](#thaliatrainingevaluation) | - [thalia.training.visualization](#thaliatrainingvisualization)
-- [thalia.utils](#thaliautils) | - [thalia.visualization](#thaliavisualization) | 
+- [thalia.regions.thalamus](#thaliaregionsthalamus) | - [thalia.regulation](#thaliaregulation) | - [thalia.stimuli](#thaliastimuli)
+- [thalia.surgery](#thaliasurgery) | - [thalia.synapses](#thaliasynapses) | - [thalia.tasks](#thaliatasks)
+- [thalia.training](#thaliatraining) | - [thalia.training.curriculum](#thaliatrainingcurriculum) | - [thalia.training.datasets](#thaliatrainingdatasets)
+- [thalia.training.evaluation](#thaliatrainingevaluation) | - [thalia.training.visualization](#thaliatrainingvisualization) | - [thalia.utils](#thaliautils)
+- [thalia.visualization](#thaliavisualization) | 
 
 ## Module Exports
 
@@ -40,7 +40,6 @@ Quick jump to module:
 - `__version__`
 - `ThaliaConfig`
 - `BrainConfig`
-- `RegionSizes`
 - `ComponentGraph`
 - `ConnectionGraph`
 - `TopologyGraph`
@@ -57,6 +56,7 @@ Quick jump to module:
 - `BatchData`
 - `DynamicBrain`
 - `NeuralComponentConfig`
+- `Striatum`
 
 **Usage**:
 
@@ -214,10 +214,10 @@ from thalia.components.synapses import InitStrategy
 - `STDPLearningConfig`
 - `HebbianLearningConfig`
 - `BrainConfig`
-- `RegionSizes`
 - `CortexType`
 - `NeuromodulationConfig`
 - `TrainingConfig`
+- `LayeredCortexConfig`
 
 **Usage**:
 
@@ -650,12 +650,8 @@ from thalia.managers import ComponentRegistry
 
 **Source**: [`thalia/memory/__init__.py`](../../src/thalia/memory/__init__.py)
 
-**Exports** (13):
+**Exports** (9):
 
-- `SequenceMemory`
-- `SequenceContext`
-- `ContextBuffer`
-- `ContextBufferConfig`
 - `MemoryPressureDetector`
 - `MemoryPressureConfig`
 - `SleepStageController`
@@ -669,7 +665,7 @@ from thalia.managers import ComponentRegistry
 **Usage**:
 
 ```python
-from thalia.memory import SequenceMemory
+from thalia.memory import MemoryPressureDetector
 ```
 
 ---
@@ -841,14 +837,10 @@ from thalia.regions.cortex import LayeredCortex
 
 **Source**: [`thalia/regions/hippocampus/__init__.py`](../../src/thalia/regions/hippocampus/__init__.py)
 
-**Exports** (6):
+**Exports** (2):
 
 - `TrisynapticHippocampus`
 - `HippocampusState`
-- `Episode`
-- `ReplayEngine`
-- `ReplayConfig`
-- `ReplayMode`
 
 **Usage**:
 
@@ -862,13 +854,12 @@ from thalia.regions.hippocampus import TrisynapticHippocampus
 
 **Source**: [`thalia/regions/prefrontal/__init__.py`](../../src/thalia/regions/prefrontal/__init__.py)
 
-**Exports** (6):
+**Exports** (5):
 
 - `Prefrontal`
 - `PrefrontalState`
 - `PrefrontalCheckpointManager`
-- `Goal`
-- `GoalStatus`
+- `EmergentGoalSystem`
 - `sample_heterogeneous_wm_neurons`
 
 **Usage**:
@@ -928,23 +919,6 @@ from thalia.regions.thalamus import ThalamicRelay
 
 ```python
 from thalia.regulation import DivisiveNormConfig
-```
-
----
-
-### `thalia.replay`
-
-**Source**: [`thalia/replay/__init__.py`](../../src/thalia/replay/__init__.py)
-
-**Exports** (2):
-
-- `ReplayContext`
-- `UnifiedReplayCoordinator`
-
-**Usage**:
-
-```python
-from thalia.replay import ReplayContext
 ```
 
 ---

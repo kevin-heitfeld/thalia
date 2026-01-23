@@ -127,7 +127,9 @@ class ConductanceLIFConfig(BaseNeuronConfig):
     E_adapt: float = -0.5  # Adaptation reversal (hyperpolarizing, like slow K+)
 
     # Noise (enable by default for biological realism)
-    noise_std: float = 0.01  # NOISE_STD_LOW - enables exploration and prevents overfitting
+    noise_std: float = 0.005  # With OU noise, this gives low spontaneous rate but sufficient exploration
+    noise_tau_ms: float = 5.0  # Ornstein-Uhlenbeck correlation time (5-10ms biologically)
+    use_ou_noise: bool = True  # Use autocorrelated (OU) noise instead of white noise
 
     @property
     def tau_m(self) -> float:
@@ -213,6 +215,7 @@ class ConductanceLIF(nn.Module):
         self.g_I: Optional[torch.Tensor] = None  # Inhibitory conductance
         self.g_adapt: Optional[torch.Tensor] = None  # Adaptation conductance
         self.refractory: Optional[torch.Tensor] = None
+        self.ou_noise: Optional[torch.Tensor] = None  # Ornstein-Uhlenbeck noise state
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update decay factors for new timestep.
@@ -291,6 +294,15 @@ class ConductanceLIF(nn.Module):
         if hasattr(self, "membrane_pre_spike"):
             delattr(self, "membrane_pre_spike")
         self.register_buffer("membrane_pre_spike", membrane_pre_spike, persistent=False)
+
+        # Initialize OU noise state (autocorrelated noise)
+        if self.config.use_ou_noise:
+            ou_noise = torch.zeros(self.n_neurons, device=dev, dtype=torch.float32)
+            if hasattr(self, "ou_noise"):
+                delattr(self, "ou_noise")
+            self.register_buffer("ou_noise", ou_noise, persistent=False)
+        else:
+            self.ou_noise = None
 
     def adjust_thresholds(
         self, delta: torch.Tensor, min_threshold: float = 0.5, max_threshold: float = 2.0
@@ -392,9 +404,22 @@ class ConductanceLIF(nn.Module):
         V_diff = self.membrane - V_inf  # type: ignore[operator]
         new_membrane = V_inf + V_diff * decay_factor
 
-        # Add noise only if configured (branch elimination)
+        # Add noise only if configured
         if self.config.noise_std > 0:
-            new_membrane = new_membrane + torch.randn_like(self.membrane) * self.config.noise_std  # type: ignore[arg-type]
+            if self.config.use_ou_noise:
+                # Ornstein-Uhlenbeck (colored) noise: dx = -x/τ*dt + σ*sqrt(2/τ)*dW
+                # Discrete: x(t+dt) = x(t)*exp(-dt/τ) + σ*sqrt(1-exp(-2*dt/τ))*randn()
+                if self.ou_noise is None:
+                    # Initialize OU noise if not present (e.g., after loading old checkpoint)
+                    self.ou_noise = torch.zeros_like(self.membrane)
+
+                ou_decay = torch.exp(torch.tensor(-self._dt_ms / self.config.noise_tau_ms))  # type: ignore[arg-type]
+                ou_std = self.config.noise_std * torch.sqrt(1 - ou_decay**2)  # Stationary variance
+                self.ou_noise = self.ou_noise * ou_decay + torch.randn_like(self.membrane) * ou_std  # type: ignore[assignment, arg-type]
+                new_membrane = new_membrane + self.ou_noise  # type: ignore[arg-type]
+            else:
+                # White noise (legacy, uncorrelated)
+                new_membrane = new_membrane + torch.randn_like(self.membrane) * self.config.noise_std  # type: ignore[arg-type]
 
         # Apply only to non-refractory neurons
         self.membrane = torch.where(not_refractory, new_membrane, self.membrane)  # type: ignore[assignment, arg-type]
@@ -459,6 +484,7 @@ class ConductanceLIF(nn.Module):
             "g_I": self.g_I.clone() if self.g_I is not None else None,
             "g_adapt": self.g_adapt.clone() if self.g_adapt is not None else None,
             "refractory": self.refractory.clone() if self.refractory is not None else None,
+            "ou_noise": self.ou_noise.clone() if self.ou_noise is not None else None,
         }
 
     def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
@@ -489,6 +515,9 @@ class ConductanceLIF(nn.Module):
             self.g_adapt = state["g_adapt"].to(dev_cast)  # type: ignore[assignment, arg-type]
         if state["refractory"] is not None:
             self.refractory = state["refractory"].to(dev_cast)  # type: ignore[assignment, arg-type]
+        # Restore OU noise if present in state
+        if state.get("ou_noise") is not None:
+            self.ou_noise = state["ou_noise"].to(dev_cast)  # type: ignore[assignment, arg-type]
 
     def grow_neurons(self, n_new: int) -> None:
         """Grow neuron population by adding new neurons.
@@ -545,6 +574,11 @@ class ConductanceLIF(nn.Module):
             new_ref = torch.zeros(n_new, device=dev_cast, dtype=torch.int32)  # type: ignore[arg-type]
             assert self.refractory is not None
             self.refractory = torch.cat([self.refractory, new_ref])  # type: ignore[assignment, list-item]
+
+            # Extend OU noise for new neurons (if using OU noise)
+            if hasattr(self, "ou_noise") and self.ou_noise is not None:
+                new_ou = torch.zeros(n_new, device=dev_cast, dtype=torch.float32)  # type: ignore[arg-type]
+                self.ou_noise = torch.cat([self.ou_noise, new_ou])  # type: ignore[assignment, list-item]
 
     def _apply(self, fn, recurse: bool = True):
         """Apply a function to all tensors, including state variables.

@@ -512,7 +512,6 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     Behavioral parameters:
     - Learning rates (learning_rate, d1_lr_scale, d2_lr_scale)
     - Action selection (lateral_inhibition, softmax_temperature)
-    - TD(λ) parameters (td_lambda, td_gamma)
     - Exploration (ucb_coefficient, adaptive_exploration)
     - Neuromodulation sensitivity (d1_da_sensitivity, d2_da_sensitivity)
 
@@ -531,7 +530,7 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     3. POPULATION CODING: Multiple neurons per action
     4. ADAPTIVE EXPLORATION: UCB + uncertainty-driven
 
-    Note: Dopamine/RPE computation has been centralized at the Brain level
+    Note: Dopamine computation has been centralized at the Brain level
     (Brain acts as VTA). Striatum receives dopamine via set_dopamine().
     """
 
@@ -593,14 +592,6 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     max_tonic_dopamine: float = 0.5
 
     # =========================================================================
-    # TD(λ) - MULTI-STEP CREDIT ASSIGNMENT (Phase 1 Enhancement)
-    # =========================================================================
-    use_td_lambda: bool = True  # Enable TD(λ) instead of basic TD(0) [DEFAULT: Enabled]
-    td_lambda: float = 0.9  # Trace decay rate (0=TD(0), 0.9=~10 steps, 1.0=Monte Carlo)
-    td_gamma: float = 0.99  # Discount factor for future rewards
-    td_lambda_accumulating: bool = True  # Accumulating vs replacing traces
-
-    # =========================================================================
     # UCB EXPLORATION BONUS
     # =========================================================================
     ucb_exploration: bool = True
@@ -611,13 +602,6 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     # =========================================================================
     uncertainty_temperature: float = 0.05
     min_exploration_boost: float = 0.05
-
-    # =========================================================================
-    # REWARD PREDICTION ERROR (RPE)
-    # =========================================================================
-    rpe_enabled: bool = True
-    rpe_learning_rate: float = 0.1
-    rpe_initial_value: float = 0.0
 
     # =========================================================================
     # TONIC vs PHASIC DOPAMINE
@@ -635,9 +619,6 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     # High beta → action persistence (D1 dominant, D2 suppressed)
     # Low beta → action flexibility (D2 effective, D1 reduced)
     beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence
-
-    # Size-free config - no __post_init__, no validation of sizes
-    # Sizes are now passed separately to Striatum.__init__(config, sizes, device)
 
     @classmethod
     def from_n_actions(
@@ -705,9 +686,6 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     # Biology: PFC → Striatum projections gate action selection by goal context
     use_goal_conditioning: bool = True  # Enable goal-conditioned value learning
     goal_modulation_strength: float = 0.5  # How strongly goals modulate values
-    goal_modulation_lr: float = (
-        LEARNING_RATE_HEBBIAN_SLOW  # Learning rate for PFC → striatum weights
-    )
 
     # =========================================================================
     # D1/D2 PATHWAY DELAYS (Temporal Competition)
@@ -737,9 +715,9 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     # - Partridge et al. (2000): Synaptic plasticity in striatum
     # - Ding et al. (2008): Thalamostriatal facilitation
     stp_enabled: bool = True  # Enable STP by default
-    # Note: STP types use presets from stp_presets.py ("corticostriatal", "thalamostriatal")
+    # NOTE: STP types use presets from stp_presets.py ("corticostriatal", "thalamostriatal")
 
-    # Heterogeneous STP (Phase 1 Enhancement)
+    # Heterogeneous STP
     # Biological: Within same pathway, U varies 10-fold across synapses (Dobrunz & Stevens 1997)
     # Enables more realistic synaptic diversity and temporal dynamics
     heterogeneous_stp: bool = False  # Enable per-synapse STP parameter sampling
@@ -747,7 +725,7 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     stp_seed: Optional[int] = None  # Random seed for reproducibility
 
     # =========================================================================
-    # MULTI-TIMESCALE ELIGIBILITY TRACES (Phase 1 Enhancement)
+    # MULTI-TIMESCALE ELIGIBILITY TRACES
     # =========================================================================
     # Biological: Synaptic tags (eligibility traces) have multiple timescales:
     # - Fast traces (~500ms): Immediate pre-post spike coincidence tagging

@@ -1,11 +1,11 @@
-"""Phase 6 Integration Tests: Emergent RL System Validation.
+"""Integration Tests: Emergent RL System Validation.
 
-Validates the complete emergent RL system across all phases:
-- Phase 1: Synaptic tags for eligibility marking
-- Phase 2: Spontaneous replay for offline consolidation
-- Phase 3: Eligibility traces for temporal credit assignment
-- Phase 4: Episode-free learning (no explicit memory)
-- Phase 5: D1/D2 competition for action values
+Validates the complete emergent RL system across multiple critical tests:
+- Synaptic tags for eligibility marking
+- Spontaneous replay for offline consolidation
+- Eligibility traces for temporal credit assignment
+- Episode-free learning (no explicit memory)
+- D1/D2 competition for action values
 
 Critical Tests:
 1. Delayed Gratification (10-second delays)
@@ -18,11 +18,6 @@ Success Criteria:
 - Credit assignment works for 5-10 step delays
 - Replay emerges during low ACh
 - D1/D2 competition converges correctly
-
-References:
-- docs/design/emergent_rl_migration.md Phase 6
-- Foster & Wilson (2006): Reverse replay during awake rest
-- Diba & Buzsáki (2007): Forward/reverse replay in sleep
 """
 
 import pytest
@@ -64,7 +59,7 @@ def emergent_rl_brain():
         striatum.config.ucb_coefficient = 2.0  # Exploration bonus
         striatum.config.softmax_action_selection = False
 
-    # Configure hippocampus for replay (Phase 2)
+    # Configure hippocampus for replay
     if "hippocampus" in brain.components:
         hippocampus = brain.components["hippocampus"]
         # Enable spontaneous replay during low ACh
@@ -76,7 +71,7 @@ def emergent_rl_brain():
 
 @pytest.mark.slow
 def test_delayed_gratification_10sec(emergent_rl_brain):
-    """Phase 6 Critical Test 1: Learn rewards with 10-second delays.
+    """Learn rewards with 10-second delays.
 
     Validates:
     - Eligibility traces maintain credit over long delays
@@ -152,7 +147,7 @@ def test_delayed_gratification_10sec(emergent_rl_brain):
 
 @pytest.mark.slow
 def test_credit_assignment_accuracy(emergent_rl_brain):
-    """Phase 6 Critical Test 2: Credit assignment accuracy vs TD(λ).
+    """Credit assignment accuracy vs TD(λ).
 
     Validates:
     - Emergent credit assignment within 20% of TD(λ) baseline
@@ -225,7 +220,7 @@ def test_credit_assignment_accuracy(emergent_rl_brain):
 
 @pytest.mark.slow
 def test_replay_selectivity(emergent_rl_brain):
-    """Phase 6 Critical Test 3: Rewarded patterns replay 3-5x more.
+    """Rewarded patterns replay 3-5x more.
 
     Validates:
     - Replay prioritizes rewarded experiences
@@ -292,23 +287,20 @@ def test_replay_selectivity(emergent_rl_brain):
     # Verify rewarded pattern replays more (not strict 3-5x, but significantly more)
     total_replays = sum(replay_counts.values())
 
-    if total_replays > 0:
-        rewarded_ratio = replay_counts["rewarded"] / total_replays
-        unrewarded_ratio = replay_counts["unrewarded"] / total_replays
+    assert total_replays > 0, "No replay events detected during low ACh."
 
-        assert rewarded_ratio > unrewarded_ratio, (
-            f"Rewarded pattern should replay more than unrewarded. "
-            f"Rewarded: {rewarded_ratio:.2%}, Unrewarded: {unrewarded_ratio:.2%}"
-        )
-    else:
-        # If no replay detected, test is inconclusive but not failed
-        # (replay might be working but harder to detect)
-        pytest.skip("No replay detected during test period")
+    rewarded_ratio = replay_counts["rewarded"] / total_replays
+    unrewarded_ratio = replay_counts["unrewarded"] / total_replays
+
+    assert rewarded_ratio > unrewarded_ratio, (
+        f"Rewarded pattern should replay more than unrewarded. "
+        f"Rewarded: {rewarded_ratio:.2%}, Unrewarded: {unrewarded_ratio:.2%}"
+    )
 
 
 @pytest.mark.slow
 def test_action_learning_convergence(emergent_rl_brain):
-    """Phase 6 Critical Test 4: D1/D2 competition converges correctly.
+    """D1/D2 competition converges correctly.
 
     Validates:
     - Action preferences converge over training

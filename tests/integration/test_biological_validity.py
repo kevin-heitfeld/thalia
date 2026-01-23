@@ -418,7 +418,7 @@ class TestCA3PersistentActivity:
 
         # Build CA3 pattern
         for _ in range(15):
-            hippocampus.forward(torch.rand(20) > 0.6)
+            hippocampus.forward({"ec": torch.rand(20) > 0.6})
 
         # Check some CA3 activity exists
         ca3_spikes_before = (

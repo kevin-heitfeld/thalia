@@ -483,7 +483,7 @@ class TestNeuromodulationAndConsolidation:
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="Hippocampus component required"):
-            brain.consolidate(n_cycles=1)
+            brain.consolidate(duration_ms=1)
 
     def test_consolidate_basic(self, device, brain_config):
         """Test basic consolidation functionality."""
@@ -498,20 +498,19 @@ class TestNeuromodulationAndConsolidation:
                 brain.deliver_reward(external_reward=1.0)
 
         # Consolidation should work with hippocampus
-        stats = brain.consolidate(n_cycles=2, batch_size=4, verbose=False)
+        consolidation_duration_ms = 100.0
+        stats = brain.consolidate(duration_ms=consolidation_duration_ms, verbose=False)
 
-        # Check stats structure
+        # Check stats structure (current implementation returns ripple stats)
         assert isinstance(stats, dict)
-        assert "cycles_completed" in stats
-        assert "total_replayed" in stats
-        assert "experiences_learned" in stats
+        assert "ripples" in stats
+        assert "duration_ms" in stats
+        assert "ripple_rate_hz" in stats
 
-        # Cycles should complete
-        assert stats["cycles_completed"] == 2
-
-        # May or may not have experiences to replay depending on hippocampus implementation
-        assert stats["total_replayed"] >= 0
-        assert stats["experiences_learned"] >= 0
+        # Basic sanity checks
+        assert stats["duration_ms"] == consolidation_duration_ms
+        assert stats["ripples"] >= 0  # May or may not detect ripples
+        assert stats["ripple_rate_hz"] >= 0.0  # Hz can be zero if no ripples
 
 
 class TestDiagnosticsAndGrowth:

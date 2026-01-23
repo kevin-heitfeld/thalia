@@ -666,16 +666,16 @@ class ThalamicRelay(NeuralRegion):
                 "l6a_feedback": ["l6a_feedback", "feedback"],
                 "l6b_feedback": ["l6b_feedback"],
             },
-            defaults={"l6a_feedback": None, "l6b_feedback": None},
-            required=["sensory"],
+            defaults={"sensory": None, "l6a_feedback": None, "l6b_feedback": None},
+            required=[],  # Sensory input optional during consolidation (sleep)
             component_name="ThalamicRelay",
         )
         input_spikes = routed["sensory"]
         cortical_l6a_feedback = routed["l6a_feedback"]
         cortical_l6b_feedback = routed["l6b_feedback"]
 
-        # If no sensory input, relay neurons have nothing to relay
-        # (This should not happen due to required=["sensory"], but handle gracefully)
+        # If no sensory input, relay neurons are silent (e.g., during consolidation/sleep)
+        # Biologically accurate: thalamus doesn't fire without sensory stimulation
         if input_spikes is None:
             return torch.zeros(self.n_output, dtype=torch.bool, device=self.device)
 

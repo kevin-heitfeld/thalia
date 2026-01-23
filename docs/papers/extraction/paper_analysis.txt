@@ -1,0 +1,460 @@
+================================================================================
+BIOLOGICAL MECHANISM ANALYSIS FROM KEY PAPERS
+================================================================================
+
+Research Question: How does action-specific learning occur when dopamine
+broadcasts globally in the striatum?
+
+Goal: Extract biological evidence to determine correct implementation
+for Thalia's striatal learning mechanism.
+
+
+================================================================================
+Downloading: Action-modulated midbrain dopamine activity
+arXiv ID: 2207.00636
+Reason: Addresses action-specific dopamine modulation
+================================================================================
+
+Status: Downloaded successfully
+Path: temp\papers\2207.00636v1.pdf
+
+Extracted: 50239 characters
+
+
+================================================================================
+PAPER: Action-modulated midbrain dopamine activity
+ID: 2207.00636
+================================================================================
+
+RELEVANT CONCEPTS FOUND:
+--------------------------------------------------------------------------------
+  dopamine_gating: 42 mentions
+  cortical_input: 3 mentions
+  action_specific: 1 mentions
+  competition: 1 mentions
+  synaptic_specificity: 1 mentions
+  pathway_separation: 1 mentions
+
+KEY EXCERPTS:
+--------------------------------------------------------------------------------
+
+[1] A central property of the model is that the action surprise term
+(cid:107)a −µ(s )(cid:107)2 is not action-specific—it reflects only scalar information about the agent’s action,
+t t
+7
+
+0 100k
+Episodes
+fo
+edutingaM
+esirprus
+noitca
+0 100k
+Episodes
+fo
+edutingaM
+esirprus
+noitca
+2.
+
+
+
+================================================================================
+Downloading: One-shot learning and behavioral eligibility traces
+arXiv ID: 1707.04192
+Reason: Directly addresses eligibility traces and credit assignment
+================================================================================
+
+Status: Downloaded successfully
+Path: temp\papers\1707.04192v3.pdf
+
+Extracted: 84137 characters
+
+
+================================================================================
+PAPER: One-shot learning and behavioral eligibility traces
+ID: 1707.04192
+================================================================================
+
+RELEVANT CONCEPTS FOUND:
+--------------------------------------------------------------------------------
+  eligibility: 207 mentions
+  pathway_separation: 155 mentions
+  dopamine_gating: 35 mentions
+  synaptic_specificity: 2 mentions
+  action_specific: 1 mentions
+  cortical_input: 1 mentions
+
+KEY EXCERPTS:
+--------------------------------------------------------------------------------
+
+[1] One-shot learning and behavioral eligibility
+traces in sequential decision making
+Marco P.
+
+[2] Reinforcement learning theory suggests two classes of algorithms solving this credit assignment
+problem: In classic temporal-difference learning, earlier actions receive reward information only
+after multiple repetitions of the task, whereas models with eligibility traces reinforce entire
+sequences of actions from a single experience (one-shot).
+
+[3] By focusing our analysis on those
+states for which RL with and without eligibility trace make qualitatively distinct predictions,
+we find direct behavioral (choice probability) and physiological (pupil dilation) signatures of
+reinforcement learning with eligibility trace across multiple sensory modalities.
+
+[4] Keywords: eligibility trace, human learning, sequential decision making, pupillometry, Reward Prediction Error
+Acknowledgments
+This research was supported by Swiss National Science Foundation (no.
+
+[5] Such a memory is a key feature of the second class of RL theories – called RL with
+eligibility trace –, which includes algorithms with explicit eligibility traces [8, 9, 10, 11, 12] and related
+reinforcement learning models [1, 9, 13, 14, 15].
+
+[6] Eligibility traces are well-established in computational models [1], and supported by synaptic plasticity
+experiments [16, 17, 18, 19, 20].
+
+[7] However, it is unclear whether humans show one-shot learning, and a
+direct test of predictions that are manifestly different between the classes of RL models with and without
+eligibility trace has never been performed.
+
+[8] Our question can therefore be reformulated more precisely: Is there evidence for RL with
+eligibility trace in the form of one-shot learning? In other words, are actions and states more than one step
+away from the goal, reinforced after a single rewarded experience? And if eligibility traces play a role, how
+many states and actions are reinforced by a single reward?
+Toanswerthesequestions, wedesignedanovelsequentiallearningtasktodirectlyobservewhichactions
+and states of a multi-step sequence are reinforced.
+
+[9] We exploit that after a single reward, models of learning
+without eligibility traces (our null hypothesis) and with eligibility traces (alternative hypothesis) make
+qualitatively distinct predictions about changes in action-selection bias and in state evaluation (Fig.
+
+[10] , after a single reward) allows us to draw conclusions
+about the presence or absence of eligibility traces independently of specific model fitting procedures and
+independently of the choice of physiological correlates, be it EEG, fMRI, or pupil responses.
+
+[11] By focusing our analysis on those states for which the
+two hypotheses make distinct predictions after a single reward (’one-shot’) we find direct behavioral and
+2
+
+physiological signatures of reinforcement learning with eligibility trace.
+
+[12] Both classes of algorithms, with or without eligibility
+trace, predicted that effects of learning after the first reward should be reflected in the action choice
+probabilityduringasubsequentvisitofstateD1(Fig.
+
+[13] RL without eligibility trace (null hypothesis) such
+as TD-0, predicted that the action choice probability at D2 during episode 2 should be at 50 percent,
+since information about the reward at the goal state G cannot "travel" two steps.
+
+[14] However, the class of
+RL with eligibility trace (alternative hypothesis) predicted an increase in the probability of choosing the
+correct action, i.
+
+[15] In contrast,
+learning with eligibility trace predicted a change in state evaluation, presumably reflected in pupil dilation
+(Fig.
+
+[16] Episode 2
+Hypothesis State D2 State D1 State D2 State D1
+Null- x Episode 1 x
+Hypothesis: Episode 2
+Learning 50%
+without
+eligibility
+trace 'a' 'b' 'a' 'b' state on t state on t
+Alternative x x
+Hypothesis:
+50%
+Learning
+with
+eligibility
+trace 'a' 'b' 'a' 'b' state on t state on t
+Fig.
+
+[17] Null Hypothesis: In RL without
+eligibility traces, only the state-action pair immediately preceding a reward is reinforced, leading to a bias
+at state D1, but not at D2 (50%-line).
+
+[18] Alternative Hypothesis: RL with eligibility traces reinforces decisions further back in the state-
+action history.
+
+[19] The effects may be smaller at state D2 because
+of decay factors in models with eligibility traces.
+
+[20] For example, if, during the first episode, a participant had chosen action a in
+state D2 to initiate the transition to D1, then action a brought this participant in all future encounters of
+D2 to D1 whereas action b brought her from D2 to Z (Fig.
+
+... and 80 more relevant excerpts
+
+
+
+================================================================================
+Downloading: Functions of Direct and Indirect Pathways in Spiking Network
+arXiv ID: 2404.13888
+Reason: Analyzes D1/D2 pathway competition quantitatively
+================================================================================
+
+Status: Downloaded successfully
+Path: temp\papers\2404.13888v2.pdf
+
+Extracted: 77802 characters
+
+
+================================================================================
+PAPER: Functions of Direct and Indirect Pathways in Spiking Network
+ID: 2404.13888
+================================================================================
+
+RELEVANT CONCEPTS FOUND:
+--------------------------------------------------------------------------------
+  pathway_separation: 86 mentions
+  cortical_input: 49 mentions
+  competition: 46 mentions
+  action_specific: 1 mentions
+
+KEY EXCERPTS:
+--------------------------------------------------------------------------------
+
+[1] Functions of Direct and Indirect Pathways for Action Selection Are Quantitatively
+Analyzed in A Spiking Neural Network of The Basal Ganglia
+Sang-Yoon Kim∗ and Woochang Lim†
+Institute for Computational Neuroscience and Department of Science Education,
+Daegu National University of Education, Daegu 42411, Korea
+We are concerned about action selection in the basal ganglia (BG).
+
+[2] We quantitatively analyze
+functions of direct pathway (DP) and indirect pathway (IP) for action selection in a spiking neural
+network with 3 competing channels.
+
+[3] rs
+Keywords: Quantitative analysis, Action selection, Basal ganglia, Competition degree, Direct pathway, In-
+directpathway(IP),Intra-channelIP,Inter-channelIP
+I.
+
+[4] Diverse subjects in the BG were investigated in com-
+IntheSNNwithasinglechannel,therearedirectpath-
+putational works by employing a variety of neuron mod-
+way (DP) and indirect pathway (IP) [38–41].
+
+[5] Thus, functions of the DP and the intra- the direct pathway (DP) is denoted by green line.
+
+[6] (a) Box diagram for the off-center effect in the channel 1 (receiving cortical input of 15 Hz) via the DP synaptic current
+2
+(green) from the D1 SPNs to the SNr and the on-surround effect in the neighboring channels 2 and 3 via the inter-channel
+IP synaptic current from the STN neurons in the channel 1 with selected action in the time interval I.
+
+[7] tween direct and indirect pathways in the basal gan- [62] M.
+
+[8] 29, 225
+mony between direct and indirect pathways in the basal (1997).
+
+
+
+================================================================================
+Downloading: Computational model of inhibitory control in frontal cortex and basal ganglia
+arXiv ID: 1112.0778
+Reason: Models action selection with cortical-BG interaction
+================================================================================
+
+Status: Downloaded successfully
+Path: temp\papers\1112.0778v3.pdf
+
+Extracted: 158454 characters
+
+
+================================================================================
+PAPER: Computational model of inhibitory control in frontal cortex and basal ganglia
+ID: 1112.0778
+================================================================================
+
+RELEVANT CONCEPTS FOUND:
+--------------------------------------------------------------------------------
+  pathway_separation: 33 mentions
+  cortical_input: 7 mentions
+  competition: 3 mentions
+  dopamine_gating: 2 mentions
+  synaptic_specificity: 1 mentions
+
+KEY EXCERPTS:
+--------------------------------------------------------------------------------
+
+[1] Thus, for SC units
+to become excited, they have to be disinhibited via striatal direct pathway Go unit activation and
+subsequent inhibition of corresponding SNr units.
+
+[2] The indirect pathway acts in
+opposition to the direct pathway by further exciting the SNr (indirectly, via inhibitory projections to
+the globus pallidus (GP) which inhibits the SNr).
+
+[3] Thus, direct pathway activity results in gating of
+a saccade (i.
+
+[4] Go) while indirect pathway activity prevents gating (i.
+
+[5] Relativeactivityofthe
+striatalpathwaysismodulatedbydopaminergicinnervationfromtheSubstantiaNigraparscompacta
+(SNc) due to differential simulated D1 and D2 receptors present in the two pathways.
+
+[6] Bottom-up projections from SC to FEF allow action-planning to be modulated according to direct
+and indirect pathway activity (Sommer and Wurtz, 2006, 2004a,b, 2002).
+
+[7] #8 Neurons forming part of the hyperdirect pathway from frontal cortex (pre-SMA, dACC) to the
+STN show increased activity (i) before correct incongruent responses and (ii) after incorrect
+incongruentresponses,but(iii)baselineactivityduringcongruentresponse(IsodaandHikosaka,
+2007, 2008; Yeung et al.
+
+[8] Recall that the
+SNr tonically inhibits the thalamus, unless it is itself inhibited by the striatal direct pathway.
+
+[9] Again, this qualitative
+pattern was also found in STN recordings in monkeys by Isoda and Hikosaka (2008) (see figure 8b),
+who showed that timing of STN firing relative to pre-SMA was consistent with communication along
+this hyperdirect pathway.
+
+[10] Thus our model predicts that the pattern of electrophysiology
+observed in empirical recordings arises due to top-down cognitive control modulation of direct and
+indirect pathway neurons.
+
+[11] Note again that we can distinguish our model’s predictions from those of other models that omit
+the indirect pathway as a distinct source of computation (there are several) or from models that do
+includeitbutassignadifferentfunction.
+
+[12] (2004)assumesthe
+indirect pathway activation defers execution of the correct action plan until the time is appropriate.
+
+[13] (2004) assumption that the indirect pathway acts to defer the execution of
+the correct response, rather than suppress the alternative response.
+
+[14] rIFG units in the hyperdirect pathway excite the STN (Aron et al.
+
+[15] Moreover, via
+the hyperdirect pathway to the STN, this mechanism serves to transiently increase the BG gating
+threshold to prevent prepotent actions from being facilitated and allows more time for the controlled
+PFC-striatalmechanismstoselectivelysuppressthisresponseandto facilitateappropriatealternative
+courses of action.
+
+[16] Thus it should be clear that compared to a congruent response, an incongruent response should
+(i) be more prone to error because it depends on successful inhibition of prepotent actions which
+may be close to threshold by the time conflict is detected and (ii) take longer due to (iia) additional
+computation needed for the DLPFC to perform the requisite vector inversion (activation of correct
+rulerepresentationamongmultiplecompetitorsbasedonanintegrationofinputandinstruction),and
+(iib)thedelayincommitmenttoaresponseresultingfromtheincreaseindecisionthresholdalongthe
+hyperdirect pathway.
+
+[17] These errors result primarily from variance in the speed of
+cognitive control (DLPFC), but also in the prepotent response (in some trials gating is faster than
+others) and in the inhibition process (in some trials the hyperdirect pathway and/or striatal NoGo
+process is slower).
+
+[18] The second proactive mechanism increases response
+caution by increasing baseline rIFG activity to prime saliency detection and slow responding via
+36
+
+the rIFG-STN hyperdirect pathway (see figure 13(b)).
+
+[19] Our model converges on the same conclusion but extends this view by showing that
+gating threshold is also more dynamically regulated on a shorter time-scale by (i) motivational state
+(changes in DA levels, which are modulated by reinforcement and also facilitate striatal Go signals);
+and (ii) response conflict and saliency (via the hyperdirect pathway, making it more difficult or Go
+signals to drive BG gating (Jahfari et al.
+
+[20] Evidence
+for conflict-induced decision threshold adjustment via the hyperdirect pathway has been recently de-
+scribed in a reinforcement-based decision making task (Cavanagh et al.
+
+... and 1 more relevant excerpts
+
+
+
+================================================================================
+Downloading: Real-Time Recurrent Reinforcement Learning
+arXiv ID: 2311.04830
+Reason: Biologically plausible RL with basal ganglia model
+================================================================================
+
+Status: Downloaded successfully
+Path: temp\papers\2311.04830v3.pdf
+
+Extracted: 59149 characters
+
+
+================================================================================
+PAPER: Real-Time Recurrent Reinforcement Learning
+ID: 2311.04830
+================================================================================
+
+RELEVANT CONCEPTS FOUND:
+--------------------------------------------------------------------------------
+  eligibility: 14 mentions
+  dopamine_gating: 7 mentions
+  synaptic_specificity: 1 mentions
+
+KEY EXCERPTS:
+--------------------------------------------------------------------------------
+
+[1] The proposed algorithm combines three
+integral parts: (1) A Meta-RL architecture, resembling the
+mammalian basal ganglia; (2) A biologically plausible re-
+inforcement learning algorithm, exploiting temporal differ-
+encelearningandeligibilitytracestotrainthepolicyandthe
+value-function;(3)Anonlineautomaticdifferentiationalgo-
+Figure1:RTRRLusesaMeta-RLRNN-backbonewhichre-
+rithmforcomputingthegradientswithrespecttoparameters
+of a shared recurrent network backbone.
+
+[2] TheTD(λ)RLalgorithm,exploitingbackwards-oriented
+Gradient-based reinforcement-learning (RL) algorithms, eligibilitytracestotraintheweightsoftheRNN.
+
+[3] Localityofgradientinformation
+eligibilitytracee ofTD(λ)toupdatetheRNNweights.
+
+[4] Thegradientsforeachfunctionareaccumulated
+t+1 t t t usingeligibilitytracese withλdecay.
+
+[5] Theeligibilitytrace
+A C
+JˆWBε using a fixed random matrix B.
+
+[6] (2020) stands
+gorithm with two eligibility traces, that starts from a small
+outasthemostsimilartoRFLO.
+
+[7] 0
+τ∈RN and the next state h t+1 ∈ RN is computed as fol- entropyrate η H 1e-5
+lows: Actoreligibilitydecay λ A 0.
+
+[8] 9
+(cid:34)x (cid:35) C
+1 t RNNeligibilitydecay λ 0.
+
+[9] eligibility traces
+Jacobian
+Figure 7: Left: RTRRL can be devided into 4 parts that are repeated throughout training.
+
+
+
+
+================================================================================
+ANALYSIS SUMMARY
+================================================================================
+
+Based on the extracted evidence, look for consensus on:
+
+1. ELIGIBILITY MECHANISM:
+   - Are eligibility traces action-specific or global?
+   - Does masking happen during trace accumulation or DA application?
+
+2. DOPAMINE SIGNAL:
+   - Is dopamine truly global or modulated by action?
+   - What is the role of cortical feedback in modulation?
+
+3. PATHWAY COMPETITION:
+   - How do D1/D2 pathways interact during learning?
+   - Is there winner-take-all at the striatal or GP level?
+
+4. IMPLEMENTATION RECOMMENDATION:
+   - Should we mask eligibility during accumulation?
+   - Should we implement action-specific dopamine?
+   - What additional mechanisms are needed?
+

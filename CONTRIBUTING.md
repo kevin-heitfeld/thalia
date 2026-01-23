@@ -383,7 +383,6 @@ class Hippocampus:  # Should be HippocampusConfig
 config = StriatumConfig(
     n_actions=10,
     learning_rate=0.001,
-    use_td_lambda=True,
     device="cuda"
 )
 

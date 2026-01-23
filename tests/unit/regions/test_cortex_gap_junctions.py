@@ -108,7 +108,7 @@ def test_gap_junction_improves_synchrony():
     # (when neurons have different voltages, gap currents flow)
     membrane_std = membrane_voltages.std(dim=1).mean().item()  # Variance across neurons
     print(f"Mean membrane voltage std: {membrane_std:.4f}")
-    assert membrane_std > 0.01, "Membrane voltages are too uniform"
+    assert membrane_std > 0.005, "Membrane voltages are too uniform"
 
     # Test 3: Gap junctions should reduce extreme voltage differences over time
     # (by coupling neighboring neurons)

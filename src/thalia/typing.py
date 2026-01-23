@@ -287,7 +287,6 @@ class HippocampusDiagnostics(BaseDiagnostics):
         ca1_mismatch: CA1 prediction error (novelty detection)
         theta_phase: Current theta oscillation phase (0-2π)
         encoding_mode: Whether in encoding (True) or retrieval (False)
-        n_stored_episodes: Number of stored memory episodes
         memory_capacity_used: Fraction of memory capacity used (0.0-1.0)
         last_retrieval_similarity: Similarity of last retrieval (0.0-1.0)
         acetylcholine_level: Current ACh concentration (0.0-1.0)
@@ -301,7 +300,6 @@ class HippocampusDiagnostics(BaseDiagnostics):
     ca1_mismatch: float
     theta_phase: float
     encoding_mode: bool
-    n_stored_episodes: int
     memory_capacity_used: float
     last_retrieval_similarity: float
     acetylcholine_level: float

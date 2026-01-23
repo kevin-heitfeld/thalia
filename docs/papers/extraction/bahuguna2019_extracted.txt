@@ -1,0 +1,978 @@
+
+
+=== PAGE 1 ===
+
+European Journal ofNeuroscience, Vol.49, pp.737–753, 2019 doi:10.1111/ejn.14021
+Exploring the role of striatal D1 and D2 medium spiny
+neurons in action selection using a virtual robotic
+framework
+Jyotika Bahuguna,1,† Philipp Weidel1,† and Abigail Morrison1,2
+1InstituteforAdvanced Simulation (IAS-6), InstituteofNeuroscienceand Medicine (INM-6) andJARA Institute Brain Structure-
+Function Relationships (JBI-1/INM-10), Ju€lich ResearchCentre, Ju€lich 52428, Germany
+2InstituteforCognitive Neurosciences, RuhrUniversity, Bochum, Germany
+Keywords: actionselection, basalganglia, direct-indirect pathways, neuronalnetwork, robotic simulator,striatum
+Abstract
+The basal ganglia have been hypothesized to be involved in action selection, i.e. resolving competition between simultaneously
+activated motor programs. It has been shown that the direct pathway facilitates action execution whereas the indirect pathway
+inhibits it. However, as the pathways are both active during an action, it remains unclear whether their role is co-operative or
+competitive. In order to investigate this issue, we developed a striatal model consisting of D1 and D2 medium spiny neurons
+(MSNs) and interfaced it to a simulated robot moving in an environment. We demonstrate that this model is able to reproduce
+key behavioral features of several experiments involving optogenetic manipulation of the striatum, such as freezing and ambula-
+tion. We then investigate the interaction of D1- and D2-MSNs. We find that their fundamental relationship is co-operative within a
+channel and competitive between channels; this turns out to be crucial for action selection. However, individual pairs of D1- and
+D2-MSNs may exhibit predominantly competition or co-operation depending on their distance, and D1- and D2-MSNs population
+activitycan alternatebetween co-operationandcompetition modesduringastimulation. Additionally, ourresultsshow thatD2–D2
+connectivity between channels is necessary for effective resolution of competition; in its absence, a conflict of two motor pro-
+grams typically resultsinneither being selected.
+Introduction
+The classical firing rate model of basal ganglia by Albin et al. inhibition on the thalamic activity, an inhibition of GPi/SNr disin-
+(1995) suggests three functional pathways in basal ganglia: direct/go hibits thalamus, thereby facilitating an action. The indirect pathway
+pathway, indirect/no-go pathway, and hyperdirect/stop pathway. The originates from D2-MSNs and inhibits GPe (globus pallidus
+direct/go pathway is hypothesized to help in facilitating a move- externa), which in turn can directly disinhibit GPi/SNr or excite
+ment, whereas the indirect/no-go pathway is hypothesized to sup- GPi/SNr bydisinhibiting the STN(subthalamic nucleus).
+press a movement. The antagonistic nature of these pathways is Althoughthereisevidencetoshowthatthesepathwaysoverlap(Cal-
+emphasized by the fact that these pathways originate from different abresi et al., 2014), a strong proof of the concept of Go and No-Go
+striatal sub-populations, namely D1 medium spiny neurons (D1- pathways was provided by Kravitz et al. (2010). They showed that
+MSNs) and D2 medium spiny neurons (D2-MSNs), so named based selective optogenetic stimulation of D1-MSNs in mice leads to
+on the dopamine receptor (D1 or D2) they express. The direct path- increased ambulation, whereas optogenetic stimulation of D2-MSNs
+way originates from D1-MSNs and inhibits GPi/SNr (globus pal- leadstofreezing.Thisisconsistentwiththeexperimentalobservations
+lidus interna/substantia nigra pars reticulata), which forms the output thatD1-MSNsisindeeda‘Go’signalwhereoptogeneticstimulationof
+of basal ganglia. As the basal ganglia output maintains a strong D1-MSNscansubstitutewhiskerstimulationandreliablyevokelicking
+behaviorinmice(Sippyet al.,2015).However,ithasbeenshownthat
+D1-andD2-MSNsco-activateinfreelymovingmiceduringactionini-
+Correspondence:JyotikaBahuguna,asabove.E-mail:j.bahuguna@fz-juelich.de tiation(Cuiet al.,2013)aswellashabitualbehavioriscorrelatedwith
+†J.B.andP.W.contributedequallytothiswork. the strengthened output of both populations (O’Hare et al., 2016),
+whichsuggestsaco-operativeratherthananantagonisticrole.
+Received15December2017,revised15May2018,accepted6June2018 Two recent studies have significantly contributed to our under-
+EditedbyPaulBolam.ReviewedbyKimBlackwell,GeorgeMasonUniversity,USA; standing of action encoding in striatum. Barbera et al. (2016)
+andEleftheriaPissadaki,IBMT.J.WatsonResearchCenter,USA. showed that activity of D1- and D2-MSNs, when clustered on the
+basis of their correlation coefficients, form compact and non-
+Allpeerreviewcommunicationscanbefoundwiththeonlineversionofthearticle.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+Thisis anopenaccessarticleunderthetermsoftheCreativeCommonsAttributionLicense,whichpermitsuse,distributionandreproductioninanymedium,
+providedtheoriginalworkisproperlycited.
+
+=== PAGE 2 ===
+
+738 J.Bahuguna et al.
+overlapping spatial clusters, i.e. neurons situated spatially close demonstratingitsabilitytoreproducethemainfeaturesofseveralkey
+together show high covariance in their activity, and the covariance motor studies employing optogenetic manipulation, such as freezing,
+between clusters is significantly less than within clusters. Moreover, increased ambulation, and ipsilateral turning. In Sec. D1-MSNs and
+the neural activity of the neurons in the clusters can predict the D2-MSNs show concurrent activation on a single channel level, we
+behavioral states (ambulation, immobility etc.) with high accuracy in then evaluate the hypothesis that D1- and D2-MSNs are competitive
+comparison with randomly picked neurons or the total population within a channel but cooperative on a population level. In contrast
+activity. This suggests that the actions might be encoded in striatum withourinitialassumption,wefoundthatD1-andD2-MSNsdonot
+in spatially compact and non-overlapping clusters. Klaus et al. opposeeachotheronasinglechannellevel,butshowconcurrentacti-
+(2017) also showed that D1- and D2-MSNs located spatially close vationasaresultofthedistancedependentconnectivity.Althoughthis
+together showed high covariance in their activity, however, high result is very robust under different conditions, the increase in the
+covariance could also sometimes be detected between distant neu- activityisnotlargeenoughtoshowanincreaseinthetotalpopulation
+ronal pairs. A mapping between behavioral state and neuronal activ- activity, which is probably the closest approximation to the signal
+ity suggested a rather continuous encoding across the MSN activity measured in experiments. Further investigations on our model using
+space,in contrast tothe findings of Barbera et al.(2016). novel experimental paradigms reveal that an increase of D1 and D2
+Intheabovestudies,theD1-andD2-MSNswererecordedinfreely activityduringactionselectioncanindeedbeseenifbothD1-andD2-
+moving D1-cre and D2-cre mice respectively. However, in order to MSNsreceivesufficientexternalexcitatoryinput.
+systematically investigate the individual and interactive roles of D1- Inaddition,weshowthatcompetingmotorprogramscanleadtoa
+and D2-MSNs in action selection, it is necessary to be able to both strongcompetitionbetweenneighboringchannels,andthatthiscom-
+recordD1-andD2-MSNsinthesame animal, andselectively record petition is induced by the D2–D2 connections between the channels
+andmanipulatetheactionencodingneurons.Asthisisbeyondpresent (Sec.CompetitionoriginatesinD2–D2connections).Finally,inSec.
+experimentaltechniques,inthisarticleweinvestigatethisissueonthe RelationshipbetweenD1-andD2-MSNsdependsonspatialdistance
+basisofahybridneuronalnetwork/virtualrobotmodel. andtemporalscale,weshowhowthestructureofcorrelationbetween
+There has been significant progress in the development of such MSNsdependsonthedistancebetweenneuronsandthetypeofstim-
+hybridsystemsinthelastyears,sothatseveralalternativeexperimen- ulation, and that D1- and D2-MSNs can even alternate between co-
+tal approaches could be considered. These systems interface a living operativityandcompetitionatdifferentstagesduringastimulation.
+biologicalentity,tissueorinsiliconeuronalnetworkwithrealoravir-
+tual robot. The robotic setup (real or virtual) provides the biological
+entitywiththemeanstointeractwiththeenvironment,whichisespe- Material and methods
+cially beneficial in the case where such a link has been severed, e.g.
+patients suffering from locked-in syndrome or loss of a limb. The Networkmodelof the striatum
+hybridsystems,inaddition,giveusefulinsightsaboutneuralencoding Networkcomposition
+anddecodingofsignalsespeciallyinaclosedloopsetting,where,in
+additiontotheneuronalsystemcontrollingtheroboticsetup,thesen- Our network model of the striatal MSNs, shown in Fig. 1, consists
+soryinputasperceivedbytherobotisalsofedbackintotheneuronal of 36 channels, or striatal functional units, arranged in a (6,6) edge-
+system.Someoftheimportanthybridsystemsincludebrain-machine wrapped grid per hemisphere. Each channel contains 40 D1- and 40
+interfaces (Carmena, 2013; Maharbiz et al., 2017), hybrid models D2-MSNs. The size of the channel is consistent with the size of
+using cell cultures (Bontorin et al., 2007) or neurorobotics (Falotico neuronalensembles that werefoundtobedisinhibited byalocalized
+et al.,2017).Forthequestionaddressedinthisstudy,weselectavir- application of GABA antagonist or co-activated by cortical stimula-
+tual neuronal network and a virtual robot, as this provides us with a tionof acorticostriatal slice(Carrillo-reid et al.,2008; L(cid:2)opez-Huerta
+behavioral manifestation of the striatal network activity that gives us et al.,2013).
+complete control over all parameters and greatest flexibility in terms The neurons are realized by a leaky integrate-and-fire model with
+ofmeasurementsandmanipulations. conductance-based synapses. The neuron parameters (Table 1) were
+The neuronal network part of our model (Sec. Network model of tuned to generate F-I curves qualitatively similar to experimentally
+the striatum) consists of two hemispheres of D1- and D2-MSNs measured F-I curves for D1- and D2-MSNs (Gertler et al., 2008,
+arranged on a grid of 36 non-overlapping channels, each represent- seeFig.S1A).
+ing an action. Connectivity within and between the channels is dis-
+tance-dependent, based on experimental findings. Among the 36
+Networkconnectivity
+channels, twoneighboring channels encodefor the actions ‘turn left’
+and ‘turn right’, and are interfaced to a four wheeled virtual robot Theneuronsareconnectedrandomlyaccordingtotheconnectiondensi-
+(Sec. Virtual robot). The other channels have no effect on the ties and connection strengths listed in Table 1. Notably, the recurrent
+behavior of the robot, but allow us to examine the relationship of network connectivity between D1- and D2-MSNs is asymmetrical, i.e.
+D1- and D2-MSNs not only within a single channel but between D2-MSNs make more connections to D1-MSNs than vice versa (Tav-
+close and distant channels. To our knowledge, this is the first erna et al., 2008; Planert et al., 2010). The synaptic conductances
+attemptto understandthe nature of the interactions betweenD1- and between D1-MSNs and D2-MSNs were tuned to yield postsynaptic
+D2-MSNsandtheirrelationshiptomotorbehaviorusingacombined potentialsintherangereportedbyPlanertet al.(2010).
+neuronalnetworkandvirtual robot setup. The connection probabilities listed in Table 1 are average connec-
+InSec.Networkconnectivityprofileofthestriatalnetwork,wefirst tionprobabilitiesbetweenneuronalpairs,asreportedbyPlanertet al.
+demonstrate that our choice of a non-monotonic connectivity kernel (2010).Theseconnectivitiesarethenscaleddependingonwhetherthe
+canreproducethedistributionofdistancesbetweendis-inhibitedneu- connectingneuronsareinthesamechannel,nearchannelsorfarchan-
+rons under the influence of a GABA-antagonist reported by L(cid:2)opez- nels,inordertoachievedistancedependentconnectivityonthechan-
+Huertaet al.(2013),incontrasttoamonotonickernel.Wethenvali- nel level. For neurons situated within the same channel, all
+date the combined neuronal network/virtual robotic framework by connectivities are scaled by a factor of 1.2 (k ). Between
+within
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 3 ===
+
+Roleof D1/D2-MSNs inaction selection 739
+Fig.1. Left:Striatalnetworkinone hemisphere. Threeconnectivitystrengthsareused:theconnectivitywithinthechannelisscaledtobemedium(1.2,light
+gray),connectivitywiththechannelsintheimmediateneighborhood(nearconnectivity)isscaledtobehigh(3.4,darkgray)andtheconnectivitywiththechan-
+nelsfarawayisscaledtobesparse(0.3,mediumgray).Right:Twochannelsareconnectedtotherobotrepresentingthetwobasicactions‘turnleft’and‘turn
+right’.Thehemispheresimplementacontralateralencodingofanaction(i.e.‘turnleft’isimplementedintherighthemisphere).WithinachannelD1-MSNrep-
+resent‘Go’(positiveinputtothemotor)andD2-MSNrepresent‘No-Go’(negativeinputtothemotor).
+Table1. NetworkandneuronparametersforD1-MSNsandD2-MSNs
+Parameters Description D1-MSNs D2-MSNs
+Neuronparameters
+V Restingvoltage (cid:3)87.2mV(Gertleretal.,2008) (cid:3)85.4mV(Gertleretal.,2008)
+rest
+V Thresholdvoltage (cid:3)50mV (cid:3)50mV
+thresh
+C Capacitance 195pF(Gertleretal.,2008) 159pF(Gertleretal.,2008)
+m
+g Leakconductance 9nS 4.5nS
+L
+s Excitatorysynaptictimeconstant 5ms 5ms
+syn-ex
+s Inhibitorysynaptictimeconstant 10ms 10ms
+syn-in
+Connectivity
+q D1,D2?D1 ConnectionprobabilitytoD1-MSNs 0.07(Planertetal.,2010) 0.13(Planertetal.,2010)
+q D1,D2?D2 ConnectionprobabilitytoD2-MSNs 0.05(Planertetal.,2010) 0.23(Planertetal.,2010)
+Distance-dependentconnectivity
+k Scalingfactorforwithinchannelconnectivities 1.2 1.2
+within
+k Scalingfactorfornearchannelconnectivities 3.4 3.4
+near
+k Scalingfactorforfarchannelconnectivities 0.3 0.3
+far
+Synapticstrengths
+J D1,D2?D1 SynapticstrengthofincomingprojectionstoD1-MSNs (cid:3)0.75nS (cid:3)1.7nS
+J D1,D2?D2 SynapticstrengthofincomingprojectionstoD2-MSNs (cid:3)0.85nS (cid:3)1.35nS
+Backgroundnoise
+k Bckgrnd?D1,D2 Backgroundnoiserateforpoissongenerator 80spks/s 57spks/s
+J Bckgrnd?D1,D2 Synapticstrengthofbackground 2.5nS 2.5nS
+neighboring channels, connection probabilities are scaled by a factor 2011; L(cid:2)opez-Huerta et al., 2013). The delays between the channels
+of 3.4 (k ), indicating high connectivity. Between channels at increase monotonically, i.e., 1.0 ms within the channel, 2.5 ms for
+near
+greater distance,allconnectionprobabilities arescaledbyafactor of neighboringchannelsand4.5 msforchannelssituatedfaraway.
+0.3 (k ), indicating sparse connectivity. This connectivity profile,
+far
+illustrated inFig. 1,isinspiredbythe experimentaldata thatsuggest
+Backgroundinput
+thatconnectivitiesbetweentheMSNspeakat(cid:1)40–60 lm,implying
+that closely located MSNs may be more sparsely connected to each Toachievereasonablefiringactivityintheabsenceofspecificexperi-
+otherthantoneuronsinneighboringchannels.Hence,theconnectivity mental stimulation, neurons were provided with background noise
+changesnon-monotonicallyasafunctionofdistance(Fujiyamaet al., in the form of independent excitatory poissonian spike trains. As
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 4 ===
+
+740 J.Bahuguna et al.
+D1-MSNsreceiveahighernumberofstrongerinhibitorysynapsesfrom distance dependent connectivity profile as used in Table 1 by repro-
+D2-MSNs than vice versa (Taverna et al., 2008; Planert et al., 2010) ducinganexperimentcarriedoutbyL(cid:2)opez-Huertaet al.(2013).The
+andhavelowerintrinsicexcitability(Gertleret al.,2008),applyingthe details of this experiment are described in the following subsection
+samebackgroundinputtobothpopulationswouldleadtoasilentD1- Validatingthenetworkconnectivityprofile.Secondly,weexaminethe
+MSNpopulation.Toavoidthis,weapplyahigherbackgroundinputto behavior of our robotic setup by emulating key optogenetic experi-
+D1-MSNs(Bahugunaet al.,2015),buttunedsuchthattheaveragefir- ments that unilaterally or bilaterally inhibit/excite D1- and/or D2-
+ingrateofD1-MSNsislessthanthatoftheD2-MSNpopulation.The MSNs (Kravitz et al., 2010; Tecuapetla et al., 2014). Additionally,
+firing rates of the Poisson processes and the synaptic strength of the we perform further experiments with novel stimuli that can currently
+spikesarrivingatD1-andD2-MSNsarelistedinTable 1. only be carried out in our virtual set-up. We describe the details of
+theseexperimentalparametersinBehavioralexperiments.
+Simulation
+Validatingthe network connectivityprofile
+All the simulations were carried out using NESTversion 2.12.0 (Kun-
+kelet al.,2017)with asimulation resolution of 1 ms. Tovalidateour choiceof networkconnectivityprofile,wereproduce
+an experiment carried out by L(cid:2)opez-Huerta et al. (2013), in which a
+striatal slice is subjected to antidromic stimulation in control condi-
+Virtual robot
+tions and in the presence of GABA antagonist. The analysis of dis-
+The robotic simulation was carried out using the robotic simulator tances between the neurons stimulated during the two conditions
+Gazebo (http://www.gazebosim.org) and the Robotic Operating Sys- can be used to estimate the underlying network connectivity profile.
+tem (ROS) (http://www.ros.org/) on the Pioneer3AT (http://www.mo Here, we compare the distance distribution of stimulated neurons for
+bilerobots.com/ResearchRobots/P3AT.aspx) robotic platform. To two possible network connectivity profiles: monotonic and non-
+interface the neural network simulation in NEST with the robotic monotonicwith respect to distance.
+simulation in Gazebo, we used the ROS-MUSIC Toolchain (Djur- All the neurons were stimulated with a current injection of
+feldtet al.,2010; Weidel et al.,2016). 140 pA in control conditions (at 5 s) and in the presence of a simu-
+In the striatal model, two specific neighboring channels in each lated GABA antagonist (at 15 s) for 200 ms. The effect of the
+hemisphere were chosen to represent the basic movements ‘turn left’ GABA antagonist was implemented by reducing the strength of all
+and ‘turn right’. All other channels have no behavioral effect in this theinhibitory connections (J D1? D1 ,J D1 ? D2 ,J D2 ? D1 ,J D2 ? D2 )
+study, but enable us to investigate the effects of distance dependent to20%oftheir initial values.Theneuronsinthe in-vitroexperiment
+connectivity. The Pioneer3AT platform can be steered by applying a by L(cid:2)opez-Huerta et al. (2013) exhibit a very low spontaneous acti-
+linear velocity v (m/s) and an angular velocity h (rad/s). ROS and vation.Wesimulate thisconditionbyreducingthe backgroundinput
+Gazebo automatically transform the linear velocity and angular to 25% of its original value, leading to a very reduced population
+velocity into torques which are applied to the four motors of the firing rate.
+robot. However, the angular velocity must be chosen in the range The monotonically decreasing distance dependent kernel is imple-
+[(cid:3)p, p] rad/s, and to ensure a stable movement of the robot we mentedbyscalingtheaverageconnectivitieslistedinTable 1asfol-
+decided to limit the maximal linear velocity to 2 m/s. In order to lows: k = 3.4, k = 1.2, and k = 0.3. The non-
+within near far
+transform the spiking neural activity of the regarding channels to a monotonically decreasing distance dependent kernel is implemented
+valid command for the Pioneer3AT, we first estimate the instanta- by scaling the average connectivities as shown in Table 1:
+neous population firing rate fD1 and fD2 of the corresponding neu- k = 1.2, k = 3.4, and k = 0.3. To enable comparison with
+within near far
+rons by convolving their spike trains with an exponential filter the data presented in L(cid:2)opez-Huerta et al. (2013), we assume a dis-
+(s = 200 ms). In a second step we defined the two basic actions of tancebetweenchannels inour model of 40 lm.
+turningleft andright, a anda,respectively.
+1 r
+(cid:1) (cid:3)
+S S Behavioralexperiments
+a ¼Sig D1fD1(cid:3) D2fD2 ð1Þ
+l N D1 r N D2 r We defined a series of manipulations, listed in Table 2, to perform
+(cid:1) (cid:3) on our neuronal network/virtual robotic set-up to emulate key opto-
+a ¼Sig S D1fD1(cid:3) S D2fD2 ð2Þ genetic experiments carried out by Kravitz et al. (2010) and Tecua-
+r N D1 l N D2 l petla et al. (2014). The ‘No stim’ condition, in which the network
+receives only the background noise as described in Sec. Background
+where N and N are the number of D1 and D2 neurons, input, is used as a control; all other experiments are implemented as
+D1 D2
+Sig(x) = 2/(1 + e(cid:3)4x+4) is a sigmoid function limiting the variables current injections to specific neuron populations in addition to the
+to the allowed range, and S (2.0 for D1 and 0.4 for D2) are scaling background noise. If not stated otherwise, all experiments have a
+constants giving more weight to D1 neurons to compensate for their duration of 20 s with the current injection starting at second 5 and
+lowfiring rate.The velocityand rotationapplied to therobot are lastingfor aduration of10 s.
+a þa The bilateral D1 stimulation as used in Kravitz et al. (2010) is
+v¼ l r ð3Þ implemented by injecting an excitatory current into D1 neurons of
+2
+all 36 channels as well as both the hemispheres. Similarly bilateral
+D2 stimulation Kravitz et al. (2010) was simulated by injecting an
+h¼a (cid:3)a ð4Þ
+l r excitatory current into D2 neurons of all channels and both the
+hemispheres. In paradigm ‘Unilateral D1D2 inh’, the whole left
+Experimentalparadigms
+hemisphere was inhibited by inhibiting both D1 and D2 neurons of
+Weperformtwokindsofexperimentswiththisneuronalnetwork/vir- all channels in the left hemisphere (Tecuapetla et al., 2014). In
+tual robotic set-up. Firstly, we validate the use of non-monotonic ‘Unilateral D1 inh’, an inhibitory current was injected into D1
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 5 ===
+
+Roleof D1/D2-MSNs inaction selection 741
+Table2. Experimentalparadigms Time dependentactivity
+The instantaneous firing rate for D1- and D2-MSNs was calculated
+Left-hemis Left-hemis Right- Right-
+Paradigm (D1) (D2) hemis(D1) hemis(D2) by binning their activity with a bin size of 200 ms, individually for
+each channel as well as for the activity pooled over all D1-MSNs
+Nostim – – – – (D2-MSNs) forahemisphere.
+BilateralD1 115pA – 115pA –
+BilateralD2 – 160pA – 160pA
+UnilateralD1D2inh (cid:3)175pA (cid:3)100pA – – Simulation times
+UnilateralD1inh (cid:3)175pA – – –
+UnilateralD2inh – (cid:3)100pA – – All the mean rate activity and trajectories were recorded from simu-
+UnilateralD1Exc 125pA – – – lations of 20 s duration. The correlation measures, unless specified,
+UnilateralD2Exc – 110pA – –
+were calculated onalonger simulation timeof 200 s.
+Correlations
+neurons of all channels of the left hemisphere (Tecuapetla et al.,
+2014). Similarly in ‘Unilateral D2 Inh’, an inhibitory current was The spike trains were convolved with an exponential filter of
+injected into D2 neurons of all channels in the left hemisphere 300 ms and the correlations were calculated between the filtered
+(Tecuapetla et al.,2014). Kravitz et al. (2010)also reports unilateral spike trains. The time constant of 300 ms corresponds to the decay
+excitation of D1- or D2-MSNs. In order to implement ‘Unilateral dynamics of the intracellular calcium transients for GCaMP6f as
+D1 Exc’, an excitatory current was injected in D1-MSNs of the left measured by Klaus et al. (2017). To calculate correlation his-
+hemisphere. Similarly, in ‘Unilateral D2 Exc’, an excitatory current tograms with respect to spatial distances, 500 neurons were ran-
+wasinjected in D2-MSNsof the left hemisphere. domly chosen and their filtered spike trains were correlated
+In contrast to the global stimulation in the experiments mentioned (250 000 neuronal pairs) with Pearson’s correlation coefficient mea-
+so far, we also designed novel paradigms in which only specific sure. The distances between the neurons are taken to be the distance
+channels are stimulated (see Table 3). Whereas the previously between their originating channels and were calculated as the Eucli-
+describedexperimentsmodeloptogeneticstimulation,forthespecific
+dean distance between channel co-ordinates in a (6,6) grid with
+channel stimulation we consider a scenario in which the striatum is wrapped edges. We divided the correlations into three categories: (i)
+receiving a sequence of commands from cortex. Thus, we model the Within channel: neuronal pairs that belong to the same channel. (ii)
+input as excitatory Poissonian spike trains rather than the direct cur- Near channel: neuronal pairs that belong to neighboring channels.
+rent used above. In the experiment ‘Sequences D1’ we activated the (iii) Far channel: neuronal pairs exceeding the distance of neighbor-
+D1-MSNs of channel ‘turn right’ in the left hemisphere followed by ing channels.
+an activation of D1-MSNs of channel ‘turn left’ in the right hemi- For some experiments, the filtered spike train of every 5th neuron
+sphere(bothfor5 s).In‘SequencesD2’,weperformedanequivalent was correlated to show the correlation coefficients for individual
+experiment where we stimulated D2-MSNs instead of D1-MSNs. In neurons within and between channels. Correlation coefficients were
+the experiment ‘Sequences D1D2’ we proceeded similarly to calculated during two phases: (i) no stimulation, i.e. when the net-
+‘SequencesD1’buttargetedbothcelltypes.Theseexperimentsallow
+work did not receive anyexternal stimulation except the background
+theD1-andD2-MSNsfiringratestobecalculatedduringstimulation
+noise (ii) stimulation determined by the experimental paradigm e.g.,
+andwithoutstimulation.Allthree‘Sequences’arerepeatedfivetimes bilateral D1stimulation (see Sec. Experimental paradigms).
+fordifferent randomseeds toaveragetheresultsacrossdifferent net-
+work instances as well as different initial conditions of the network
+dynamics. Lastly, in the experiment ‘Competing Actions’ we stimu- Instantaneous correlation ofpopulation averagetrace
+lated channels ‘turn left’ and ‘turn right’ of both hemispheres simul- The population activity of D1- and D2-MSNs was filtered using an
+taneouslybetweenseconds2and18. exponential kernel with a time constant of 300 ms. The instanta-
+neous correlation coefficient between the filtered activities was cal-
+culated within a sliding window. Two window sizes were used: (i)
+Analysisof neuralactivityand trajectories
+A window size shorter than the stimulation time (0.3 9 stimulation
+For each of the behavioral experimental paradigms detailed above, time) (ii) A window size longer than the stimulation time (1.2 9
+the spiking activity of the network and the ROS odometry data of stimulation time). This analysis was performed for a simulation of
+the virtualrobot were recorded, andanalyzedas follows. 20 s.
+Table3. Novelexperimentalparadigmsandbehaviors
+Paradigm Left-hemis(D1) Left-hemis(D2) Right-hemis(D1) Right-hemis(D2)
+SequencesD1 300spks/stochannel‘turnright’ – 300spks/stochannel‘turnleft’ –
+for5s for5s
+SequencesD2 – 120spks/stochannel‘turnright’ – 120spks/stochannel‘turnleft’
+for5s for5s
+Sequences 300spks/stochannel‘turnright’ 150spks/stochannel‘turnright’ 300spks/stochannel‘turnleft’ 150spks/stochannel‘turnleft’
+D1D2 for5s for5s for5s for5s
+Competing 250spks/stochannel‘turnleft’ 200spks/stochannel‘turnleft’ 250spks/stochannel‘turnleft’ 200spks/stochannel‘turnleft’
+actions and‘turnright’for16s and‘turnright’for16s and‘turnright’for16s and‘turnright’for16s
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 6 ===
+
+742 J.Bahuguna et al.
+Results The results of the experiment are shown in Fig. 2. The network
+activity, shown in Fig. 2A for the non-monotonic kernel, is quali-
+Networkconnectivity profileofthe striatalnetwork tatively similar for both profiles: the stimulus after GABA antago-
+Our striatal model incorporates a non-monotonic connectivity pro- nist application recruits more neurons than it did during the
+file. There is already empirical evidence for this, see for example control, due to the decrease in lateral inhibition. This is also
+Fujiyama et al. (2011), which is a Sholl analysis of dendrites of the reflected in the relative number of co-active neurons during the
+striatal neurons. To check that this is an appropriate profile for our two states (Fig. 2B), which is similarly insensitive to the choice of
+modeling work, we perform an additional experiment based on the connectivity profile.
+findings reported byL(cid:2)opez-Huerta et al. (2013). In this study,a stri- However, the distribution of the distances between the neurons
+atal slice was antidromically stimulated via the striatofugal axons in recruited by the stimulus after GABA antagonist application and
+control conditions and in the presence of a GABA antagonist. In the their nearest neighbors in control condition follow the corresponding
+presence of a GABA antagonist, the same stimulus recruited more connectivity profiles for monotonic and non-monotonic connectivity
+neurons due to the decrease in striato-striatal lateral inhibition. kernels. In order to improve the comparability to L(cid:2)opez-Huerta
+Moreover, the distribution of distances between the neurons et al. (2013) we down-sampled the recorded neural data to 500 neu-
+recruited by the stimulus after the application of the GABA antago- rons per trial. For the monotonic kernel, the nearest neighbors are
+nist and their nearest neighbors during control conditions displays a most likely to be within the channels, as the connectivity is highest
+non-monotonic distribution (L(cid:2)opez-Huerta et al. (2013-Fig. 6). there, yielding a peak at channel distance zero and decreasing with
+We hypothesize that this is an indirect measure of the striatal dis- increasingchannel distance(Fig. 2C). In contrast,for thenon-mono-
+tance dependent connectivity. We therefore replicate the above tonic kernel, because the neurons that were released from inhibition
+experiment with two connectivity profiles: (i) connectivity decreas- after GABA antagonist application most likely belong to the nearby
+ing monotonically with distance. (ii) connectivity peaking at some channels (due to the highest connectivity), the peak is shifted to the
+non-zero distance from the center, according to the kernel shown in channel distance 1.0 ((cid:1)40 lm). This distribution bears a close
+Fig. 1, asdescribed inSec. Network modelof the striatum. resemblance to the distribution shown in L(cid:2)opez-Huerta et al.(2013),
+To evaluate the choices of connectivity kernel, we first define co- suggesting that the coarse distance dependent connectivity in the
+active neurons as all the neurons that are active during the bout of striatum isnon-monotonically shaped.
+stimulation. The neurons that are recruited by stimulus only after Moreover, this non-monotonic connectivity profile has also been
+the application of GABA antagonist (and not during the control) are shown to exhibit a larger repertoire of spatio-temporal dynamics
+isolated and the distance to their nearest neighbors under control ranging from spatially homogenous asynchronous irregular (AI) to
+conditions (neurons that were recruited by stimulation without the spatially localized stable activity bumps as compared to the mono-
+GABA antagonist) are calculated. This experiment is repeated for tonically shaped kernel (Spreizer et al., 2017). Consequently, we
+five trials with different random seeds, hence averaging the results use the non-monotonic connectivity kernel detailed in Table 1 for
+overfivedifferent networkinstances. therest of our study.
+Fig.2. DistributionofdistancesbetweenneuronsrecruitedbystimulusandtheirnearestneighborsincontrolconditionsandafterapplicationofGABAantago-
+nist.(A)Moreneurons(markedasreddots)arerecruitedbythestimulusafterapplicationofGABAantagonist(stimulusat15s)ascomparedtocontrolcondi-
+tions (stimulus at 5 s). (B) Number of co-active neurons for monotonic (blue) and non-monotonic connectivity kernel (red) in control conditions and in the
+presence of GABA antagonist. (C) The distribution of distances between the neurons recruited after GABA antagonist and their nearest neighbors in control
+conditions for monotonic (blue) and non-monotonic (red) connectivity kernels. These results are averaged over five trials, shaded areas indicate one standard
+deviation.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 7 ===
+
+Roleof D1/D2-MSNs inaction selection 743
+Unilateral andbilateral stimulation only. The robot trajectories, shown in Fig. 3D and E, respectively,
+exhibit correspondingturns tothe left.
+In order to use our neuronal network/virtual robot model to investi-
+According to observations from the same study, a strong unilat-
+gate co-operation and competition in the striatum, it is first neces-
+eral inhibition of D2-MSNs should lead to a contralateral rotation.
+sary to establish whether it adequately reproduces experimental
+Our model is able to replicate this and shows a contralateral rotation
+findings on the behavioral level. We therefore repeated, using our
+(Fig. 3F). This is due to disproportionately higher input that the left
+model, all the experimental paradigms reported in Kravitz et al.
+motor receives from the left hemisphere when the D2-MSNs in the
+(2010) and Tecuapetla et al. (2014) (see Table 2 and Sec. Experi-
+hemisphere are inhibited. This behavior is also consistent with other
+mental paradigms), in which either D1- or D2-MSNs were optoge-
+studies which have shown that targeted ablation of D2-MSNs in
+netically activated or inhibited. Additionally, we performed one
+mice indeed leads to contralateral rotations (Hikida et al., 2010;
+control experiment ‘No stim’ where the network only receivedback-
+Sano et al., 2013). However, unilateral inhibition of fewer D2-
+groundstimulation.
+MSNs (~30%) results in an ipsilateral rotation (Tecuapetla et al.,
+For each paradigm, we recorded the average population activity
+2014) which we cannot reproduce with this current model. This
+of D1- and D2-MSNs in left and right hemispheres and the trajec-
+issue isfurther discussed in Sec. Limitations.
+tory of the robot. These results are displayed in Fig. 3. We also
+Finally, Kravitz et al. (2010) reports contralateral rotation for uni-
+recorded the activity of every channel in both hemispheres and for
+lateral excitation of D1-MSNs and ipsilateral rotation for unilateral
+all stimulation paradigms (data not shown). The trajectory in
+excitation to D2-MSNs. In our set-up, excitation of D1-MSNs in the
+Fig. 3A is the reference trajectory for the control experiment, where
+left hemisphere results in stronger motor input to the left motor,
+the network only received background stimulation. Note the varying
+hence leading to right turns (Fig. 3G). Conversely, excitation of D2-
+speed of the virtual robot: each section between two circular mark-
+MSNs of the left hemisphere results in stronger input to the right
+ers represents one biological second. The inset in the trajectory
+motor, leading to a left turn (Fig. 3H). A video of the trajectory of
+shows the time dependent angular velocity of the robot which are
+the robot for unilateral D1 excitation is shown in Video S2 in the
+marked as ‘L’ (left turns) for positive values and ‘R’ (right turns)
+Supportinginformation.
+for negative values, note these insets are not shown to the same
+These results show that our model is able to reproduce the key
+scale.
+behavioral features of all but one of the optogenetics experiments,
+In all other experiments, optogenetic stimulations were simulated
+namelyipsilateralrotationforunilateralinhibitionofareducednum-
+as current injection to specific populations of neurons (see Sec.
+ber of D2-MSNs. We thus conclude it is well-suited for exploring
+Experimental paradigms and Table 2) starting at t = 5 s with a
+hypothesesoncooperation andcompetition within the striatum.
+duration of 10 s. Within this duration, the stimulated neurons of the
+targeted hemisphere show higher or lower activity, depending on
+whetherthestimulationparadigmwasexcitatoryorinhibitoryinnat- D1-MSNsand D2-MSNsshowconcurrentactivation ona
+ure. This can be clearly observed in the total population activity, single channel level
+which we assume to be representative of the signal recorded during
+In order to explore the hypothesis that D1- and D2-MSNs areantag-
+experiments, as it is currently difficult to localize the relevant func-
+onistic on a single channel level but show concurrent activation on
+tional unit for a specific behavior and record it in a targeted fashion.
+the populationlevel, wedesignedandsimulatedsequence paradigms
+The total population activity during all global stimulation paradigms
+that emulate the selective stimulation of neurons that belong to a
+qualitatively match the activity shown in the corresponding experi-
+certain action, or channel in our case (see Sec. Experimental para-
+ments (Kravitzet al.,2010; Tecuapetla et al.,2014).
+digms and Table 3). Unlike the global unilateral or bilateral stimula-
+Figure 3B shows the robot trajectory for bilateral D1 stimulation,
+tions investigated in the previous section, in these experimental
+for whichKravitzet al.(2010)reports increased, non-specificambu-
+paradigms individual channels are sequentially stimulated to induce
+lation. In this condition, all D1 neurons of both the hemispheres
+asequence of actions. The results of these experiments areshown in
+receive external stimulation, resulting in an increased input to both
+Fig. 4.
+the motors of the robot. Correspondingly, the robot trajectory indi-
+In the paradigm ‘Sequences D1’ we sequentially stimulate D1-
+cates increased rotation and movement – the distance between red
+MSNs with an excitatory input, first ‘turn right’ (in left hemisphere
+circular markers (stimulation present) is greater than between gray
+– first panel) for 5 s and then ‘turn left’ (in right hemisphere – sec-
+circular markers (stimulation absent). Note also the differing scales
+ond panel) for 5 s (see Fig. 4A). As expected, a clear increase is
+between Fig. 3AandB.
+observed in the population activity of the left hemisphere D1 neu-
+A bilateral D2 stimulation was reported to induce freezing by
+rons for the first half of the stimulation (and in the right hemisphere
+Kravitz et al. (2010). In contrast with the previous condition, in our
+for the second). Correspondingly, the robot performs first right turns
+model this stimulation blocks input to both the motors, thereby
+for the first stimulation period andafterwardsleft turns.
+restraining any kind of movement. Figure 3C illustrates the halting
+As can be observed, only the D1-MSNs in the relevant channel
+behavior of the robot – distances between the red circular markers
+(‘turn right’) show activation during stimulation, whereas the activ-
+are short, or the markers are on top of each other. A video of the
+ity in other channels remain low. The population activity also
+robot trajectory for this experiment can be seen in Video S1 in the
+shows an increase in D1-MSNs activity whereas the population
+Supporting information. Tecuapetla et al. (2014) showed that both
+activity of D2-MSNs does not show any distinguishable change in
+unilateral inhibition of the left hemisphere and inhibition of D1-
+response to the stimulation. We then calculated the average activity
+MSNs in the left hemisphere result in ipsilateral rotations. In our
+of D1- and D2-MSNs in the stimulated channel in the absence and
+set-up, we reproduce the former condition by applying an inhibitory
+presence of stimulation. The results are shown in the right most
+current to both D1- and D2-MSNs of the left hemisphere, and the
+panel of Fig. 4A. According to the hypothesis of antagonistic
+latter by inhibiting just the left D1-MSNs. Both manipulations have
+behavior within the channel, we expect a suppression of D2-MSNs
+the effect that there is no input from D1-MSNs to the left motor
+within the stimulated channels. Interestingly, it turns out that D1-
+during stimulation; the robot trajectory is modulated by right motor
+and D2-MSNs show concurrent activation within the channel i.e., in
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 8 ===
+
+744 J.Bahuguna et al.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 9 ===
+
+Roleof D1/D2-MSNs inaction selection 745
+Fig.3. Total population activity and trajectories of the robot for global stimulation paradigms. Left panel shows the total activity of the D1 (black) and D2
+(blue)neuronsinleftandrighthemispheres(markedasLandR,respectively).Rightpanelshowsthecorrespondingtrajectoryoftherobot,startingatthegreen
+star.Eachtrajectorysectionbetweentwomarkerscorrespondstoonebiologicalsecond.Redcirclesindicatethepresenceoftheexperimentalstimulus;graycir-
+clesindicatenoexperimentalstimulus.Insetsshowinstantaneousangularvelocity;inthegreen(orange)areatherobotisturningtotheleft(right).Notethedif-
+fering scales for firing rate and trajectory between the panels. (A) No stimulation (B) Bilateral D1 stimulation (C) Bilateral D2 stimulation (D) Unilateral
+inhibitionoflefthemisphere(E)UnilateralD1inhibition(F)UnilateralD2inhibition(G)UnilateralD1excitation(H)UnilateralD2excitation.
+addition to the expected clear increase in activity of D1-MSNs the same channel. We repeated the experimental paradigms as
+when the external stimulus is applied, the average activity for the described above for D2-MSNs (‘Sequences D2’ in Table 3). The
+corresponding D2-MSNs also increases in both left and right hemi- spiking activity and trajectory are shown in Fig. 4B, and the com-
+spheres. parison of D1 and D2 activity in the stimulated and background
+This unexpected effect is due to relatively sparser connectivity condition can be seen in Fig. 4B. The corresponding trajectory
+within the channel and high connectivity with the channels nearby. shows weak ipsilateral turning on D2-MSNs stimulation (first left
+The increased activity in D1-MSNs inhibits the D1- and D2-MSNs followed by right) which is consistent with behavioral experiments
+in the near channels more strongly than the ones within the channel. in Fig. 3H. We observe that D1-MSNs within the channel indeed
+Due to a decrease in the activity of nearby D2-channels, the D2- increase their activity in response to stimulation of the channel D2-
+MSNs within the stimulated channel are released from inhibition MSNs. The explanation for this effect is analogous. The increase in
+andhenceshow anincrease in theactivity. D2-MSNs activity within a channel inhibits the neighboring D2-
+We also checked whether the converse was true, i.e. whether a MSNs and D1-MSNs more strongly, hence disinhibiting the D1-
+stimulation of D2-MSNs can induce an activation of D1-MSNs in MSNs within thechannel.
+Fig.4. Spikingactivityandtrajectoryforthesequencesexperiments,seeTable3.Thefirstpanelshowsthetimebinnedactivityinninechannels(‘turnleft’–
+greenframe;‘turnright’–orangeframe)andthepopulationactivity(D1–black;D2–blue)inthelefthemisphere.Thesecondpanelshowsthecorresponding
+datafortherighthemisphere.Thethirdpanelshowstheresultingrobottrajectory.InsetshowstheinstantaneousangularvelocityasinFig.3;whitegapsindi-
+cate the pause in stimulation. The last panel shows the activityof D1 (black markers)and D2-MSNs(blue markers) averaged over the 5 s of stimulationand
+nostimulation.Theleft hemisphereis indicatedbysolidlines andcircular markers,the righthemispherebydashedlines and squaremarkers.Theexperiment
+wasrepeatedfivetimesandeachmarkerrepresentstheactivityduringonetrial(withdifferentrandomseeds).(A)experiment‘SequencesD1’.(B)experiment
+‘SequencesD2’.(C)experiment‘SequencesD1D2’.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 10 ===
+
+746 J.Bahuguna et al.
+Externalinput to bothD1-MSNsandD2-MSNs inthe channel MSNs increases leading to nearly no movement of the robot (com-
+requiredforpopulationlevel increasein activity pareFig. 5BandD).TheD1–D2correlationswithinthechannelsare
+now mildly negative (right violins in Fig. 5G and H), whereas D1–
+The distance dependent connectivity ensures a concurrent activation
+D1andD2–D2correlationsbetweenthechannelsaremuchlessnega-
+of both D1-and D2-MSNswithin achannel, evenif only of themis
+tive,orevenpositive(rightviolinsinFig. 5CandD).
+stimulated. This increase in activity, however, is not substantial
+Our model implies that although the D1- and D2-MSNs are
+enough to be visible on the entire population level, as recorded in
+antagonistic on the motor level of the robot, both neuron types are
+Cui et al. (2013), who showed an increase in activity of both D1-
+needed for action selection in the striatum. D1-MSNs are required
+and D2-MSNs on the population level. As can be observed in
+for initiating the desired action while D2-MSNs are responsible to
+Fig. 4A and B, an activity increase on the population level is only
+suppress all other competing motor plans. See Sec. Implications for
+visiblefor stimulated neurons.
+striatal representations of an action for a detailed discussion of the
+Wethereforedesignedanewparadigm,inwhichweprovidedexci-
+implications of thisresult.
+tatory stimulation to both D1- and D2-MSNs within a channel
+(‘Sequences D1D2’ in Table 3). The stimulation was greater to D1-
+MSNs to ensure a net positive input to the motors, enabling move- RelationshipbetweenD1- andD2-MSNs dependsonspatial
+ment.Theresultsofthisexperimentcanbeseenin(Fig. 4C).Thetra- distanceandtemporal scale
+jectory for this experiment is similar to the one for the experiment
+In the following, we explore how the relationship between D1- and
+‘SequencesD1’,i.e.rightturnforthefirsthalfofstimulationfollowed
+D2-MSNs depends on their spatial location as well as on the pres-
+byleftturnsfortherestofthestimulation,whereasthespikingactivity
+ence/absence of external stimulation. We measured correlations at
+showsanincreaseintheactivityofbothD1-andD2-MSNswithinthe
+zero-lag among individual D1-MSNs (D1–D1), D2-MSNs (D2–D2)
+channel‘turnleft’,butalsoonthepopulationlevel.
+and between D1- and D2-MSNs (D1–D2) at different spatial dis-
+An external stimulation to both D1 and D2 is also consistent with
+tances. For this correlation analysis, the transients in the neural
+the observations that both D1- and D2-MSNs receive external input
+activity during the beginning and end of the stimulation phase are
+(e.g.fromcortex) duringaction execution.
+excluded. We base our analysis onthe assumption that negative cor-
+relations between D1- and D2-MSNs indicate an antagonistic rela-
+Competitionoriginates in D2–D2connections tionship, whereas positive correlations indicate a co-operative
+relationship. We discuss the effects of spatial and temporal condi-
+IfD1-andD2-MSNsareindeedco-activatedduringactionselection,
+tionsseparately in the following sections.
+the question remains as to whether their individual roles should be
+considered as co-operative or antagonistic. To address this issue, we
+performed another experiment called ‘Competing Actions’ (see Correlations withrespectto spatialdistances
+Table 3 for details). In this experiment, the D1- and D2-MSN of the
+Modulationof neuronalpairwise correlationsbystimulus depends
+neighboring channels ‘turn left’ and ‘turn right’ are simultaneously
+ontheir spatialdistance
+stimulated in both hemispheres with equal strength.This is to mimic
+competing action plans, as may occur, for example, in an untrained We measured the Pearson’s correlation coefficient for 500 randomly
+animal performing a two-choice task such as a T-Maze. The popula- picked neurons (250 000 neuronal pairs) and separated the neuronal
+tionactivityduringstimulationforD1-andD2-MSNsforbothchan- pairs into three groups depending on the spatial distance, i.e. within
+nels was filtered and mean corrected and is shown in Fig. 5A, and channel,neighboringchannelandfarchannel(see Sec.Materialand
+the trajectory of the simulated robot in Fig. 5B. The competition in Methods). All experimental paradigms have two phases: no stimula-
+the striatal network of both hemispheres results in a switching activ- tion and external stimulation; the correlation coefficients were calcu-
+itybetweenthetwoactions‘turnleft’and‘turnright’.Wedetermine latedseparatelyforthesetwotimeperiods.Becausetheexperimental
+the ‘winning channel’ within a hemisphere by comparing the D2 paradigm ‘No stim’ does not have a stimulation phase, the neuronal
+activities of both channels within a sliding window of 250 ms (see activity was separated based on the stimulation times of other para-
+color bars of the hemispheres in Fig. 5A). It can be observed that digms as a control. The correlation coefficients for the stimulation
+there is a strong competition between the channels within the hemi- phasewerebinnedandareplottedashistogramsinFig. 6.
+spheres and there are clear winners (few gray areas). An overlap of The correlation histograms for the experimental paradigm ‘No
+winningchannelsinboth hemispheres determines theselected action Stim’ are shown in Fig. 6A.In this caseall correlations are predom-
+(see ‘selected action’ in Fig. 5A), which can also be observed in the inantly negative. However, D1–D1 and D2–D2 correlations show an
+trajectory of the robot. The competition between the channelsis also additional positive peak at 0.6 for neuronal pairs within a channel.
+reflected in strong negative D1–D1 and D2–D2 correlations between Pairs of neurons between neighboring channels are more negatively
+the two competing channels (left violins in Fig. 5E and F). In con- correlated comparedto within andfar channels.
+trast, the mean activity of D1- and D2-MSNs is not opposing within The global stimulation paradigms ‘Bilateral D1’, ‘Bilateral D2’,
+a single channel, but rather shows strong positive correlation (left and ‘Unilateral D1 Exc’ enhance this trend (Fig. 6B–D). The within
+violins in Fig. 5G and H) which is consistent with our earlier obser- channel correlations become predominantly positive while near
+vationthatD1-andD2-MSNsco-operateonasinglechannellevel. channel correlations shift further to negative values. It should be
+Toinvestigatethesourceofthecompetitionbetweenthechannels, noted that although D1–D1 and D2–D2 correlations have been mea-
+we repeated the experiment having severed the D2–D2 connections sured in experiments (Barbera et al., 2016; Klaus et al., 2017), D1–
+(set the synaptic weight to zero) between the two channels. In this D2 correlations have not yet been reported. Our model predicts that
+condition, the competition between the channels is impaired, which the spatial structure for D1–D2 correlations follows the same trend
+can be observed in the color bars in Fig. 5C. Here, there are more asD1–D1 andD2–D2 correlations.
+gray areas visible, indicating that for much of the time, no channel Our observation that within channel neurons show higher positive
+emerged as a clear winner. Additionally, the average activity of D2- correlations is consistent with Klaus et al. (2017) and Barbera et al.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 11 ===
+
+Roleof D1/D2-MSNs inaction selection 747
+Fig.5. (A) Mean corrected activity traces during stimulation of channels ‘turn left’ and ‘turn right’ in both hemispheres in the experiment ‘Competing
+Actions’. Colorbarsindicatethe winningchannelineachhemisphereina250msslidingwindow.Orangeareasindicatethatthe D2-MSNsactivityishigher
+inthe‘turnright’thaninthe‘turnleft’channel,greenareasindicatethat‘turnleft’isthewinner,grayareasindicatenoclearwinnerinthatperiod.Colorbar
+atthetopofthepanelindicatestheselectedactionwhenbothhemispheresareinagreement.(B)Trajectoryofthesimulatedrobot.Numberedpositionscorre-
+spondtothosein(A).(C)Asin(A),butwithD2–D2connectionsbetweenchannelssevered.(D)TrajectoryofthesimulatedrobotwithoutD2–D2connections.
+(E) Correlation coefficient of the meanactivity of D1and D1neurons between the channels.(F)as in(E) but for D2–D2 correlations. (G) Correlation coeffi-
+cientofthemeanactivityofD1andD2neuronswithinthechannel‘turnleft’.(H)asin(G)butforchannel‘turnright’.
+(2016),wheretheyshowthatneuronssituatedclosebyshowsignifi- basisofindividualchannels.Consequently,theanalysisrevealslarge
+cantly higher covariance in their activity as compared to other neu- deviations in the distribution of correlation coefficients, but not the
+ron pairs. However, going beyond the findings reported in those changes in correlations on asingle channel level. In order to investi-
+studies, our model exhibits strong negative correlations between the gate the change in correlations locally, we measured the correlations
+nearby channels, resulting from the strong connectivity and inhibi- of all neuronal pairs within a channel as well between the channels.
+tion between the nearby channels. This issue is discussed in detail For computational feasibility and ease of visibility, every 5th neuron
+in Sec. Limitations. in a channel was used for this analysis. The correlation coefficients
+were calculated among the D1-MSNs, D2-MSNs and between D1-
+andD2-MSNs. These correlation matricesare shownin Fig. 7.
+Globalandcompeting stimulationparadigms resultin spatial
+Figure 7A shows the correlations for the network during the no
+patterns inthe correlation structure
+stimulationconditionasareference.ThecorrelationsforD1–D1and
+The pairwise correlation coefficients calculated in the previous sec- D2–D2alongthediagonalsrepresentthepositivecorrelationsforneu-
+tion were separated in terms of spatial distances, rather than on the rons within a channel as previously observed in Fig. 6. In contrast,
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 12 ===
+
+748 J.Bahuguna et al.
+Fig.6. Theprobabilitydensityfunctionsofcorrelationcoefficientsforneuronalpairssituatedwithin(black),near(orange),andfar(blue)channelsoftheleft
+hemisphere.Thecorrelationhistogramswerecalculatedduringstimulation,exceptfor(A),whichiscalculatedforanequivalentperiod.Toprow:D1–D1corre-
+lations.Middlerow:D2–D2correlations.Bottomrow:D1–D2correlations.(A)Nostim.(B)BilateralD1stimulation.(C)BilateralD2stimulation(D)Unilat-
+eralD1stimulation.
+neuronal D1–D2 pairs (Fig. 7A – right column) show neither strong D1- and D2-MSNs for several different experiments (see Sec.
+positivenornegativecorrelationsonasinglechannellevel. Instantaneous correlation of population average trace). The shorter
+During a global stimulation such as ‘Bilateral D1’, these correla- window size was selected to be shorter than the stimulation period,
+tions are strongly modulated as shown in Fig. 7B. As all D1-MSNs and the larger to be longer than it. As the experimental paradigm
+are stimulated in this paradigm, the D1–D1 correlations shows ‘No stim’ has no stimulation period, we apply the same window
+strong modulation; the D1-MSN sub-network self-organizes into a sizes as for ‘Bilateral D1’. The motivation to consider two window
+checkerboard pattern with channels firing in co-operation (positive sizes relative to stimulation periods is to discover how the apparent
+correlations) and in competition (negative correlations). This effect co-operation or competition depends on whether the stimulation is
+is due to the distance-dependent connectivity: channels nearest to considered as an unitary event against the background. The shorter
+stimulated channel receive strong inhibition, and thus disinhibit their window detects instantaneous correlations on shorter time scales, i.e.
+neighboring channels. The D1-stimulation also indirectly modulates not only the on- andoffset of stimulation, but also during the stimu-
+the D2–D2 correlations and D1–D2 correlations in a similar pattern. lation period. The window size longer than stimulation period con-
+The same pattern of correlations, but focused on the D2-MSN sub- siders the whole stimulation as a single event with respect to the
+network, isobservedfor the ‘Bilateral D2’ paradigm (Fig. 7C). background.
+In the paradigm ‘Competing Actions’ (Fig. 7D), the D1- and D2- The instantaneous D1–D2 correlations were calculated for these
+MSNs of two neighboring channels are stimulated simultaneously, two window sizes and repeated for five trials for each experimental
+emulating a competition between two actions. Interestingly, the paradigm. The mean spiking activities and the means and standard
+checkerboard correlation patterns that emerge are similar to the glo- deviationsof the instantaneous correlations areplottedin Fig. 8.
+bal stimulation paradigms such as bilateral D1 and D2 stimulation, Forthe‘Nostim’paradigm(Fig. 8A),weobservethatalthoughthe
+albeit concentrated on a local area. No such pattern could be absolute values of D1–D2 correlations fluctuate, they remain reso-
+observed for single channel stimulations such as ‘Sequences D1D2’ lutely negative throughout the whole simulation for both window
+(data not shown). This suggests that global stimulation paradigms sizes.Theinstantaneouscorrelationsforshuffledversionsoftheactiv-
+like bilateral D1 stimulation is qualitatively similar to the ‘Compet- ityremainatzero.Thissuggeststhatintheabsenceofexternalstimu-
+ing Actions’ paradigm, but on a global scale. This also supports the lation,D1-andD2-MSNscompeteonthelevelofpopulationactivity.
+hypothesisthatbilateralD1/D2stimulationreleasesmultiplecompet- In the experimental paradigm ‘Bilateral D1’, shown in Fig. 8B,
+ingmotor programs simultaneously. the instantaneous D1–D2 correlations measured within a short win-
+dow are negative for activity before, during and after stimulation.
+Correlations withrespectto temporalscales However, they become more strongly negative during the on- and
+offset of stimulation. This is due to the strong increase in D1 activ-
+Here, we explore the instantaneous correlations between the popula-
+ity evoked by the stimulation and concomitant decrease in D2 activ-
+tionactivityofD1-andD2-MSNsinordertodeterminetheirdepen-
+ity. The D1–D2 correlations for the longer window size remain
+denceonthe presence/absence of stimulation.
+strongly negative and show no such modulation. The instantaneous
+correlations for the shuffledactivity for both window sizes remain at
+InstantaneousD1–D2 correlationsdepend onwindow size andtype zero. A similar trend can be observed for bilateral D2 stimulation
+ofstimulation (Fig. 8C). The competition between D1 and D2-MSNs at the popu-
+lation level in the absence of stimulation is consistent with the pre-
+In order to measure the instantaneous correlations, we applied slid-
+vious observation in Fig. 5A. This competition is intensified at the
+ing windows of two different sizes to the filtered activity traces of
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 13 ===
+
+Roleof D1/D2-MSNs inaction selection 749
+Fig.7. Pairwise correlation coefficient for every 5th neuron in the left hemisphere, i.e. eight neurons shown per channel (marked as dashed grid lines). The
+correlationsaremeasuredbetweenD1-MSNs(leftcolumn),D2-MSNs(middlecolumn)andbetweenD1-MSNsandD2-MSNs(rightcolumn).Thechannelout-
+lined in black represents ‘turn right’; channels marked in magenta represent the near channels to ‘turn right’. (A) No stim. (B) Bilateral D1 stimulation. (C)
+BilateralD2stimulation.(D)Competingactions.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 14 ===
+
+750 J.Bahuguna et al.
+Fig.8. Dependence of instantaneous correlations on stimulus features and correlation window. Top panels: Mean spiking activity for D1- (black) and D2-
+MSNs(blue);windowssizesusedformeasuringinstantaneouscorrelationsshownasoverlaidrectangles.Bottompanels:Instantaneouscorrelationsbetweenthe
+populationactivities,colorscorrespondingtotheboxesinthetoppanels,standarddeviationindicatedbyshadedareas.Theinstantaneouscorrelationsforshuf-
+fledversionsofthetraceplottedassolidgraycurves.(A)Nostim.(B)BilateralD1stimulation.(C)BilateralD2stimulation.(D)SequencesD1D2.
+on- and offset of the stimulation if only one of the population is under observation, and whether the stimulation paradigm involves a
+stimulated, as is the case in both of these paradigms (i.e. D1-MSNs concurrent stimulation of both populations (e.g. ‘Sequences D1D2’)
+in ‘Bilateral D1’ and D2-MSNs in ‘Bilateral D2’). The larger win- or only one of them (e.g. ‘Bilateral D1’). Although a short external
+dow size suggests a constant strong competition between population stimulation of D1- and D2-MSNs (‘Sequences D1D2’) indicates co-
+activities of D1andD2-MSNs. operationwithrespecttothebackground,theircompetitionisrevealed
+Lastly,during ‘SequencesD1D2’,theinstantaneousD1–D2corre- during stimulation when observed on shorter time scales. This has
+lations measured using a short window size show a strong shift manyimplications,theminorandmostobviousbeingthatinorderto
+towards positive values during on- and offset of stimulation recordinstantaneouscorrelationscorrectly,theobservationtimewin-
+(Fig. 8D – red line in second panel). This is in line with the obser- dowshouldbeatleastshorterthanthestimulationtime.Moreimpor-
+vations made by Barbera et al. (2016), where a concurrent increase tantly, this raises the question as to what time scales the nuclei
+in D1- and D2-MSNs population activity was observed during downstream from the striatum detect and track correlations. It has
+movement initiation and a concurrent decrease in activity was been shown that transfer of correlations from presynaptic to postsy-
+observedat movement termination. During stimulation, however, the napticpopulationdependsonthesizeofthewindowinwhichtheyare
+D1–D2 correlations are strongly negative. This has yet to be calculated (Pamela et al., 2011). Specifically, in this case, it will be
+reported and hence is a prediction of this model. However, the lar- interestingtoinvestigatehowtheD1-andD2-MSNscorrelationsare
+gerwindowsizeisnotabletodetect negativevaluesduringstimula- transferred to the downstream nuclei such as GPe (where some D1-
+tion, but rather detects the entire stimulation period as an event of MSNsmayprojectalongwithmajorityofD2-MSNs)andGPi(where
+increase in instantaneous D1–D2 correlations (Fig. 8D – orange line thebothpathwaysmostdefinitelyconverge).
+in second panel). Hence, on shorter time scales, our model predicts
+thatthepopulationactivityofD1-andD2-MSNsco-operateatonset
+Discussion
+and offset of stimulation but compete during stimulation. However,
+on the longer time scales the paradigm ‘Sequences D1D2’ is In this study, we present a functional model that aims to bridge the
+detected as anunitaryevent of co-operation againstthe background. action-specific representations in the striatum, modeled by a spiking
+In summary, the population activity of D1- and D2-MSNs can neuronal network, to behavioral manifestations in a simulated robot.
+appear to co-operate or compete depending on the temporal scale The advantage of this approach is that D1- and D2-MSNs can be
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 15 ===
+
+Roleof D1/D2-MSNs inaction selection 751
+observed/manipulated on the single channel and population levels Secondly, the neighboring channels in our model show strong
+whilsttheeffectofthesemanipulationscanbeobservedasrobottra- negative correlations, in contrast to experimental results that show a
+jectories.Hence,thisframeworkiswellsuitedtoexplorewhetherD1- gradual decrease in positive correlations with respect to neuronal
+andD2-MSNsco-operateorcompeteduringactionselection. distances (Klaus et al., 2017). There might be many reasons for this
+Weshowthatthismodelisabletoreproduceonabehaviorallevel discrepancy in neuronal correlations, such as the role of fast spiking
+all but one key finding from several optogenetically manipulated interneurons (FSIs), short or long term plasticity between the striatal
+experiments(Sec.Unilateralandbilateralstimulation).Wealsoshow units, spatio-temporal structure in the input (background and/or
+thatD1-andD2-MSNsco-operate(showingco-activation)onasingle external stimulus), or acombinationof some of these factors.
+channel level. Concurrent activation on the population level can be In particular, the role of FSIs might be integral in shaping MSN-
+observed if D1- andD2-MSNsare simultaneously stimulated. In con- MSN correlations. Although striatal FSIs are much fewer in number
+trast, D1- and D2-MSNs of the neighboring channels compete than MSNs ((cid:1)1–3% of the total striatal neurons), they provide
+strongly,wherebythecompetitionislargelymodulatedbytheconnec- strong feed-forward inhibition to both D1- and D2-MSNs by form-
+tion between D2-MSNs. (Sec. Competition originates in D2-D2 con- ing divergent projections to many MSNs (Tepper et al., 2004;
+nections). We also show that the correlation structure of the striatal Humphries et al., 2010). FSIs are coupled by gap junctions, and
+D1-and D2-MSNs dependson their spatiallocations and thestimula- although they do not show synchronization on small timescales in
+tion paradigms. The neuronal pairs within a channel on an average awake animals (Berke, 2008, 2011), they show co-ordinated activa-
+showhigherpositivecorrelations,whereasneuronalpairsintheneigh- tion during stages of behavioral tasks such as movement initiation
+boring channels showstrongnegative correlations. Finally, theinstan- (Gage et al., 2010). Hence, the change in synchronization of FSI
+taneous correlations of the D1- and D2-MSNs population activity activity could affect the correlations between the MSNs (Damodaran
+depends on temporal scales on which this activity is observed (Sec. et al., 2015;Corbit et al.,2016).
+Relationship between D1- and D2-MSNs depends on spatial distance
+andtemporalscale).Althoughwecouldreproducemanyexperimental
+Futureextensions
+results,weseediscrepanciesintworesults:firstly,unilateralinhibition
+ofareducednumberofD2-MSNsinourmodeldoesnotshowipsilat- For the sake of simplicity, we assumed static synapses between the
+eralrotationsasreportedbyTecuapetlaet al.(2014).Secondly,inour striatal neurons. However, the model could be extended to include
+model, neighboring channels are negatively correlated, while experi- short- and long-term plasticity, as has been reported for FSI-MSN
+ments show a gradual decrease in positive correlations with increased synapses as well as MSN-MSN connections (Tecuapetla et al.,
+distancebetweenMSNs(Klauset al.,2017). 2007; Rueda-Orozco et al.,2009; Planert et al.,2010).
+The former discrepancy might be a result of several missing basal Forsimilarreasons,thebackgroundinputconsideredinourmodelis
+ganglia nuclei in the model, and is discussed in more detail in Sec. uncorrelatedPoissonianspiketrains.However,backgroundinputunder
+Limitations. The latter can be partially attributed to coarse distance in-vivo conditions is likely to exhibit spatio-temporal structure. Simi-
+dependent connectivity structure (a more continuous form of dis- larly,weconsideredglobalstimulationinourmodelasacurrentinjec-
+tance dependent network has been explored in Spreizer et al., tionandlocalizedchannelinputsaspoissonspiketrains.Amorenatural
+2017). Of course, we cannot exclude the possibility that there are input,however,mightalsohaveaspecificspatio-temporalpatternand
+non-modeled features of the biological network which would have influencetheMSN-MSNcorrelations(Yimet al.,2011).
+significant effect on the correlation structure in the model. These are Our model of the striatum implements both hemispheres, but we
+discussed in Sec.Limitations. did not model inter-hemisphere interactions. The origin of this inter-
+hemispherical co-ordination may well lie at a much earlier phase of
+the motor program, i.e. at the cortico-cortical connections. Unilateral
+Limitations
+tracing studies have shown significant projections from primary
+Tecuapetla et al. (2014) show that inhibition of a reduced number motor cortex corresponding to forepaw region of a rat to the corre-
+of D2-MSNs lead to ipsilateral rotations. In our model, inhibiting sponding area in the contralateral hemisphere (Alloway et al.,
+only a few D2-MSNs does not show clear results (data not shown). 2009). Although there are no interhemispheric connections on the
+However, inthesamestudyTecuapetlaet al.(2014)report thatwith level of the striatum (Swanson et al., 2016), there is significant con-
+a strong expression of opsins in D2-MSNs, and hence optogenetic tralateral cortico-striatal innervation from the motor cortex (Reig &
+inhibition of a large number of D2-MSNs, the mice show contralat- Silberberg, 2016). Our model could be extended to include inter-
+eral rotations. Our model is able to replicate this result (Fig. 3F). hemispheric connections to explore their rolein action selection.
+This behavior is also consistent with other studies which also show Finally, it has been shown that cholinergic interneurons can also
+that targeted ablation of D2-MSNs leads to contralateral rotations in significantly change the dynamical state of the striatal network
+mice (Hikidaet al., 2010; Sanoet al., 2013). (McCarthy et al., 2011). An extension of the model could explore
+Thereasonbehindthisdiscrepancy isnotunderstood,as alsosug- the influenceof cholinergic interneurons onthe striatal dynamics.
+gested by Tecuapetla et al. (2014). It may be due to entrainment of
+differentbasalgangliadownstreampathwaysand/orlateralstriatalcir-
+Spatial extentof action encodinginstriatum
+cuitelementsduringthesetwotypesofstimulations.Henceourmodel
+doesreproduceoneaspectoftheexperiment(stronginhibitionofD2- Inourmodel,byencodingoneactionperchannel,wehavebydefault
+MSNs) but fails to reproduce the other aspect (weaker inhibition of assumed a non-overlapping and spatially compact action encoding in
+D2-MSNs).ThisworkonlymodelstheMSNsofstriatalnetworkand striatum as proposed by Barbera et al. (2016). However, an arrange-
+nottheotherdownstreamnucleiofbasalgangliathatareintegralcom- mentsuggestedbyKlauset al.(2017)canbeimplementedbyallowing
+ponents of ‘Go’ and ‘No-Go’ pathways. One way to overcome this multiplechannelstoencodeanactioninoverlappingfashion.Theexter-
+limitationwouldbetoaddtheminimalbasalgangliacircuitthatisable nal input should then stimulate all the channels encoding the action.
+to replicate both behaviors (ipsilateral as well as contralateral rota- However, thisraises interesting questions about the downstream map-
+tions)fordifferentdegreesofD2-MSNsinhibition. pingofthestriatalrepresentationofaction.Inourmodel,onepossible
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 16 ===
+
+752 J.Bahuguna et al.
+arrangement could be that all the channels encoding the action are actionstotheroboticbehavior(e.g.wall-follow)asdescribedinGur-
+mappedtotherelevantmotorwithequalweights.Alternatively,chan- ney et al. (2006), albeit with the difference that all chunks of the
+nelscouldbemappedtothemotorswithdifferentweights,ascouldbe action sequence are represented in striatum. Such an approach could
+interpretedfromBarberaet al.(2016),wheredifferentneuronalclusters be a fruitful source of insights into how striatum encodes complex
+contributedtodecodingabehaviorstatewithdifferentweights. actions.
+Implicationsforstriatalrepresentations ofanaction Supporting Information
+Ithasbeensuggestedthatastriatalrepresentationforanaction(func- Additional supporting information may be found online in the Sup-
+tionalunitorchannel)shouldincludebothD1-andD2-MSNs,andthat portingInformation section at theendof the article:
+both populations are needed for action selection: D1-MSNs facilitate Fig. S1. F-I curves for D1 and D2-MSNs for the neuron parameters
+action execution while D2-MSNs suppress action execution (Gurney listedinTable 1.
+et al.,2001a,b,2015;Humphrieset al.,2006;Bahugunaet al.,2015; Video S1. Video for experimental paradigm ‘Bilateral D2’ excita-
+Lindahl & Kotaleski,2016). One hypothesis proposed about comple- tion.
+mentaryrolesforD1-andD2-MSNsistheconceptofD1–D2hetero- VideoS2. Videofor experimental paradigm ‘Unilateral D1 Exc’.
+mers,whereallMSNseitherfacilitateorsuppressanactiondepending
+on the form of synaptic plasticity they express at a certain moment
+(Calabresiet al.,2014).Otherstudiesproposethattheglobalco-activa-
+Acknowledgments
+tionofbothMSNscanbeexplainedbyD1-andD2-MSNscompeting
+withinachannelandco-operatingamongthechannels,i.e.D1-MSNs Thisworkwasinspiredbythedebate‘Directandindirectpathways:Friends
+ofthedesiredactionandD2-MSNsofallsuppressedactionsincrease or Foes?’ at IBAGS 2017. We thank Dr. Anu G. Nair, Dr. Lyuba Zehl and
+Prof.Bj€ornM.Kampaforhelpfuldiscussions.
+inactivity(Nelson&Kreitzer,2014;Burkeet al.,2017).
+In contrast to the aforementioned hypotheses, we propose that the
+global co-activation of D1- and D2-MSNs originates not in different Funding
+channels, but within one (or more) channel(s) representing the
+German Research Foundation [DFG; grant DI 1721/3-1 (KFO219-TP9)], the
+desired action. Despite the lateral inhibition, suggesting a competi- Helmholtz Association through the Helmholtz Portfolio Theme ‘Supercom-
+tion between D1-MSNs and D2-MSNs within a channel, they co- putingandModelingfortheHumanBrain’(SMHB),InitiativeandNetwork-
+operate by playing complementary roles during action selection. In ingFundof theHelmholtzAssociation andGerman-Japanese Computational
+Neuroscience Project, German Federal Ministry for Education and Research
+this co-operative tandem, D1-MSNs of a channel drive the action
+(BMBFGrant01GQ1343).
+execution while D2-MSNs of the channel suppress the competing
+actions. This suppression is most effective between neighboring
+channelsdue to high connectivity between them. Hence, this implies Conflicts of interest
+that diametrically opposite actions are encoded by neurons situated Theauthorsreportnoconflictofinterest.
+in neighboring channels, ensuring effective suppression of one when
+the other is active. The suppression of the neighboring channels in
+Data and code accessibility
+turn disinhibits their neighbors, hence allowing them to be recruited
+for co-operation. This would therefore be a plausible location for The full model implementation and robotic setup are available on GitHub
+therepresentation ofcomplementary actions. (https://github.com/weidel-p/go-robot-nogo-robot). All figures, including
+Theaforementionedfunctionalunitsorchannelsareakintothecon-
+thosemarkedas‘datanotshown’,areavailableontheOpenScienceFrame-
+work(OSFhttps://osf.io/knf5s/).
+ceptofneuronalassembliesfoundinstriatumduringinvitro(Carrillo-
+Reidet al.,2008;Carrillo-Reidet al.,2011)andinvivoduringtask-
+related activity in primates (Adler et al., 2013) and in freely moving Author contributions
+mice(Barberaet al.,2016;Klauset al.,2017).Thegenerationofstri-
+Designed the experiments: JB, PW. Performed experiments and analyzed
+atalassemblieshasbeenshowninstriatalmodelswithspatialconnec- data: JB, PW. Contributed reagents and analytic tools: AM, PW. Wrote the
+tivity structure (Wickens et al., 1995; Humphries et al., 2009; paper:JB,PW,AM.
+Spreizer et al., 2017) as well as with randomly connected networks
+(Ponzi & Wickens, 2010; Angulo-Garcia et al., 2016). The channels
+References
+inourmodelconsistsofspatiallylocalneuronsincontrasttoglobally
+distributed neurons in the other models (although see Spreizer et al., Adler, A., Finkes, I., Katabi, S., Prut, Y. & Bergman, H. (2013) Encoding
+bysynchronizationintheprimatestriatum.J.Neurosci.,33,4854–4866.
+2017).Theexperimentaldataalsoshowsthatstriatalneuronsencoding
+Albin, R.L., Young,A.B. & Penney, J.B. (1995) The functionalanatomy of
+an action do show spatial bias (Barbera et al., 2016; Klaus et al., disordersofthebasalganglia.TrendsNeurosci.,18,63–64.
+2017). We also note that the channels/assemblies in our model are Alloway, K.D., Smith, J.B., Beauchemin, K.J. & Olson, M.L. (2009) Bilat-
+structurally pre-defined in terms of mapping the striatal activity to eral projections from rat MI whisker cortex to the neostriatum, thalamus,
+low-levelrobotic motors.Thisassumptionisconsistentwith theidea and claustrum: forebrain circuits for modulating whisking behavior.
+J.Comp.Neurol.,515,548–564.
+thatstriatum,likecortex,followsasomatotopicorganization(Nambu,
+Angulo-Garcia,D.,Berke,J.D.&Torcini,A.(2016)Cellassemblydynamics
+2011), which might further corroborate the hypothesis that an action of sparsely-connected inhibitory networks: a simple model for the collec-
+encodinginstriatummaybebiasedtowardslocallysituatedneurons. tiveactivityofstriatalprojectionneurons.PLOSComput.Biol.,12,1–29.
+We emphasize that this reasoning applies strictly to only the striatal Bahuguna,J.,Aertsen,A.&Kumar,A.(2015)ExistenceandcontrolofGo/
+encodingofalowerlevellimb(e.g.‘turnleft’channelinstriatumrep- No-Go decision transition threshold in the striatum. PLOS Comput. Biol.,
+11,1–35.
+resentsamappingoftherobot’srightmotor).Ahigherlevelormore
+Barbera, G., Liang, B., Zhang, L., Gerfen, C., Culurciello, E., Chen, R., Li,
+complex action representation need not be limited to locally biased Y. & Lin, D.-T. (2016) Spatially compact neural clusters in the dorsal
+assemblies. This prediction can be tested by adding more complex striatumencodelocomotionrelevantinformation.Neuron,92,202–213.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753
+
+=== PAGE 17 ===
+
+Roleof D1/D2-MSNs inaction selection 753
+Berke, J.D. (2008) Uncoordinated firing rate changes of striatal fast-spiking Kravitz, A.V., Freeze, B.S., Parker, P.R.L., Kay, K., Thwin, M.T., Deis-
+interneuronsduringbehavioraltaskperformance.J.Neurosci.,28,10075–10080. seroth,K.&Kreitzer,A.C.(2010)RegulationofParkinsonianmotorbeha-
+Berke, J.D. (2011) Functional properties of striatal fast-spiking interneurons. vioursbyoptogeneticcontrolofbasalgangliacircuitry.Nature,466,622–
+Front.Syst.Neuros.,5,45. 626.
+Bontorin,G.,Renaud,S.,Garenne,A.,Alvado,L.,LeMasson,G.&Tomas, Kunkel, S., Morrison, A., Weidel, P., Eppler, J.M., Sinha, A., Schenck, W.,
+J. (2007) A real-time closed-loop setup for hybrid neural networks. In Schmidt,M.,Vennemo,S.B.etal.(2017)Nest2.12.0.
+Engineering in Medicine and Biology Society, 29th Annual International Lindahl, M. & Kotaleski, J.H. (2016) Untangling basal ganglia network
+ConferenceoftheIEEE,3004–3007.IEEE. dynamics and function: role of dopamine depletion and inhibition investi-
+Burke,D.A.,Rotstein,H.G.&Alvarez,V.A.(2017)Striatallocalcircuitry:a gatedinaspikingnetworkmodel.eNeuro,3,ENEURO.0156-16.2016.
+newframeworkforlateralinhibition.Neuron,96,267–284. L(cid:2)opez-Huerta, V.G., Carrillo-Reid, L., Galarraga, E., Tapia, D., Fiordelisio,
+Calabresi, P., Picconi, B., Tozzi, A., Ghiglieri, V. & Di Filippo, M. (2014) T.,Drucker-Colin,R.&Bargas,J.(2013)Thebalanceofstriatalfeedback
+Direct and indirect pathways of basal ganglia: a critical reappraisal. Nat. transmission is disrupted in a model of Parkinsonism. J. Neurosci., 33,
+Neurosci.,17,1022–1030. 4964–4975.
+Carmena, J.M. (2013) Advances in neuroprosthetic learning and control. Maharbiz, M.M., Muller, R., Alon, E., Rabaey, J.M. & Carmena, J.M.
+PLOSBiol.,11,e1001561. (2017) Reliable next-generation cortical interfaces for chronic brain–ma-
+Carrillo-reid,L.,Tecuapetla,F.,Tapia,D.,Herna,A.&Galarraga,E.(2008) chineinterfacesandneuroscience.Proc.IEEE,105,73–82.
+Encoding network states by striatal cell assemblies. J. Neurophysiol., 1, McCarthy,M.,Moore-Kochlacs,C.,Gu,X.,Boyden,E.,Han,X. &Kopell,
+1435–1450. N. (2011) Striatal origin of the pathologic beta oscillations in Parkinson’s
+Carrillo-Reid,L.,Hernandez-Lopez,S.,Tapia,D.,Galarraga,E.&Bargas,J. disease.Proc.Natl.Acad.Sci.USA,108,11620–11625.
+(2011) Dopaminergic modulation of the striatal microcircuit: receptor-spe- Nambu, A. (2011) Somatotopic organization of the primate basal ganglia.
+cificconfigurationofcellassemblies.J.Neurosci.,31,14972–14983. Front.Neuroanat.,5,1–9.
+Corbit, V.L., Whalen, T.C., Zitelli, K.T., Crilly, S.Y., Rubin, J.E. & Gittis, Nelson, A.B. & Kreitzer, A.C. (2014) Reassessing models of basal ganglia
+A.H.(2016)Pallidostriatalprojectionspromoteoscillationsinadopamine- functionanddysfunction.Annu.Rev.Neurosci.,37,117–135.
+depletedbiophysicalnetworkmodel.J.Neurosci.,36,5556–5571. O’Hare, J., Ade, K., Sukharnikova, T., VanHooser, S., Palmeri, M., Yin, H.
+Cui, G., Jun, S.B., Jin, X., Pham, M.D., Vogel, S.S., Lovinger, D.M. & & Calakos, N. (2016) Pathway-specific striatal substrates for habitual
+Costa, R.M. (2013) Concurrent activation of striatal direct and indirect behavior.Neuron,89,472–479.
+pathwaysduringactioninitiation.Nature,494,238–242. Pamela, R., Brent, D. & Jonathan, R. (2011) Correlation transfer from
+Damodaran, S., Cressman, J.R., Jedrzejewski-Szmek, Z. & Blackwell, K.T. basal ganglia to thalamus in Parkinson’s disease. Front. Comput. Neu-
+(2015) Desynchronization of fast-spiking interneurons reduces b-band ros., 5, 58.
+oscillations and imbalance in firing in the dopamine-depleted striatum. J. Planert, H., Szydlowski, S.N., Hjorth, J.J.J., Grillner, S. & Silberberg, G.
+Neurosci.,35,1149–1159. (2010) Dynamics of synaptic transmission between fast-spiking interneu-
+Djurfeldt,M.,Hjorth,J.,Eppler,J.M.,Dudani,N.,Helias,M.,Potjans,T.C., rons and striatal projectionneurons of the direct and indirect pathways. J.
+Bhalla, U.S., Diesmann, M. etal. (2010) Run-time interoperability Neurosci.,30,3499–3507.
+betweenneuronalnetworksimulatorsbasedonthemusicframework.Neu- Ponzi, A. & Wickens, J. (2010) Sequentially switching cell assemblies in
+roinformatics,8,43–60. random inhibitory networks of spiking neurons in the striatum. J. Neu-
+Falotico, E., Vannucci, L., Ambrosano, A., Albanese, U., Ulbrich, S., Vas- rosci.,30,5894–5911.
+quez Tieck, J.C., Hinkel, G., Kaiser, J. etal. (2017) Connecting artificial Reig, R. & Silberberg, G. (2016) Distinct corticostriatal and intracortical
+brains to robots in a comprehensive simulation framework: The Neuro- pathways mediate bilateral sensory responses in the striatum. Cereb. Cor-
+roboticsPlatform.Front.Neurorobotics,11,2. tex,26,4405–4415.
+Fujiyama, F., Sohn, J., Nakano, T., Furuta, T., Nakamura, K.C., Matsuda, Rueda-Orozco, P.E., Mendoza, E., Hernandez, R., Aceves, J.J., Ibanez-
+W.&Kaneko,T.(2011)Exclusiveandcommontargetsofneostriatofugal Sandoval, O., Galarraga, E. & Bargas, J. (2009) Diversity in long-term
+projectionsofratstriosomeneurons:asingleneuron-tracingstudyusinga synaptic plasticity at inhibitory synapses of striatal spiny neurons. Learn.
+viralvector.Eur.J.Neurosci.,33,668–677. Memory,16,474–478.
+Gage, G.J., Stoetzner, C.R., Wiltschko,A.B. & Berke, J.D. (2010) Selective Sano,H.,Chiken,S.,Hikida,T.,Kobayashi,K.&Nambu,A.(2013)Signals
+activation of striatal fast-spiking interneurons during choice execution. through the striatopallidal indirect pathway stop movements by phasic
+Neuron,67,466–479. excitationinthesubstantianigra.J.Neurosci.,33,7583–7594.
+Gertler,T.S.,Chan,C.S.&Surmeier,D.J.(2008)Dichotomousanatomicalproper- Sippy, T., Lapray, D., Crochet, S. & Petersen, C. (2015) Cell-type-specific
+tiesofadultstriatalmediumspinyneurons.J.Neurosci.,28,10814–10824. sensorimotor processing in striatal projection neurons during goal-directed
+Gurney,K.,Prescott,T.J.&Redgrave,P.(2001a)Acomputationalmodelof behavior.Neuron,88,1–8.
+action selection in the basal ganglia. I. A new functional anatomy. Biol. Spreizer,S.,Angelhuber,M.,Bahuguna,J.,Aertsen,A.&Kumar,A.(2017)
+Cybern.,84,401–410. Activity dynamics and signal representation in a striatal network model
+Gurney,K.,Prescott,T.J.&Redgrave,P.(2001b)Acomputationalmodelof with distance-dependent connectivity. eNeuro, 4, 1–15. ENEURO.0348-
+action selection in the basal ganglia. II. Analysis and simulation of beha- 16.2017
+viour.Biol.Cybern.,84,411–423. Swanson,L.W.,Sporns,O.&Hahn,J.D.(2016)Networkarchitectureofthe
+Gurney,K.,Prescott,T.J.,Gonza,F.M.M.,Humphries,M.D.&Redgrave,P. cerebral nuclei (basal ganglia) association and commissural connectome.
+(2006)Arobotmodelofthebasalganglia:behaviorandintrinsicprocess- Proc.Natl.Acad.Sci.USA,113,E5972–E5981.
+ing.NeuralNetw.,19,31–61. Taverna, S., Ilijic, E. & Surmeier, D.J. (2008) Recurrent collateral connec-
+Gurney, K.N., Humphries, M.D. & Redgrave, P. (2015) A new framework tions of striatal medium spiny neurons are disrupted in models of Parkin-
+for cortico-striatal plasticity: behavioural theory meets in vitro data at the son’sdisease.J.Neurosci.,28,5504–5512.
+reinforcement-actioninterface.PLOSBiol.,13,e1002034. Tecuapetla,F.,Carrillo-Reid,L.,Bargas,J.&Galarraga,E.(2007)Dopamin-
+Hikida,T.,Kimura,K.,Wada,N.,Funabiki,K.&Nakanishi,S.(2010)Dis- ergic modulation of short-term synaptic plasticity at striatal inhibitory
+tinct roles of synaptic transmission in direct and indirect striatal pathways synapses.Proc.Natl.Acad.Sci.USA,104,10258–10263.
+torewardandaversivebehavior.Neuron,66,896–907. Tecuapetla,F.,Matias,S.,Dugue,G.P.,Mainen,Z.F.&Costa,R.M.(2014)
+Humphries, M.D., Stewart, R.D. & Gurney, K.N. (2006) A physiologically Balanced activity in basal ganglia projection pathways is critical for con-
+plausible model of action selection and oscillatory activity in the basal traversivemovements.Nat.Commun.,5,4315.
+ganglia.J.Neurosci.,26,12921–12942. Tepper, J.M., Ko(cid:2)os, T. & Wilson, C.J. (2004) GABAergic microcircuits in
+Humphries, M.D., Wood, R. & Gurney, K. (2009) Dopamine-modulated theneostriatum.TrendsNeurosci.,27,662–669.
+dynamiccellassembliesgeneratedbytheGABAergicstriatalmicrocircuit. Weidel, P., Djurfeldt, M., Duarte, R.C. & Morrison, A. (2016) Closed loop
+J.Neurosci.,22,1174–1188. interactions between spiking neural network and robotic simulators based
+Humphries, M.D., Wood, R. & Gurney, K. (2010) Reconstructing the three- onMUSICandROS.Front.Neuroinform.,10,31.
+dimensionalGABAergicmicrocircuitofthestriatum.PLOSComput.Biol., Wickens,J.R.,Kotter,R.&Alexander,M.E.(1995)Effectsoflocalconnec-
+6,1–16. tivity on striatal function: Stimulation and analysis of a model. Synapse,
+Klaus,A.,Martins,G.J.,Paixao,V.B.,Zhou,P.,Paninski,L.&Costa,R.M. 20,281–298.
+(2017) The spatiotemporal organization of the striatum encodes action Yim, M.Y., Aertsen, A. & Kumar, A. (2011) Significance of input correla-
+space.Neuron,95,1171–1180. tionsinstriatalfunction.PLoSComput.Biol.,7,1–14.
+©2018TheAuthors.EuropeanJournalofNeurosciencepublishedbyFederationofEuropeanNeuroscienceSocietiesandJohnWiley&SonsLtd.
+EuropeanJournalofNeuroscience,49,737–753

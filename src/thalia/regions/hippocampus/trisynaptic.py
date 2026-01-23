@@ -139,6 +139,7 @@ from thalia.utils.oscillator_utils import (
 )
 
 from .checkpoint_manager import HippocampusCheckpointManager
+from .spontaneous_replay import SpontaneousReplayGenerator
 from .synaptic_tagging import SynapticTagging
 
 
@@ -199,6 +200,9 @@ class HippocampusState(BaseRegionState):
     # Current feedforward inhibition strength
     ffi_strength: float = 0.0
 
+    # Spontaneous replay (sharp-wave ripple) detection
+    ripple_detected: bool = False
+
     # Short-term plasticity state for 7 pathways
     stp_mossy_state: Optional[Dict[str, torch.Tensor]] = None  # DG→CA3 facilitation
     stp_ca3_ca2_state: Optional[Dict[str, torch.Tensor]] = None  # CA3→CA2 depression
@@ -229,6 +233,7 @@ class HippocampusState(BaseRegionState):
             # CA3 state
             "ca3_membrane": self.ca3_membrane,
             "ca3_persistent": self.ca3_persistent,
+            "ripple_detected": self.ripple_detected,
             # CA1 state (gap junctions)
             "ca1_membrane": self.ca1_membrane,
             # Memory and traces
@@ -295,6 +300,7 @@ class HippocampusState(BaseRegionState):
             # CA3 state
             ca3_membrane=transfer_tensor(data.get("ca3_membrane")),
             ca3_persistent=transfer_tensor(data.get("ca3_persistent")),
+            ripple_detected=data.get("ripple_detected", False),
             # CA1 state (gap junctions, added 2025-01, backward compatible)
             ca1_membrane=transfer_tensor(data.get("ca1_membrane")),
             # Memory and traces
@@ -635,7 +641,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self._ca3_ca1_delay_ptr: int = 0
 
         # =====================================================================
-        # CONSOLIDATION MODE (Phase 1: Biologically-Accurate Replay)
+        # CONSOLIDATION MODE
         # =====================================================================
         # Sleep/offline replay state variables
         # When _consolidation_mode=True, forward() spontaneously reactivates stored
@@ -662,7 +668,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self._ca3_activity_history: Optional[torch.Tensor] = None
         self._ca3_threshold_offset: Optional[torch.Tensor] = None
 
-        # Synaptic tagging for emergent priority (Phase 1: Emergent RL Migration)
+        # Synaptic tagging for emergent priority
         # Tags mark recently-active synapses for consolidation
         # Provides biological priority mechanism without explicit Episode objects
         if config.theta_gamma_enabled:
@@ -675,6 +681,18 @@ class TrisynapticHippocampus(NeuralRegion):
         else:
             self.synaptic_tagging = None  # type: ignore[assignment]
 
+        # Spontaneous replay generator (sharp-wave ripples)
+        # Occurs during low ACh (sleep/rest) for memory consolidation
+        if config.theta_gamma_enabled:
+            self.spontaneous_replay = SpontaneousReplayGenerator(
+                ripple_rate_hz=2.0,  # Biological rate: 1-3 Hz during sleep
+                ach_threshold=0.3,   # Ripples only below this ACh level
+                ripple_refractory_ms=200.0,  # Minimum 200ms between ripples
+                device=device,
+            )
+        else:
+            self.spontaneous_replay = None  # type: ignore[assignment]
+
         # Feedback inhibition state - tracks recent CA3 activity
         self._ca3_activity_trace: Optional[torch.Tensor] = None
 
@@ -686,11 +704,12 @@ class TrisynapticHippocampus(NeuralRegion):
 
         # Storage for broadcast values from brain's OscillatorManager
         self._theta_phase: float = 0.0
+        self._prev_theta_phase: float = 0.0  # Track for oscillation detection
         self._gamma_phase: float = 0.0
         self._theta_slot: int = 0
         self._coupled_amplitudes: Dict[str, float] = {}
 
-        # Phase preferences EMERGE from synaptic timing diversity + STDP
+        # Phase preferences emerge from synaptic timing diversity + STDP
         # No explicit slot assignment needed - neurons self-organize!
 
         # Track current sequence position for encoding (auto-advances)
@@ -704,7 +723,7 @@ class TrisynapticHippocampus(NeuralRegion):
         self.state: HippocampusState = HippocampusState()  # type: ignore[assignment]
 
         # =========================================================================
-        # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+        # MULTI-TIMESCALE CONSOLIDATION
         # =========================================================================
         self._ca3_ca3_fast: Optional[torch.Tensor] = None
         self._ca3_ca3_slow: Optional[torch.Tensor] = None
@@ -829,18 +848,21 @@ class TrisynapticHippocampus(NeuralRegion):
             )
 
         # =====================================================================
-        # INTERNAL WEIGHTS (v2.0): Migrated to synaptic_weights dict
+        # INTERNAL WEIGHTS: Migrated to synaptic_weights dict
         # =====================================================================
-        # Enhancement #2: All weights at target dendrites for consistency
+        # All weights at target dendrites for consistency
         # Pattern: {source}_{target} naming, e.g., "dg_ca3" = DG→CA3 at CA3 dendrites
 
         # DG → CA3: Random but less sparse (mossy fibers) - AT CA3 DENDRITES
+        # Enhancement: Increased weight_scale from 0.5 to 2.0 to enable CA3 attractor bootstrap
+        # Biological rationale: Mossy fiber synapses are among the largest in the brain
+        # and provide powerful "detonator" synapses that can reliably drive CA3 pyramidal cells
         self.synaptic_weights["dg_ca3"] = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=self.ca3_size,
                 n_input=self.dg_size,
                 sparsity=0.5,
-                weight_scale=0.5,  # Strong weights for propagation
+                weight_scale=2.0,  # Strengthened to bootstrap CA3 attractor (was 0.5)
                 normalize_rows=True,  # Normalize for reliable propagation
                 device=device,
             )
@@ -1027,6 +1049,7 @@ class TrisynapticHippocampus(NeuralRegion):
             ca3_membrane=torch.zeros(self.ca3_size, device=device),
             ca3_persistent=torch.zeros(self.ca3_size, device=device),
             ca1_membrane=torch.zeros(self.ca1_size, device=device),  # For gap junction coupling
+            ripple_detected=False,  # Spontaneous replay detection
             sample_trace=None,  # Set during sample encoding
             dg_trace=torch.zeros(self.dg_size, device=device),
             ca3_trace=torch.zeros(self.ca3_size, device=device),
@@ -1427,12 +1450,39 @@ class TrisynapticHippocampus(NeuralRegion):
         # - STP dynamics preserved (biological timing maintained)
         # - CA1 output drives cortical consolidation via back-projections
 
-        # Phase 4: Consolidation mode removed - spontaneous replay now uses
-        # SpontaneousReplayGenerator (Phase 2) not explicit episode buffer
-        # Spontaneous replay happens automatically during low ACh in forward()
+        # Reset ripple detection flag
+        self.state.ripple_detected = False
+
+        # Check if spontaneous replay should occur (low ACh, probabilistic trigger)
+        if self.spontaneous_replay is not None:
+            should_replay = self.spontaneous_replay.should_trigger_ripple(
+                acetylcholine=self.state.acetylcholine,
+                dt_ms=self.config.dt_ms,
+            )
+
+            if should_replay:
+                # Select pattern to replay based on tags and weight strength
+                # Only trigger ripple if we can actually select a pattern
+                if self.synaptic_tagging is not None and "ca3_ca3" in self.synaptic_weights:
+                    # Mark ripple detected
+                    self.state.ripple_detected = True
+
+                    seed_pattern = self.spontaneous_replay.select_pattern_to_replay(
+                        synaptic_tags=self.synaptic_tagging.tags,
+                        ca3_weights=self.synaptic_weights["ca3_ca3"],
+                        seed_fraction=0.15,  # ~15% of CA3 neurons
+                    )
+
+                    # Inject seed pattern into CA3 persistent activity
+                    # This triggers attractor dynamics for pattern completion
+                    if self.state.ca3_persistent is not None:
+                        self.state.ca3_persistent = (
+                            self.state.ca3_persistent * 0.5 + seed_pattern.float() * 2.0
+                        )
+                    else:
+                        self.state.ca3_persistent = seed_pattern.float() * 2.0
+
         if self._consolidation_mode and self._replay_cue is not None:
-            # Legacy consolidation mode - no longer used
-            # Spontaneous replay is now handled by Phase 2 mechanism
             self._replay_cue = None
             return torch.zeros(self.ca1_size, device=self.device, dtype=torch.bool)
 
@@ -1501,9 +1551,17 @@ class TrisynapticHippocampus(NeuralRegion):
         # Detect theta trough transition (encoding_mod > 0.8) for reset logic
         # This is biologically realistic: theta rhythm naturally segments
         # sequences, and new_trial() just schedules reset for next theta trough.
-        at_theta_trough = encoding_mod > 0.8
 
-        if at_theta_trough:
+        # Only apply theta-based reset if theta is actually oscillating
+        # (phase is changing). This prevents spurious resets when brain
+        # doesn't have oscillators running (theta_phase stays at 0).
+        prev_encoding_mod, _ = compute_theta_encoding_retrieval(self._prev_theta_phase)
+        theta_is_oscillating = abs(self._theta_phase - self._prev_theta_phase) > 0.01
+        at_theta_trough = encoding_mod > 0.8 and prev_encoding_mod <= 0.8  # Transition detection
+
+        self._prev_theta_phase = self._theta_phase  # Update for next timestep
+
+        if at_theta_trough and theta_is_oscillating:
             # Check if new_trial() requested a full reset
             if self._pending_theta_reset:
                 # Full reset at theta trough - clear stored patterns
@@ -1872,7 +1930,7 @@ class TrisynapticHippocampus(NeuralRegion):
         ca3_activity = ca3_spikes.float()  # Already 1D, no squeeze needed
 
         # =========================================================
-        # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+        # MULTI-TIMESCALE CONSOLIDATION
         # =========================================================
         # Trace decay happens CONTINUOUSLY based on time, not conditionally
         # on activity. This is biologically accurate - molecular traces
@@ -1907,10 +1965,21 @@ class TrisynapticHippocampus(NeuralRegion):
             else:
                 effective_lr = base_lr
 
+            # Apply dopamine modulation to learning rate
+            # Dopamine gates consolidation strength - higher DA = stronger learning
+            # Biological basis: VTA dopamine signals reward/novelty and gates LTP
+            # Get dopamine from state (inherited from BaseRegionState via NeuromodulatorMixin)
+            # State is guaranteed to exist here (initialized in __init__ via StateManagementMixin)
+            da_level = self.state.dopamine
+            # Strong dopamine gating: 0.0 DA = 20% learning, 1.0 DA = 200% learning
+            # This creates a 10x range between min and max dopamine
+            da_gain = 0.2 + 1.8 * da_level  # Range: [0.2, 2.0]
+            effective_lr = effective_lr * da_gain
+
             dW = effective_lr * torch.outer(ca3_activity, ca3_activity)
 
             # =========================================================
-            # SYNAPTIC TAGGING (Phase 1: Emergent RL Migration)
+            # SYNAPTIC TAGGING
             # =========================================================
             # Update synaptic tags based on spike coincidence
             # Tags mark recently-active synapses for potential consolidation
@@ -2430,7 +2499,7 @@ class TrisynapticHippocampus(NeuralRegion):
             # The position is used for diagnostics and can be reset by new_trial().
 
         # =====================================================================
-        # DOPAMINE-GATED CONSOLIDATION (Phase 1: Emergent RL Migration)
+        # DOPAMINE-GATED CONSOLIDATION
         # =====================================================================
         # Apply dopamine-gated consolidation to tagged synapses
         # High dopamine (reward) → strong consolidation of tagged synapses
@@ -2447,9 +2516,6 @@ class TrisynapticHippocampus(NeuralRegion):
                 )
                 self.synaptic_weights["ca3_ca3"].data = new_weights
 
-        # Axonal delays are handled by AxonalProjection pathways, not within regions
-        # Ensure bool output (CA1 neurons already return bool from Phase 1)
-        # WTA sparsity also returns bool
         return ca1_spikes
 
     def _apply_wta_sparsity(
@@ -2651,7 +2717,7 @@ class TrisynapticHippocampus(NeuralRegion):
             self.stp_ca3_recurrent.load_state(state.stp_ca3_recurrent_state)  # type: ignore[arg-type]
 
     # =========================================================================
-    # CONSOLIDATION MODE (Phase 1: Biologically-Accurate Sleep Replay)
+    # CONSOLIDATION MODE
     # =========================================================================
 
     def enter_consolidation_mode(self) -> None:
@@ -2718,6 +2784,16 @@ class TrisynapticHippocampus(NeuralRegion):
             step: Current global training step
         """
         self._current_training_step = step
+
+    def set_acetylcholine(self, level: float) -> None:
+        """Convenience method to set acetylcholine level.
+
+        Args:
+            level: ACh level in [0, 1]
+                  High (0.7-1.0) = encoding mode
+                  Low (0.0-0.3) = retrieval/replay mode
+        """
+        self.set_neuromodulators(acetylcholine=level)
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
@@ -2851,7 +2927,7 @@ class TrisynapticHippocampus(NeuralRegion):
             },
         }
 
-        # Synaptic tagging diagnostics (Phase 1: Emergent RL Migration)
+        # Synaptic tagging diagnostics
         if self.synaptic_tagging is not None:
             region_specific["synaptic_tagging"] = self.synaptic_tagging.get_diagnostics()
 

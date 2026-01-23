@@ -937,6 +937,26 @@ class BrainBuilder:
             components[name] = cast(LearnableComponent, component)
             spec.instance = component
 
+        # === REGISTER DIRECT INPUT SOURCES FOR INPUT INTERFACES ===
+        # Components with input_size but no incoming connections are input interfaces
+        # Register "input" source so they can receive direct sensory input from brain.forward()
+        for name, spec in self._components.items():
+            component = components[name]
+            # Check if component is an input interface (has input_size, no incoming connections)
+            has_incoming = any(conn.target == name for conn in self._connections)
+            input_size = spec.config_params.get("input_size", 0)
+
+            if not has_incoming and input_size > 0 and hasattr(component, "add_input_source"):
+                # Component is an input interface - register direct input source
+                # Use stronger weights for cortex to compensate for theta modulation
+                weight_scale = 1.5 if spec.registry_name in ("cortex", "layered_cortex") else 0.5
+                component.add_input_source(
+                    source_name="input",  # DynamicBrain uses "input" for direct sensory input
+                    n_input=input_size,
+                    sparsity=0.2,
+                    weight_scale=weight_scale,
+                )
+
         # === MULTI-SOURCE PATHWAY CONSTRUCTION ===
         # Instantiate pathways - GROUP BY (TARGET, TARGET_PORT) for multi-source pathways
         # This allows multiple independent pathways to the same target (e.g., L6a and L6b to thalamus)

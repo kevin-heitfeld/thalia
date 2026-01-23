@@ -1594,7 +1594,7 @@ class CurriculumTrainer:
             if trigger.consolidate_before:
                 if self.verbose:
                     print("  Consolidating before growth...")
-                self.brain.consolidate(n_cycles=5, batch_size=32, verbose=False)
+                self.brain.consolidate(duration_ms=2000.0, verbose=True)
 
             # Perform growth
             growth_manager.grow_component(
@@ -1620,7 +1620,7 @@ class CurriculumTrainer:
             if trigger.consolidate_after:
                 if self.verbose:
                     print("  Consolidating after growth...")
-                self.brain.consolidate(n_cycles=5, batch_size=32, verbose=False)
+                self.brain.consolidate(duration_ms=2000.0, verbose=True)
 
             # Record growth event
             result.growth_events.append(
@@ -1663,7 +1663,7 @@ class CurriculumTrainer:
 
         # Run consolidation automatically (handles HER, replay, mode switching)
         stats = self.brain.consolidate(
-            n_cycles=config.consolidation_cycles, batch_size=32, verbose=self.verbose
+            duration_ms=config.consolidation_duration_ms, verbose=self.verbose
         )
 
         # Record consolidation event
@@ -1690,7 +1690,7 @@ class CurriculumTrainer:
             print(f"  Extended consolidation: {cycles} cycles")
 
         # Run extended consolidation automatically
-        stats = self.brain.consolidate(n_cycles=cycles, batch_size=64, verbose=self.verbose)
+        stats = self.brain.consolidate(duration_ms=cycles, verbose=self.verbose)
 
         if self.verbose:
             print(f"  Replayed {stats['total_replayed']} total experiences")

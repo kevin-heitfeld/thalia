@@ -394,9 +394,6 @@ class HippocampusDiagnostics:
     ca3_spikes: float = 0.0
     ca1_spikes: float = 0.0
 
-    # Memory metrics
-    n_stored_episodes: int = 0
-
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -407,7 +404,6 @@ class HippocampusDiagnostics:
             "dg_spikes": self.dg_spikes,
             "ca3_spikes": self.ca3_spikes,
             "ca1_spikes": self.ca1_spikes,
-            "n_stored_episodes": self.n_stored_episodes,
         }
 
 

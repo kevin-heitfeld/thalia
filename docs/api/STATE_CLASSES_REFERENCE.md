@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-19 05:37:19
+> Last updated: 2026-01-23 21:18:02
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -78,7 +78,7 @@ Total region states: 8
 
 ---
 
-### [``HippocampusState``](../../src/thalia/regions/hippocampus/trisynaptic.py#L156)
+### [``HippocampusState``](../../src/thalia/regions/hippocampus/trisynaptic.py#L147)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -104,6 +104,7 @@ Total region states: 8
 | `nmda_trace` | `Optional[torch.Tensor]` | `None` |
 | `stored_dg_pattern` | `Optional[torch.Tensor]` | `None` |
 | `ffi_strength` | `float` | `0.0` |
+| `ripple_detected` | `bool` | `False` |
 | `stp_mossy_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `stp_ca3_ca2_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `stp_ca2_ca1_state` | `Optional[Dict[str, torch.Tensor]]` | `None` |
@@ -127,6 +128,7 @@ Total region states: 8
 | Field | Type | Default |
 |-------|------|----------|
 | `input_spikes` | `Optional[torch.Tensor]` | `None` |
+| `source_inputs` | `Optional[Dict[str, torch.Tensor]]` | `None` |
 | `l4_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l23_spikes` | `Optional[torch.Tensor]` | `None` |
 | `l5_spikes` | `Optional[torch.Tensor]` | `None` |
@@ -177,7 +179,7 @@ Total region states: 8
 
 ---
 
-### [``PrefrontalState``](../../src/thalia/regions/prefrontal/prefrontal.py#L111)
+### [``PrefrontalState``](../../src/thalia/regions/prefrontal/prefrontal.py#L103)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -197,7 +199,7 @@ Total region states: 8
 
 ---
 
-### [``StriatumState``](../../src/thalia/regions/striatum/striatum.py#L164)
+### [``StriatumState``](../../src/thalia/regions/striatum/striatum.py#L163)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  
@@ -220,7 +222,6 @@ Total region states: 8
 | `last_uncertainty` | `Optional[float]` | `None` |
 | `last_exploration_prob` | `Optional[float]` | `None` |
 | `exploration_manager_state` | `Optional[Dict[str, Any]]` | `None` |
-| `value_estimates` | `Optional[torch.Tensor]` | `None` |
 | `last_rpe` | `Optional[float]` | `None` |
 | `last_expected` | `Optional[float]` | `None` |
 | `pfc_modulation_d1` | `Optional[torch.Tensor]` | `None` |

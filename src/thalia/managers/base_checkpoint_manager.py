@@ -243,7 +243,7 @@ class BaseCheckpointManager(ABC):
             learning_state: Learning-related state (STP, STDP, etc.)
             neuromodulator_state: Neuromodulator levels and systems
             region_state: Region-specific state (traces, buffers, etc.)
-            additional_state: Optional additional state sections (e.g., episode_buffer)
+            additional_state: Optional additional state sections
 
         Returns:
             Complete checkpoint dict with standardized structure

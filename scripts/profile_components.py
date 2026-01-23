@@ -27,7 +27,7 @@ import torch
 script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir.parent / "src"))
 
-from thalia.config import GlobalConfig
+from thalia.config import BrainConfig
 from thalia.core.brain_builder import BrainBuilder
 
 
@@ -114,7 +114,7 @@ class ComponentProfiler:
         print()
 
         # Create test brain
-        config = GlobalConfig(device="cpu", dt_ms=1.0)
+        config = BrainConfig(device="cpu", dt_ms=1.0)
         brain = BrainBuilder.preset("default", config)
 
         print(f"Profiling {len(brain.components)} components via brain.forward()...")

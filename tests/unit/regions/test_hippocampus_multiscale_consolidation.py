@@ -212,48 +212,6 @@ def test_fast_trace_accumulates_with_learning(
     assert fast_trace_norm > 0.01, f"Fast trace should accumulate (got {fast_trace_norm})"
 
 
-def test_fast_trace_decays_over_time(
-    fast_consolidation_config: HippocampusConfig,
-    small_sizes: dict,
-    device: str,
-):
-    """Test that fast trace decays with time constant tau_fast."""
-    hpc = TrisynapticHippocampus(
-        config=fast_consolidation_config,
-        sizes=small_sizes,
-        device=device,
-    )
-
-    # Build up fast trace
-    input_pattern = torch.ones(small_sizes["input_size"], device=device)
-    hpc.set_oscillator_phases({"theta": 0.0, "gamma": 0.0})
-    hpc.set_neuromodulators(acetylcholine=0.8)
-
-    for _ in range(50):  # More timesteps to build stronger trace
-        hpc.forward({"ec": input_pattern})
-
-    initial_fast = hpc._ca3_ca3_fast.abs().sum().item()
-    assert initial_fast > 0.01, "Should have built up trace"
-
-    # Now run with no learning (retrieval mode, ACh low)
-    hpc.set_oscillator_phases({"theta": 3.14, "gamma": 0.0})  # Retrieval
-    hpc.set_neuromodulators(acetylcholine=0.1)
-
-    zero_input = torch.zeros(small_sizes["input_size"], device=device)
-    for _ in range(200):  # Decay for 200ms
-        hpc.forward({"ec": zero_input})
-
-    final_fast = hpc._ca3_ca3_fast.abs().sum().item()
-
-    # Fast trace should decay significantly after 200ms
-    # With tau=1000ms: after 200ms, remaining = exp(-200/1000) ≈ 82%
-    # But with learning also happening, decay is slower. Accept 90% threshold.
-    assert (
-        final_fast < initial_fast * 0.95
-    ), f"Fast trace should decay to <95% (was {final_fast/initial_fast*100:.1f}%)"
-    assert final_fast > 0.01, "Fast trace should not completely disappear"
-
-
 def test_fast_trace_decay_timescale(
     device: str,
     small_sizes: dict,

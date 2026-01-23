@@ -159,7 +159,6 @@ class TestHippocampusDiagnostics:
         assert isinstance(diag.ca1_normalized, float)
         assert isinstance(diag.dg_spikes, float)
         assert isinstance(diag.ca3_spikes, float)
-        assert isinstance(diag.n_stored_episodes, int)
 
     def test_hippocampus_diagnostics_after_activity(self, brain):
         """Test diagnostics after hippocampus activity."""

@@ -61,7 +61,6 @@ class TestStriatum(RegionTestBase):
             "input_size": 100,  # Total input size
             "n_actions": 5,  # Number of actions
             "neurons_per_action": 4,  # 20 total neurons (5 actions × 4)
-            "rpe_enabled": True,
             "use_goal_conditioning": False,  # Disable for simpler testing
             "device": "cpu",
             "dt_ms": 1.0,
@@ -324,29 +323,6 @@ class TestStriatum(RegionTestBase):
         state = region.get_state()
         if hasattr(state, "dopamine"):
             assert state.dopamine == 0.8
-
-    def test_rpe_computation(self):
-        """Test reward prediction error (RPE) computation."""
-        params = self.get_default_params()
-        params["rpe_enabled"] = True
-        region = self.create_region(**params)
-
-        # Forward passes
-        input_spikes = torch.ones(self._get_input_size(params), device=region.device)
-        for _ in range(5):
-            region.forward({"default": input_spikes})
-
-        # Check RPE state
-        state = region.get_state()
-        if hasattr(state, "last_rpe"):
-            # RPE should be a scalar value
-            if state.last_rpe is not None:
-                assert isinstance(state.last_rpe, (int, float))
-
-        if hasattr(state, "value_estimates"):
-            # Should have value estimates per action
-            if state.value_estimates is not None:
-                assert state.value_estimates.shape[0] == region.n_actions
 
     def test_exploration_uncertainty(self):
         """Test exploration based on uncertainty."""

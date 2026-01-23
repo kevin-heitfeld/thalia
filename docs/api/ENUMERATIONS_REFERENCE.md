@@ -1,12 +1,12 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-19 05:37:19
+> Last updated: 2026-01-23 21:18:02
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
 
-Total: 48 enumerations
+Total: 44 enumerations
 
 ## 📑 Table of Contents
 
@@ -25,8 +25,7 @@ Jump to category:
 - [Thalia/Learning](#thalialearning) (1 enums)
 - [Thalia/Memory](#thaliamemory) (1 enums)
 - [Thalia/Pathways](#thaliapathways) (1 enums)
-- [Thalia/Regions](#thaliaregions) (4 enums)
-- [Thalia/Replay](#thaliareplay) (1 enums)
+- [Thalia/Regions](#thaliaregions) (1 enums)
 - [Thalia/Tasks](#thaliatasks) (4 enums)
 - [Thalia/Training](#thaliatraining) (7 enums)
 
@@ -591,7 +590,7 @@ Types of social cues.
 
 ### Thalia/Memory
 
-#### [``SleepStage``](../../src/thalia/memory/consolidation.py#L108) (Enum)
+#### [``SleepStage``](../../src/thalia/memory/consolidation.py#L75) (Enum)
 
 Sleep stages during consolidation.
 
@@ -635,127 +634,6 @@ Types of prediction errors.
 - `POSITIVE` — Actual > Predicted (under-prediction)
 - `NEGATIVE` — Actual < Predicted (over-prediction)
 - `SIGNED` — Single population with +/- values
-
----
-
-#### [``GoalStatus``](../../src/thalia/regions/prefrontal/hierarchy.py#L39) (Enum)
-
-Status of a goal in the hierarchy.
-
-**Source**: [`thalia/regions/prefrontal/hierarchy.py`](../../src/thalia/regions/prefrontal/hierarchy.py)
-
-**Members**:
-
-- `PENDING` — Not started
-- `ACTIVE` — Currently pursuing
-- `COMPLETED` — Successfully achieved
-- `FAILED` — Could not achieve
-- `PAUSED` — Temporarily suspended
-
----
-
-#### [``HERStrategy``](../../src/thalia/regions/hippocampus/hindsight_relabeling.py#L38) (Enum)
-
-Strategy for selecting hindsight goals.
-
-**Source**: [`thalia/regions/hippocampus/hindsight_relabeling.py`](../../src/thalia/regions/hippocampus/hindsight_relabeling.py)
-
-**Members**:
-
-- `FINAL` — Use final achieved state as goal
-- `FUTURE` — Sample from future achieved states
-- `EPISODE` — Sample from any state in episode
-- `RANDOM` — Sample random goal (baseline)
-
----
-
-#### [``ReplayMode``](../../src/thalia/regions/hippocampus/replay_engine.py#L42) (Enum)
-
-Replay execution mode.
-
-**Biological Context**:
-- AWAKE_FORWARD: Planning at choice points (prospection)
-- AWAKE_REVERSE: Immediate credit assignment after reward
-- SLEEP_REVERSE: Systems consolidation during sleep
-
-**Source**: [`thalia/regions/hippocampus/replay_engine.py`](../../src/thalia/regions/hippocampus/replay_engine.py)
-
-**Members**:
-
-- `AWAKE_FORWARD` — Planning/prospection
-- `AWAKE_REVERSE` — Immediate credit assignment
-- `SLEEP_REVERSE` — Systems consolidation
-
----
-
-### Thalia/Replay
-
-#### [``ReplayContext``](../../src/thalia/replay/contexts.py#L13) (Enum)
-
-Biological context for hippocampal replay.
-
-The same hippocampal CA3→CA1 circuitry produces different replay modes
-depending on behavioral state and neuromodulatory context. These contexts
-map to distinct neuroscience findings:
-
-**SLEEP_CONSOLIDATION** (Sleep, offline)
-- Timing: During sleep/offline periods
-- Direction: Reverse (credit assignment)
-- Trigger: Spontaneous (CA3 driven)
-- ACh level: Low (0.1) - enables spontaneous CA3 replay
-- NE level: Low (0.1) - reduces noise
-- DA level: Moderate (0.3) - available for learning
-- Compression: 5x (slow, thorough consolidation)
-- Target: Hippocampus → cortex transfer (systems consolidation)
-- Biology: Sharp-wave ripples during slow-wave sleep (Buzsáki 2015)
-
-**AWAKE_IMMEDIATE** (Post-reward, online)
-- Timing: Immediately after reward/surprise
-- Direction: Reverse (credit assignment)
-- Trigger: Reward/surprise driven
-- ACh level: High (0.8) - encoding mode
-- NE level: Elevated (0.6) - arousal
-- DA level: High (0.9) - reward signal
-- Compression: 10x (fast, focused on recent)
-- Target: Rapid credit assignment to recent actions
-- Biology: Reverse replay during theta troughs (Foster & Wilson 2006)
-
-**FORWARD_PLANNING** (Choice points, online)
-- Timing: At decision/choice points
-- Direction: Forward (prospection)
-- Trigger: Goal-directed (PFC driven)
-- ACh level: High (0.8) - goal-directed retrieval
-- NE level: Moderate (0.5) - attention
-- DA level: Moderate (0.5) - evaluation
-- Compression: 10-20x (fast simulation)
-- Target: Action selection via outcome prediction
-- Biology: Forward replay in VTE behavior (Pfeiffer & Foster 2013)
-
-**BACKGROUND_PLANNING** (Idle moments, online)
-- Timing: During awake idle moments
-- Direction: Mixed (forward/reverse)
-- Trigger: Opportunistic (sampling driven)
-- ACh level: Moderate (0.6) - partial CA3 release
-- NE level: Low (0.3) - idle state
-- DA level: Moderate (0.4) - value updates
-- Compression: Variable
-- Target: Value refinement, policy improvement
-- Biology: Default mode network activity (Dyna-like, Sutton 1990)
-
-References:
-- Buzsáki (2015): Hippocampal sharp wave-ripple
-- Foster & Wilson (2006): Reverse replay in awake state
-- Pfeiffer & Foster (2013): Forward replay to remembered goals
-- Sutton (1990): Dyna architecture for planning
-
-**Source**: [`thalia/replay/contexts.py`](../../src/thalia/replay/contexts.py)
-
-**Members**:
-
-- `SLEEP_CONSOLIDATION` — 'sleep'
-- `AWAKE_IMMEDIATE` — 'awake_immediate'
-- `FORWARD_PLANNING` — 'forward_plan'
-- `BACKGROUND_PLANNING` — 'background'
 
 ---
 

@@ -74,7 +74,7 @@ class TestSynapticTaggingIntegration:
         # Pattern 1: weak (present once)
         input_1 = torch.zeros(64, dtype=torch.bool)
         input_1[10:15] = True
-        _ = hippo.forward(input_1)
+        _ = hippo.forward({"ec": input_1})
 
         # Pattern 2: strong (present 5 times)
         input_2 = torch.zeros(64, dtype=torch.bool)

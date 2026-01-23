@@ -370,6 +370,9 @@ class TestRegionIntegration:
     @pytest.mark.parametrize("device", ["cpu", "cuda"])
     def test_prefrontal_uses_stdp_strategy(self, device):
         """Test Prefrontal region uses STDPStrategy correctly."""
+        if device == "cuda" and not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
         config = PrefrontalConfig(learning_rate=0.001)  # Uses learning_rate from base config
         sizes = {"input_size": 20, "n_neurons": 10}
         pfc = Prefrontal(config, sizes, device)

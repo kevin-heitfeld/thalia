@@ -35,28 +35,13 @@ pip install -e ".[all]"
 ## Quick Start
 
 ```python
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.config import BrainConfig
 from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
 import torch
 
-# Option 1: Use preset architectures
-global_config = GlobalConfig(device="cpu", dt_ms=1.0)
-brain = BrainBuilder.preset("default", global_config)
-
-# Option 2: Build from configuration
-config = ThaliaConfig(
-    global_=GlobalConfig(device="cpu", dt_ms=1.0),
-    brain=BrainConfig(
-        sizes=RegionSizes(
-            input_size=784,      # 28x28 MNIST
-            cortex_size=1000,
-            hippocampus_size=500,
-            pfc_size=200,
-            n_actions=10,
-        ),
-    ),
-)
-brain = BrainBuilder.preset("default", global_config)
+# Use preset architectures
+brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+brain = BrainBuilder.preset("default", brain_config)
 
 # Process sensory input (encoding phase)
 visual_input = torch.rand(784, dtype=torch.float32)

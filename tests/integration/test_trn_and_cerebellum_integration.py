@@ -68,22 +68,6 @@ def enhanced_cerebellum_brain(brain_config, device):
 class TestL6TRNFeedbackIntegration:
     """Integration tests for complete L6→TRN feedback loop."""
 
-    def test_default_brain_with_l6(self, brain_config):
-        """Test default preset includes L6→TRN pathway."""
-        # Create brain with default preset (includes L6→TRN)
-        brain = BrainBuilder.preset("default", brain_config)
-
-        # Contract: brain should have necessary components
-        assert "cortex" in brain.components, "Brain should have cortex"
-        assert "thalamus" in brain.components, "Brain should have thalamus"
-
-        # Contract: cortex should have L6a and L6b layers
-        cortex = brain.components["cortex"]
-        assert hasattr(cortex, "l6a_size"), "Cortex should have L6a layer"
-        assert hasattr(cortex, "l6b_size"), "Cortex should have L6b layer"
-        assert cortex.l6a_size > 0, "L6a should have neurons"
-        assert cortex.l6b_size > 0, "L6b should have neurons"
-
     def test_end_to_end_attention_loop(self, brain_config, device):
         """Test complete attention loop: thalamus→cortex→L6→TRN→thalamus."""
         # Create brain

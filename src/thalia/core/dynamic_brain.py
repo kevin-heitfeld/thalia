@@ -905,7 +905,7 @@ class DynamicBrain(nn.Module):
                 f"finalize_action method. Ensure striatum implements RL interface."
             )
 
-    def deliver_reward(self, external_reward: Optional[float] = None) -> None:
+    def deliver_reward(self, external_reward: Optional[float] = None) -> Dict[str, Any]:
         """Deliver reward signal for learning.
 
         **Phase 5 Migration**: Simplified reward delivery - no explicit RPE computation.
@@ -921,6 +921,15 @@ class DynamicBrain(nn.Module):
             external_reward: Task-based reward value (typically -1 to +1),
                            or None for pure intrinsic reward
 
+        Returns:
+            Metrics dict from striatum.deliver_reward() containing:
+                - d1_ltp: D1 pathway LTP magnitude
+                - d1_ltd: D1 pathway LTD magnitude
+                - d2_ltp: D2 pathway LTP magnitude
+                - d2_ltd: D2 pathway LTD magnitude
+                - net_change: Total weight change
+                - dopamine: Dopamine level used
+
         Raises:
             ValueError: If striatum not found or no action was selected
 
@@ -932,7 +941,8 @@ class DynamicBrain(nn.Module):
             reward = env.step(action)
 
             # Deliver reward for learning
-            brain.deliver_reward(external_reward=reward)
+            metrics = brain.deliver_reward(external_reward=reward)
+            print(f"Weight change: {metrics['net_change']:.6f}")
 
         Note:
             This is a simplified RL interface. For full EventDrivenBrain
@@ -959,12 +969,21 @@ class DynamicBrain(nn.Module):
         # Deliver reward to striatum for learning (only if action was selected)
         # NOTE: Permissive behavior - allow deliver_reward() without prior
         # select_action() for streaming/continuous learning scenarios
+        learning_metrics = {
+            "d1_ltp": 0.0,
+            "d1_ltd": 0.0,
+            "d2_ltp": 0.0,
+            "d2_ltd": 0.0,
+            "net_change": 0.0,
+            "dopamine": 0.0,
+        }
+
         if hasattr(self, "_last_action") and self._last_action is not None:
             # Direct dopamine delivery, no RPE computation
             # Striatum uses three-factor learning: eligibility × dopamine → weight change
             # Action values emerge from D1-D2 weight balance (no explicit Q-values)
             if hasattr(striatum, "deliver_reward"):
-                striatum.deliver_reward(reward=total_reward)  # type: ignore[operator]
+                learning_metrics = striatum.deliver_reward(reward=total_reward)  # type: ignore[operator]
             else:
                 raise AttributeError(
                     f"Striatum component ({type(striatum).__name__}) does not have "
@@ -974,6 +993,8 @@ class DynamicBrain(nn.Module):
         # Sync last_action to container for consolidation manager
         if self._last_action is not None:
             self._last_action_container[0] = self._last_action
+
+        return learning_metrics
 
     def deliver_reward_with_counterfactual(
         self,
@@ -1333,10 +1354,8 @@ class DynamicBrain(nn.Module):
 
     def consolidate(
         self,
-        duration_ms: float = 5000.0,
+        duration_ms: float = 1000.0,
         verbose: bool = False,
-        n_cycles: Optional[int] = None,
-        batch_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Trigger memory consolidation via spontaneous replay.
 
@@ -1351,10 +1370,8 @@ class DynamicBrain(nn.Module):
         5. Restore acetylcholine (0.7) → awake/encoding mode
 
         Args:
-            duration_ms: Consolidation duration in milliseconds (default 5000ms = 5 seconds)
+            duration_ms: Consolidation duration in milliseconds (default 1000ms = 1 second)
             verbose: Whether to print ripple statistics
-            n_cycles: DEPRECATED (kept for backward compatibility, ignored)
-            batch_size: DEPRECATED (kept for backward compatibility, ignored)
 
         Returns:
             Dict with consolidation statistics:
@@ -1892,7 +1909,6 @@ class DynamicBrain(nn.Module):
                 dg_spikes=0.0,
                 ca3_spikes=0.0,
                 ca1_spikes=0.0,
-                n_stored_episodes=0,
             )
 
         hippo = self._get_component("hippocampus")
@@ -1916,18 +1932,12 @@ class DynamicBrain(nn.Module):
             if hasattr(hippo.state, "ca3_spikes") and hippo.state.ca3_spikes is not None:
                 ca3_spikes = hippo.state.ca3_spikes.sum().item()
 
-        # Memory metrics
-        n_stored = 0
-        if hasattr(hippo, "episode_buffer"):
-            n_stored = len(hippo.episode_buffer)  # type: ignore[arg-type]
-
         return HippocampusDiagnostics(
             ca1_total_spikes=ca1_spikes,
             ca1_normalized=ca1_normalized,
             dg_spikes=dg_spikes,
             ca3_spikes=ca3_spikes,
             ca1_spikes=ca1_spikes,
-            n_stored_episodes=n_stored,
         )
 
     def get_diagnostics(self) -> Dict[str, Any]:

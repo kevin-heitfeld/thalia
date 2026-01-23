@@ -1,7 +1,7 @@
 # Dependency Graph
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-19 05:37:19
+> Last updated: 2026-01-23 21:18:02
 > Generated from: `scripts/generate_api_docs.py`
 
 This document visualizes the dependency relationships between Thalia modules.

@@ -1,0 +1,787 @@
+
+
+=== PAGE 1 ===
+
+ORIGINALRESEARCHARTICLE
+COMPUTATIONAL NEUROSCIENCE published:25November2014
+doi:10.3389/fncom.2014.00152
+Lateral and feedforward inhibition suppress asynchronous
+activity in a large, biophysically-detailed computational
+model of the striatal network
+JasonT.Moyer1*,BenjaminL.Halterman1,LeifH.Finkel1 andJohnA.Wolf2
+1DepartmentofBioengineering,UniversityofPennsylvania,Philadelphia,PA,USA
+2DepartmentofNeurosurgery,UniversityofPennsylvania,Philadelphia,PA,USA
+Editedby: Striatal medium spiny neurons (MSNs) receive lateral inhibitory projections from other
+FlorentinWörgötter,University MSNs and feedforward inhibitory projections from fast-spiking, parvalbumin-containing
+Goettingen,Germany striatal interneurons (FSIs). The functional roles of these connections are unknown,
+Reviewedby: and difficult to study in an experimental preparation. We therefore investigated the
+KenjiMorita,TheUniversityof
+functionality of both lateral (MSN-MSN) and feedforward (FSI-MSN) inhibition using a
+Tokyo,Japan
+JoachimHass,CentralInstitutefor large-scalecomputationalmodelofthestriatalnetwork.Themodelconsistsof2744MSNs
+MentalHealth,Germany comprisedof189compartmentseachand121FSIscomprisedof148compartmentseach,
+*Correspondence: with dendrites explicitly represented and almost all known ionic currents included and
+JasonT.Moyer,Postdoctoral strictly constrained by biological data as appropriate. Our analysis of the model indicates
+ResearchAssociate,Centerfor
+thatbothlateralinhibitionandfeedforwardinhibitionfunctionatthepopulationleveltolimit
+NeuroengineeringandTherapeutics,
+UniversityofPennsylvania,210S. non-ensembleMSNspikingwhilepreservingensembleMSNspiking.Specifically,lateral
+33rdSt.,240SkirkanichHall, inhibition enables large ensembles of MSNs firing synchronously to strongly suppress
+Philadelphia,PA19104,USA non-ensemble MSNs over a short time-scale (10–30ms). Feedforward inhibition enables
+e-mail:jtmoyer@seas.upenn.edu
+FSIstostronglyinhibitweaklyactivated,non-ensembleMSNswhilemoderatelyinhibiting
+activated ensemble MSNs. Importantly, FSIs appear to more effectively inhibit MSNs
+whenFSIsfireasynchronously.Bothtypesofinhibitionwouldincreasethesignal-to-noise
+ratio of responding MSN ensembles and contribute to the formation and dissolution of
+MSNensemblesinthestriatalnetwork.
+Keywords: striatum, computational model, basal ganglia, inhibition, signal-to-noise ratio, Tourette syndrome,
+Parkinsondisease,obsessive-compulsivedisorder
+INTRODUCTION accurate, large-scale computational model of the striatal
+Thebasalganglia,asetofinterconnectedneuralstructuresposi- network.
+tioned deep in the brain, are believed to be critically involved This report focuses on the interactions of two types of stri-
+in learning (Graybiel, 1995; Houk et al., 1995; Pasupathy and atal cells. Eighty-five to ninety-five percent of the cells within
+Miller, 2005), motivation (Salamone and Correa, 2002; Yin the striatum are medium spiny neurons (MSNs) (O’Donnell
+and Knowlton, 2006), action selection (Gurney et al., 2001a,b; and Grace, 1993). These cells comprise the output of the stria-
+Humphriesetal.,2006;Nicola,2007),andmotorcontrol(Mink, tum, projecting to downstream structures in the basal ganglia
+1996;Doya,2000;Hikosakaetal.,2000;TurnerandDesmurget, (pallidumandsubstantianigra),withextensiveaxonalarboriza-
+2010). As such, the basal ganglia are involved in a number of tions occurring within the striatum as well (Kita and Kitai,
+highlyprevalentdiseasesaffectingbothmovementandcognition, 1988). These MSN-MSN connections are GABA-Aergic and are
+including Parkinson’s disease, Huntington’s disease, Tourette’s termed lateral inhibition. Of the remaining striatal cells, about
+syndrome, schizophrenia, addiction, and compulsive disorders halfareparvalbumin-containingfast-spikinginterneurons(FSIs)
+(Modelletal.,1989;CarlssonandCarlsson,1990;DeLong,1990; (Kawaguchietal.,1995).FSIsarborizeextensivelywithinalocally
+Mink,2001;AlbinandMink,2006;Belinetal.,2009).Thestria- confined area, inhibiting MSNs via GABA-A receptors (Kita
+tumisthelargeststructureinthebasalgangliaandreceivesmost etal.,1990).FSIdeficiencieshavebeenlinkedwithdystoniaand
+oftheinputtothebasalgangliafromtherestofthebrain.One Tourette syndrome (Gernert et al., 2000; Kalanithi et al., 2005;
+of the most intriguing features of the striatum is the apprecia- Berke, 2008; Gittis et al., 2011). Because they receive connec-
+ble amount of inhibitory interconnections it contains, although tionsdirectlyfromstriatalinputstructuressuchascortex,rather
+itiscurrentlyunknownwhatroletheseconnectionsplayinthe than receiving their input from within the striatum, these con-
+proper function of the striatum. This study examines the func- nectionsaretermedfeedforwardinhibition(thoughseeWilson,
+tionalrolesoftwoformsofintra-striatalinhibition—lateraland 2007). Combined, these two intrastriatal circuits are presumed
+feedforward inhibition—using a highly detailed, biophysically tocriticallycontributetostriatalfunction,thoughtheirspecific
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|1
+
+=== PAGE 2 ===
+
+Moyeretal. Localinhibitioninthestriatum
+functionalrolesareasubjectofmanyinvestigations(Plenz,2003; whenFSIcellsfiredasynchronously.Theseresultssuggestthatthe
+Gurneyetal.,2004;Tepperetal.,2008). functional role of lateral inhibition may be to aid MSN ensem-
+Thepresenceofsuchprevalentlateralinhibitoryinterconnec- ble synchronization and formation, while the functional role
+tions between striatal cells has long driven conceptual models of feedforward inhibition may be to suppress less active MSN
+of striatal function, and, by extension, basal ganglia function. ensemblesinfavorofmoreactiveMSNensembles.Thesefindings
+For example, the existence of so many inhibitory connections will help to refine and inspire both new and existing concep-
+between MSNs spurred the long-dominant hypothesis that the tual models of the function of the striatum and of the basal
+striatumfunctionedasawinner-take-all,competitiveneuralnet- ganglia.
+work, with lateral (MSN-to-MSN) inhibition enabling strongly
+activated MSNs or MSN ensembles to shut down competing METHODS
+MSNs/MSNensembles(Groves,1983;Wickensetal.,1991;Fukai The model was developed in the NEURON 7 simulation envi-
+andTanaka,1997).Interestingly,ensuingstudiesfoundthatsin- ronment (Hines and Carnevale, 1997; Carnevale and Hines,
+gleMSNinhibitorypost-synapticpotentials(IPSPs)areactually 2005). Simulations were performed in parallel on a 32-
+veryweakandrarelyreciprocal(PennartzandKitai,1991;Jaeger node cluster with dual 2.8GHz processors per node (Apple
+etal.,1994;Plenz,2003).Thesefindingsledtoothersuggestions Computers,Cupertino,CA,USA).Dataanalysiswasperformed
+fortheroleoflateralinhibition,includingthehypothesesthatit using MATLAB (Mathworks Inc, Natick, MA). Unless other-
+might facilitate ensemble synchronization by holding the MSN wise noted, all simulations were performed using a 2744 MSN,
+near the relatively depolarized GABA reversal potential (Plenz, 144 FSI, 280µm cubic network. In this configuration, a 2-s
+2003), might enhance the coherence of large cellular ensembles long simulation of the full network required 30h to load and
+(PonziandWickens,2010,2012,2013),ormightworkinconcert 12htorun.
+withfeedforwardinhibitiontooptimizeensemblerepresentation
+(Yimetal.,2011).Todate,ageneralconsensusonthefunctional MORPHOLOGYANDPHYSIOLOGYOFTHEMSNMODEL
+roleoflateralinhibitioninthestriatumhasyettoemerge. The MSN model has been previously described in detail (Wolf
+Likewise,theanatomyofthefeedforwardinhibitoryprojection etal.,2005),andisavailableonModelDB(http://senselab.med.
+has fueled a number of hypotheses regarding its functionality, yale.edu/ModelDB/),sowefocusonlyonthemostsalientaspects
+thoughwithsomewhatlessexperimentaldataavailableforevalu- ofthesinglecellmodelinthisdescription.Celldimensions(den-
+atingeachtheory.TheobservationthatFSI-to-MSNprojections dritic length and diameter, soma size), and passive properties
+form clusters of synapses near the MSN soma and produce rel- weresettomatchpublishedvalues(Wilson,1992;O’Donnelland
+atively large IPSPs in the postsynaptic cell (Kawaguchi et al., Grace,1993).TheMSNmodelconsistsof189compartmentsand
+1995;KoosandTepper,1999)suggeststhatFSIstonicallysuppress includes almost all intrinsic currents known to be expressed in
+MSNactivity,withonlystronglyactivatedcorticostriatalensem- the MSN, including: fast (NaF) and persistent sodium (NaP);
+blesabletoovercomeFSIinhibition(ParthasarathyandGraybiel, fast-inactivating (KAf) and slow-inactivating (KAs) A-type, 4-
+1997;Gageetal.,2010).AnotherpossibilityisthattonicFSIspik- AP-resistant, persistent delayed-rectifying (KRP), and inward-
+ingmayenforceMSNsynchronicitybydefiningnarrowinterspike rectifying(KIR)potassiumcurrents;large-conductance(BK)and
+time windows in which MSNs may fire (Pouille and Scanziani, small-conductance(SK)calcium-dependentpotassiumcurrents;
+2001), or that FSIs may reset the striatal network by shutting N-(CaN), P/Q-(CaP/Q), R-(CaR), and L-type (Cav1.2) high-
+downactionrepresentationsofcellularensembles(Wickensand voltage activated calcium channels; and T-(CaT) and L-type
+Arbuthnott,1993;Plenz,2003;Carrillo-Reidetal.,2008).More (Cav1.3)low-voltageactivatedcalciumchannels.Thesechannels
+recent studies have suggested that while individual FSI-to-MSN weredistributedthroughoutthecellinaccordancewithpublished
+IPSPsarepowerful,theinhibitoryeffectsoffeedforwardinhibi- data when possible. If not known, channels were assumed to
+tion are surprisingly subtle, leading to the hypothesis that FSIs bedistributeduniformlythroughoutthecellunlessthisresulted
+preciselycontrolMSNspiketiminginordertoinfluencesynap- in non-physiological behavior (see Wolf et al., 2005). All bio-
+tic plasticity in the striatal network (Tepper and Bolam, 2004; physicalandkineticproperties(i.e.,steady-stateparametersand
+Wilson,2007;Tepperetal.,2008;UrbanczikandSenn,2009). timeconstantsforactivation/inactivation)foreachchannelinthe
+Determining the role of inhibition in the striatal network model were taken directly from published data (see Wolf et al.,
+in vivo is extremely difficult with current experimental tech- 2005).Channelkineticsandvoltage-dependenciesfromchannels
+niques. We therefore studied the functionality of both lateral isolatedinstriatalMSNcellswereusedwhenavailable,andsup-
+(MSN-to-MSN)andfeedforward(FSI-to-MSN)inhibitionusing plementedwithparametersderivedfromdorsalstriatalcellsand
+a biophysically constrained, large scale computational model of otherneuronsasnecessary.Themodelwastunedsolelybybal-
+thestriatalnetwork.Inanefforttoaccuratelycapturethecom- ancingthemaximumconductancelevelsofallintrinsiccurrents
+plexdynamicsofinhibitoryandexcitatoryinputsinthedendrites against each other to match the response of an in vitro cell to
+ofMSNs,weexplicitlyincludeddendritesandalmostallknown current injection (Wolf et al., 2005). Spines were not explicitly
+ionic channels in both the FSI and MSN models. We found modeled,butweaccountedfortheircontributiontomembrane
+thatlateralinhibitionenabledlargeensemblesofsynchronously area (Segev and Burke, 1998). Each tertiary dendrite was com-
+firing MSNs to strongly suppress non-synchronous MSNs. We prisedof11compartmentstoensurespatialaccuracy,andinputs
+found that feedforward inhibition effectively suppressed MSN were placed in the middle of the appropriate compartment in
+activity—especially non-synchronous MSN activity—but only order to acquire second order correct solutions (Carnevale and
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|2
+
+=== PAGE 3 ===
+
+Moyeretal. Localinhibitioninthestriatum
+Hines, 2005). All model MSN cells utilized the same tuning makingthreecontacts(percentagesobtainedfromanexponential
+throughoutthenetwork. fit).Reciprocalconnectionswerepermitted,butself-connections
+Theinternalcalciumconcentrationinathinshelljustinside werenot,tomatchpublisheddata(Jaegeretal.,1994).Wedidnot
+the cell membrane was tracked for each compartment. BK and “wrap”projectionsfromcellsononesideofthenetworktothe
+SKcurrentswereregulatedbycalciuminfluxviaN-,P/Q-,andR- otherside,inordertokeepthemodeleasilyscalable.Becauseof
+typecalciumchannels.Theremainingcalciumcurrents(1.2and this,andbecausethesizeofthenetworkisapproximatelythesize
+1.3 L-type and T-type) contributed to a separate pool that did ofoneMSNdendriticarbor,neuronsintheperipheryofthenet-
+not regulate the BK and SK currents, in accord with published workseefewerinhibitoryinputsthanwouldbeexpectedinvivo
+experimentalresults(Vilchisetal.,2000). (seeResults).
+Feedforward projections in the model randomly connect to
+MORPHOLOGYANDPHYSIOLOGYOFTHEFSIMODEL compartments (uniform probability) in the soma and primary
+The FSI model has been previously described (Kotaleski et al., dendritesofanMSN,inagreementwithpublishedfindings(Kita
+2006), and includes fast sodium (Na), two types of delayed- etal.,1990;BennettandBolam,1994;Bolametal.,2000).Ifan
+rectifyingpotassiumcurrents(Kv1.3andKv3.1/3.2),andaninac- FSI connects to an MSN, it forms between 7 and 12 contacts
+tivating potassium current (KA). We reconstructed the model (Koosetal.,2004),withtheexactnumberofcontactsrandomly
+inNEURONandconvertedittothreedimensions.Importantly, chosen with uniform probability. Both lateral and feedforward
+the number of compartments in the model was increased to connectionsformGABA-Asynapseswithapproximatelythesame
+148 (d-lambda value of 0.2) to ensure second order spatial res- conductance levels (Planert et al., 2010). Lateral and feedfor-
+olutioninthemodel(CarnevaleandHines,2005).Accordingly, wardconnectionshaddelaysof2.4mstomatchpublishedresults
+thesomawascomprisedofonecompartment,theprimaryden- (Tepperetal.,2004).
+dritesofthreecompartmentseach,thesecondarydendritesoffive Cortical inputs to both FSIs and MSNs—consisting of exci-
+compartmentseach,andthetertiarydendritesofninecompart- tatory AMPA/NMDA pairs—were generated according to the
+ments each. Otherwise, the model’s morphology, passive prop- algorithmdescribedbelow.Eachinputtrainwasindependentof
+erties, and active channels are the same as reported previously otherinputtrains,unlessotherwisedetailedforaspecificexperi-
+(Kotaleskietal.,2006).EachFSIreceived84glutamatergicinputs ment.CorticalconnectionsinnervatedthewholecellfortheFSI
+(AMPA/NMDApairs)and84GABAergicinputsplacedthrough- model (Kotaleski et al., 2006), while they were confined to the
+outthecell.AllFSImodelcellsusedthesametuningthroughout dendritic compartments of the MSN to match published find-
+themodelnetwork. ings(Wilson,1992).Corticalcontactswererandomlyassignedto
+compartmentswithuniformprobability.
+NETWORKTOPOLOGY
+The MSN network was modeled as a cube of MSNs spaced SYNAPTICINPUTGENERATION
+20µmapartfromeachother—givingaspatialdensityof88,900 As described previously (Wolf et al., 2005; Moyer et al., 2007),
+cells per cubic millimeter, to match reported results (Oorschot, explicit glutamatergic and GABAergic synapses were modeled
+1996;Humphriesetal.,2010).FSIswererandomlyinterspersed using a two-state synapse with time constants set to published
+throughoutthenetworkcubewithauniformprobabilitydistri- values(GalarretaandHestrin,1997;Gotzetal.,1997;Chapman
+butionalongthex,y,andzaxes.MSNswithsomaswithin380µm et al., 2003). Each glutamatergic synapse consisted of an AMPA
+ofeachotherhadauniform15.5%unidirectionalprobabilityof and NMDA pair receiving the same input train. Glutamatergic
+beingconnected(CzubaykoandPlenz,2002;Tunstalletal.,2002; synapses were placed throughout the dendrites of the MSN, in
+Koos et al., 2004; Taverna et al., 2004; Humphries et al., 2010). accordance with published results (Wilson, 1992; Gracy et al.,
+MSNswithsomaswithin250µmofanFSIsomahadauniform 1999).GABAergicsynapsesweredistributedthroughouttheMSN
+25% probability of receiving a projection from the FSI (Gittis butclusterednearthesomainagreementwithphysiologicaldata
+et al., 2010; Humphries et al., 2010). The ratio of FSIs:MSNs (PickelandHeras,1996;Fujiyamaetal.,2000).BothGABAergic
+was set at 4 FSIs: 90 MSNs to match reported data (Kawaguchi andglutamatergicsynapsesweredistributedthroughouttheFSI
+etal.,1995;LukandSadikot,2001;Bolametal.,2006;Oorschot, (Kotaleskietal.,2006).IntheMSN,AMPAandNMDAchannels
+2013).Sincethenetworkisintendedtobeageneralizedrepresen- contributed to the calcium pool not associated with the SK/BK
+tationofasmallsection(0.022mm3)ofstriataltissue,wedidnot currents—10% of NMDA current and 0.5% of AMPA current
+differentiate between projections among D1 and D2 expressing weredesignatedascalciumcurrentashasbeendescribedinpre-
+cells, though differences in connectivity between these popula- viousstudies(Burnashevetal.,1995).AMPA(Mymeetal.,2003),
+tions have been shown to exist (Taverna et al., 2008; Chuhma NMDA(DalbyandMody,2003),andGABA(Nusseretal.,1998)
+etal.,2011). conductance levels were set to published values (see Wolf et al.,
+Lateral projections (MSN to MSN) in the model randomly 2005).
+connecttocompartments(uniformprobability)inthesecondary SynapticinputsweremodeledusingtheNetStimobjectpro-
+andtertiarydendritesofMSNtomatchpublishedresults(Wilson videdintheNEURONpackage.Eachsynapse(AMPA/NMDAor
+andGroves,1980).MSNsmakebetween1and3contactsperpro- GABA)receivedanindependentspiketrain.Eachspiketrainwas
+jection (Scheuss and Neher, 2001)—in the model, if one MSN generated using the following algorithm (see Wolf et al., 2005):
+connects to another, it has an 83% chance of making one con- first, a constant interspike interval (ISI) train was generated at
+tact,a13%chanceofmakingtwocontacts,anda4%chanceof the desired frequency. Each spike was then pulled anew from a
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|3
+
+=== PAGE 4 ===
+
+Moyeretal. Localinhibitioninthestriatum
+Gaussian distribution centered at the original spike time. The potentials below firing threshold. Only data from the first spike
+resulting train was then randomly shifted, and this process was inthesimulationwasusedfortheplot.ForeachIPSP,wefound
+repeatedforeachofthesynapses.Uncorrelatedinputwasgener- the maximum and minimum value of the IPSP, and then used
+atedbyusingalargeshift(oneISI)andalargestandarddeviation whichever value (max or min) had a greater absolute value.
+(1/4 of the ISI). Using this algorithm, as opposed to a standard Therefore, there are no IPSPs of zero amplitude, or very small
+Poisson process, allowed us to generate partially synchronized, absolutevalue,ontheplot.
+though still randomized, input trains. The ratio of glutamater- SynapticinputfrequenciesinFigure4arecalculatedforgluta-
+gicinputstoGABAinputsforFSIswasheldconstantatroughly matergicinputsonly.ForFigure4A,FSIsinthenetworkreceived
+1:1forallsimulations(Blackwelletal.,2003).Thesynapticinput glutamatergic synaptic inputs at a frequency of 300Hz. For
+frequencyiscalculatedasthesummednumberofglutamatergic Figure4B,MSNsinthenetworkreceivedglutamatergicsynaptic
+andGABAergicinputspersecond. inputsatafrequencyof1000Hz.
+The traces shown in Figures3A,B are representative samples
+fromthenetworksimulationsshowninFigure5.Inhibitorypost- RESULTS
+synapticpotential(IPSP)amplitudesandtimecoursesforlateral CELLMODELS
+andfeedforwardinhibitionshowninFigures3C–Fwereobtained TheMSNmodelisastylizedrepresentationofanucleusaccum-
+by subtracting MSN membrane voltage traces from a 512 MSN benscoreMSN,whichhasbeenpreviouslydescribed(Wolfetal.,
+network simulation with lateral (feedforward) inhibition active 2005; Moyer et al., 2007). It consists of 189 compartments and
+fromthesamenetworksimulationwithoutlateral(feedforward) includesalmostallcurrentsknowntobeexpressedintheMSN.
+inhibitionactive.Tosimplifythecalculation,onlyoneMSN(FSI) Forthisstudy,themorphologyoftheMSNmodelwasadjusted
+receivedenoughdepolarizinginputtospike,whileallotherMSNs so that the model’s dendritic arbor filled a three-dimensional
+receiveduniquesynapticinputtrainsthatplacedthematvarious cube, rather than a two-dimensional square (Figure1A, inset).
+I (nA)
+−40
+−60
+−80
+−100
+)zH(
+F
+−50 V (mV)
+12
+20mV
+−60 Cell
+100ms Model
+−70
+−80
+I (nA)
+−400 −200 200 400
+20mV
+−100
+0
+100ms
+−110 0.15 0.4
+Real FSI Real FSI
+20mV
+Model FSI Model FSI
+100ms
+20mV
+100ms -0.08 -0.04 0 0.04
+I (nA)
+)Vm(
+V
+80
+40
+0
+0 0.05 0.1
+I (nA)
+)zH(
+.qerF
+ekipS
+A B C
+D E F
+FIGURE1|TheMSNandFSImodelsmatchinvitrocellulardata.(A) andisrepresentativeofotherinvitroMSNcells(dashedgraylines).(D)Left,
+Left,themediumspinyneuron(MSN)modelisastylizedthree-dimensional thefast-spikinginterneuron(FSI)modelisastylizedthreedimensional
+representationofanadultratnucleusaccumbensMSN(Wolfetal.,2005). representationofanadultratdorsalstriatalFSI(Kotaleskietal.,2006).
+Bottom,theresponseoftheMSNmodeltocurrentinjectionmatchesthe Bottom,theresponseoftheFSImodeltocurrentinjectionistunedto
+responseofinvitroMSNtocurrentinjection(top).(B)Themodel’s representtheresponseofaninvitroFSItocurrentinjection(top).(E)TheV-I
+voltage-current(V-I)response(grayline)matchestheV-Iresponseofan responseoftheFSImodel(redline)matchestheV-Iresponseofaninvitro
+invitroMSN(blackline).(C)Thespikefrequencyvs.current(F-I)responseof FSI(blackline).(F)TheF-IresponseoftheFSImodel(redline)matchesthe
+themodel(blackline)matchestheF-Iresponseofaninvitrocell(grayline) F-IresponseofaninvitroFSI(blackline).
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|4
+
+=== PAGE 5 ===
+
+Moyeretal. Localinhibitioninthestriatum
+As reported previously (Wolf et al., 2005), the MSN model was MSNs should be approximately 4–10 times larger than MSN
+tunedtomatchspikeshape(Figure1A),voltage-currentresponse inputstoMSNs(Tepperetal.,2004)—inthemodel,FSIinputs
+(Figure1B), and spike frequency behavior (Figure1C) of an are4–8timeslargerthanMSNinputs.Accordingly,bothlateral
+invitroMSNfromanadult(P-X)rataccumbenscoreneuron. andfeedforwardIPSPsareaccuratelyreproducedinthemodel.
+The fast-spiking interneuron (FSI) model was adapted WefitadoubleexponentialtoeachIPSPusingtheformV=
+from a previously published model of a rat dorsal striatal exp(−t/T1)−exp(−t/T2),whereVisvoltage,tistime,andT1
+parvalbumin-expressing FSI (Kotaleski et al., 2006). Channel andT2aretimeconstants,andusedaone-samplez-testtocom-
+parameters, including conductance levels, are as reported pre- pare the in vitro data to the model data, where a z-value in the
+viously (Kotaleski et al., 2006). The morphology of this model rangeof(−1.96,1.96)indicates95%confidenceinequivalence.
+FSI is maintained in our version of the FSI, with two excep- After discarding any fits with an R-squared value of less than
+tions: the cell is three-dimensional (Figure1D, inset), and the 80%,thisgaveameanT1of10.4ms(SDof3.9ms)andamean
+numberofcompartmentsisincreasedtoensurespatialaccuracy T2of10.2ms(SDof3.6ms)forlateralinhibitioninthemodel.
+(see Methods). The model was tuned to match the spike shape For comparison, the in vitro data in Figure3 gave time con-
+(Figure1D),voltage-currentrelationship(Figure1E),andspike stants of 10.5ms (z=−0.18), 10.2ms (z=0.35), and 10.5ms
+frequency-current(F-I;Figure1F)responseofaninvitroFSI. (z=−0.18)forT1,and6.3(z=7.4),7.3(z=5.5),and8.1ms
+(z=4.0) for T2. For feedforward inhibition, fitting the model
+NETWORKTOPOLOGY gaveameanT1of6.5ms(SDof3.7ms),andameanT2of4.4ms
+The topology of the model network (Figure2) is based strictly (SD of 4.9ms). The in vitro data in Figure3 gave a time con-
+onpreviouslypublishedstudies(seeMethods).Assuch,thenet-
+stantof9.9ms(z=−6.3)forT1and5.7(z=−1.8)msforT2.
+workrepresentsa0.022mm3 cubeofstriataltissue,280umper Therefore,themodel’svaluesforlateral T1andfeedforward T2
+side—approximatelythesizeofoneMSNdendriticarbor(Wilson timeconstants matchinvitrodata, whilethemodel’svaluesfor
+andGroves,1980;Wilson,1992).Onaverage,eachMSNreceived lateralT2andfeedforwardT1timeconstantsdonot.
+636lateralinhibitorysynapticconnectionsfrom430otherMSNs
+and 116 feedforward inhibitory synaptic connections from 18 RELATIVEEFFECTSOFLATERALANDFEEDFORWARDINHIBITIONON
+FSIs. Accordingly, each MSN receives one-third to one-half the UNSTRUCTUREDMSNSPIKING
+expected number of lateral inhibitory input connections [range We examined the effects of lateral (MSN-to-MSN) and feed-
+estimatedtobe1200–1800lateralconnectionsperMSN(Wilson forward (FSI-to-MSN) inhibition on MSN firing rate in
+andGroves,1980;Wilson,2007)]butapproximatelythecorrect response to increasing frequencies of unstructured synaptic
+numberoffeedforwardinhibitoryinputconnections[rangeesti- inputs(Figure4A).Lateralinhibitionhadasignificanteffecton
+mated to be 50–175 feedforward connections per MSN (Tepper themeanMSNspikerateinthenetwork,progressivelydecreas-
+etal.,2004;Wilson,2007)]. ing spiking by up to 70% for input frequencies between 800
+and 1100Hz (Figure4A, left). Lateral inhibition also increased
+COMPARISONOFTHENETWORKTOPHYSIOLOGY thestandarddeviationofthedistributionofMSNfiringratesas
+The model network is able to accurately reproduce observed the input frequency to the MSNs increased (Figure4A, right),
+physiological phenomena, such as IPSP size, time course, and in agreement with previous findings (Humphries et al., 2010;
+dependence on membrane voltage for both lateral inhibi- Ponzi and Wickens, 2010; Yim et al., 2011). In contrast, feed-
+tion(Figures3C,D),andfeedforwardinhibition(Figures3E,F). forward(FSI-to-MSN)inhibitionreducedmeanMSNspikingby
+Importantly, previous studies have reported that FSI inputs to only 33%, from 6.5 to 4.3Hz (Figure4B, black trace), with an
+A Cortex B C
+MSN
+FSI
+Feedfrwd Lateral
+Inhibition Inhibition
+Lateral Connections
+MSN Feedforward Connections
+Afferent (In)
+Efferent (Out)
+Efferent (Out)
+FIGURE2|Thetopologyofthestriatalnetworkmodelaccurately lines)connectiontoeachoftheotherMSNsinthenetwork,anda15.5%
+representsphysiologicaldata.(A)Lateral(MSN-to-MSN)inhibitory probabilityofreceivinganafferent(redline)connectionfromeachofthe
+connectionscontactdistalportionsofthetargetMSNandmake1–3 otherMSNs,providedtheMSNsomasarewithin380µmofeachother.(C)
+contacts.Feedforward(FSI-to-MSN)inhibitoryconnectionscontactproximal FSIs(reddots)havea25%chanceofsendinganefferent(blacklines)
+regionsofthetargetMSNandmake7–12contacts.BothFSIsandMSNs connectiontoeachoftheMSNsinthenetwork,providedtheMSNsomais
+receiveexcitatoryglutamatergicinputsfromthecortexandotherregions.(B) within250µmoftheFSIsoma.Asnotedthroughoutthetext,thenetwork
+MSNs(blackdots)havea15.5%probabilityofsendinganefferent(black topologyisstrictlybasedonpreviouslypublishedanatomicalobservations.
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|5
+
+=== PAGE 6 ===
+
+Moyeretal. Localinhibitioninthestriatum
+FIGURE3|Physiology ofthenetworkmodel. (A)Intracellularvoltage data(inset;adaptedfromTunstalletal.,2002). (E)Bottom, theamplitude
+traceofarepresentativeMSNmodelcellduringanetworksimulation.(B) andtimecourseoffeedforward inhibitoryIPSPsinthemodel
+Intracellularvoltagetraceofarepresentative FSImodel cellduringa approximates invitro data(top;takenfromTepper etal.,2004). (F)
+networksimulation. (C)Bottom, theamplitudeandtimecourseoflateral Feedforward IPSPamplitudesareroughly fivetimeslarger(range ±1mV)
+(MSN-to-MSN)IPSPsinthemodelcomparefavorablytotheamplitudeand thanlateralIPSPamplitudes,approximatinginvitroresults.Takentogether,
+timecourseofinvitro lateralIPSPs(top;takenfromTunstalletal.,2002). theseresultsindicatethatinhibitioninthenetworkmodel isconsistent
+(D)LateralIPSPamplitudeswere intherange±0.2mV,matching withpublished invitro data,anddemonstrate thatIPSPsinthemodel are
+published invitro data.Thedependence oflateralIPSPamplitudeon highlydependent onvoltage–and time-dependent interactionsinthe
+postsynapticmembrane voltageinthemodel closelyapproximates invitro dendrites ofthemodel cells.
+FSIfiringrateof55Hz.Feedforwardinhibitiondidnotaffectthe EFFECTSOFLATERALINHIBITIONONSTRIATALNEURALENSEMBLES
+distributionofMSNfiringrates(datanotshown). We next examined the effect of lateral inhibition on MSN neu-
+Accordingly, lateral inhibition appears to be capable of sig- ralensemblesrespondingtocorrelatedanduncorrelatedinputs.
+nificantly limiting uncorrelated spiking in the striatal network Specifically,wecreatedanetworksimulationinwhichhalfofthe
+model,despitethefactthatMSNsformfewconnectionspercell MSNs(cells1–1372)wererespondingasapartiallysynchronized
+and contact mostly distal locations on the target MSN. In con- ensemble and the other half (cells 1373–2744) were firing ran-
+trast,feedforwardinhibitionisrelativelyincapableofsuppressing domly(Figures5A,B).Ensemblecellsreceivedacombinationof
+uncorrelatedMSNfiring,despitethefactthatFSIsformmultiple distinct noisy synaptic inputs and shared, precisely timed, 8Hz
+proximalconnectionswithtargetMSNs. rhythmic inputs—representing theta-coordinated input from
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|6
+
+=== PAGE 7 ===
+
+Moyeretal. Localinhibitioninthestriatum
+A No lateral inhibition B
+With lateral inhibition
+20
+15
+10
+5
+0
+gniriF
+NSM
+naeM
+)zH(
+etaR
+25 8
+2
+0 800 900 1000 1100
+MSN Synaptic Input Frequency (Hz)
+gniriF
+NSM
+naeM
+)zH(
+etaR
+60
+6
+4 30
+0 0 100 200 300 400 500
+FSI Synaptic Input Frequency (Hz)
+gniriF
+ISF
+naeM
+)zH(
+etaR
+No lateral inhibition
+With lateral inhibition
+1000 800 Hz Input 0
+1000
+900 Hz Input 0
+1000
+1000 Hz Input
+0
+1000 1100 Hz Input
+00 10 20 30
+Distr. of MSN Firing Rates (Hz)
+FIGURE4|EffectsoflateralandfeedforwardinhibitiononMSNspiking pronouncedathigherMSNspikerates.(B)Feedforwardinhibitiononly
+inthemodel.(A)Left,withlateralinhibitionactive(redline),themeanfiring slightlysuppressesMSNspikefiringinthemodel(blackline),evenathigh
+rateofMSNsinthenetworkissignificantlyreducedcomparedtothecase FSIspikefrequencies(redline).Unlikelateralinhibition,feedforward
+whenlateralinhibitionisinactive(blackline).Right,withlateralinhibition inhibitiondoesnotaffectthedistributionofMSNfiringratesinthenetwork
+active(redhistograms),thestandarddeviationofthedistributionofMSN (datanotshown).Theseresultsindicatethatlateralinhibitionhasapowerful
+firingratesinthenetworkisincreasedcomparedtothecasewhenlateral effectonMSNspikinginthemodelrelativetofeedforwardinhibition,despite
+inhibitionisinactive(blackhistograms).Theseeffectsbecomemore thefactthatcell-to-cellconnectionsareweakerforlateralinhibition.
+upstreamcorticalorlimbicstructures(Berkeetal.,2004).Non- thenetworkwithfeedforwardinhibition(Figure6A,right),itis
+ensemble MSNs each received distinct noisy inputs. There was apparentthatsynchronousfeedforward inhibitiondoesnotsig-
+nodifferenceinconnectivitybetweenintra-ensembleMSNsand nificantly suppress MSN firing. Binning the spike times of the
+non-ensembleMSNs.FSIsinthenetworkeachreceivedadistinct, MSNsinahistogramalignedtothebeginningofeveryFSIburst
+noisy 600Hz input train. By running the simulation with and (Figure6B)makesitclearthatwhileperfectlysynchronizedfeed-
+withoutlateralinhibitionactive,withthesameconnectivityand forwardinhibitioncansuppresssomeMSNactivity,itdoesnot
+samesetofsynapticinputs,wewereabletocarefullyinvestigate stronglysuppressMSNfiring,evenwhentheMSNsreceivenoisy,
+theeffectsoflateralinhibitiononensemblesinthenetwork. uncorrelatedinputs.
+Upon comparing the activity in the network without lateral Since synchronized feedforward inhibition does not appear
+inhibition (Figure5A) and the activity in the network with lat- to significantly suppress MSN firing, we asked whether desyn-
+eral inhibition (Figure5B), two observations were immediately chronized feedforward inhibition might be more effective in
+apparent.First,each“ensemblespike,”consistingofthepopula- suppressing MSN activity. To study this, we created a net-
+tionofsynchronizedMSNcells,significantlysuppressedfiringin work simulation in which half the MSNs responded as a par-
+thenon-ensemblecellswithinawindowof5–30msfollowingthe tially synchronized ensemble (receiving a combination of noisy
+ensemblespike(Figure5C).Second,lateralinhibitionnarrowed inputs and structured, 8Hz inputs) while the other half of
+theresponsehistogramoftheensemblecellsinresponsetostruc- the MSNs were not synchronized at all—receiving only noisy
+turedinput,suppressingintra-ensemblespikesthatoccurredlater synaptic inputs (Figure6C). Comparing the activity of the net-
+intheresponse(Figure5D).Thisdecreasedthestandarddevia- work without (Figure6C, left) and with feedforward inhibition
+tion of the ensemble spike from 5.15 to 4.43ms withoutreduc- active(Figure6C,right),itwasapparentthatfeedforwardinhibi-
+ing the maximum amplitude. An additional simulation using a tionsuppressedbothMSNensembleandnon-ensembleactivity.
+smaller,512MSNnetworkisincludedasSupplementalFigure1, BinningtheMSNspikesinahistogramalignedtothe8HzMSN
+demonstratingthattheseresultsarenotdependentonthespecific ensemble spikes (Figure6D) clarifies that while non-ensemble
+networksetupusedforFigure5. MSNspikeswerestronglysuppressed(12.6%ofspikesremained),
+Therefore,lateralinhibitionimprovesthetimingprecisionof ensemble MSNs were only moderately suppressed (42.8% of
+the ensemble response to coordinated input by suppressing the spikesremained).Anadditionalsimulationusingasmaller,512
+activity of MSNs (both intra-ensemble cells and non-ensemble MSNnetworkisincludedasSupplementalFigure2,demonstrat-
+cells)thatarenotpreciselysynchronizedwiththeactiveensemble. ingthattheseresultsarenotdependentonthespecificnetwork
+setupusedforFigure6.
+EFFECTOFFEEDFORWARDINHIBITIONONSTRIATALNEURAL Accordingly, feedforward inhibition appears to dispropor-
+ENSEMBLES tionately limit non-synchronously firing MSNs in favor of syn-
+We next investigated whether synchronized feedforward inhibi- chronouslyfiringMSNs,andappearstoactmoreeffectivelywhen
+tioncouldsimilarlysuppressMSNactivity.Wecreatedanetwork FSIsaredesynchronized.
+simulationinwhichall2744MSNsreceivednoisysynapticinput,
+and all 121 FSIs received precisely the same synaptic input and DISCUSSION
+therefore spiked in perfectly synchronized approximately 60Hz ACCURACYOFTHEMODELANDCOMPARISONWITHOTHERMODELS
+burstsevery125ms.Comparingtheactivityofthenetworkwith- To our knowledge, this model is the most accurate representa-
+out feedforward inhibition (Figure6A, left) to the activity of tiontodateofthecurrentstateofknowledgeoftheconnectivity
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|7
+
+=== PAGE 8 ===
+
+Moyeretal. Localinhibitioninthestriatum
+FIGURE5|Functional effects of lateral inhibition in the model. (A) suppresses spiking in the non-ensemble MSNs within 5–30ms of the
+Raster plot of the network with lateral inhibition inactive. MSNs are cells ensemble spike. (D) Histogram of ensemble cells (MSNs 1–1372) aligned
+number 1–2744, FSIs are cells 2745–2888. MSNs 1–1372 are entrained to to the 8-Hz synchronous input preceding each ensemble spike in MSNs
+a structured 8Hz rhythm, while MSNs 1373–2744 are responding to 1–1372. Comparing the case with lateral inhibition inactive (gray
+noisy, unstructured input. FSIs are responding to noisy, unstructured histogram) to the case with lateral inhibition active (red histogram), it is
+input. (B) Raster plot of the same network with lateral inhibition active. clear that lateral inhibition suppresses MSN spikes that occur later in the
+(C) Histogram of non-ensemble MSNs (cells 1373–2744) aligned to each ensemble response, without affecting MSN spikes that occur early in the
+ensemble spike in MSNs 1–1372. Comparing the case with lateral ensemble response. Accordingly, lateral inhibition enhances the
+inhibition inactive (gray histogram) to the case with lateral inhibition signal-to-noise ratio of responding MSNs by suppressing non-ensemble
+active (red histogram), it is clear that lateral inhibition significantly MSNs and sharpening the response of ensemble MSNs.
+andparametersofthestriatalnetwork.Itisalsothefirststriatal it is only possible to conclude this with reasonable certainty
+networkmodeltoincorporatemulti-compartmentMSNandFSI after having built and analyzed this more complicated network
+models(Wolfetal.,2005;Kotaleskietal.,2006)containingmulti- containing representative neurons with all known currents and
+plespeciesofioniccurrentsandbiophysicallydetaileddendrites. parameters. Future studies using this network will allow for a
+The model captures several important aspects of striatal func- morethoroughexaminationoftheparameterspaceofthemodel
+tion,includingintrinsicMSNandfast-spikinginterneuron(FSI) network,includingtheconstructionofthenetworkandprojec-
+cellular function (Figure1), network topology (Figure2), and tion topography between cells, as well potential comparisons to
+voltage–andtime-dependentcharacteristics(Figure3)ofthelat- an optimized version of the network using simplified cells. In a
+eral (MSN-to-MSN) and feedforward (FSI-to-MSN) inhibitory complexnetworksuchastheonemodeledhere,itisimportant
+connections. toconfirmthatanyobservedeffectsarenotaresultofthespecific
+Our operating philosophy in building the single cell MSN networksetup.Wedidsobyusingasingleseedvaluefortheran-
+model, and later the network model, was to include as much domnumbergeneratorusedtobuildthenetwork—includingthe
+experimentallyverifieddataaspossibleinordertoremainobjec- networkconnections,FSIpositioning,andsynapticinputtiming.
+tive. A reduced computational model may accurately reproduce Whilewedidnothavetheresourcestoperformafullstatistical
+some, perhaps most, of the behavior we present here. However, analysis of the network output, by performing a large number
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|8
+
+=== PAGE 9 ===
+
+Moyeretal. Localinhibitioninthestriatum
+FIGURE6|Functionaleffectsoffeedforwardinhibitioninthemodel.(A) 60Hz.(D)Left,histogramofnon-ensemblecells(MSNs1373–2744)aligned
+Rasterplotofthenetworkwithfeedforwardinhibitioninactive(left)andwith toeachensemblespikeincells1–1372.Comparingthecasewith
+feedforwardinhibitionactive(right).MSNsarecellsnumber1–2744,FSIsare feedforwardinhibitioninactive(grayhistogram)tothecasewithfeedforward
+cells2745–2888.MSNsarerespondingtonoisy,unstructuredinput,while inhibitionactive(redhistogram),itisclearthatfeedforwardinhibitioncan
+FSIsarecompletelysynchronizedandburstingevery125ms.(B)Histogram significantlysuppressnon-coordinatedMSNspiking.Right,histogramofthe
+ofthe2744MSNsalignedtothebeginningoftheFSIbursts.WithFSIs ensemblecells(MSNs1–1372)alignedtoeachensemblespike.Comparing
+completelysynchronized,feedforwardinhibitiononlymildlysuppressesMSN thecasewithfeedforwardinhibitioninactive(grayhistogram)tothecase
+spiking.ArrowsandverticalblacklinesindicateFSIspikes.(C)Rasterplotof withfeedforwardinhibitionactive(redhistogram),itisclearthatfeedforward
+networkwithfeedforwardinhibitioninactive(left)andwithfeedforward inhibitionsuppressesbutdoesnoteliminatecoordinatedMSNspiking.
+inhibitionactive(right).Inthissimulation,MSNs1–1372arerespondingto Accordingly,feedforwardinhibitionsuppressesbothcoordinatedand
+structuredinput,whileMSNs1373–2744arerespondingtounstructured uncoordinatedMSNspiking,thoughitisunabletocompletelysuppress
+input.FSIsaredesynchronizedandarerespondingwithameanspikerateof eithertypeofactivity.
+ofsimulationswithdifferentseedvalues,weconfirmedthatthe theroleofFSIgapjunctionswithregardstostriatalinformation
+resultsherearerobust(seeSupplementalMaterialforexamples). processing.
+Importantly, we did not explicitly account for gap junc- Severalothergroupshavecreatedlargecomputationalmodels
+tions between FSIs in the model, though these have been ofthestriatumusingsinglecompartmentcellsinordertostudy
+observedexperimentally(Kitaetal.,1990;KoosandTepper,1999; the functional effects of the lateral and feedforward inhibitory
+Galarreta and Hestrin, 2001; Fukuda, 2009). We did, however, projections.Usinglargescalenetworkmodelsconsistingof100–
+accountfortheeffectsofgapjunctionsonFSIfunctionandfeed- 4000 single compartment neurons, researchers have shown that
+forward inhibition, in the sense that gap junctions have been lateral inhibitory interactions in the striatal network enhance
+shown to synchronize FSIs in computational modeling studies the ability of MSNs to express a diverse array of spiking char-
+(Hjorthetal.,2009;Lauetal.,2010;Klausetal.,2011),andwe acteristics and form large cellular ensembles with other MSNs
+simulated the extreme condition in which FSIs were completely (Humphries et al., 2009, 2010; Ponzi and Wickens, 2010, 2012,
+synchronizedwitheachother(Figures6A,B).Asnoted,wefound 2013;McCarthyetal.,2011;Yimetal.,2011).Ourfindingsdonot
+thatfeedforwardinhibitionwasactuallylesseffectivewhenFSIs contradictthefindingsofthesestudies—however,itisimportant
+weresynchronized,suggestingfurtherworkisnecessarytodefine tonotethatingeneral,weexaminedtheeffectsofinhibitionon
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|9
+
+=== PAGE 10 ===
+
+Moyeretal. Localinhibitioninthestriatum
+a shorter time scale (less than 2s), while in some cases, these firingMSNstostronglysuppressnon-synchronizedMSNs.These
+studies examined inhibitory interactions over several seconds. findingsareinlinewiththeconceptthatthestriatumfunctions
+Interestingly,otherstudieshaveindicatedthatcellularensembles as a competitive neural network, but suggest that it is not only
+mayariseintrinsicallywithinthestriatum,especiallyoverlonger the size of an MSN ensemble which determines the winner in
+timescales (Carrillo-Reid et al., 2008; Ponzi and Wickens, 2010, the competition, but also the latency with which the ensemble
+2012; McCarthy et al., 2011). While our study focused on the responds to inputs. The ability of lateral inhibition to signifi-
+role of local inhibition during ensemble responses to correlated cantly constrain uncorrelated activity in the network (Figure4)
+inputsatmillisecondtimescales,ourconclusionsmayalsoapply alsosuggeststhatlateralinhibitionplaysaroleingaincontrolof
+forcellularensemblesthatariseintrinsically. thenetwork,limitingnetworkoutputlevelsevenastheinputto
+With respect to feedforward inhibition, a previous model thenetworkincreasessignificantly.
+foundthatfeedforwardinhibitionactuallyincreasedMSNspik- Additionally, we suggest that the precise MSN spike timing
+ing(Humphriesetal.,2009,2010).Wedidnotobservethiseffect. conveyedbylateralinhibitionisimportantforregulatingsynap-
+Thehypothesisthatfeedforwardinhibitionmightactuallyfacili- tic plasticity—specifically, dopamine-dependent, spike-timing
+tateMSNspikingreliesontheobservationthattheGABAreversal dependentplasticity.Corticostriatalplasticityhasbeenshownto
+potential(−60mVinourmodel)isquiteclosetothe“up-state” bedrivenbyatypeofspike-timingdependentplasticityinwhich
+potential(Plenz,2003;Flores-Barreraetal.,2009).Thatsaid,the thepresenceorabsenceofdopaminedetermineswhetherasynap-
+feedforward inputs to the MSN would presumably need to be ticconnectionstrengthensorweakens(Wickensetal.,2003;Goto
+carefully timed to arrive while the MSN was hyperpolarized yet and Grace, 2005; Lindskog et al., 2006). This type of plastic-
+subsidepriortotheMSNspikinginresponsetoinput.Wemade ityiscriticallydependentonthetimingofaspikerelativetoits
+noprovisionsforsuchtiminginourmodel—accordingly,wecan- inputs.Inthislight,lateralinhibitionpreciselydefinesanarrow
+notruleoutthatthismayoccurundercertainconditionsinthe temporalwindowduringwhichMSNswillrespondtoincoming
+network. corticalinput,whichwouldhelptoquicklyandaccuratelydefine
+ordissolveneuralensembles.
+FUNCTIONALEFFECTSOFLATERALANDFEEDFORWARDINHIBITION In contrast, we showed that feedforward inhibition can
+Theprimaryreasonthatlateralinhibitionisabletomorepower- disproportionately reduce spiking in non-synchronously firing
+fullysuppressMSNfiringthanfeedforwardinhibitionisbecause MSNs while sparing synchronously firing MSNs. Recent stud-
+ofthesignificantlygreaternumberoflateralinhibitoryinputsper ies have shown that even though FSIs fire non-synchronously
+MSN. Additionally, we suggest that the dendritic localization of (Berke, 2008), they do show a coordinated increase in fir-
+lateralinhibitoryinputsmayactuallybeadvantageousforinflu- ing at the moment of left-right choice in a lever-pressing task
+encing MSN activity. In previous work, we demonstrated that (Gage et al., 2010). Additionally, in vitro experiments have
+the MSN model’s dendrites integrate input independently and shown that FSIs burst at the beginning and ending of MSN
+together “pull” the soma up toward the spike threshold (Wolf ensemble formation (Carrillo-Reid et al., 2008). Assuming that
+et al., 2005)—meaning that the output of the MSN is almost synchronously firing MSN neural ensembles represent specific
+entirely determined by the input integration of its independent action choices an organism may make in a given situation,
+dendrites. Therefore, distally located inhibitory inputs, such as andthatmoreactiveensemblesrepresentmoreoptimalchoices,
+lateralinhibitoryinputs,areoptimallypositionedtoregulateden- feedforward inhibition would suppress suboptimal actions in
+driticintegrationandthereforetheoutputofthecellasawhole favor of preferred ones. Further, feedforward inhibition would
+(Wilson,2007;Tepperetal.,2008).Ourmodelisuniqueinthat also facilitate switching from one activity to another (Berke,
+it captures the interaction of these inputs in explicitly modeled 2011).
+dendrites. Both forms of inhibition would increase the signal-to-noise
+A surprising finding of our study is that asynchronous FSI ratioofMSNensembles.Lateralinhibition,byenforcingprecise
+activity appears to have a more profound inhibitory effect on synchronizationofactiveMSNensembleswhilesuppressingnon-
+MSNspikingthansynchronousFSIactivity.Sinceeachfeedfor- synchronizedcells,wouldincreasetheclarityofactivatedensem-
+wardIPSPisalreadyrelativelylarge,wespeculatethatseveralFSIs blesrelativetobackgroundactivityinthestriatumandfacilitate
+firing in synchrony have only a small reinforcing effect. Given signalreadoutbythepallidumandotherdownstreamstructures.
+thebrieffeedforwardIPSPtimecourseof∼10ms,asynchronous Feedforward inhibition would comprise a simple yet effective
+spiking would distribute the inhibitory effect of the FSI spik- mechanismforturningoffweakneuralensembleswhilesparing
+ing over a longer time course, and induce more of a sustained strongerones,againincreasingtheclarityofsignalpresentation
+suppressionthansynchronousFSIspiking.Importantly,experi- inthestriatum.
+mentalrecordingshaveobservedthatFSIsaretonicallyactivein
+vivo(Berke,2011)andtendtomodulatetheirspikingactivityin CONCLUSION—IMPLICATIONSFORMODELSOFSTRIATALFUNCTION
+acoordinatedmanner,yetarenotpreciselysynchronous(Berke, Taken together, our results suggest a conceptual framework
+2008, 2011). This suggests that asynchronous FSI spiking exerts withinwhichmodelsofstriatalandbasalgangliafunctionmaybe
+a more effective inhibitory influence on MSNs in vivo, which is considered. For example, within the context of action selection,
+supportedbyourmodel. where an organism must choose from among several poten-
+Wehavedemonstratedthatlateralinhibitioncansignificantly tially conflicting choices, lateral inhibition would be expected
+reduceuncorrelatedMSNspikingaswellasenablesynchronously to improve the ability of the network to learn new action
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|10
+
+=== PAGE 11 ===
+
+Moyeretal. Localinhibitioninthestriatum
+representations,toefficientlyselectonlyoneactionatanygiven REFERENCES
+time,andtoassociatetheoutcomeofanactionwiththecorrect Albin, R. L., and Mink, J. W. (2006). Recent advances in Tourette syndrome
+choicerepresentation.Feedforwardinhibitionwouldbeexpected research.TrendsNeurosci.29,175–182.doi:10.1016/j.tins.2006.01.001
+Belin,D.,Jonkman,S.,Dickinson,A.,Robbins,T.W.,andEveritt,B.J.(2009).
+to ensure the selection of the most appropriate action, to help
+Parallel and interactive learning processes within the basal ganglia: rele-
+the striatal network shift between actions, and to prevent mul- vancefortheunderstandingofaddiction.Behav.BrainRes.199,89–102.doi:
+tiple action representations from being active simultaneously. 10.1016/j.bbr.2008.09.027
+Importantly, subjects with impaired lateral inhibition would be Bennett,B.D.,andBolam,J.P.(1994).Synapticinputandoutputofparvalbumin-
+expected to exhibit learning deficits as well as impairments in immunoreactive neurons in the neostriatum of the rat. Neuroscience 62,
+707–719.doi:10.1016/0306-4522(94)90471-5
+action initiation and control, as with chorea in Huntington’s
+Berke, J. D. (2008). Uncoordinated firing rate changes of striatal fast-spiking
+disease and akinesia and cognitive deficits in Parkinson’s dis- interneuronsduringbehavioraltaskperformance.J.Neurosci.28,10075–10080.
+ease. Subjects with impaired feedforward inhibition would be doi:10.1523/JNEUROSCI.2192-08.2008
+expectedtoexhibitdeficitsintheselectionofappropriateactions, Berke, J. D. (2011). Functional properties of striatal fast-spiking interneurons.
+Front.Syst.Neurosci.5:45.doi:10.3389/fnsys.2011.00045
+asobservedinTourette’sdiseaseandobsessive-compulsivedisor-
+Berke,J.D.,Okatan,M.,Skurski,J.,andEichenbaum,H.B.(2004).Oscillatory
+der. Continued research with animal models of these disorders,
+entrainmentofstriatalneuronsinfreelymovingrats.Neuron43,883–896.doi:
+along with selective inactivation of either form of inhibition, 10.1016/j.neuron.2004.08.035
+will allow for the testing of the predictions generated from the Blackwell, K. T., Czubayko, U., and Plenz, D. (2003). Quantitative estimate
+comprehensivenetworkmodelpresentedhere. of synaptic inputs to striatal neurons during up and down states in vitro.
+J.Neurosci.23,9123–9132.
+Bolam,J.P.,Bergman,H.,Graybiel,A.M.,Kimura,M.,Plenz,D.,Seung,H.S.,
+ACKNOWLEDGMENTS etal.(2006).“Microcircuits,molecules,andmotivatedbehavior–microcircuits
+FundingsupportprovidedbyNIHComputationalNeuroscience inthestriatum,”inMicrocircuits:theInterfaceBetweenNeuronsandGlobalBrain
+Function, eds S. Grillner and A. M. Graybiel (Cambridge, MA: MIT Press),
+Training Grant T90-DA-022763-01 and NIH NINDS 1U24 NS
+165–190.
+63930-01A1. The authors wish to thank Brian Litt and Michael
+Bolam,J.P.,Hanley,J.J.,Booth,P.A.,andBevan,M.D.(2000).Synapticorgan-
+Kahana of the University of Pennsylvania for making computa- isationofthebasalganglia.J.Anat.196(Pt4),527–542.doi:10.1046/j.1469-
+tionalresourcesavailableforthisstudy.Thisworkisdedicatedto 7580.2000.19640527.x
+thememoryofLeifFinkel. Burnashev,N.,Zhou,Z.,Neher,E.,andSakmann,B.(1995).Fractionalcalcium
+currentsthroughrecombinantGluRchannelsoftheNMDA,AMPAandkainate
+receptorsubtypes.J.Physiol.485(Pt2),403–418.
+SUPPLEMENTARYMATERIAL Carlsson, M., and Carlsson, A. (1990). Interactions between glutamatergic and
+TheSupplementaryMaterialforthisarticlecanbefoundonline monoaminergicsystemswithinthebasalganglia–implicationsforschizophre-
+at: http://www.frontiersin.org/journal/10.3389/fncom.2014. niaandParkinson’sdisease.TrendsNeurosci.13,272–276.doi:10.1016/0166-
+2236(90)90108-M
+00152/abstract
+Carnevale,N.T.,andHines,M.L.(2005).TheNEURONBook.Cambridge;New
+York:CambridgeUniversityPress.
+SupplementalFigure1|Functionaleffectsoflateralinhibitionina512
+Carrillo-Reid, L., Tecuapetla, F., Tapia, D., Hernandez-Cruz, A., Galarraga, E.,
+MSNversionofthemodelusingadifferentseedvaluethaninFigure5.
+Drucker-Colin,R.,etal.(2008).Encodingnetworkstatesbystriatalcellassem-
+(A)Rasterplotofthenetworkwithlateralinhibitioninactive.MSNsare blies.J.Neurophysiol.99,1435–1450.doi:10.1152/jn.01131.2007
+cells1–512,FSIsarecells513–535.(B)Rasterplotofthesamenetwork Chapman,D.E.,Keefe,K.A.,andWilcox,K.S.(2003).Evidenceforfunctionally
+withlateralinhibitionactive.(C)Histogramofnon-ensembleMSNs(cells distinctsynapticNMDAreceptorsinventromedialversusdorsolateralstriatum.
+J.Neurophysiol.89,69–80.doi:10.1152/jn.00342.2002
+257–512)alignedtoeachensemblespikeinMSNs1–256.(D)Histogram
+Chuhma,N.,Tanaka,K.F.,Hen,R.,andRayport,S.(2011).Functionalconnec-
+ofensemblecells(MSNs1–256)alignedtothe8-Hzsynchronousinput
+tome of the striatal medium spiny neuron. J. Neurosci. 31, 1183–1192. doi:
+precedingeachensemblespike.AsinFigure5,lateralinhibition 10.1523/JNEUROSCI.3833-10.2011
+suppressesnon-synchronousspikesinboththeensembleand Czubayko,U.,andPlenz,D.(2002).Fastsynaptictransmissionbetweenstriatal
+non-ensemblecells. spinyprojectionneurons.Proc.Natl.Acad.Sci.U.S.A.99,15764–15769.doi:
+10.1073/pnas.242428599
+SupplementalFigure2|Functionaleffectsoffeedforwardinhibitionina Dalby, N. O., and Mody, I. (2003). Activation of NMDA receptors in rat
+512MSNversionofthemodelusingadifferentseedvaluethanin dentate gyrus granule cells by spontaneous and evoked transmitter release.
+Figure6.(A)RasterplotofthenetworkwithFSIscompletely J.Neurophysiol.90,786–797.doi:10.1152/jn.00118.2003
+DeLong,M.R.(1990).Primatemodelsofmovementdisordersofbasalganglia
+synchronized,MSNsdesynchronized,andfeedforwardinhibitioninactive
+origin.TrendsNeurosci.13,281–285.doi:10.1016/0166-2236(90)90110-V
+(left),andactive(right).MSNsarecells1–512,FSIsarecells513–535.(B) Doya,K.(2000).Complementaryrolesofbasalgangliaandcerebelluminlearning
+HistogramoftheMSNcellsin(A)alignedtothebeginningofeachFSI andmotorcontrol.Curr.Opin.Neurobiol.10,732–739.doi:10.1016/S0959-
+burst.(C)RasterplotofthenetworkwithFSIsdesynchronized,MSNs 4388(00)00153-7
+Flores-Barrera, E., Laville, A., Plata, V., Tapia, D., Bargas, J., and Galarraga, E.
+synchronized,andfeedforwardinhibitioninactive(left)andactive(right).
+(2009). Inhibitory contribution to suprathreshold corticostriatal responses:
+(D)HistogramoftheMSNcellsin(C)alignedtothebeginningofeach
+anexperimentalandmodelingstudy.Cell.Mol.Neurobiol.29,719–731.doi:
+8-HzMSNthetacycle.(E)RasterplotofthenetworkwithFSIs 10.1007/s10571-009-9394-2
+desynchronized,MSNsdesynchronized,andfeedforwardinhibition Fujiyama, F., Fritschy, J. M., Stephenson, F. A., and Bolam, J. P. (2000).
+inactive(left)andactive(right).(F)HistogramoftheMSNcellsin(E) Synaptic localization of GABA(A) receptor subunits in the striatum
+of the rat. J. Comp. Neurol. 416, 158–172. doi: 10.1002/(SICI)1096-
+binnedin125msintervals.AsinFigure6,feedforwardinhibitionismore
+9861(20000110)416:2<158::AID-CNE3>3.0.CO;2-L
+effectivewhenFSIsaredesynchronized,andfeedforwardinhibition
+Fukai,T.,andTanaka,S.(1997).Asimpleneuralnetworkexhibitingselectiveacti-
+stronglysuppressesnon-ensembleMSNsbutonlymoderately vationofneuronalensembles:fromwinner-take-alltowinners-share-all.Neural
+suppressesensembleMSNs. Comput.9,77–97.doi:10.1162/neco.1997.9.1.77
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|11
+
+=== PAGE 12 ===
+
+Moyeretal. Localinhibitioninthestriatum
+Fukuda,T.(2009).Networkarchitectureofgapjunction-coupledneuronallinkage Jaeger,D.,Kita,H.,andWilson,C.J.(1994).Surroundinhibitionamongprojec-
+inthestriatum.J.Neurosci.29,1235–1243.doi:10.1523/JNEUROSCI.4418- tionneuronsisweakornonexistentintheratneostriatum.J.Neurophysiol.72,
+08.2009 2555–2558.
+Gage,G.J.,Stoetzner,C.R.,Wiltschko,A.B.,andBerke,J.D.(2010).Selective Kalanithi, P. S., Zheng, W., Kataoka, Y., DiFiglia, M., Grantz, H., Saper, C. B.,
+activationofstriatalfast-spikinginterneuronsduringchoiceexecution.Neuron etal.(2005).Alteredparvalbumin-positiveneurondistributioninbasalgan-
+67,466–479.doi:10.1016/j.neuron.2010.06.034 gliaofindividualswithTourettesyndrome.Proc.Natl.Acad.Sci.U.S.A.102,
+Galarreta,M.,andHestrin,S.(1997).PropertiesofGABAAreceptorsunderlying 13307–13312.doi:10.1073/pnas.0502624102
+inhibitorysynapticcurrentsinneocorticalpyramidalneurons.J.Neurosci.17, Kawaguchi, Y., Wilson, C. J., Augood, S. J., and Emson, P. C. (1995). Striatal
+7220–7227. interneurones: chemical, physiological and morphological characterization.
+Galarreta,M.,andHestrin,S.(2001).ElectricalsynapsesbetweenGABA-releasing TrendsNeurosci.18,527–535.doi:10.1016/0166-2236(95)98374-8
+interneurons.Nat.Rev.Neurosci.2,425–433.doi:10.1038/35077566 Kita,H.,andKitai,S.T.(1988).Glutamatedecarboxylaseimmunoreactiveneurons
+Gernert,M.,Hamann,M.,Bennay,M.,Loscher,W.,andRichter,A.(2000).Deficit inratneostriatum:theirmorphologicaltypesandpopulations.BrainRes.447,
+ofstriatalparvalbumin-reactiveGABAergicinterneuronsanddecreasedbasal 346–352.doi:10.1016/0006-8993(88)91138-9
+gangliaoutputinageneticrodentmodelofidiopathicparoxysmaldystonia. Kita,H.,Kosaka,T.,andHeizmann,C.W.(1990).Parvalbumin-immunoreactive
+J.Neurosci.20,7052–7058. neuronsintheratneostriatum:alightandelectronmicroscopicstudy.Brain
+Gittis,A.H.,Leventhal,D.K.,Fensterheim,B.A.,Pettibone,J.R.,Berke,J.D.,and Res.536,1–15.doi:10.1016/0006-8993(90)90002-S
+Kreitzer,A.C.(2011).Selectiveinhibitionofstriatalfast-spikinginterneurons Klaus,A.,Planert,H.,Hjorth,J.J.,Berke,J.D.,Silberberg,G.,andKotaleski,J.H.
+causes dyskinesias. J. Neurosci. 31, 15727–15731. doi: 10.1523/JNEUROSCI. (2011).Striatalfast-spikinginterneurons:fromfiringpatternstopostsynaptic
+3875-11.2011 impact.Front.Syst.Neurosci.5:57.doi:10.3389/fnsys.2011.00057
+Gittis, A. H., Nelson, A. B., Thwin, M. T., Palop, J. J., and Kreitzer, A. C. Koos, T., and Tepper, J. M. (1999). Inhibitory control of neostriatal projec-
+(2010).DistinctrolesofGABAergicinterneuronsintheregulationofstriatal tionneuronsbyGABAergicinterneurons.Nat.Neurosci.2,467–472.doi:10.
+outputpathways.J.Neurosci.30,2223–2234.doi:10.1523/JNEUROSCI.4870- 1038/8138
+09.2010 Koos,T.,Tepper,J.M.,andWilson,C.J.(2004).ComparisonofIPSCsevokedby
+Goto, Y., and Grace, A. A. (2005). Dopamine-dependent interactions between spinyandfast-spikingneuronsintheneostriatum.J.Neurosci.24,7916–7922.
+limbic and prefrontal cortical plasticity in the nucleus accumbens: disrup- doi:10.1523/JNEUROSCI.2163-04.2004
+tionbycocainesensitization.Neuron47,255–266.doi:10.1016/j.neuron.2005. Kotaleski,J.H.,Plenz,D.,andBlackwell,K.T.(2006).Usingpotassiumcurrents
+06.017 tosolvesignal-to-noiseproblems ininhibitoryfeedforwardnetworksofthe
+Gotz, T., Kraushaar, U., Geiger, J., Lubke, J., Berger, T., and Jonas, P. (1997). striatum.J.Neurophysiol.95,331–341.doi:10.1152/jn.00063.2005
+FunctionalpropertiesofAMPAandNMDAreceptorsexpressedinidentified Lau,T.,Gage,G.J.,Berke,J.D.,andZochowski,M.(2010).Localdynamicsofgap-
+typesofbasalganglianeurons.J.Neurosci.17,204–215. junction-coupledinterneuronnetworks.Phys.Biol.7,16015.doi:10.1088/1478-
+Gracy,K.N.,Clarke,C.L.,Meyers,M.B.,andPickel,V.M.(1999).N-methyl-D- 3975/7/1/016015
+aspartatereceptor1inthecaudate-putamennucleus:ultrastructurallocaliza- Lindskog,M.,Kim,M.,Wikstrom,M.A.,Blackwell,K.T.,andKotaleski,J.H.
+tionandco-expressionwithsorcin,a22,000mol.wtcalciumbindingprotein. (2006).TransientcalciumanddopamineincreasePKAactivityandDARPP-
+Neuroscience90,107–117.doi:10.1016/S0306-4522(98)00440-0 32 phosphorylation. PLoS Comput. Biol. 2:e119. doi: 10.1371/journal.pcbi.
+Graybiel, A. M. (1995). The basal ganglia. Trends Neurosci. 18, 60–62. doi: 0020119
+10.1016/0166-2236(95)80019-X Luk,K.C.,andSadikot,A.F.(2001).GABApromotessurvivalbutnotprolifera-
+Groves,P.M.(1983).Atheoryofthefunctionalorganizationoftheneostriatum tionofparvalbumin-immunoreactiveinterneuronsinrodentneostriatum:an
+andtheneostriatalcontrolofvoluntarymovement.BrainRes.286,109–132. invivostudywithstereology.Neuroscience104,93–103.doi:10.1016/S0306-
+doi:10.1016/0165-0173(83)90011-5 4522(01)00038-0
+Gurney,K.,Prescott,T.J.,andRedgrave,P.(2001a).Acomputationalmodelof McCarthy, M. M., Moore-Kochlacs, C., Gu, X., Boyden, E. S., Han, X., and
+actionselectioninthebasalganglia.I.Anewfunctionalanatomy.Biol.Cybern. Kopell, N. (2011). Striatal origin of the pathologic beta oscillations in
+84,401–410.doi:10.1007/PL00007984 Parkinson’s disease. Proc. Natl. Acad. Sci. U.S.A. 108, 11620–11625. doi:
+Gurney,K.,Prescott,T.J.,andRedgrave,P.(2001b).Acomputationalmodelof 10.1073/pnas.1107748108
+actionselectioninthebasalganglia.II.Analysisandsimulationofbehaviour. Mink,J.W.(1996).Thebasalganglia:focusedselectionandinhibitionofcom-
+Biol.Cybern.84,411–423.doi:10.1007/PL00007985 peting motor programs. Prog. Neurobiol. 50, 381–425. doi: 10.1016/S0301-
+Gurney,K.,Prescott,T.J.,Wickens,J.R.,andRedgrave,P.(2004).Computational 0082(96)00042-1
+modelsofthebasalganglia:fromrobotstomembranes.TrendsNeurosci.27, Mink,J.W.(2001).NeurobiologyofbasalgangliacircuitsinTourettesyndrome:
+453–459.doi:10.1016/j.tins.2004.06.003 faultyinhibitionofunwantedmotorpatterns?Adv.Neurol.85,113–122.
+Hikosaka,O.,Takikawa,Y.,andKawagoe,R.(2000).Roleofthebasalgangliainthe Modell, J. G., Mountz, J. M., Curtis, G. C., and Greden, J. F. (1989).
+controlofpurposivesaccadiceyemovements.Physiol.Rev.80,953–978. Neurophysiologicdysfunctioninbasalganglia/limbicstriatalandthalamocor-
+Hines,M.L.,andCarnevale,N.T.(1997).TheNEURONsimulationenvironment. ticalcircuitsasapathogeneticmechanismofobsessive-compulsivedisorder.
+NeuralComput.9,1179–1209.doi:10.1162/neco.1997.9.6.1179 J.NeuropsychiatryClin.Neurosci.1,27–36.
+Hjorth,J.,Blackwell,K.T.,andKotaleski,J.H.(2009).Gapjunctionsbetween Moyer,J.T.,Wolf,J.A.,andFinkel,L.H.(2007).Effectsofdopaminergicmodula-
+striatal fast-spiking interneurons regulate spiking activity and synchroniza- tionontheintegrativepropertiesoftheventralstriatalmediumspinyneuron.
+tion as a function of cortical activity. J. Neurosci. 29, 5276–5286. doi: J.Neurophysiol.98,3731–3748.doi:10.1152/jn.00335.2007
+10.1523/JNEUROSCI.6031-08.2009 Myme, C. I., Sugino, K., Turrigiano, G. G., and Nelson, S. B. (2003). The
+Houk,J.C.,Adams,J.L.,andBarto,A.G.(1995).“Amodelofhowthebasalgan- NMDA-to-AMPAratioatsynapsesontolayer2/3pyramidalneuronsiscon-
+gliagenerateanduseneuralsignalsthatpredictreinforcement,”inModelsof servedacrossprefrontalandvisualcortices.J.Neurophysiol.90,771–779.doi:
+InformationProcessingintheBasalGanglia,edsJ.C.Houk,J.L.Davis,andD. 10.1152/jn.00070.2003
+G.Beiser(Cambridge,MA:TheMITPress),249–270. Nicola,S.M.(2007).Thenucleusaccumbensaspartofabasalgangliaactionselec-
+Humphries,M.D.,Stewart,R.D.,andGurney,K.N.(2006).Aphysiologically tioncircuit.Psychopharmacology(Berl.)191,521–550.doi:10.1007/s00213-006-
+plausiblemodelofactionselectionandoscillatoryactivityinthebasalganglia. 0510-4
+J.Neurosci.26,12921–12942.doi:10.1523/JNEUROSCI.3486-06.2006 Nusser, Z., Hajos, N., Somogyi, P., and Mody, I. (1998). Increased number of
+Humphries, M. D., Wood, R., and Gurney, K. (2009). Dopamine-modulated synapticGABA(A)receptorsunderliespotentiationathippocampalinhibitory
+dynamic cell assemblies generated by the GABAergic striatal microcircuit. synapses.Nature395,172–177.doi:10.1038/25999
+NeuralNetw.22,1174–1188.doi:10.1016/j.neunet.2009.07.018 O’Donnell,P.,andGrace,A.A.(1993).Physiologicalandmorphologicalproperties
+Humphries,M.D.,Wood,R.,andGurney,K.(2010).Reconstructingthethree- ofaccumbenscoreandshellneuronsrecordedinvitro.Synapse13,135–160.
+dimensional GABAergic microcircuit of the striatum. PLoS Comput. Biol. Oorschot,D.E.(1996).Totalnumberofneuronsintheneostriatal,pallidal,sub-
+6:e1001011.doi:10.1371/journal.pcbi.1001011 thalamic,andsubstantianigralnucleioftheratbasalganglia:astereological
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|12
+
+=== PAGE 13 ===
+
+Moyeretal. Localinhibitioninthestriatum
+studyusingthecavalieriandopticaldisectormethods.J.Comp.Neurol.366, Tepper,J.M.,Wilson,C.J.,andKoos,T.(2008).Feedforwardandfeedbackinhibi-
+580–599. tioninneostriatalGABAergicspinyneurons.BrainRes.Rev.58,272–281.doi:
+Oorschot,D.E.(2013).Thepercentageofinterneuronsinthedorsalstriatumofthe 10.1016/j.brainresrev.2007.10.008
+rat,cat,monkeyandhuman:acritiqueoftheevidence.BasalGanglia3,19–24. Tunstall, M. J., Oorschot, D. E., Kean, A., and Wickens, J. R. (2002).
+doi:10.1016/j.baga.2012.11.001 Inhibitoryinteractionsbetweenspinyprojectionneuronsintheratstriatum.
+Parthasarathy,H.B.,andGraybiel,A.M.(1997).Corticallydrivenimmediate-early J.Neurophysiol.88,1263–1269.doi:10.1152/jn.00886.2001
+geneexpressionreflectsmodularinfluenceofsensorimotorcortexonidentified Turner, R. S., and Desmurget, M. (2010). Basal ganglia contributions to
+striatalneuronsinthesquirrelmonkey.J.Neurosci.17,2477–2491. motor control: a vigorous tutor. Curr. Opin. Neurobiol. 20, 704–716. doi:
+Pasupathy,A.,andMiller,E.K.(2005).Differenttimecoursesoflearning-related 10.1016/j.conb.2010.08.022
+activity in the prefrontal cortex and striatum. Nature 433, 873–876. doi: Urbanczik, R., and Senn, W. (2009). Reinforcement learning in populations of
+10.1038/nature03287 spikingneurons.Nat.Neurosci.12,250–252.doi:10.1038/nn.2264
+Pennartz,C.M.,andKitai,S.T.(1991).Hippocampalinputstoidentifiedneurons Vilchis,C.,Bargas,J.,Ayala,G.X.,Galvan,E.,andGalarraga,E.(2000).Ca2+
+inaninvitroslicepreparationoftheratnucleusaccumbens:evidenceforfeed- channels that activate Ca2+-dependent K+ currents in neostriatal neurons.
+forwardinhibition.J.Neurosci.11,2838–2847. Neuroscience95,745–752.doi:10.1016/S0306-4522(99)00493-5
+Pickel, V. M., and Heras, A. (1996). Ultrastructural localization of Wickens,J.R.,Alexander,M.E.,andMiller,R.(1991).Twodynamicmodesofstri-
+calbindin-D28k and GABA in the matrix compartment of the rat caudate- atalfunctionunderdopaminergic-cholinergiccontrol:simulationandanalysis
+putamen nuclei. Neuroscience 71, 167–178. doi: 10.1016/0306-4522(95) ofamodel.Synapse8,1–12.doi:10.1002/syn.890080102
+00441-6 Wickens,J.R.,andArbuthnott,G.W.(1993).Thecorticostriatalsystemoncom-
+Planert,H.,Szydlowski,S.N.,Hjorth,J.J.,Grillner,S.,andSilberberg,G.(2010). putersimulation:anintermediatemechanismforsequencingofactions.Prog.
+Dynamicsofsynaptictransmissionbetweenfast-spikinginterneuronsandstri- BrainRes.99,325–339.doi:10.1016/S0079-6123(08)61355-2
+atal projection neurons of the direct and indirect pathways. J. Neurosci. 30, Wickens, J. R., Reynolds, J. N., and Hyland, B. I. (2003). Neural mechanisms
+3499–3507.doi:10.1523/JNEUROSCI.5139-09.2010 of reward-related motor learning. Curr. Opin. Neurobiol. 13, 685–690. doi:
+Plenz,D.(2003).Wheninhibitiongoesincognito:feedbackinteractionbetween 10.1016/j.conb.2003.10.013
+spinyprojectionneuronsinstriatalfunction.TrendsNeurosci.26,436–443.doi: Wilson,C.J.(1992).“Dendriticmorphology,inwardrectification,andthefunc-
+10.1016/S0166-2236(03)00196-6 tionalpropertiesofneostriatalneurons,”inSingleNeuronComputation,eds
+Ponzi,A.,andWickens,J.(2010).Sequentiallyswitchingcellassembliesinran- T.McKenna,J.Davis,andS.Zornetzer(SanDiego,CA:AcademicPressInc.),
+dominhibitorynetworksofspikingneuronsinthestriatum.J.Neurosci.30, 141–171.Availableonat:http://dl.acm.org/citation.cfm?id=132444
+5894–5911.doi:10.1523/JNEUROSCI.5540-09.2010 Wilson,C.J.(2007).GABAergicinhibitionintheneostriatum.Prog.BrainRes.160,
+Ponzi,A.,andWickens,J.(2012).Inputdependentcellassemblydynamicsina 91–110.doi:10.1016/S0079-6123(06)60006-X
+modelofthestriatalmediumspinyneuronnetwork.Front.Syst.Neurosci.6:6. Wilson,C.J.,andGroves,P.M.(1980).Finestructureandsynapticconnections
+doi:10.3389/fnsys.2012.00006 ofthecommonspinyneuronoftheratneostriatum:astudyemployingintra-
+Ponzi, A., and Wickens, J. R. (2013). Optimal balance of the striatal medium cellularinjectofhorseradishperoxidase.J.Comp.Neurol.194,599–615.doi:
+spiny neuron network. PLoS Comput. Biol. 9:e1002954. doi: 10.1371/jour- 10.1002/cne.901940308
+nal.pcbi.1002954 Wolf, J. A., Moyer, J. T., Lazarewicz, M. T., Contreras, D., Benoit-Marand, M.,
+Pouille,F.,andScanziani,M.(2001).Enforcementoftemporalfidelityinpyra- O’Donnell, P., et al. (2005). NMDA/AMPA ratio impacts state transitions
+midalcellsbysomaticfeed-forwardinhibition.Science293,1159–1163.doi: and entrainment to oscillations in a computational model of the nucleus
+10.1126/science.1060342 accumbensmediumspinyprojectionneuron.J.Neurosci.25,9080–9095.doi:
+Salamone, J. D., and Correa, M. (2002). Motivational views of reinforcement: 10.1523/JNEUROSCI.2220-05.2005
+implications for understanding the behavioral functions of nucleus accum- Yim, M. Y., Aertsen, A., and Kumar, A. (2011). Significance of input correla-
+bens dopamine. Behav. Brain Res. 137, 3–25. doi: 10.1016/S0166-4328(02) tionsinstriatalfunction.PLoSComput.Biol.7:e1002254.doi:10.1371/jour-
+00282-6 nal.pcbi.1002254
+Scheuss,V.,andNeher,E.(2001).Estimatingsynapticparametersfrommean,vari- Yin, H. H., and Knowlton, B. J. (2006). The role of the basal ganglia in habit
+ance,andcovarianceintrainsofsynapticresponses.Biophys.J.81,1970–1989. formation.Nat.Rev.Neurosci.7,464–476.doi:10.1038/nrn1919
+doi:10.1016/S0006-3495(01)75848-1
+Segev,I.,andBurke,R.E.(1998).“Compartmentalmodelsofcomplexneurons,”in ConflictofInterestStatement:Theauthorsdeclarethattheresearchwascon-
+MethodsinNeuronalModeling:FromIonstoNetworks,edsC.KochandI.Segev ductedintheabsenceofanycommercialorfinancialrelationshipsthatcouldbe
+(Cambridge,MA:MITPress),93–136. construedasapotentialconflictofinterest.
+Taverna, S., Ilijic, E., and Surmeier, D. J. (2008). Recurrent collateral con-
+nections of striatal medium spiny neurons are disrupted in models of Received:20May2014;accepted:04November2014;publishedonline:25November
+Parkinson’sdisease.J.Neurosci.28,5504–5512.doi:10.1523/JNEUROSCI.5493- 2014.
+07.2008 Citation:MoyerJT,HaltermanBL,FinkelLHandWolfJA(2014)Lateralandfeed-
+Taverna,S.,vanDongen,Y.C.,Groenewegen,H.J.,andPennartz,C.M.(2004). forwardinhibitionsuppressasynchronousactivityinalarge,biophysically-detailed
+Directphysiologicalevidenceforsynapticconnectivitybetweenmedium-sized computationalmodelofthestriatalnetwork.Front.Comput.Neurosci.8:152.doi:
+spinyneuronsinratnucleusaccumbensinsitu.J.Neurophysiol.91,1111–1121. 10.3389/fncom.2014.00152
+doi:10.1152/jn.00892.2003 ThisarticlewassubmittedtothejournalFrontiersinComputationalNeuroscience.
+Tepper, J. M., and Bolam, J. P. (2004). Functional diversity and speci- Copyright©2014Moyer,Halterman,FinkelandWolf.Thisisanopen-accessarticle
+ficity of neostriatal interneurons. Curr. Opin. Neurobiol. 14, 685–692. doi: distributedunderthetermsoftheCreativeCommonsAttributionLicense(CCBY).
+10.1016/j.conb.2004.10.003 The use, distribution or reproduction in other forums is permitted, provided the
+Tepper, J. M., Koos, T., and Wilson, C. J. (2004). GABAergic microcircuits originalauthor(s)orlicensorarecreditedandthattheoriginalpublicationinthis
+in the neostriatum. Trends Neurosci. 27, 662–669. doi: 10.1016/j.tins.2004. journaliscited,inaccordancewithacceptedacademicpractice.Nouse,distributionor
+08.007 reproductionispermittedwhichdoesnotcomplywiththeseterms.
+FrontiersinComputationalNeuroscience www.frontiersin.org November2014|Volume8|Article152|13

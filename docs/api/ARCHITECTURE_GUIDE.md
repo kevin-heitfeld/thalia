@@ -1,7 +1,7 @@
 # Architecture Guide
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-19 05:37:19
+> Last updated: 2026-01-23 21:18:02
 > Generated from: `scripts/generate_api_docs.py`
 
 This guide provides architectural diagrams and design patterns for the Thalia framework.
@@ -199,16 +199,18 @@ graph TD
 graph TD
     Global[ThaliaConfig<br/>Global settings]
     Brain[BrainConfig<br/>Architecture]
-    Regions[RegionSizes<br/>Size specs]
     Regional[*RegionConfig<br/>Region-specific]
+    Builder[BrainBuilder<br/>Size specification]
 
     Global --> Brain
-    Brain --> Regions
-    Regions --> Regional
+    Brain --> Regional
+    Builder --> Regional
     Regional --> Cortex[LayeredCortexConfig]
     Regional --> Hippo[HippocampusConfig]
     Regional --> Stri[StriatumConfig]
 ```
+
+**Note**: Region sizes are specified directly in BrainBuilder.add_component() calls.
 
 ## 💡 Architectural Best Practices
 

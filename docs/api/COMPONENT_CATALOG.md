@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-19 05:37:19
+> Last updated: 2026-01-23 21:18:02
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -168,7 +168,7 @@ Total: **8** regions
 
 **Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum/cerebellum.py#L345)
 
-**Config Class**: [`CerebellumConfig`](../../src/thalia/config/region_configs.py#L348)
+**Config Class**: [`CerebellumConfig`](../../src/thalia/config/region_configs.py#L336)
 
 **Source**: [`thalia/regions/cerebellum/cerebellum.py`](../../src/thalia/regions/cerebellum/cerebellum.py)
 
@@ -178,11 +178,11 @@ Total: **8** regions
 
 ### `cortex`
 
-**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L405)
+**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L406)
 
 **Aliases**: `layered_cortex`
 
-**Config Class**: [`LayeredCortexConfig`](../../src/thalia/config/region_configs.py#L1088)
+**Config Class**: [`LayeredCortexConfig`](../../src/thalia/config/region_configs.py#L1053)
 
 **Source**: [`thalia/regions/cortex/layered_cortex.py`](../../src/thalia/regions/cortex/layered_cortex.py)
 
@@ -192,7 +192,7 @@ Total: **8** regions
 
 ### `hippocampus`
 
-**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L366)
+**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L362)
 
 **Aliases**: `trisynaptic, trisynaptic_hippocampus`
 
@@ -224,7 +224,7 @@ Total: **8** regions
 
 **Aliases**: `predictive`
 
-**Config Class**: [`PredictiveCortexConfig`](../../src/thalia/config/region_configs.py#L1360)
+**Config Class**: [`PredictiveCortexConfig`](../../src/thalia/config/region_configs.py#L1325)
 
 **Source**: [`thalia/regions/cortex/predictive_cortex.py`](../../src/thalia/regions/cortex/predictive_cortex.py)
 
@@ -234,11 +234,11 @@ Total: **8** regions
 
 ### `prefrontal`
 
-**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L407)
+**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L399)
 
 **Aliases**: `pfc`
 
-**Config Class**: [`PrefrontalConfig`](../../src/thalia/config/region_configs.py#L793)
+**Config Class**: [`PrefrontalConfig`](../../src/thalia/config/region_configs.py#L758)
 
 **Source**: [`thalia/regions/prefrontal/prefrontal.py`](../../src/thalia/regions/prefrontal/prefrontal.py)
 
@@ -248,11 +248,11 @@ Total: **8** regions
 
 ### `striatum`
 
-**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L487)
+**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L482)
 
 **Aliases**: `basal_ganglia`
 
-**Config Class**: [`StriatumConfig`](../../src/thalia/config/region_configs.py#L514)
+**Config Class**: [`StriatumConfig`](../../src/thalia/config/region_configs.py#L502)
 
 **Source**: [`thalia/regions/striatum/striatum.py`](../../src/thalia/regions/striatum/striatum.py)
 
@@ -266,7 +266,7 @@ Total: **8** regions
 
 **Aliases**: `thalamic_relay`
 
-**Config Class**: [`ThalamicRelayConfig`](../../src/thalia/config/region_configs.py#L979)
+**Config Class**: [`ThalamicRelayConfig`](../../src/thalia/config/region_configs.py#L944)
 
 **Source**: [`thalia/regions/thalamus/thalamus.py`](../../src/thalia/regions/thalamus/thalamus.py)
 

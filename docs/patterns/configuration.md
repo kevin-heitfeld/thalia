@@ -101,8 +101,8 @@ class LayeredCortexConfig(NeuralComponentConfig):  # No learning config mixin
 
 ### Always centralize in `thalia.config.*`:
 
-🌍 **Global settings**
-- Device, dtype, seed (in `GlobalConfig`)
+🌍 **Brain settings**
+- Device, dtype, seed (in `BrainConfig`)
 - Cross-region parameters (theta frequency, dt_ms)
 
 🌍 **Cross-region coordination**

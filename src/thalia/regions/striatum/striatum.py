@@ -743,6 +743,81 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.gap_junctions_fsi = None
 
         # =====================================================================
+        # MSN→MSN LATERAL INHIBITION (Moyer 2014)
+        # =====================================================================
+        # Biology: Each MSN receives inhibitory connections from other MSNs
+        # Creates action competition: neurons of one action suppress other actions
+        # Mechanism: GABAergic collaterals, action-specific organization
+        #
+        # Implementation: Sparse recurrent inhibitory weights within each pathway
+        # - D1→D1 lateral: Within direct pathway
+        # - D2→D2 lateral: Within indirect pathway
+        # - Action-specific: Neurons of action_i preferentially inhibit action_j≠i
+
+        # D1 lateral inhibition (action-specific competition)
+        # Shape: [d1_size, d1_size] - each D1 MSN can inhibit other D1 MSNs
+        # Sparsity: ~35% to match ~636 connections per MSN from 430 others
+        # Strength: Negative weights for inhibition (REDUCED from 0.3 to 0.1)
+        self.d1_lateral_weights = WeightInitializer.sparse_random(
+            n_output=self.d1_size,
+            n_input=self.d1_size,
+            sparsity=0.35,  # ~35% connectivity (430/1200 ≈ 0.36)
+            weight_scale=0.1,  # Weak lateral inhibition (Moyer: weaker than FSI)
+            device=self.device,
+        )
+        # Make weights negative (inhibitory) and zero diagonal (no self-inhibition)
+        self.d1_lateral_weights = -torch.abs(self.d1_lateral_weights)
+        self.d1_lateral_weights.fill_diagonal_(0.0)
+
+        # D2 lateral inhibition (same structure)
+        self.d2_lateral_weights = WeightInitializer.sparse_random(
+            n_output=self.d2_size,
+            n_input=self.d2_size,
+            sparsity=0.35,
+            weight_scale=0.1,  # Weak lateral (matches D1)
+            device=self.device,
+        )
+        self.d2_lateral_weights = -torch.abs(self.d2_lateral_weights)
+        self.d2_lateral_weights.fill_diagonal_(0.0)
+
+        # =====================================================================
+        # FSI→MSN CONNECTIONS (Per-Neuron, Moyer 2014)
+        # =====================================================================
+        # Biology: Each MSN receives ~116 feedforward connections from ~18 FSIs
+        # FSI inputs are 4-10× STRONGER than MSN lateral inputs
+        #
+        # Implementation: Sparse connectivity matrix from FSI → MSNs
+        # Shape: [msn_size, fsi_size] - which FSI neurons connect to which MSNs
+        # NOT a global broadcast - each MSN gets different FSI subset
+
+        if self.config.fsi_enabled and self.fsi_size > 0:
+            # FSI → D1 connections
+            # ~15% connectivity to match ~18 FSI per MSN (18/120 ≈ 0.15)
+            self.fsi_to_d1_weights = WeightInitializer.sparse_random(
+                n_output=self.d1_size,
+                n_input=self.fsi_size,
+                sparsity=0.15,  # Sparse FSI connections
+                weight_scale=0.8,  # Moderate strength (reduced from 2.5)
+                device=self.device,
+            )
+            # Negative for inhibition
+            self.fsi_to_d1_weights = -torch.abs(self.fsi_to_d1_weights)
+
+            # FSI → D2 connections (same structure)
+            self.fsi_to_d2_weights = WeightInitializer.sparse_random(
+                n_output=self.d2_size,
+                n_input=self.fsi_size,
+                sparsity=0.15,
+                weight_scale=0.8,  # Moderate strength (matches D1)
+                device=self.device,
+            )
+            self.fsi_to_d2_weights = -torch.abs(self.fsi_to_d2_weights)
+        else:
+            # FSI disabled - no FSI→MSN connections
+            self.fsi_to_d1_weights = torch.zeros((self.d1_size, 1), device=self.device)
+            self.fsi_to_d2_weights = torch.zeros((self.d2_size, 1), device=self.device)
+
+        # =====================================================================
         # SYNAPTIC WEIGHTS - Multi-Source Per-Pathway Architecture
         # =====================================================================
         # Weights are stored in parent's synaptic_weights dict per source-pathway.
@@ -907,11 +982,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Initialize recent_spikes tensor for trial activity tracking
         total_msn_neurons = self.d1_size + self.d2_size
         self.recent_spikes = torch.zeros(total_msn_neurons, device=self.device)
-
-        # Initialize rpe_trace if RPE is enabled
-        self.rpe_trace = (
-            torch.zeros(self.n_actions, device=self.device) if self.config.rpe_enabled else None
-        )
 
         # =====================================================================
         # STATE OBJECT - Required for NeuromodulatorMixin
@@ -1311,6 +1381,15 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d2_stp.to(self.device)
             self.stp_modules[d2_key] = d2_stp
 
+        # =====================================================================
+        # ADD FSI SOURCE (Feedforward Inhibition)
+        # =====================================================================
+        # FSI neurons need to receive input from ALL sources to provide
+        # feedforward inhibition. If FSI are enabled, automatically create
+        # FSI input weights for this source.
+        if self.fsi_size > 0:
+            self.add_fsi_source(source_name, n_input, weight_scale=weight_scale)
+
     def add_fsi_source(
         self,
         source_name: str,
@@ -1331,11 +1410,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             return  # FSI disabled
 
         # Initialize FSI weights (input → FSI)
+        # Use sparse_random for positive excitatory weights (FSI receive glutamatergic input)
+        # FSI need strong weights because they're highly excitable and fire from weak inputs
         fsi_weights = (
-            WeightInitializer.xavier(
+            WeightInitializer.sparse_random(
                 n_output=self.fsi_size,
                 n_input=n_input,
-                gain=0.3 * weight_scale,  # FSI more excitable than MSNs
+                sparsity=0.5,  # 50% connectivity (FSI are highly connected)
+                weight_scale=1.0 * weight_scale,  # Strong weights for FSI (increased from 0.4)
                 device=self.device,
             )
             * self.config.w_max
@@ -1680,7 +1762,94 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         [old_fsi_weights, new_fsi_weights], dim=0
                     )
 
-        # 4.5. GROW STP MODULES (D1 and D2 separately)
+        # =====================================================================
+        # 4.6. EXPAND LATERAL INHIBITION WEIGHTS (MSN→MSN)
+        # =====================================================================
+        # D1 lateral weights: [d1_size, d1_size] - need to expand both dimensions
+        old_d1_lateral = self.d1_lateral_weights
+        new_d1_lateral_shape = (self.d1_size, self.d1_size)
+        new_d1_lateral = torch.zeros(new_d1_lateral_shape, device=self.device)
+
+        # Copy old weights to top-left corner
+        old_d1_size = old_d1_lateral.shape[0]
+        new_d1_lateral[:old_d1_size, :old_d1_size] = old_d1_lateral
+
+        # Initialize new connections (new neurons → all, all → new neurons)
+        if n_new_d1 > 0:
+            # New neurons' outgoing connections
+            new_outgoing = WeightInitializer.sparse_random(
+                n_output=n_new_d1, n_input=self.d1_size,
+                sparsity=0.35, weight_scale=0.1, device=self.device
+            )
+            new_d1_lateral[old_d1_size:, :] = -torch.abs(new_outgoing)
+
+            # New neurons' incoming connections (only from old neurons)
+            new_incoming = WeightInitializer.sparse_random(
+                n_output=old_d1_size, n_input=n_new_d1,
+                sparsity=0.35, weight_scale=0.1, device=self.device
+            )
+            new_d1_lateral[:old_d1_size, old_d1_size:] = -torch.abs(new_incoming)
+
+        # Zero diagonal (no self-inhibition)
+        new_d1_lateral.fill_diagonal_(0.0)
+        self.d1_lateral_weights = new_d1_lateral
+
+        # D2 lateral weights: same process
+        old_d2_lateral = self.d2_lateral_weights
+        new_d2_lateral_shape = (self.d2_size, self.d2_size)
+        new_d2_lateral = torch.zeros(new_d2_lateral_shape, device=self.device)
+
+        old_d2_size = old_d2_lateral.shape[0]
+        new_d2_lateral[:old_d2_size, :old_d2_size] = old_d2_lateral
+
+        if n_new_d2 > 0:
+            new_outgoing = WeightInitializer.sparse_random(
+                n_output=n_new_d2, n_input=self.d2_size,
+                sparsity=0.35, weight_scale=0.1, device=self.device
+            )
+            new_d2_lateral[old_d2_size:, :] = -torch.abs(new_outgoing)
+
+            new_incoming = WeightInitializer.sparse_random(
+                n_output=old_d2_size, n_input=n_new_d2,
+                sparsity=0.35, weight_scale=0.1, device=self.device
+            )
+            new_d2_lateral[:old_d2_size, old_d2_size:] = -torch.abs(new_incoming)
+
+        new_d2_lateral.fill_diagonal_(0.0)
+        self.d2_lateral_weights = new_d2_lateral
+
+        # =====================================================================
+        # 4.7. EXPAND FSI→MSN CONNECTION WEIGHTS
+        # =====================================================================
+        if self.config.fsi_enabled and self.fsi_size > 0:
+            # FSI→D1 weights: [d1_size, fsi_size] - expand rows for new D1 neurons
+            old_fsi_to_d1 = self.fsi_to_d1_weights
+            old_fsi_size = old_fsi_to_d1.shape[1]
+
+            if n_new_d1 > 0:
+                new_fsi_to_d1_weights = WeightInitializer.sparse_random(
+                    n_output=n_new_d1, n_input=old_fsi_size,
+                    sparsity=0.15, weight_scale=0.8, device=self.device
+                )
+                self.fsi_to_d1_weights = torch.cat([
+                    old_fsi_to_d1,
+                    -torch.abs(new_fsi_to_d1_weights)
+                ], dim=0)
+
+            # FSI→D2 weights: [d2_size, fsi_size] - expand rows for new D2 neurons
+            old_fsi_to_d2 = self.fsi_to_d2_weights
+
+            if n_new_d2 > 0:
+                new_fsi_to_d2_weights = WeightInitializer.sparse_random(
+                    n_output=n_new_d2, n_input=old_fsi_size,
+                    sparsity=0.15, weight_scale=0.8, device=self.device
+                )
+                self.fsi_to_d2_weights = torch.cat([
+                    old_fsi_to_d2,
+                    -torch.abs(new_fsi_to_d2_weights)
+                ], dim=0)
+
+        # 4.8. GROW STP MODULES (D1 and D2 separately)
         # =====================================================================
         # STP modules are per-pathway (D1/D2), need to expand separately
         # Each source has "_d1" and "_d2" STP modules that track n_post neurons
@@ -1704,12 +1873,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Expand exploration manager (handles action_counts and other exploration state)
         self.exploration.grow(self.n_actions)
-
-        # RPE traces for new actions (only if rpe_trace is enabled)
-        if self.rpe_trace is not None:
-            self.rpe_trace = torch.cat(
-                [self.rpe_trace, torch.zeros(n_new, device=self.device)], dim=0
-            )
 
         # =====================================================================
         # 6. EXPAND PFC MODULATION WEIGHTS (using base helper)
@@ -2054,24 +2217,25 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     def _update_d1_d2_eligibility(
         self,
-        inputs: SourceOutputs,  # Changed from Dict[str, torch.Tensor] - multi-source spike inputs
+        inputs: SourceOutputs,  # Multi-source spike inputs
         d1_spikes: torch.Tensor,
         d2_spikes: torch.Tensor,
-        chosen_action: int | None = None,
     ) -> None:
         """Update separate eligibility traces for D1 and D2 pathways per source.
 
         **Multi-Source Architecture**: Each input source (cortex:l5, hippocampus, etc.)
         has separate eligibility traces for D1 and D2 pathways.
 
+        **Biological Mechanism**: Eligibility accumulates naturally based on pre-post
+        spike coincidence (Hebbian learning). Action specificity emerges from differential
+        firing patterns created by D1/D2 pathway competition, NOT from explicit masking.
+
         With SEPARATE neuron populations:
         - D1 eligibility is computed from input-D1 spike coincidence PER SOURCE
         - D2 eligibility is computed from input-D2 spike coincidence PER SOURCE
 
-        CRITICAL: When chosen_action is provided, eligibility is ONLY built for
-        the neurons corresponding to that action. This is biologically correct:
-        only synapses where the post-synaptic neuron fired should become eligible.
-        This prevents both actions from building eligibility from the same input.
+        Only synapses where BOTH pre-synaptic (input) and post-synaptic (D1/D2) neurons
+        fired will build eligibility. This is the natural Hebbian mechanism.
 
         Timestep (dt) is obtained from self.config.dt_ms for temporal dynamics.
 
@@ -2080,7 +2244,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                    e.g., {"cortex:l5": [n_l5], "hippocampus": [n_hc]}
             d1_spikes: D1 neuron population spikes [n_d1] (1D)
             d2_spikes: D2 neuron population spikes [n_d2] (1D)
-            chosen_action: If provided, only build eligibility for this action's neurons
         """
         # Ensure D1/D2 spikes are 1D
         if d1_spikes.dim() != 1:
@@ -2092,22 +2255,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         d1_output_1d = d1_spikes.float()
         d2_output_1d = d2_spikes.float()
 
-        # CRITICAL: Mask output spikes to ONLY include the chosen action's neurons
-        # This is biologically correct: only synapses where post-synaptic neurons
-        # actually fired should become eligible. Without this, both actions build
-        # eligibility from the same input, causing learning instability.
-        if chosen_action is not None:
-            action_mask = torch.zeros_like(d1_output_1d)
-            if self.neurons_per_action > 1:
-                pop_slice = self._get_action_population_indices(chosen_action)
-                action_mask[pop_slice] = 1.0
-            else:
-                action_mask[chosen_action] = 1.0
-            d1_output_1d = d1_output_1d * action_mask
-            d2_output_1d = d2_output_1d * action_mask
-
         # Update eligibility traces PER SOURCE
-        # Each source-pathway combination has its own eligibility traces
+        # Natural Hebbian accumulation: eligibility ∝ pre_spikes ⊗ post_spikes
+        # Action differentiation emerges from competitive dynamics:
+        # - Chosen action: D1 neurons fire MORE → accumulate MORE eligibility
+        # - Unchosen actions: D1 neurons fire LESS (suppressed) → accumulate LESS eligibility
+        # - Global dopamine then multiplies these differential traces
         self._update_pathway_eligibility(inputs, d1_output_1d, "_d1", "_eligibility_d1")
         self._update_pathway_eligibility(inputs, d2_output_1d, "_d2", "_eligibility_d2")
 
@@ -2317,9 +2470,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             d1_spikes: D1 neuron population spikes
             d2_spikes: D2 neuron population spikes
         """
-        # Just call the existing method with chosen_action=None
-        # which will update eligibility for all active neurons
-        self._update_d1_d2_eligibility(inputs, d1_spikes, d2_spikes, chosen_action=None)
+        # Just call the existing method which will update eligibility
+        # for all active neurons based on natural Hebbian accumulation
+        self._update_d1_d2_eligibility(inputs, d1_spikes, d2_spikes)
 
     def set_oscillator_phases(
         self,
@@ -2646,7 +2799,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # 1. Gap junction coupling for synchronization (<0.1ms)
         # 2. Feedforward inhibition to MSNs (sharpens action timing)
         # Biology: FSI are parvalbumin+ interneurons (~2% of striatum)
-        fsi_inhibition = 0.0  # Scalar value broadcast to all MSNs
         if self.fsi_size > 0:
             # Accumulate FSI currents from all sources
             fsi_current = torch.zeros(self.fsi_size, device=self.device)
@@ -2671,12 +2823,51 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 g_inh_input=torch.zeros_like(fsi_current),  # FSI receive minimal inhibition
             )
 
-            # Store FSI membrane for next timestep gap junctions
+            # Store FSI membrane and spikes for next timestep and diagnostics
             self.state.fsi_membrane = fsi_membrane  # type: ignore[attr-defined]
+            self.state.fsi_spikes = fsi_spikes  # type: ignore[attr-defined] # For diagnostics
 
-            # FSI provide feedforward inhibition to ALL MSNs (broadcast)
-            # Each FSI spike contributes 0.5 inhibitory conductance (strong!)
-            fsi_inhibition = float(torch.sum(fsi_spikes).item()) * 0.5  # type: ignore[assignment]
+            # =====================================================================
+            # PER-NEURON FSI→MSN INHIBITION (Moyer 2014)
+            # =====================================================================
+            # Biology: Each MSN receives ~116 feedforward connections from ~18 FSIs
+            # FSI inputs are 4-10× STRONGER than MSN lateral inputs
+            # Implementation: Sparse weight matrix multiplication (NOT global broadcast)
+
+            # FSI → D1 inhibition (per-neuron, from sparse connectivity matrix)
+            # Shape: fsi_to_d1_weights [d1_size, fsi_size] @ fsi_spikes [fsi_size] = [d1_size]
+            fsi_inhibition_d1 = self.fsi_to_d1_weights @ fsi_spikes.float()
+
+            # FSI → D2 inhibition (per-neuron, from sparse connectivity matrix)
+            fsi_inhibition_d2 = self.fsi_to_d2_weights @ fsi_spikes.float()
+        else:
+            # FSI disabled → no FSI inhibition
+            fsi_inhibition_d1 = torch.zeros(self.d1_size, device=self.device)
+            fsi_inhibition_d2 = torch.zeros(self.d2_size, device=self.device)
+
+        # =====================================================================
+        # MSN→MSN LATERAL INHIBITION (Moyer 2014)
+        # =====================================================================
+        # Biology: Each MSN receives ~636 lateral inhibitory connections from ~430 other MSNs
+        # Creates action competition: neurons of one action inhibit neurons of other actions
+        # Mechanism: GABAergic collaterals with action-specific spatial organization
+
+        # Get previous MSN spikes for lateral inhibition
+        # Use previous timestep to avoid instantaneous feedback loops
+        if hasattr(self.state, 'd1_spikes') and self.state.d1_spikes is not None:
+            prev_d1_spikes = self.state.d1_spikes.float()
+            prev_d2_spikes = self.state.d2_spikes.float()
+        else:
+            # First timestep - no previous spikes
+            prev_d1_spikes = torch.zeros(self.d1_size, device=self.device)
+            prev_d2_spikes = torch.zeros(self.d2_size, device=self.device)
+
+        # D1 lateral inhibition: D1 MSNs inhibit other D1 MSNs
+        # Shape: d1_lateral_weights [d1_size, d1_size] @ prev_d1_spikes [d1_size] = [d1_size]
+        d1_lateral_inhibition = self.d1_lateral_weights @ prev_d1_spikes
+
+        # D2 lateral inhibition: D2 MSNs inhibit other D2 MSNs
+        d2_lateral_inhibition = self.d2_lateral_weights @ prev_d2_spikes
 
         # =====================================================================
         # D1/D2 NEURON ACTIVATION with Modulation
@@ -2695,9 +2886,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         d1_current = d1_current * da_gain * ne_gain
         d2_current = d2_current * da_gain * ne_gain
 
-        # Apply FSI inhibition (broadcast to all MSNs)
-        d1_current = d1_current - fsi_inhibition
-        d2_current = d2_current - fsi_inhibition
+        # Apply ALL inhibition sources (FSI + MSN lateral)
+        # Both are negative values, so addition makes currents more negative (stronger inhibition)
+        d1_current = d1_current + fsi_inhibition_d1 + d1_lateral_inhibition
+        d2_current = d2_current + fsi_inhibition_d2 + d2_lateral_inhibition
 
         # Execute D1 and D2 MSN populations
         d1_spikes, _ = self.d1_pathway.neurons(
@@ -2845,8 +3037,17 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     def deliver_reward(self, reward: float) -> Dict[str, Any]:
         """Deliver reward signal and trigger D1/D2 learning.
 
+        **Biological Dopamine Broadcast**: Dopamine modulates ALL synapses with
+        eligibility traces, not just the last selected action. This matches biological
+        reality where dopamine broadcasts globally to striatum and affects any synapse
+        with accumulated eligibility traces.
+
         **Multi-Source Learning**: Applies dopamine-modulated plasticity to each
         source-pathway combination separately using their respective eligibility traces.
+
+        **Multi-Step Credit Assignment**: Credit naturally distributes to all recently
+        active synapses via eligibility trace decay. Earlier actions receive weaker
+        credit due to exponential trace decay (tau ~1000ms).
 
         Args:
             reward: Reward signal (+1 for reward, -1 for punishment, 0 for neutral)
@@ -2870,31 +3071,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         correct = reward > 0
         self.exploration.update_performance(reward, correct)
 
-        # Get last action for action-specific learning
-        # Only the selected action's neurons should have their weights updated
-        last_action = self.state_tracker.last_action
-        if last_action is None:
-            # No action was selected, cannot apply learning
-            return {
-                "d1_ltp": 0.0,
-                "d1_ltd": 0.0,
-                "d2_ltp": 0.0,
-                "d2_ltd": 0.0,
-                "net_change": 0.0,
-                "dopamine": da_level,
-            }
-
-        # Create action mask for selected action's neurons
-        # Only these neurons participated in the action, so only their synapses should learn
-        action_mask_d1 = torch.zeros(self.d1_size, 1, device=self.device)
-        action_mask_d2 = torch.zeros(self.d2_size, 1, device=self.device)
-
-        action_indices = self._get_action_population_indices(last_action)
-        action_mask_d1[action_indices, :] = 1.0
-        action_mask_d2[action_indices, :] = 1.0
-
         # Apply learning per source-pathway using eligibility traces
-        # Three-factor rule: Δw = eligibility × dopamine × learning_rate × ACTION_MASK
+        # Three-factor rule: Δw = eligibility × dopamine × learning_rate
+        # Biology: Dopamine broadcasts globally to ALL synapses with eligibility traces.
+        # No action-specific masking - this matches biological dopamine modulation.
+        # Action differentiation emerges from differences in eligibility (which neurons spiked most)
+        # Multi-step credit assignment works via eligibility trace decay.
         # Combined eligibility = fast + α*slow (if multi-timescale enabled)
         d1_total_ltp = 0.0
         d1_total_ltd = 0.0
@@ -2920,11 +3102,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         # Single-timescale mode: use standard eligibility
                         combined_eligibility = eligibility
 
-                    # CRITICAL: Apply action mask to only update selected action's neurons
-                    masked_eligibility = combined_eligibility * action_mask_d1
-
                     # Compute weight update: Δw = eligibility × dopamine × lr
-                    weight_update = masked_eligibility * da_level * self.config.stdp_lr
+                    # Biology: Dopamine affects all synapses with eligibility (no action mask)
+                    weight_update = combined_eligibility * da_level * self.config.stdp_lr
 
                     # Apply update with weight bounds
                     new_weights = torch.clamp(
@@ -2958,11 +3138,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                         # Single-timescale mode: use standard eligibility
                         combined_eligibility = eligibility
 
-                    # CRITICAL: Apply action mask to only update selected action's neurons
-                    masked_eligibility = combined_eligibility * action_mask_d2
-
                     # Compute weight update with INVERTED dopamine
-                    weight_update = masked_eligibility * (-da_level) * self.config.stdp_lr
+                    # Biology: Dopamine affects all synapses with eligibility (no action mask)
+                    weight_update = combined_eligibility * (-da_level) * self.config.stdp_lr
 
                     # Apply update with weight bounds
                     new_weights = torch.clamp(

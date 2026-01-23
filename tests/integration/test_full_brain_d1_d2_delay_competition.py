@@ -33,7 +33,7 @@ class TestFullBrainD1D2DelayCompetition:
             cortex_size=128,
             hippocampus_size=80,
             pfc_size=128,  # Must match striatum's expected pfc_modulation weights
-            n_actions=4,
+            striatum_actions=4,
         )
         # Configure D1/D2 delays on the striatum
         striatum = brain.components["striatum"]
@@ -57,11 +57,11 @@ class TestFullBrainD1D2DelayCompetition:
         """
         brain = brain_with_delays
         striatum = brain.components["striatum"]
+        thalamus = brain.components["thalamus"]
 
         # Create a consistent input pattern that will drive action selection
         # Use a strong, consistent pattern to ensure reliable D1/D2 activity
-        # Use thalamus size (64) as input size
-        pattern = torch.ones(64, device=brain.device)
+        pattern = torch.ones(thalamus.input_size, device=brain.device)
 
         # Run forward passes to build up D1/D2 activity
         # Need enough timesteps for signals to propagate through thalamus→cortex→striatum
@@ -98,7 +98,7 @@ class TestFullBrainD1D2DelayCompetition:
                 cortex_size=128,
                 hippocampus_size=80,
                 pfc_size=128,  # Must match striatum's expected pfc_modulation weights
-                n_actions=4,
+                striatum_actions=4,
             )
             # Configure delays before loading
             striatum2 = brain2.components["striatum"]
@@ -122,10 +122,9 @@ class TestFullBrainD1D2DelayCompetition:
 
             # Continue simulation and verify action selection remains consistent
             # Run a few more timesteps with zero input to let delayed signals propagate
-            # Use thalamus size (64) as input size
             for _ in range(30):
                 brain2.forward(
-                    {"thalamus": torch.zeros(64, device=brain2.device)},
+                    {"thalamus": torch.zeros(thalamus.input_size, device=brain2.device)},
                     n_timesteps=1,
                 )
 
@@ -142,10 +141,10 @@ class TestFullBrainD1D2DelayCompetition:
         """Test that delay buffer pointers and data are correctly preserved."""
         brain = brain_with_delays
         striatum = brain.components["striatum"]
+        thalamus = brain.components["thalamus"]
 
         # Generate activity
-        # Use thalamus size (64) as input size
-        pattern = torch.ones(64, device=brain.device) * 0.8
+        pattern = torch.ones(thalamus.input_size, device=brain.device) * 0.8
         for _ in range(20):
             brain.forward({"thalamus": pattern}, n_timesteps=1)
 
@@ -166,7 +165,7 @@ class TestFullBrainD1D2DelayCompetition:
                     cortex_size=128,
                     hippocampus_size=80,
                     pfc_size=128,  # Must match striatum's expected pfc_modulation weights
-                    n_actions=4,
+                    striatum_actions=4,
                 )
                 striatum2 = brain2.components["striatum"]
                 striatum2.config.d1_to_output_delay_ms = 15.0
@@ -199,13 +198,13 @@ class TestFullBrainD1D2DelayCompetition:
     def test_action_selection_consistency_after_checkpoint(self, brain_with_delays):
         """Verify that action selection produces consistent results after checkpoint."""
         brain = brain_with_delays
+        thalamus = brain.components["thalamus"]
 
         # Disable mental simulation to avoid Dyna planner errors with no experience
         brain.mental_simulation = None
 
         # Build up consistent state
-        # Use thalamus size (64) as input size
-        pattern = torch.ones(64, device=brain.device) * 0.9
+        pattern = torch.ones(thalamus.input_size, device=brain.device) * 0.9
         for _ in range(80):
             brain.forward({"thalamus": pattern}, n_timesteps=1)
 
@@ -230,7 +229,7 @@ class TestFullBrainD1D2DelayCompetition:
                 cortex_size=128,
                 hippocampus_size=80,
                 pfc_size=128,  # Must match striatum's expected pfc_modulation weights
-                n_actions=4,
+                striatum_actions=4,
             )
             striatum2 = brain2.components["striatum"]
             striatum2.config.d1_to_output_delay_ms = 15.0

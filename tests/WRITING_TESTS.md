@@ -988,18 +988,10 @@ def test_visualize_brain(tmp_path):
 def test_visualize_real_brain(tmp_path):
     """Test visualization with real brain structure."""
     # ✅ Use real (minimal) brain
-    config = ThaliaConfig(
-        brain=BrainConfig(
-            device="cpu",
-            sizes=RegionSizes(
-                input_size=10,
-                thalamus_size=20,
-                cortex_size=30,
-                n_actions=5,
-            ),
-        ),
-    )
-    brain = DynamicBrain.from_thalia_config(config)
+    brain_config=BrainConfig(
+        device="cpu",
+    ),
+    brain = DynamicBrain.from_thalia_config(brain_config)
 
     # Test with REAL components
     output_file = tmp_path / "topology.dot"
