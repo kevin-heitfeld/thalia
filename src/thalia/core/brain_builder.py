@@ -11,7 +11,6 @@ Date: December 15, 2025
 from __future__ import annotations
 
 import json
-import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
@@ -225,8 +224,8 @@ class BrainBuilder:
         source: str,
         target: str,
         pathway_type: str = "axonal_projection",
-        source_port: Optional[str] = None,
-        target_port: Optional[str] = None,
+        source_port: str = ...,  # type: ignore[assignment]
+        target_port: str = ...,  # type: ignore[assignment]
         **config_params: Any,
     ) -> BrainBuilder:
         """Connect two components with a pathway.
@@ -237,11 +236,10 @@ class BrainBuilder:
             pathway_type: Pathway registry name:
                 - "axonal_projection": AxonalProjection (pure spike routing, NO weights)
                 - Other registered pathway types
-            source_port: Output port on source (e.g., 'l23', 'l5', 'relay', 'ca1', 'd1')
-                RECOMMENDED: Explicitly specify ports for biological accuracy.
-                When None, uses full output (n_output) which bypasses port system.
-            target_port: Input port on target (e.g., 'feedforward', 'top_down', 'ec_l3')
-                RECOMMENDED: Explicitly specify ports for biological accuracy.
+            source_port: Output port on source (e.g., 'l23', 'l5', 'relay', 'ca1', 'd1', 'executive', 'prediction')
+                REQUIRED: Must explicitly specify port for biological accuracy.
+            target_port: Input port on target (e.g., 'feedforward', 'l6a_feedback', 'l6b_feedback')
+                REQUIRED: Must explicitly specify port for biological accuracy.
             **config_params: Pathway configuration parameters
                 For axonal pathways, can specify 'axonal_delay_ms' (default: 2.0)
 
@@ -249,11 +247,7 @@ class BrainBuilder:
             Self for method chaining
 
         Raises:
-            ValueError: If source or target component doesn't exist
-
-        Deprecation:
-            Omitting source_port will be deprecated in v2.0. Specify explicit ports
-            for biological accuracy (e.g., 'relay', 'ca1', 'd1', or 'default').
+            ValueError: If source or target component doesn't exist, or if ports not specified
         """
         # Validate components exist
         if source not in self._components:
@@ -261,26 +255,19 @@ class BrainBuilder:
         if target not in self._components:
             raise ValueError(f"Target component '{target}' not found")
 
-        # Deprecation warnings for missing ports
-        if source_port is None:
-            source_spec = self._components[source]
-            warnings.warn(
-                f"Connection {source}→{target}: source_port not specified. "
-                f"Using full output (n_output={source_spec.registry_name}). "
-                f"This bypasses the port system and will be deprecated in v2.0. "
-                f"Please specify source_port explicitly (e.g., 'relay', 'ca1', 'd1', or 'default').",
-                DeprecationWarning,
-                stacklevel=2,
+        # Validate ports are specified (mandatory parameters)
+        if source_port is ...:  # type: ignore[comparison-overlap]
+            raise ValueError(
+                f"Connection {source}→{target}: source_port is required. "
+                f"Must specify explicit port for biological accuracy "
+                f"(e.g., 'l23', 'l5', 'relay', 'ca1', 'd1', 'executive', 'prediction')."
             )
 
-        if target_port is None:
-            # target_spec = self._components[target]
-            warnings.warn(
-                f"Connection {source}→{target}: target_port not specified. "
-                f"This will be deprecated in v2.0. "
-                f"Please specify target_port explicitly (e.g., 'feedforward', 'l6a_feedback', 'l6b_feedback', or None for default routing).",
-                DeprecationWarning,
-                stacklevel=2,
+        if target_port is ...:  # type: ignore[comparison-overlap]
+            raise ValueError(
+                f"Connection {source}→{target}: target_port is required. "
+                f"Must specify explicit port for biological accuracy "
+                f"(e.g., 'feedforward', 'l6a_feedback', 'l6b_feedback')."
             )
 
         # Create connection spec with ports
@@ -518,6 +505,9 @@ class BrainBuilder:
                 return int(l6a_size)
             elif source_port == "l6b":
                 return int(l6b_size)
+            elif source_port == "default":
+                # Default returns L2/3 + L5 concatenated (backward compat)
+                return int(l23_size + l5_size)
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -592,6 +582,42 @@ class BrainBuilder:
             else:
                 raise ValueError(f"Unknown striatum port '{source_port}'")
 
+        # For prefrontal, get executive output size
+        if source_spec.registry_name == "prefrontal":
+            config = source_spec.config_params
+            if "n_neurons" not in config:
+                raise ValueError(
+                    f"BrainBuilder: Prefrontal '{source_name}' must specify n_neurons"
+                )
+
+            n_neurons = config["n_neurons"]
+
+            if source_port == "executive":
+                return int(n_neurons)
+            elif source_port == "default":
+                # Default port returns full output (backward compat)
+                return int(n_neurons)
+            else:
+                raise ValueError(f"Unknown prefrontal port '{source_port}'")
+
+        # For cerebellum, get prediction output size
+        if source_spec.registry_name == "cerebellum":
+            config = source_spec.config_params
+            if "purkinje_size" not in config:
+                raise ValueError(
+                    f"BrainBuilder: Cerebellum '{source_name}' must specify purkinje_size"
+                )
+
+            purkinje_size = config["purkinje_size"]
+
+            if source_port == "prediction":
+                return int(purkinje_size)
+            elif source_port == "default":
+                # Default port returns full output (backward compat)
+                return int(purkinje_size)
+            else:
+                raise ValueError(f"Unknown cerebellum port '{source_port}'")
+
         # For other components, ports not yet supported
         if source_port is not None:
             raise ValueError(
@@ -632,6 +658,9 @@ class BrainBuilder:
                 return int(source_comp.l6a_size)  # type: ignore[arg-type]
             elif source_port == "l6b" and hasattr(source_comp, "l6b_size"):
                 return int(source_comp.l6b_size)  # type: ignore[arg-type]
+            elif source_port == "default":
+                # Default returns L2/3 + L5 concatenated (backward compat)
+                return int(source_comp.l23_size + source_comp.l5_size)  # type: ignore[arg-type,operator]
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -674,6 +703,26 @@ class BrainBuilder:
                 return int(source_comp.d1_size + source_comp.d2_size)  # type: ignore[arg-type,operator]
             else:
                 raise ValueError(f"Unknown striatum port '{source_port}'")
+
+        # Check for prefrontal outputs (executive)
+        if hasattr(source_comp, "n_neurons") and type(source_comp).__name__ == "Prefrontal":
+            if source_port == "executive":
+                return int(source_comp.n_neurons)  # type: ignore[arg-type]
+            elif source_port == "default":
+                # Default returns full output (backward compat)
+                return int(source_comp.n_neurons)  # type: ignore[arg-type]
+            else:
+                raise ValueError(f"Unknown prefrontal port '{source_port}'")
+
+        # Check for cerebellum outputs (prediction)
+        if hasattr(source_comp, "purkinje_size"):
+            if source_port == "prediction":
+                return int(source_comp.purkinje_size)  # type: ignore[arg-type]
+            elif source_port == "default":
+                # Default returns full output (backward compat)
+                return int(source_comp.purkinje_size)  # type: ignore[arg-type]
+            else:
+                raise ValueError(f"Unknown cerebellum port '{source_port}'")
 
         # For other components, ports not yet supported
         raise ValueError(
@@ -1357,8 +1406,19 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     builder.add_component("output", "layered_cortex", **calc.cortex_from_output(output_size))
 
     # Connections use axonal projections (pure spike routing)
-    builder.connect("input", "process", pathway_type="axonal")
-    builder.connect("process", "output", pathway_type="axonal")
+    # Explicit ports for biological accuracy
+    builder.connect(
+        "input", "process",
+        pathway_type="axonal",
+        source_port="relay",
+        target_port="feedforward"
+    )
+    builder.connect(
+        "process", "output",
+        pathway_type="axonal",
+        source_port="default",
+        target_port="feedforward"
+    )
 
 
 def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
@@ -1440,7 +1500,12 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Distance: ~2-3cm, conduction velocity: ~10-20 m/s → 2-3ms delay
     # Uses 'relay' port: Only relay neurons project to cortex (TRN provides lateral inhibition)
     builder.connect(
-        "thalamus", "cortex", pathway_type="axonal", source_port="relay", axonal_delay_ms=2.5
+        "thalamus",
+        "cortex",
+        pathway_type="axonal",
+        source_port="relay",
+        target_port="feedforward",
+        axonal_delay_ms=2.5,
     )
 
     # Cortex L6a/L6b → Thalamus: Dual corticothalamic feedback pathways
@@ -1480,16 +1545,36 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Cortex ⇄ Hippocampus: Bidirectional memory integration
     # Entorhinal cortex ↔ hippocampus: moderately myelinated (Witter et al. 2000)
     # Distance: ~3-5cm, conduction velocity: ~5-10 m/s → 5-8ms delay
-    builder.connect("cortex", "hippocampus", pathway_type="axonal", axonal_delay_ms=6.5)
+    # Uses 'l5' port: L5 subcortical output to hippocampus
+    builder.connect(
+        "cortex",
+        "hippocampus",
+        pathway_type="axonal",
+        source_port="l5",
+        target_port="feedforward",
+        axonal_delay_ms=6.5,
+    )
     # Uses 'ca1' port: CA1 is the primary output layer of hippocampus to cortex
     builder.connect(
-        "hippocampus", "cortex", pathway_type="axonal", source_port="ca1", axonal_delay_ms=6.5
+        "hippocampus",
+        "cortex",
+        pathway_type="axonal",
+        source_port="ca1",
+        target_port="feedforward",
+        axonal_delay_ms=6.5,
     )
 
     # Cortex → PFC: Executive control pathway
     # Corticocortical long-range connections (Miller & Cohen 2001)
     # Distance: ~5-10cm, conduction velocity: ~3-8 m/s → 10-15ms delay
-    builder.connect("cortex", "pfc", pathway_type="axonal", axonal_delay_ms=12.5)
+    builder.connect(
+        "cortex",
+        "pfc",
+        pathway_type="axonal",
+        source_port="l23",
+        target_port="feedforward",
+        axonal_delay_ms=12.5,
+    )
 
     # Multi-source → Striatum: Corticostriatal + hippocampostriatal + PFC inputs
     # These will be automatically combined into single multi-source AxonalProjection
@@ -1497,37 +1582,74 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # - Cortex → Striatum: Fast, heavily myelinated, short distance (~2-4cm) → 3-5ms
     # - Hippocampus → Striatum: Moderate, longer distance (~4-6cm) → 7-10ms
     # - PFC → Striatum: Variable, longest distance (~6-10cm) → 12-18ms
-    builder.connect("cortex", "striatum", pathway_type="axonal", axonal_delay_ms=4.0)
+    builder.connect(
+        "cortex",
+        "striatum",
+        pathway_type="axonal",
+        source_port="l5",
+        target_port="feedforward",
+        axonal_delay_ms=4.0,
+    )
     # Uses 'ca1' port: CA1 provides contextual information for action selection
     builder.connect(
         "hippocampus",
         "striatum",
         pathway_type="axonal",
         source_port="ca1",
+        target_port="feedforward",
         axonal_delay_ms=8.5,
     )
-    builder.connect("pfc", "striatum", pathway_type="axonal", axonal_delay_ms=15.0)
+    builder.connect(
+        "pfc",
+        "striatum",
+        pathway_type="axonal",
+        source_port="executive",
+        target_port="feedforward",
+        axonal_delay_ms=15.0,
+    )
 
     # Striatum → PFC: Basal ganglia gating of working memory
     # Via thalamus (MD/VA nuclei), total distance ~8-12cm (Haber 2003)
     # Includes striatum→thalamus→PFC relay → 15-20ms total delay
-    builder.connect("striatum", "pfc", pathway_type="axonal", axonal_delay_ms=17.5)
+    builder.connect(
+        "striatum",
+        "pfc",
+        pathway_type="axonal",
+        source_port="d1",
+        target_port="feedforward",
+        axonal_delay_ms=17.5,
+    )
 
     # Cerebellum: Motor/cognitive forward models
     # Receives multi-modal input (sensory + goals), outputs predictions
     # Corticopontocerebellar pathway: via pontine nuclei (Schmahmann 1996)
     # Distance: ~10-15cm total, includes relay → 20-30ms delay
     builder.connect(
-        "cortex", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0
+        "cortex",
+        "cerebellum",
+        pathway_type="axonal",
+        source_port="l5",
+        target_port="feedforward",
+        axonal_delay_ms=25.0,
     )  # Sensorimotor input
     # PFC → Cerebellum: similar pathway length
     builder.connect(
-        "pfc", "cerebellum", pathway_type="axonal", axonal_delay_ms=25.0
+        "pfc",
+        "cerebellum",
+        pathway_type="axonal",
+        source_port="executive",
+        target_port="feedforward",
+        axonal_delay_ms=25.0,
     )  # Goal/context input
     # Cerebellum → Cortex: via thalamus (VL/VA nuclei), moderately fast
     # Distance: ~8-12cm, includes thalamic relay → 15-20ms delay
     builder.connect(
-        "cerebellum", "cortex", pathway_type="axonal", axonal_delay_ms=17.5
+        "cerebellum",
+        "cortex",
+        pathway_type="axonal",
+        source_port="prediction",
+        target_port="feedforward",
+        axonal_delay_ms=17.5,
     )  # Forward model predictions
 
 

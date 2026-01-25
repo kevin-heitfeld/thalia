@@ -373,8 +373,9 @@ class Cerebellum(NeuralRegion):
                 device=self.device,
             )
 
-        # Register output port (port-based routing support)
-        self.register_output_port("default", self.purkinje_size)
+        # Register output ports (port-based routing support)
+        self.register_output_port("prediction", self.purkinje_size)  # Main predictive output
+        self.register_output_port("default", self.purkinje_size)  # Deprecated: use "prediction"
 
         # Move all components to target device
         self.to(self.device)
@@ -883,9 +884,10 @@ class Cerebellum(NeuralRegion):
         # Store effective input for learning (granule spikes in enhanced mode)
         self.last_effective_input = effective_input
 
-        # Set port output (port-based routing support)
+        # Set port outputs (port-based routing support)
         self.clear_port_outputs()
-        self.set_port_output("default", output_spikes)
+        self.set_port_output("prediction", output_spikes)
+        self.set_port_output("default", output_spikes)  # Deprecated: for backward compat
 
         # Axonal delays are handled by AxonalProjection pathways, not within regions
         return output_spikes  # type: ignore[no-any-return]
