@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import torch
 
+from thalia.components.synapses import WeightInitializer
 from thalia.constants.task import (
     PROPRIOCEPTION_NOISE_SCALE,
     SPIKE_PROBABILITY_LOW,
@@ -42,7 +43,9 @@ def create_random_stimulus(
         >>> stimulus.shape
         torch.Size([100])
     """
-    return torch.randn(dim, device=device) * std + mean
+    return WeightInitializer.gaussian(
+        n_output=dim, n_input=1, mean=mean, std=std, device=str(device)
+    ).squeeze()
 
 
 def add_noise(

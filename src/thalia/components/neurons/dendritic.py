@@ -31,6 +31,7 @@ import torch
 import torch.nn as nn
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.synapses import WeightInitializer
 
 
 @dataclass
@@ -162,7 +163,10 @@ class DendriticBranch(nn.Module):
         # Synaptic weights for this branch
         # Initialize with small positive values (excitatory)
         self.weights = nn.Parameter(
-            torch.rand(n_inputs, requires_grad=False) * 0.1 + 0.05, requires_grad=False
+            WeightInitializer.uniform(
+                n_output=n_inputs, n_input=1, low=0.05, high=0.15, device="cpu"
+            ).squeeze(),
+            requires_grad=False,
         )
 
         # Register constants
@@ -307,8 +311,15 @@ class DendriticNeuron(nn.Module):
 
         # Branch weights: (n_neurons, n_branches, inputs_per_branch)
         # Each neuron has independent branch weights
+        weights_2d = WeightInitializer.uniform(
+            n_output=n_neurons * self.n_branches,
+            n_input=self.inputs_per_branch,
+            low=0.05,
+            high=0.15,
+            device="cpu",
+        )
         self.branch_weights = nn.Parameter(
-            torch.rand(n_neurons, self.n_branches, self.inputs_per_branch) * 0.1 + 0.05
+            weights_2d.reshape(n_neurons, self.n_branches, self.inputs_per_branch)
         )
 
         # Cached clamped weights (optimization: avoid recomputing every forward)

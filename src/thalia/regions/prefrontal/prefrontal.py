@@ -972,7 +972,9 @@ class Prefrontal(NeuralRegion):
             new_tags = torch.zeros(n_new, device=self.device)
             self.emergent_goals.goal_tags = torch.cat([self.emergent_goals.goal_tags, new_tags])
 
-            new_values = torch.randn(n_new, device=self.device) * 0.1
+            new_values = WeightInitializer.gaussian(
+                n_output=n_new, n_input=1, mean=0.0, std=0.1, device=self.device
+            ).squeeze()
             self.emergent_goals.value_weights = torch.cat(
                 [self.emergent_goals.value_weights, new_values]
             )

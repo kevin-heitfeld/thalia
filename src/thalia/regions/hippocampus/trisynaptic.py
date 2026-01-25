@@ -669,7 +669,14 @@ class TrisynapticHippocampus(NeuralRegion):
             # Convert timing jitter to weight modulation (earlier arrival = stronger weight)
             # Scale: ±5ms jitter → ±15% weight variation
             jitter_scale = 0.03 * (self.config.phase_jitter_std_ms / 5.0)
-            phase_modulation = 1.0 + jitter_scale * torch.randn_like(base_weights)
+            jitter = WeightInitializer.gaussian(
+                n_output=base_weights.shape[0],
+                n_input=base_weights.shape[1],
+                mean=0.0,
+                std=1.0,
+                device=self.device,
+            )
+            phase_modulation = 1.0 + jitter_scale * jitter
             base_weights = base_weights * phase_modulation
 
         # CA3 → CA3: Recurrent connections (autoassociative memory) - AT CA3 DENDRITES

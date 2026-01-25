@@ -37,6 +37,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from thalia.components.synapses import WeightInitializer
 from thalia.constants.task import (
     REWARD_SCALE_PREDICTION,
     SENSORIMOTOR_WEIGHT_MANIPULATION,
@@ -710,7 +711,9 @@ class PhonologyTaskLoader:
         """
         if self.mnist_dataset is None:
             # Fallback: Random retinal input
-            random_image = torch.rand(28, 28, device=self.device)
+            random_image = WeightInitializer.uniform(
+                n_output=28, n_input=28, low=0.0, high=1.0, device=str(self.device)
+            )
             spikes, _ = self.visual_encoder(random_image)
             # Take first timestep for single-timestep input
             spikes = spikes[0, :]  # [n_timesteps, output_size] → [output_size]
@@ -798,7 +801,9 @@ class PhonologyTaskLoader:
         if self.phonology_dataset is None:
             # Fallback: Random phoneme features
             n_features = 40  # Typical phoneme feature dimension
-            spikes_raw = torch.rand(n_features, device=self.device)
+            spikes_raw = WeightInitializer.uniform(
+                n_output=n_features, n_input=1, low=0.0, high=1.0, device=str(self.device)
+            ).squeeze()
             is_same = torch.randint(0, 2, (1,), device=self.device).item()
         else:
             # Generate sample from dataset
@@ -834,7 +839,9 @@ class PhonologyTaskLoader:
         # In full implementation, would use actual gaze following dataset
 
         # Generate random "visual scene"
-        scene = torch.rand(28, 28, device=self.device)
+        scene = WeightInitializer.uniform(
+            n_output=28, n_input=28, low=0.0, high=1.0, device=str(self.device)
+        )
 
         # Encode through visual pathway
         spikes, _ = self.visual_encoder(scene)

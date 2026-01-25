@@ -47,6 +47,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from thalia.components.synapses import WeightInitializer
 from thalia.utils.core_utils import clamp_weights
 
 
@@ -509,7 +510,9 @@ class STPSynapse(nn.Module):
         self.w_max = w_max
 
         # Initialize weights
-        weights = torch.randn(n_pre, n_post, requires_grad=False) * w_init_std + w_init_mean
+        weights = WeightInitializer.gaussian(
+            n_output=n_pre, n_input=n_post, mean=w_init_mean, std=w_init_std, device="cpu"
+        )
         weights = clamp_weights(weights, w_min, w_max, inplace=False)
         self.weight = nn.Parameter(weights, requires_grad=False)
 
