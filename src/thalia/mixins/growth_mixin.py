@@ -159,7 +159,7 @@ class GrowthMixin:
         # Lazy import to avoid circular dependency
         from thalia.components.synapses import WeightInitializer
 
-        # Default scale: Use constant from regulation module (Architecture Review 2025-12-21, Tier 1.3)
+        # Default scale factor
         if scale is None:
             from thalia.constants.architecture import GROWTH_NEW_WEIGHT_SCALE
 

@@ -241,23 +241,6 @@ Realistic level of membrane noise from channel fluctuations.
 """
 
 # =============================================================================
-# WEIGHT INITIALIZATION SCALES
-# =============================================================================
-
-WEIGHT_INIT_SCALE_SMALL = 0.1
-"""Small weight initialization scale.
-
-Used for PFC modulation weights and other fine-tuning connections.
-Prevents overwhelming initial connectivity.
-"""
-
-WEIGHT_INIT_SCALE_RECURRENT = 0.01
-"""Weight initialization scale for recurrent/associative connections."""
-
-WEIGHT_INIT_SCALE_PREDICTIVE = 0.1
-"""Weight initialization scale for predictive coding pathways."""
-
-# =============================================================================
 # NEUROMODULATOR GAIN PARAMETERS
 # =============================================================================
 
@@ -361,10 +344,6 @@ __all__ = [
     "NOISE_STD_NONE",
     "NOISE_STD_LOW",
     "NOISE_STD_MODERATE",
-    # Weight initialization
-    "WEIGHT_INIT_SCALE_SMALL",
-    "WEIGHT_INIT_SCALE_RECURRENT",
-    "WEIGHT_INIT_SCALE_PREDICTIVE",
     # Neuromodulator gains
     "TONIC_D1_GAIN_SCALE",
     # Theta modulation

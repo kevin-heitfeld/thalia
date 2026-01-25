@@ -86,7 +86,6 @@ from thalia.config.region_configs import (
     PredictiveCodingConfig,
     PredictiveCortexConfig,
 )
-from thalia.constants.neuron import WEIGHT_INIT_SCALE_PREDICTIVE
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
@@ -161,7 +160,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 config.n_input,
                 config.n_representation,
                 mean=0.0,
-                std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                std=0.1,
                 device=device,
             )
         )
@@ -218,7 +217,7 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
                 config.n_representation,
                 config.n_input,
                 mean=0.0,
-                std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                std=0.1,
                 device=device,
             )
         )

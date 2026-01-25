@@ -1839,8 +1839,7 @@ class CurriculumTrainer:
 
             if self.verbose:
                 print(
-                    f"  • Alpha suppression: {thalamus.thalamus_config.alpha_suppression_strength:.3f} "
-                    f"(scale: {suppression_scale:.2f}x)"
+                    f"  • Alpha suppression: {thalamus.thalamus_config.alpha_suppression_strength:.3f}"
                 )
                 print(f"  • L6a→TRN feedback: {thalamus.thalamus_config.l6a_to_trn_strength:.3f}")
                 print(
