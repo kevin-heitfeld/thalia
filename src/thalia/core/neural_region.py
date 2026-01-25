@@ -321,13 +321,13 @@ class NeuralRegion(
 
         self._port_outputs[port_name] = spikes
 
-    def get_port_output(self, port_name: Optional[str] = None) -> torch.Tensor:
+    def get_port_output(self, port_name: str) -> torch.Tensor:
         """Get output from a specific port.
 
         Used by AxonalProjection to route from specific outputs.
 
         Args:
-            port_name: Name of the port. If None, returns "default" port.
+            port_name: Name of the port (required). Must specify explicit port.
 
         Returns:
             Spike tensor from the specified port
@@ -337,11 +337,8 @@ class NeuralRegion(
 
         Example:
             >>> spikes = cortex.get_port_output("l6a")  # Get L6a output
-            >>> spikes = cortex.get_port_output()  # Get default output
+            >>> spikes = thalamus.get_port_output("relay")  # Get relay output
         """
-        if port_name is None:
-            port_name = "default"
-
         if port_name not in self._port_outputs:
             raise ValueError(
                 f"No output set for port '{port_name}' in {self.__class__.__name__}. "
