@@ -191,7 +191,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
     From NeuralRegion (base class):
         - synaptic_weights: ParameterDict (per-source weights)
-        - add_input_source(source, n_input, learning_rule) → None
+        - add_input_source(source, n_input, learning_strategy) → None
         - _apply_synapses(source, input_spikes) → Tensor
         - forward(inputs: Dict) → Tensor [must implement]
 
@@ -246,7 +246,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         NeuralRegion.__init__(
             self,
             n_neurons=total_neurons,  # Use actual total (d1+d2)
-            default_learning_rule="three_factor",  # Dopamine-modulated
+            default_learning_strategy="three_factor",  # Dopamine-modulated
             device=device,
         )
 
@@ -934,7 +934,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         n_input: int,
         sparsity: float = 0.0,
         weight_scale: float = 1.0,
-        learning_rule: Optional[str] = "three_factor",
+        learning_strategy: Optional[str] = "three_factor",
     ) -> None:
         """Add input source with automatic D1/D2 pathway weight creation.
 
@@ -946,7 +946,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             n_input: Input size from this source
             sparsity: Connection sparsity (0.0 = fully connected)
             weight_scale: Initial weight scale multiplier
-            learning_rule: Learning rule name (default: "three_factor")
+            learning_strategy: Learning rule name (default: "three_factor")
 
         Example:
             >>> striatum.add_input_source_striatum("cortex:l5", n_input=256)

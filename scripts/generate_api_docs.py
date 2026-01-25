@@ -3147,7 +3147,7 @@ class APIDocGenerator:
                         desc = "Device (CPU/GPU)"
                     elif field.key == "dt_ms":
                         desc = "Timestep in milliseconds"
-                    elif field.key == "default_learning_rule":
+                    elif field.key == "default_learning_strategy":
                         desc = "Default learning strategy"
                     elif field.key == "input_sources":
                         desc = "Input source names"

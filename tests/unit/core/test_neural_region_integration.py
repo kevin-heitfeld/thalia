@@ -15,7 +15,7 @@ class SimpleNeuralRegion(NeuralRegion):
     def __init__(self, n_neurons: int, device: str = "cpu"):
         super().__init__(
             n_neurons=n_neurons,
-            default_learning_rule="stdp",
+            default_learning_strategy="stdp",
             device=device,
         )
 
@@ -25,8 +25,8 @@ def test_manual_input_registration():
     region = SimpleNeuralRegion(n_neurons=50, device="cpu")
 
     # Manually register input sources
-    region.add_input_source("cortex", n_input=128, learning_rule="stdp")
-    region.add_input_source("hippocampus", n_input=64, learning_rule="bcm")
+    region.add_input_source("cortex", n_input=128, learning_strategy="stdp")
+    region.add_input_source("hippocampus", n_input=64, learning_strategy="bcm")
 
     # Verify registration
     assert "cortex" in region.synaptic_weights

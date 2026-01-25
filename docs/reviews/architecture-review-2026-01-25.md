@@ -56,7 +56,7 @@ These improvements provide immediate value with minimal risk. Implement these fi
 
 **Current State**: Despite having a comprehensive `WeightInitializer` registry, ~30 files still use manual initialization:
 - `torch.randn()` for Gaussian initialization
-- `torch.rand()` for uniform initialization  
+- `torch.rand()` for uniform initialization
 - Manual Xavier/Kaiming calculations
 
 **Proposed Change**: Replace all manual weight initialization with registry calls:
@@ -70,7 +70,7 @@ from thalia.components.synapses import WeightInitializer
 weights = WeightInitializer.gaussian(n_output, n_input, std=0.1, device=device)
 ```
 
-**Rationale**: 
+**Rationale**:
 - Single source of truth for initialization strategies
 - Easier to experiment with different initialization methods
 - Better testability and reproducibility
@@ -100,7 +100,7 @@ weights = WeightInitializer.gaussian(n_output, n_input, std=0.1, device=device)
 14. [training/datasets/loaders.py](../../../src/thalia/training/datasets/loaders.py#L713) - line 713: random images
 15-30. Various test utilities, noise generation, and example code
 
-**Impact**: 
+**Impact**:
 - **Breaking**: Low (internal implementation detail)
 - **Files affected**: ~30 files
 - **Lines changed**: ~50-80 lines total
@@ -125,7 +125,7 @@ weights = WeightInitializer.gaussian(n_output, n_input, std=0.1, device=device)
 noise = torch.randn_like(active_v) * 0.002  # What is 0.002?
 phase_modulation = 1.0 + jitter_scale * torch.randn_like(base_weights)  # What is jitter_scale default?
 
-# regions/prefrontal/prefrontal.py  
+# regions/prefrontal/prefrontal.py
 noise = torch.randn_like(new_wm) * wm_noise_std  # wm_noise_std not defined as constant
 
 # regions/striatum/action_selection.py
@@ -139,7 +139,7 @@ ou_decay = 1.0 - self.config.noise_std  # Implicit OU noise decay calculation
 
 ```python
 # In constants/neuron.py (NEW additions):
-MEMBRANE_NOISE_STD_MV = 0.002  
+MEMBRANE_NOISE_STD_MV = 0.002
 """Biological membrane noise std deviation (2mV).
 
 White noise component representing stochastic ion channel fluctuations
@@ -186,10 +186,12 @@ WEIGHT_JITTER_SCALE = 0.1
 
 ---
 
-### 1.4 Naming Consistency: "learning_strategy" vs "learning_rule"
+### 1.4 ✅ Naming Consistency: "learning_strategy" vs "learning_rule" (COMPLETED)
+
+**Status**: Completed January 25, 2026 - Parameter renamed with consistent terminology throughout
 
 **Current State**: Mixed terminology for the same concept:
-- `NeuralRegion.__init__`: parameter is `default_learning_rule` 
+- `NeuralRegion.__init__`: parameter is `default_learning_rule`
 - `LearningStrategyMixin`: uses `learning_strategy` attribute
 - Documentation uses both "learning rule" and "learning strategy"
 
@@ -206,7 +208,7 @@ def __init__(self, ..., default_learning_rule="stdp"):
 # BEFORE:
 def __init__(self, ..., default_learning_rule="stdp"):
 
-# AFTER:  
+# AFTER:
 def __init__(self, ..., default_learning_strategy="stdp"):
 ```
 
@@ -269,14 +271,14 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         super().__init__()
         self.pathway_name = ""  # Set by subclass
         self.dopamine_polarity = 1.0  # +1 for D1, -1 for D2
-    
+
     def apply_dopamine_modulation(
         self, dopamine: float, heterosynaptic_ratio: float = 0.3
     ) -> Dict[str, Any]:
         """Apply dopamine modulation with pathway-specific polarity."""
         # Apply polarity (D1: +1, D2: -1)
         modulated_dopamine = dopamine * self.dopamine_polarity
-        
+
         # Common update logic
         new_weights, metrics = self.learning_strategy.compute_update(
             weights=self.weights.data,
@@ -284,16 +286,16 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
             post=torch.ones(1, device=self.device),
             modulator=modulated_dopamine,
         )
-        
+
         # Update weights
         self.weights.data = new_weights
-        
+
         # Add pathway metadata
         metrics["pathway"] = self.pathway_name
         metrics["dopamine_sign"] = (
             "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
         )
-        
+
         return metrics
 
 # In d1_pathway.py (SIMPLIFIED):
@@ -353,7 +355,7 @@ from thalia.components.synapses import WeightInitializer, InitStrategy
 - Consistent with other component imports (e.g., `from thalia.components.neurons import NeuronFactory`)
 
 **Affected Files**: ~15 files currently using long path
-**Impact**: 
+**Impact**:
 - **Breaking**: None (imports work either way)
 - **Lines changed**: ~15 lines (one per file)
 - **Benefits**: Consistency, readability
@@ -368,7 +370,7 @@ These improvements require more coordination but provide substantial architectur
 
 **Current State**: Three region-specific checkpoint managers with similar structure:
 - `regions/striatum/checkpoint_manager.py` (~900 lines)
-- `regions/hippocampus/checkpoint_manager.py` (~600 lines)  
+- `regions/hippocampus/checkpoint_manager.py` (~600 lines)
 - `regions/prefrontal/checkpoint_manager.py` (~400 lines)
 
 **Analysis**: While `BaseCheckpointManager` provides common helpers (as seen in 1.1), the region-specific managers still have structural similarities:
@@ -393,19 +395,19 @@ class BaseCheckpointManager(ABC):
         }
         self._validate_state(state)
         return state
-    
+
     @abstractmethod
     def _get_neuron_state(self, region) -> Dict[str, Any]:
         """Extract neuron state (membrane, spikes, etc.)."""
-        
+
     @abstractmethod
     def _get_pathway_state(self, region) -> Dict[str, Any]:
         """Extract pathway weights and structure."""
-        
+
     @abstractmethod
     def _get_learning_state(self, region) -> Dict[str, Any]:
         """Extract learning state (traces, STP, etc.)."""
-        
+
     @abstractmethod
     def _get_region_specific_state(self, region) -> Dict[str, Any]:
         """Extract region-specific state (custom buffers, etc.)."""
@@ -447,13 +449,13 @@ def grow_output(self, n_new: int) -> None:
     old_size = self.n_neurons
     self.n_neurons += n_new
     # ... create neurons ...
-    
+
     # Step 2: Expand weights (DUPLICATED)
     for source_name, weights in self.synaptic_weights.items():
         n_input = weights.shape[1]
         new_rows = WeightInitializer.gaussian(n_new, n_input, device=self.device)
         self.synaptic_weights[source_name] = torch.cat([weights, new_rows], dim=0)
-    
+
     # Step 3: Update config (DUPLICATED)
     self.config.n_output = self.n_neurons
 ```
@@ -465,25 +467,25 @@ def grow_output(self, n_new: int) -> None:
 class GrowthMixin:
     def _grow_neurons(self, n_new: int, neuron_type: str = "pyramidal") -> Any:
         """Helper: Create and append new neurons.
-        
+
         Returns new neuron module that can be concatenated/appended.
         """
         from thalia.components.neurons import NeuronFactory
         return NeuronFactory.create(neuron_type, n_neurons=n_new, device=self.device)
-    
+
     def _expand_synaptic_weights_output(
-        self, 
+        self,
         n_new: int,
         initialization: str = "gaussian",
         **init_kwargs
     ) -> None:
         """Helper: Expand all synaptic weight matrices by adding output rows.
-        
+
         Handles multi-source weight dicts automatically.
         """
         from thalia.components.synapses import WeightInitializer
         init_func = getattr(WeightInitializer, initialization)
-        
+
         for source_name, weights in self.synaptic_weights.items():
             n_input = weights.shape[1]
             new_rows = init_func(n_new, n_input, device=self.device, **init_kwargs)
@@ -541,7 +543,7 @@ def grow_output(self, n_new: int) -> None:
 - Thalamus: Should use `"relay"`, `"trn"` but implementation unclear
 - Hippocampus: Uses `"ca1"`, `"ca3"` internally but no port routing
 
-**Proposed Convention**: 
+**Proposed Convention**:
 - **Lowercase with underscores**: `"l2_3"`, `"l5"`, `"l6a"`, `"l6b"`, `"relay"`, `"trn"`, `"ca1"`, `"ca3"`
 - **Or**: Uppercase abbreviations: `"L23"`, `"L5"`, `"L6A"`, `"RELAY"`, `"TRN"`, `"CA1"`, `"CA3"`
 
@@ -585,16 +587,16 @@ def grow_output(self, n_new: int) -> None:
 # In learning/strategy_registry.py (NEW):
 class LearningStrategyFactory:
     """Factory for creating learning strategies with region-specific presets."""
-    
+
     @staticmethod
     def create(strategy_type: str, **kwargs) -> LearningStrategy:
         """Create strategy by name (generic factory)."""
         # Existing create_strategy() logic
-    
+
     @staticmethod
     def preset(preset_name: str, **overrides) -> LearningStrategy:
         """Create strategy from region-specific preset.
-        
+
         Args:
             preset_name: "cortex", "striatum", "hippocampus", "cerebellum"
             **overrides: Override preset parameters
@@ -685,7 +687,7 @@ def create_stimulus_gating(
     tau_ms: float,
 ) -> StimulusGating:
     """Create StimulusGating with biological parameters.
-    
+
     Args:
         threshold: Stimulus change detection threshold
         strength: Maximum inhibition strength (scales to appropriate range)
@@ -795,7 +797,7 @@ learning/
 - **Files affected**: ~30-40 files (all regions that import strategies)
 - **Lines changed**: ~1200 lines moved, ~50 import updates
 - **Benefits**: Better organization, easier maintenance, clearer structure
-- **Migration Path**: 
+- **Migration Path**:
   1. Create new structure alongside old
   2. Add backward-compatible imports in `learning/__init__.py`
   3. Update all regions over 2-3 releases
@@ -896,13 +898,13 @@ regions/
 > 3. Obscure the opponent pathway interaction
 > 4. Break action selection coherence"
 
-**Analysis**: 
+**Analysis**:
 - **Striatum (3661 lines)**: Justification is reasonable. File has good internal structure (navigation comments at top). Components ARE extracted where appropriate (D1Pathway, D2Pathway, learning/homeostasis/exploration components).
 - **Hippocampus (2770 lines)**: Trisynaptic circuit (DG→CA3→CA1) is tightly coupled. Similar justification applies.
 - **LayeredCortex (2422 lines)**: Laminar architecture (L4→L2/3→L5→L6) requires coordination. Reasonable size.
 - **strategies.py (1209 lines)**: This SHOULD be split (see 3.1)
 
-**Recommendation**: 
+**Recommendation**:
 - **Accept**: Striatum, Hippocampus, LayeredCortex sizes are justified
 - **Consider**: Split strategies.py (Tier 3.1)
 - **Monitor**: If files exceed 4000 lines, revisit justification
@@ -1066,7 +1068,7 @@ For each phase:
 - `regions/hippocampus/trisynaptic.py:292` (3 lines)
 - `regions/thalamus/thalamus.py:XXX` (estimated, not confirmed)
 
-**Formula**: 
+**Formula**:
 ```python
 StimulusGating(
     threshold=config.ffi_threshold,
@@ -1165,5 +1167,5 @@ The codebase is in good health. These recommendations will make it even better.
 
 ---
 
-**Review Completed**: January 25, 2026  
+**Review Completed**: January 25, 2026
 **Next Review Recommended**: After implementing Phase 1-2 (approximately 3 months)

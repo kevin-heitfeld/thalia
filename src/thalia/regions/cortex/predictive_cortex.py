@@ -782,7 +782,7 @@ class PredictiveCortex(NeuralRegion):
         super().__init__(
             n_neurons=_output_size,
             neuron_config=None,  # Managed by inner cortex
-            default_learning_rule=None,  # Managed by inner cortex
+            default_learning_strategy=None,  # Managed by inner cortex
             device=device,
         )
 

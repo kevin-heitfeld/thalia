@@ -144,7 +144,7 @@ class TestPredictiveCortex(RegionTestBase):
         n_new = 10
 
         # Add input source to inner cortex
-        region.cortex.add_input_source(source_name, n_new, learning_rule="bcm")
+        region.cortex.add_input_source(source_name, n_new, learning_strategy="bcm")
 
         # Verify source was added
         assert source_name in region.cortex.input_sources

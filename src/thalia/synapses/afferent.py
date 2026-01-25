@@ -35,7 +35,7 @@ class AfferentSynapsesConfig:
     Attributes:
         n_neurons: Number of post-synaptic neurons
         n_inputs: Number of pre-synaptic inputs (axons)
-        learning_rule: Learning strategy name (e.g., 'stdp', 'three_factor')
+        learning_strategy: Learning strategy name (e.g., 'stdp', 'three_factor')
         learning_rate: Learning rate for weight updates
         use_stp: Whether to apply short-term plasticity
         stp_config: Configuration for STP (if enabled)
@@ -44,7 +44,7 @@ class AfferentSynapsesConfig:
 
     n_neurons: int
     n_inputs: int
-    learning_rule: str = "hebbian"
+    learning_strategy: str = "hebbian"
     learning_rate: float = 0.001
     use_stp: bool = False
     stp_config: Optional[Any] = None  # Will be STPConfig if use_stp=True
@@ -71,7 +71,7 @@ class AfferentSynapses(nn.Module):
             config=AfferentSynapsesConfig(
                 n_neurons=70,      # 70 MSN neurons
                 n_inputs=224,      # 224 afferent axons
-                learning_rule="three_factor",  # Dopamine-gated
+                learning_strategy="three_factor",  # Dopamine-gated
                 learning_rate=0.001,
             )
         )
@@ -122,7 +122,7 @@ class AfferentSynapses(nn.Module):
             from thalia.learning.rules.strategies import create_strategy
 
             self.learning_strategy = create_strategy(
-                rule_name=config.learning_rule,
+                strategy_name=config.learning_strategy,
                 learning_rate=config.learning_rate,
             )
 
@@ -273,7 +273,7 @@ class AfferentSynapses(nn.Module):
             "config": {
                 "n_neurons": self.config.n_neurons,
                 "n_inputs": self.config.n_inputs,
-                "learning_rule": self.config.learning_rule,
+                "learning_strategy": self.config.learning_strategy,
                 "learning_rate": self.config.learning_rate,
             },
         }
@@ -301,5 +301,5 @@ class AfferentSynapses(nn.Module):
         stp_str = " + STP" if self.stp is not None else ""
         return (
             f"AfferentSynapses({self.config.n_inputs} → {self.config.n_neurons}, "
-            f"{self.config.learning_rule}{stp_str})"
+            f"{self.config.learning_strategy}{stp_str})"
         )

@@ -1144,7 +1144,7 @@ class LayeredCortex(NeuralRegion):
         self,
         source_name: str,
         n_input: int,
-        learning_rule: Optional[str] = ...,  # type: ignore
+        learning_strategy: Optional[str] = ...,  # type: ignore
         sparsity: float = 0.2,
         weight_scale: float = 0.3,
     ) -> None:
@@ -1156,7 +1156,7 @@ class LayeredCortex(NeuralRegion):
         Args:
             source_name: Name of source region (e.g., "thalamus", "hippocampus")
             n_input: Number of neurons in source region
-            learning_rule: Plasticity rule for these synapses (default: use bcm_l4)
+            learning_strategy: Plasticity rule for these synapses (default: use bcm_l4)
             sparsity: Connection sparsity (0.0 = dense, 1.0 = no connections)
             weight_scale: Initial weight scale (mean synaptic strength)
 

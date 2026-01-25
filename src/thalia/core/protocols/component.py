@@ -1016,7 +1016,7 @@ class LearnableComponent(
         synapses_config = AfferentSynapsesConfig(
             n_neurons=self.config.n_neurons,
             n_inputs=self.config.n_input,
-            learning_rule=getattr(self.config, "learning_rule", "hebbian"),
+            learning_strategy=getattr(self.config, "learning_strategy", "hebbian"),
             learning_rate=self.config.learning_rate,
             device=self.config.device,
         )

@@ -241,7 +241,7 @@ class TestAfferentSynapses:
         config = AfferentSynapsesConfig(
             n_neurons=70,
             n_inputs=224,
-            learning_rule="three_factor",
+            learning_strategy="three_factor",
             learning_rate=0.001,
             device="cpu",
         )
@@ -264,7 +264,7 @@ class TestAfferentSynapses:
         config = AfferentSynapsesConfig(
             n_neurons=10,
             n_inputs=5,
-            learning_rule="hebbian",
+            learning_strategy="hebbian",
             learning_rate=0.001,
             device="cpu",
         )
@@ -291,7 +291,7 @@ class TestAfferentSynapses:
         config = AfferentSynapsesConfig(
             n_neurons=10,
             n_inputs=5,
-            learning_rule="hebbian",
+            learning_strategy="hebbian",
             learning_rate=0.1,
             device="cpu",
         )
@@ -325,7 +325,7 @@ class TestAfferentSynapses:
         config = AfferentSynapsesConfig(
             n_neurons=n_neurons,
             n_inputs=initial_inputs,
-            learning_rule="hebbian",
+            learning_strategy="hebbian",
             device="cpu",
         )
 
@@ -345,7 +345,7 @@ class TestAfferentSynapses:
         config = AfferentSynapsesConfig(
             n_neurons=70,
             n_inputs=224,
-            learning_rule="hebbian",
+            learning_strategy="hebbian",
             device="cpu",
         )
 
@@ -374,7 +374,7 @@ class TestAfferentSynapses:
         config = AfferentSynapsesConfig(
             n_neurons=10,
             n_inputs=5,
-            learning_rule="hebbian",
+            learning_strategy="hebbian",
             device="cpu",
         )
 
@@ -426,7 +426,7 @@ class TestIntegration:
         synapses_config = AfferentSynapsesConfig(
             n_neurons=70,
             n_inputs=224,  # Must match projection output
-            learning_rule="three_factor",
+            learning_strategy="three_factor",
             device="cpu",
         )
         synapses = AfferentSynapses(synapses_config)

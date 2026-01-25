@@ -252,7 +252,7 @@ class TrisynapticHippocampus(NeuralRegion):
         super().__init__(
             n_neurons=self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size,
             neuron_config=None,  # We create custom neurons for each layer
-            default_learning_rule="hebbian",  # Hippocampus uses Hebbian learning
+            default_learning_strategy="hebbian",  # Hippocampus uses Hebbian learning
             device=device,
         )
 

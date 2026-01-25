@@ -195,7 +195,7 @@ class TestLayeredCortex(RegionTestBase):
         n_new = 10
 
         # Add input source
-        region.add_input_source(source_name, n_new, learning_rule="bcm")
+        region.add_input_source(source_name, n_new, learning_strategy="bcm")
 
         # Verify source was added
         assert source_name in region.input_sources
@@ -299,7 +299,7 @@ class TestLayeredCortex(RegionTestBase):
         # Multi-source architecture: must add input source first
         source_name = "input"
         input_size = self._get_input_size(params)
-        region.add_input_source(source_name, input_size, learning_rule="bcm")
+        region.add_input_source(source_name, input_size, learning_strategy="bcm")
 
         # Run multiple forward passes with actual input
         input_spikes = torch.ones(input_size, device=region.device)

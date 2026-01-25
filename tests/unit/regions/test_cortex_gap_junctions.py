@@ -138,7 +138,7 @@ def test_gap_junction_state_management():
 
     # Multi-source architecture: add input source first
     input_size = sizes["input_size"]
-    cortex.add_input_source("input", input_size, learning_rule="bcm")
+    cortex.add_input_source("input", input_size, learning_strategy="bcm")
 
     # After forward pass, l23_membrane should be initialized and updated
     input_spikes = torch.ones(input_size, device=cortex.device)
@@ -165,7 +165,7 @@ def test_gap_junction_state_serialization():
 
     # Multi-source architecture: add input source first
     input_size = sizes["input_size"]
-    cortex.add_input_source("input", input_size, learning_rule="bcm")
+    cortex.add_input_source("input", input_size, learning_strategy="bcm")
 
     # Run forward to populate l23_membrane
     input_spikes = torch.ones(input_size, device=cortex.device)

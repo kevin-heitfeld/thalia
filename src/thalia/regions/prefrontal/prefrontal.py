@@ -371,7 +371,7 @@ class Prefrontal(NeuralRegion):
                 adapt_increment=config.adapt_increment,
                 tau_adapt=config.adapt_tau,
             ),
-            default_learning_rule="stdp",
+            default_learning_strategy="stdp",
             device=device,
         )
 

@@ -20,12 +20,12 @@ Total: 4 examples
 region = NeuralRegion(
             n_neurons=500,
             neuron_config=ConductanceLIFConfig(),
-            default_learning_rule="stdp"
+            default_learning_strategy="stdp"
         )
         >>>
         # Add input sources with their synaptic weights
         region.add_input_source("thalamus", n_input=128)  # Uses default STDP
-        region.add_input_source("hippocampus", n_input=200, learning_rule="bcm")  # Override
+        region.add_input_source("hippocampus", n_input=200, learning_strategy="bcm")  # Override
         >>>
         # Forward pass with multi-source input
         outputs = region.forward({
@@ -75,4 +75,3 @@ stdp_cfg = STDPConfig(learning_rate=0.002, a_plus=0.02)
 ```
 
 ---
-

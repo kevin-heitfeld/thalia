@@ -542,7 +542,7 @@ class STDPStrategy(BaseStrategy):
                 - norepinephrine (float): NE level (inverted-U modulation)
                 - bcm_modulation (float|Tensor): BCM metaplasticity factor
                 - oscillation_phase (float): Phase for phase-locked STDP
-                - learning_rule (SpikingLearningRule): Rule type for conditional modulation
+                - learning_strategy (SpikingLearningRule): Rule type for conditional modulation
         """
         # Ensure 1D inputs
         if pre.dim() != 1:
@@ -573,14 +573,14 @@ class STDPStrategy(BaseStrategy):
         norepinephrine = kwargs.get("norepinephrine", 0.0)
         bcm_modulation = kwargs.get("bcm_modulation", 1.0)
         oscillation_phase = kwargs.get("oscillation_phase", 0.0)
-        learning_rule = kwargs.get("learning_rule", None)
+        learning_strategy = kwargs.get("learning_strategy", None)
 
         # Apply neuromodulator modulations to LTP
         if isinstance(ltp, torch.Tensor):
             # Dopamine modulation (for dopamine-STDP)
-            if learning_rule is not None and hasattr(learning_rule, "name"):
+            if learning_strategy is not None and hasattr(learning_strategy, "name"):
                 # Check if this is dopamine-STDP rule
-                if "DOPAMINE" in learning_rule.name:
+                if "DOPAMINE" in learning_strategy.name:
                     ltp = ltp * (1.0 + dopamine)
 
             # Acetylcholine modulation (high ACh = favor LTP/encoding)
@@ -592,8 +592,8 @@ class STDPStrategy(BaseStrategy):
             ltp = ltp * ne_modulation
 
             # Phase modulation (for phase-STDP)
-            if learning_rule is not None and hasattr(learning_rule, "name"):
-                if "PHASE" in learning_rule.name:
+            if learning_strategy is not None and hasattr(learning_strategy, "name"):
+                if "PHASE" in learning_strategy.name:
                     phase_mod = 0.5 + 0.5 * np.cos(oscillation_phase)
                     ltp = ltp * phase_mod
 
@@ -606,8 +606,8 @@ class STDPStrategy(BaseStrategy):
         # Apply neuromodulator modulations to LTD
         if isinstance(ltd, torch.Tensor):
             # Dopamine modulation (reduces LTD, protects good synapses)
-            if learning_rule is not None and hasattr(learning_rule, "name"):
-                if "DOPAMINE" in learning_rule.name:
+            if learning_strategy is not None and hasattr(learning_strategy, "name"):
+                if "DOPAMINE" in learning_strategy.name:
                     ltd = ltd * (1.0 - 0.5 * max(0.0, dopamine))
 
             # Acetylcholine modulation (high ACh = reduce LTD/favor encoding)
@@ -619,8 +619,8 @@ class STDPStrategy(BaseStrategy):
             ltd = ltd * ne_modulation
 
             # Phase modulation (for phase-STDP)
-            if learning_rule is not None and hasattr(learning_rule, "name"):
-                if "PHASE" in learning_rule.name:
+            if learning_strategy is not None and hasattr(learning_strategy, "name"):
+                if "PHASE" in learning_strategy.name:
                     phase_mod = 0.5 - 0.5 * np.cos(oscillation_phase)
                     ltd = ltd * phase_mod
 
@@ -1106,13 +1106,13 @@ class CompositeStrategy(BaseStrategy):
 
 
 def create_strategy(
-    rule_name: str,
+    strategy_name: str,
     **config_kwargs: Any,
 ) -> BaseStrategy:
     """Factory function to create learning strategies by name.
 
     Args:
-        rule_name: One of 'hebbian', 'stdp', 'bcm', 'three_factor', 'error_corrective'
+        strategy_name: One of 'hebbian', 'stdp', 'bcm', 'three_factor', 'error_corrective'
         **config_kwargs: Configuration parameters for the strategy
 
     Returns:
@@ -1121,7 +1121,7 @@ def create_strategy(
     Example:
         strategy = create_strategy('stdp', a_plus=0.02, a_minus=0.02)
     """
-    name = rule_name.lower().replace("-", "_").replace(" ", "_")
+    name = strategy_name.lower().replace("-", "_").replace(" ", "_")
 
     if name == "hebbian":
         return HebbianStrategy(HebbianConfig(**config_kwargs))
@@ -1134,7 +1134,7 @@ def create_strategy(
     elif name in ("error_corrective", "delta", "supervised"):
         return ErrorCorrectiveStrategy(ErrorCorrectiveConfig(**config_kwargs))
     else:
-        raise ValueError(f"Unknown learning rule: {rule_name}")
+        raise ValueError(f"Unknown learning strategy: {strategy_name}")
 
 
 # =============================================================================

@@ -84,12 +84,12 @@ class NeuralRegion(
         >>> region = NeuralRegion(
         ...     n_neurons=500,
         ...     neuron_config=ConductanceLIFConfig(),
-        ...     default_learning_rule="stdp"
+        ...     default_learning_strategy="stdp"
         ... )
         >>>
         >>> # Add input sources with their synaptic weights
         >>> region.add_input_source("thalamus", n_input=128)  # Uses default STDP
-        >>> region.add_input_source("hippocampus", n_input=200, learning_rule="bcm")  # Override
+        >>> region.add_input_source("hippocampus", n_input=200, learning_strategy="bcm")  # Override
         >>>
         >>> # Forward pass with multi-source input
         >>> outputs = region.forward({
@@ -132,7 +132,7 @@ class NeuralRegion(
         self,
         n_neurons: int,
         neuron_config: Optional[ConductanceLIFConfig] = None,
-        default_learning_rule: Optional[str] = None,
+        default_learning_strategy: Optional[str] = None,
         device: str = "cpu",
         **kwargs,
     ):
@@ -141,8 +141,8 @@ class NeuralRegion(
         Args:
             n_neurons: Number of neurons in this region
             neuron_config: Configuration for ConductanceLIF neurons
-            default_learning_rule: Default plasticity rule for new input sources
-                                   Options: "stdp", "bcm", "hebbian", "three_factor"
+            default_learning_strategy: Default plasticity strategy for new input sources
+                                       Options: "stdp", "bcm", "hebbian", "three_factor"
             device: Device for computation ("cpu" or "cuda")
             **kwargs: Additional arguments for base class compatibility
 
@@ -157,7 +157,7 @@ class NeuralRegion(
         self.n_input = 0  # Updated as sources are added
         self.n_output = n_neurons
         self.device = torch.device(device)  # Regular attribute, not property
-        self.default_learning_rule = default_learning_rule
+        self.default_learning_strategy = default_learning_strategy
 
         # Plasticity control (for surgery/experiments)
         self.plasticity_enabled = True
@@ -185,7 +185,7 @@ class NeuralRegion(
         self,
         source_name: str,
         n_input: int,
-        learning_rule=...,  # Sentinel for default
+        learning_strategy=...,  # Sentinel for default
         sparsity: float = 0.2,
         weight_scale: float = 0.3,
     ) -> None:
@@ -197,8 +197,8 @@ class NeuralRegion(
         Args:
             source_name: Name of source region (e.g., "thalamus", "hippocampus")
             n_input: Number of neurons in source region
-            learning_rule: Plasticity rule for these synapses
-                          ... (default) = use region's default_learning_rule
+            learning_strategy: Plasticity rule for these synapses
+                          ... (default) = use region's default_learning_strategy
                           None = explicitly disable learning
                           str = specific rule ("stdp", "bcm", "hebbian", "three_factor")
             sparsity: Connection sparsity (0.0 = dense, 1.0 = no connections)
@@ -229,19 +229,19 @@ class NeuralRegion(
         # Update total n_input for tracking
         self.n_input = sum(self.input_sources.values())
 
-        # Create plasticity rule based on learning_rule parameter
-        # ... (sentinel) → use region's default_learning_rule
+        # Create plasticity rule based on learning_strategy parameter
+        # ... (sentinel) → use region's default_learning_strategy
         # None → explicitly disable learning
         # str → use specific rule
-        if learning_rule is ...:
+        if learning_strategy is ...:
             # Use default if set
-            rule = self.default_learning_rule
-        elif learning_rule is None:
+            rule = self.default_learning_strategy
+        elif learning_strategy is None:
             # Explicitly disabled
             rule = None
         else:
             # Specific rule provided
-            rule = learning_rule
+            rule = learning_strategy
 
         if rule:
             self.plasticity_rules[source_name] = create_strategy(
@@ -459,7 +459,7 @@ class NeuralRegion(
             "n_output": self.n_output,
             "device": str(self.device),
             "dt_ms": self.dt_ms,
-            "default_learning_rule": self.default_learning_rule,
+            "default_learning_strategy": self.default_learning_strategy,
             "input_sources": self.input_sources.copy(),
             "synaptic_weights": {
                 name: weights.detach().cpu() for name, weights in self.synaptic_weights.items()
@@ -487,7 +487,7 @@ class NeuralRegion(
             else:
                 # Add missing source
                 n_input = weights_cpu.shape[1]
-                self.add_input_source(name, n_input=n_input, learning_rule=None)
+                self.add_input_source(name, n_input=n_input, learning_strategy=None)
                 self.synaptic_weights[name].data = weights_cpu.to(self.device)
 
     def set_oscillator_phases(

@@ -139,7 +139,7 @@ class MultimodalIntegration(NeuralRegion):
         super().__init__(
             n_neurons=n_neurons,
             neuron_config=None,  # Created manually below
-            default_learning_rule="hebbian",
+            default_learning_strategy="hebbian",
             device=config.device,
         )
         self.config = config

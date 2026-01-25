@@ -94,7 +94,7 @@ class NeuralComponentConfig(BaseConfig):
     # =========================================================================
     # STDP PARAMETERS (shared by most regions)
     # =========================================================================
-    learning_rule: str = "STDP"
+    learning_strategy: str = "STDP"
     """Which plasticity rule to use (STDP, PHASE_STDP, TRIPLET_STDP, etc.)."""
 
     stdp_lr: float = 0.01
@@ -251,7 +251,7 @@ class PathwayConfig(NeuralComponentConfig):
     Pathway-Specific Defaults:
     - axonal_delay_ms: 5.0ms (inter-region typical, vs 1.0ms for local)
     - adapt_increment: 0.0 (pathways are relay neurons, not pyramidal)
-    - learning_rule: "STDP" (spike-timing dependent plasticity)
+    - learning_strategy: "STDP" (spike-timing dependent plasticity)
 
     Example:
         config = PathwayConfig(

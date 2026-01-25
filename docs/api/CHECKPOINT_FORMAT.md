@@ -49,7 +49,7 @@ All regions include these base fields:
 | `n_output` | `Any` | Output dimension |
 | `device` | `Any` | Device (CPU/GPU) |
 | `dt_ms` | `Any` | Timestep in milliseconds |
-| `default_learning_rule` | `Any` | Default learning strategy |
+| `default_learning_strategy` | `Any` | Default learning strategy |
 | `input_sources` | `Any` | Input source names |
 | `synaptic_weights` | `Dict[str, Any]` | Weight matrices per source |
 
@@ -97,4 +97,3 @@ if not is_valid:
 - **[Checkpoint Format Specification](../design/checkpoint_format.md)** - Complete binary format details, byte layouts, compression algorithms
 - **[Curriculum Strategy](../design/curriculum_strategy.md)** - Training stages and checkpoint usage in curriculum training
 - **[GETTING_STARTED_CURRICULUM](../GETTING_STARTED_CURRICULUM.md)** - Tutorial including checkpoint management
-

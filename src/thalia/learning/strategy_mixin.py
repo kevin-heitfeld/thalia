@@ -177,13 +177,13 @@ class LearningStrategyMixin:
 
     def create_strategy_from_config(
         self,
-        learning_rule: str,
+        learning_strategy: str,
         **config_kwargs: Any,
     ) -> BaseStrategy:
         """Convenience method to create strategy from learning rule name.
 
         Args:
-            learning_rule: Learning rule name ('stdp', 'bcm', 'three_factor', etc.)
+            learning_strategy: Learning rule name ('stdp', 'bcm', 'three_factor', etc.)
             **config_kwargs: Strategy configuration parameters
 
         Returns:
@@ -197,7 +197,7 @@ class LearningStrategyMixin:
                 a_minus=0.012,
             )
         """
-        return create_strategy(learning_rule, **config_kwargs)
+        return create_strategy(learning_strategy, **config_kwargs)
 
 
 __all__ = [

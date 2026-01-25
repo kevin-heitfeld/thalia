@@ -60,7 +60,7 @@ class LayeredCortex(NeuralRegion):
         super().__init__(
             n_neurons=config.n_output,
             neuron_config=config.neuron_config,
-            default_learning_rule="stdp",
+            default_learning_strategy="stdp",
             device=config.device,
         )
 
@@ -68,12 +68,12 @@ class LayeredCortex(NeuralRegion):
         self.add_input_source(
             "thalamus",
             n_input=config.n_input,
-            learning_rule="stdp",  # Uses default
+            learning_strategy="stdp",  # Uses default
         )
         self.add_input_source(
             "hippocampus",
             n_input=config.hipp_input_size,
-            learning_rule="bcm",  # Different strategy
+            learning_strategy="bcm",  # Different strategy
         )
 
     def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:

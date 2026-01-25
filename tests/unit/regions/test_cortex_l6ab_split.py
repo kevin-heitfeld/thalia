@@ -136,7 +136,7 @@ class TestL6abSplit:
         l6b_size = cortex_config_l6ab.l6b_size
 
         # Multi-source architecture: add input source first
-        cortex.add_input_source("input", n_input, learning_rule="bcm")
+        cortex.add_input_source("input", n_input, learning_strategy="bcm")
 
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True  # Activate some inputs
@@ -185,7 +185,7 @@ class TestL6abSplit:
         l6b_size = cortex_config_l6ab.l6b_size
 
         # Multi-source architecture: add input source first
-        cortex.add_input_source("input", n_input, learning_rule="bcm")
+        cortex.add_input_source("input", n_input, learning_strategy="bcm")
 
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True
@@ -242,7 +242,7 @@ class TestL6abSplit:
         n_input = cortex_config_l6ab.n_input
 
         # Multi-source architecture: add input source first
-        cortex.add_input_source("input", n_input, learning_rule="bcm")
+        cortex.add_input_source("input", n_input, learning_strategy="bcm")
 
         sensory_input = torch.zeros(n_input, dtype=torch.bool, device=device)
         sensory_input[0:20] = True

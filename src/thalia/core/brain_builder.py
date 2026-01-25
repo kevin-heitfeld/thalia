@@ -821,7 +821,7 @@ class BrainBuilder:
                 target_comp.add_input_source(
                     source_name=source_identifier,
                     n_input=source_size,
-                    learning_rule="bcm",  # Default learning rule (can be customized later)
+                    learning_strategy="bcm",  # Default learning rule (can be customized later)
                 )
 
         return projection

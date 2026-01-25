@@ -19,16 +19,16 @@ class TestNeuralRegionBasics:
     def test_initialization(self):
         """Test region creation with default parameters."""
         n_neurons = 100
-        learning_rule = "stdp"
+        learning_strategy = "stdp"
         region = NeuralRegion(
             n_neurons=n_neurons,
-            default_learning_rule=learning_rule,
+            default_learning_strategy=learning_strategy,
             device="cpu",
         )
 
         assert region.n_neurons == n_neurons  # Matches specified value
         assert region.n_neurons > 0  # Positive count invariant
-        assert region.default_learning_rule == learning_rule
+        assert region.default_learning_strategy == learning_strategy
         assert len(region.synaptic_weights) == 0  # No sources added yet
         assert len(region.plasticity_rules) == 0
         assert region.n_input == 0  # Updated when sources added
@@ -64,7 +64,7 @@ class TestNeuralRegionBasics:
         n_pfc = 64
         region = NeuralRegion(
             n_neurons=n_neurons,
-            default_learning_rule="stdp",
+            default_learning_strategy="stdp",
             device="cpu",
         )
 
@@ -116,7 +116,7 @@ class TestNeuralRegionBasics:
         """Test custom learning rule per input source."""
         region = NeuralRegion(
             n_neurons=100,
-            default_learning_rule="stdp",  # Default
+            default_learning_strategy="stdp",  # Default
             device="cpu",
         )
 
@@ -124,10 +124,10 @@ class TestNeuralRegionBasics:
         region.add_input_source("thalamus", n_input=128)
 
         # Hippocampus overrides with BCM
-        region.add_input_source("hippocampus", n_input=200, learning_rule="bcm")
+        region.add_input_source("hippocampus", n_input=200, learning_strategy="bcm")
 
         # PFC has no learning
-        region.add_input_source("pfc", n_input=64, learning_rule=None)
+        region.add_input_source("pfc", n_input=64, learning_strategy=None)
 
         # Check learning rules
         assert "thalamus" in region.plasticity_rules
@@ -142,7 +142,7 @@ class TestNeuralRegionForward:
         """Test forward pass with one input source."""
         region = NeuralRegion(n_neurons=50, device="cpu")
         region.add_input_source(
-            "thalamus", n_input=128, learning_rule=None
+            "thalamus", n_input=128, learning_strategy=None
         )  # No learning for simplicity
 
         # Create input spikes
@@ -162,9 +162,9 @@ class TestNeuralRegionForward:
     def test_multi_source_forward(self):
         """Test forward pass with multiple input sources."""
         region = NeuralRegion(n_neurons=100, device="cpu")
-        region.add_input_source("thalamus", n_input=128, learning_rule=None)
-        region.add_input_source("hippocampus", n_input=200, learning_rule=None)
-        region.add_input_source("pfc", n_input=64, learning_rule=None)
+        region.add_input_source("thalamus", n_input=128, learning_strategy=None)
+        region.add_input_source("hippocampus", n_input=200, learning_strategy=None)
+        region.add_input_source("pfc", n_input=64, learning_strategy=None)
 
         # Create inputs (different sparsities)
         inputs = {
@@ -196,8 +196,8 @@ class TestNeuralRegionForward:
     def test_partial_inputs_allowed(self):
         """Test that not all sources need to provide input."""
         region = NeuralRegion(n_neurons=100, device="cpu")
-        region.add_input_source("thalamus", n_input=128, learning_rule=None)
-        region.add_input_source("hippocampus", n_input=200, learning_rule=None)
+        region.add_input_source("thalamus", n_input=128, learning_strategy=None)
+        region.add_input_source("hippocampus", n_input=200, learning_strategy=None)
 
         # Only provide thalamic input (hippocampus silent)
         output = region.forward({"thalamus": torch.rand(128) > 0.9})
@@ -218,7 +218,7 @@ class TestNeuralRegionLearning:
         """Test that plasticity actually updates synaptic weights."""
         region = NeuralRegion(
             n_neurons=50,
-            default_learning_rule="hebbian",  # Simple Hebbian for testing
+            default_learning_strategy="hebbian",  # Simple Hebbian for testing
             device="cpu",
         )
         region.add_input_source("input", n_input=100, weight_scale=0.1)
@@ -241,9 +241,9 @@ class TestNeuralRegionLearning:
         assert weight_change > 0, "Weights should change with learning"
 
     def test_no_learning_when_rule_none(self):
-        """Test that weights don't change when learning_rule=None."""
+        """Test that weights don't change when learning_strategy=None."""
         region = NeuralRegion(n_neurons=50, device="cpu")
-        region.add_input_source("input", n_input=100, learning_rule=None)
+        region.add_input_source("input", n_input=100, learning_strategy=None)
 
         # Get initial weights
         initial_weights = region.synaptic_weights["input"].data.clone()
@@ -257,7 +257,7 @@ class TestNeuralRegionLearning:
         final_weights = region.synaptic_weights["input"].data
         assert torch.allclose(
             initial_weights, final_weights
-        ), "Weights should not change when learning_rule=None"
+        ), "Weights should not change when learning_strategy=None"
 
 
 class TestNeuralRegionStateManagement:
@@ -266,7 +266,7 @@ class TestNeuralRegionStateManagement:
     def test_reset_state(self):
         """Test that reset_state clears neuron state."""
         region = NeuralRegion(n_neurons=50, device="cpu")
-        region.add_input_source("input", n_input=100, learning_rule=None)
+        region.add_input_source("input", n_input=100, learning_strategy=None)
 
         # Run forward to create state
         input_spikes = torch.rand(100) > 0.5
