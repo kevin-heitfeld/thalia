@@ -224,13 +224,35 @@ builder.connect(
 2. `forward()`: Call `self.clear_port_outputs()` at start, then `self.set_port_output("default", output)` before return
 
 **Current Port Support:**
-- **LayeredCortex**: default, l23, l5, l6a, l6b (5 ports)
-- **All Other Regions**: default port (backward compatible)
+- **LayeredCortex**: default, l23, l5, l4, l6a, l6b (6 ports)
+- **ThalamicRelay**: default, relay, trn (3 ports)
+- **TrisynapticHippocampus**: default, dg, ca3, ca2, ca1 (5 ports)
+- **Striatum**: default, d1, d2 (3 ports)
+- **Other Regions**: default port only (PFC, Cerebellum)
 
 **Biological Rationale:**
-- L6a CT neurons → TRN (burst firing, lateral inhibition)
-- L6b CT neurons → Relay (regular spiking, feedback modulation)
-- Different cell types project to different targets (no output concatenation)
+- **Cortex**: L6a CT → TRN (burst firing, lateral inhibition), L6b CT → Relay (regular spiking, feedback modulation)
+- **Thalamus**: Relay cells → cortex (excitatory), TRN cells → lateral inhibition
+- **Hippocampus**: DG (pattern separation) → CA3 (pattern completion) → CA2 (context) → CA1 (output)
+- **Striatum**: D1 pathway (direct, facilitation), D2 pathway (indirect, suppression)
+
+**Best Practices (see default preset):**
+```python
+# Thalamocortical projection
+builder.connect("thalamus", "cortex", source_port="relay", ...)
+
+# Corticothalamic feedback (dual pathways)
+builder.connect("cortex", "thalamus", source_port="l6a", target_port="l6a_feedback", ...)
+builder.connect("cortex", "thalamus", source_port="l6b", target_port="l6b_feedback", ...)
+
+# Hippocampal output
+builder.connect("hippocampus", "cortex", source_port="ca1", ...)
+builder.connect("hippocampus", "striatum", source_port="ca1", ...)
+
+# Striatal pathways (when connecting to basal ganglia)
+builder.connect("striatum", "gpi", source_port="d1", ...)  # Direct pathway
+builder.connect("striatum", "gpe", source_port="d2", ...)  # Indirect pathway
+```
 
 **Implementation Details:**
 - Ports stored in `_port_outputs: Dict[str, torch.Tensor]`
