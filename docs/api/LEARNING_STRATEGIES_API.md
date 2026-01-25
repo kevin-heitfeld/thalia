@@ -1,7 +1,7 @@
 # Learning Strategies API
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all learning strategy factory functions available in Thalia.
@@ -200,3 +200,4 @@ strategy = create_strategy('stdp', a_plus=0.02, a_minus=0.02)
 - **Time constants**: Match biological ranges (10-100ms for STDP)
 - **Modulator sensitivity**: Tune based on task reward structure
 - **Testing**: Always validate with curriculum training stages
+

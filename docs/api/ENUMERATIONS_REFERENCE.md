@@ -1,7 +1,7 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
@@ -72,7 +72,7 @@ Weight initialization strategies.
 
 ---
 
-#### [``STPType``](../../src/thalia/components/synapses/stp.py#L53) (Enum)
+#### [``STPType``](../../src/thalia/components/synapses/stp.py#L55) (Enum)
 
 Predefined synapse types based on Markram et al. (1998) classification.
 
@@ -157,7 +157,7 @@ Types of spike encoding strategies.
 
 ---
 
-#### [``PredictiveCodingErrorType``](../../src/thalia/config/region_configs.py#L1370) (Enum)
+#### [``PredictiveCodingErrorType``](../../src/thalia/config/region_configs.py#L1351) (Enum)
 
 Types of prediction errors.
 
@@ -618,7 +618,7 @@ Sleep stages during consolidation.
 
 ### Thalia/Pathways
 
-#### [``Modality``](../../src/thalia/pathways/sensory_pathways.py#L131) (Enum)
+#### [``Modality``](../../src/thalia/pathways/sensory_pathways.py#L119) (Enum)
 
 Sensory modalities.
 
@@ -750,7 +750,7 @@ Logging levels for curriculum training.
 
 ---
 
-#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L190) (IntEnum)
+#### [``MechanismPriority``](../../src/thalia/training/curriculum/stage_manager.py#L189) (IntEnum)
 
 Priority levels for cognitive mechanisms.
 
@@ -780,7 +780,7 @@ Types of noise that can be scheduled.
 
 ---
 
-#### [``PhonologyTaskType``](../../src/thalia/training/datasets/loaders.py#L448) (Enum)
+#### [``PhonologyTaskType``](../../src/thalia/training/datasets/loaders.py#L449) (Enum)
 
 Task types for phonology stage.
 
@@ -795,7 +795,7 @@ Task types for phonology stage.
 
 ---
 
-#### [``TaskType``](../../src/thalia/training/datasets/loaders.py#L105) (Enum)
+#### [``TaskType``](../../src/thalia/training/datasets/loaders.py#L106) (Enum)
 
 Task types for sensorimotor stage.
 

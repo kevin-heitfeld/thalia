@@ -1,8 +1,8 @@
 # ADR-015: Port-Based Routing System
 
-**Status**: Accepted  
-**Date**: 2026-01-25  
-**Deciders**: Architecture Review (Tier 3.2)  
+**Status**: Accepted
+**Date**: 2026-01-25
+**Deciders**: Architecture Review (Tier 3.2)
 **Related**: Architecture Review 2026-01-25 (Tier 3.2)
 
 ## Context
@@ -47,7 +47,7 @@ class NeuralRegion(nn.Module):
         super().__init__()
         self.n_neurons = n_neurons
         self.device = device
-        
+
         # Port infrastructure
         self._port_outputs: Dict[str, torch.Tensor] = {}
         self._port_sizes: Dict[str, int] = {}
@@ -55,65 +55,65 @@ class NeuralRegion(nn.Module):
 
     def register_output_port(self, port_name: str, size: int) -> None:
         """Register an output port for routing.
-        
+
         Args:
             port_name: Name of the port (e.g., "l6a", "default")
             size: Number of neurons in this output
-            
+
         Raises:
             ValueError: If port already registered
         """
         if port_name in self._registered_ports:
             raise ValueError(f"Port '{port_name}' already registered")
-        
+
         self._port_sizes[port_name] = size
         self._registered_ports.add(port_name)
 
     def set_port_output(self, port_name: str, spikes: torch.Tensor) -> None:
         """Store output for a specific port.
-        
+
         Args:
             port_name: Name of the port
             spikes: Spike tensor for this port
-            
+
         Raises:
             ValueError: If port not registered
         """
         if port_name not in self._registered_ports:
             raise ValueError(f"Port '{port_name}' not registered. "
                            f"Available ports: {list(self._registered_ports)}")
-        
+
         if spikes.shape[0] != self._port_sizes[port_name]:
             raise ValueError(f"Port '{port_name}' expects {self._port_sizes[port_name]} "
                            f"neurons, got {spikes.shape[0]}")
-        
+
         self._port_outputs[port_name] = spikes
 
     def get_port_output(self, port_name: Optional[str] = None) -> torch.Tensor:
         """Get output from a specific port.
-        
+
         Args:
             port_name: Name of the port. If None, returns "default" port.
-            
+
         Returns:
             Spike tensor from the specified port
-            
+
         Raises:
             ValueError: If port not found or no output set
         """
         if port_name is None:
             port_name = "default"
-        
+
         if port_name not in self._port_outputs:
             raise ValueError(f"No output set for port '{port_name}'. "
                            f"Available outputs: {list(self._port_outputs.keys())}")
-        
+
         return self._port_outputs[port_name]
-    
+
     def clear_port_outputs(self) -> None:
         """Clear all port outputs (called at start of forward pass)."""
         self._port_outputs.clear()
-    
+
     def get_registered_ports(self) -> List[str]:
         """Get list of all registered port names."""
         return sorted(self._registered_ports)
@@ -125,7 +125,7 @@ class NeuralRegion(nn.Module):
 class LayeredCortex(NeuralRegion):
     def __init__(self, config: CortexConfig, sizes: Dict[str, int], device: str):
         # ... existing initialization ...
-        
+
         # Register output ports
         self.register_output_port("default", self.l23_size + self.l5_size)
         self.register_output_port("l23", self.l23_size)
@@ -136,17 +136,17 @@ class LayeredCortex(NeuralRegion):
     def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Process input and set port outputs."""
         self.clear_port_outputs()  # Clear previous outputs
-        
+
         # ... existing layer processing ...
         # l4_spikes, l23_spikes, l5_spikes, l6a_spikes, l6b_spikes = ...
-        
+
         # Set port outputs
         self.set_port_output("l23", l23_spikes)
         self.set_port_output("l5", l5_spikes)
         self.set_port_output("l6a", l6a_spikes)
         self.set_port_output("l6b", l6b_spikes)
         self.set_port_output("default", torch.cat([l23_spikes, l5_spikes]))
-        
+
         # Return default output (backward compatibility)
         return self.get_port_output("default")
 ```
@@ -164,14 +164,14 @@ class BrainBuilder:
         delay_ms: float = 0.0,
     ) -> "BrainBuilder":
         """Connect two regions with optional port specification.
-        
+
         Args:
             source: Source region name
             target: Target region name
             source_port: Output port of source (None = "default")
             target_port: Input port of target (for future multi-port inputs)
             delay_ms: Axonal delay in milliseconds
-            
+
         Example:
             >>> builder.connect("cortex", "thalamus", source_port="l6a", target_port="trn")
             >>> builder.connect("cortex", "thalamus", source_port="l6b", target_port="relay")
@@ -180,14 +180,14 @@ class BrainBuilder:
         source_region = self.components.get(source)
         if source_region is None:
             raise ValueError(f"Source region '{source}' not found")
-        
+
         if source_port is not None:
             if source_port not in source_region.get_registered_ports():
                 raise ValueError(
                     f"Port '{source_port}' not found in '{source}'. "
                     f"Available: {source_region.get_registered_ports()}"
                 )
-        
+
         # Store connection with port info
         connection_key = (source, target)
         self.topology[source].append(target)
@@ -196,7 +196,7 @@ class BrainBuilder:
             "target_port": target_port,
             "delay_ms": delay_ms,
         }
-        
+
         return self
 ```
 
@@ -211,7 +211,7 @@ class AxonalProjection(RoutingComponent):
         dt_ms: float = 1.0,
     ):
         """Initialize with source regions and optional ports.
-        
+
         Args:
             sources: List of (region_name, port_name) tuples
             device: Device for tensors
@@ -219,29 +219,29 @@ class AxonalProjection(RoutingComponent):
         """
         self.sources = sources  # [(region_name, port), ...]
         # ... rest of initialization ...
-    
+
     def forward(self, source_outputs: Dict[str, NeuralRegion]) -> Dict[str, torch.Tensor]:
         """Route from source ports to target.
-        
+
         Args:
             source_outputs: Dict mapping region names to region objects
-            
+
         Returns:
             Dict mapping source names to routed spike tensors
         """
         routed = {}
         for source_name, port_name in self.sources:
             region = source_outputs[source_name]
-            
+
             # Get port-specific output
             spikes = region.get_port_output(port_name)
-            
+
             # Apply delay if configured
             if self.delays.get(source_name) is not None:
                 spikes = self.delays[source_name].forward(spikes)
-            
+
             routed[source_name] = spikes
-        
+
         return routed
 ```
 
@@ -295,55 +295,70 @@ brain = builder.build()
 
 ### Risks and Mitigations
 
-**Risk**: Breaking existing brain configurations  
+**Risk**: Breaking existing brain configurations
 **Mitigation**: Default port behavior ensures backward compatibility for regions that don't use ports
 
-**Risk**: Confusion between port names and region names  
+**Risk**: Confusion between port names and region names
 **Mitigation**: Clear naming conventions and validation errors with helpful messages
 
-**Risk**: Performance overhead  
+**Risk**: Performance overhead
 **Mitigation**: Benchmark shows <1% overhead vs. concatenation approach
 
 ## Implementation Plan
 
-### Phase 1: Core Infrastructure (2-3 hours)
-- [ ] Add port methods to NeuralRegion base class
-- [ ] Add unit tests for port registration and retrieval
-- [ ] Update type aliases (SourceSpec to include port)
+### Phase 1: Core Infrastructure ✅ COMPLETE
+- [x] Add port methods to NeuralRegion base class
+- [x] Add unit tests for port registration and retrieval
+- [x] Update type aliases (SourceSpec to include port)
 
-### Phase 2: LayeredCortex Integration (2-3 hours)
-- [ ] Register L6a, L6b, L23, L5, default ports
-- [ ] Update forward() to set port outputs
-- [ ] Add integration tests for cortex ports
+**Commit**: c21ca3c (2026-01-25)
 
-### Phase 3: Routing Updates (3-4 hours)
-- [ ] Update AxonalProjection for port-aware routing
-- [ ] Update BrainBuilder.connect() with port parameters
-- [ ] Update DynamicBrain execution to use ports
+### Phase 2: LayeredCortex Integration ✅ COMPLETE
+- [x] Register L6a, L6b, L23, L5, default ports
+- [x] Update forward() to set port outputs
+- [x] Add integration tests for cortex ports
 
-### Phase 4: Testing & Documentation (4-5 hours)
-- [ ] End-to-end tests with L6a→TRN, L6b→relay routing
-- [ ] Update copilot-instructions.md
-- [ ] Create migration guide
-- [ ] Update API documentation
+**Commit**: c21ca3c (2026-01-25)
 
-### Phase 5: Other Regions (Optional, future work)
-- [ ] Add ports to TrisynapticHippocampus (DG, CA3, CA1 outputs)
-- [ ] Add ports to Striatum (D1, D2 outputs)
-- [ ] Add ports to Thalamus (relay, TRN outputs)
+### Phase 3: Routing Updates ✅ COMPLETE
+- [x] Update AxonalProjection for port-aware routing
+- [x] Update BrainBuilder.connect() with port parameters (already supported)
+- [x] Update DynamicBrain execution to use ports
+
+**Commit**: 45f27dc (2026-01-25)
+
+### Phase 4: Integration Testing & Region Updates ✅ COMPLETE
+- [x] End-to-end tests with L6a→TRN, L6b→relay routing
+- [x] Add ports to ALL NeuralRegion subclasses (7 total):
+  - [x] ThalamicRelay (relay, TRN outputs)
+  - [x] TrisynapticHippocampus (CA1 output)
+  - [x] Striatum (action selection output)
+  - [x] Prefrontal (executive control output)
+  - [x] Cerebellum (Purkinje cell output)
+  - [x] MultimodalIntegration (integrated output)
+  - [x] PredictiveCortex (L2/3+L5 representation output)
+
+**Commit**: edcad07 (2026-01-25)
+
+### Phase 5: Documentation ✅ COMPLETE
+- [x] Update copilot-instructions.md with port usage patterns
+- [x] Update API documentation
+- [x] Migration guide (backward compatibility via "default" port - no migration needed!)
+
+**Note**: Phase 5 (Other Regions) was completed as part of Phase 4 to ensure full system integration.
 
 ## Alternatives Considered
 
 ### Alternative 1: Slice-Based Routing (Current)
-**Approach**: Concatenate all outputs, slice at connection sites  
+**Approach**: Concatenate all outputs, slice at connection sites
 **Rejected**: Fragile (magic indices), difficult to maintain, doesn't scale
 
 ### Alternative 2: Multiple forward() Methods
-**Approach**: `forward_default()`, `forward_l6a()`, `forward_l6b()`  
+**Approach**: `forward_default()`, `forward_l6a()`, `forward_l6b()`
 **Rejected**: Violates single responsibility, complicates execution loop
 
 ### Alternative 3: Separate Regions for Each Layer
-**Approach**: L6aCortex, L6bCortex as independent regions  
+**Approach**: L6aCortex, L6bCortex as independent regions
 **Rejected**: Breaks biological coherence, massive code duplication
 
 ## References

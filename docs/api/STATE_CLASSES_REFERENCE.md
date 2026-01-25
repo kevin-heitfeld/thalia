@@ -1,12 +1,12 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
 
-Total: 8 state classes
+Total: 9 state classes
 
 ## Overview
 
@@ -32,9 +32,9 @@ RegionState (Protocol)
 
 ## Region State Classes
 
-Total region states: 8
+Total region states: 9
 
-### [``AxonalProjectionState``](../../src/thalia/core/pathway_state.py#L130)
+### [``AxonalProjectionState``](../../src/thalia/core/pathway_state.py#L129)
 
 **Base Class**: `PathwayState`  
 **Version**: 1  
@@ -47,6 +47,26 @@ Total region states: 8
 | Field | Type | Default |
 |-------|------|----------|
 | `delay_buffers` | `Dict[str, Tuple[torch.Tensor, int, int, int]]` | `{}` |
+
+---
+
+### [``BaseRegionState``](../../src/thalia/core/region_state.py#L134)
+
+**Base Class**: `RegionState`  
+**Version**: 1  
+**Source**: [`thalia/core/region_state.py`](../../src/thalia/core/region_state.py)
+
+**Description**: Base implementation with common fields for most regions.
+
+**Fields**:
+
+| Field | Type | Default |
+|-------|------|----------|
+| `spikes` | `Optional[torch.Tensor]` | `None` |
+| `membrane` | `Optional[torch.Tensor]` | `None` |
+| `dopamine` | `float` | `DA_BASELINE_STANDARD` |
+| `acetylcholine` | `float` | `ACH_BASELINE` |
+| `norepinephrine` | `float` | `NE_BASELINE` |
 
 ---
 

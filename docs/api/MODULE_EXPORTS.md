@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 46 modules, 485 exports
+Total: 46 modules, 468 exports
 
 ## 📑 Table of Contents
 
@@ -162,7 +162,7 @@ from thalia.components.neurons import ConductanceLIF
 
 **Source**: [`thalia/components/synapses/__init__.py`](../../src/thalia/components/synapses/__init__.py)
 
-**Exports** (19):
+**Exports** (13):
 
 - `InitStrategy`
 - `WeightInitializer`
@@ -176,13 +176,7 @@ from thalia.components.neurons import ConductanceLIF
 - `list_presets`
 - `sample_heterogeneous_stp_params`
 - `create_heterogeneous_stp_configs`
-- `SpikeTrace`
-- `PairedTraces`
-- `TraceConfig`
-- `compute_stdp_update`
-- `create_trace`
 - `update_trace`
-- `compute_decay`
 
 **Usage**:
 
@@ -302,8 +296,8 @@ from thalia.coordination import CapacityMetrics
 - `StriatumDiagnostics`
 - `HippocampusDiagnostics`
 - `BrainSystemDiagnostics`
-- `Resettable`
-- `Learnable`
+- `BrainComponent`
+- `BrainComponentMixin`
 
 **Usage**:
 
@@ -335,22 +329,11 @@ from thalia.core.base import NeuralComponentConfig
 
 **Source**: [`thalia/core/protocols/__init__.py`](../../src/thalia/core/protocols/__init__.py)
 
-**Exports** (14):
+**Exports** (3):
 
 - `BrainComponent`
-- `BrainComponentBase`
 - `BrainComponentMixin`
-- `LearnableComponent`
 - `RoutingComponent`
-- `Resettable`
-- `Learnable`
-- `Forwardable`
-- `Diagnosable`
-- `WeightContainer`
-- `Configurable`
-- `NeuralComponentProtocol`
-- `Checkpointable`
-- `CheckpointableWithNeuromorphic`
 
 **Usage**:
 
@@ -748,9 +731,8 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 
 **Source**: [`thalia/pathways/__init__.py`](../../src/thalia/pathways/__init__.py)
 
-**Exports** (6):
+**Exports** (5):
 
-- `NeuralPathway`
 - `AxonalProjection`
 - `SensoryPathway`
 - `VisualPathway`
@@ -760,7 +742,7 @@ from thalia.neuromodulation.systems import VTADopamineSystem
 **Usage**:
 
 ```python
-from thalia.pathways import NeuralPathway
+from thalia.pathways import AxonalProjection
 ```
 
 ---
@@ -979,15 +961,16 @@ from thalia.surgery import lesion_region
 
 **Source**: [`thalia/synapses/__init__.py`](../../src/thalia/synapses/__init__.py)
 
-**Exports** (2):
+**Exports** (3):
 
-- `AfferentSynapses`
-- `AfferentSynapsesConfig`
+- `SpilloverConfig`
+- `SpilloverTransmission`
+- `apply_spillover_to_weights`
 
 **Usage**:
 
 ```python
-from thalia.synapses import AfferentSynapses
+from thalia.synapses import SpilloverConfig
 ```
 
 ---

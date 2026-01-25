@@ -164,8 +164,79 @@ class MyRegion(NeuralRegion):
             )
             self.synaptic_weights[source_name].data = new_weights
 
+        # Port-based routing (ADR-015): Set port outputs before return
+        self.clear_port_outputs()
+        self.set_port_output("default", output_spikes)
+
         return output_spikes
 ```
+
+### Port-Based Routing (ADR-015)
+
+All NeuralRegion subclasses support port-based routing for biologically-accurate connections:
+
+```python
+# Register ports in __init__ (declarative)
+class LayeredCortex(NeuralRegion):
+    def __init__(self, config: CortexConfig, ...):
+        # ... initialization ...
+
+        # Register output ports
+        self.register_output_port("default", self.l23_size + self.l5_size)
+        self.register_output_port("l23", self.l23_size)
+        self.register_output_port("l5", self.l5_size)
+        self.register_output_port("l6a", self.l6a_size)  # → TRN
+        self.register_output_port("l6b", self.l6b_size)  # → Relay
+
+    def forward(self, source_spikes: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Process input and set port outputs."""
+        self.clear_port_outputs()  # Clear previous outputs
+
+        # ... layer processing ...
+        # l4_spikes, l23_spikes, l5_spikes, l6a_spikes, l6b_spikes = ...
+
+        # Set port outputs (runtime)
+        self.set_port_output("l23", l23_spikes)
+        self.set_port_output("l5", l5_spikes)
+        self.set_port_output("l6a", l6a_spikes)
+        self.set_port_output("l6b", l6b_spikes)
+        self.set_port_output("default", torch.cat([l23_spikes, l5_spikes]))
+
+        return self.get_port_output("default")
+
+# Connect with specific ports in BrainBuilder
+builder.connect(
+    "cortex", "thalamus",
+    source_port="l6a",      # L6a CT neurons → TRN
+    target_port="trn",
+    delay_ms=2.0
+)
+builder.connect(
+    "cortex", "thalamus",
+    source_port="l6b",      # L6b CT neurons → Relay
+    target_port="relay",
+    delay_ms=2.0
+)
+```
+
+**Port Registration Pattern (REQUIRED for all regions):**
+1. `__init__`: Call `self.register_output_port("default", size)` before `self.to(device)`
+2. `forward()`: Call `self.clear_port_outputs()` at start, then `self.set_port_output("default", output)` before return
+
+**Current Port Support:**
+- **LayeredCortex**: default, l23, l5, l6a, l6b (5 ports)
+- **All Other Regions**: default port (backward compatible)
+
+**Biological Rationale:**
+- L6a CT neurons → TRN (burst firing, lateral inhibition)
+- L6b CT neurons → Relay (regular spiking, feedback modulation)
+- Different cell types project to different targets (no output concatenation)
+
+**Implementation Details:**
+- Ports stored in `_port_outputs: Dict[str, torch.Tensor]`
+- AxonalProjection extracts port outputs via `region.get_port_output(port)`
+- BrainBuilder passes `source_port` parameter to connections
+- DynamicBrain passes region objects (not tensors) to pathways
 
 ## Common Imports
 

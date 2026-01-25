@@ -1,7 +1,7 @@
 # Checkpoint Format Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 > **📚 For complete binary format specification, version compatibility, and implementation details, see [checkpoint_format.md](../design/checkpoint_format.md)**
@@ -97,3 +97,4 @@ if not is_valid:
 - **[Checkpoint Format Specification](../design/checkpoint_format.md)** - Complete binary format details, byte layouts, compression algorithms
 - **[Curriculum Strategy](../design/curriculum_strategy.md)** - Training stages and checkpoint usage in curriculum training
 - **[GETTING_STARTED_CURRICULUM](../GETTING_STARTED_CURRICULUM.md)** - Tutorial including checkpoint management
+

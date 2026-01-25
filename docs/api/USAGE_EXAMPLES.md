@@ -1,7 +1,7 @@
 # Usage Examples
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs usage examples extracted from docstrings and training scripts.
@@ -17,21 +17,10 @@ Total: 4 examples
 **Source**: `thalia\core\neural_region.py`
 
 ```python
-region = NeuralRegion(
-            n_neurons=500,
-            neuron_config=ConductanceLIFConfig(),
-            default_learning_strategy="stdp"
-        )
-        >>>
-        # Add input sources with their synaptic weights
-        region.add_input_source("thalamus", n_input=128)  # Uses default STDP
-        region.add_input_source("hippocampus", n_input=200, learning_strategy="bcm")  # Override
-        >>>
-        # Forward pass with multi-source input
-        outputs = region.forward({
-            "thalamus": thalamic_spikes,      # [128]
-            "hippocampus": hippocampal_spikes # [200]
-        })  # Returns [500]
+self.clear_port_outputs()
+                # process layers ...
+                self.set_port_output("l6a", l6a_spikes)
+                return self.get_port_output("default")
 ```
 
 ---
@@ -75,3 +64,4 @@ stdp_cfg = STDPConfig(learning_rate=0.002, a_plus=0.02)
 ```
 
 ---
+

@@ -1,7 +1,7 @@
 # Constants Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all module-level constants with biological context, ranges, and scientific references.
@@ -30,11 +30,6 @@ from thalia.components.neurons.neuron_constants import (
     V_THRESHOLD_STANDARD,
 )
 
-# Learning parameters
-from thalia.regulation.learning_constants import (
-    TAU_ELIGIBILITY_STANDARD,
-)
-
 # Neuromodulation
 from thalia.neuromodulation.constants import (
     DA_PHASIC_DECAY_PER_MS,
@@ -47,3 +42,4 @@ from thalia.neuromodulation.constants import (
 - [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md) - Config classes that use these constants
 - [COMPONENT_CATALOG.md](COMPONENT_CATALOG.md) - Components using these parameters
 - [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) - Pre-configured neuron populations
+

@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 18:43:05
+> Last updated: 2026-01-25 23:23:15
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -166,9 +166,9 @@ Total: **8** regions
 
 ### `cerebellum`
 
-**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum/cerebellum.py#L161)
+**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum/cerebellum.py#L134)
 
-**Config Class**: [`CerebellumConfig`](../../src/thalia/config/region_configs.py#L338)
+**Config Class**: [`CerebellumConfig`](../../src/thalia/config/region_configs.py#L319)
 
 **Source**: [`thalia/regions/cerebellum/cerebellum.py`](../../src/thalia/regions/cerebellum/cerebellum.py)
 
@@ -182,7 +182,7 @@ Total: **8** regions
 
 **Aliases**: `layered_cortex`
 
-**Config Class**: [`LayeredCortexConfig`](../../src/thalia/config/region_configs.py#L1099)
+**Config Class**: [`LayeredCortexConfig`](../../src/thalia/config/region_configs.py#L1080)
 
 **Source**: [`thalia/regions/cortex/layered_cortex.py`](../../src/thalia/regions/cortex/layered_cortex.py)
 
@@ -196,7 +196,7 @@ Total: **8** regions
 
 **Aliases**: `trisynaptic, trisynaptic_hippocampus`
 
-**Config Class**: [`HippocampusConfig`](../../src/thalia/config/region_configs.py#L99)
+**Config Class**: [`HippocampusConfig`](../../src/thalia/config/region_configs.py#L80)
 
 **Source**: [`thalia/regions/hippocampus/trisynaptic.py`](../../src/thalia/regions/hippocampus/trisynaptic.py)
 
@@ -220,11 +220,11 @@ Total: **8** regions
 
 ### `predictive_cortex`
 
-**Class**: [`PredictiveCortex`](../../src/thalia/regions/cortex/predictive_cortex.py#L687)
+**Class**: [`PredictiveCortex`](../../src/thalia/regions/cortex/predictive_cortex.py#L685)
 
 **Aliases**: `predictive`
 
-**Config Class**: [`PredictiveCortexConfig`](../../src/thalia/config/region_configs.py#L1438)
+**Config Class**: [`PredictiveCortexConfig`](../../src/thalia/config/region_configs.py#L1419)
 
 **Source**: [`thalia/regions/cortex/predictive_cortex.py`](../../src/thalia/regions/cortex/predictive_cortex.py)
 
@@ -234,11 +234,11 @@ Total: **8** regions
 
 ### `prefrontal`
 
-**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L281)
+**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L260)
 
 **Aliases**: `pfc`
 
-**Config Class**: [`PrefrontalConfig`](../../src/thalia/config/region_configs.py#L760)
+**Config Class**: [`PrefrontalConfig`](../../src/thalia/config/region_configs.py#L741)
 
 **Source**: [`thalia/regions/prefrontal/prefrontal.py`](../../src/thalia/regions/prefrontal/prefrontal.py)
 
@@ -248,11 +248,11 @@ Total: **8** regions
 
 ### `striatum`
 
-**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L167)
+**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L165)
 
 **Aliases**: `basal_ganglia`
 
-**Config Class**: [`StriatumConfig`](../../src/thalia/config/region_configs.py#L504)
+**Config Class**: [`StriatumConfig`](../../src/thalia/config/region_configs.py#L485)
 
 **Source**: [`thalia/regions/striatum/striatum.py`](../../src/thalia/regions/striatum/striatum.py)
 
@@ -262,11 +262,11 @@ Total: **8** regions
 
 ### `thalamus`
 
-**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus/thalamus.py#L129)
+**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus/thalamus.py#L104)
 
 **Aliases**: `thalamic_relay`
 
-**Config Class**: [`ThalamicRelayConfig`](../../src/thalia/config/region_configs.py#L850)
+**Config Class**: [`ThalamicRelayConfig`](../../src/thalia/config/region_configs.py#L831)
 
 **Source**: [`thalia/regions/thalamus/thalamus.py`](../../src/thalia/regions/thalamus/thalamus.py)
 
@@ -280,7 +280,7 @@ Total: **4** pathways
 
 ### `auditory`
 
-**Class**: [`AuditoryPathway`](../../src/thalia/pathways/sensory_pathways.py#L760)
+**Class**: [`AuditoryPathway`](../../src/thalia/pathways/sensory_pathways.py#L748)
 
 **Aliases**: `auditory_pathway, cochlear_pathway`
 
@@ -294,7 +294,7 @@ Total: **4** pathways
 
 ### `axonal`
 
-**Class**: [`AxonalProjection`](../../src/thalia/pathways/axonal_projection.py#L86)
+**Class**: [`AxonalProjection`](../../src/thalia/pathways/axonal_projection.py#L89)
 
 **Aliases**: `axonal_projection, pure_axon`
 
@@ -308,7 +308,7 @@ Total: **4** pathways
 
 ### `language`
 
-**Class**: [`LanguagePathway`](../../src/thalia/pathways/sensory_pathways.py#L827)
+**Class**: [`LanguagePathway`](../../src/thalia/pathways/sensory_pathways.py#L815)
 
 **Aliases**: `language_pathway, linguistic_pathway`
 
@@ -322,7 +322,7 @@ Total: **4** pathways
 
 ### `visual`
 
-**Class**: [`VisualPathway`](../../src/thalia/pathways/sensory_pathways.py#L505)
+**Class**: [`VisualPathway`](../../src/thalia/pathways/sensory_pathways.py#L493)
 
 **Aliases**: `visual_pathway, retinal_pathway`
 
