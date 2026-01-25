@@ -1,8 +1,6 @@
 """
 Edge case tests for neural components using DynamicBrain.
 
-This is an exact copy of test_edge_cases.py but using DynamicBrain instead of EventDrivenBrain.
-
 Tests boundary conditions using the full brain: silent input, saturated input,
 extreme parameters, dimension mismatches, and numerical stability.
 

@@ -147,7 +147,6 @@ class DocumentationValidator:
             (r"create_learning_strategy\s*\(", "create_learning_strategy", "create_strategy"),
             (r"class\s+SimpleLIF", "SimpleLIF", "ConductanceLIF"),
             (r"from.*SimpleLIF", "SimpleLIF", "ConductanceLIF"),
-            (r"EventDrivenBrain", "EventDrivenBrain", "DynamicBrain"),
             (r"brain\.cortex\b", "brain.cortex", 'brain.components["cortex"]'),
             (r"brain\.hippocampus\b", "brain.hippocampus", 'brain.components["hippocampus"]'),
             (r"brain\.striatum\b", "brain.striatum", 'brain.components["striatum"]'),

@@ -311,7 +311,7 @@ class TestMultiSourceLearning:
         assert hippo_tau == 300.0
 
     def test_learning_applies_to_all_sources(self, brain_config):
-        """Test that deliver_reward applies learning to all source-pathways."""
+        """Test that continuous learning applies to all source-pathways."""
         builder = BrainBuilder(brain_config)
 
         builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
@@ -339,9 +339,9 @@ class TestMultiSourceLearning:
         cortex_d1_before = striatum.synaptic_weights["cortex:l5_d1"].clone()
         hippo_d1_before = striatum.synaptic_weights["hippocampus_d1"].clone()
 
-        # Deliver reward (should trigger learning)
+        # Apply high dopamine and run forward pass (triggers continuous learning)
         striatum.set_neuromodulators(dopamine=1.0)  # High dopamine
-        metrics = striatum.deliver_reward(reward=1.0)
+        striatum(inputs)  # Learning happens automatically in forward()
 
         # Both sources should have weight changes
         cortex_d1_after = striatum.synaptic_weights["cortex:l5_d1"]
@@ -352,8 +352,7 @@ class TestMultiSourceLearning:
 
         assert (
             cortex_changed or hippo_changed
-        ), "At least one source should have weight changes after learning"
-        assert "d1_ltp" in metrics, "Learning metrics should be returned"
+        ), "At least one source should have weight changes after continuous learning"
 
 
 class TestMultiSourceGrowth:

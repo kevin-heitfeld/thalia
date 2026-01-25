@@ -36,7 +36,6 @@ The full state dict contains:
 - `learning_state`: Vote accumulators, trial statistics, homeostasis
 - `exploration_state`: Exploration parameters and history
 - `last_action`: Most recent action for credit assignment
-- `td_lambda_state`: TD(λ) eligibility traces (if enabled)
 
 Author: Thalia Project
 Date: December 9, 2025 (extracted during striatum refactoring)

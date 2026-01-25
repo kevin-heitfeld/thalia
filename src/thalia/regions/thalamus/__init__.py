@@ -13,7 +13,8 @@ Date: January 16, 2026
 
 from __future__ import annotations
 
-from .thalamus import ThalamicRelay, ThalamicRelayState
+from .state import ThalamicRelayState
+from .thalamus import ThalamicRelay
 
 __all__ = [
     "ThalamicRelay",

@@ -104,8 +104,6 @@ def test_growth_history_retrieval():
 def test_coordinate_growth_with_real_brain():
     """Integration test: coordinate growth on real brain components.
 
-    This is an exact copy of the test but using DynamicBrain instead of EventDrivenBrain.
-
     This test complements the unit tests above by verifying that growth
     coordination works with actual DynamicBrain regions and pathways,
     not just mocks.

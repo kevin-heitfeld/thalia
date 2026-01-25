@@ -19,22 +19,7 @@ Duration: 1 simulated month (50,000 steps)
 Success criteria: >95% motor accuracy, >90% reaching, >85% manipulation
 Next stage: Stage 0 - Sensory Foundations (object recognition, phonology)
 
-AUTOMATIC FEATURES (ALL ENABLED BY DEFAULT):
-============================================
-✅ Phase 1: TD(λ) + Goal-Conditioned Learning (multi-step credit assignment)
-✅ Phase 2: Unified Replay System (sleep consolidation, awake replay, forward planning)
-✅ Phase 3: Hierarchical Goals + Hyperbolic Discounting (delayed gratification)
-
-All features automatically apply during training:
-- TD(λ) bridges 5-10 second delays
-- Unified replay handles sleep consolidation, immediate replay, and forward planning
-- Cognitive load tracked from working memory
-- Temporal discounting adapts to load
-- Goal hierarchies auto-configured for Stages 3+ (planning, reasoning)
-
-No manual intervention required! The brain does everything automatically.
-
-COMPREHENSIVE DIAGNOSTICS (NEW! December 12, 2025):
+COMPREHENSIVE DIAGNOSTICS:
 ===================================================
 ✅ Performance Profiling:
    - Steps/second throughput
@@ -58,9 +43,6 @@ COMPREHENSIVE DIAGNOSTICS (NEW! December 12, 2025):
    - Phase transitions (early/peak/late)
    - Learning rate modulation
 
-All metrics are automatically collected, logged, and saved in checkpoints.
-Performance overhead: <2%
-
 Usage:
     python training/thalia_birth_sensorimotor.py
 
@@ -68,12 +50,6 @@ Usage:
     from thalia.training import TrainingMonitor
     monitor = TrainingMonitor("training_runs/00_sensorimotor")
     monitor.show_all()  # Show all visualizations
-
-Author: Thalia Project
-Date: December 9, 2025
-Updated: December 10, 2025 (Phase 3 auto-integration)
-Updated: December 12, 2025 (Comprehensive diagnostics added)
-Milestone: First Curriculum Training Session
 """
 
 from __future__ import annotations

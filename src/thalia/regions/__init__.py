@@ -74,36 +74,42 @@ Biological References:
 
 from __future__ import annotations
 
-from .cerebellum import Cerebellum, CerebellumState
-from .cortex import LayeredCortex, PredictiveCortex
+from .cerebellum import Cerebellum, GranuleLayerState, PurkinjeCellState, CerebellumState
+from .cortex import LayeredCortex, LayeredCortexState, PredictiveCortex, PredictiveCortexState
 from .hippocampus import HippocampusState, TrisynapticHippocampus
-from .multisensory import MultimodalIntegration
 from .prefrontal import Prefrontal, PrefrontalState
-from .stimulus_gating import StimulusGating
-from .striatum import Striatum, StriatumState
+from .striatum import Striatum, StriatumState, StriatumStateTracker
 from .thalamus import ThalamicRelay, ThalamicRelayState
+
+from .multisensory import MultimodalIntegration
+from .stimulus_gating import StimulusGating
 
 __all__ = [
     # Cerebellum
     "Cerebellum",
+    "GranuleLayerState",
+    "PurkinjeCellState",
     "CerebellumState",
     # Cortex
     "LayeredCortex",
+    "LayeredCortexState",
     "PredictiveCortex",
+    "PredictiveCortexState",
     # Hippocampus
     "TrisynapticHippocampus",
     "HippocampusState",
-    # Multisensory Integration
-    "MultimodalIntegration",
     # Prefrontal
     "Prefrontal",
     "PrefrontalState",
-    # Stimulus Gating
-    "StimulusGating",
     # Striatum
     "Striatum",
     "StriatumState",
+    "StriatumStateTracker",
     # Thalamus
     "ThalamicRelay",
     "ThalamicRelayState",
+    # Multisensory Integration
+    "MultimodalIntegration",
+    # Stimulus Gating
+    "StimulusGating",
 ]

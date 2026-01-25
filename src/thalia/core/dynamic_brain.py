@@ -4,7 +4,7 @@ Dynamic Brain - Component Graph Executor
 This module implements a flexible brain architecture where the brain is
 treated as a directed graph of neural components (regions, pathways, modules).
 
-Unlike EventDrivenBrain (hardcoded 6 regions), DynamicBrain supports:
+DynamicBrain supports:
 - Arbitrary number of components
 - Flexible topologies (not limited to fixed connectivity)
 - User-defined custom components via ComponentRegistry
@@ -65,10 +65,7 @@ if TYPE_CHECKING:
 class DynamicBrain(nn.Module):
     """Dynamic brain constructed from component graph.
 
-    Unlike EventDrivenBrain (hardcoded 6 regions), DynamicBrain builds
-    arbitrary topologies from registered components.
-
-    Key Differences from EventDrivenBrain:
+    DynamicBrain builds arbitrary topologies from registered components:
     - Flexible component graph vs. hardcoded regions
     - User-extensible via ComponentRegistry
     - Arbitrary connectivity patterns
@@ -333,11 +330,7 @@ class DynamicBrain(nn.Module):
         return cast(NeuralRegion, self.components[name])
 
     def _update_config_sizes(self) -> None:
-        """Update config with component sizes for CheckpointManager compatibility.
-
-        EventDrivenBrain has config.input_size, config.cortex_size, etc.
-        DynamicBrain extracts these from components if they exist.
-        """
+        """Update config with component sizes for CheckpointManager compatibility."""
         # Try to extract common size attributes for compatibility
         if "thalamus" in self.components:
             thalamus = self._get_component("thalamus")
@@ -834,8 +827,7 @@ class DynamicBrain(nn.Module):
     def select_action(self, explore: bool = True, use_planning: bool = True) -> tuple[int, float]:
         """Select action based on current striatum state.
 
-        Compatible with EventDrivenBrain RL interface. Uses striatum to
-        select actions based on accumulated evidence.
+        Uses striatum to select actions based on accumulated evidence.
 
         If use_planning=True and UnifiedReplayCoordinator is available:
         - Uses forward planning to simulate action outcomes
@@ -905,16 +897,53 @@ class DynamicBrain(nn.Module):
                 f"finalize_action method. Ensure striatum implements RL interface."
             )
 
+    def reset_trial(self) -> None:
+        """Reset state for new trial in action learning experiments.
+
+        Delegates to striatum.reset_trial() if present. This clears trial-specific
+        state (votes, FSI membrane, action selection) while preserving learned
+        weights and exploration statistics.
+
+        Biology: Between trials, FSI neurons return to resting potential and
+        action votes reset, but synaptic plasticity persists.
+
+        Use Case:
+            for trial in range(n_trials):
+                brain.reset_trial()  # Start fresh
+                for t in range(trial_length):
+                    spikes = brain(inputs)
+                action = brain.finalize_action()
+                reward = environment.get_reward(action)
+                brain.deliver_reward(reward)
+
+        Raises:
+            AttributeError: If striatum doesn't have reset_trial method
+        """
+        if "striatum" in self.components:
+            striatum = self.components["striatum"]
+            if hasattr(striatum, "reset_trial"):
+                striatum.reset_trial()  # type: ignore[attr-defined]
+            else:
+                raise AttributeError(
+                    f"Striatum component ({type(striatum).__name__}) does not have "
+                    f"reset_trial method. Update striatum implementation."
+                )
+        else:
+            # No striatum - no-op (some architectures may not need this)
+            pass
+
     def deliver_reward(self, external_reward: Optional[float] = None) -> Dict[str, Any]:
-        """Deliver reward signal for learning.
+        """Deliver reward signal and update exploration statistics.
 
-        **Phase 5 Migration**: Simplified reward delivery - no explicit RPE computation.
-        Dopamine-modulated learning happens purely via eligibility traces in striatum.
+        **Continuous Learning Architecture**: Learning happens automatically in striatum's
+        forward() pass using broadcast dopamine. This method broadcasts dopamine globally
+        and updates exploration statistics.
 
-        Compatible with EventDrivenBrain RL interface. The brain broadcasts reward
-        as dopamine signal to striatum, which uses three-factor learning
-        (STDP + eligibility + dopamine) for synaptic updates.
-
+        Uses striatum to select actions based on accumulated evidence.
+        The brain broadcasts reward as dopamine signal to all regions,
+        which use three-factor learning (eligibility × dopamine × lr)
+        for continuous synaptic updates.
+s
         Action values emerge from D1-D2 synaptic weight competition - no Q-values!
 
         Args:
@@ -922,16 +951,16 @@ class DynamicBrain(nn.Module):
                            or None for pure intrinsic reward
 
         Returns:
-            Metrics dict from striatum.deliver_reward() containing:
-                - d1_ltp: D1 pathway LTP magnitude
-                - d1_ltd: D1 pathway LTD magnitude
-                - d2_ltp: D2 pathway LTP magnitude
-                - d2_ltd: D2 pathway LTD magnitude
-                - net_change: Total weight change
-                - dopamine: Dopamine level used
+            Metrics dict containing:
+                - d1_ltp: 0.0 (learning tracked internally)
+                - d1_ltd: 0.0 (learning tracked internally)
+                - d2_ltp: 0.0 (learning tracked internally)
+                - d2_ltd: 0.0 (learning tracked internally)
+                - net_change: 0.0 (learning tracked internally)
+                - dopamine: Dopamine level broadcast globally
 
         Raises:
-            ValueError: If striatum not found or no action was selected
+            ValueError: If striatum not found
 
         Example:
             # After action selection
@@ -940,15 +969,14 @@ class DynamicBrain(nn.Module):
             # Execute in environment
             reward = env.step(action)
 
-            # Deliver reward for learning
+            # Deliver reward (updates dopamine and exploration)
             metrics = brain.deliver_reward(external_reward=reward)
-            print(f"Weight change: {metrics['net_change']:.6f}")
+            print(f"Dopamine level: {metrics['dopamine']:.2f}")
 
         Note:
-            This is a simplified RL interface. For full EventDrivenBrain
-            compatibility including intrinsic rewards, neuromodulation,
-            and consolidation, use EventDrivenBrain or implement those
-            features separately.
+            Actual learning happens continuously in striatum.forward() using
+            the broadcast dopamine level. This method only broadcasts dopamine
+            and updates exploration - no discrete learning trigger.
         """
         if "striatum" not in self.components:
             raise ValueError(
@@ -966,29 +994,32 @@ class DynamicBrain(nn.Module):
             total_reward = external_reward + intrinsic_reward
             total_reward = max(-2.0, min(2.0, total_reward))
 
-        # Deliver reward to striatum for learning (only if action was selected)
-        # NOTE: Permissive behavior - allow deliver_reward() without prior
-        # select_action() for streaming/continuous learning scenarios
+        # Deliver reward to VTA and broadcast dopamine globally
+        # This ensures all regions (hippocampus, prefrontal, striatum, etc.) receive
+        # dopamine signal for synaptic tagging and learning
+        expected_value = 0.0  # Simplified: no value prediction yet
+        self.neuromodulator_manager.vta.deliver_reward(
+            external_reward=total_reward,
+            expected_value=expected_value,
+        )
+        # Broadcast updated dopamine to all regions
+        self.neuromodulator_manager.broadcast_to_regions(self.components)
+
+        # Update exploration statistics based on reward
+        # Striatum applies continuous learning automatically in forward() using broadcast dopamine
+        correct = external_reward > 0 if external_reward is not None else intrinsic_reward > 0
+        if hasattr(striatum, "exploration"):
+            striatum.exploration.update_performance(total_reward, correct)  # type: ignore[attr-defined]
+
+        # Return learning metrics (continuous learning happens in forward())
         learning_metrics = {
-            "d1_ltp": 0.0,
+            "d1_ltp": 0.0,  # Learning metrics tracked internally in forward()
             "d1_ltd": 0.0,
             "d2_ltp": 0.0,
             "d2_ltd": 0.0,
             "net_change": 0.0,
-            "dopamine": 0.0,
+            "dopamine": self.neuromodulator_manager.vta.get_global_dopamine(),
         }
-
-        if hasattr(self, "_last_action") and self._last_action is not None:
-            # Direct dopamine delivery, no RPE computation
-            # Striatum uses three-factor learning: eligibility × dopamine → weight change
-            # Action values emerge from D1-D2 weight balance (no explicit Q-values)
-            if hasattr(striatum, "deliver_reward"):
-                learning_metrics = striatum.deliver_reward(reward=total_reward)  # type: ignore[operator]
-            else:
-                raise AttributeError(
-                    f"Striatum component ({type(striatum).__name__}) does not have "
-                    f"deliver_reward method. Ensure striatum implements RL interface."
-                )
 
         # Sync last_action to container for consolidation manager
         if self._last_action is not None:
@@ -1038,18 +1069,15 @@ class DynamicBrain(nn.Module):
         counterfactual_metrics = {}
         if "striatum" in self.components:
             striatum = self._get_component("striatum")
-            # Simulate counterfactual action selection
-            if hasattr(striatum, "deliver_reward"):
-                # Create temporary action state for counterfactual
-                saved_action = self._last_action
-                self._last_action = other_action
-
-                # Deliver scaled counterfactual reward
-                striatum.deliver_reward(reward=modulated_reward)  # type: ignore[operator]
+            # Apply counterfactual learning for alternate action
+            if hasattr(striatum, "deliver_counterfactual_reward"):
+                # Deliver counterfactual reward with scale factor
+                striatum.deliver_counterfactual_reward(  # type: ignore[attr-defined]
+                    reward=modulated_reward,
+                    action=other_action,
+                    counterfactual_scale=counterfactual_scale,
+                )
                 counterfactual_metrics["counterfactual_applied"] = True
-
-                # Restore real action
-                self._last_action = saved_action
 
         return {
             "real": {"reward": reward},
@@ -1075,7 +1103,7 @@ class DynamicBrain(nn.Module):
         return max(1.0, self._novelty_signal)
 
     # =========================================================================
-    # NEUROMODULATION (Phase 1.6.3)
+    # NEUROMODULATION
     # =========================================================================
 
     def _update_neuromodulators(self) -> None:
@@ -1086,7 +1114,7 @@ class DynamicBrain(nn.Module):
         prediction error. Then broadcasts signals to all components.
 
         This is called automatically during forward() to maintain neuromodulator
-        dynamics every timestep, matching EventDrivenBrain behavior.
+        dynamics every timestep.
 
         Neuromodulator Sources:
             - VTA: Tonic from intrinsic reward, phasic from RPE
@@ -1443,14 +1471,13 @@ class DynamicBrain(nn.Module):
         }
 
     # =========================================================================
-    # HEALTH & CRITICALITY MONITORING (Phase 1.7.6)
+    # HEALTH & CRITICALITY MONITORING
     # =========================================================================
 
     def check_health(self) -> HealthReport:
         """Check network health and detect pathological states.
 
         Returns health report with detected issues, severity, and recommendations.
-        Compatible with EventDrivenBrain's health monitoring interface.
 
         Returns:
             HealthReport object with:
@@ -1472,14 +1499,14 @@ class DynamicBrain(nn.Module):
         return self.health_monitor.check_health(diagnostics)
 
     # =========================================================================
-    # DIAGNOSTICS & GROWTH (Phase 1.6.4)
+    # DIAGNOSTICS & GROWTH
     # =========================================================================
 
     def check_growth_needs(self) -> Dict[str, Any]:
         """Check if any components need growth based on capacity metrics.
 
         Analyzes utilization, saturation, and activity patterns to determine
-        if components need more capacity. Compatible with EventDrivenBrain
+        if components need more capacity. Uses GrowthManager for standardized
         growth detection.
 
         Returns:
@@ -1551,7 +1578,7 @@ class DynamicBrain(nn.Module):
                 print(f"Grew: {growth}")
 
         Note:
-            Growth history is not tracked in DynamicBrain (unlike EventDrivenBrain).
+            Growth history is not tracked in DynamicBrain.
             Add tracking if needed for your use case.
         """
         growth_actions = {}
@@ -1757,7 +1784,7 @@ class DynamicBrain(nn.Module):
 
     @property
     def regions(self) -> ComponentGraph:
-        """Get all brain regions (EventDrivenBrain compatibility).
+        """Get all brain regions.
 
         Returns:
             Dict mapping region names to component instances
@@ -2140,9 +2167,6 @@ class DynamicBrain(nn.Module):
     ) -> CheckpointMetadata:
         """Save checkpoint (wrapper for CheckpointManager.save).
 
-        This is a convenience wrapper that provides EventDrivenBrain-compatible
-        API for checkpoint saving.
-
         Args:
             path: Path to save checkpoint
             metadata: Optional metadata dict (epoch, loss, etc.)
@@ -2167,9 +2191,6 @@ class DynamicBrain(nn.Module):
         strict: bool = True,
     ) -> CheckpointMetadata:
         """Load checkpoint (wrapper for CheckpointManager.load).
-
-        This is a convenience wrapper that provides EventDrivenBrain-compatible
-        API for checkpoint loading.
 
         Args:
             path: Path to checkpoint file

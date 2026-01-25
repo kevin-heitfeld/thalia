@@ -129,9 +129,8 @@ def test_d1_weights_strengthen_with_reward(simple_striatum_brain):
         # Force action 0 selection (bypass exploration)
         striatum.state_tracker.set_last_action(0, exploring=False)
 
-        # Deliver reward (high dopamine)
+        # Apply high dopamine (triggers continuous learning in next forward)
         striatum.set_neuromodulators(dopamine=0.9)  # Dopamine burst
-        striatum.deliver_reward(reward=1.0)
 
     # Check that D1 weights for action 0 increased
     final_weights = d1_pathway.weights.clone()
@@ -171,9 +170,8 @@ def test_d2_weights_strengthen_with_punishment(simple_striatum_brain):
         # Force action 1 selection
         striatum.state_tracker.set_last_action(1, exploring=False)
 
-        # Deliver punishment (low dopamine = D2 strengthening)
+        # Apply low dopamine (triggers continuous learning in next forward)
         striatum.set_neuromodulators(dopamine=0.1)  # Dopamine dip
-        striatum.deliver_reward(reward=-1.0)
 
     # Check that D2 weights for action 1 increased
     final_weights = d2_pathway.weights.clone()
@@ -254,12 +252,12 @@ def test_action_preferences_converge(simple_striatum_brain):
         action, _ = brain.select_action(explore=False)
         action_history.append(action)
 
-        # Deliver reward based on action
+        # Apply dopamine based on action (learning happens continuously)
         reward = 1.0 if action == 0 else -1.0
         dopamine = 0.9 if reward > 0 else 0.1
 
         striatum.set_neuromodulators(dopamine=dopamine)
-        striatum.deliver_reward(reward=reward)
+        # Learning happens automatically in next trial's forward passes
 
     # Compute preferences over time
     early_trials = 50  # First 50 trials
@@ -328,7 +326,7 @@ def test_net_votes_reflect_action_value(simple_striatum_brain):
             dopamine = 0.9 if reward > 0 else 0.1
 
             striatum.set_neuromodulators(dopamine=dopamine)
-            striatum.deliver_reward(reward=reward)
+            # Learning happens automatically in next trial's forward passes
 
     # Test: Measure NET votes for each action
     striatum.state_tracker.reset_trial_votes()
@@ -363,9 +361,11 @@ def test_eligibility_gates_learning(simple_striatum_brain):
     # Get initial weights
     d1_initial = striatum.d1_pathway.weights.clone()
 
-    # Deliver dopamine WITHOUT prior activity (no eligibility)
+    # Apply dopamine WITHOUT prior activity (no eligibility)
     striatum.set_neuromodulators(dopamine=0.9)
-    striatum.deliver_reward(reward=1.0)
+    # Run forward with zero input (no eligibility should accumulate)
+    test_input = torch.zeros(128, device=brain.device)
+    brain.forward({"thalamus": test_input}, n_timesteps=1)
 
     # Weights should NOT change (no eligibility traces)
     d1_after_dopamine_only = striatum.d1_pathway.weights.clone()
@@ -374,7 +374,7 @@ def test_eligibility_gates_learning(simple_striatum_brain):
     assert weight_change_no_eligibility < 0.0001, \
         f"Weights should not change without eligibility. Change: {weight_change_no_eligibility:.6f}"
 
-    # Now create eligibility by running forward pass
+    # Now create eligibility by running forward pass with real input
     test_input = torch.randn(128, device=brain.device)
     striatum.state_tracker.reset_trial_votes()
 
@@ -383,9 +383,10 @@ def test_eligibility_gates_learning(simple_striatum_brain):
 
     striatum.state_tracker.set_last_action(0, exploring=False)
 
-    # Deliver dopamine WITH eligibility
+    # Apply high dopamine WITH eligibility (continuous learning)
     striatum.set_neuromodulators(dopamine=0.9)
-    striatum.deliver_reward(reward=1.0)
+    # Run one more forward pass to trigger learning
+    brain.forward({"thalamus": test_input}, n_timesteps=1)
 
     # Weights SHOULD change (eligibility present)
     d1_after_dopamine_with_eligibility = striatum.d1_pathway.weights.clone()
@@ -414,7 +415,7 @@ def test_evaluate_state_uses_d1_d2_weights(simple_striatum_brain):
 
         striatum.state_tracker.set_last_action(0, exploring=False)
         striatum.set_neuromodulators(dopamine=0.9)
-        striatum.deliver_reward(reward=1.0)
+        # Learning happens automatically in next trial's forward passes
 
     # Evaluate state should return value based on D1-D2 weights
     # Note: evaluate_state expects dict input like forward()

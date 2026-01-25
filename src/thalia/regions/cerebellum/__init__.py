@@ -16,13 +16,16 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from .cerebellum import Cerebellum, CerebellumState
+from .cerebellum import Cerebellum
 from .deep_nuclei import DeepCerebellarNuclei
 from .granule_layer import GranuleCellLayer
 from .purkinje_cell import EnhancedPurkinjeCell
+from .state import GranuleLayerState, PurkinjeCellState, CerebellumState
 
 __all__ = [
     "Cerebellum",
+    "GranuleLayerState",
+    "PurkinjeCellState",
     "CerebellumState",
     "DeepCerebellarNuclei",
     "GranuleCellLayer",

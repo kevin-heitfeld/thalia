@@ -2,7 +2,6 @@
 Tests for streaming trainer on DynamicBrain.
 
 Tests continuous online learning without epochs or train/eval splits.
-This is an exact copy of test_streaming_trainer.py but using DynamicBrain instead of EventDrivenBrain.
 """
 
 import pytest

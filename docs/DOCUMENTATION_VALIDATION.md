@@ -23,7 +23,7 @@ The validation script:
 
 3. **Validates examples** - Checks each code block for:
    - Outdated patterns (e.g., `create_learning_strategy` → `create_strategy`)
-   - Removed classes (e.g., `SimpleLIF`, `EventDrivenBrain`)
+   - Removed classes (e.g., `SimpleLIF`)
    - Incorrect attribute access (e.g., `brain.cortex` → `brain.components["cortex"]`)
    - Invalid imports using **AST parsing** (handles multi-line imports correctly)
    - Non-existent functions
@@ -145,7 +145,6 @@ should be 'brain.components["cortex"]'
 |-------------|-------------|----------|
 | `create_learning_strategy()` | `create_strategy()` | Error |
 | `SimpleLIF` | `ConductanceLIF` | Error |
-| `EventDrivenBrain` | `DynamicBrain` | Error |
 | `brain.cortex` | `brain.components["cortex"]` | Error |
 | `brain.hippocampus` | `brain.components["hippocampus"]` | Error |
 | `brain.striatum` | `brain.components["striatum"]` | Error |

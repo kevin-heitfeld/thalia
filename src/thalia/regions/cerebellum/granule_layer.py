@@ -19,8 +19,7 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -28,18 +27,7 @@ import torch.nn as nn
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses.weight_init import WeightInitializer
 
-
-@dataclass
-class GranuleLayerState:
-    """State for granule cell layer.
-
-    Attributes:
-        mossy_to_granule: Synaptic weights from mossy fibers to granule cells
-        granule_neurons: State dict from granule neuron model (ConductanceLIF)
-    """
-
-    mossy_to_granule: torch.Tensor
-    granule_neurons: Dict[str, Any]  # State from ConductanceLIF.get_state()
+from .state import GranuleLayerState
 
 
 class GranuleCellLayer(nn.Module):
@@ -225,6 +213,3 @@ class GranuleCellLayer(nn.Module):
 
         # Expand granule neurons
         self.granule_neurons.grow(n_new)
-
-
-__all__ = ["GranuleCellLayer"]

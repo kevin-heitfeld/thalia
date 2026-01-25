@@ -1,14 +1,15 @@
 """
 Unit tests for network topology visualization using DynamicBrain.
 
-This is an exact copy of test_network_visualization.py but using DynamicBrain instead of EventDrivenBrain.
-
 Tests verify that visualization functions correctly handle brain structures
 without requiring NetworkX (graceful degradation).
 """
 
+import re
 from unittest.mock import Mock
 
+import matplotlib.pyplot as plt
+import networkx as nx
 import pytest
 import torch
 
@@ -72,7 +73,7 @@ def test_export_graphviz_basic(tmp_path, small_test_brain):
     content = output_file.read_text()
     assert "digraph BrainTopology" in content, "DOT file should have brain topology graph structure"
 
-    # Check for actual brain regions (EventDrivenBrain has 6 regions)
+    # Check for actual brain regions
     assert '"thalamus"' in content, "Should include thalamus region (sensory relay)"
     assert '"cortex"' in content, "Should include cortex region"
     assert '"hippocampus"' in content, "Should include hippocampus region"
@@ -88,8 +89,6 @@ def test_export_graphviz_basic(tmp_path, small_test_brain):
     assert '"thalamus" -> "cortex"' in content, "Should have thalamus to cortex pathway"
 
     # Check that weights are formatted correctly (0.000 format)
-    import re
-
     weight_pattern = r"\d+\.\d{3}"
     assert re.search(weight_pattern, content), "Should contain formatted pathway weights"
 
@@ -150,8 +149,6 @@ def test_get_region_type_classification():
 
 def test_get_pathway_strength():
     """Helper should extract average weight from pathway."""
-    import torch
-
     from thalia.visualization.network_graph import _get_pathway_strength
 
     # Pathway with weights
@@ -174,8 +171,6 @@ def test_get_pathway_strength():
 
 def test_hierarchical_layout_structure():
     """Hierarchical layout should organize regions by type."""
-    import networkx as nx
-
     from thalia.visualization.network_graph import _hierarchical_layout
 
     G = nx.DiGraph()
@@ -212,14 +207,12 @@ def test_hierarchical_layout_structure():
 @pytest.mark.skip(reason="Requires networkx and matplotlib - run manually")
 def test_full_visualization(small_test_brain):
     """Integration test with real brain (requires dependencies)."""
-    import matplotlib.pyplot as plt
-
     from thalia.visualization import visualize_brain_topology
 
     # Generate visualization from real brain
     G = visualize_brain_topology(small_test_brain, layout="hierarchical")
 
-    # Test contract: graph should contain all brain regions (EventDrivenBrain has 6)
+    # Test contract: graph should contain all brain regions
     expected_regions = {"thalamus", "cortex", "hippocampus", "pfc", "striatum", "cerebellum"}
     assert len(G.nodes()) == len(
         expected_regions
@@ -262,7 +255,7 @@ def test_visualization_after_forward_pass(tmp_path, small_test_brain, device):
     content = output_file.read_text()
     assert "digraph BrainTopology" in content, "Should export valid DOT graph after forward pass"
 
-    # Check that all core regions are present (EventDrivenBrain has 6 regions)
+    # Check that all core regions are present
     expected_regions = ["thalamus", "cortex", "hippocampus", "pfc", "striatum", "cerebellum"]
     for region in expected_regions:
         assert f'"{region}"' in content, f"Region '{region}' should be in exported topology"

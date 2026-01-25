@@ -73,174 +73,607 @@ Date: December 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from thalia.config.region_configs import PredictiveCortexConfig
-from thalia.core.neural_region import NeuralRegion
-from thalia.core.region_state import BaseRegionState
-from thalia.managers.component_registry import register_region
-from thalia.regions.cortex.layered_cortex import LayeredCortex
-from thalia.regions.cortex.predictive_coding import (
+from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.config.region_configs import (
+    PredictiveCodingErrorType,
     PredictiveCodingConfig,
-    PredictiveCodingLayer,
+    PredictiveCortexConfig,
 )
+from thalia.constants.neuron import WEIGHT_INIT_SCALE_PREDICTIVE
+from thalia.core.neural_region import NeuralRegion
+from thalia.managers.component_registry import register_region
+from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
+
+from .layered_cortex import LayeredCortex
+from .state import PredictiveCodingState, PredictiveCortexState
 
 
-@dataclass
-class PredictiveCortexState(BaseRegionState):
-    """State for predictive cortex with RegionState protocol compliance.
+class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
+    """
+    Predictive Coding Layer with local, backprop-free learning.
 
-    Extends BaseRegionState with predictive cortex-specific fields:
-    - Layer-specific spike states (L4, L2/3, L5, L6a, L6b)
-    - Predictive coding state (prediction, error, precision, free energy)
-    - Attention weights
-    - Oscillator signals (for alpha suppression, theta modulation, etc.)
+    This layer learns to predict its inputs from a higher-level representation.
+    Learning is driven entirely by local prediction errors - no gradients
+    need to flow backwards through the network.
 
-    Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
-    inherited from BaseRegionState.
+    The key insight: instead of propagating errors backward (backprop),
+    we compute errors LOCALLY by comparing predictions to actual inputs.
+    This is more biologically plausible and enables hierarchical learning.
+
+    Credit Assignment Solution:
+    ===========================
+    Traditional backprop: Error at output → propagated to all weights
+    Predictive coding: Error at EACH LAYER → updates THAT layer's weights
+
+    This means:
+    1. No weight transport problem (no need to know downstream weights)
+    2. No non-local computation (all signals are local)
+    3. Continuous learning (no separate forward/backward passes)
+
+    Usage:
+        layer = PredictiveCodingLayer(PredictiveCodingConfig(
+            n_input=256,
+            n_representation=64,
+        ))
+
+        # Reset for new sequence
+        layer.reset_state(batch_size=1)
+
+        # Each timestep
+        for t in range(n_timesteps):
+            # Bottom-up input (from lower layer or sensors)
+            actual_input = get_input(t)
+
+            # Top-down representation (from higher layer)
+            representation = get_higher_representation(t)
+
+            # Compute prediction error
+            error, prediction = layer(actual_input, representation)
+
+            # Error goes to higher layer (it's their input now!)
+            # This creates hierarchical prediction
+
+        # Learning happens continuously based on errors
+        layer.learn()
     """
 
-    # Layer-specific spikes (cortex has L4→L2/3→L5+L6 microcircuit)
-    l4_spikes: Optional[torch.Tensor] = None
-    l23_spikes: Optional[torch.Tensor] = None
-    l5_spikes: Optional[torch.Tensor] = None
-    l6a_spikes: Optional[torch.Tensor] = None
-    l6b_spikes: Optional[torch.Tensor] = None
+    def __init__(self, config: PredictiveCodingConfig):
+        super().__init__()
+        self.config = config
+        # Don't cache device - use property instead to track actual module device
 
-    # Multi-source inputs for learning (dict mapping source names to spike tensors)
-    source_inputs: Optional[Dict[str, torch.Tensor]] = None
+        # =================================================================
+        # PREDICTION PATHWAY (top-down)
+        # =================================================================
+        # Learns to predict input from representation
+        # W_pred: representation → predicted_input
 
-    # Predictive coding
-    prediction: Optional[torch.Tensor] = None
-    error: Optional[torch.Tensor] = None
-    precision: Optional[torch.Tensor] = None
-    free_energy: float = 0.0
+        from thalia.components.synapses.weight_init import WeightInitializer
 
-    # Attention
-    attention_weights: Optional[torch.Tensor] = None
-
-    # Oscillator signals (for alpha suppression, theta modulation, etc.)
-    # Note: Actual alpha gating happens in inner LayeredCortex
-    _oscillator_phases: Optional[Dict[str, float]] = None
-    _oscillator_signals: Optional[Dict[str, float]] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize state to dictionary.
-
-        Returns:
-            Dictionary with all state fields
-        """
-        # Start with base fields (spikes, membrane, neuromodulators)
-        data = super().to_dict()
-
-        # Add predictive cortex-specific fields
-        data.update(
-            {
-                # Layer spikes
-                "l4_spikes": self.l4_spikes,
-                "l23_spikes": self.l23_spikes,
-                "l5_spikes": self.l5_spikes,
-                "l6a_spikes": self.l6a_spikes,
-                "l6b_spikes": self.l6b_spikes,
-                # Multi-source inputs
-                "source_inputs": self.source_inputs,
-                # Predictive coding
-                "prediction": self.prediction,
-                "error": self.error,
-                "precision": self.precision,
-                "free_energy": self.free_energy,
-                # Attention
-                "attention_weights": self.attention_weights,
-                # Oscillators (can be None)
-                "_oscillator_phases": self._oscillator_phases,
-                "_oscillator_signals": self._oscillator_signals,
-            }
+        device = torch.device(config.device)  # Use local variable for initialization
+        self.W_pred = nn.Parameter(
+            WeightInitializer.gaussian(
+                config.n_input,
+                config.n_representation,
+                mean=0.0,
+                std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                device=device,
+            )
         )
 
-        return data
+        # Prediction bias (learned prior)
+        self.b_pred = nn.Parameter(torch.zeros(config.n_input, device=device))
 
-    @classmethod
-    def from_dict(
-        cls,
-        data: Dict[str, Any],
-        device: str = "cpu",
-    ) -> PredictiveCortexState:
-        """Deserialize state from dictionary.
+        # =================================================================
+        # ERROR COMPUTATION (local, no backprop needed)
+        # =================================================================
+        # Error neurons receive:
+        #   + excitation from actual input
+        #   - inhibition from prediction
+        # Net activity = error signal
+
+        # Spiking error neurons (fast dynamics)
+        error_config = ConductanceLIFConfig(
+            g_L=1.0 / config.error_tau_ms,  # Convert tau to conductance
+            tau_E=5.0,  # Fast excitatory
+            tau_I=10.0,  # Fast inhibitory
+            v_threshold=0.5,  # Lower threshold for sensitive error detection
+        )
+        self.error_neurons = ConductanceLIF(config.n_input, error_config, device=device)
+
+        # Spiking prediction neurons (slow dynamics)
+        pred_config = ConductanceLIFConfig(
+            g_L=1.0 / config.prediction_tau_ms,  # Convert tau to conductance
+            tau_E=10.0,  # Slower excitatory for temporal integration
+            tau_I=15.0,
+            v_threshold=1.0,
+        )
+        self.prediction_neurons = ConductanceLIF(config.n_input, pred_config, device=device)
+
+        # =================================================================
+        # PRECISION (attention/confidence weighting)
+        # =================================================================
+        # High precision = pay attention to errors
+        # Low precision = ignore errors (unreliable input)
+
+        self.log_precision = nn.Parameter(
+            torch.full(
+                (config.n_input,),
+                fill_value=torch.log(torch.tensor(config.initial_precision)).item(),
+                device=device,
+            )
+        )
+
+        # =================================================================
+        # REPRESENTATION → PREDICTION ENCODING
+        # =================================================================
+        # Optional: learn a compact representation
+        self.W_encode = nn.Parameter(
+            WeightInitializer.gaussian(
+                config.n_representation,
+                config.n_input,
+                mean=0.0,
+                std=WEIGHT_INIT_SCALE_PREDICTIVE,
+                device=device,
+            )
+        )
+
+        # =================================================================
+        # STATE
+        # =================================================================
+        self.state = PredictiveCodingState()
+
+        # =================================================================
+        # TEMPORAL VARIANCE TRACKING FOR PRECISION LEARNING
+        # =================================================================
+        # Maintain a circular buffer of recent errors for variance estimation
+        # This allows precision to adapt based on how predictable inputs have been
+        self._error_history: list[torch.Tensor] = []
+        self._timestep_counter: int = 0
+
+        # Cached decay factors (updated via update_temporal_parameters)
+        self._prediction_decay: Optional[float] = None
+        self._error_decay: Optional[float] = None
+
+    @property
+    def device(self) -> torch.device:
+        """Get current device from parameters (tracks module.to() calls)."""
+        return self.W_pred.device
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update cached decay factors when dt changes.
 
         Args:
-            data: Dictionary with state fields
-            device: Target device string (e.g., 'cpu', 'cuda', 'cuda:0')
-
-        Returns:
-            PredictiveCortexState instance with restored state
+            dt_ms: New simulation timestep in milliseconds
         """
-
-        def transfer_tensor(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
-            if t is None:
-                return None
-            return t.to(device)
-
-        return cls(
-            # Base region state
-            spikes=transfer_tensor(data.get("spikes")),
-            membrane=transfer_tensor(data.get("membrane")),
-            dopamine=data.get("dopamine", 0.2),
-            acetylcholine=data.get("acetylcholine", 0.0),
-            norepinephrine=data.get("norepinephrine", 0.0),
-            # Layer spikes
-            l4_spikes=transfer_tensor(data.get("l4_spikes")),
-            l23_spikes=transfer_tensor(data.get("l23_spikes")),
-            l5_spikes=transfer_tensor(data.get("l5_spikes")),
-            l6a_spikes=transfer_tensor(data.get("l6a_spikes")),
-            l6b_spikes=transfer_tensor(data.get("l6b_spikes")),
-            # Multi-source inputs (backwards compat: also check old "input_spikes")
-            source_inputs=(
-                {k: transfer_tensor(v) for k, v in data["source_inputs"].items()}
-                if "source_inputs" in data and data["source_inputs"] is not None
-                else (
-                    {"input": transfer_tensor(data["input_spikes"])}
-                    if "input_spikes" in data and data["input_spikes"] is not None
-                    else None
-                )
-            ),
-            # Predictive coding
-            prediction=transfer_tensor(data.get("prediction")),
-            error=transfer_tensor(data.get("error")),
-            precision=transfer_tensor(data.get("precision")),
-            free_energy=data.get("free_energy", 0.0),
-            # Attention
-            attention_weights=transfer_tensor(data.get("attention_weights")),
-            # Oscillators
-            _oscillator_phases=data.get("_oscillator_phases"),
-            _oscillator_signals=data.get("_oscillator_signals"),
+        self._prediction_decay = float(
+            torch.exp(torch.tensor(-dt_ms / self.config.prediction_tau_ms)).item()
+        )
+        self._error_decay = float(
+            torch.exp(torch.tensor(-dt_ms / self.config.error_tau_ms)).item()
         )
 
-    def reset(self) -> None:
-        """Reset state to initial conditions.
+    def reset_state(self) -> None:
+        """Reset layer state for new sequence."""
+        # Ensure decay factors are initialized (use dt=1.0 if not set)
+        if self._prediction_decay is None or self._error_decay is None:
+            self.update_temporal_parameters(1.0)
 
-        Clears all tensors and restores baseline neuromodulator levels.
+        # ADR-005: Single-instance architecture (1D tensors, no batch dimension)
+        self.state = PredictiveCodingState(
+            prediction=torch.zeros(self.config.n_input, device=self.device),
+            representation=torch.zeros(self.config.n_representation, device=self.device),
+            error=torch.zeros(self.config.n_input, device=self.device),
+            precision=self.precision,
+            eligibility=torch.zeros(
+                self.config.n_input, self.config.n_representation, device=self.device
+            ),
+        )
+
+        # Clear temporal variance tracking
+        self._error_history.clear()
+        self._timestep_counter = 0
+
+        # Reset spiking neurons
+        self.error_neurons.reset_state()
+        self.prediction_neurons.reset_state()
+
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for checkpointing."""
+        state_dict = {
+            "W_pred": self.W_pred.data if hasattr(self, "W_pred") else None,
+            "W_encode": self.W_encode.data if hasattr(self, "W_encode") else None,
+            "log_precision": self.log_precision.data if hasattr(self, "log_precision") else None,
+            "prediction": (
+                self.state.prediction.clone()
+                if (hasattr(self.state, "prediction") and self.state.prediction is not None)
+                else None
+            ),
+            "error": (
+                self.state.error.clone()
+                if (hasattr(self.state, "error") and self.state.error is not None)
+                else None
+            ),
+        }
+        return state_dict
+
+    def load_state(self, state_dict: Dict[str, Any]) -> None:
+        """Load state from checkpoint."""
+        if state_dict.get("W_pred") is not None and hasattr(self, "W_pred"):
+            self.W_pred.data.copy_(state_dict["W_pred"].to(self.device))
+        if state_dict.get("W_encode") is not None and hasattr(self, "W_encode"):
+            self.W_encode.data.copy_(state_dict["W_encode"].to(self.device))
+        if state_dict.get("log_precision") is not None and hasattr(self, "log_precision"):
+            self.log_precision.data.copy_(state_dict["log_precision"].to(self.device))
+        if state_dict.get("prediction") is not None and hasattr(self.state, "prediction"):
+            self.state.prediction = state_dict["prediction"].to(self.device)
+        if state_dict.get("error") is not None and hasattr(self.state, "error"):
+            self.state.error = state_dict["error"].to(self.device)
+
+    @property
+    def precision(self) -> torch.Tensor:
+        """Get precision (clamped to valid range)."""
+        return torch.clamp(
+            torch.exp(self.log_precision), self.config.precision_min, self.config.precision_max
+        )
+
+    def predict(self, representation: torch.Tensor) -> torch.Tensor:
         """
-        # Reset base fields
-        super().reset()
+        Generate prediction from representation (top-down).
 
-        # Reset predictive cortex-specific fields
-        self.l4_spikes = None
-        self.l23_spikes = None
-        self.l5_spikes = None
-        self.l6a_spikes = None
-        self.l6b_spikes = None
-        self.input_spikes = None
-        self.prediction = None
-        self.error = None
-        self.precision = None
-        self.free_energy = 0.0
-        self.attention_weights = None
-        self._oscillator_phases = None
-        self._oscillator_signals = None
+        Args:
+            representation: Higher-level representation [batch, n_representation]
+
+        Returns:
+            prediction: Predicted input [batch, n_input]
+        """
+        # Linear prediction (can be made nonlinear if needed)
+        prediction = F.linear(representation, self.W_pred, self.b_pred)
+
+        # Convert to conductance and get spikes (ConductanceLIF expects g_exc)
+        pred_g_exc = F.relu(prediction)  # Clamp to positive conductance
+        pred_spikes, pred_membrane = self.prediction_neurons(pred_g_exc, g_inh_input=None)
+        return pred_membrane  # type: ignore[no-any-return]  # Use membrane potential as analog prediction
+
+    def compute_error(
+        self,
+        actual: torch.Tensor,
+        predicted: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute prediction error (actual - predicted).
+
+        This is the core of predictive coding:
+        - Positive error: under-predicted (need to increase prediction)
+        - Negative error: over-predicted (need to decrease prediction)
+
+        Per ADR-005: Single-instance architecture (1D tensors, no batch dimension)
+
+        Args:
+            actual: Actual input [n_input]
+            predicted: Predicted input [n_input]
+
+        Returns:
+            error: Precision-weighted prediction error [n_input]
+        """
+        # Raw error
+        raw_error = actual - predicted
+
+        # Error neurons: convert signed error to separate E/I conductances
+        # Positive error → excitation, negative error → inhibition
+        if self.config.error_type == PredictiveCodingErrorType.SIGNED:
+            # Split signed error into excitatory (positive) and inhibitory (negative)
+            error_g_exc = F.relu(raw_error)  # Positive errors
+            error_g_inh = F.relu(-raw_error)  # Negative errors (flipped)
+            error_spikes, error_membrane = self.error_neurons(error_g_exc, error_g_inh)
+            error = error_membrane
+        else:
+            # Two populations: E+ for positive, E- for negative
+            # Not implemented for simplicity, but would double neurons
+            raise NotImplementedError("Separate E+/E- populations not yet implemented")
+
+        # Apply precision weighting (high precision = amplify error)
+        precision_weighted_error = error * self.precision
+
+        return precision_weighted_error  # type: ignore[no-any-return]
+
+    def encode(self, error: torch.Tensor) -> torch.Tensor:
+        """
+        Encode error into representation update.
+
+        The representation is updated to reduce future prediction errors.
+        This is the "explaining away" of prediction errors.
+
+        Args:
+            error: Prediction error [batch, n_input]
+
+        Returns:
+            representation_update: Update to representation [batch, n_representation]
+        """
+        # Project error into representation space
+        # This tells the representation what to change
+        return F.linear(error, self.W_encode)
+
+    def forward(
+        self,
+        actual_input: torch.Tensor,
+        representation: Optional[torch.Tensor] = None,
+        top_down_prediction: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Process one timestep of predictive coding.
+
+        Per ADR-005: Single-instance architecture (1D tensors, no batch dimension)
+
+        Args:
+            actual_input: Bottom-up input (sensory or from lower layer) [n_input]
+            representation: Current representation from higher layer [n_representation]
+            top_down_prediction: Optional direct prediction from above [n_input]
+
+        Returns:
+            error: Prediction error (goes UP to higher layers)
+            prediction: Current prediction (for diagnostics)
+            representation_update: Suggested update to representation
+        """
+        # =====================================================================
+        # SHAPE ASSERTIONS - catch dimension mismatches early with clear messages
+        # =====================================================================
+        assert actual_input.shape[-1] == self.config.n_input, (
+            f"PredictiveCodingLayer.forward: actual_input has shape {actual_input.shape} "
+            f"but n_input={self.config.n_input}. Check that you're passing L4 output."
+        )
+        if representation is not None:
+            assert representation.shape[-1] == self.config.n_representation, (
+                f"PredictiveCodingLayer.forward: representation has shape {representation.shape} "
+                f"but n_representation={self.config.n_representation}. Check that you're passing L5 output."
+            )
+        if top_down_prediction is not None:
+            assert top_down_prediction.shape[-1] == self.config.n_input, (
+                f"PredictiveCodingLayer.forward: top_down_prediction has shape {top_down_prediction.shape} "
+                f"but must match n_input={self.config.n_input}. "
+                f"Did you pass L2/3 modulation (size {top_down_prediction.shape[-1]}) instead of L4 prediction?"
+            )
+
+        # Initialize state if needed
+        if self.state.prediction is None:
+            self.reset_state()
+
+        # Get current representation (from input or stored)
+        if representation is not None:
+            self.state.representation = representation
+
+        # Generate prediction (top-down)
+        if top_down_prediction is not None:
+            prediction = top_down_prediction
+        else:
+            prediction = self.predict(self.state.representation)  # type: ignore[arg-type]
+
+        # Smooth prediction over time (temporal integration)
+        assert self._prediction_decay is not None
+        self.state.prediction = (
+            self._prediction_decay * self.state.prediction + (1 - self._prediction_decay) * prediction  # type: ignore[operator]
+        )
+
+        # Compute prediction error
+        error = self.compute_error(actual_input, self.state.prediction)
+
+        # Store error
+        self.state.error = error
+
+        # Compute representation update from error
+        representation_update = self.encode(error)
+
+        # Update eligibility trace for learning
+        self._update_eligibility(actual_input, self.state.representation, error)  # type: ignore[arg-type]
+
+        # Error propagates upward with same dimensionality as input
+        # (Per ADR-013: dimensional transformations handled by pathways)
+        return error, self.state.prediction, representation_update
+
+    def _update_eligibility(
+        self,
+        actual: torch.Tensor,
+        representation: torch.Tensor,
+        error: torch.Tensor,
+    ) -> None:
+        """
+        Update eligibility traces for local learning.
+
+        The eligibility trace records which weight contributed to which error.
+        This enables proper credit assignment without backprop.
+
+        Eligibility = outer_product(error, representation)
+        This is a Hebbian-like trace: which inputs were active when error occurred.
+        """
+        # Outer product: [n_input] x [n_representation] → [n_input, n_representation]
+        # Per ADR-005: single-instance architecture (1D tensors, no batch dimension)
+        eligibility_update = torch.einsum("i,j->ij", error, representation)
+
+        # Exponential moving average of eligibility
+        eligibility_decay = 0.95
+        self.state.eligibility = (
+            eligibility_decay * self.state.eligibility  # type: ignore[operator]
+            + (1 - eligibility_decay) * eligibility_update
+        )
+
+    def learn(self, reward_signal: Optional[torch.Tensor] = None) -> Dict[str, float]:
+        """
+        Update weights based on accumulated prediction errors.
+
+        This is where the magic happens - LOCAL learning that doesn't need backprop!
+
+        The learning rule:
+            ΔW_pred = η * precision * error * representation^T
+
+        This means:
+        - Increase prediction weights for inputs that were under-predicted
+        - Decrease prediction weights for inputs that were over-predicted
+        - Modulate by precision (pay attention to reliable signals)
+
+        Optionally modulated by reward signal for three-factor learning.
+
+        Returns:
+            metrics: Learning metrics for monitoring
+        """
+        if self.state.eligibility is None:
+            return {"weight_update": 0.0}
+
+        # Average eligibility over batch
+        eligibility = self.state.eligibility.mean(dim=0)  # [n_input, n_representation]
+
+        # Optional reward modulation (three-factor rule)
+        if reward_signal is not None:
+            eligibility = eligibility * reward_signal.unsqueeze(-1)
+
+        # Apply precision weighting
+        precision_weights = self.precision.unsqueeze(-1)  # [n_input, 1]
+        weighted_eligibility = eligibility * precision_weights
+
+        # Update prediction weights
+        weight_update = self.config.learning_rate * weighted_eligibility
+        self.W_pred.data += weight_update
+
+        # Weight normalization (homeostatic)
+        w_norm = torch.norm(self.W_pred, dim=1, keepdim=True)
+        self.W_pred.data = (
+            self.W_pred.data
+            / (w_norm + 1e-8)
+            * torch.sqrt(torch.tensor(self.config.n_representation, dtype=torch.float))
+        )
+
+        # Update precision based on error statistics
+        self._update_precision()
+
+        # Clear eligibility after learning
+        self.state.eligibility.zero_()
+
+        return {
+            "weight_update": weight_update.abs().mean().item(),
+            "precision_mean": self.precision.mean().item(),
+        }
+
+    def _update_precision(self) -> None:
+        """
+        Update precision (inverse variance) based on TEMPORAL error history.
+
+        Precision reflects how predictable inputs have been recently:
+        - High precision: errors have been consistently small (reliable predictions)
+        - Low precision: errors have been variable (unreliable/surprising input)
+
+        This is biologically plausible - synaptic precision should adapt based
+        on recent prediction history, not parallel samples.
+
+        Implementation:
+        - Maintain a circular buffer of recent errors (across timesteps)
+        - Compute variance over the temporal dimension
+        - Update precision periodically (not every timestep)
+        """
+        if self.state.error is None:
+            return
+
+        # Add current error to history (mean across batch for single value per input)
+        # Detach to avoid gradient accumulation
+        error_snapshot = self.state.error.detach().mean(dim=0)  # [n_input]
+        self._error_history.append(error_snapshot)
+
+        # Keep buffer at configured size (circular buffer behavior)
+        if len(self._error_history) > self.config.error_history_size:
+            self._error_history.pop(0)
+
+        # Increment timestep counter
+        self._timestep_counter += 1
+
+        # Only update precision periodically and when we have enough history
+        if (
+            self._timestep_counter % self.config.precision_update_interval != 0
+            or len(self._error_history) < 10
+        ):  # Need at least 10 samples for meaningful variance
+            return
+
+        # Stack history into tensor: [history_size, n_input]
+        error_history_tensor = torch.stack(self._error_history, dim=0)
+
+        # Compute variance over time dimension (dim=0)
+        error_var = error_history_tensor.var(dim=0, correction=1)  # [n_input]
+
+        # Update log precision (in log space for stability)
+        # precision = 1 / variance, so log_precision = -log(variance)
+        target_log_precision = -torch.log(error_var + 1e-6)
+
+        self.log_precision.data = (
+            1 - self.config.precision_learning_rate
+        ) * self.log_precision.data + self.config.precision_learning_rate * target_log_precision
+
+        # Clamp to valid range
+        min_log = torch.log(torch.tensor(self.config.precision_min, device=self.device))
+        max_log = torch.log(torch.tensor(self.config.precision_max, device=self.device))
+        self.log_precision.data = torch.clamp(self.log_precision.data, min_log, max_log)
+
+    def get_free_energy(self) -> torch.Tensor:
+        """
+        Compute free energy (prediction error + complexity).
+
+        The brain minimizes free energy, which balances:
+        - Accuracy: prediction error should be small
+        - Complexity: model shouldn't be overly complex
+
+        F = precision * error^2 + log(precision)
+
+        The first term is weighted squared error.
+        The second term penalizes high precision (overconfidence).
+        """
+        if self.state.error is None:
+            return torch.tensor(0.0)
+
+        error_term = (self.precision * self.state.error**2).sum()
+        complexity_term = self.log_precision.sum()
+
+        return error_term + complexity_term
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostic information using DiagnosticsMixin helpers."""
+        diag: Dict[str, Any] = {
+            "free_energy": self.get_free_energy().item(),
+        }
+
+        # Prediction state
+        if self.state.prediction is not None:
+            diag["prediction_mean"] = self.state.prediction.mean().item()
+            diag["prediction_std"] = self.state.prediction.std().item()
+
+        # Error diagnostics
+        if self.state.error is not None:
+            diag.update(self.spike_diagnostics(self.state.error, "error"))
+
+        # Precision (attention) statistics
+        diag["precision_mean"] = self.precision.mean().item()
+        diag["precision_std"] = self.precision.std().item()
+        diag["precision_min"] = self.precision.min().item()
+        diag["precision_max"] = self.precision.max().item()
+
+        # Temporal variance tracking stats
+        diag["error_history_size"] = len(self._error_history)
+        diag["timestep_counter"] = self._timestep_counter
+        if len(self._error_history) >= 2:
+            # Compute current temporal variance estimate
+            error_history_tensor = torch.stack(self._error_history, dim=0)
+            temporal_var = error_history_tensor.var(dim=0).mean().item()
+            diag["temporal_error_variance"] = temporal_var
+
+        # Weight diagnostics
+        diag.update(self.weight_diagnostics(self.W_pred, "pred"))
+
+        # Eligibility trace diagnostics (if available)
+        if self.state.eligibility is not None:
+            diag.update(self.trace_diagnostics(self.state.eligibility, "elig"))
+
+        return diag
 
 
 @register_region(

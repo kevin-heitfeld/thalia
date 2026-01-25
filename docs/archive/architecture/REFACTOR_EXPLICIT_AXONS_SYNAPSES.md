@@ -784,10 +784,9 @@ builder.connect("thalamus", "cortex", "axonal")
 ## Next Steps
 
 1. ✅ Create this implementation plan
-2. ⏳ Remove EventDrivenBrain
-3. ⏳ Implement Phase 1 (Core Components)
-4. ⏳ Test Phase 1 in isolation
-5. ⏳ Continue with remaining phases
+2. ⏳ Implement Phase 1 (Core Components)
+3. ⏳ Test Phase 1 in isolation
+4. ⏳ Continue with remaining phases
 
 ---
 

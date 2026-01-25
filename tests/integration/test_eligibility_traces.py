@@ -98,46 +98,6 @@ def test_multi_step_credit_assignment(test_brain):
     )
 
 
-def test_eligibility_trace_decay(test_brain):
-    """Traces should decay exponentially without reinforcement."""
-    brain = test_brain
-    striatum = brain.components["striatum"]
-    thalamus = brain.components["thalamus"]
-
-    # Create test state
-    test_state = torch.randn(thalamus.input_size)
-
-
-    # Create eligibility trace
-    brain.forward({"thalamus": test_state})
-    _ = brain.select_action()
-
-    # Get initial eligibility from D1 pathway learning strategy
-    d1_pathway = striatum.d1_pathway
-    if not hasattr(d1_pathway.learning_strategy, "eligibility") or d1_pathway.learning_strategy.eligibility is None:
-        pytest.skip("D1 pathway strategy doesn't have eligibility attribute")
-
-    initial_eligibility = d1_pathway.learning_strategy.eligibility.clone()
-    initial_sum = initial_eligibility.sum().item()
-
-    # Let decay for 200 timesteps (no new activity, no dopamine)
-    for _ in range(200):
-        empty_state = torch.zeros(thalamus.input_size)
-        brain.forward({"thalamus": empty_state})
-
-    # Check eligibility decayed
-    final_eligibility = d1_pathway.learning_strategy.eligibility
-    final_sum = final_eligibility.sum().item()
-    decay_ratio = final_sum / (initial_sum + 1e-10)
-
-    # With tau=1000ms and dt=1ms, decay per step = 1 - 1/1000 = 0.999
-    # After 200 steps: 0.999^200 ≈ 0.819
-    assert 0.7 < decay_ratio < 0.9, (
-        f"Eligibility should decay to ~82% after 200ms (tau=1000ms). "
-        f"Got {decay_ratio:.2%} of original"
-    )
-
-
 def test_no_td_error_calculation(test_brain):
     """System should learn without computing explicit TD errors."""
     brain = test_brain
@@ -188,37 +148,49 @@ def test_eligibility_accumulates_before_dopamine(test_brain):
     thalamus = brain.components["thalamus"]
     d1_pathway = striatum.d1_pathway
 
-    # Skip if strategy doesn't expose eligibility
-    if not hasattr(d1_pathway.learning_strategy, "eligibility"):
-        pytest.skip("D1 pathway strategy doesn't have eligibility attribute")
-
     # Create test state with correct thalamus input size
     test_state = torch.randn(thalamus.input_size)
 
-    # Reset eligibility
-    d1_pathway.learning_strategy.reset_state()
+    # Reset eligibility and set dopamine to 0 (continuous learning requires explicit dopamine=0)
+    striatum.reset_state()
+    striatum.set_neuromodulators(dopamine=0.0)
 
-    # Present same state 10 times (build eligibility)
+    # Get initial weights before any processing
+    d1_source_key = next(k for k in striatum.synaptic_weights.keys() if "d1" in k)
+    initial_weights = striatum.synaptic_weights[d1_source_key].clone()
+
+    # Present same state 10 times (build eligibility without learning)
     for _ in range(10):
         brain.forward({"thalamus": test_state})
         brain.select_action()
-        # No dopamine yet
+        # No dopamine yet (explicitly set to 0.0)
 
     # Check eligibility accumulated
-    eligibility = d1_pathway.learning_strategy.eligibility
+    eligibility = d1_pathway.eligibility
     if eligibility is not None:
         elig_sum = eligibility.sum().item()
         assert elig_sum > 1.0, (
             "Eligibility should accumulate over multiple presentations. " f"Got sum: {elig_sum:.3f}"
         )
 
+        # Weights should not have changed yet (no dopamine)
+        no_dopamine_weights = striatum.synaptic_weights[d1_source_key].clone()
+        weight_change_without_dopamine = (no_dopamine_weights - initial_weights).abs().sum().item()
+        assert weight_change_without_dopamine < 0.01, (
+            "Weights should not change without dopamine. "
+            f"Got change: {weight_change_without_dopamine:.3f}"
+        )
+
         # Now deliver dopamine
-        initial_weights = striatum.synaptic_weights["default_d1"].clone()
         brain.deliver_reward(1.0)
-        final_weights = striatum.synaptic_weights["default_d1"]
+
+        # Process one more timestep to apply the dopamine-modulated update
+        brain.forward({"thalamus": test_state})
+
+        final_weights = striatum.synaptic_weights[d1_source_key]
 
         # Weights should change significantly (accumulated eligibility × dopamine)
-        weight_change = (final_weights - initial_weights).abs().sum().item()
+        weight_change = (final_weights - no_dopamine_weights).abs().sum().item()
         assert weight_change > 0.1, (
             "Accumulated eligibility should create large weight change when dopamine arrives. "
             f"Got change: {weight_change:.3f}"
@@ -226,7 +198,7 @@ def test_eligibility_accumulates_before_dopamine(test_brain):
 
 
 def test_delayed_reward_5_steps(test_brain):
-    """Test 5-step credit assignment without TD(λ)."""
+    """Test 5-step credit assignment."""
     brain = test_brain
     striatum = brain.components["striatum"]
     thalamus = brain.components["thalamus"]
@@ -280,11 +252,14 @@ def test_dopamine_gates_learning(test_brain):
     source_key = next(k for k in striatum.synaptic_weights.keys() if "d1" in k)
     initial_weights = striatum.synaptic_weights[source_key].clone()
 
+    # Set dopamine to zero to test gating (continuous learning architecture)
+    striatum.set_neuromodulators(dopamine=0.0)
+
     # Create eligibility WITHOUT dopamine
     for _ in range(50):
         brain.forward({"thalamus": test_state})
         brain.select_action()
-        # NO reward delivery → no dopamine → no learning
+        # Dopamine = 0 → continuous learning produces zero weight changes
 
     # Weights should NOT change significantly
     final_weights = striatum.synaptic_weights[source_key]

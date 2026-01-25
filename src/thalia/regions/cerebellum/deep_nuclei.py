@@ -344,6 +344,3 @@ class DeepCerebellarNuclei(nn.Module):
             self.n_mossy += n_new
         else:
             raise ValueError(f"Unknown source: {source}. Use 'purkinje' or 'mossy'.")
-
-
-__all__ = ["DeepCerebellarNuclei"]

@@ -49,7 +49,8 @@ Date: January 2026 (Tier 2.1 Consolidation)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, Optional
+from enum import Enum
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from thalia.components.synapses.stp import STPType
 from thalia.config.learning_config import (
@@ -86,7 +87,10 @@ from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.learning.rules.bcm import BCMConfig
 
 if TYPE_CHECKING:
-    from thalia.regions.cortex.robustness_config import RobustnessConfig
+    from thalia.diagnostics.criticality import CriticalityConfig
+    from thalia.learning.ei_balance import EIBalanceConfig
+    from thalia.learning.homeostasis.metabolic import MetabolicConfig
+
 
 # ============================================================================
 # MEMORY & LEARNING SYSTEMS
@@ -1050,6 +1054,146 @@ class ThalamicRelayConfig(NeuralComponentConfig):
 
 
 @dataclass
+class CortexRobustnessConfig:
+    """Cortex-specific robustness mechanisms.
+
+    This config contains mechanisms NOT already handled by UnifiedHomeostasis:
+    - E/I Balance: Critical for recurrent cortical stability
+    - Criticality: Optional research/diagnostics tool
+    - Metabolic: Optional sparse coding objective
+
+    Note: The following are handled by UnifiedHomeostasis (base class):
+    - Weight normalization (budget constraints)
+    - Activity regulation (threshold adaptation)
+    - Competitive dynamics (winner-take-all)
+
+    Divisive normalization removed: ConductanceLIF neurons provide natural
+    gain control via shunting inhibition, making explicit divisive norm redundant.
+
+    **Recommended presets:**
+    - minimal(): Just E/I balance (essential for recurrence)
+      → Use for: Most cortical regions, minimal overhead
+
+    - full(): All mechanisms enabled
+      → Use for: Research, diagnostics, sparse coding goals
+
+    **When to customize:**
+    - Debugging: Disable all, enable E/I balance only
+    - Sparse coding: Enable metabolic constraints
+    - Research: Enable criticality monitoring for branching ratio
+
+    Attributes:
+        enable_ei_balance: Enable E/I balance regulation
+            Maintains healthy ratio between excitation and inhibition.
+            Critical for recurrent cortical circuits (prevents oscillations).
+
+        enable_criticality: Enable criticality monitoring
+            Tracks branching ratio, can correct toward critical state.
+            More expensive, research/diagnostics use only.
+
+        enable_metabolic: Enable metabolic constraints
+            Penalizes excessive activity, encourages sparse coding.
+            Useful when energy efficiency is an explicit goal.
+
+        ei_balance: E/I balance configuration
+        criticality: Criticality monitoring configuration
+        metabolic: Metabolic constraint configuration
+    """
+
+    # Enable/disable flags
+    enable_ei_balance: bool = True
+    enable_criticality: bool = False  # Research/diagnostics only
+    enable_metabolic: bool = False  # Sparse coding objective
+
+    # Sub-configurations
+    ei_balance: EIBalanceConfig = field(default_factory=EIBalanceConfig)
+    criticality: CriticalityConfig = field(default_factory=CriticalityConfig)
+    metabolic: MetabolicConfig = field(default_factory=MetabolicConfig)
+
+    @classmethod
+    def minimal(cls) -> CortexRobustnessConfig:
+        """Create minimal config with only essential mechanisms.
+
+        Enables E/I balance only (critical for recurrent stability).
+
+        Use cases:
+        - Most cortical regions (default choice)
+        - Quick prototyping and debugging
+        - Minimal computational overhead
+        - Essential recurrence stability without extras
+
+        Performance impact: ~10-15% overhead vs no robustness
+        """
+        return cls(
+            enable_ei_balance=True,  # Essential for recurrence
+            enable_criticality=False,
+            enable_metabolic=False,
+        )
+
+    @classmethod
+    def full(cls) -> CortexRobustnessConfig:
+        """Create full config with ALL robustness mechanisms.
+
+        Maximum robustness with all mechanisms enabled.
+
+        Use cases:
+        - Research exploring criticality dynamics
+        - Sparse coding objectives (metabolic constraints)
+        - Maximum diagnostics and monitoring
+
+        Performance impact: ~20-30% overhead vs minimal
+        """
+        return cls(
+            enable_ei_balance=True,
+            enable_criticality=True,
+            enable_metabolic=True,
+        )
+
+    def get_enabled_mechanisms(self) -> List[str]:
+        """Get list of enabled mechanism names."""
+        enabled: List[str] = []
+        if self.enable_ei_balance:
+            enabled.append("ei_balance")
+        if self.enable_criticality:
+            enabled.append("criticality")
+        if self.enable_metabolic:
+            enabled.append("metabolic")
+        return enabled
+
+    def summary(self) -> str:
+        """Get a summary of the robustness configuration."""
+        lines = [
+            "Robustness Configuration:",
+            f"  E/I Balance: {'ON' if self.enable_ei_balance else 'OFF'}",
+            f"  Divisive Norm: {'ON' if hasattr(self, 'enable_divisive_norm') and self.enable_divisive_norm else 'OFF'}",
+            f"  Intrinsic Plasticity: {'ON' if hasattr(self, 'enable_intrinsic_plasticity') and self.enable_intrinsic_plasticity else 'OFF'}",
+            f"  Criticality: {'ON' if self.enable_criticality else 'OFF'}",
+            f"  Metabolic: {'ON' if self.enable_metabolic else 'OFF'}",
+        ]
+
+        if self.enable_ei_balance:
+            lines.append(f"    E/I target ratio: {self.ei_balance.target_ratio}")
+        if (
+            hasattr(self, "enable_divisive_norm")
+            and self.enable_divisive_norm
+            and hasattr(self, "divisive_norm")
+        ):
+            lines.append(f"    Divisive sigma: {self.divisive_norm.sigma}")  # type: ignore[attr-defined]
+        if (
+            hasattr(self, "enable_intrinsic_plasticity")
+            and self.enable_intrinsic_plasticity
+            and hasattr(self, "intrinsic_plasticity")
+        ):
+            lines.append(f"    IP target rate: {self.intrinsic_plasticity.target_rate}")  # type: ignore[attr-defined]
+        if self.enable_criticality:
+            lines.append(f"    Target branching: {self.criticality.target_branching}")
+        if self.enable_metabolic:
+            lines.append(f"    Energy budget: {self.metabolic.energy_budget}")
+
+        return "\n".join(lines)
+
+
+@dataclass
 class LayeredCortexConfig(NeuralComponentConfig):
     """Configuration for layered cortical microcircuit.
 
@@ -1228,7 +1372,7 @@ class LayeredCortexConfig(NeuralComponentConfig):
     #
     # Note: Activity regulation and threshold adaptation are handled by
     # UnifiedHomeostasis (in NeuralComponentConfig base class).
-    robustness: Optional[RobustnessConfig] = field(default=None)
+    robustness: Optional[CortexRobustnessConfig] = field(default=None)
 
     # =========================================================================
     # LAYER-SPECIFIC HETEROGENEITY (Phase 2A Enhancement)
@@ -1321,6 +1465,73 @@ class LayeredCortexConfig(NeuralComponentConfig):
     """
 
 
+class PredictiveCodingErrorType(Enum):
+    """Types of prediction errors."""
+
+    POSITIVE = "positive"  # Actual > Predicted (under-prediction)
+    NEGATIVE = "negative"  # Actual < Predicted (over-prediction)
+    SIGNED = "signed"  # Single population with +/- values
+
+
+@dataclass
+class PredictiveCodingConfig:
+    """Configuration for a predictive coding layer.
+
+    Attributes:
+        n_input: Size of input (from lower layer or sensory)
+        n_representation: Size of internal representation (prediction neurons)
+
+        # Prediction dynamics
+        prediction_tau_ms: Time constant for prediction integration (slow, NMDA-like)
+        error_tau_ms: Time constant for error neurons (fast, AMPA-like)
+
+        # Learning parameters
+        learning_rate: Base learning rate for prediction weight updates
+        precision_learning_rate: Learning rate for precision updates
+
+        # Precision (attention/confidence) parameters
+        initial_precision: Starting precision (inverse variance)
+        precision_min: Minimum precision (prevents division by zero)
+        precision_max: Maximum precision (prevents over-confidence)
+
+        # Architecture choices
+        error_type: How errors are represented (separate +/- or signed)
+        sparse_coding: Apply sparsity constraint on representations
+        sparsity_target: Target activation fraction if sparse_coding=True
+
+        dt_ms: Simulation timestep
+        device: Computation device
+    """
+
+    n_input: int = 256
+    n_representation: int = 128
+
+    # Dynamics
+    prediction_tau_ms: float = 50.0  # Slow (NMDA-like) for stable predictions
+    error_tau_ms: float = 5.0  # Fast (AMPA-like) for quick error signaling
+
+    # Learning
+    learning_rate: float = 0.01
+    precision_learning_rate: float = LEARNING_RATE_PRECISION
+
+    # Precision (attention)
+    initial_precision: float = 1.0
+    precision_min: float = 0.1
+    precision_max: float = 10.0
+
+    # Temporal variance tracking for precision learning
+    # Precision is updated based on variance of errors over recent history
+    error_history_size: int = 50  # Number of timesteps to track for variance
+    precision_update_interval: int = 10  # Update precision every N timesteps
+
+    # Architecture
+    error_type: PredictiveCodingErrorType = PredictiveCodingErrorType.SIGNED
+    sparse_coding: bool = True
+    sparsity_target: float = 0.1
+
+    device: str = "cpu"
+
+
 @dataclass
 class PredictiveCortexConfig(LayeredCortexConfig):
     """Configuration for predictive cortex.
@@ -1410,7 +1621,10 @@ __all__ = [
     "HyperbolicDiscountingConfig",
     # Sensory Processing & Integration
     "ThalamicRelayConfig",
+    "CortexRobustnessConfig",
     "LayeredCortexConfig",
+    "PredictiveCodingErrorType",
+    "PredictiveCodingConfig",
     "PredictiveCortexConfig",
     "MultimodalIntegrationConfig",
 ]

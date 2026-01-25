@@ -1,8 +1,8 @@
 """
 Integration tests for CheckpointManager in DynamicBrain.
 
-Tests Phase 1.7.4: Checkpoint management
-Note: ConsolidationManager NOT tested (requires EventDrivenBrain's unified config)
+Tests: Checkpoint management
+Note: ConsolidationManager NOT tested
 
 Author: Thalia Project
 Date: December 15, 2025

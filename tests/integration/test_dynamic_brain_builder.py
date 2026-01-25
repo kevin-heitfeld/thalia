@@ -5,7 +5,6 @@ Tests end-to-end functionality:
     - Brain creation from builder API
     - Preset architecture execution
     - Custom brain construction
-    - Performance benchmarks vs EventDrivenBrain
     - Memory usage validation
 """
 
@@ -299,7 +298,7 @@ class TestSaveAndLoad:
 
 
 class TestRLInterface:
-    """Test EventDrivenBrain-compatible RL interface (Phase 1.6.2)."""
+    """Test DynamicBrain RL interface."""
 
     def test_select_action_basic(self, device, brain_config):
         """Test basic action selection after forward pass."""
@@ -403,8 +402,8 @@ class TestRLInterface:
     def test_deliver_reward_without_action_allowed(self, device, brain_config):
         """Test that deliver_reward works without prior select_action().
 
-        Both DynamicBrain and EventDrivenBrain allow deliver_reward() without
-        prior select_action() for streaming/continuous learning scenarios.
+        DynamicBrain allows deliver_reward() without prior
+        select_action() for streaming/continuous learning scenarios.
         The brain simply uses None/_last_action which may be None initially.
         """
         brain = BrainBuilder.preset("default", brain_config)

@@ -71,7 +71,6 @@ class ActionSelectionMixin:
     - d1_weights, d2_weights: nn.Parameter (properties delegating to pathways)
     - state: with .spikes attribute
     - state_tracker: StriatumStateTracker (provides votes, last_action, exploring)
-    - exploration_manager: ExplorationManager
     """
 
     # Type hints for mixin - these are provided by Striatum
@@ -80,7 +79,6 @@ class ActionSelectionMixin:
     neurons_per_action: int
     device: torch.device  # provided by LearnableComponent base class as @property
     state_tracker: Any  # StriatumStateTracker
-    exploration_manager: Any  # ExplorationManager
     state: Any
     d1_pathway: Any  # D1Pathway
     d2_pathway: Any  # D2Pathway

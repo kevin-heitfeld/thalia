@@ -6,14 +6,15 @@ This package provides the Striatum region with:
 - D1/D2 opponent pathways (Go/No-Go)
 - Population coding for robust action selection
 - Adaptive exploration (UCB + uncertainty-driven)
-- TD(λ) for multi-step credit assignment (Phase 1 Enhancement)
 """
 
 from __future__ import annotations
 
-from .striatum import Striatum, StriatumState
+from .state import StriatumState, StriatumStateTracker
+from .striatum import Striatum
 
 __all__ = [
     "Striatum",
     "StriatumState",
+    "StriatumStateTracker",
 ]

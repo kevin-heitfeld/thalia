@@ -12,8 +12,9 @@ Date: December 2025
 
 from __future__ import annotations
 
-from .layered_cortex import LayeredCortex, LayeredCortexState
-from .predictive_cortex import PredictiveCortex, PredictiveCortexState
+from .layered_cortex import LayeredCortex
+from .predictive_cortex import PredictiveCortex
+from .state import LayeredCortexState, PredictiveCortexState
 
 __all__ = [
     "LayeredCortex",

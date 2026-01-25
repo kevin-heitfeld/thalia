@@ -210,23 +210,24 @@ class TestMultiTimescaleEligibility:
         ), f"Slow trace {slow_magnitude:.4f} should be smaller than fast {fast_magnitude:.4f}"
 
     def test_combined_eligibility_in_learning(self, brain_with_multi_eligibility):
-        """Test that deliver_reward uses combined eligibility."""
+        """Test that continuous learning uses combined eligibility."""
         _, striatum = brain_with_multi_eligibility
 
         # Run forward passes to create eligibility
+        inputs = {
+            "cortex:l5": torch.randn(32, device=striatum.device),
+            "hippocampus": torch.randn(64, device=striatum.device),
+        }
         for _ in range(100):
-            inputs = {
-                "cortex:l5": torch.randn(32, device=striatum.device),
-                "hippocampus": torch.randn(64, device=striatum.device),
-            }
             striatum(inputs)
 
         # Store initial weights
         source_key = list(striatum._eligibility_d1_fast.keys())[0]
         initial_weights = striatum.synaptic_weights[source_key].clone()
 
-        # Deliver reward (should use combined eligibility: fast + 0.3*slow)
-        striatum.deliver_reward(1.0)  # Positive reward
+        # Apply high dopamine and run forward (continuous learning uses combined eligibility: fast + 0.3*slow)
+        striatum.set_neuromodulators(dopamine=1.0)  # Positive dopamine signal
+        striatum(inputs)  # Learning happens automatically
 
         # Weights should change
         final_weights = striatum.synaptic_weights[source_key]
@@ -309,13 +310,14 @@ class TestSingleTimescaleMode:
         # Store initial weights
         initial_weights = striatum.synaptic_weights[source_key].clone()
 
-        # Deliver reward
-        striatum.deliver_reward(1.0)
+        # Apply high dopamine and run forward (continuous learning)
+        striatum.set_neuromodulators(dopamine=1.0)
+        striatum(inputs)
 
         # Weights should change
         final_weights = striatum.synaptic_weights[source_key]
         weight_change = (final_weights - initial_weights).abs().sum().item()
-        assert weight_change > 0, "Single-timescale learning should still work"
+        assert weight_change > 0, "Single-timescale continuous learning should still work"
 
 
 if __name__ == "__main__":

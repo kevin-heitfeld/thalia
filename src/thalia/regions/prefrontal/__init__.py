@@ -16,11 +16,8 @@ from __future__ import annotations
 
 from .checkpoint_manager import PrefrontalCheckpointManager
 from .goal_emergence import EmergentGoalSystem
-from .prefrontal import (
-    Prefrontal,
-    PrefrontalState,
-    sample_heterogeneous_wm_neurons,
-)
+from .prefrontal import Prefrontal, sample_heterogeneous_wm_neurons
+from .state import PrefrontalState
 
 __all__ = [
     "Prefrontal",

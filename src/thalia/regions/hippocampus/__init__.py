@@ -13,7 +13,8 @@ Usage:
 
 from __future__ import annotations
 
-from .trisynaptic import HippocampusState, TrisynapticHippocampus
+from .state import HippocampusState
+from .trisynaptic import TrisynapticHippocampus
 
 __all__ = [
     "TrisynapticHippocampus",

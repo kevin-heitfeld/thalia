@@ -96,19 +96,6 @@ THALAMUS_TRN_FEEDFORWARD_SPARSITY = 0.3
 THALAMUS_SPATIAL_CENTER_SPARSITY = 0.2
 """Sparsity for center-surround spatial filters (20% for local receptive fields)."""
 
-# =============================================================================
-# STRIATUM - TD(λ) LEARNING PARAMETERS
-# =============================================================================
-
-STRIATUM_TD_LAMBDA = 0.9
-"""TD(λ) trace decay parameter (0.9 bridges ~10 timesteps, standard value)."""
-
-STRIATUM_GAMMA = 0.99
-"""Discount factor for future rewards (standard RL value, 0.99^100 ≈ 0.37)."""
-
-STRIATUM_TD_MIN_TRACE = 1e-6
-"""Minimum eligibility trace value (below this, traces are zeroed)."""
-
 
 __all__ = [
     "THALAMUS_BURST_THRESHOLD",
@@ -132,7 +119,4 @@ __all__ = [
     "THALAMUS_TRN_FEEDBACK_SCALE",
     "THALAMUS_TRN_FEEDFORWARD_SPARSITY",
     "THALAMUS_SPATIAL_CENTER_SPARSITY",
-    "STRIATUM_TD_LAMBDA",
-    "STRIATUM_GAMMA",
-    "STRIATUM_TD_MIN_TRACE",
 ]

@@ -102,7 +102,6 @@ See: docs/decisions/adr-011-large-file-justification.md
 from __future__ import annotations
 
 import weakref
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
 
 import torch
@@ -123,7 +122,6 @@ from thalia.components.synapses import (
 from thalia.config.region_configs import StriatumConfig
 from thalia.constants.neuromodulation import (
     ACH_BASELINE,
-    DA_BASELINE_STRIATUM,
     NE_BASELINE,
     compute_ne_gain,
 )
@@ -140,7 +138,6 @@ from thalia.core.diagnostics_schema import (
     compute_plasticity_metrics,
 )
 from thalia.core.neural_region import NeuralRegion
-from thalia.core.region_state import BaseRegionState
 from thalia.managers.base_manager import ManagerContext
 from thalia.managers.component_registry import register_region
 from thalia.typing import SourceOutputs, StateDict
@@ -156,319 +153,7 @@ from .forward_coordinator import ForwardPassCoordinator
 from .homeostasis_component import HomeostasisManagerConfig, StriatumHomeostasisComponent
 from .learning_component import StriatumLearningComponent
 from .pathway_base import StriatumPathwayConfig
-from .state_tracker import StriatumStateTracker
-
-
-@dataclass
-class StriatumState(BaseRegionState):
-    """Complete state for Striatum region.
-
-    Stores all striatal state including:
-    - D1/D2 opponent pathway states
-    - Vote accumulation for action selection
-    - Action selection history
-    - Exploration state
-    - Value estimates and RPE tracking
-    - Goal modulation weights
-    - Delay buffers for temporal competition
-    - Homeostatic tracking
-    - Neuromodulator levels
-
-    Design Notes:
-    =============
-    - D1/D2 pathway states are stored as opaque dicts (from pathway.get_state())
-    - Delay buffers include circular buffer pointers
-    - Optional features (RPE, goal conditioning) may be None if disabled
-    - Neuromodulators are explicit fields (not from mixin)
-    """
-
-    STATE_VERSION: int = 1
-
-    # ========================================================================
-    # FSI (FAST-SPIKING INTERNEURON) STATE
-    # ========================================================================
-    fsi_membrane: Optional[torch.Tensor] = None
-    """FSI membrane potentials [n_fsi] for gap junction coupling."""
-
-    # ========================================================================
-    # D1/D2 OPPONENT PATHWAY STATES
-    # ========================================================================
-    d1_pathway_state: Optional[Dict[str, Any]] = None
-    """D1 'Go' pathway state from d1_pathway.get_state()."""
-
-    d2_pathway_state: Optional[Dict[str, Any]] = None
-    """D2 'No-Go' pathway state from d2_pathway.get_state()."""
-
-    # ========================================================================
-    # VOTE ACCUMULATION (Trial-based Action Selection)
-    # ========================================================================
-    d1_votes_accumulated: Optional[torch.Tensor] = None
-    """Accumulated D1 votes [n_neurons] for current trial."""
-
-    d2_votes_accumulated: Optional[torch.Tensor] = None
-    """Accumulated D2 votes [n_neurons] for current trial."""
-
-    # ========================================================================
-    # ACTION SELECTION STATE
-    # ========================================================================
-    last_action: Optional[int] = None
-    """Last selected action index (for credit assignment)."""
-
-    recent_spikes: Optional[torch.Tensor] = None
-    """Recent spike history [n_neurons] for lateral inhibition."""
-
-    # ========================================================================
-    # EXPLORATION STATE
-    # ========================================================================
-    exploring: bool = False
-    """Flag indicating if currently exploring (not exploiting)."""
-
-    last_uncertainty: Optional[float] = None
-    """Last computed action uncertainty (for adaptive exploration)."""
-
-    last_exploration_prob: Optional[float] = None
-    """Last exploration probability (for diagnostics)."""
-
-    exploration_manager_state: Optional[Dict[str, Any]] = None
-    """Exploration manager state (action counts, uncertainties, etc.)."""
-
-    # ========================================================================
-    # VALUE ESTIMATES REMOVED (Emergent from D1-D2 competition)
-    # ========================================================================
-    # value_estimates field removed - action values now emerge from D1-D2 weights
-    # RPE tracking variables kept for compatibility with learning diagnostics
-
-    last_rpe: Optional[float] = None
-    """Last computed reward prediction error."""
-
-    last_expected: Optional[float] = None
-    """Last expected value (for RPE computation)."""
-
-    # ========================================================================
-    # GOAL MODULATION (PFC → Striatum)
-    # ========================================================================
-    pfc_modulation_d1: Optional[torch.Tensor] = None
-    """PFC goal modulation weights for D1 pathway [n_neurons, pfc_size]."""
-
-    pfc_modulation_d2: Optional[torch.Tensor] = None
-    """PFC goal modulation weights for D2 pathway [n_neurons, pfc_size]."""
-
-    # ========================================================================
-    # DELAY BUFFERS (Temporal Competition)
-    # ========================================================================
-    d1_delay_buffer: Optional[torch.Tensor] = None
-    """D1 pathway delay buffer [delay_steps, n_neurons]."""
-
-    d2_delay_buffer: Optional[torch.Tensor] = None
-    """D2 pathway delay buffer [delay_steps, n_neurons]."""
-
-    d1_delay_ptr: int = 0
-    """Circular buffer pointer for D1 delay buffer."""
-
-    d2_delay_ptr: int = 0
-    """Circular buffer pointer for D2 delay buffer."""
-
-    # ========================================================================
-    # HOMEOSTATIC TRACKING
-    # ========================================================================
-    activity_ema: float = 0.0
-    """Exponential moving average of activity (for homeostasis)."""
-
-    trial_spike_count: int = 0
-    """Total spikes in current trial."""
-
-    trial_timesteps: int = 0
-    """Number of timesteps in current trial."""
-
-    homeostatic_scaling_applied: bool = False
-    """Flag indicating if homeostatic scaling was applied."""
-
-    homeostasis_manager_state: Optional[Dict[str, Any]] = None
-    """Unified homeostasis manager state."""
-
-    # ========================================================================
-    # SHORT-TERM PLASTICITY (STP)
-    # ========================================================================
-    # Per-source STP modules
-    stp_modules_state: Dict[str, Dict[str, Optional[torch.Tensor]]] = field(default_factory=dict)
-    """Per-source STP states. Keys are source-pathway names (e.g., 'cortex:l5_d1'),
-    values are dicts with 'u' and 'x' tensors."""
-
-    # Note: Neuromodulators (dopamine, acetylcholine, norepinephrine) are
-    # inherited from BaseRegionState
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize state to dictionary.
-
-        Returns:
-            Dictionary containing all state fields.
-        """
-        return {
-            "state_version": self.STATE_VERSION,
-            # Base state (spikes, membrane from BaseRegionState)
-            "spikes": self.spikes,
-            "membrane": self.membrane,
-            # D1/D2 pathways
-            "d1_pathway_state": self.d1_pathway_state,
-            "d2_pathway_state": self.d2_pathway_state,
-            # Vote accumulation
-            "d1_votes_accumulated": self.d1_votes_accumulated,
-            "d2_votes_accumulated": self.d2_votes_accumulated,
-            # Action selection
-            "last_action": self.last_action,
-            "recent_spikes": self.recent_spikes,
-            # Exploration
-            "exploring": self.exploring,
-            "last_uncertainty": self.last_uncertainty,
-            "last_exploration_prob": self.last_exploration_prob,
-            "exploration_manager_state": self.exploration_manager_state,
-            # RPE tracking (no value_estimates, just diagnostic fields)
-            "last_rpe": self.last_rpe,
-            "last_expected": self.last_expected,
-            # Goal modulation
-            "pfc_modulation_d1": self.pfc_modulation_d1,
-            "pfc_modulation_d2": self.pfc_modulation_d2,
-            # Delay buffers
-            "d1_delay_buffer": self.d1_delay_buffer,
-            "d2_delay_buffer": self.d2_delay_buffer,
-            "d1_delay_ptr": self.d1_delay_ptr,
-            "d2_delay_ptr": self.d2_delay_ptr,
-            # Homeostasis
-            "activity_ema": self.activity_ema,
-            "trial_spike_count": self.trial_spike_count,
-            "trial_timesteps": self.trial_timesteps,
-            "homeostatic_scaling_applied": self.homeostatic_scaling_applied,
-            "homeostasis_manager_state": self.homeostasis_manager_state,
-            # Neuromodulators inherited from BaseRegionState
-            "dopamine": self.dopamine,
-            "acetylcholine": self.acetylcholine,
-            "norepinephrine": self.norepinephrine,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any], device: str = "cpu") -> StriatumState:
-        """Deserialize state from dictionary.
-
-        Args:
-            data: Dictionary from to_dict()
-            device: Target device for tensors
-
-        Returns:
-            New StriatumState instance with data on specified device
-        """
-
-        # Helper function to transfer tensors
-        def to_device(x):
-            if x is not None and isinstance(x, torch.Tensor):
-                return x.to(device)
-            return x
-
-        return cls(
-            # Base state
-            spikes=to_device(data.get("spikes")),
-            membrane=to_device(data.get("membrane")),
-            # FSI state (backward compatible)
-            fsi_membrane=to_device(data.get("fsi_membrane")),
-            # D1/D2 pathways
-            d1_pathway_state=data.get("d1_pathway_state"),
-            d2_pathway_state=data.get("d2_pathway_state"),
-            # Vote accumulation
-            d1_votes_accumulated=to_device(data.get("d1_votes_accumulated")),
-            d2_votes_accumulated=to_device(data.get("d2_votes_accumulated")),
-            # Action selection
-            last_action=data.get("last_action"),
-            recent_spikes=to_device(data.get("recent_spikes")),
-            # Exploration
-            exploring=data.get("exploring", False),
-            last_uncertainty=data.get("last_uncertainty"),
-            last_exploration_prob=data.get("last_exploration_prob"),
-            exploration_manager_state=data.get("exploration_manager_state"),
-            # RPE tracking (no value_estimates)
-            last_rpe=data.get("last_rpe"),
-            last_expected=data.get("last_expected"),
-            # Goal modulation
-            pfc_modulation_d1=to_device(data.get("pfc_modulation_d1")),
-            pfc_modulation_d2=to_device(data.get("pfc_modulation_d2")),
-            # Delay buffers
-            d1_delay_buffer=to_device(data.get("d1_delay_buffer")),
-            d2_delay_buffer=to_device(data.get("d2_delay_buffer")),
-            d1_delay_ptr=data.get("d1_delay_ptr", 0),
-            d2_delay_ptr=data.get("d2_delay_ptr", 0),
-            # Homeostasis
-            activity_ema=data.get("activity_ema", 0.0),
-            trial_spike_count=data.get("trial_spike_count", 0),
-            trial_timesteps=data.get("trial_timesteps", 0),
-            homeostatic_scaling_applied=data.get("homeostatic_scaling_applied", False),
-            homeostasis_manager_state=data.get("homeostasis_manager_state"),
-            # STP (unified format)
-            stp_modules_state=data.get("stp_modules_state", {}),
-            # Neuromodulators inherited from BaseRegionState
-            # Striatum uses higher baseline for RL
-            dopamine=data.get("dopamine", DA_BASELINE_STRIATUM),
-            acetylcholine=data.get("acetylcholine", 0.0),
-            norepinephrine=data.get("norepinephrine", 0.0),
-        )
-
-    def reset(self) -> None:
-        """Reset state to initial conditions.
-
-        Clears:
-        - Spike history and membrane potentials
-        - Vote accumulation
-        - Action selection history
-        - Exploration flags
-        - Value/RPE tracking
-        - Trial statistics
-        - Neuromodulator levels
-
-        Preserves:
-        - Synaptic weights (not part of state)
-        - Goal modulation weights (learned parameters)
-        - Pathway configurations
-        """
-        # Reset base state (spikes, membrane, neuromodulators)
-        super().reset()
-
-        # Striatum uses higher tonic dopamine than base
-        # This matches config.tonic_dopamine for exploration/RL
-        self.dopamine = DA_BASELINE_STRIATUM
-
-        # Reset pathways (delegate to pathway reset)
-        # Note: Pathway states will be reset via pathway.reset() calls
-
-        # Reset vote accumulation
-        if self.d1_votes_accumulated is not None:
-            self.d1_votes_accumulated.zero_()
-        if self.d2_votes_accumulated is not None:
-            self.d2_votes_accumulated.zero_()
-
-        # Reset action selection
-        self.last_action = None
-        if self.recent_spikes is not None:
-            self.recent_spikes.zero_()
-
-        # Reset exploration
-        self.exploring = False
-        self.last_uncertainty = None
-        self.last_exploration_prob = None
-
-        # Reset value/RPE
-        self.last_rpe = None
-        self.last_expected = None
-
-        # Reset delay buffers
-        if self.d1_delay_buffer is not None:
-            self.d1_delay_buffer.zero_()
-        if self.d2_delay_buffer is not None:
-            self.d2_delay_buffer.zero_()
-        self.d1_delay_ptr = 0
-        self.d2_delay_ptr = 0
-
-        # Reset homeostasis tracking
-        self.activity_ema = 0.0
-        self.trial_spike_count = 0
-        self.trial_timesteps = 0
-        self.homeostatic_scaling_applied = False
+from .state import StriatumState, StriatumStateTracker
 
 
 @register_region(
@@ -779,6 +464,44 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
         self.d2_lateral_weights = -torch.abs(self.d2_lateral_weights)
         self.d2_lateral_weights.fill_diagonal_(0.0)
+
+        # =====================================================================
+        # MSN→FSI CONNECTIONS (Excitatory Feedback, Koos & Tepper 1999)
+        # =====================================================================
+        # Biology: MSNs excite FSI via glutamatergic collaterals (~30% connectivity)
+        # This creates the feedback loop needed for winner-take-all dynamics:
+        # - Winning action's MSNs fire more → excite FSI more
+        # - FSI depolarizes → voltage-dependent Ca²⁺ channels open
+        # - More GABA release → stronger inhibition of losing actions
+        #
+        # Implementation: Sparse connectivity from both D1 and D2 MSNs to FSI
+        # Shape: [fsi_size, d1_size+d2_size] - FSI receive from all MSNs
+
+        if self.config.fsi_enabled and self.fsi_size > 0:
+            # D1 MSNs → FSI (excitatory, ~30% connectivity)
+            self.d1_to_fsi_weights = WeightInitializer.sparse_random(
+                n_output=self.fsi_size,
+                n_input=self.d1_size,
+                sparsity=0.3,  # ~30% MSN-FSI connectivity
+                weight_scale=0.2,  # Moderate excitation
+                device=self.device,
+            )
+            # Positive for excitation
+            self.d1_to_fsi_weights = torch.abs(self.d1_to_fsi_weights)
+
+            # D2 MSNs → FSI (excitatory, ~30% connectivity)
+            self.d2_to_fsi_weights = WeightInitializer.sparse_random(
+                n_output=self.fsi_size,
+                n_input=self.d2_size,
+                sparsity=0.3,
+                weight_scale=0.2,  # Matches D1
+                device=self.device,
+            )
+            self.d2_to_fsi_weights = torch.abs(self.d2_to_fsi_weights)
+        else:
+            # FSI disabled
+            self.d1_to_fsi_weights = torch.zeros((1, self.d1_size), device=self.device)
+            self.d2_to_fsi_weights = torch.zeros((1, self.d2_size), device=self.device)
 
         # =====================================================================
         # FSI→MSN CONNECTIONS (Per-Neuron, Moyer 2014)
@@ -2321,7 +2044,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - Fast traces (~500ms): Immediate coincidence detection
         - Slow traces (~60s): Consolidated long-term tags
         - Consolidation: slow ← slow*decay + fast*consolidation_rate
-        - Combined eligibility = fast + α*slow (used in deliver_reward())
+        - Combined eligibility = fast + α*slow (used in continuous learning)
 
         Args:
             inputs: Dict of source_name -> spike_tensor
@@ -2388,7 +2111,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 slow_dict[key] = slow_dict[key] * slow_decay + fast_dict[key] * consolidation_rate
 
             # For backward compatibility: set regular eligibility to fast traces
-            # (deliver_reward will use combined eligibility when multi-timescale enabled)
+            # (continuous learning uses combined eligibility when multi-timescale enabled)
             if not hasattr(self, eligibility_attr):
                 setattr(self, eligibility_attr, {})
             eligibility_dict = getattr(self, eligibility_attr)
@@ -2456,9 +2179,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         Unlike _update_d1_d2_eligibility which masks to a chosen action,
         this version accumulates eligibility for all neurons that fired.
-        The action-specific masking is deferred to deliver_reward(), which
-        uses last_action (set by finalize_action) to apply learning only
-        to the chosen action's synapses.
+        Learning is applied continuously in forward() using these eligibility
+        traces and the current dopamine level.
 
         This is the correct approach when action selection happens at trial
         end (via finalize_action) rather than per-timestep.
@@ -2651,6 +2373,58 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         return total_current
 
+    # =========================================================================
+    # FSI WINNER-TAKE-ALL DYNAMICS (Voltage-Dependent GABA Release)
+    # =========================================================================
+
+    def _fsi_membrane_to_inhibition_strength(self, fsi_membrane_v: torch.Tensor) -> torch.Tensor:
+        """Convert FSI membrane potential to inhibition scaling factor.
+
+        Biology: GABA release is voltage-dependent!
+        - Calcium influx increases with depolarization
+        - More Ca²⁺ → more vesicle fusion → more GABA release
+        - This creates nonlinear relationship between membrane voltage and inhibition
+
+        NO RATE COMPUTATION - the membrane potential itself carries temporal history:
+        - Membrane time constant (tau_mem ~5ms) naturally integrates recent spikes
+        - Depolarized membrane = recent high activity
+        - Hyperpolarized membrane = recent low activity
+
+        This voltage-dependent release creates BISTABILITY:
+        - Below ~-58 mV: weak GABA release, competitive dynamics
+        - Above ~-52 mV: strong GABA release, winner-take-all dynamics
+
+        Implementation:
+        - Baseline (0.1): Minimum inhibition at rest (~-65 mV)
+        - Maximum (0.8): Maximum inhibition near threshold (~-45 mV)
+        - Inflection (-55 mV): Where transition happens (FSI saturation)
+        - Steepness (3.0 mV): How sharp the transition is
+
+        Args:
+            fsi_membrane_v: FSI membrane potentials [n_fsi] in mV
+
+        Returns:
+            Per-FSI inhibition scaling factors [n_fsi] (0.1 to 0.8)
+
+        References:
+            - Gittis et al. 2010: Voltage-dependent GABA release in striatum
+            - Koos & Tepper 1999: FSI feedforward inhibition dynamics
+            - Planert et al. 2010: Ca²⁺-dependent vesicle release kinetics
+        """
+        baseline = 0.1  # Minimum inhibition (at rest, ~-65 mV)
+        maximum = 0.8  # Maximum inhibition (near threshold, ~-45 mV)
+        inflection = -55.0  # Voltage where transition happens (mV)
+        steepness = 3.0  # How sharp the transition is (mV)
+
+        # Sigmoid based on membrane voltage (voltage-dependent GABA release)
+        # σ(v) = baseline + (maximum - baseline) / (1 + exp(-(v - inflection) / steepness))
+        sigmoid = torch.sigmoid((fsi_membrane_v - inflection) / steepness)
+        return baseline + (maximum - baseline) * sigmoid
+
+    # =========================================================================
+    # MULTI-SOURCE SYNAPTIC INTEGRATION
+    # =========================================================================
+
     def _integrate_multi_source_inputs(
         self,
         inputs: SourceOutputs,
@@ -2817,6 +2591,29 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 gap_current = self.gap_junctions_fsi(self.state.fsi_membrane)  # type: ignore[misc, attr-defined]
                 fsi_current = fsi_current + gap_current
 
+            # =====================================================================
+            # MSN→FSI EXCITATION (Winner-Take-All Feedback)
+            # =====================================================================
+            # Biology: MSN collaterals excite FSI via glutamatergic synapses
+            # This creates positive feedback for winner-take-all:
+            # - Winning action's MSNs fire more → excite FSI more
+            # - FSI depolarizes → voltage-dependent GABA release increases
+            # - Increased GABA → suppresses losing action more
+            # - Gap widens → runaway to winner-take-all state
+
+            # Compute excitation from D1 and D2 MSNs to FSI
+            # Get spikes from current or previous timestep
+            if hasattr(self.state, 'd1_spikes') and self.state.d1_spikes is not None:
+                d1_to_fsi_input = self.d1_to_fsi_weights @ self.state.d1_spikes.float()
+                d2_to_fsi_input = self.d2_to_fsi_weights @ self.state.d2_spikes.float()
+            else:
+                # First timestep - no previous spikes
+                d1_to_fsi_input = torch.zeros(self.fsi_size, device=self.device)
+                d2_to_fsi_input = torch.zeros(self.fsi_size, device=self.device)
+
+            # Add MSN excitation to FSI input
+            fsi_current = fsi_current + d1_to_fsi_input + d2_to_fsi_input
+
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
             fsi_spikes, fsi_membrane = self.fsi_neurons(  # type: ignore[misc]
                 g_exc_input=fsi_current,
@@ -2828,18 +2625,40 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             self.state.fsi_spikes = fsi_spikes  # type: ignore[attr-defined] # For diagnostics
 
             # =====================================================================
-            # PER-NEURON FSI→MSN INHIBITION (Moyer 2014)
+            # PER-NEURON FSI→MSN INHIBITION WITH VOLTAGE-DEPENDENT GABA RELEASE
             # =====================================================================
             # Biology: Each MSN receives ~116 feedforward connections from ~18 FSIs
             # FSI inputs are 4-10× STRONGER than MSN lateral inputs
-            # Implementation: Sparse weight matrix multiplication (NOT global broadcast)
+            # CRITICAL: GABA release is voltage-dependent (Ca²⁺ channel dynamics)!
+            #
+            # Mechanism:
+            # 1. FSI spikes create baseline inhibition via fsi_to_msn_weights
+            # 2. FSI membrane voltage modulates release strength (Ca²⁺-dependent)
+            # 3. Depolarized FSI (recent high activity) → more GABA release
+            # 4. Hyperpolarized FSI (recent low activity) → less GABA release
+            #
+            # This creates BISTABILITY:
+            # - Competitive state (~-60 mV): weak GABA, balanced competition
+            # - Winner-take-all state (~-50 mV): strong GABA, losers suppressed
+            #
+            # NO EXPLICIT DETECTION - system naturally settles into attractor states!
 
-            # FSI → D1 inhibition (per-neuron, from sparse connectivity matrix)
+            # Compute voltage-dependent inhibition scaling factor
+            # fsi_membrane is [fsi_size] tensor of membrane voltages
+            # Returns [fsi_size] tensor of scaling factors (0.1 to 0.8)
+            inhibition_scale = self._fsi_membrane_to_inhibition_strength(fsi_membrane)
+
+            # Average scaling across FSI population (they're synchronized via gap junctions)
+            # This gives single scaling factor for whole network
+            avg_inhibition_scale = inhibition_scale.mean()
+
+            # FSI → D1 inhibition (per-neuron, voltage-dependent)
             # Shape: fsi_to_d1_weights [d1_size, fsi_size] @ fsi_spikes [fsi_size] = [d1_size]
-            fsi_inhibition_d1 = self.fsi_to_d1_weights @ fsi_spikes.float()
+            # Then scale by voltage-dependent factor
+            fsi_inhibition_d1 = (self.fsi_to_d1_weights @ fsi_spikes.float()) * avg_inhibition_scale
 
-            # FSI → D2 inhibition (per-neuron, from sparse connectivity matrix)
-            fsi_inhibition_d2 = self.fsi_to_d2_weights @ fsi_spikes.float()
+            # FSI → D2 inhibition (per-neuron, voltage-dependent)
+            fsi_inhibition_d2 = (self.fsi_to_d2_weights @ fsi_spikes.float()) * avg_inhibition_scale
         else:
             # FSI disabled → no FSI inhibition
             fsi_inhibition_d1 = torch.zeros(self.d1_size, device=self.device)
@@ -3013,8 +2832,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # =====================================================================
         # Update D1/D2 STDP-style eligibility (always enabled)
         # Eligibility accumulates for ALL neurons that fire during the trial.
-        # When reward arrives, deliver_reward() uses last_action (set by finalize_action)
-        # to apply learning only to the chosen action's synapses.
+        # Learning is applied continuously in _apply_dopamine_modulated_learning()
+        # using these eligibility traces and the current dopamine level.
         # Pass inputs dict to eligibility update (multi-source aware)
         self._update_d1_d2_eligibility_all(inputs, d1_spikes, d2_spikes)
 
@@ -3025,6 +2844,16 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Store D1 and D2 spikes for learning manager
         self.learning.store_spikes(d1_spikes, d2_spikes)
 
+        # =====================================================================
+        # CONTINUOUS LEARNING (Biologically Accurate)
+        # =====================================================================
+        # Apply three-factor learning EVERY timestep using current dopamine level
+        # Biology: Plasticity is continuous, not discrete. The three-factor rule
+        # (Δw = eligibility × dopamine × lr) runs constantly in real synapses.
+        # No separate "learning trigger" exists - dopamine levels fluctuate
+        # continuously and weight changes happen continuously.s
+        self._apply_dopamine_modulated_learning()
+
         # Store output spikes (NeuralRegion pattern, not self.state.spikes)
         self.output_spikes = output_spikes
 
@@ -3034,13 +2863,12 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Return output spikes (D1/D2 delays already handled by forward_coordinator)
         return output_spikes
 
-    def deliver_reward(self, reward: float) -> Dict[str, Any]:
-        """Deliver reward signal and trigger D1/D2 learning.
+    def _apply_dopamine_modulated_learning(self) -> Dict[str, Any]:
+        """Apply three-factor learning rule using current dopamine level.
 
-        **Biological Dopamine Broadcast**: Dopamine modulates ALL synapses with
-        eligibility traces, not just the last selected action. This matches biological
-        reality where dopamine broadcasts globally to striatum and affects any synapse
-        with accumulated eligibility traces.
+        **Continuous Biological Plasticity**: This method implements the core
+        three-factor learning rule (Δw = eligibility × dopamine × lr) that runs
+        continuously in real neurons.
 
         **Multi-Source Learning**: Applies dopamine-modulated plasticity to each
         source-pathway combination separately using their respective eligibility traces.
@@ -3049,35 +2877,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         active synapses via eligibility trace decay. Earlier actions receive weaker
         credit due to exponential trace decay (tau ~1000ms).
 
-        Args:
-            reward: Reward signal (+1 for reward, -1 for punishment, 0 for neutral)
-
         Returns:
             Metrics dict with dopamine level and weight changes per source.
         """
-        # Convert reward to phasic dopamine signal
-        # Positive reward → dopamine burst above baseline
-        # Negative reward → dopamine dip below baseline
-        # This modulates learning via three-factor rule: Δw = eligibility × DA × lr
-        tonic_baseline = self.forward_coordinator._tonic_dopamine
-        da_level = tonic_baseline + reward  # Phasic = tonic + reward signal
+        # Use dopamine from centralized VTA broadcast
+        # VTA handles RPE computation and broadcasts globally
+        da_level = self.state.dopamine
 
         # Store for diagnostics
         self._last_rpe = da_level
         self._last_expected = 0.0
-
-        # Adjust exploration based on performance (new component API)
-        # reward > 0 counts as "correct" for exploration adjustment
-        correct = reward > 0
-        self.exploration.update_performance(reward, correct)
 
         # Apply learning per source-pathway using eligibility traces
         # Three-factor rule: Δw = eligibility × dopamine × learning_rate
         # Biology: Dopamine broadcasts globally to ALL synapses with eligibility traces.
         # No action-specific masking - this matches biological dopamine modulation.
         # Action differentiation emerges from differences in eligibility (which neurons spiked most)
-        # Multi-step credit assignment works via eligibility trace decay.
-        # Combined eligibility = fast + α*slow (if multi-timescale enabled)
         d1_total_ltp = 0.0
         d1_total_ltd = 0.0
         d2_total_ltp = 0.0
@@ -3239,7 +3054,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         - State tracker (votes, spikes, trials)
         - D1/D2 pathway eligibility and neurons
         - Multi-source eligibility traces
-        - TD(λ) traces (if enabled)
         - Delay buffers (if enabled)
         """
         # Reset state tracker (votes, recent spikes, trial stats, last action)
@@ -3474,25 +3288,67 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         }
 
     # =========================================================================
+    # TRIAL RESET (Winner-Take-All Action Commitment)
+    # =========================================================================
+
+    def reset_trial(self) -> None:
+        """Reset state for new trial in action learning experiments.
+
+        Biology: Between trials, there's a natural reset:
+        - FSI neurons return to resting potential (membrane dynamics)
+        - Action votes accumulated during trial are cleared
+        - Eligibility traces may persist (depending on tau)
+        - Synaptic weights persist (learning accumulates across trials)
+
+        This enables trial-by-trial RL learning where:
+        1. Each trial starts with balanced competition (FSI at rest ~-65 mV)
+        2. During trial, winner-take-all emerges via FSI dynamics
+        3. At trial end, dopamine reinforces winner's synapses via eligibility
+        4. Next trial starts fresh (no vote carryover)
+
+        Use Case:
+            for trial in range(n_trials):
+                brain.reset_trial()  # Start fresh
+                for t in range(trial_length):
+                    spikes = brain(inputs)
+                selected_action = brain.get_selected_action()
+                reward = environment.get_reward(selected_action)
+                brain.deliver_dopamine(reward)
+
+        IMPORTANT: This does NOT reset synaptic weights (learning persists)!
+        Only resets trial-specific dynamics (votes, FSI membrane).
+        """
+        # Reset vote accumulation (trial-specific)
+        self.state_tracker.reset_trial_votes()
+
+        # Reset action selection state
+        self.state_tracker.last_action = None
+
+        # Reset FSI membrane voltage to resting potential
+        # This naturally happens through membrane dynamics, but we can force it
+        # to ensure clean trial boundaries
+        if hasattr(self, 'fsi_neurons') and hasattr(self.fsi_neurons, 'v'):
+            # Set to resting potential (around -65 mV for ConductanceLIF)
+            resting_v = -65.0  # mV (typical resting potential)
+            self.fsi_neurons.v.fill_(resting_v)
+
+        # Also reset FSI membrane in state tracker (for diagnostics)
+        if hasattr(self.state, 'fsi_membrane') and self.state.fsi_membrane is not None:
+            resting_v = -65.0  # mV
+            self.state.fsi_membrane.fill_(resting_v)
+
+        # NOTE: We do NOT reset:
+        # - Synaptic weights (learning persists)
+        # - Eligibility traces (may persist across trials depending on tau)
+        # - D1/D2 neuron membrane voltages (reset naturally via dynamics)
+        # - Exploration parameters (persist across trials)
+
+    # =========================================================================
     # CHECKPOINT STATE MANAGEMENT
     # =========================================================================
 
     def get_state(self) -> StriatumState:
         """Get current state as StriatumState instance (RegionState protocol).
-
-        Extracts complete striatal state including:
-        - D1/D2 pathway states
-        - Vote accumulation
-        - Action selection state
-        - Exploration state
-        - Value/RPE tracking
-        - Goal modulation weights
-        - Delay buffers
-        - Homeostatic tracking
-        - Neuromodulators
-
-        Returns:
-            StriatumState instance with all current state
 
         Note:
             This is the NEW state management API.

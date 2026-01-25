@@ -1,7 +1,6 @@
 """Integration tests for health and criticality monitoring in DynamicBrain.
 
-Tests health monitoring, criticality tracking, and diagnostic reporting
-to ensure DynamicBrain matches EventDrivenBrain monitoring capabilities.
+Tests health monitoring, criticality tracking, and diagnostic reporting.
 """
 
 import inspect
@@ -287,34 +286,6 @@ def test_health_check_uses_all_diagnostics(health_brain):
     health_brain.check_health()
 
     print("✓ Health check uses comprehensive diagnostics")
-
-
-def test_health_monitoring_backward_compatibility(health_brain):
-    """Test that health monitoring is compatible with EventDrivenBrain interface."""
-    from thalia.diagnostics.health_monitor import HealthReport
-
-    # EventDrivenBrain interface requirements:
-    # 1. check_health() method exists
-    # 2. Returns HealthReport with is_healthy, issues, summary, overall_severity
-    # 3. get_diagnostics() includes all subsystem info
-    # Check interface compatibility
-    assert hasattr(health_brain, "check_health")
-    assert hasattr(health_brain, "get_diagnostics")
-    assert hasattr(health_brain, "health_monitor")
-
-    # Check method signatures match
-    sig = inspect.signature(health_brain.check_health)
-    assert len(sig.parameters) == 0  # No required parameters
-
-    # Check return format (HealthReport dataclass)
-    health_report = health_brain.check_health()
-    assert isinstance(health_report, HealthReport)
-    assert hasattr(health_report, "is_healthy")
-    assert hasattr(health_report, "issues")
-    assert hasattr(health_report, "summary")
-    assert hasattr(health_report, "overall_severity")
-
-    print("✓ Health monitoring interface matches EventDrivenBrain")
 
 
 if __name__ == "__main__":

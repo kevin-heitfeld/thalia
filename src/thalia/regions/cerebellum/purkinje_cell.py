@@ -19,32 +19,14 @@ Date: December 17, 2025
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn as nn
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
 
-
-@dataclass
-class PurkinjeCellState:
-    """State for Purkinje cell component.
-
-    Attributes:
-        dendrite_voltage: Voltage of each dendritic compartment [n_dendrites]
-        dendrite_calcium: Calcium level in each dendrite [n_dendrites]
-        soma_neurons: State dict from the soma neuron model (ConductanceLIF)
-        last_complex_spike_time: Timestep of last complex spike (for refractory period)
-        timestep: Current timestep counter
-    """
-
-    dendrite_voltage: torch.Tensor
-    dendrite_calcium: torch.Tensor
-    soma_neurons: Dict[str, Any]  # State from ConductanceLIF.get_state()
-    last_complex_spike_time: int
-    timestep: int
+from .state import PurkinjeCellState
 
 
 class EnhancedPurkinjeCell(nn.Module):
@@ -196,6 +178,3 @@ class EnhancedPurkinjeCell(nn.Module):
         self.soma_neurons.load_state(state.soma_neurons)
         self.last_complex_spike_time = state.last_complex_spike_time
         self.timestep = state.timestep
-
-
-__all__ = ["EnhancedPurkinjeCell"]
