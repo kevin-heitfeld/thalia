@@ -491,6 +491,77 @@ class BrainBuilder:
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
+        # For thalamus, get relay or TRN sizes
+        if source_spec.registry_name in ("thalamus", "thalamic_relay"):
+            config = source_spec.config_params
+            if "relay_size" not in config or "trn_size" not in config:
+                raise ValueError(
+                    f"BrainBuilder: Thalamus '{source_name}' must specify relay_size and trn_size"
+                )
+
+            relay_size = config["relay_size"]
+            trn_size = config["trn_size"]
+
+            if source_port == "relay":
+                return int(relay_size)
+            elif source_port == "trn":
+                return int(trn_size)
+            elif source_port == "default":
+                # Default port returns relay output (backward compat)
+                return int(relay_size)
+            else:
+                raise ValueError(f"Unknown thalamus port '{source_port}'")
+
+        # For hippocampus, get subregion sizes
+        if source_spec.registry_name == "hippocampus":
+            config = source_spec.config_params
+            calc = LayerSizeCalculator()
+
+            # Compute hippocampus sizes if not already present
+            if "ca1_size" not in config:
+                if "input_size" not in config:
+                    raise ValueError(
+                        f"BrainBuilder: Hippocampus '{source_name}' must specify input_size or ca1_size"
+                    )
+                sizes = calc.hippocampus_from_input(config["input_size"])
+                config.update(sizes)  # Add computed sizes
+
+            # Return subregion-specific size
+            if source_port == "dg":
+                return int(config["dg_size"])
+            elif source_port == "ca3":
+                return int(config["ca3_size"])
+            elif source_port == "ca2":
+                return int(config["ca2_size"])
+            elif source_port == "ca1":
+                return int(config["ca1_size"])
+            elif source_port == "default":
+                # Default port returns CA1 output (backward compat)
+                return int(config["ca1_size"])
+            else:
+                raise ValueError(f"Unknown hippocampus port '{source_port}'")
+
+        # For striatum, get D1 or D2 pathway sizes
+        if source_spec.registry_name == "striatum":
+            config = source_spec.config_params
+            if "n_actions" not in config or "neurons_per_action" not in config:
+                raise ValueError(
+                    f"BrainBuilder: Striatum '{source_name}' must specify n_actions and neurons_per_action"
+                )
+
+            d1_size = config["n_actions"] * config["neurons_per_action"]
+            d2_size = d1_size  # D1 and D2 pathways have equal size
+
+            if source_port == "d1":
+                return int(d1_size)
+            elif source_port == "d2":
+                return int(d2_size)
+            elif source_port == "default":
+                # Default port returns D1+D2 concatenated (backward compat)
+                return int(d1_size + d2_size)
+            else:
+                raise ValueError(f"Unknown striatum port '{source_port}'")
+
         # For other components, ports not yet supported
         if source_port is not None:
             raise ValueError(
@@ -533,6 +604,46 @@ class BrainBuilder:
                 return int(source_comp.l6b_size)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
+
+        # Check for thalamus-specific outputs (relay, trn)
+        if hasattr(source_comp, "relay_size") and hasattr(source_comp, "trn_size"):
+            if source_port == "relay":
+                return int(source_comp.relay_size)  # type: ignore[arg-type]
+            elif source_port == "trn":
+                return int(source_comp.trn_size)  # type: ignore[arg-type]
+            elif source_port == "default":
+                # Default returns relay size (backward compat)
+                return int(source_comp.relay_size)  # type: ignore[arg-type]
+            else:
+                raise ValueError(f"Unknown thalamus port '{source_port}'")
+
+        # Check for hippocampus-specific outputs (dg, ca3, ca2, ca1)
+        if hasattr(source_comp, "dg_size") and hasattr(source_comp, "ca1_size"):
+            if source_port == "dg":
+                return int(source_comp.dg_size)  # type: ignore[arg-type]
+            elif source_port == "ca3":
+                return int(source_comp.ca3_size)  # type: ignore[arg-type]
+            elif source_port == "ca2":
+                return int(source_comp.ca2_size)  # type: ignore[arg-type]
+            elif source_port == "ca1":
+                return int(source_comp.ca1_size)  # type: ignore[arg-type]
+            elif source_port == "default":
+                # Default returns CA1 size (backward compat)
+                return int(source_comp.ca1_size)  # type: ignore[arg-type]
+            else:
+                raise ValueError(f"Unknown hippocampus port '{source_port}'")
+
+        # Check for striatum-specific outputs (d1, d2)
+        if hasattr(source_comp, "d1_size") and hasattr(source_comp, "d2_size"):
+            if source_port == "d1":
+                return int(source_comp.d1_size)  # type: ignore[arg-type]
+            elif source_port == "d2":
+                return int(source_comp.d2_size)  # type: ignore[arg-type]
+            elif source_port == "default":
+                # Default returns D1+D2 concatenated (backward compat)
+                return int(source_comp.d1_size + source_comp.d2_size)  # type: ignore[arg-type,operator]
+            else:
+                raise ValueError(f"Unknown striatum port '{source_port}'")
 
         # For other components, ports not yet supported
         raise ValueError(
@@ -1297,7 +1408,10 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Thalamus → Cortex: Thalamocortical projection
     # Fast, heavily myelinated pathway (Jones 2007, Sherman & Guillery 2006)
     # Distance: ~2-3cm, conduction velocity: ~10-20 m/s → 2-3ms delay
-    builder.connect("thalamus", "cortex", pathway_type="axonal", axonal_delay_ms=2.5)
+    # Uses 'relay' port: Only relay neurons project to cortex (TRN provides lateral inhibition)
+    builder.connect(
+        "thalamus", "cortex", pathway_type="axonal", source_port="relay", axonal_delay_ms=2.5
+    )
 
     # Cortex L6a/L6b → Thalamus: Dual corticothalamic feedback pathways
     # L6a (type I) → TRN: Inhibitory modulation for selective attention (slow pathway, low gamma 25-35 Hz)
@@ -1337,7 +1451,10 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Entorhinal cortex ↔ hippocampus: moderately myelinated (Witter et al. 2000)
     # Distance: ~3-5cm, conduction velocity: ~5-10 m/s → 5-8ms delay
     builder.connect("cortex", "hippocampus", pathway_type="axonal", axonal_delay_ms=6.5)
-    builder.connect("hippocampus", "cortex", pathway_type="axonal", axonal_delay_ms=6.5)
+    # Uses 'ca1' port: CA1 is the primary output layer of hippocampus to cortex
+    builder.connect(
+        "hippocampus", "cortex", pathway_type="axonal", source_port="ca1", axonal_delay_ms=6.5
+    )
 
     # Cortex → PFC: Executive control pathway
     # Corticocortical long-range connections (Miller & Cohen 2001)
@@ -1351,7 +1468,14 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # - Hippocampus → Striatum: Moderate, longer distance (~4-6cm) → 7-10ms
     # - PFC → Striatum: Variable, longest distance (~6-10cm) → 12-18ms
     builder.connect("cortex", "striatum", pathway_type="axonal", axonal_delay_ms=4.0)
-    builder.connect("hippocampus", "striatum", pathway_type="axonal", axonal_delay_ms=8.5)
+    # Uses 'ca1' port: CA1 provides contextual information for action selection
+    builder.connect(
+        "hippocampus",
+        "striatum",
+        pathway_type="axonal",
+        source_port="ca1",
+        axonal_delay_ms=8.5,
+    )
     builder.connect("pfc", "striatum", pathway_type="axonal", axonal_delay_ms=15.0)
 
     # Striatum → PFC: Basal ganglia gating of working memory
