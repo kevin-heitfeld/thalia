@@ -765,7 +765,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # default: Concatenated D1+D2 output (backward compatibility)
         self.register_output_port("d1", self.d1_size)
         self.register_output_port("d2", self.d2_size)
-        self.register_output_port("default", self.n_output)  # D1+D2 concatenated
 
         # Ensure all parameters are on correct device
         self.to(device)
@@ -2870,9 +2869,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self.clear_port_outputs()
         self.set_port_output("d1", d1_spikes)      # Direct pathway → GPi/SNr
         self.set_port_output("d2", d2_spikes)      # Indirect pathway → GPe
-        self.set_port_output("default", output_spikes)  # D1+D2 concatenated (backward compat)
 
-        # Return output spikes (D1/D2 delays already handled by forward_coordinator)
         return output_spikes
 
     def _apply_dopamine_modulated_learning(self) -> Dict[str, Any]:

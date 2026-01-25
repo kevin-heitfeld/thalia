@@ -3480,8 +3480,8 @@ class APIDocGenerator:
                 f.write("|--------|-------------|---|--------|-------------|-------------|\n")
 
                 for rel in relations:
-                    src_port = rel.source_port or "default"
-                    tgt_port = rel.target_port or "default"
+                    src_port = rel.source_port
+                    tgt_port = rel.target_port
                     f.write(
                         f"| `{rel.source}` | `{src_port}` | → | `{rel.target}` | `{tgt_port}` | `{rel.pathway_type}` |\n"
                     )
@@ -3496,9 +3496,9 @@ class APIDocGenerator:
                 for rel in relations:
                     # Create edge label - use simple text without special characters for mermaid
                     label = rel.pathway_type
-                    if rel.source_port and rel.source_port != "default":
+                    if rel.source_port:
                         label = f"{rel.source_port} {label}"
-                    if rel.target_port and rel.target_port != "default":
+                    if rel.target_port:
                         label = f"{label} to {rel.target_port}"
 
                     f.write(f"    {rel.source} -->|{label}| {rel.target}\n")

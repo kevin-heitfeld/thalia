@@ -282,15 +282,11 @@ class NeuralRegion(
         reality where different cell types project to different targets (e.g., L6a→TRN, L6b→relay).
 
         Args:
-            port_name: Name of the port (e.g., "l6a", "l6b", "default")
+            port_name: Name of the port (e.g., "l6a", "l6b")
             size: Number of neurons in this output
 
         Raises:
             ValueError: If port already registered
-
-        Example:
-            >>> self.register_output_port("l6a", self.l6a_size)
-            >>> self.register_output_port("default", self.l23_size + self.l5_size)
         """
         if port_name in self._registered_ports:
             raise ValueError(f"Port '{port_name}' already registered in {self.__class__.__name__}")
@@ -309,10 +305,6 @@ class NeuralRegion(
 
         Raises:
             ValueError: If port not registered or size mismatch
-
-        Example:
-            >>> self.set_port_output("l6a", l6a_spikes)
-            >>> self.set_port_output("default", torch.cat([l23_spikes, l5_spikes]))
         """
         if port_name not in self._registered_ports:
             raise ValueError(
@@ -363,13 +355,6 @@ class NeuralRegion(
 
         Called at the start of forward() to reset outputs from previous timestep.
         Regions using ports should call this at the beginning of their forward() method.
-
-        Example:
-            >>> def forward(self, source_spikes):
-            >>>     self.clear_port_outputs()
-            >>>     # ... process layers ...
-            >>>     self.set_port_output("l6a", l6a_spikes)
-            >>>     return self.get_port_output("default")
         """
         self._port_outputs.clear()
 

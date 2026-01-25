@@ -451,7 +451,6 @@ class Prefrontal(NeuralRegion):
 
         # Port-based routing: Register output ports
         self.register_output_port("executive", self.n_neurons)  # Main executive control output
-        self.register_output_port("default", self.n_neurons)  # Deprecated: use "executive"
 
         # Move all components to target device
         self.to(self.device)
@@ -788,7 +787,6 @@ class Prefrontal(NeuralRegion):
         # Port-based routing: Set port outputs
         self.clear_port_outputs()
         self.set_port_output("executive", output_spikes)
-        self.set_port_output("default", output_spikes)  # Deprecated: for backward compat
 
         return output_spikes  # type: ignore[no-any-return]
 

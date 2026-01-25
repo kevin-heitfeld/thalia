@@ -397,9 +397,9 @@ class LayeredCortex(NeuralRegion):
         # PORT-BASED ROUTING (ADR-015)
         # =====================================================================
         # Register output ports for biologically-accurate routing
-        self.register_output_port("default", self.l23_size + self.l5_size)  # L2/3 + L5
         self.register_output_port("l23", self.l23_size)  # Cortico-cortical
         self.register_output_port("l5", self.l5_size)  # Subcortical
+        self.register_output_port("l4", self.l4_size)  # Feedforward
         self.register_output_port("l6a", self.l6a_size)  # CT Type I → TRN
         self.register_output_port("l6b", self.l6b_size)  # CT Type II → Relay
 
@@ -1214,14 +1214,6 @@ class LayeredCortex(NeuralRegion):
         Note:
             Theta modulation and timestep (dt_ms) computed internally from config
         """
-        # Validate inputs is a dict (required for multi-source architecture)
-        if not isinstance(inputs, dict):
-            raise TypeError(
-                f"LayeredCortex.forward: inputs must be a Dict[str, Tensor], "
-                f"got {type(inputs)}. If you have a single tensor, wrap it in a dict like "
-                f'{{"source_name": tensor}}'
-            )
-
         # Get timestep from config for temporal dynamics
         dt_ms = self.config.dt_ms
 
@@ -1685,19 +1677,16 @@ class LayeredCortex(NeuralRegion):
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity()
 
-        # Construct output: always concatenate L2/3 and L5 (biological cortex has both pathways)
-        output = torch.cat([l23_spikes, l5_spikes], dim=-1)
-
         # PORT-BASED ROUTING (ADR-015): Set outputs for all ports
         self.clear_port_outputs()  # Clear previous timestep
         self.set_port_output("l23", l23_spikes)
         self.set_port_output("l5", l5_spikes)
         self.set_port_output("l6a", l6a_spikes)
         self.set_port_output("l6b", l6b_spikes)
-        self.set_port_output("default", output)
 
-        # Axonal delays are handled by AxonalProjection pathways, not within regions
-        # ADR-005: Return 1D tensor as bool spikes
+        # Construct output: always concatenate L2/3 and L5 (biological cortex has both pathways)
+        output = torch.cat([l23_spikes, l5_spikes], dim=-1)
+
         return output.bool()
 
     def get_l6_spikes(self) -> Optional[torch.Tensor]:

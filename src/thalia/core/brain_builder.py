@@ -505,9 +505,6 @@ class BrainBuilder:
                 return int(l6a_size)
             elif source_port == "l6b":
                 return int(l6b_size)
-            elif source_port == "default":
-                # Default returns L2/3 + L5 concatenated (backward compat)
-                return int(l23_size + l5_size)
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -526,9 +523,6 @@ class BrainBuilder:
                 return int(relay_size)
             elif source_port == "trn":
                 return int(trn_size)
-            elif source_port == "default":
-                # Default port returns relay output (backward compat)
-                return int(relay_size)
             else:
                 raise ValueError(f"Unknown thalamus port '{source_port}'")
 
@@ -555,9 +549,6 @@ class BrainBuilder:
                 return int(config["ca2_size"])
             elif source_port == "ca1":
                 return int(config["ca1_size"])
-            elif source_port == "default":
-                # Default port returns CA1 output (backward compat)
-                return int(config["ca1_size"])
             else:
                 raise ValueError(f"Unknown hippocampus port '{source_port}'")
 
@@ -576,9 +567,6 @@ class BrainBuilder:
                 return int(d1_size)
             elif source_port == "d2":
                 return int(d2_size)
-            elif source_port == "default":
-                # Default port returns D1+D2 concatenated (backward compat)
-                return int(d1_size + d2_size)
             else:
                 raise ValueError(f"Unknown striatum port '{source_port}'")
 
@@ -594,9 +582,6 @@ class BrainBuilder:
 
             if source_port == "executive":
                 return int(n_neurons)
-            elif source_port == "default":
-                # Default port returns full output (backward compat)
-                return int(n_neurons)
             else:
                 raise ValueError(f"Unknown prefrontal port '{source_port}'")
 
@@ -611,9 +596,6 @@ class BrainBuilder:
             purkinje_size = config["purkinje_size"]
 
             if source_port == "prediction":
-                return int(purkinje_size)
-            elif source_port == "default":
-                # Default port returns full output (backward compat)
                 return int(purkinje_size)
             else:
                 raise ValueError(f"Unknown cerebellum port '{source_port}'")
@@ -658,9 +640,6 @@ class BrainBuilder:
                 return int(source_comp.l6a_size)  # type: ignore[arg-type]
             elif source_port == "l6b" and hasattr(source_comp, "l6b_size"):
                 return int(source_comp.l6b_size)  # type: ignore[arg-type]
-            elif source_port == "default":
-                # Default returns L2/3 + L5 concatenated (backward compat)
-                return int(source_comp.l23_size + source_comp.l5_size)  # type: ignore[arg-type,operator]
             else:
                 raise ValueError(f"Unknown cortex port '{source_port}'")
 
@@ -670,9 +649,6 @@ class BrainBuilder:
                 return int(source_comp.relay_size)  # type: ignore[arg-type]
             elif source_port == "trn":
                 return int(source_comp.trn_size)  # type: ignore[arg-type]
-            elif source_port == "default":
-                # Default returns relay size (backward compat)
-                return int(source_comp.relay_size)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown thalamus port '{source_port}'")
 
@@ -686,9 +662,6 @@ class BrainBuilder:
                 return int(source_comp.ca2_size)  # type: ignore[arg-type]
             elif source_port == "ca1":
                 return int(source_comp.ca1_size)  # type: ignore[arg-type]
-            elif source_port == "default":
-                # Default returns CA1 size (backward compat)
-                return int(source_comp.ca1_size)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown hippocampus port '{source_port}'")
 
@@ -698,9 +671,6 @@ class BrainBuilder:
                 return int(source_comp.d1_size)  # type: ignore[arg-type]
             elif source_port == "d2":
                 return int(source_comp.d2_size)  # type: ignore[arg-type]
-            elif source_port == "default":
-                # Default returns D1+D2 concatenated (backward compat)
-                return int(source_comp.d1_size + source_comp.d2_size)  # type: ignore[arg-type,operator]
             else:
                 raise ValueError(f"Unknown striatum port '{source_port}'")
 
@@ -708,18 +678,12 @@ class BrainBuilder:
         if hasattr(source_comp, "n_neurons") and type(source_comp).__name__ == "Prefrontal":
             if source_port == "executive":
                 return int(source_comp.n_neurons)  # type: ignore[arg-type]
-            elif source_port == "default":
-                # Default returns full output (backward compat)
-                return int(source_comp.n_neurons)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown prefrontal port '{source_port}'")
 
         # Check for cerebellum outputs (prediction)
         if hasattr(source_comp, "purkinje_size"):
             if source_port == "prediction":
-                return int(source_comp.purkinje_size)  # type: ignore[arg-type]
-            elif source_port == "default":
-                # Default returns full output (backward compat)
                 return int(source_comp.purkinje_size)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown cerebellum port '{source_port}'")
@@ -1416,8 +1380,8 @@ def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
     builder.connect(
         "process", "output",
         pathway_type="axonal",
-        source_port="default",
-        target_port="feedforward"
+        source_port="l5",
+        target_port="feedforward",
     )
 
 
