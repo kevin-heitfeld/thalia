@@ -686,7 +686,6 @@ class TestEndToEndPortBasedRouting:
         assert cortex.get_port_output("l5").shape[0] == 32
         assert cortex.get_port_output("l6a").shape[0] == 16
         assert cortex.get_port_output("l6b").shape[0] == 16
-        assert cortex.get_port_output("default").shape[0] == 128  # L2/3 + L5
 
     def test_thalamus_specific_ports(self, brain_config):
         """Test thalamus relay and TRN port outputs."""
@@ -705,15 +704,10 @@ class TestEndToEndPortBasedRouting:
         # Verify port outputs
         relay_output = thalamus.get_port_output("relay")
         trn_output = thalamus.get_port_output("trn")
-        default_output = thalamus.get_port_output("default")
 
         # Check shapes
         assert relay_output.shape[0] == sizes["relay_size"], f"Relay output mismatch"
         assert trn_output.shape[0] == sizes["trn_size"], f"TRN output mismatch"
-        assert default_output.shape[0] == sizes["relay_size"], f"Default should match relay size"
-
-        # Default should equal relay (backward compatibility)
-        assert torch.equal(default_output, relay_output), "Default port should equal relay port"
 
         # Outputs should be binary spikes
         assert relay_output.dtype == torch.bool
@@ -737,17 +731,12 @@ class TestEndToEndPortBasedRouting:
         ca3_output = hippocampus.get_port_output("ca3")
         ca2_output = hippocampus.get_port_output("ca2")
         ca1_output = hippocampus.get_port_output("ca1")
-        default_output = hippocampus.get_port_output("default")
 
         # Check shapes
         assert dg_output.shape[0] == 128, f"DG output should be 128, got {dg_output.shape[0]}"
         assert ca3_output.shape[0] == 96, f"CA3 output should be 96, got {ca3_output.shape[0]}"
         assert ca2_output.shape[0] == 32, f"CA2 output should be 32, got {ca2_output.shape[0]}"
         assert ca1_output.shape[0] == 64, f"CA1 output should be 64, got {ca1_output.shape[0]}"
-        assert default_output.shape[0] == 64, f"Default should match CA1 size"
-
-        # Default should equal CA1 (backward compatibility)
-        assert torch.equal(default_output, ca1_output), "Default port should equal CA1 port"
 
         # Outputs should be binary spikes
         assert dg_output.dtype == torch.bool
@@ -773,18 +762,12 @@ class TestEndToEndPortBasedRouting:
         # Verify port outputs
         d1_output = striatum.get_port_output("d1")
         d2_output = striatum.get_port_output("d2")
-        default_output = striatum.get_port_output("default")
 
         # Check shapes (d1_size and d2_size should be n_actions * neurons_per_action)
         expected_d1 = striatum.d1_size
         expected_d2 = striatum.d2_size
         assert d1_output.shape[0] == expected_d1, f"D1 output should be {expected_d1}, got {d1_output.shape[0]}"
         assert d2_output.shape[0] == expected_d2, f"D2 output should be {expected_d2}, got {d2_output.shape[0]}"
-        assert default_output.shape[0] == expected_d1 + expected_d2, f"Default should be D1+D2"
-
-        # Default should equal concatenated D1+D2 (backward compatibility)
-        expected_default = torch.cat([d1_output, d2_output], dim=0)
-        assert torch.equal(default_output, expected_default), "Default port should equal D1+D2 concatenation"
 
         # Outputs should be binary spikes
         assert d1_output.dtype == torch.bool
