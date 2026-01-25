@@ -80,7 +80,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 from thalia.config.region_configs import (
     PredictiveCodingErrorType,
     PredictiveCodingConfig,

@@ -223,7 +223,7 @@ def grow_source(self, source_name: str, new_size: int) -> None:
 **All new weights MUST use `WeightInitializer` registry**:
 
 ```python
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 
 # ✅ CORRECT: Use centralized initializer
 new_weights = self._create_new_weights(

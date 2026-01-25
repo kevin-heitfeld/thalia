@@ -49,7 +49,7 @@ Common Patterns in Thalia:
 
 Usage Example:
 ==============
-    from thalia.core.weight_init import WeightInitializer, InitStrategy
+    from thalia.components.synapses import WeightInitializer, InitStrategy
 
     # Using registry
     initializer = WeightInitializer.get(InitStrategy.XAVIER)

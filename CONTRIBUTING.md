@@ -495,7 +495,7 @@ def __init__(self, config):
 - ✅ **No Magic Numbers**: Parameters have clear biological meaning
 
 ```python
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 
 # ✅ CORRECT: Use WeightInitializer with device
 weights = WeightInitializer.gaussian(

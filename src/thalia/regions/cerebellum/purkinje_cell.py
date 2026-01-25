@@ -25,6 +25,7 @@ import torch
 import torch.nn as nn
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.synapses import WeightInitializer
 
 from .state import PurkinjeCellState
 
@@ -86,8 +87,6 @@ class EnhancedPurkinjeCell(nn.Module):
 
         # Dendritic weights (parallel fiber → dendrites)
         # EAGER INITIALIZATION: Weights created immediately
-        from thalia.components.synapses.weight_init import WeightInitializer
-
         self.dendritic_weights = nn.Parameter(
             WeightInitializer.sparse_random(
                 n_output=1,  # Single Purkinje cell

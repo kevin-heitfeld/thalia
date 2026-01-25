@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 import torch
 import torch.nn as nn
 
+from thalia.components.synapses import WeightInitializer
+
 if TYPE_CHECKING:
     from thalia.learning.rules.strategies import LearningStrategy
 
@@ -103,8 +105,6 @@ class AfferentSynapses(nn.Module):
 
         # Synaptic weights [n_neurons, n_inputs]
         # Initialize with small random values (Gaussian)
-        from thalia.components.synapses.weight_init import WeightInitializer
-
         self.weights = nn.Parameter(
             WeightInitializer.gaussian(
                 n_output=config.n_neurons,
@@ -130,10 +130,8 @@ class AfferentSynapses(nn.Module):
         self.stp: Optional[Any] = None  # Will be ShortTermPlasticity if enabled
         if config.use_stp:
             try:
-                from thalia.components.plasticity.stp import (
-                    ShortTermPlasticity,
-                )
-                from thalia.components.plasticity.stp import STPConfig as STPConfigClass
+                from thalia.components.stp import ShortTermPlasticity
+                from thalia.components.stp import STPConfig as STPConfigClass
 
                 stp_config = config.stp_config or STPConfigClass()
                 self.stp = ShortTermPlasticity(
@@ -231,8 +229,6 @@ class AfferentSynapses(nn.Module):
         new_n_neurons = old_n_neurons + n_new
 
         # Create expanded weight matrix
-        from thalia.components.synapses.weight_init import WeightInitializer
-
         new_weights = torch.zeros(
             new_n_neurons,
             self.config.n_inputs,

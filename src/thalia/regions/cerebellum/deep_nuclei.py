@@ -26,7 +26,7 @@ import torch
 import torch.nn as nn
 
 from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.components.synapses.weight_init import WeightInitializer
+from thalia.components.synapses import WeightInitializer
 
 
 class DeepCerebellarNuclei(nn.Module):

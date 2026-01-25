@@ -42,7 +42,7 @@ __version__ = "0.2.0"
 from thalia.components.neurons.neuron import ConductanceLIF
 from thalia.components.synapses.stp import ShortTermPlasticity, STPConfig, STPType
 from thalia.components.synapses.stp_presets import STP_PRESETS, STPPreset, get_stp_config
-from thalia.components.synapses.weight_init import InitStrategy, WeightInitializer
+from thalia.components.synapses import InitStrategy, WeightInitializer
 
 # Configuration
 # Configuration
