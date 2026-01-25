@@ -11,8 +11,10 @@ Date: December 15, 2025
 import pytest
 import torch
 
-from thalia.config import BrainConfig
+from thalia.config import LayeredCortexConfig, BrainConfig
 from thalia.core.brain_builder import BrainBuilder, ConnectionSpec
+from thalia.pathways.axonal_projection import AxonalProjection
+from thalia.regions.cortex import LayeredCortex
 
 
 @pytest.fixture
@@ -246,48 +248,6 @@ class TestLayerSpecificCorticalRouting:
         # Should infer input_size from cortex L2/3 output, not full output
         assert hippo.input_size == cortex.l23_size
 
-    @pytest.mark.skip(
-        reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
-    )
-    def test_l5_output_routes_to_striatum(self, brain_config):
-        """Test that cortex L5 output routes to striatum with D1/D2 separation."""
-        builder = BrainBuilder(brain_config)
-
-        builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=0)
-        builder.add_component(
-            "cortex",
-            "cortex",
-            input_size=64,
-            l4_size=64,
-            l23_size=96,
-            l5_size=32,
-            l6a_size=0,
-            l6b_size=0,
-        )
-        builder.add_component(
-            "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"default": 32}
-        )
-
-        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
-        builder.connect("cortex", "striatum", source_port="l5", pathway_type="axonal_projection")
-
-        brain = builder.build()
-
-        cortex = brain.components["cortex"]
-        striatum = brain.components["striatum"]
-
-        # Striatum should have separate D1 and D2 weights for cortex:l5 source
-        assert "cortex:l5_d1" in striatum.synaptic_weights
-        assert "cortex:l5_d2" in striatum.synaptic_weights
-
-        # Both D1 and D2 should match L5 size (input dimension)
-        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
-        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
-
-        # D1 and D2 should have different output dimensions (neuron counts)
-        assert striatum.synaptic_weights["cortex:l5_d1"].shape[0] == striatum.d1_size
-        assert striatum.synaptic_weights["cortex:l5_d2"].shape[0] == striatum.d2_size
-
     def test_dual_output_routing(self, brain_config):
         """Test cortex routing L2/3 to one target and L5 to another with D1/D2 separation."""
         builder = BrainBuilder(brain_config)
@@ -393,65 +353,6 @@ class TestMultipleInputPorts:
         assert "thalamus" in hippo.input_sources
         assert hippo.input_sources["thalamus"] == 64  # entorhinal from thalamus
 
-    @pytest.mark.skip(
-        reason="Striatum uses internal D1/D2 structure, not per-source synaptic_weights. See docs/decisions/striatum-multi-source-architecture.md"
-    )
-    def test_striatum_multiple_sources(self, brain_config):
-        """Test striatum receiving inputs from cortex, hippocampus, and PFC with D1/D2 separation."""
-        builder = BrainBuilder(brain_config)
-
-        builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
-        builder.add_component(
-            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
-        )
-        builder.add_component(
-            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
-        )
-        builder.add_component("pfc", "prefrontal", input_size=96, n_neurons=32)
-        builder.add_component(
-            "striatum",
-            "striatum",
-            n_actions=4,
-            neurons_per_action=1,
-            input_sources={"cortex": 32, "hippocampus": 64},
-        )
-
-        # Standard connections
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "pfc", source_port="l23")  # PFC needs input
-
-        # Striatum inputs from multiple sources
-        builder.connect("cortex", "striatum", source_port="l5", target_port="cortical")
-        builder.connect("hippocampus", "striatum", target_port="hippocampal")
-        builder.connect("pfc", "striatum", target_port="pfc_modulation")
-
-        brain = builder.build()
-
-        cortex = brain.components["cortex"]
-        hippo = brain.components["hippocampus"]
-        # pfc = brain.components["pfc"]
-        striatum = brain.components["striatum"]
-
-        # Striatum should have D1 and D2 weights for each source
-        # Cortex source
-        assert "cortex:l5_d1" in striatum.synaptic_weights
-        assert "cortex:l5_d2" in striatum.synaptic_weights
-        assert striatum.synaptic_weights["cortex:l5_d1"].shape[1] == cortex.l5_size
-        assert striatum.synaptic_weights["cortex:l5_d2"].shape[1] == cortex.l5_size
-
-        # Hippocampus source
-        assert "hippocampus_d1" in striatum.synaptic_weights
-        assert "hippocampus_d2" in striatum.synaptic_weights
-        assert striatum.synaptic_weights["hippocampus_d1"].shape[1] == hippo.n_output
-        assert striatum.synaptic_weights["hippocampus_d2"].shape[1] == hippo.n_output
-
-        # Verify D1 and D2 output dimensions
-        assert striatum.synaptic_weights["cortex:l5_d1"].shape[0] == striatum.d1_size
-        assert striatum.synaptic_weights["cortex:l5_d2"].shape[0] == striatum.d2_size
-        assert striatum.synaptic_weights["hippocampus_d1"].shape[0] == striatum.d1_size
-        assert striatum.synaptic_weights["hippocampus_d2"].shape[0] == striatum.d2_size
-
 
 class TestPortBasedForwardPass:
     """Test forward pass with port-based routing."""
@@ -548,3 +449,83 @@ class TestBackwardCompatibility:
 
         # Should build successfully
         assert len(brain.components) == 4
+
+
+class TestAxonalProjectionPortRouting:
+    """Test AxonalProjection port-aware routing (Phase 3.2)."""
+
+    def test_axonal_projection_with_port_spec(self, device):
+        """Test AxonalProjection routes from specific port."""
+        # Create cortex with layers
+        cortex_config = LayeredCortexConfig()
+        sizes = {"l4_size": 64, "l23_size": 96, "l5_size": 32, "l6a_size": 16, "l6b_size": 16}
+        cortex = LayeredCortex(config=cortex_config, sizes=sizes, device=device)
+
+        # Create pathway that routes from L6a port
+        projection = AxonalProjection(
+            sources=[
+                ("cortex", "l6a", 16, 2.0),  # (region_name, port, size, delay_ms)
+            ],
+            device=device,
+            dt_ms=1.0,
+        )
+
+        # Simulate cortex forward pass (sets port outputs)
+        input_spikes = {"input": torch.zeros(64, dtype=torch.bool, device=device)}
+        cortex.forward(input_spikes)
+
+        # Route through pathway (pass region object, not tensor)
+        routed = projection.forward({"cortex": cortex})
+
+        # Should get L6a output specifically
+        assert "cortex:l6a" in routed
+        assert routed["cortex:l6a"].shape[0] == 16
+
+    def test_axonal_projection_multiple_ports(self, device):
+        """Test AxonalProjection routes from multiple ports."""
+        # Create cortex
+        cortex_config = LayeredCortexConfig()
+        sizes = {"l4_size": 64, "l23_size": 96, "l5_size": 32, "l6a_size": 16, "l6b_size": 16}
+        cortex = LayeredCortex(config=cortex_config, sizes=sizes, device=device)
+
+        # Create pathway that routes from multiple ports
+        projection = AxonalProjection(
+            sources=[
+                ("cortex", "l6a", 16, 2.0),
+                ("cortex", "l6b", 16, 2.0),
+            ],
+            device=device,
+            dt_ms=1.0,
+        )
+
+        # Simulate cortex forward pass
+        input_spikes = {"input": torch.zeros(64, dtype=torch.bool, device=device)}
+        cortex.forward(input_spikes)
+
+        # Route through pathway
+        routed = projection.forward({"cortex": cortex})
+
+        # Should get both port outputs
+        assert "cortex:l6a" in routed
+        assert "cortex:l6b" in routed
+        assert routed["cortex:l6a"].shape[0] == 16
+        assert routed["cortex:l6b"].shape[0] == 16
+
+    def test_axonal_projection_backward_compat_tensor_mode(self, device):
+        """Test AxonalProjection still works with tensor inputs (backward compatibility)."""
+        # Create pathway
+        projection = AxonalProjection(
+            sources=[
+                ("cortex", None, 128, 2.0),  # No port specified
+            ],
+            device=device,
+            dt_ms=1.0,
+        )
+
+        # Old-style tensor input
+        tensor_input = {"cortex": torch.zeros(128, dtype=torch.bool, device=device)}
+        routed = projection.forward(tensor_input)
+
+        # Should work correctly
+        assert "cortex" in routed
+        assert routed["cortex"].shape[0] == 128

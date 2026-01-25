@@ -18,11 +18,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
 from thalia.core.base.component_config import NeuralComponentConfig
+
+if TYPE_CHECKING:
+    from thalia.core.neural_region import NeuralRegion
 from thalia.core.pathway_state import AxonalProjectionState
 from thalia.core.protocols.component import RoutingComponent
 from thalia.managers.component_registry import register_pathway
@@ -218,6 +221,15 @@ class AxonalProjection(RoutingComponent):
         Biologically accurate: Returns dict so target regions can route inputs
         to different neuron populations (e.g., thalamus sensory→relay, L6→TRN).
 
+        Port-Based Routing (Phase 3.2):
+        When SourceSpec includes a port (e.g., "l6a", "l5"), the pathway will:
+        1. Look up the source region object in source_outputs
+        2. Call region.get_port_output(port) to get port-specific spikes
+        3. Route those spikes with the specified axonal delay
+
+        This enables biologically-accurate routing where different cortical layers
+        project to different targets (e.g., L6a→TRN, L6b→relay).
+
         Per-Target Delays:
         When SourceSpec includes target_delays, the appropriate delay is used
         automatically based on target_name specified during initialization.
@@ -230,24 +242,28 @@ class AxonalProjection(RoutingComponent):
         3. Advance buffer pointer
 
         Args:
-            source_outputs: Dict mapping source keys to spike tensors.
-                Keys can be compound (e.g., "cortex:l6a") or simple (e.g., "hippocampus")
+            source_outputs: Dict mapping source keys to spike tensors OR region objects.
+                - Tensor mode (legacy): {"cortex:l6a": tensor, "hippocampus": tensor}
+                - Region mode (port-aware): {"cortex": region_obj, "hippocampus": region_obj}
+                Keys can be compound ("cortex:l6a") or simple ("cortex")
 
         Returns:
             Dict mapping source keys to delayed spike tensors (NOT concatenated)
 
-        Example:
-            outputs = {
+        Example (Port-Based Routing):
+            # Pathway has sources=[("cortex", "l6a", 32, 2.0), ("cortex", "l5", 128, 2.0)]
+            region_outputs = {"cortex": cortex_region}  # Pass region object
+            delayed = projection.forward(region_outputs)
+            # Returns: {"cortex:l6a": [32], "cortex:l5": [128]}
+            # Each tensor from different cortex layer
+
+        Example (Legacy Tensor Mode):
+            tensor_outputs = {
                 "cortex:l5": cortex_l5_spikes,    # [128]
                 "hippocampus": hipp_spikes,       # [64]
-                "pfc": pfc_spikes,                # [32]
             }
-            delayed = projection.forward(outputs)
-            # Returns: {"cortex:l5": [128], "hippocampus": [64], "pfc": [32]}
-            # Each tensor contains spikes from delay_ms milliseconds ago
-
-            # Target regions can concatenate if needed:
-            concatenated = torch.cat([delayed["cortex:l5"], delayed["hippocampus"]])
+            delayed = projection.forward(tensor_outputs)
+            # Returns: {"cortex:l5": [128], "hippocampus": [64]}
         """
         delayed_outputs = {}
 
@@ -264,13 +280,36 @@ class AxonalProjection(RoutingComponent):
             delay_steps = int(effective_delay / self.dt_ms)
 
             # Get current spikes from source
-            if not isinstance(source_outputs, dict) or source_key not in source_outputs:
+            # Support both tensor mode (legacy) and region mode (port-aware)
+            if not isinstance(source_outputs, dict):
+                # Invalid input
+                spikes = torch.zeros(source_spec.size, dtype=torch.bool, device=self.device)
+            elif source_key in source_outputs:
+                # Tensor mode: compound key already in dict ("cortex:l6a")
+                source_value = source_outputs[source_key]
+                if isinstance(source_value, torch.Tensor):
+                    spikes = source_value
+                else:
+                    # Region object with compound key - extract port
+                    spikes = source_value.get_port_output(source_spec.port)
+            elif source_spec.region_name in source_outputs:
+                # Region mode: lookup by region name, then get port output
+                source_value = source_outputs[source_spec.region_name]
+                if isinstance(source_value, torch.Tensor):
+                    # Tensor without port - use directly
+                    spikes = source_value
+                elif hasattr(source_value, 'get_port_output'):
+                    # Region object - get port-specific output
+                    spikes = source_value.get_port_output(source_spec.port)
+                else:
+                    # Unknown type
+                    spikes = torch.zeros(source_spec.size, dtype=torch.bool, device=self.device)
+            else:
                 # Source not firing this timestep, use zeros
                 spikes = torch.zeros(source_spec.size, dtype=torch.bool, device=self.device)
-            else:
-                spikes = source_outputs[source_key]
 
-                # Validate size
+            # Validate size (only if we got actual spikes)
+            if spikes is not None and spikes.numel() > 0:
                 if spikes.shape[0] != source_spec.size:
                     raise ValueError(
                         f"Size mismatch for {source_key}: "
