@@ -17,7 +17,6 @@ remaining independent from the external pathway hierarchy.
 
 from __future__ import annotations
 
-from abc import ABC
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -81,10 +80,11 @@ class StriatumPathwayState:
     neuron_refractory: Optional[torch.Tensor]
 
 
-class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
+class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin):
     """
-    Base class for D1 and D2 striatal pathways.
+    Striatal pathway implementation for dopamine receptor subtypes.
 
+    Creates MSN subpopulations via factory methods (create_d1, create_d2).
     Each pathway is a separate population of Medium Spiny Neurons (MSNs)
     with its own weights, eligibility traces, and learning dynamics.
 
