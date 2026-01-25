@@ -218,7 +218,7 @@ def test_hebbian_learning_stores_patterns_automatically(brain_with_hippocampus):
     )
 
 
-def test_synaptic_tags_provide_priority_not_episode_priority(brain_with_hippocampus):
+def test_synaptic_tags_provide_priority(brain_with_hippocampus):
     """Priority should come from synaptic tags."""
     brain, hippocampus = brain_with_hippocampus
     input_size = 64  # Cortex input size from fixture

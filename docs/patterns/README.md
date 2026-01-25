@@ -66,6 +66,15 @@ Config hierarchy, organization, and declarative validation.
 - **Validation**: `ValidatedConfig` mixin with declarative rules
 - **Best practices**: Parameter validation, cross-field checks
 
+### [Size Dictionaries](./size-dictionaries.md)
+**Status**: ✅ Implemented (Tier 1.2, January 2026)
+
+Standard keys for size specification in region initialization.
+- **Pattern**: `__init__(config, sizes, device)` separation
+- **Standard keys**: `input_size` (required), region-specific layer names
+- **Integration**: Works with LayerSizeCalculator for consistent sizing
+- **Compliance**: 86% of regions follow pattern
+
 ---
 
 ## Mixins
