@@ -45,7 +45,6 @@ from thalia.components.synapses.stp_presets import STP_PRESETS, STPPreset, get_s
 from thalia.components.synapses import InitStrategy, WeightInitializer
 
 # Configuration
-# Configuration
 from thalia.config import (
     BrainConfig,
     CerebellumConfig,

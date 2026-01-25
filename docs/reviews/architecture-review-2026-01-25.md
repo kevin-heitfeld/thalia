@@ -330,7 +330,9 @@ class D2Pathway(StriatumPathway):
 
 ---
 
-### 1.6 Consistent Import Path for WeightInitializer
+### 1.6 ✅ Consistent Import Path for WeightInitializer (COMPLETED)
+
+**Status**: Completed January 25, 2026 - All WeightInitializer imports standardized to short path
 
 **Current State**: WeightInitializer imported from different paths:
 ```python
@@ -356,10 +358,10 @@ from thalia.components.synapses import WeightInitializer, InitStrategy
 - `components/synapses/__init__.py` already exports WeightInitializer
 - Consistent with other component imports (e.g., `from thalia.components.neurons import NeuronFactory`)
 
-**Affected Files**: ~15 files currently using long path
+**Affected Files**: 7 code files updated
 **Impact**:
 - **Breaking**: None (imports work either way)
-- **Lines changed**: ~15 lines (one per file)
+- **Lines changed**: 7 lines (one per file)
 - **Benefits**: Consistency, readability
 
 ---
