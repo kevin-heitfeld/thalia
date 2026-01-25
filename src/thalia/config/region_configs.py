@@ -54,27 +54,8 @@ from typing import Dict, List, Optional
 
 from thalia.components.synapses.stp import STPType
 from thalia.constants import (
-    ADAPT_INCREMENT_CORTEX_L23,
     EMA_DECAY_FAST,
-    HIPPOCAMPUS_SPARSITY_TARGET,
-    LEARNING_RATE_HEBBIAN_SLOW,
-    LEARNING_RATE_ONE_SHOT,
     LEARNING_RATE_PRECISION,
-    LEARNING_RATE_STDP,
-    STDP_A_MINUS_CORTEX,
-    STDP_A_PLUS_CORTEX,
-    THALAMUS_ALPHA_GATE_THRESHOLD,
-    THALAMUS_ALPHA_SUPPRESSION,
-    THALAMUS_BURST_GAIN,
-    THALAMUS_BURST_SPIKE_COUNT,
-    THALAMUS_BURST_THRESHOLD,
-    THALAMUS_CENTER_EXCITATION,
-    THALAMUS_RELAY_STRENGTH,
-    THALAMUS_SPATIAL_FILTER_WIDTH,
-    THALAMUS_SURROUND_INHIBITION,
-    THALAMUS_TONIC_THRESHOLD,
-    THALAMUS_TRN_INHIBITION,
-    THALAMUS_TRN_RECURRENT,
 )
 from thalia.core.base.component_config import NeuralComponentConfig
 from thalia.diagnostics.criticality import CriticalityConfig
@@ -115,10 +96,10 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     """
 
     # Override default learning rate with CA3-specific fast learning
-    learning_rate: float = LEARNING_RATE_ONE_SHOT  # Fast one-shot learning for CA3 recurrent
+    learning_rate: float = 0.1  # Fast one-shot learning for CA3 recurrent
 
     # DG sparsity (VERY sparse for pattern separation)
-    dg_sparsity: float = HIPPOCAMPUS_SPARSITY_TARGET
+    dg_sparsity: float = 0.03  # 3% active neurons for pattern separation
     dg_inhibition: float = 5.0  # Strong lateral inhibition
 
     # CA3 recurrent dynamics
@@ -786,7 +767,7 @@ class PrefrontalConfig(NeuralComponentConfig):
 
     # Learning rates
     wm_lr: float = 0.1  # Learning rate for WM update weights
-    rule_lr: float = LEARNING_RATE_STDP  # Learning rate for rule weights
+    rule_lr: float = 0.001  # Learning rate for rule weights
     # NOTE: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # and heterosynaptic_ratio (0.3) are inherited from NeuralComponentConfig
 
@@ -869,43 +850,43 @@ class ThalamicRelayConfig(NeuralComponentConfig):
     """
 
     # Relay parameters
-    relay_strength: float = THALAMUS_RELAY_STRENGTH
+    relay_strength: float = 1.2
     """Base relay gain (thalamus amplifies weak inputs)."""
 
     # Mode switching
-    burst_threshold: float = THALAMUS_BURST_THRESHOLD
+    burst_threshold: float = -0.2
     """Membrane potential threshold for burst mode (hyperpolarized)."""
 
-    tonic_threshold: float = THALAMUS_TONIC_THRESHOLD
+    tonic_threshold: float = 0.3
     """Membrane potential threshold for tonic mode (depolarized)."""
 
-    burst_spike_count: int = THALAMUS_BURST_SPIKE_COUNT
+    burst_spike_count: int = 3
     """Number of spikes in a burst (typically 2-5)."""
 
-    burst_gain: float = THALAMUS_BURST_GAIN
+    burst_gain: float = 2.0
     """Amplification factor for burst mode (alerting signal)."""
 
     # Attention gating (alpha oscillation)
-    alpha_suppression_strength: float = THALAMUS_ALPHA_SUPPRESSION
+    alpha_suppression_strength: float = 0.5
     """How strongly alpha suppresses unattended inputs (0-1)."""
 
-    alpha_gate_threshold: float = THALAMUS_ALPHA_GATE_THRESHOLD
+    alpha_gate_threshold: float = 0.0
     """Alpha phase threshold for suppression (0 = trough, π = peak)."""
 
-    trn_inhibition_strength: float = THALAMUS_TRN_INHIBITION
+    trn_inhibition_strength: float = 0.3
     """Strength of TRN → relay inhibition."""
 
-    trn_recurrent_strength: float = THALAMUS_TRN_RECURRENT
+    trn_recurrent_strength: float = 0.4
     """TRN recurrent inhibition (for oscillations)."""
 
     # Sensory filtering
-    spatial_filter_width: float = THALAMUS_SPATIAL_FILTER_WIDTH
+    spatial_filter_width: float = 0.15
     """Gaussian filter width for center-surround (as fraction of input)."""
 
-    center_excitation: float = THALAMUS_CENTER_EXCITATION
+    center_excitation: float = 1.5
     """Center enhancement in receptive field."""
 
-    surround_inhibition: float = THALAMUS_SURROUND_INHIBITION
+    surround_inhibition: float = 0.5
     """Surround suppression in receptive field."""
 
     # Corticothalamic feedback
@@ -1184,8 +1165,8 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # are inherited from NeuralComponentConfig
     # Override with cortical values from constants:
-    a_plus: float = STDP_A_PLUS_CORTEX  # LTP amplitude
-    a_minus: float = STDP_A_MINUS_CORTEX  # LTD amplitude
+    a_plus: float = 0.01  # LTP amplitude
+    a_minus: float = 0.012  # LTD amplitude
 
     # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
     # Unlike feedforward connections, recurrent lateral connections use signed weights
@@ -1200,7 +1181,7 @@ class LayeredCortexConfig(NeuralComponentConfig):
     # Cortical pyramidal neurons show strong spike-frequency adaptation.
     # Inherited from base: adapt_increment=0.0, adapt_tau=100.0
     # Override for L2/3 strong adaptation:
-    adapt_increment: float = ADAPT_INCREMENT_CORTEX_L23  # Very strong adaptation for decorrelation
+    adapt_increment: float = 0.30  # Very strong adaptation for decorrelation
     # adapt_tau: 100.0 (use base default)
 
     # =========================================================================
@@ -1498,7 +1479,7 @@ class MultimodalIntegrationConfig(NeuralComponentConfig, HebbianLearningConfig):
     salience_competition_strength: float = 0.5
 
     # Override default learning rate with region-specific value
-    learning_rate: float = LEARNING_RATE_HEBBIAN_SLOW
+    learning_rate: float = 0.001
 
     # Gamma synchronization parameters (for cross-modal binding)
     gamma_freq_hz: float = 40.0  # Gamma frequency for binding (typically 40 Hz)

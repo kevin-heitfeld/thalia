@@ -100,7 +100,6 @@ from thalia.components.neurons import create_relay_neurons, create_trn_neurons
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, WeightInitializer
 from thalia.config.region_configs import ThalamicRelayConfig
 from thalia.constants.regions import (
-    THALAMUS_ALPHA_SUPPRESSION,
     THALAMUS_MODE_THRESHOLD,
     THALAMUS_NE_GAIN_SCALE,
     THALAMUS_RELAY_SCALE,
@@ -458,7 +457,8 @@ class ThalamicRelay(NeuralRegion):
         # gate = 1 - strength × (1 + cos(phase)) / 2
         # This gives: phase=0 → gate=1-strength, phase=π → gate=1.0
 
-        alpha_modulation = THALAMUS_ALPHA_SUPPRESSION * (1.0 + math.cos(self._alpha_phase))
+        # Normalize (1 + cos(phase)) from [0, 2] to [0, 1]
+        alpha_modulation = 0.5 * (1.0 + math.cos(self._alpha_phase))
         gate = 1.0 - self.config.alpha_suppression_strength * alpha_modulation
 
         # Broadcast to all neurons (ADR-005: 1D)

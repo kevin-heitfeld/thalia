@@ -104,20 +104,20 @@ class WeightInitializer:
     """
 
     # Registry of initialization functions
-    _registry: Dict[InitStrategy, Callable] = {}
+    _registry: Dict[InitStrategy, Callable[..., torch.Tensor]] = {}
 
     @classmethod
     def register(cls, strategy: InitStrategy):
         """Decorator to register an initialization function."""
 
-        def decorator(func: Callable) -> Callable:
+        def decorator(func: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
             cls._registry[strategy] = func
             return func
 
         return decorator
 
     @classmethod
-    def get(cls, strategy: InitStrategy) -> Callable:
+    def get(cls, strategy: InitStrategy) -> Callable[..., torch.Tensor]:
         """Get initialization function by strategy."""
         if strategy not in cls._registry:
             available = ", ".join([s.name for s in InitStrategy])
@@ -135,7 +135,6 @@ class WeightInitializer:
         mean: float = 0.0,
         std: float = 0.1,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Gaussian (normal) distribution initialization.
@@ -161,7 +160,6 @@ class WeightInitializer:
         low: float = 0.0,
         high: float = 1.0,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Uniform distribution initialization.
@@ -188,7 +186,6 @@ class WeightInitializer:
         n_input: int,
         gain: float = 1.0,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Xavier/Glorot initialization.
@@ -217,7 +214,6 @@ class WeightInitializer:
         mode: str = "fan_in",
         nonlinearity: str = "relu",
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Kaiming/He initialization.
@@ -250,7 +246,6 @@ class WeightInitializer:
         weight_scale: float = 0.1,
         normalize_rows: bool = False,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Sparse random connectivity initialization.
@@ -292,7 +287,6 @@ class WeightInitializer:
         sigma_factor: float = 4.0,
         boost_strength: float = 0.3,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Topographic (spatial) connectivity initialization.
@@ -339,7 +333,6 @@ class WeightInitializer:
         n_input: int,
         gain: float = 1.0,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """
         Orthogonal initialization.
@@ -364,21 +357,27 @@ class WeightInitializer:
 
     @staticmethod
     def zeros(
-        n_output: int, n_input: int, device: Union[str, torch.device] = "cpu", **kwargs
+        n_output: int,
+        n_input: int,
+        device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """All zeros initialization."""
         return torch.zeros(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
     def ones(
-        n_output: int, n_input: int, device: Union[str, torch.device] = "cpu", **kwargs
+        n_output: int,
+        n_input: int,
+        device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """All ones initialization."""
         return torch.ones(n_output, n_input, device=device, requires_grad=False)
 
     @staticmethod
     def identity(
-        n_output: int, n_input: int, device: Union[str, torch.device] = "cpu", **kwargs
+        n_output: int,
+        n_input: int,
+        device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
         """
         Identity matrix initialization.
@@ -396,7 +395,6 @@ class WeightInitializer:
         n_input: int,
         value: float = 0.1,
         device: Union[str, torch.device] = "cpu",
-        **kwargs,
     ) -> torch.Tensor:
         """Constant value initialization."""
         return torch.full((n_output, n_input), value, device=device, requires_grad=False)
@@ -414,9 +412,3 @@ WeightInitializer.register(InitStrategy.ZEROS)(WeightInitializer.zeros)
 WeightInitializer.register(InitStrategy.ONES)(WeightInitializer.ones)
 WeightInitializer.register(InitStrategy.IDENTITY)(WeightInitializer.identity)
 WeightInitializer.register(InitStrategy.CONSTANT)(WeightInitializer.constant)
-
-
-__all__ = [
-    "InitStrategy",
-    "WeightInitializer",
-]

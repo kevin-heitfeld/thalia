@@ -59,11 +59,6 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from thalia.constants.learning import (
-    LEARNING_RATE_BCM,
-    TAU_BCM_THRESHOLD,
-)
-
 
 @dataclass
 class BCMConfig:
@@ -89,11 +84,11 @@ class BCMConfig:
             Original BCM uses p=2, but p=1 (linear) is sometimes used.
     """
 
-    tau_theta: float = TAU_BCM_THRESHOLD  # Slow adaptation (5 seconds)
+    tau_theta: float = 5000.0  # Slow adaptation (5 seconds)
     theta_init: float = 0.01  # Initial threshold
     theta_min: float = 1e-6  # Minimum threshold
     theta_max: float = 1.0  # Maximum threshold
-    learning_rate: float = LEARNING_RATE_BCM  # Base learning rate
+    learning_rate: float = 0.01  # Base learning rate
     p: float = 2.0  # Power for threshold (c^p)
 
 

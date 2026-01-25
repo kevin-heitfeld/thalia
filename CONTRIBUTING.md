@@ -275,7 +275,7 @@ delta_w = torch.outer(post_activity, pre_activity)
 tensor = torch.zeros(size, device=device)
 
 # Named constants
-from thalia.regulation.learning_constants import LEARNING_RATE_STDP
+from thalia.regulation.learning_constants import TAU_ELIGIBILITY_STANDARD
 ```
 
 #### ❌ DON'T:
@@ -300,12 +300,6 @@ learning_rate = 0.001
 Import biological parameters from centralized modules:
 
 ```python
-# Learning rates
-from thalia.regulation.learning_constants import (
-    LEARNING_RATE_STDP,
-    LEARNING_RATE_BCM,
-)
-
 # Neuromodulator parameters
 from thalia.neuromodulation.constants import (
     DA_PHASIC_DECAY_PER_MS,

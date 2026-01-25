@@ -149,7 +149,6 @@ from thalia.config.curriculum_growth import (
     get_attention_stage_for_curriculum,
     get_curriculum_growth_config,
 )
-from thalia.constants.regions import THALAMUS_ALPHA_SUPPRESSION
 from thalia.constants.training import (
     CURRICULUM_LOAD_THRESHOLD,
     CURRICULUM_MARGIN,
@@ -1820,12 +1819,12 @@ class CurriculumTrainer:
         # Higher bottom-up weight → lower suppression (more reactive to salience)
         # Lower bottom-up weight → higher suppression (ignore distractors)
         if hasattr(thalamus, "thalamus_config"):
-            # Scale suppression inversely with bottom-up weight
-            # Infant (100% bottom-up): 0.5x suppression (very reactive)
-            # School-age (30% bottom-up): 1.5x suppression (ignore distractors)
-            suppression_scale = 0.5 + (1.0 - bottom_up_weight)
+            # Direct formula for suppression strength based on attention control
+            # Infant (bottom_up=1.0): 0.25 suppression (very reactive)
+            # School-age (bottom_up=0.3): 0.6 suppression (ignore distractors)
+            # Adult (bottom_up=0.0): 0.75 suppression (maximal filtering)
             thalamus.thalamus_config.alpha_suppression_strength = (
-                THALAMUS_ALPHA_SUPPRESSION * suppression_scale
+                0.25 + 0.5 * (1.0 - bottom_up_weight)
             )
 
             # Adjust L6 feedback strength (top-down modulation)

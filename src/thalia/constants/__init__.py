@@ -7,7 +7,6 @@ the Thalia codebase, organized by category for easy discovery.
 Usage:
 ======
     # Import from specific category
-    from thalia.constants.learning import LEARNING_RATE_STDP
     from thalia.constants.neuron import TAU_MEM_STANDARD
     from thalia.constants.oscillator import THETA_ENCODING_PHASE_SCALE
 
@@ -36,18 +35,18 @@ Date: January 16, 2026 (Architecture Review Tier 1.2)
 from __future__ import annotations
 
 # Re-export all constants for convenience
-from thalia.constants.architecture import *
-from thalia.constants.exploration import *
-from thalia.constants.learning import *
-from thalia.constants.neuromodulation import *
-from thalia.constants.neuron import *
-from thalia.constants.oscillator import *
-from thalia.constants.regions import *
-from thalia.constants.sensory import *
-from thalia.constants.task import *
-from thalia.constants.time import *
-from thalia.constants.training import *
-from thalia.constants.visualization import *
+from .architecture import *
+from .exploration import *
+from .learning import *
+from .neuromodulation import *
+from .neuron import *
+from .oscillator import *
+from .regions import *
+from .sensory import *
+from .task import *
+from .time import *
+from .training import *
+from .visualization import *
 
 __all__ = [
     # Submodules

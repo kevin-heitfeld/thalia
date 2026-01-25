@@ -8,7 +8,7 @@ spiking neural networks in Thalia.
 from __future__ import annotations
 
 # Spike coding
-from thalia.components.coding import (
+from .coding import (
     CodingStrategy,
     RateDecoder,
     RateEncoder,
@@ -24,7 +24,7 @@ from thalia.components.coding import (
 )
 
 # Neuron models
-from thalia.components.neurons import (
+from .neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
     DendriticBranch,
@@ -41,21 +41,15 @@ from thalia.components.neurons import (
 )
 
 # Synaptic mechanisms
-from thalia.components.synapses import (
+from .synapses import (
     STP_PRESETS,
     InitStrategy,
-    PairedTraces,
     ShortTermPlasticity,
-    SpikeTrace,
     STPConfig,
     STPPreset,
     STPSynapse,
     STPType,
-    TraceConfig,
     WeightInitializer,
-    compute_decay,
-    compute_stdp_update,
-    create_trace,
     get_stp_config,
     list_presets,
     update_trace,
@@ -92,13 +86,7 @@ __all__ = [
     "get_stp_config",
     "list_presets",
     # Spike Traces
-    "SpikeTrace",
-    "PairedTraces",
-    "TraceConfig",
-    "compute_stdp_update",
-    "create_trace",
     "update_trace",
-    "compute_decay",
     # Spike Coding
     "CodingStrategy",
     "SpikeCodingConfig",

@@ -10,13 +10,6 @@ Date: January 16, 2026
 from __future__ import annotations
 
 # =============================================================================
-# HIPPOCAMPUS ARCHITECTURE
-# =============================================================================
-
-HIPPOCAMPUS_SPARSITY_TARGET = 0.03
-"""Target sparsity for dentate gyrus (3% active neurons for pattern separation)."""
-
-# =============================================================================
 # CORTICAL LAYER ARCHITECTURE
 # =============================================================================
 
@@ -47,7 +40,6 @@ ACTIVITY_HISTORY_INCREMENT = 0.01
 
 
 __all__ = [
-    "HIPPOCAMPUS_SPARSITY_TARGET",
     "CORTEX_L4_DA_FRACTION",
     "CORTEX_L23_DA_FRACTION",
     "CORTEX_L5_DA_FRACTION",

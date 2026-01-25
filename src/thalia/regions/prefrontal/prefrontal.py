@@ -70,7 +70,6 @@ import torch.nn as nn
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import ShortTermPlasticity, STPConfig, STPType, WeightInitializer
 from thalia.config.region_configs import PrefrontalConfig
-from thalia.constants.learning import WM_NOISE_STD_DEFAULT
 from thalia.constants.neuromodulation import DA_BASELINE_STANDARD, compute_ne_gain
 from thalia.constants.oscillator import (
     PFC_FEEDFORWARD_GAIN_MIN,
@@ -775,8 +774,7 @@ class Prefrontal(NeuralRegion):
         )
 
         # Add noise for stochasticity
-        wm_noise_std = getattr(self.pfc_config, "wm_noise_std", WM_NOISE_STD_DEFAULT)
-        noise = torch.randn_like(new_wm) * wm_noise_std
+        noise = torch.randn_like(new_wm) * self.pfc_config.wm_noise_std
         self.state.working_memory = (new_wm + noise).clamp(min=0, max=1)
 
         # Store state

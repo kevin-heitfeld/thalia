@@ -30,7 +30,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-from thalia.components.synapses.stp import STPConfig
+from .stp import STPConfig
 
 
 @dataclass(frozen=True)

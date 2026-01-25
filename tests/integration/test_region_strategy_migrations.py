@@ -12,8 +12,6 @@ import pytest
 import torch
 
 from thalia.config import LayeredCortexConfig
-from thalia.constants.learning import TAU_BCM_THRESHOLD
-from thalia.learning import BCMStrategy, CompositeStrategy
 from thalia.regions import LayeredCortex
 
 

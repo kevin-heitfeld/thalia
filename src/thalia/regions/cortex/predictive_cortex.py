@@ -80,6 +80,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.components.synapses.weight_init import WeightInitializer
 from thalia.config.region_configs import (
     PredictiveCodingErrorType,
     PredictiveCodingConfig,
@@ -153,8 +154,6 @@ class PredictiveCodingLayer(DiagnosticsMixin, nn.Module):
         # =================================================================
         # Learns to predict input from representation
         # W_pred: representation → predicted_input
-
-        from thalia.components.synapses.weight_init import WeightInitializer
 
         device = torch.device(config.device)  # Use local variable for initialization
         self.W_pred = nn.Parameter(
