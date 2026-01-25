@@ -33,13 +33,27 @@ class ResettableMixin:
     def reset_state(self) -> None:
         """Reset internal state for new sequence/episode.
 
-        Resets dynamic state (membrane potentials, traces, working memory)
-        while preserving learned parameters. Always initializes to batch_size=1
-        per THALIA's single-instance architecture.
+        Standard signature: `reset_state(self) -> None`
+
+        Components should reset:
+        - Neuron membrane potentials and refractory states
+        - Synaptic conductances (AMPA, NMDA, GABA)
+        - Learning traces (eligibility, STDP, BCM)
+        - Activity history and homeostatic variables
+        - Working memory and gating states
+
+        Do NOT reset:
+        - Synaptic weights (learned knowledge)
+        - Structural parameters (neuron counts, connectivity)
+        - Configuration settings
+
+        Always initializes to batch_size=1 per THALIA's single-instance architecture.
 
         Note:
             Subclasses should override this method to reset their
-            specific state variables.
+            specific state variables. The signature must be exactly
+            `reset_state(self) -> None` with no optional parameters
+            for consistency across all components.
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement reset_state()")
 

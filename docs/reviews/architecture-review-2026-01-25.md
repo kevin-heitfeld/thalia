@@ -177,7 +177,15 @@ if torch.rand(1, device=device).item() < prob:
 
 ---
 
-### 1.5 Standardize reset_state() Signature Across Components
+### 1.5 Standardize reset_state() Signature Across Components ✅ IMPLEMENTED
+
+**Status**: ✅ **Complete** (January 25, 2026)
+
+**Implementation Summary:**
+- ✅ Updated ResettableMixin docstring with standard signature documentation
+- ✅ Documented what should be reset (membrane potentials, traces, conductances)
+- ✅ Documented what should NOT be reset (weights, structural parameters)
+- ✅ Enforced signature: `reset_state(self) -> None` (no optional parameters)
 
 **Current State:**
 Most regions implement `reset_state(self) -> None`, but there's minor inconsistency in whether they accept optional parameters:
@@ -211,14 +219,20 @@ def reset_state(self) -> None:
     """
 ```
 
+**Documentation Delivered:**
+- Standard signature specification: `reset_state(self) -> None`
+- Clear list of what should be reset (dynamic state)
+- Clear list of what should NOT be reset (learned knowledge)
+- Note about no optional parameters for consistency
+
 **Rationale:**
 - Makes reset behavior predictable across components
 - Clarifies what should/shouldn't be reset
 - Supports proper trial-based training
 
 **Impact:**
-- Files affected: Documentation update, no code changes
-- Breaking changes: None
+- Files affected: 1 file (ResettableMixin docstring)
+- Breaking changes: None (documentation only)
 - Severity: Low
 
 ---
