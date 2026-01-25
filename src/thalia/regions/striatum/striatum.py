@@ -759,8 +759,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self._d1_delay_ptr: int = 0
         self._d2_delay_ptr: int = 0
 
-        # Port-based routing: Register default output port
-        self.register_output_port("default", self.n_output)
+        # Port-based routing: Register output ports for pathway-specific outputs
+        # d1: Direct pathway MSNs (D1 receptors, Go pathway → GPi/SNr)
+        # d2: Indirect pathway MSNs (D2 receptors, NoGo pathway → GPe)
+        # default: Concatenated D1+D2 output (backward compatibility)
+        self.register_output_port("d1", self.d1_size)
+        self.register_output_port("d2", self.d2_size)
+        self.register_output_port("default", self.n_output)  # D1+D2 concatenated
 
         # Ensure all parameters are on correct device
         self.to(device)
@@ -2861,9 +2866,11 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         # Increment step counter for neuromorphic checkpoint creation timestamps
         self._current_step += 1
 
-        # Port-based routing: Set default port output
+        # Port-based routing: Set pathway-specific outputs
         self.clear_port_outputs()
-        self.set_port_output("default", output_spikes)
+        self.set_port_output("d1", d1_spikes)      # Direct pathway → GPi/SNr
+        self.set_port_output("d2", d2_spikes)      # Indirect pathway → GPe
+        self.set_port_output("default", output_spikes)  # D1+D2 concatenated (backward compat)
 
         # Return output spikes (D1/D2 delays already handled by forward_coordinator)
         return output_spikes

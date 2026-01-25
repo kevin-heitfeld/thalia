@@ -11,10 +11,22 @@ Date: December 15, 2025
 import pytest
 import torch
 
-from thalia.config import LayeredCortexConfig, BrainConfig
+from thalia.config import (
+    LayeredCortexConfig,
+    HippocampusConfig,
+    StriatumConfig,
+    ThalamicRelayConfig,
+    BrainConfig,
+    LayerSizeCalculator,
+)
 from thalia.core.brain_builder import BrainBuilder, ConnectionSpec
 from thalia.pathways.axonal_projection import AxonalProjection
-from thalia.regions.cortex import LayeredCortex
+from thalia.regions import (
+    LayeredCortex,
+    Striatum,
+    ThalamicRelay,
+    TrisynapticHippocampus,
+)
 
 
 @pytest.fixture
@@ -675,3 +687,105 @@ class TestEndToEndPortBasedRouting:
         assert cortex.get_port_output("l6a").shape[0] == 16
         assert cortex.get_port_output("l6b").shape[0] == 16
         assert cortex.get_port_output("default").shape[0] == 128  # L2/3 + L5
+
+    def test_thalamus_specific_ports(self, brain_config):
+        """Test thalamus relay and TRN port outputs."""
+        calc = LayerSizeCalculator()
+        sizes = calc.thalamus_from_relay(64)
+        config = ThalamicRelayConfig(dt_ms=1.0, device=brain_config.device)
+        thalamus = ThalamicRelay(config=config, sizes=sizes, device=brain_config.device)
+
+        # Create input
+        input_spikes = torch.zeros(64, device=brain_config.device)
+        input_spikes[:10] = 1  # Activate first 10 neurons
+
+        # Forward pass
+        thalamus.forward({"sensory": input_spikes})
+
+        # Verify port outputs
+        relay_output = thalamus.get_port_output("relay")
+        trn_output = thalamus.get_port_output("trn")
+        default_output = thalamus.get_port_output("default")
+
+        # Check shapes
+        assert relay_output.shape[0] == sizes["relay_size"], f"Relay output mismatch"
+        assert trn_output.shape[0] == sizes["trn_size"], f"TRN output mismatch"
+        assert default_output.shape[0] == sizes["relay_size"], f"Default should match relay size"
+
+        # Default should equal relay (backward compatibility)
+        assert torch.equal(default_output, relay_output), "Default port should equal relay port"
+
+        # Outputs should be binary spikes
+        assert relay_output.dtype == torch.bool
+        assert trn_output.dtype == torch.bool
+
+    def test_hippocampus_specific_ports(self, brain_config):
+        """Test hippocampus subregion port outputs (DG, CA3, CA2, CA1)."""
+        config = HippocampusConfig(dt_ms=1.0)
+        sizes = {"dg_size": 128, "ca3_size": 96, "ca2_size": 32, "ca1_size": 64, "input_size": 128}
+        hippocampus = TrisynapticHippocampus(config=config, sizes=sizes, device=brain_config.device)
+
+        # Create input
+        input_spikes = torch.zeros(128, device=brain_config.device)
+        input_spikes[:20] = 1  # Activate first 20 neurons
+
+        # Forward pass
+        hippocampus.forward({"entorhinal": input_spikes})
+
+        # Verify port outputs
+        dg_output = hippocampus.get_port_output("dg")
+        ca3_output = hippocampus.get_port_output("ca3")
+        ca2_output = hippocampus.get_port_output("ca2")
+        ca1_output = hippocampus.get_port_output("ca1")
+        default_output = hippocampus.get_port_output("default")
+
+        # Check shapes
+        assert dg_output.shape[0] == 128, f"DG output should be 128, got {dg_output.shape[0]}"
+        assert ca3_output.shape[0] == 96, f"CA3 output should be 96, got {ca3_output.shape[0]}"
+        assert ca2_output.shape[0] == 32, f"CA2 output should be 32, got {ca2_output.shape[0]}"
+        assert ca1_output.shape[0] == 64, f"CA1 output should be 64, got {ca1_output.shape[0]}"
+        assert default_output.shape[0] == 64, f"Default should match CA1 size"
+
+        # Default should equal CA1 (backward compatibility)
+        assert torch.equal(default_output, ca1_output), "Default port should equal CA1 port"
+
+        # Outputs should be binary spikes
+        assert dg_output.dtype == torch.bool
+        assert ca3_output.dtype == torch.bool
+        assert ca2_output.dtype == torch.bool
+        assert ca1_output.dtype == torch.bool
+
+    def test_striatum_specific_ports(self, brain_config):
+        """Test striatum D1/D2 pathway port outputs."""
+        calc = LayerSizeCalculator()
+        sizes = calc.striatum_from_actions(n_actions=4, neurons_per_action=16)
+        sizes["input_size"] = 64  # Add input size
+        config = StriatumConfig(dt_ms=1.0, device=brain_config.device)
+        striatum = Striatum(config=config, sizes=sizes, device=brain_config.device)
+
+        # Create input
+        input_spikes = torch.zeros(64, device=brain_config.device)
+        input_spikes[:10] = 1  # Activate first 10 neurons
+
+        # Forward pass
+        striatum.forward({"cortex": input_spikes})
+
+        # Verify port outputs
+        d1_output = striatum.get_port_output("d1")
+        d2_output = striatum.get_port_output("d2")
+        default_output = striatum.get_port_output("default")
+
+        # Check shapes (d1_size and d2_size should be n_actions * neurons_per_action)
+        expected_d1 = striatum.d1_size
+        expected_d2 = striatum.d2_size
+        assert d1_output.shape[0] == expected_d1, f"D1 output should be {expected_d1}, got {d1_output.shape[0]}"
+        assert d2_output.shape[0] == expected_d2, f"D2 output should be {expected_d2}, got {d2_output.shape[0]}"
+        assert default_output.shape[0] == expected_d1 + expected_d2, f"Default should be D1+D2"
+
+        # Default should equal concatenated D1+D2 (backward compatibility)
+        expected_default = torch.cat([d1_output, d2_output], dim=0)
+        assert torch.equal(default_output, expected_default), "Default port should equal D1+D2 concatenation"
+
+        # Outputs should be binary spikes
+        assert d1_output.dtype == torch.bool
+        assert d2_output.dtype == torch.bool

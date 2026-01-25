@@ -550,8 +550,17 @@ class TrisynapticHippocampus(NeuralRegion):
         # Checkpoint manager for neuromorphic format support
         self.checkpoint_manager = HippocampusCheckpointManager(self)
 
-        # Port-based routing: Register default output port
-        self.register_output_port("default", self.ca1_size)
+        # Port-based routing: Register output ports for each subregion
+        # dg: Dentate gyrus (sparse pattern separation)
+        # ca3: CA3 (pattern completion, attractor dynamics)
+        # ca2: CA2 (contextual processing)
+        # ca1: CA1 (output integration, cortical projection)
+        # default: CA1 output only (backward compatibility)
+        self.register_output_port("dg", self.dg_size)
+        self.register_output_port("ca3", self.ca3_size)
+        self.register_output_port("ca2", self.ca2_size)
+        self.register_output_port("ca1", self.ca1_size)
+        self.register_output_port("default", self.ca1_size)  # Backward compatibility
 
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""
@@ -2297,11 +2306,15 @@ class TrisynapticHippocampus(NeuralRegion):
                 )
                 self.synaptic_weights["ca3_ca3"].data = new_weights
 
-        # Port-based routing: Set default port output
+        # Port-based routing: Set all hippocampal subregion outputs
         self.clear_port_outputs()
-        self.set_port_output("default", ca1_spikes)
+        self.set_port_output("dg", self.state.dg_spikes)    # Pattern separation
+        self.set_port_output("ca3", self.state.ca3_spikes)  # Pattern completion
+        self.set_port_output("ca2", self.state.ca2_spikes)  # Contextual processing
+        self.set_port_output("ca1", self.state.ca1_spikes)             # Output integration
+        self.set_port_output("default", self.state.ca1_spikes)         # Backward compatibility
 
-        return ca1_spikes
+        return self.state.ca1_spikes
 
     def _apply_wta_sparsity(
         self,

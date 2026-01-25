@@ -327,8 +327,13 @@ class ThalamicRelay(NeuralRegion):
         # =====================================================================
         # PORT-BASED ROUTING
         # =====================================================================
-        # Register output port for relay neurons (default output)
-        self.register_output_port("default", self.relay_size)
+        # Register output ports for relay and TRN neurons
+        # relay: Thalamic relay cells (sensory gating, cortical projection)
+        # trn: Thalamic reticular nucleus (lateral inhibition, attention gating)
+        # default: Relay output only (backward compatible)
+        self.register_output_port("relay", self.relay_size)
+        self.register_output_port("trn", self.trn_size)
+        self.register_output_port("default", self.relay_size)  # Backward compatibility
 
         # =====================================================================
         # MOVE TO DEVICE (must be last)
@@ -738,9 +743,14 @@ class ThalamicRelay(NeuralRegion):
         self.state.membrane = self.state.relay_membrane
         self.state.spikes = self.state.relay_spikes
 
-        # Port-based routing: Set default port output
+        # =====================================================================
+        # 7. PORT-BASED ROUTING OUTPUTS
+        # =====================================================================
+        # Set port outputs for biologically-specific routing
         self.clear_port_outputs()
-        self.set_port_output("default", relay_output)
+        self.set_port_output("relay", relay_output)  # Thalamic relay → Cortex
+        self.set_port_output("trn", trn_spikes)     # TRN → lateral inhibition
+        self.set_port_output("default", relay_output)  # Backward compatibility
 
         return relay_output  # [n_relay], bool (ADR-004/005)
 
