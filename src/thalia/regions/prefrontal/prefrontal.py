@@ -449,6 +449,9 @@ class Prefrontal(NeuralRegion):
         # Initialize theta phase for modulation
         self._theta_phase: float = 0.0
 
+        # Port-based routing: Register default output port
+        self.register_output_port("default", self.n_neurons)
+
         # Move all components to target device
         self.to(self.device)
 
@@ -780,6 +783,10 @@ class Prefrontal(NeuralRegion):
 
         # Store output (NeuralRegion pattern)
         self.output_spikes = output_spikes
+
+        # Port-based routing: Set default port output
+        self.clear_port_outputs()
+        self.set_port_output("default", output_spikes)
 
         return output_spikes  # type: ignore[no-any-return]
 

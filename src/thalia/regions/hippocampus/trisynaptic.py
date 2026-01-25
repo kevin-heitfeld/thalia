@@ -550,6 +550,9 @@ class TrisynapticHippocampus(NeuralRegion):
         # Checkpoint manager for neuromorphic format support
         self.checkpoint_manager = HippocampusCheckpointManager(self)
 
+        # Port-based routing: Register default output port
+        self.register_output_port("default", self.ca1_size)
+
     def _initialize_weights(self) -> torch.Tensor:
         """Placeholder - real weights created in _init_circuit_weights."""
         return nn.Parameter(torch.zeros(self.ca1_size, self.input_size))
@@ -2293,6 +2296,10 @@ class TrisynapticHippocampus(NeuralRegion):
                     learning_rate=self.config.learning_rate * 0.5,  # Half of base LR
                 )
                 self.synaptic_weights["ca3_ca3"].data = new_weights
+
+        # Port-based routing: Set default port output
+        self.clear_port_outputs()
+        self.set_port_output("default", ca1_spikes)
 
         return ca1_spikes
 

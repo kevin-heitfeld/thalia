@@ -759,6 +759,9 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         self._d1_delay_ptr: int = 0
         self._d2_delay_ptr: int = 0
 
+        # Port-based routing: Register default output port
+        self.register_output_port("default", self.n_output)
+
         # Ensure all parameters are on correct device
         self.to(device)
 
@@ -2857,6 +2860,10 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
 
         # Increment step counter for neuromorphic checkpoint creation timestamps
         self._current_step += 1
+
+        # Port-based routing: Set default port output
+        self.clear_port_outputs()
+        self.set_port_output("default", output_spikes)
 
         # Return output spikes (D1/D2 delays already handled by forward_coordinator)
         return output_spikes

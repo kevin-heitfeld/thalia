@@ -325,6 +325,12 @@ class ThalamicRelay(NeuralRegion):
         # Note: TRN growth is manual (maintains current ratio, not fixed ratio)
 
         # =====================================================================
+        # PORT-BASED ROUTING
+        # =====================================================================
+        # Register output port for relay neurons (default output)
+        self.register_output_port("default", self.relay_size)
+
+        # =====================================================================
         # MOVE TO DEVICE (must be last)
         # =====================================================================
         self.to(device)
@@ -731,6 +737,10 @@ class ThalamicRelay(NeuralRegion):
         # Store for component state (BrainComponent protocol)
         self.state.membrane = self.state.relay_membrane
         self.state.spikes = self.state.relay_spikes
+
+        # Port-based routing: Set default port output
+        self.clear_port_outputs()
+        self.set_port_output("default", relay_output)
 
         return relay_output  # [n_relay], bool (ADR-004/005)
 

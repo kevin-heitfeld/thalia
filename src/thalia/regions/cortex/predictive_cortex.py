@@ -866,6 +866,9 @@ class PredictiveCortex(NeuralRegion):
         self._cumulative_l23_spikes = 0
         self._cumulative_l5_spikes = 0
 
+        # Register output port (port-based routing support)
+        self.register_output_port("default", self.config.n_representation)
+
     def reset_state(self) -> None:
         """Reset all states for new sequence."""
         self.cortex.reset_state()
@@ -1247,6 +1250,10 @@ class PredictiveCortex(NeuralRegion):
                 pred_metrics = self.prediction_layer.learn(reward_signal=None)
                 # Store plasticity delta on the prediction layer state
                 self._last_plasticity_delta = pred_metrics.get("weight_update", 0.0)
+
+        # Set port output (port-based routing support)
+        self.clear_port_outputs()
+        self.set_port_output("default", output)
 
         return output
 

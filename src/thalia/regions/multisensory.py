@@ -310,6 +310,9 @@ class MultimodalIntegration(NeuralRegion):
 
         self._reset_state()
 
+        # Register output port (port-based routing support)
+        self.register_output_port("default", self.n_output)
+
     def _reset_state(self) -> None:
         """Reset internal state."""
         # Pool activations
@@ -517,6 +520,10 @@ class MultimodalIntegration(NeuralRegion):
                     pre=self.auditory_pool_spikes,
                     post=self.language_pool_spikes,
                 )
+
+        # Set port output (port-based routing support)
+        self.clear_port_outputs()
+        self.set_port_output("default", output_spikes)
 
         return output_spikes
 

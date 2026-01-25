@@ -737,7 +737,7 @@ class DynamicBrain(nn.Module):
                 # OPTIMIZATION: Direct lookup instead of iterating all connections
                 for src, pathway in self._component_connections.get(comp_name, []):
                     if src in self._output_cache and self._output_cache[src] is not None:
-                        # Port-Based Routing (Phase 3.2):
+                        # Port-Based Routing:
                         # Pass region object (not just tensor) so pathway can call get_port_output()
                         # for port-specific routing (e.g., L6a→TRN, L6b→relay)
                         source_region = self.components[src]

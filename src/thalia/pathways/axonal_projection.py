@@ -221,7 +221,7 @@ class AxonalProjection(RoutingComponent):
         Biologically accurate: Returns dict so target regions can route inputs
         to different neuron populations (e.g., thalamus sensory→relay, L6→TRN).
 
-        Port-Based Routing (Phase 3.2):
+        Port-Based Routing:
         When SourceSpec includes a port (e.g., "l6a", "l5"), the pathway will:
         1. Look up the source region object in source_outputs
         2. Call region.get_port_output(port) to get port-specific spikes

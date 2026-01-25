@@ -452,7 +452,7 @@ class TestBackwardCompatibility:
 
 
 class TestAxonalProjectionPortRouting:
-    """Test AxonalProjection port-aware routing (Phase 3.2)."""
+    """Test AxonalProjection port-aware routing."""
 
     def test_axonal_projection_with_port_spec(self, device):
         """Test AxonalProjection routes from specific port."""
@@ -529,3 +529,149 @@ class TestAxonalProjectionPortRouting:
         # Should work correctly
         assert "cortex" in routed
         assert routed["cortex"].shape[0] == 128
+
+
+class TestEndToEndPortBasedRouting:
+    """End-to-end integration tests for port-based routing (Phase 4)."""
+
+    def test_cortex_l6_to_thalamus_routing(self, brain_config):
+        """Test L6a→TRN and L6b→relay routing through full brain."""
+        builder = BrainBuilder(brain_config)
+
+        # Add thalamus with relay and TRN
+        builder.add_component(
+            "thalamus",
+            "thalamus",
+            input_size=64,
+            relay_size=64,
+            trn_size=19,
+        )
+
+        # Add cortex with L6a and L6b layers
+        builder.add_component(
+            "cortex",
+            "cortex",
+            l4_size=64,
+            l23_size=96,
+            l5_size=32,
+            l6a_size=16,  # L6a CT neurons
+            l6b_size=16,  # L6b CT neurons
+        )
+
+        # Feedforward: thalamus → cortex L4
+        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
+
+        # Feedback: L6a → TRN (attentional gating)
+        builder.connect(
+            "cortex",
+            "thalamus",
+            source_port="l6a",
+            target_port="l6a_feedback",
+            pathway_type="axonal_projection",
+            axonal_delay_ms=2.0,
+        )
+
+        # Feedback: L6b → relay (gain modulation)
+        builder.connect(
+            "cortex",
+            "thalamus",
+            source_port="l6b",
+            target_port="l6b_feedback",
+            pathway_type="axonal_projection",
+            axonal_delay_ms=2.0,
+        )
+
+        # Build brain
+        brain = builder.build()
+
+        # Verify components exist
+        assert "cortex" in brain.components
+        assert "thalamus" in brain.components
+
+        # Verify cortex has L6a and L6b ports
+        cortex = brain.components["cortex"]
+        assert "l6a" in cortex.get_registered_ports()
+        assert "l6b" in cortex.get_registered_ports()
+
+        # Verify thalamus has both feedback connections
+        thalamus = brain.components["thalamus"]
+        assert "cortex:l6a" in thalamus.synaptic_weights or "cortex:l6a" in thalamus.input_sources
+        assert "cortex:l6b" in thalamus.synaptic_weights or "cortex:l6b" in thalamus.input_sources
+
+        # Run forward pass
+        input_data = torch.randn(64, device=brain.device)
+        result = brain.forward({"thalamus": input_data}, n_timesteps=10)
+
+        # Verify outputs
+        assert "cortex" in result["outputs"]
+        assert "thalamus" in result["outputs"]
+
+        # Verify cortex set port outputs
+        cortex_output = result["outputs"]["cortex"]
+        if cortex_output is not None:
+            # Cortex should output concatenated L2/3 + L5 (default port)
+            assert cortex_output.shape[0] == cortex.l23_size + cortex.l5_size
+
+            # Verify L6a and L6b port outputs were set
+            l6a_output = cortex.get_port_output("l6a")
+            l6b_output = cortex.get_port_output("l6b")
+            assert l6a_output.shape[0] == 16
+            assert l6b_output.shape[0] == 16
+
+    def test_multi_region_port_routing(self, brain_config):
+        """Test port-based routing with multiple regions and pathways."""
+        builder = BrainBuilder(brain_config)
+
+        # Build a more complex network:
+        # thalamus → cortex (feedforward)
+        # cortex L2/3 → hippocampus (cortico-cortical)
+        # cortex L5 → striatum (cortico-subcortical)
+        # cortex L6a → thalamus TRN (feedback gating)
+        # cortex L6b → thalamus relay (feedback modulation)
+
+        builder.add_component("thalamus", "thalamus", input_size=64, relay_size=64, trn_size=19)
+        builder.add_component(
+            "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=16, l6b_size=16
+        )
+        builder.add_component(
+            "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
+        )
+        builder.add_component(
+            "striatum", "striatum", n_actions=4, neurons_per_action=8, input_sources={"cortex": 32}
+        )
+
+        # Feedforward path
+        builder.connect("thalamus", "cortex")
+
+        # Cortico-cortical (L2/3 → hippocampus)
+        builder.connect("cortex", "hippocampus", source_port="l23")
+
+        # Cortico-subcortical (L5 → striatum)
+        builder.connect("cortex", "striatum", source_port="l5")
+
+        # Cortico-thalamic feedback
+        builder.connect("cortex", "thalamus", source_port="l6a", target_port="l6a_feedback")
+        builder.connect("cortex", "thalamus", source_port="l6b", target_port="l6b_feedback")
+
+        # Build and verify
+        brain = builder.build()
+
+        # Verify all connections exist
+        assert len(brain.connections) == 5
+
+        # Run forward pass
+        input_data = torch.randn(64, device=brain.device)
+        result = brain.forward({"thalamus": input_data}, n_timesteps=5)
+
+        # Verify all components produced outputs
+        assert all(
+            comp in result["outputs"] for comp in ["thalamus", "cortex", "hippocampus", "striatum"]
+        )
+
+        # Verify cortex port outputs are accessible
+        cortex = brain.components["cortex"]
+        assert cortex.get_port_output("l23").shape[0] == 96
+        assert cortex.get_port_output("l5").shape[0] == 32
+        assert cortex.get_port_output("l6a").shape[0] == 16
+        assert cortex.get_port_output("l6b").shape[0] == 16
+        assert cortex.get_port_output("default").shape[0] == 128  # L2/3 + L5
