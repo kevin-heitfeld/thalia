@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-23 21:18:02
+> Last updated: 2026-01-25 18:43:05
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 46 modules, 477 exports
+Total: 46 modules, 485 exports
 
 ## 📑 Table of Contents
 
@@ -769,22 +769,27 @@ from thalia.pathways import NeuralPathway
 
 **Source**: [`thalia/regions/__init__.py`](../../src/thalia/regions/__init__.py)
 
-**Exports** (14):
+**Exports** (19):
 
 - `Cerebellum`
+- `GranuleLayerState`
+- `PurkinjeCellState`
 - `CerebellumState`
 - `LayeredCortex`
+- `LayeredCortexState`
 - `PredictiveCortex`
+- `PredictiveCortexState`
 - `TrisynapticHippocampus`
 - `HippocampusState`
-- `MultimodalIntegration`
 - `Prefrontal`
 - `PrefrontalState`
-- `StimulusGating`
 - `Striatum`
 - `StriatumState`
+- `StriatumStateTracker`
 - `ThalamicRelay`
 - `ThalamicRelayState`
+- `MultimodalIntegration`
+- `StimulusGating`
 
 **Usage**:
 
@@ -798,9 +803,11 @@ from thalia.regions import Cerebellum
 
 **Source**: [`thalia/regions/cerebellum/__init__.py`](../../src/thalia/regions/cerebellum/__init__.py)
 
-**Exports** (5):
+**Exports** (7):
 
 - `Cerebellum`
+- `GranuleLayerState`
+- `PurkinjeCellState`
 - `CerebellumState`
 - `DeepCerebellarNuclei`
 - `GranuleCellLayer`
@@ -874,10 +881,11 @@ from thalia.regions.prefrontal import Prefrontal
 
 **Source**: [`thalia/regions/striatum/__init__.py`](../../src/thalia/regions/striatum/__init__.py)
 
-**Exports** (2):
+**Exports** (3):
 
 - `Striatum`
 - `StriatumState`
+- `StriatumStateTracker`
 
 **Usage**:
 

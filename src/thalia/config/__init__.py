@@ -50,9 +50,7 @@ from .learning_config import (
 )
 from .region_configs import (
     CerebellumConfig,
-    GoalHierarchyConfig,
     HippocampusConfig,
-    HyperbolicDiscountingConfig,
     LayeredCortexConfig,
     MultimodalIntegrationConfig,
     PredictiveCortexConfig,
@@ -106,8 +104,6 @@ __all__ = [
     "StriatumConfig",
     "PrefrontalConfig",
     "CerebellumConfig",
-    "GoalHierarchyConfig",
-    "HyperbolicDiscountingConfig",
     "ThalamicRelayConfig",
     "MultimodalIntegrationConfig",
     # Language configs

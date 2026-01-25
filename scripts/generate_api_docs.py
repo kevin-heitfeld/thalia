@@ -1588,11 +1588,9 @@ class APIDocGenerator:
                                 if isinstance(node.value, ast.List):
                                     all_list = [
                                         (
-                                            elt.s
-                                            if isinstance(elt, ast.Str)
-                                            else (
-                                                elt.value if isinstance(elt, ast.Constant) else None
-                                            )
+                                            elt.value
+                                            if isinstance(elt, ast.Constant)
+                                            else None
                                         )
                                         for elt in node.value.elts
                                     ]
@@ -3010,10 +3008,11 @@ class APIDocGenerator:
             elif isinstance(value, bool):
                 return "bool"
             return "Any"
-        elif isinstance(node, ast.Num):  # Python 3.7 compat
-            return "int" if isinstance(node.n, int) else "float"
-        elif isinstance(node, ast.Str):
-            return "str"
+        elif isinstance(node, ast.Constant):
+            # Handle all constant types
+            if isinstance(node.value, (int, float, str, bool)):
+                return type(node.value).__name__
+            return "Any"
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
                 method_name = node.func.attr
@@ -3556,8 +3555,6 @@ class APIDocGenerator:
                                                 comment = "auto()"
                                             elif isinstance(item.value, ast.Constant):
                                                 comment = repr(item.value.value)
-                                            elif isinstance(item.value, ast.Str):
-                                                comment = repr(item.value.s)
 
                                             # Look for inline comments in source
                                             try:

@@ -9,7 +9,7 @@ implementation files, they are now centralized for:
 - Simplified imports
 - Better documentation
 
-**Architectural Decision (Tier 2.1)**:
+**Architectural Decision**:
 Configurations define BEHAVIORAL parameters only (learning rates, time constants,
 strengths, etc.). Sizes (n_neurons, input_size, etc.) are passed separately at
 instantiation via the sizes dictionary pattern.
@@ -43,25 +43,18 @@ Region State classes are co-located with their configs for cohesion.
 All state classes inherit from BaseRegionState to ensure protocol compliance.
 
 Author: Thalia Project
-Date: January 2026 (Tier 2.1 Consolidation)
+Date: January 2026
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from thalia.components.synapses.stp import STPType
-from thalia.config.learning_config import (
-    ErrorCorrectiveLearningConfig,
-    HebbianLearningConfig,
-    ModulatedLearningConfig,
-    STDPLearningConfig,
-)
 from thalia.constants import (
     ADAPT_INCREMENT_CORTEX_L23,
-    DEFAULT_EPSILON_EXPLORATION,
     EMA_DECAY_FAST,
     HIPPOCAMPUS_SPARSITY_TARGET,
     LEARNING_RATE_HEBBIAN_SLOW,
@@ -84,12 +77,17 @@ from thalia.constants import (
     THALAMUS_TRN_RECURRENT,
 )
 from thalia.core.base.component_config import NeuralComponentConfig
+from thalia.diagnostics.criticality import CriticalityConfig
+from thalia.learning.ei_balance import EIBalanceConfig
+from thalia.learning.homeostasis.metabolic import MetabolicConfig
 from thalia.learning.rules.bcm import BCMConfig
 
-if TYPE_CHECKING:
-    from thalia.diagnostics.criticality import CriticalityConfig
-    from thalia.learning.ei_balance import EIBalanceConfig
-    from thalia.learning.homeostasis.metabolic import MetabolicConfig
+from .learning_config import (
+    ErrorCorrectiveLearningConfig,
+    HebbianLearningConfig,
+    ModulatedLearningConfig,
+    STDPLearningConfig,
+)
 
 
 # ============================================================================
@@ -313,7 +311,7 @@ class HippocampusConfig(NeuralComponentConfig, STDPLearningConfig):
     phase_jitter_std_ms: float = 5.0  # Std dev of timing jitter (0-10ms)
 
     # =========================================================================
-    # MULTI-TIMESCALE CONSOLIDATION (Phase 1A Enhancement)
+    # MULTI-TIMESCALE CONSOLIDATION
     # =========================================================================
     # Biological reality: Memory consolidation operates over multiple timescales
     # - Fast trace (synaptic tagging): Minutes, ~60s tau
@@ -450,7 +448,7 @@ class CerebellumConfig(NeuralComponentConfig, ErrorCorrectiveLearningConfig):
     """Maximum gap junction neighbors per IO neuron (biological: 6-15, IO is densely coupled)."""
 
     # =========================================================================
-    # COMPLEX SPIKE DYNAMICS (Phase 2B Enhancement)
+    # COMPLEX SPIKE DYNAMICS
     # =========================================================================
     # Climbing fibers trigger complex spikes in Purkinje cells - bursts of 2-7
     # spikes with very short inter-spike intervals (1-2ms). These bursts encode
@@ -746,7 +744,7 @@ class StriatumConfig(ModulatedLearningConfig, NeuralComponentConfig):  # type: i
     slow_trace_weight: float = 0.3  # Weight of slow trace in combined eligibility
 
     # =========================================================================
-    # ELASTIC TENSOR CHECKPOINT FORMAT (Phase 1 - Growth Support)
+    # ELASTIC TENSOR CHECKPOINT FORMAT
     # =========================================================================
     # Enable elastic tensor format for checkpoint-growth compatibility.
     # Pre-allocates tensors with reserved capacity to enable fast growth.
@@ -789,7 +787,7 @@ class PrefrontalConfig(NeuralComponentConfig):
     # Learning rates
     wm_lr: float = 0.1  # Learning rate for WM update weights
     rule_lr: float = LEARNING_RATE_STDP  # Learning rate for rule weights
-    # Note: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
+    # NOTE: STDP parameters (stdp_lr, tau_plus_ms, tau_minus_ms, a_plus, a_minus)
     # and heterosynaptic_ratio (0.3) are inherited from NeuralComponentConfig
 
     # Recurrent connections for WM maintenance
@@ -806,48 +804,7 @@ class PrefrontalConfig(NeuralComponentConfig):
     adapt_tau: float = 150.0  # Slower decay (longer timescale for WM)
 
     # =========================================================================
-    # SHORT-TERM PLASTICITY (STP)
-    # =========================================================================
-    # Feedforward connections: Facilitation for temporal filtering
-    stp_feedforward_enabled: bool = True
-    """Enable short-term plasticity on feedforward (input) connections."""
-
-    # Recurrent connections: Depression prevents frozen attractors
-    stp_recurrent_enabled: bool = True
-    """Enable short-term plasticity on recurrent connections."""
-
-    # =========================================================================
-    # PHASE 3: HIERARCHICAL GOALS & TEMPORAL ABSTRACTION
-    # =========================================================================
-    # Hierarchical goal management and hyperbolic discounting
-    use_hierarchical_goals: bool = True
-    """Enable hierarchical goal structures (Phase 3).
-
-    When True:
-        - Maintains goal hierarchy stack in working memory
-        - Tracks active goals and subgoals
-        - Supports options framework for reusable policies
-        - Requires goal_hierarchy_config
-    """
-
-    goal_hierarchy_config: Optional["GoalHierarchyConfig"] = None
-    """Configuration for goal hierarchy manager (Phase 3)."""
-
-    use_hyperbolic_discounting: bool = True
-    """Enable hyperbolic temporal discounting (Phase 3).
-
-    When True:
-        - Hyperbolic (not exponential) discounting of delayed rewards
-        - Context-dependent k parameter (cognitive load, stress, fatigue)
-        - Adaptive k learning from experience
-        - Requires hyperbolic_config
-    """
-
-    hyperbolic_config: Optional["HyperbolicDiscountingConfig"] = None
-    """Configuration for hyperbolic discounter (Phase 3)."""
-
-    # =========================================================================
-    # HETEROGENEOUS WORKING MEMORY (Phase 1B Enhancement)
+    # HETEROGENEOUS WORKING MEMORY
     # =========================================================================
     # Biological reality: PFC neurons show heterogeneous maintenance properties
     # - Stable neurons: Strong recurrence, long time constants (~1-2s)
@@ -857,18 +814,13 @@ class PrefrontalConfig(NeuralComponentConfig):
     # - Stable neurons: Maintain context/goals over long delays
     # - Flexible neurons: Rapid updating for new information
     # - Mixed selectivity: Distributed representations across neuron types
-    #
-    # References:
-    # - Rigotti et al. (2013): Mixed selectivity in prefrontal cortex
-    # - Murray et al. (2017): Stable population coding for working memory
-    # - Wasmuht et al. (2018): Intrinsic neuronal dynamics in PFC
     use_heterogeneous_wm: bool = False  # Enable heterogeneous WM neurons
     stability_cv: float = 0.3  # Coefficient of variation for recurrent strength
     tau_mem_min: float = 100.0  # Minimum membrane time constant (ms) - flexible neurons
     tau_mem_max: float = 500.0  # Maximum membrane time constant (ms) - stable neurons
 
     # =========================================================================
-    # D1/D2 DOPAMINE RECEPTOR SUBTYPES (Phase 1B Enhancement)
+    # D1/D2 DOPAMINE RECEPTOR SUBTYPES
     # =========================================================================
     # Biological reality: PFC has both D1 (excitatory) and D2 (inhibitory) receptors
     # - D1-dominant neurons (~60%): "Go" pathway, enhance signals with DA
@@ -878,11 +830,6 @@ class PrefrontalConfig(NeuralComponentConfig):
     # - D1: Update WM when DA high (new information is important)
     # - D2: Maintain WM when DA low (protect current state)
     # - Opponent modulation: D1 and D2 have opposite DA responses
-    #
-    # References:
-    # - Seamans & Yang (2004): D1 and D2 dopamine systems in PFC
-    # - Durstewitz & Seamans (2008): Neurocomputational perspective on PFC
-    # - Cools & D'Esposito (2011): Inverted-U dopamine in working memory
     use_d1_d2_subtypes: bool = False  # Enable D1/D2 receptor subtypes
     d1_fraction: float = 0.6  # Fraction of neurons that are D1-dominant (60%)
     d1_da_gain: float = 0.5  # DA gain for D1 neurons (excitatory, 1.0 + gain*DA)
@@ -892,51 +839,6 @@ class PrefrontalConfig(NeuralComponentConfig):
     def __post_init__(self) -> None:
         """Auto-compute output_size and total_neurons from n_neurons."""
         # Properties handle this now - no manual assignment needed
-
-
-@dataclass
-class GoalHierarchyConfig:
-    """Configuration for goal hierarchy manager."""
-
-    max_depth: int = 4  # Maximum hierarchy depth (0=actions, 4=high-level)
-    max_active_goals: int = 5  # Limit on parallel goals (working memory constraint)
-
-    # Goal selection
-    use_value_based_selection: bool = True  # Select high-value goals
-    epsilon_exploration: float = DEFAULT_EPSILON_EXPLORATION  # Explore low-value goals sometimes
-
-    # Goal dynamics
-    goal_persistence: float = 0.9  # Resist goal switching (stability)
-    deadline_pressure_scale: float = 0.1  # Boost value as deadline approaches
-
-    # Options
-    enable_option_learning: bool = True  # Learn reusable policies
-    option_discovery_threshold: float = 0.8  # Success rate to cache option
-
-    # Device
-    device: str = "cpu"
-
-
-@dataclass
-class HyperbolicDiscountingConfig:
-    """Configuration for hyperbolic discounting."""
-
-    # Base discounting
-    base_k: float = 0.01  # Base hyperbolic discount rate
-    k_min: float = 0.001  # Minimum k (most patient)
-    k_max: float = 0.20  # Maximum k (most impulsive)
-
-    # Context modulation
-    cognitive_load_scale: float = 0.5  # How much load affects k
-    stress_scale: float = 0.3  # How much stress affects k
-    fatigue_scale: float = 0.2  # How much fatigue affects k
-
-    # Learning
-    learn_k: bool = True  # Adapt k based on outcomes
-    k_learning_rate: float = 0.01  # Step size for k adaptation
-
-    # Device
-    device: str = "cpu"
 
 
 # ============================================================================
@@ -1617,8 +1519,6 @@ __all__ = [
     # Action Selection & Executive Control
     "StriatumConfig",
     "PrefrontalConfig",
-    "GoalHierarchyConfig",
-    "HyperbolicDiscountingConfig",
     # Sensory Processing & Integration
     "ThalamicRelayConfig",
     "CortexRobustnessConfig",

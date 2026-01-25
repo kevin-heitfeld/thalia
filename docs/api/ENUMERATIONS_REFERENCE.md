@@ -1,7 +1,7 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-23 21:18:02
+> Last updated: 2026-01-25 18:43:05
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
@@ -13,7 +13,7 @@ Total: 44 enumerations
 Jump to category:
 
 - [Thalia/Components](#thaliacomponents) (3 enums)
-- [Thalia/Config](#thaliaconfig) (5 enums)
+- [Thalia/Config](#thaliaconfig) (6 enums)
 - [Thalia/Constants](#thaliaconstants) (1 enums)
 - [Thalia/Core](#thaliacore) (2 enums)
 - [Thalia/Datasets](#thaliadatasets) (8 enums)
@@ -25,7 +25,6 @@ Jump to category:
 - [Thalia/Learning](#thalialearning) (1 enums)
 - [Thalia/Memory](#thaliamemory) (1 enums)
 - [Thalia/Pathways](#thaliapathways) (1 enums)
-- [Thalia/Regions](#thaliaregions) (1 enums)
 - [Thalia/Tasks](#thaliatasks) (4 enums)
 - [Thalia/Training](#thaliatraining) (7 enums)
 
@@ -155,6 +154,20 @@ Types of spike encoding strategies.
 - `PHASE` — 'phase'
 - `BURST` — 'burst'
 - `SDR` — 'sdr'
+
+---
+
+#### [``PredictiveCodingErrorType``](../../src/thalia/config/region_configs.py#L1370) (Enum)
+
+Types of prediction errors.
+
+**Source**: [`thalia/config/region_configs.py`](../../src/thalia/config/region_configs.py)
+
+**Members**:
+
+- `POSITIVE` — Actual > Predicted (under-prediction)
+- `NEGATIVE` — Actual < Predicted (over-prediction)
+- `SIGNED` — Single population with +/- values
 
 ---
 
@@ -618,22 +631,6 @@ Sensory modalities.
 - `LANGUAGE` — 'language'
 - `TOUCH` — 'touch'
 - `PROPRIOCEPTION` — 'proprioception'
-
----
-
-### Thalia/Regions
-
-#### [``ErrorType``](../../src/thalia/regions/cortex/predictive_coding.py#L93) (Enum)
-
-Types of prediction errors.
-
-**Source**: [`thalia/regions/cortex/predictive_coding.py`](../../src/thalia/regions/cortex/predictive_coding.py)
-
-**Members**:
-
-- `POSITIVE` — Actual > Predicted (under-prediction)
-- `NEGATIVE` — Actual < Predicted (over-prediction)
-- `SIGNED` — Single population with +/- values
 
 ---
 

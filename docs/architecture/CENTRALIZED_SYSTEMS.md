@@ -154,28 +154,25 @@ if success_rate > threshold:
 - **ReplayEngine** (`src/thalia/regions/hippocampus/replay_engine.py`) - Sequence replay
 
 **Features**:
-- Experience storage in hippocampal memory
-- Offline replay during consolidation cycles
-- Hindsight Experience Replay (HER) support
-- Coordinated learning during replay
+- Spontaneous hippocampal replay during rest/sleep
+- Memory pressure detection (limited hippocampal capacity)
+- Sleep stage simulation (NREM/REM alternation)
+- Sharp-wave ripple triggered consolidation
 
 **Integration**:
 ```python
-# In DynamicBrain.__init__()
-from thalia.memory.consolidation.manager import ConsolidationManager
+# Consolidation is triggered directly via DynamicBrain.consolidate()
+# Uses hippocampal spontaneous replay mechanism
 
-self.consolidation_manager = ConsolidationManager(
-    hippocampus=self.components["hippocampus"],
-    striatum=self.components["striatum"],
-    cortex=self.components["cortex"],
-    pfc=self.components["pfc"],
-    config=self.config,
-    deliver_reward_fn=self.deliver_reward
-)
+# Lower acetylcholine → trigger consolidation
+stats = brain.consolidate(duration_ms=10000, verbose=True)
+# Output: "Consolidation: 23 ripples in 10000ms (2.3 Hz)"
 
-# Store experiences
-self.consolidation_manager.store_experience(
-    state, action, reward, next_state, done
+# Available consolidation utilities
+from thalia.memory.consolidation import (
+    MemoryPressureDetector,     # Detect when consolidation is needed
+    SleepStageController,        # Simulate NREM/REM cycles
+    ConsolidationTrigger,        # Coordinate consolidation events
 )
 
 # Run consolidation (offline replay)

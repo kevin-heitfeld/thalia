@@ -476,21 +476,18 @@ class Prefrontal(NeuralRegion):
         # =====================================================================
         # EMERGENT HIERARCHICAL GOALS (Biologically Plausible)
         # =====================================================================
+        # Split neurons into abstract (rostral PFC) and concrete (caudal PFC)
+        # This implements the biological rostral-caudal hierarchy
+        n_abstract = int(self.n_neurons * 0.3)  # 30% abstract (long tau, slow)
+        n_concrete = self.n_neurons - n_abstract  # 70% concrete (short tau, fast)
+
         # Goals emerge from WM patterns - no symbolic Goal objects
-        self.emergent_goals: Optional[EmergentGoalSystem] = None
-
-        if config.use_hierarchical_goals:
-            # Split neurons into abstract (rostral PFC) and concrete (caudal PFC)
-            # This implements the biological rostral-caudal hierarchy
-            n_abstract = int(self.n_neurons * 0.3)  # 30% abstract (long tau, slow)
-            n_concrete = self.n_neurons - n_abstract  # 70% concrete (short tau, fast)
-
-            self.emergent_goals = EmergentGoalSystem(
-                n_wm_neurons=self.n_neurons,
-                n_abstract=n_abstract,
-                n_concrete=n_concrete,
-                device=str(self.device),
-            )
+        self.emergent_goals = EmergentGoalSystem(
+            n_wm_neurons=self.n_neurons,
+            n_abstract=n_abstract,
+            n_concrete=n_concrete,
+            device=str(self.device),
+        )
 
     def _create_neurons(self) -> ConductanceLIF:
         """Create conductance-based LIF neurons with slow dynamics and SFA.
@@ -534,45 +531,38 @@ class Prefrontal(NeuralRegion):
         # =====================================================================
         # SHORT-TERM PLASTICITY for feedforward connections
         # =====================================================================
-        self.stp_feedforward: Optional[ShortTermPlasticity] = None
-
         # PFC feedforward connections show SHORT-TERM FACILITATION/DEPRESSION
         # for temporal filtering and gain control during encoding.
-        if cfg.stp_feedforward_enabled:
-            self.stp_feedforward = ShortTermPlasticity(
-                n_pre=self.input_size,
-                n_post=self.n_neurons,
-                config=STPConfig.from_type(STPType.FACILITATING),
-                per_synapse=True,
-            )
-            self.stp_feedforward.to(self.device)
+        self.stp_feedforward = ShortTermPlasticity(
+            n_pre=self.input_size,
+            n_post=self.n_neurons,
+            config=STPConfig.from_type(STPType.FACILITATING),
+            per_synapse=True,
+        )
+        self.stp_feedforward.to(self.device)
 
         # =====================================================================
         # SHORT-TERM PLASTICITY for recurrent connections
         # =====================================================================
-        self.stp_recurrent: Optional[ShortTermPlasticity] = None
-
         # PFC recurrent connections show SHORT-TERM DEPRESSION, preventing
         # frozen attractors. This allows working memory to be updated.
-        if cfg.stp_recurrent_enabled:
-            self.stp_recurrent = ShortTermPlasticity(
-                n_pre=self.n_neurons,
-                n_post=self.n_neurons,
-                config=STPConfig.from_type(STPType.DEPRESSING),
-                per_synapse=True,
-            )
-            self.stp_recurrent.to(self.device)
+        self.stp_recurrent = ShortTermPlasticity(
+            n_pre=self.n_neurons,
+            n_post=self.n_neurons,
+            config=STPConfig.from_type(STPType.DEPRESSING),
+            per_synapse=True,
+        )
+        self.stp_recurrent.to(self.device)
 
         # =====================================================================
-        # Phase 2 Registration: Opt-in auto-growth for STP modules
-        if self.stp_feedforward is not None:
-            # Feedforward STP (input -> n_output): grows during grow_input (pre) and grow_output (post)
-            self._register_stp("stp_feedforward", direction="both", recurrent=False)
+        # Registration: Opt-in auto-growth for STP modules
 
-        if self.stp_recurrent is not None:
-            # Recurrent STP (n_output -> n_output): ONLY grows during grow_output (both pre and post)
-            # NOT during grow_input - recurrent connections track n_output, not n_input
-            self._register_stp("stp_recurrent", direction="post", recurrent=True)
+        # Feedforward STP (input -> n_output): grows during grow_input (pre) and grow_output (post)
+        self._register_stp("stp_feedforward", direction="both", recurrent=False)
+
+        # Recurrent STP (n_output -> n_output): ONLY grows during grow_output (both pre and post)
+        # NOT during grow_input - recurrent connections track n_output, not n_input
+        self._register_stp("stp_recurrent", direction="post", recurrent=True)
 
         return neurons
 
@@ -1170,19 +1160,13 @@ class Prefrontal(NeuralRegion):
         Returns:
             Predicted concrete subgoal pattern [n_concrete]
 
-        Raises:
-            ConfigurationError: If emergent goals not enabled
-
         Example:
             # After training goal hierarchies via examples
             subgoal = pfc.predict_next_subgoal()
             # Inject into WM to activate subgoal
             pfc.state.working_memory[pfc.emergent_goals.concrete_neurons] = subgoal
         """
-        if self.emergent_goals is None:
-            raise ConfigurationError(
-                "Emergent goals not enabled. Set use_hierarchical_goals=True in config."
-            )
+        assert self.emergent_goals is not None
 
         if self.state.working_memory is None:
             return torch.zeros(self.emergent_goals.n_concrete, device=self.device)

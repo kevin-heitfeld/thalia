@@ -74,7 +74,6 @@ class PathwayState(ABC):
 
     See Also:
         docs/patterns/state-management.md - State management patterns
-        docs/design/state-management-refactoring-plan.md - Full refactoring plan
     """
 
     # Subclasses should define this
