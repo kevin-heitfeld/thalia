@@ -231,7 +231,9 @@ def __init__(self, ..., default_learning_strategy="stdp"):
 
 ---
 
-### 1.5 Simplify D1/D2 Pathway apply_dopamine_modulation() Methods
+### 1.5 ✅ Simplify D1/D2 Pathway apply_dopamine_modulation() Methods (COMPLETED)
+
+**Status**: Completed January 25, 2026 - Common logic consolidated in base class with polarity pattern
 
 **Current State**: D1 and D2 pathways have near-identical `apply_dopamine_modulation()` methods (~50 lines each) with only one line difference:
 

@@ -106,6 +106,10 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         self.config = config
         self.device = config.device
 
+        # Pathway identity (set by subclass)
+        self.pathway_name: str = ""  # "D1" or "D2"
+        self.dopamine_polarity: float = 1.0  # +1.0 for D1, -1.0 for D2
+
         # Parent reference (set by Striatum after construction)
         # Pathways access weights via parent's synaptic_weights dict
         # Use weakref to avoid circular reference during .to(device)
@@ -295,26 +299,50 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         if hasattr(self.learning_strategy, "update_eligibility"):
             self.learning_strategy.update_eligibility(input_spikes, output_spikes)  # type: ignore[attr-defined]
 
-    @abstractmethod
     def apply_dopamine_modulation(
         self,
         dopamine: float,
         heterosynaptic_ratio: float = 0.3,
     ) -> Dict[str, Any]:
         """
-        Apply dopamine-modulated plasticity to weights.
+        Apply dopamine-modulated plasticity to weights with pathway-specific polarity.
 
         D1 and D2 pathways respond OPPOSITELY to dopamine:
-        - D1: DA+ → LTP (strengthen), DA- → LTD (weaken)
-        - D2: DA+ → LTD (weaken), DA- → LTP (strengthen)
+        - D1 (polarity=+1.0): DA+ → LTP (strengthen), DA- → LTD (weaken)
+        - D2 (polarity=-1.0): DA+ → LTD (weaken), DA- → LTP (strengthen)
+
+        The polarity is applied here, so subclasses only need to set their
+        dopamine_polarity attribute in __init__.
 
         Args:
             dopamine: Dopamine signal (RPE, typically -1 to +1)
-            heterosynaptic_ratio: Fraction of learning applied to non-eligible synapses
+            heterosynaptic_ratio: Not used (kept for API compatibility)
 
         Returns:
             Metrics dict with numeric values and string metadata (pathway type, dopamine sign)
         """
+        # Apply pathway-specific polarity (D1: +1.0, D2: -1.0)
+        modulated_dopamine = dopamine * self.dopamine_polarity
+
+        # Use strategy to compute weight update
+        new_weights, metrics = self.learning_strategy.compute_update(
+            weights=self.weights.data,
+            pre=torch.ones(1, device=self.device),  # Dummy (eligibility already accumulated)
+            post=torch.ones(1, device=self.device),  # Dummy (eligibility already accumulated)
+            modulator=modulated_dopamine,
+        )
+
+        # Update weights
+        self.weights.data = new_weights
+
+        # Add pathway metadata
+        metrics["pathway"] = self.pathway_name  # type: ignore[assignment]
+        sign_value: str = "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
+        metrics["dopamine_sign"] = sign_value  # type: ignore[assignment]
+        if self.dopamine_polarity < 0:
+            metrics["inverted_response"] = True  # type: ignore[assignment]
+
+        return metrics
 
     def grow(self, n_new_neurons: int, initialization: str = "xavier") -> None:
         """

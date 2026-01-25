@@ -12,10 +12,6 @@ Biological role: "NOGO" signal for action suppression
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
-import torch
-
 from .pathway_base import StriatumPathway, StriatumPathwayConfig
 
 
@@ -47,58 +43,15 @@ class D2Pathway(StriatumPathway):
     def __init__(self, config: StriatumPathwayConfig):
         """Initialize D2 pathway (indirect/NoGo pathway).
 
-        Args:
-            config: Pathway configuration with n_input, n_output, learning rates
-        """
-        super().__init__(config)
-        self.pathway_name = "D2"
-
-    def apply_dopamine_modulation(
-        self,
-        dopamine: float,
-        heterosynaptic_ratio: float = 0.3,
-    ) -> Dict[str, Any]:
-        """
-        Apply D2-specific dopamine modulation with INVERTED polarity.
-
-        D2 RESPONSE TO DOPAMINE (OPPOSITE OF D1):
+        D2 pathways use INVERTED dopamine modulation:
         - Dopamine burst (DA+): WEAKEN eligible synapses (LTD)
         - Dopamine dip (DA-): STRENGTHEN eligible synapses (LTP)
 
         This implements the "NOGO" signal: punished actions become more inhibited.
 
         Args:
-            dopamine: Dopamine signal (RPE), typically in [-1, +1]
-            heterosynaptic_ratio: Not used (kept for API compatibility)
-
-        Returns:
-            Metrics dict from strategy:
-                - ltp: Total LTP magnitude
-                - ltd: Total LTD magnitude
-                - net_change: Net weight change
-                - modulator: Inverted dopamine value used
-                - eligibility_mean: Average eligibility trace
+            config: Pathway configuration with n_input, n_output, learning rates
         """
-        # D2 KEY DIFFERENCE: INVERTED dopamine response
-        # Use strategy with negated dopamine
-        inverted_dopamine = -dopamine
-
-        new_weights, metrics = self.learning_strategy.compute_update(
-            weights=self.weights.data,
-            pre=torch.ones(1, device=self.device),  # Dummy (eligibility already accumulated)
-            post=torch.ones(1, device=self.device),  # Dummy (eligibility already accumulated)
-            modulator=inverted_dopamine,
-        )
-
-        # Update weights
-        self.weights.data = new_weights
-
-        # Add pathway identifier (metrics is Dict[str, Any] to allow mixed types)
-        metrics["pathway"] = "D2"  # type: ignore[assignment]
-        sign_value: str = "positive" if dopamine > 0 else "negative" if dopamine < 0 else "zero"
-        metrics["dopamine_sign"] = sign_value  # type: ignore[assignment]
-        metrics["inverted_response"] = (  # type: ignore[assignment]
-            True  # Flag to indicate D2's inverted learning
-        )
-
-        return metrics
+        super().__init__(config)
+        self.pathway_name = "D2"
+        self.dopamine_polarity = -1.0  # Inverted modulation
