@@ -11,6 +11,7 @@ Date: December 15, 2025
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
@@ -236,8 +237,11 @@ class BrainBuilder:
             pathway_type: Pathway registry name:
                 - "axonal_projection": AxonalProjection (pure spike routing, NO weights)
                 - Other registered pathway types
-            source_port: Output port on source (e.g., 'l23', 'l5')
+            source_port: Output port on source (e.g., 'l23', 'l5', 'relay', 'ca1', 'd1')
+                RECOMMENDED: Explicitly specify ports for biological accuracy.
+                When None, uses full output (n_output) which bypasses port system.
             target_port: Input port on target (e.g., 'feedforward', 'top_down', 'ec_l3')
+                RECOMMENDED: Explicitly specify ports for biological accuracy.
             **config_params: Pathway configuration parameters
                 For axonal pathways, can specify 'axonal_delay_ms' (default: 2.0)
 
@@ -246,12 +250,38 @@ class BrainBuilder:
 
         Raises:
             ValueError: If source or target component doesn't exist
+
+        Deprecation:
+            Omitting source_port will be deprecated in v2.0. Specify explicit ports
+            for biological accuracy (e.g., 'relay', 'ca1', 'd1', or 'default').
         """
         # Validate components exist
         if source not in self._components:
             raise ValueError(f"Source component '{source}' not found")
         if target not in self._components:
             raise ValueError(f"Target component '{target}' not found")
+
+        # Deprecation warnings for missing ports
+        if source_port is None:
+            source_spec = self._components[source]
+            warnings.warn(
+                f"Connection {source}→{target}: source_port not specified. "
+                f"Using full output (n_output={source_spec.registry_name}). "
+                f"This bypasses the port system and will be deprecated in v2.0. "
+                f"Please specify source_port explicitly (e.g., 'relay', 'ca1', 'd1', or 'default').",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        if target_port is None:
+            # target_spec = self._components[target]
+            warnings.warn(
+                f"Connection {source}→{target}: target_port not specified. "
+                f"This will be deprecated in v2.0. "
+                f"Please specify target_port explicitly (e.g., 'feedforward', 'l6a_feedback', 'l6b_feedback', or None for default routing).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Create connection spec with ports
         spec = ConnectionSpec(
