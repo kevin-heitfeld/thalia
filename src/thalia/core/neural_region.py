@@ -131,6 +131,11 @@ class NeuralRegion(
         # State
         self.output_spikes: Optional[torch.Tensor] = None
 
+        # Port-based routing infrastructure (ADR-015)
+        self._port_outputs: Dict[str, torch.Tensor] = {}
+        self._port_sizes: Dict[str, int] = {}
+        self._registered_ports: set[str] = set()
+
     def add_input_source(
         self,
         source_name: str,
@@ -266,10 +271,144 @@ class NeuralRegion(
 
         return output_spikes
 
+    # =========================================================================
+    # Port-Based Routing (ADR-015)
+    # =========================================================================
+
+    def register_output_port(self, port_name: str, size: int) -> None:
+        """Register an output port for routing.
+
+        Ports enable routing specific outputs to specific targets, matching biological
+        reality where different cell types project to different targets (e.g., L6a→TRN, L6b→relay).
+
+        Args:
+            port_name: Name of the port (e.g., "l6a", "l6b", "default")
+            size: Number of neurons in this output
+
+        Raises:
+            ValueError: If port already registered
+
+        Example:
+            >>> self.register_output_port("l6a", self.l6a_size)
+            >>> self.register_output_port("default", self.l23_size + self.l5_size)
+        """
+        if port_name in self._registered_ports:
+            raise ValueError(f"Port '{port_name}' already registered in {self.__class__.__name__}")
+
+        self._port_sizes[port_name] = size
+        self._registered_ports.add(port_name)
+
+    def set_port_output(self, port_name: str, spikes: torch.Tensor) -> None:
+        """Store output for a specific port.
+
+        Called during forward() to set outputs for each registered port.
+
+        Args:
+            port_name: Name of the port
+            spikes: Spike tensor for this port (shape: [size])
+
+        Raises:
+            ValueError: If port not registered or size mismatch
+
+        Example:
+            >>> self.set_port_output("l6a", l6a_spikes)
+            >>> self.set_port_output("default", torch.cat([l23_spikes, l5_spikes]))
+        """
+        if port_name not in self._registered_ports:
+            raise ValueError(
+                f"Port '{port_name}' not registered in {self.__class__.__name__}. "
+                f"Available ports: {sorted(self._registered_ports)}"
+            )
+
+        expected_size = self._port_sizes[port_name]
+        if spikes.shape[0] != expected_size:
+            raise ValueError(
+                f"Port '{port_name}' in {self.__class__.__name__} expects {expected_size} "
+                f"neurons, got {spikes.shape[0]}"
+            )
+
+        self._port_outputs[port_name] = spikes
+
+    def get_port_output(self, port_name: Optional[str] = None) -> torch.Tensor:
+        """Get output from a specific port.
+
+        Used by AxonalProjection to route from specific outputs.
+
+        Args:
+            port_name: Name of the port. If None, returns "default" port.
+
+        Returns:
+            Spike tensor from the specified port
+
+        Raises:
+            ValueError: If port not found or no output set
+
+        Example:
+            >>> spikes = cortex.get_port_output("l6a")  # Get L6a output
+            >>> spikes = cortex.get_port_output()  # Get default output
+        """
+        if port_name is None:
+            port_name = "default"
+
+        if port_name not in self._port_outputs:
+            raise ValueError(
+                f"No output set for port '{port_name}' in {self.__class__.__name__}. "
+                f"Available outputs: {sorted(self._port_outputs.keys())}"
+            )
+
+        return self._port_outputs[port_name]
+
+    def clear_port_outputs(self) -> None:
+        """Clear all port outputs.
+
+        Called at the start of forward() to reset outputs from previous timestep.
+        Regions using ports should call this at the beginning of their forward() method.
+
+        Example:
+            >>> def forward(self, source_spikes):
+            >>>     self.clear_port_outputs()
+            >>>     # ... process layers ...
+            >>>     self.set_port_output("l6a", l6a_spikes)
+            >>>     return self.get_port_output("default")
+        """
+        self._port_outputs.clear()
+
+    def get_registered_ports(self) -> list[str]:
+        """Get list of all registered port names.
+
+        Returns:
+            Sorted list of port names
+
+        Example:
+            >>> ports = cortex.get_registered_ports()
+            >>> # ['default', 'l23', 'l5', 'l6a', 'l6b']
+        """
+        return sorted(self._registered_ports)
+
+    def has_port(self, port_name: str) -> bool:
+        """Check if a port is registered.
+
+        Args:
+            port_name: Name of the port to check
+
+        Returns:
+            True if port is registered, False otherwise
+
+        Example:
+            >>> if region.has_port("l6a"):
+            >>>     spikes = region.get_port_output("l6a")
+        """
+        return port_name in self._registered_ports
+
+    # =========================================================================
+    # State Reset
+    # =========================================================================
+
     def reset_state(self) -> None:
         """Reset neuron state and learning traces."""
         self.neurons.reset_state()
         self.output_spikes = None
+        self.clear_port_outputs()  # Clear port-based routing state
 
         # Reset learning rule states
         for strategy in self.plasticity_rules.values():
