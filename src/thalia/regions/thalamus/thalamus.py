@@ -41,25 +41,6 @@ Biological Basis:
 - Pulvinar: Visual attention and salience
 - Mediodorsal nucleus (MD): Prefrontal coordination
 
-FILE ORGANIZATION (680 lines)
-==============================
-Lines 1-95:    Module docstring, imports, ThalamicRelayConfig
-Lines 96-175:  ThalamicRelay class __init__, weight initialization
-Lines 176-320: Forward pass (relay neurons + TRN inhibition)
-Lines 321-450: Mode switching (burst vs tonic)
-Lines 451-550: Attentional gating (alpha oscillations)
-Lines 551-620: Diagnostics and health monitoring
-Lines 621-680: Utility methods (reset_state, get_full_state)
-
-NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
-
-When to Use:
-============
-- Between sensory input and cortex
-- For attentional modulation of sensory processing
-- Sleep-wake state transitions (burst vs tonic)
-- Implementing sensory gating and filtering
-
 Architecture Pattern:
 ====================
 
@@ -79,11 +60,6 @@ Architecture Pattern:
     │    CORTEX    │
     │  (L4 input)  │
     └──────────────┘
-
-References:
-- Sherman & Guillery (2002): The role of the thalamus in cortical function
-- Jones (2007): The thalamus (2nd edition)
-- Halassa & Kastner (2017): Thalamic functions in distributed cognitive control
 """
 
 from __future__ import annotations
@@ -141,7 +117,7 @@ class ThalamicRelay(NeuralRegion):
                      ↑              (inhibitory)
                      └── Recurrent inhibition
 
-    From LearnableComponent (abstract base):
+    From NeuralRegion (abstract base):
     ----------------------------------------
     - forward(input, **kwargs) → Tensor
     - reset_state() → None
@@ -217,7 +193,7 @@ class ThalamicRelay(NeuralRegion):
                 n_output=self.trn_size,
                 n_input=self.input_size,
                 sparsity=THALAMUS_RELAY_SPARSITY,
-                scale=THALAMUS_RELAY_SCALE,
+                weight_scale=THALAMUS_RELAY_SCALE,
                 device=self.device,
             ),
             requires_grad=False,
@@ -229,7 +205,7 @@ class ThalamicRelay(NeuralRegion):
                 n_output=self.trn_size,
                 n_input=self.relay_size,
                 sparsity=THALAMUS_TRN_FEEDBACK_SPARSITY,
-                scale=THALAMUS_TRN_FEEDBACK_SCALE,
+                weight_scale=THALAMUS_TRN_FEEDBACK_SCALE,
                 device=self.device,
             ),
             requires_grad=False,
@@ -241,7 +217,7 @@ class ThalamicRelay(NeuralRegion):
                 n_output=self.relay_size,
                 n_input=self.trn_size,
                 sparsity=THALAMUS_TRN_FEEDFORWARD_SPARSITY,
-                scale=config.trn_inhibition_strength,
+                weight_scale=config.trn_inhibition_strength,
                 device=self.device,
             ),
             requires_grad=False,
@@ -253,7 +229,7 @@ class ThalamicRelay(NeuralRegion):
                 n_output=self.trn_size,
                 n_input=self.trn_size,
                 sparsity=THALAMUS_SPATIAL_CENTER_SPARSITY,
-                scale=config.trn_recurrent_strength,
+                weight_scale=config.trn_recurrent_strength,
                 device=self.device,
             ),
             requires_grad=False,
@@ -752,7 +728,7 @@ class ThalamicRelay(NeuralRegion):
         self.state.trn_membrane = trn_membrane  # [n_trn]
         self.state.current_mode = current_mode  # [n_relay]
 
-        # Store for component state (LearnableComponent protocol)
+        # Store for component state (BrainComponent protocol)
         self.state.membrane = self.state.relay_membrane
         self.state.spikes = self.state.relay_spikes
 

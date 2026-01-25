@@ -11,12 +11,6 @@ Utility Methods:
 - _auto_grow_stp_modules(): Automatically grow all STP modules (Phase 1 improvement)
 - _validate_growth(): Post-growth validation checks (Phase 1 improvement)
 
-Historical Context:
-- Prior to this mixin, grow_output() was duplicated across 4+ regions (~320 lines)
-- This mixin consolidates weight and state expansion utilities
-- As of Dec 2025: All neurons use ConductanceLIF with direct grow_neurons() support
-- Jan 2026: Added Phase 1 validation helpers after fixing 18/18 growth tests
-
 Growth Checklist (for implementers of grow_output):
 1. ✅ Primary neurons - self.neurons.grow_neurons(n_new)
 2. ✅ Weight matrices - Add rows for new neurons
@@ -54,46 +48,10 @@ class GrowthMixin:
     This mixin provides standardized helper methods for:
     1. Expanding weight matrices when adding output neurons
     2. Expanding state tensors (traces, memory, eligibility)
-    3. (Phase 2) Opt-in registration for automatic subcomponent growth
+    3. Opt-in registration for automatic subcomponent growth
 
     All regions implement their own grow_output() methods and call
     neurons.grow_neurons() directly for neuron population growth.
-
-    Example Usage:
-        class MyRegion(NeuralRegion, GrowthMixin):
-            def __init__(self, config):
-                super().__init__(config)
-                # ... initialization ...
-
-                # Phase 2: Opt-in registration (optional)
-                self._register_stp('stp_recurrent', direction='both')
-                self._register_subcomponent('fsi_neurons', ratio=0.2)
-
-            def grow_output(self, n_new, initialization='xavier', sparsity=0.1):
-                old_n_output = self.config.n_output
-
-                # 1. Expand weights
-                self.weights = self._expand_weights(
-                    self.weights, n_new, initialization, sparsity
-                )
-
-                # 2. Update config
-                self.config = replace(self.config, n_output=self.config.n_output + n_new)
-
-                # 3. Grow neurons
-                self.neurons.grow_neurons(n_new)
-
-                # 4. Expand state tensors (if needed)
-                expanded = self._expand_state_tensors(
-                    {'traces': self.traces}, n_new
-                )
-                self.traces = expanded['traces']
-
-                # 5. Auto-grow registered components (Phase 2)
-                self._auto_grow_registered_components('output', n_new)
-
-                # 6. Validate
-                self._validate_output_growth(old_n_output, n_new)
 
     Attributes:
         config: Region configuration with w_min/w_max and n_output
@@ -181,7 +139,7 @@ class GrowthMixin:
                 n_output=n_new,
                 n_input=n_input,
                 sparsity=sparsity,
-                scale=scale,
+                weight_scale=scale,
                 device=device,
             )
         else:  # uniform
@@ -342,7 +300,7 @@ class GrowthMixin:
                 n_output=n_new,
                 n_input=n_input,
                 sparsity=sparsity,
-                scale=self.config.w_max * 0.2,
+                weight_scale=self.config.w_max * 0.2,
                 device=device,
             )
         else:  # uniform
@@ -413,7 +371,7 @@ class GrowthMixin:
                 n_output=n_output,
                 n_input=n_new,
                 sparsity=sparsity,
-                scale=self.config.w_max * 0.2,
+                weight_scale=self.config.w_max * 0.2,
                 device=device,
             )
         else:  # uniform

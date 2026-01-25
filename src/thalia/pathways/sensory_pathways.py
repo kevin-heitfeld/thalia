@@ -84,17 +84,6 @@ Our Design:
     │   Brain      │  Cortex → Hippocampus → PFC → Striatum
     └──────────────┘
 
-FILE ORGANIZATION (1058 lines):
-===============================
-Lines 1-85:    Module docstring, imports
-Lines 86-215:  SensoryPathwayConfig, VisualConfig classes
-Lines 216-505: VisualPathway implementation (retina-like)
-Lines 506-750: AuditoryPathway implementation (cochlea-like)
-Lines 751-950: LanguagePathway implementation (embedding-based)
-Lines 951-1058: Utility functions and sensory encoding helpers
-
-NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to navigate between modalities.
-
 Author: Thalia Project
 Date: December 2025
 """
@@ -124,7 +113,6 @@ from thalia.constants.sensory import (
     RETINA_ADAPTATION_DECAY,
     RETINA_ADAPTATION_RATE,
 )
-from thalia.core.protocols.component import LearnableComponent
 from thalia.managers.component_registry import register_pathway
 
 
@@ -156,25 +144,25 @@ class SensoryPathwayConfig:
     device: str = "cpu"
 
 
-class SensoryPathway(LearnableComponent):
+class SensoryPathway(nn.Module):
     """
     Abstract base class for sensory pathways.
 
-    Inherits from LearnableComponent, implementing the NeuralPathway protocol
-    to provide a standardized way to encode raw sensory input into spike patterns.
+    Sensory pathways convert raw input (images, audio, text) to spike patterns.
+    They do NOT learn (no weights) - they are deterministic encoders.
 
     All modalities must implement:
     1. forward(): Convert raw input to spike patterns (standard PyTorch, ADR-007)
     2. get_modality(): Return modality type
-    3. reset_state(): Clear temporal state (inherited from Protocol)
-    4. get_diagnostics(): Report pathway metrics (inherited from Protocol)
+    3. reset_state(): Clear temporal state
+    4. get_diagnostics(): Report pathway metrics
 
     The output format is standardized so the brain can
     process any modality uniformly.
     """
 
     def __init__(self, config: SensoryPathwayConfig):
-        super().__init__(config=config)  # type: ignore[call-arg]
+        super().__init__()
         self.config = config
         self.device = torch.device(config.device)  # type: ignore[misc]
 

@@ -346,11 +346,6 @@ def apply_spillover_to_weights(
 
     Returns:
         Effective weights (direct + spillover) [n_post, n_pre]
-
-    Example:
-        >>> weights = torch.randn(100, 50)
-        >>> config = SpilloverConfig(enabled=True, strength=0.15)
-        >>> effective_weights = apply_spillover_to_weights(weights, config)
     """
     spillover = SpilloverTransmission(weights, config, device)
     return spillover.get_effective_weights()

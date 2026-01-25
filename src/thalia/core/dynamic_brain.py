@@ -42,7 +42,7 @@ from thalia.core.diagnostics import (
     StriatumDiagnostics,
 )
 from thalia.core.neural_region import NeuralRegion
-from thalia.core.protocols.component import LearnableComponent
+from thalia.core.protocols.component import BrainComponent
 from thalia.diagnostics import CriticalityMonitor, HealthMonitor
 from thalia.io.checkpoint_manager import CheckpointManager
 from thalia.neuromodulation.manager import NeuromodulatorManager
@@ -72,7 +72,7 @@ class DynamicBrain(nn.Module):
     - Plugin support for external components
 
     Architecture:
-        - components: Dict[name -> LearnableComponent] (nodes)
+        - components: Dict[name -> BrainComponent] (nodes)
         - connections: Dict[(source, target) -> Pathway] (edges)
         - topology: Directed graph adjacency list
         - execution: Topological ordering
@@ -100,8 +100,8 @@ class DynamicBrain(nn.Module):
 
     def __init__(
         self,
-        components: Dict[str, LearnableComponent],
-        connections: Dict[Tuple[str, str], LearnableComponent],
+        components: Dict[str, BrainComponent],
+        connections: Dict[Tuple[str, str], BrainComponent],
         brain_config: "BrainConfig",
         connection_specs: Optional[Dict[Tuple[str, str], Any]] = None,
     ):
@@ -144,7 +144,7 @@ class DynamicBrain(nn.Module):
 
         # Store connections with tuple keys for easy lookup
         # Also register in ModuleDict for parameter tracking
-        self.connections: Dict[Tuple[str, str], LearnableComponent] = connections
+        self.connections: Dict[Tuple[str, str], BrainComponent] = connections
         self._connection_modules = nn.ModuleDict(
             {f"{src}_to_{tgt}": pathway for (src, tgt), pathway in connections.items()}
         )
@@ -1689,7 +1689,7 @@ s
             # when components don't override with their own forward() logic.
             return torch.cat(inputs, dim=-1)
 
-    def get_component(self, name: str) -> LearnableComponent:
+    def get_component(self, name: str) -> BrainComponent:
         """Get component by name.
 
         Args:
@@ -1704,14 +1704,14 @@ s
         if name not in self.components:
             available = list(self.components.keys())
             raise KeyError(f"Component '{name}' not found. Available: {available}")
-        # Cast from Module to LearnableComponent (all our components are LearnableComponent)
-        component: LearnableComponent = self.components[name]  # type: ignore[assignment]
+        # Cast from Module to BrainComponent (all our components are BrainComponent)
+        component: BrainComponent = self.components[name]  # type: ignore[assignment]
         return component
 
     def add_component(
         self,
         name: str,
-        component: LearnableComponent,
+        component: BrainComponent,
     ) -> None:
         """Dynamically add a component (e.g., during growth).
 
@@ -1743,7 +1743,7 @@ s
         self,
         source: str,
         target: str,
-        pathway: LearnableComponent,
+        pathway: BrainComponent,
     ) -> None:
         """Dynamically add a connection.
 

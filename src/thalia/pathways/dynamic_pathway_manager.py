@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import torch
 
-from thalia.core.protocols.component import LearnableComponent
+from thalia.core.protocols.component import BrainComponent
 from thalia.typing import TopologyGraph
 
 # Type alias for dynamic pathway states
@@ -40,7 +40,7 @@ class DynamicPathwayManager:
 
     def __init__(
         self,
-        connections: Dict[Tuple[str, str], LearnableComponent],
+        connections: Dict[Tuple[str, str], BrainComponent],
         topology: TopologyGraph,
         device: torch.device,
         dt_ms: float,
@@ -69,7 +69,7 @@ class DynamicPathwayManager:
                     self._component_pathways[target] = []
                 self._component_pathways[target].append((source, target))
 
-    def get_all_pathways(self) -> Dict[str, LearnableComponent]:
+    def get_all_pathways(self) -> Dict[str, BrainComponent]:
         """Get all pathways as dict for compatibility.
 
         Returns:

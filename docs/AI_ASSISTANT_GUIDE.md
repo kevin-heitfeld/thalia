@@ -10,7 +10,7 @@ This guide helps AI assistants (and developers) navigate the Thalia codebase eff
 - **CircularDelayBuffer**: Axonal conduction delays (1-20ms)
 - **Learning**: Pluggable strategies at target synapses (region.synaptic_weights), NOT in pathways
 - **Input Pattern**: Regions receive `Dict[str, torch.Tensor]` from multiple sources
-- **Mixins**: Neuromodulator, Growth, Resettable, Diagnostics
+- **Mixins**: Neuromodulator, Growth, Diagnostics
 
 **Finding Code (use built-in tools):**
 - Regions: `grep_search(query="@register_region", isRegexp=false)`

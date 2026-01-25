@@ -10,9 +10,10 @@ not to pathways. This matches biological reality.
 
 from __future__ import annotations
 
-from thalia.synapses.afferent import AfferentSynapses, AfferentSynapsesConfig
+from .spillover import SpilloverConfig, SpilloverTransmission, apply_spillover_to_weights
 
 __all__ = [
-    "AfferentSynapses",
-    "AfferentSynapsesConfig",
+    "SpilloverConfig",
+    "SpilloverTransmission",
+    "apply_spillover_to_weights",
 ]

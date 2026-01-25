@@ -728,10 +728,7 @@ class LayeredCortex(NeuralRegion):
         # self.bcm_l4, self.bcm_l23, self.bcm_l5 composite strategies
 
     def _reset_subsystems(self, *names: str) -> None:
-        """Reset state of named subsystems that have reset_state() method.
-
-        Helper for backward compatibility with LearnableComponent pattern.
-        """
+        """Reset state of named subsystems that have reset_state() method."""
         for name in names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)
@@ -739,10 +736,7 @@ class LayeredCortex(NeuralRegion):
                     subsystem.reset_state()
 
     def _reset_scalars(self, **scalar_values: Any) -> None:
-        """Reset scalar attributes to specified values.
-
-        Helper for backward compatibility with LearnableComponent pattern.
-        """
+        """Reset scalar attributes to specified values."""
         for name, value in scalar_values.items():
             setattr(self, name, value)
 

@@ -75,7 +75,7 @@ class DeepCerebellarNuclei(nn.Module):
                 n_output=n_output,
                 n_input=n_purkinje,
                 sparsity=0.2,  # 20% connectivity
-                scale=1.5,  # Strong inhibition
+                weight_scale=1.5,  # Strong inhibition
                 device=device,
             ).abs()  # Make positive (inhibitory conductance)
         )
@@ -87,7 +87,7 @@ class DeepCerebellarNuclei(nn.Module):
                 n_output=n_output,
                 n_input=n_mossy,
                 sparsity=0.1,  # 10% connectivity
-                scale=0.8,  # Moderate excitation
+                weight_scale=0.8,  # Moderate excitation
                 device=device,
             ).abs()  # Make positive (excitatory)
         )
@@ -266,7 +266,7 @@ class DeepCerebellarNuclei(nn.Module):
             n_output=n_new,
             n_input=self.n_purkinje,
             sparsity=0.2,
-            scale=1.5,
+            weight_scale=1.5,
             device=self.device,
         ).abs()
         self.purkinje_to_dcn = nn.Parameter(
@@ -278,7 +278,7 @@ class DeepCerebellarNuclei(nn.Module):
             n_output=n_new,
             n_input=self.n_mossy,
             sparsity=0.1,
-            scale=0.8,
+            weight_scale=0.8,
             device=self.device,
         ).abs()
         self.mossy_to_dcn = nn.Parameter(
@@ -322,7 +322,7 @@ class DeepCerebellarNuclei(nn.Module):
                 n_output=self.n_output,
                 n_input=n_new,
                 sparsity=0.2,
-                scale=1.5,
+                weight_scale=1.5,
                 device=self.device,
             ).abs()
             self.purkinje_to_dcn = nn.Parameter(
@@ -335,7 +335,7 @@ class DeepCerebellarNuclei(nn.Module):
                 n_output=self.n_output,
                 n_input=n_new,
                 sparsity=0.1,
-                scale=0.8,
+                weight_scale=0.8,
                 device=self.device,
             ).abs()
             self.mossy_to_dcn = nn.Parameter(

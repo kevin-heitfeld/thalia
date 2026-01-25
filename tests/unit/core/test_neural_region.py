@@ -8,7 +8,6 @@ Tests the new biologically accurate architecture where:
 
 import pytest
 import torch
-import torch.nn as nn
 
 from thalia.core.neural_region import NeuralRegion
 
@@ -306,36 +305,6 @@ class TestNeuralRegionStateManagement:
         input_spikes = torch.rand(100, device="cuda") > 0.5
         output = region.forward({"input": input_spikes})
         assert output.device.type == "cuda"
-
-
-class TestNeuralRegionCompatibility:
-    """Test compatibility interface (n_input, n_output, reset_state)."""
-
-    def test_has_n_input_n_output(self):
-        """Test that region exposes n_input and n_output."""
-        n_neurons = 100
-        n_source1 = 50
-        n_source2 = 75
-        region = NeuralRegion(n_neurons=n_neurons, device="cpu")
-
-        assert hasattr(region, "n_input")
-        assert hasattr(region, "n_output")
-        assert region.n_output == n_neurons
-
-        # n_input updates as sources added
-        assert region.n_input == 0
-        region.add_input_source("source1", n_input=n_source1)
-        assert region.n_input == n_source1
-        region.add_input_source("source2", n_input=n_source2)
-        assert region.n_input == n_source1 + n_source2
-
-    def test_is_nn_module(self):
-        """Test that NeuralRegion is an nn.Module."""
-        region = NeuralRegion(n_neurons=100, device="cpu")
-        assert isinstance(region, nn.Module)
-
-        # Not tied to old LearnableComponent hierarchy
-        # This is intentional - v2.0 is independent
 
 
 if __name__ == "__main__":

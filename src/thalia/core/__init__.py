@@ -14,7 +14,7 @@ For other components, import from their actual locations:
 
 from __future__ import annotations
 
-from thalia.core.diagnostics import (
+from .diagnostics import (
     BrainSystemDiagnostics,
     DiagnosticLevel,
     DiagnosticsConfig,
@@ -24,7 +24,7 @@ from thalia.core.diagnostics import (
 )
 
 # Core infrastructure only
-from thalia.core.errors import (
+from .errors import (
     BiologicalPlausibilityError,
     CheckpointError,
     ComponentError,
@@ -38,25 +38,15 @@ from thalia.core.errors import (
     validate_temporal_causality,
     validate_weight_matrix,
 )
-from thalia.core.pathway_state import (
+from .pathway_state import (
     AxonalProjectionState,
     PathwayState,
 )
-from thalia.core.protocols.component import (
+from .protocols.component import (
     BrainComponent,
-    BrainComponentBase,
     BrainComponentMixin,
 )
-from thalia.core.protocols.neural import (
-    Configurable,
-    Diagnosable,
-    Forwardable,
-    Learnable,
-    NeuralComponentProtocol,
-    Resettable,
-    WeightContainer,
-)
-from thalia.core.region_state import (
+from .region_state import (
     BaseRegionState,
     RegionState,
     get_state_version,
@@ -87,17 +77,8 @@ __all__ = [
     "StriatumDiagnostics",
     "HippocampusDiagnostics",
     "BrainSystemDiagnostics",
-    # Neural Protocols
-    "Resettable",
-    "Learnable",
-    "Forwardable",
-    "Diagnosable",
-    "WeightContainer",
-    "Configurable",
-    "NeuralComponentProtocol",
     # Component Protocols
     "BrainComponent",
-    "BrainComponentBase",
     "BrainComponentMixin",
     # State Management (Pathways)
     "PathwayState",

@@ -12,13 +12,13 @@ from thalia.pathways.axonal_projection import AxonalProjection, SourceSpec
 
 if TYPE_CHECKING:
     from thalia.core.dynamic_brain import DynamicBrain
-    from thalia.core.protocols.component import LearnableComponent
+    from thalia.core.neural_region import NeuralRegion
 
 
 def add_region_to_trained_brain(
     brain: "DynamicBrain",
     region_name: str,
-    region: "LearnableComponent",
+    region: "NeuralRegion",
     input_pathway_from: Optional[str] = None,
     output_pathway_to: Optional[str] = None,
 ) -> None:
@@ -40,29 +40,6 @@ def add_region_to_trained_brain(
         region: Initialized region component
         input_pathway_from: Source region for input pathway (optional)
         output_pathway_to: Target region for output pathway (optional)
-
-    Example:
-        >>> from thalia.regions.motor import MotorCortex, MotorCortexConfig
-        >>>
-        >>> # Create new motor cortex region
-        >>> motor_config = MotorCortexConfig(
-        ...     n_input=100,
-        ...     n_output=50,
-        ...     device=brain.device,
-        ... )
-        >>> motor_cortex = MotorCortex(motor_config)
-        >>>
-        >>> # Add to trained brain
-        >>> add_region_to_trained_brain(
-        ...     brain,
-        ...     region_name="motor_cortex",
-        ...     region=motor_cortex,
-        ...     input_pathway_from="cortex",
-        ...     output_pathway_to="cerebellum",
-        ... )
-        >>>
-        >>> # Now brain has motor cortex capability
-        >>> # Cortex → Motor Cortex → Cerebellum
     """
     # Register new region
     setattr(brain, region_name, region)
@@ -93,7 +70,7 @@ def add_region_to_trained_brain(
 def _create_input_pathway(
     brain: "DynamicBrain",
     source_region_name: str,
-    target_region: "LearnableComponent",
+    target_region: "NeuralRegion",
     target_region_name: str,
 ) -> None:
     """Create pathway from existing region to new region."""
@@ -109,7 +86,6 @@ def _create_input_pathway(
 
     pathway = AxonalProjection(
         sources=sources,
-        axonal_delay_ms=3.0,  # Default 3ms delay
         device=brain.device,
     )
     pathway.to(brain.device)
@@ -122,13 +98,11 @@ def _create_input_pathway(
 
 def _create_output_pathway(
     brain: "DynamicBrain",
-    source_region: "LearnableComponent",
+    source_region: "NeuralRegion",
     source_region_name: str,
     target_region_name: str,
 ) -> None:
     """Create pathway from new region to existing region."""
-    from .lesion import _get_region
-
     # Get source region size
     source_size = source_region.config.n_output
 
@@ -138,7 +112,6 @@ def _create_output_pathway(
 
     pathway = AxonalProjection(
         sources=sources,
-        axonal_delay_ms=3.0,  # Default 3ms delay
         device=brain.device,
     )
     pathway.to(brain.device)

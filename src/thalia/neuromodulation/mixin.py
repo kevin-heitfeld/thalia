@@ -52,25 +52,6 @@ Components respond differently to the SAME global signal via:
 2. **Gating logic**: Hippocampus uses ACh for encode/retrieve modes
 3. **Pathway-specific modulation**: Striatum D1 vs D2 pathways respond oppositely
 
-Example - Dopamine sensitivity varies by receptor density:
-
-.. code-block:: python
-
-    # Striatum: High D1/D2 receptor density
-    striatum_lr = self.get_effective_learning_rate(
-        base_lr=0.01, dopamine_sensitivity=2.0
-    )
-
-    # Cortex: Moderate D1/D2 density
-    cortex_lr = self.get_effective_learning_rate(
-        base_lr=0.01, dopamine_sensitivity=1.0
-    )
-
-    # Cerebellum: Low D1/D2 density
-    cerebellum_lr = self.get_effective_learning_rate(
-        base_lr=0.01, dopamine_sensitivity=0.3
-    )
-
 Biological Basis:
 =================
 Neuromodulators gate synaptic plasticity and influence neural dynamics:
@@ -96,26 +77,6 @@ Neuromodulators gate synaptic plasticity and influence neural dynamics:
   - Managed by: LocusCoeruleusSystem in Brain
   - Projection: Global throughout entire brain (one of most widespread systems)
   - Regional specificity via: Different α/β receptor densities and local circuit properties
-
-Usage Example:
-==============
-    class MyRegion(NeuromodulatorMixin, LearnableComponent):
-        def forward(self, input, dt_ms=1.0):
-            output = self._compute_output(input)
-
-            # Use dopamine-modulated learning rate:
-            lr = self.get_effective_learning_rate(base_lr=0.01)
-            self._apply_plasticity(lr=lr)
-
-            # Optionally use ACh for encoding/retrieval mode:
-            if self.state.acetylcholine > 0.5:
-                # Encoding mode
-                pass
-            else:
-                # Retrieval mode
-                pass
-
-            return output
 
 Author: Thalia Project
 Date: December 2025

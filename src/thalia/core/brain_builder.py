@@ -4,57 +4,6 @@ Brain Builder - Fluent API for Brain Construction
 This module provides a fluent, progressive API for building brain architectures
 using registered components.
 
-Instead of verbose dataclass configuration:
-    config = ThaliaConfig(
-        brain=BrainConfig(...),
-        ...
-    )
-    brain = BrainBuilder.preset("default", config.brain)
-
-Use fluent builder pattern:
-    brain = (
-        BrainBuilder(config)
-        .add_component("thalamus", "thalamic_relay", n_neurons=100)
-        .add_component("cortex", "layered_cortex", n_neurons=500)
-        .connect("thalamus", "cortex", "spiking")
-        .build()
-    )
-
-Or use preset architectures:
-    brain = BrainBuilder.preset("default", config)
-
-## Architecture v2.0: Axonal Projections vs Spiking Pathways
-
-**TWO architectural patterns are available:**
-
-### 1. AxonalProjection (Recommended for inter-region connections)
-- **Biologically accurate**: Represents axon bundles (no synapses)
-- **No weights**: Synapses belong to target region
-- **No learning**: Plasticity occurs at synapses, not axons
-- **Pure routing**: Concatenates sources, applies conduction delays
-- **Usage**: `builder.connect(src, tgt, pathway_type="axonal")`
-
-Example (cortex → striatum):
-```python
-# AxonalProjection: Just axons (2ms delay)
-builder.connect("cortex", "striatum", pathway_type="axonal")
-
-# Corticostriatal synapses are OWNED by striatum (at MSN dendrites)
-# No double-synapse problem, clear ownership
-```
-
-### 2. AxonalProjection Architecture
-- **Pure axonal transmission**: Delays only, no weights
-- **Synapses at target**: Weights stored in target region's dendrites
-- **Multi-source support**: Multiple input streams to single target
-- **Usage**: `builder.connect(src, tgt, pathway_type="axonal")`
-
-**Benefits of AxonalProjection:**
-1. Matches biology (axons ≠ synapses)
-2. Clear synaptic ownership (target owns synapses)
-3. Simpler growth (no double-resize)
-4. Better checkpointing (weights in regions, not pathways)
-
 Author: Thalia Project
 Date: December 15, 2025
 """
@@ -69,7 +18,7 @@ from thalia.config.brain_config import BrainConfig
 from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.component_spec import ComponentSpec, ConnectionSpec
 from thalia.core.dynamic_brain import DynamicBrain
-from thalia.core.protocols.component import BrainComponent, LearnableComponent
+from thalia.core.protocols.component import BrainComponent
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
 
@@ -185,27 +134,6 @@ class BrainBuilder:
         - Preset architectures for common use cases
         - Validation before building
         - Save/load component graphs to JSON
-
-    Example - Custom Brain:
-        builder = BrainBuilder(brain_config)
-        builder.add_component("input", "thalamic_relay", n_neurons=128)
-        builder.add_component("process", "layered_cortex", n_neurons=512)
-        builder.add_component("memory", "hippocampus", n_neurons=256)
-        builder.connect("input", "process", "spiking")
-        builder.connect("process", "memory", "spiking")
-        brain = builder.build()
-
-    Example - Preset Brain:
-        brain = BrainBuilder.preset("default", brain_config)
-
-    Example - Chained Construction:
-        brain = (
-            BrainBuilder(brain_config)
-            .add_component("thalamus", "thalamic_relay", n_neurons=100)
-            .add_component("cortex", "layered_cortex", n_neurons=500)
-            .connect("thalamus", "cortex", "spiking")
-            .build()
-        )
     """
 
     # Registry of preset architectures
@@ -256,24 +184,6 @@ class BrainBuilder:
         Raises:
             ValueError: If component name already exists
             KeyError: If registry_name not found in ComponentRegistry
-
-        Example:
-            # Input interface (no incoming connections) - needs input_size
-            builder.add_component(
-                name="sensory_input",
-                registry_name="thalamic_relay",
-                input_size=128,
-                relay_size=128,
-            )
-
-            # Processing component - input_size inferred from connection
-            builder.add_component(
-                name="cortex",
-                registry_name="layered_cortex",
-                l4_size=64, l23_size=96, l5_size=32, l6a_size=16, l6b_size=16,
-            )
-
-            builder.connect("sensory_input", "cortex")
         """
         # Validate name uniqueness
         if name in self._components:
@@ -336,25 +246,6 @@ class BrainBuilder:
 
         Raises:
             ValueError: If source or target component doesn't exist
-
-        Example:
-            # Simple connection (default is axonal_projection)
-            builder.connect("thalamus", "cortex")
-
-            # Axonal projection with custom delay
-            builder.connect("cortex", "striatum", pathway_type="axonal_projection", source_port="l5")
-
-            # Layer-specific routing
-            builder.connect("cortex", "hippocampus", source_port="l23")
-
-            # Multiple input types
-            builder.connect("thalamus", "cortex", target_port="feedforward")
-            builder.connect("pfc", "cortex", target_port="top_down")
-
-            # Axonal with custom delay
-            builder.connect("hippocampus", "pfc",
-                          pathway_type="axonal",
-                          axonal_delay_ms=3.0)
         """
         # Validate components exist
         if source not in self._components:
@@ -613,7 +504,7 @@ class BrainBuilder:
         )
 
     def _get_pathway_source_size(
-        self, source_comp: LearnableComponent, source_port: Optional[str]
+        self, source_comp: BrainComponent, source_port: Optional[str]
     ) -> int:
         """Get output size for pathway from source component and port.
 
@@ -651,7 +542,7 @@ class BrainBuilder:
     def _initialize_target_weights(
         self,
         brain: DynamicBrain,
-        components: Dict[str, LearnableComponent],
+        components: Dict[str, BrainComponent],
         connection_specs: Dict[Tuple[str, str], Any],
     ) -> None:
         """Initialize synaptic weights in target regions after pathways are created.
@@ -726,7 +617,7 @@ class BrainBuilder:
     def _create_axonal_projection(
         self,
         target_specs: List[ConnectionSpec],
-        components: Dict[str, LearnableComponent],
+        components: Dict[str, BrainComponent],
         target_name: str,
     ) -> AxonalProjection:
         """Create AxonalProjection from connection specs with per-target delay support.
@@ -827,7 +718,7 @@ class BrainBuilder:
         return projection
 
     def _get_pathway_target_size(
-        self, target_comp: LearnableComponent, target_port: Optional[str]
+        self, target_comp: BrainComponent, target_port: Optional[str]
     ) -> int:
         """Get output size for pathway to target component.
 
@@ -885,7 +776,7 @@ class BrainBuilder:
             raise ValueError("Validation failed:\n" + "\n".join(errors))
 
         # Instantiate components
-        components: Dict[str, LearnableComponent] = {}
+        components: Dict[str, BrainComponent] = {}
         for name, spec in self._components.items():
             # Get config class from registry
             config_class = self._registry.get_config_class(spec.component_type, spec.registry_name)
@@ -934,7 +825,7 @@ class BrainBuilder:
             if hasattr(component, "to"):
                 component.to(self.brain_config.device)
 
-            components[name] = cast(LearnableComponent, component)
+            components[name] = cast(BrainComponent, component)
             spec.instance = component
 
         # === REGISTER DIRECT INPUT SOURCES FOR INPUT INTERFACES ===
@@ -1115,9 +1006,6 @@ class BrainBuilder:
 
         Args:
             filepath: Path to JSON file
-
-        Example:
-            builder.save_spec(Path("architectures/my_brain.json"))
         """
         spec = {
             "components": [
@@ -1156,13 +1044,6 @@ class BrainBuilder:
 
         Returns:
             BrainBuilder populated with loaded specification
-
-        Example:
-            builder = BrainBuilder.load_spec(
-                Path("architectures/my_brain.json"),
-                brain_config
-            )
-            brain = builder.build()
         """
         with open(filepath, "r") as f:
             spec = json.load(f)
@@ -1201,18 +1082,6 @@ class BrainBuilder:
             name: Preset name (e.g., "default", "minimal")
             description: Human-readable description
             builder_fn: Function that configures a BrainBuilder
-
-        Example:
-            def build_minimal(builder: BrainBuilder):
-                builder.add_component("input", "thalamic_relay", n_neurons=64)
-                builder.add_component("output", "layered_cortex", n_neurons=128)
-                builder.connect("input", "output")
-
-            BrainBuilder.register_preset(
-                name="minimal",
-                description="Minimal 2-component brain for testing",
-                builder_fn=build_minimal,
-            )
         """
         cls._presets[name] = PresetArchitecture(
             name=name,
@@ -1239,16 +1108,6 @@ class BrainBuilder:
 
         Raises:
             KeyError: If preset name not found
-
-        Example:
-            brain = BrainBuilder.preset("default", brain_config)
-
-            # With overrides
-            brain = BrainBuilder.preset(
-                "default",
-                brain_config,
-                cortex_neurons=1024,  # Override default
-            )
         """
         if name not in cls._presets:
             available = list(cls._presets.keys())
@@ -1291,13 +1150,6 @@ class BrainBuilder:
 
         Raises:
             KeyError: If preset name not found
-
-        Example:
-            # Start with preset and add custom components
-            builder = BrainBuilder.preset_builder("minimal", brain_config)
-            builder.add_component("pfc", "prefrontal", n_input=128, n_output=64)
-            builder.connect("cortex", "pfc", pathway_type="spiking")
-            brain = builder.build()
         """
         if name not in cls._presets:
             available = list(cls._presets.keys())
@@ -1385,7 +1237,7 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     - Reinforcement learning (striatal reward processing)
     - Motor control and predictions (cerebellar forward models)
 
-    **Pathway Types** (v2.0 Architecture):
+    **Pathway Types**:
     - Thalamus is a REGION (has relay neurons), not a pathway
     - All inter-region connections use AXONAL projections (pure spike routing)
     - Synapses are owned by target regions (biologically accurate)

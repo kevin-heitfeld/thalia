@@ -185,7 +185,7 @@ Common implementation patterns and best practices.
 - **Region-Specific Factories**: `create_cortex_strategy()`, `create_striatum_strategy()`, etc.
 - **Composite Strategies**: Combining multiple learning rules (e.g., STDP + BCM)
 - **State Management**: Dataclass pattern for neural state
-- **Mixin Composition**: 4 mixins (Neuromodulator, Growth, Resettable, Diagnostics)
+- **Mixin Composition**: 4 mixins (Neuromodulator, Growth, Diagnostics)
 - **Component Parity**: NeuralRegion architecture
 | **component-parity.md** | Component design patterns | 🟢 Current | surgery/__init__.py |
 | **component-interface-enforcement.md** | Protocol enforcement guide | 🟢 Current | base.py, component.py |

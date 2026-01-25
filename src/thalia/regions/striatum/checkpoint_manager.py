@@ -864,7 +864,7 @@ class StriatumCheckpointManager(BaseCheckpointManager):
     def _get_neuromodulator_state(self) -> Dict[str, Any]:
         """Extract neuromodulator state for striatum (dopamine)."""
         s = self.striatum
-        # Use centralized neuromodulator API from LearnableComponent
+        # Use centralized neuromodulator API from NeuralRegion
         return {
             "dopamine": (
                 s.get_neuromodulator("dopamine") if hasattr(s, "get_neuromodulator") else 0.0

@@ -17,34 +17,6 @@ This consolidates:
 - Dopamine/neuromodulator gating
 - Soft bounds and weight clamping
 - Learning metrics collection
-
-Usage Example:
-==============
-    class MyRegion(LearningStrategyMixin, LearnableComponent):
-        def __init__(self, config):
-            super().__init__(config)
-            # Choose strategy based on learning rule
-            self.learning_strategy = create_strategy(
-                'stdp',
-                learning_rate=config.stdp_lr,
-                a_plus=0.01,
-                a_minus=0.012,
-                tau_plus=20.0,
-                tau_minus=20.0,
-            )
-
-        def forward(self, input_spikes, **kwargs):
-            # Process input
-            output_spikes = self._compute_output(input_spikes)
-
-            # Apply learning automatically
-            metrics = self.apply_strategy_learning(
-                input_spikes,
-                output_spikes,
-                weights=self.weights,
-            )
-
-            return output_spikes
 """
 
 from __future__ import annotations

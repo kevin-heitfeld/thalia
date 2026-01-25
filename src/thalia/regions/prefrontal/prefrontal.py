@@ -32,32 +32,12 @@ The prefrontal cortex (PFC) specializes in cognitive control and flexible behavi
    - Integrates information over longer timescales
    - Supports temporal abstraction and planning
 
-FILE ORGANIZATION (1072 lines)
-===============================
-Lines 1-85:    Module docstring, imports, PrefrontalConfig
-Lines 86-260:  Prefrontal class __init__, weight initialization
-Lines 261-430: Forward pass (input → WM update → output)
-Lines 431-590: Working memory gating logic (dopamine-modulated)
-Lines 591-760: Rule learning and context-dependent processing
-Lines 761-900: Growth and neurogenesis (grow_output)
-Lines 901-1020: Diagnostics and health monitoring
-Lines 1021-1072: Utility methods (reset_state, get_full_state)
-
-NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
-
 Biological Basis:
 =================
 - Layer 2/3 recurrent circuits for WM maintenance
 - D1/D2 receptors modulate gain and gating
 - Strong connections with striatum (for action selection)
 - Connections with hippocampus (for episodic retrieval)
-
-When to Use:
-============
-- Working memory tasks (maintain info over delays)
-- Rule learning (learn context-dependent responses)
-- Sequence generation (use rules to generate behavior)
-- Any task requiring flexible, goal-directed control
 """
 
 from __future__ import annotations
@@ -286,9 +266,9 @@ class Prefrontal(NeuralRegion):
     - Rule learning and context-dependent behavior
     - Slow integration for temporal abstraction
 
-    Inherited from LearnableComponent:
+    Inherited from NeuralRegion:
     ----------------------------------
-    From LearningStrategyMixin (via LearnableComponent):
+    From LearningStrategyMixin (via NeuralRegion):
         - add_strategy(strategy) → None
         - apply_strategy_learning(pre, post, **kwargs) → Dict
         - Pluggable learning rules (STDP with dopamine modulation)
@@ -566,10 +546,7 @@ class Prefrontal(NeuralRegion):
         return neurons
 
     def _reset_subsystems(self, *names: str) -> None:
-        """Reset state of named subsystems that have reset_state() method.
-
-        Helper from BrainComponentBase for backward compatibility.
-        """
+        """Reset state of named subsystems that have reset_state() method."""
         for name in names:
             if hasattr(self, name):
                 subsystem = getattr(self, name)

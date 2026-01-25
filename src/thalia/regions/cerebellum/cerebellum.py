@@ -28,33 +28,6 @@ enabling fast, precise learning of input-output mappings without trial-and-error
    - Cerebellum learns in 1-10 trials with immediate feedback
    - Supervised signal provides direct gradient information
    - No exploration needed - direct instruction
-
-FILE ORGANIZATION (759 lines)
-==============================
-Lines 1-80:    Module docstring, imports
-Lines 81-170:  CerebellumConfig dataclass
-Lines 171-280: Cerebellum class __init__, weight initialization
-Lines 281-370: Forward pass (parallel fibers → Purkinje cells)
-Lines 371-500: Error learning (climbing fiber supervision, delta rule)
-Lines 501-650: Growth and neurogenesis (grow_output)
-Lines 651-730: Diagnostics and health monitoring
-Lines 731-759: Utility methods (reset_state, get_full_state)
-
-NAVIGATION TIP: Use VSCode's "Go to Symbol" (Ctrl+Shift+O) to jump between methods.
-
-Biological Basis:
-=================
-- Marr (1969) and Albus (1971): Cerebellar learning theory
-- Parallel fibers (inputs) → Purkinje cells (outputs)
-- Climbing fibers carry error/teaching signals
-- LTD at parallel fiber-Purkinje synapses when climbing fiber active
-
-When to Use:
-============
-- You have explicit target outputs (labels)
-- You want to learn arbitrary input→output mappings
-- You need fast learning (few trials)
-- Precise timing is important
 """
 
 from __future__ import annotations
@@ -175,7 +148,7 @@ class Cerebellum(NeuralRegion):
         - detect_runaway_excitation(spikes) → bool
         - detect_silence(spikes) → bool
 
-    From LearnableComponent (abstract base):
+    From NeuralRegion (abstract base):
         - forward(input, **kwargs) → Tensor [must implement]
         - reset_state() → None
         - get_diagnostics() → Dict
@@ -404,7 +377,7 @@ class Cerebellum(NeuralRegion):
         self.to(self.device)
 
     def _initialize_weights_tensor(self, n_output: int, n_input: int) -> torch.nn.Parameter:
-        """Initialize weights tensor (no longer part of LearnableComponent pattern)."""
+        """Initialize weights tensor."""
         weights = WeightInitializer.gaussian(
             n_output=n_output,
             n_input=n_input,

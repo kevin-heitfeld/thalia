@@ -57,13 +57,6 @@ class NeuralRegion(
 ):
     """Base class for brain regions with biologically accurate synaptic inputs.
 
-    This is a NEW hierarchy for v3.0 architecture, independent of the legacy
-    BrainComponent system. Regions are nn.Module with specialized mixins.
-
-    **Note**: NeuralRegion does NOT inherit from BrainComponentBase. It's a simpler,
-    cleaner architecture for v3.0. Regions informally implement the BrainComponent
-    protocol through mixins, but aren't bound by the abstract base class.
-
     Mixins provide (MRO order):
     - nn.Module: PyTorch module functionality (FIRST for proper __init__)
     - BrainComponentMixin: Oscillator phase properties and defaults
@@ -79,53 +72,11 @@ class NeuralRegion(
     2. Define learning rules (per-source plasticity)
     3. Integrate multi-source inputs naturally
 
-    Example:
-        >>> # Create region with default learning rule
-        >>> region = NeuralRegion(
-        ...     n_neurons=500,
-        ...     neuron_config=ConductanceLIFConfig(),
-        ...     default_learning_strategy="stdp"
-        ... )
-        >>>
-        >>> # Add input sources with their synaptic weights
-        >>> region.add_input_source("thalamus", n_input=128)  # Uses default STDP
-        >>> region.add_input_source("hippocampus", n_input=200, learning_strategy="bcm")  # Override
-        >>>
-        >>> # Forward pass with multi-source input
-        >>> outputs = region.forward({
-        ...     "thalamus": thalamic_spikes,      # [128]
-        ...     "hippocampus": hippocampal_spikes # [200]
-        ... })  # Returns [500]
-
     Subclassing:
         Regions with internal structure (like LayeredCortex) should:
         1. Call super().__init__() to get synaptic_weights dict
         2. Define internal neurons/weights for within-region processing
         3. Override forward() to apply synaptic weights then internal processing
-
-        Example:
-            class LayeredCortex(NeuralRegion):
-                def __init__(self, ...):
-                    super().__init__(n_neurons=l23_size + l5_size, ...)
-
-                    # Internal layers
-                    self.l4_neurons = ConductanceLIF(l4_size, ...)
-                    self.l23_neurons = ConductanceLIF(l23_size, ...)
-
-                    # Internal weights (within cortex)
-                    self.w_l4_l23 = nn.Parameter(...)
-
-                    # External weights come from self.synaptic_weights dict!
-
-                def forward(self, inputs: Dict[str, Tensor]) -> Tensor:
-                    # Apply synaptic weights for thalamic input
-                    thalamic_current = self._apply_synapses("thalamus", inputs["thalamus"])
-
-                    # Internal cortical processing
-                    l4_spikes = self.l4_neurons(thalamic_current)
-                    l23_spikes = self._internal_l4_to_l23(l4_spikes)
-
-                    return l23_spikes
     """
 
     def __init__(
@@ -134,7 +85,6 @@ class NeuralRegion(
         neuron_config: Optional[ConductanceLIFConfig] = None,
         default_learning_strategy: Optional[str] = None,
         device: str = "cpu",
-        **kwargs,
     ):
         """Initialize neural region with neurons and empty synaptic weight dict.
 
@@ -249,7 +199,7 @@ class NeuralRegion(
                 learning_rate=0.001,  # Conservative default
             )
 
-    def forward(self, inputs: SourceOutputs, **kwargs) -> torch.Tensor:
+    def forward(self, inputs: SourceOutputs) -> torch.Tensor:
         """Process inputs through synapses and neurons.
 
         This is the core of biological integration:
@@ -576,7 +526,7 @@ class NeuralRegion(
                 n_output=self.n_neurons,
                 n_input=n_new,
                 sparsity=sparsity,
-                scale=weight_scale,
+                weight_scale=weight_scale,
                 device=self.device,
             )
 

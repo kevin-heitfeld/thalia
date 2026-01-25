@@ -79,7 +79,7 @@ class ActionSelectionMixin:
     config: "StriatumConfig"
     n_actions: int
     neurons_per_action: int
-    device: torch.device  # provided by LearnableComponent base class as @property
+    device: torch.device  # provided by NeuralRegion base class as @property
     state_tracker: Any  # StriatumStateTracker
     state: Any
     d1_pathway: StriatumPathway

@@ -15,9 +15,6 @@ from __future__ import annotations
 # Core pathway types
 from thalia.pathways.axonal_projection import AxonalProjection
 
-# Protocol
-from thalia.pathways.protocol import NeuralPathway
-
 # Sensory pathways
 from thalia.pathways.sensory_pathways import (
     AuditoryPathway,
@@ -27,8 +24,6 @@ from thalia.pathways.sensory_pathways import (
 )
 
 __all__ = [
-    # Protocol
-    "NeuralPathway",
     # Core pathways
     "AxonalProjection",
     # Sensory pathways

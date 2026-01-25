@@ -131,7 +131,7 @@ class RegionState(ABC):
 
 
 @dataclass
-class BaseRegionState:
+class BaseRegionState(RegionState):
     """Base implementation with common fields for most regions.
 
     Provides default implementations for common state elements.
