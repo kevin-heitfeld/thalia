@@ -230,8 +230,6 @@ src/thalia/regions/striatum/
 │   ├── StriatumLearningConfig
 │   └── StriatumHomeostasisConfig
 ├── striatum.py
-├── d1_pathway.py
-└── d2_pathway.py
 ```
 
 **Keep Inline** (simple auxiliary region):

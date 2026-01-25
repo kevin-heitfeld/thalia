@@ -56,6 +56,8 @@ import torch
 from thalia.config.region_configs import StriatumConfig
 from thalia.constants.exploration import SOFTMAX_TEMPERATURE_DEFAULT
 
+from .pathway_base import StriatumPathway
+
 
 class ActionSelectionMixin:
     """Mixin providing action selection methods for Striatum.
@@ -80,8 +82,8 @@ class ActionSelectionMixin:
     device: torch.device  # provided by LearnableComponent base class as @property
     state_tracker: Any  # StriatumStateTracker
     state: Any
-    d1_pathway: Any  # D1Pathway
-    d2_pathway: Any  # D2Pathway
+    d1_pathway: StriatumPathway
+    d2_pathway: StriatumPathway
     exploration: Any  # ExplorationManager (legacy name)
     _total_trials: int
     _action_counts: torch.Tensor

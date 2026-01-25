@@ -19,8 +19,7 @@ from thalia.constants.learning import LEARNING_RATE_STRIATUM_PFC_MODULATION
 from thalia.core.region_components import LearningComponent
 from thalia.managers.base_manager import ManagerContext
 
-from .d1_pathway import D1Pathway
-from .d2_pathway import D2Pathway
+from .pathway_base import StriatumPathway
 
 
 class StriatumLearningComponent(LearningComponent):
@@ -40,8 +39,8 @@ class StriatumLearningComponent(LearningComponent):
         self,
         config: StriatumConfig,
         context: ManagerContext,
-        d1_pathway: D1Pathway,
-        d2_pathway: D2Pathway,
+        d1_pathway: StriatumPathway,
+        d2_pathway: StriatumPathway,
     ):
         """Initialize striatum learning component.
 

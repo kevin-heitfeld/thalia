@@ -146,13 +146,11 @@ from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
 from .action_selection import ActionSelectionMixin
 from .checkpoint_manager import StriatumCheckpointManager
-from .d1_pathway import D1Pathway
-from .d2_pathway import D2Pathway
 from .exploration import ExplorationConfig, StriatumExplorationComponent
 from .forward_coordinator import ForwardPassCoordinator
 from .homeostasis_component import HomeostasisManagerConfig, StriatumHomeostasisComponent
 from .learning_component import StriatumLearningComponent
-from .pathway_base import StriatumPathwayConfig
+from .pathway_base import StriatumPathway, StriatumPathwayConfig
 from .state import StriatumState, StriatumStateTracker
 
 
@@ -388,8 +386,8 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
 
         # Create D1 and D2 pathways (neurons only, weights stored in parent)
-        self.d1_pathway = D1Pathway(d1_pathway_config)
-        self.d2_pathway = D2Pathway(d2_pathway_config)
+        self.d1_pathway = StriatumPathway.create_d1(d1_pathway_config)
+        self.d2_pathway = StriatumPathway.create_d2(d2_pathway_config)
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Parvalbumin+ Interneurons

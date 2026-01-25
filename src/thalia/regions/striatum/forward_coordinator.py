@@ -71,8 +71,7 @@ from thalia.neuromodulation.mixin import validate_finite
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
 if TYPE_CHECKING:
-    from thalia.regions.striatum.d1_pathway import D1Pathway
-    from thalia.regions.striatum.d2_pathway import D2Pathway
+    from thalia.regions.striatum.pathway_base import StriatumPathway
     from thalia.regions.striatum.homeostasis_component import StriatumHomeostasisComponent
 
 
@@ -91,8 +90,8 @@ class ForwardPassCoordinator:
     def __init__(
         self,
         config: StriatumConfig,
-        d1_pathway: D1Pathway,
-        d2_pathway: D2Pathway,
+        d1_pathway: StriatumPathway,
+        d2_pathway: StriatumPathway,
         d1_neurons: ConductanceLIF,
         d2_neurons: ConductanceLIF,
         homeostasis_manager: Optional[StriatumHomeostasisComponent],

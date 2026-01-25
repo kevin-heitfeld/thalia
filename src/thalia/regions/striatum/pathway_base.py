@@ -17,7 +17,7 @@ remaining independent from the external pathway hierarchy.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -106,7 +106,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
         self.config = config
         self.device = config.device
 
-        # Pathway identity (set by subclass)
+        # Pathway identity (set by subclass or factory method)
         self.pathway_name: str = ""  # "D1" or "D2"
         self.dopamine_polarity: float = 1.0  # +1.0 for D1, -1.0 for D2
 
@@ -129,6 +129,48 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin, ABC):
 
         # Neuron population
         self.neurons = self._create_neurons()
+
+    @classmethod
+    def create_d1(cls, config: StriatumPathwayConfig) -> "StriatumPathway":
+        """Factory method to create D1 pathway (direct/Go pathway).
+
+        D1 pathways use DIRECT dopamine modulation:
+        - Dopamine burst (DA+): Strengthen eligible synapses (LTP)
+        - Dopamine dip (DA-): Weaken eligible synapses (LTD)
+
+        This implements the "GO" signal: rewarded actions become stronger.
+
+        Args:
+            config: Pathway configuration with n_input, n_output, learning rates
+
+        Returns:
+            StriatumPathway configured as D1 pathway
+        """
+        pathway = cls(config)
+        pathway.pathway_name = "D1"
+        pathway.dopamine_polarity = 1.0  # Direct modulation
+        return pathway
+
+    @classmethod
+    def create_d2(cls, config: StriatumPathwayConfig) -> "StriatumPathway":
+        """Factory method to create D2 pathway (indirect/NoGo pathway).
+
+        D2 pathways use INVERTED dopamine modulation:
+        - Dopamine burst (DA+): WEAKEN eligible synapses (LTD)
+        - Dopamine dip (DA-): STRENGTHEN eligible synapses (LTP)
+
+        This implements the "NOGO" signal: punished actions become more inhibited.
+
+        Args:
+            config: Pathway configuration with n_input, n_output, learning rates
+
+        Returns:
+            StriatumPathway configured as D2 pathway
+        """
+        pathway = cls(config)
+        pathway.pathway_name = "D2"
+        pathway.dopamine_polarity = -1.0  # Inverted modulation
+        return pathway
 
     # =========================================================================
     # WEIGHT ACCESS (Phase 2 - Option B)
