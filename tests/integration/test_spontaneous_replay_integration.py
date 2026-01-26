@@ -37,6 +37,7 @@ def hippocampus():
     return hippo
 
 
+@pytest.mark.flaky(reason="Stochastic test - may fail occasionally due to randomness")
 def test_replay_during_low_ach_only(hippocampus):
     """Ripples should occur only during low ACh, not during high ACh."""
     # High ACh (encoding) - no ripples

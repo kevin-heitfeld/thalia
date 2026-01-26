@@ -170,7 +170,7 @@ class TwoCompartmentPyramidal:
 ### Biological Accuracy Assessment
 
 #### Strengths
-1. **Trisynaptic Architecture**: Faithful DG→CA3→CA1 implementation
+1. **Trisynaptic Architecture**: Faithful DG→CA3→CA2→CA1 implementation with social memory layer
 2. **Pattern Separation**: DG achieves ~2% sparsity (biological: 1-5%)
 3. **Theta Rhythm**: 6-10 Hz oscillations gate encoding/retrieval
 4. **ACh Modulation**: High ACh = encoding, low ACh = retrieval

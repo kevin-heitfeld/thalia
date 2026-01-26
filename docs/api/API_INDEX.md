@@ -1,7 +1,7 @@
 # API Index
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 Comprehensive searchable index of all Thalia API components.
@@ -21,7 +21,7 @@ Comprehensive searchable index of all Thalia API components.
 | **Constants** | 0 | [CONSTANTS_REFERENCE.md](CONSTANTS_REFERENCE.md) |
 | **Protocols** | 1 | [PROTOCOLS_REFERENCE.md](PROTOCOLS_REFERENCE.md) |
 | **Type Aliases** | 14 | [TYPE_ALIASES.md](TYPE_ALIASES.md) |
-| **Enumerations** | 44 | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |
+| **Enumerations** | 42 | [ENUMERATIONS_REFERENCE.md](ENUMERATIONS_REFERENCE.md) |
 | **State Classes** | 9 | [STATE_CLASSES_REFERENCE.md](STATE_CLASSES_REFERENCE.md) |
 | **Neuron Factories** | 5 | [NEURON_FACTORIES_REFERENCE.md](NEURON_FACTORIES_REFERENCE.md) |
 | **Compute Functions** | 5 | [COMPUTE_FUNCTIONS_REFERENCE.md](COMPUTE_FUNCTIONS_REFERENCE.md) |

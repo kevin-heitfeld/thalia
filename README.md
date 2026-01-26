@@ -65,7 +65,7 @@ brain.deliver_reward(external_reward=1.0)
 graph TD
     A[Sensory Input] --> B[Thalamus]
     B -->|5ms delay| C[Cortex L4→L2/3→L5→L6a/L6b]
-    C -->|3ms| D[Hippocampus DG→CA3→CA1]
+    C -->|3ms| D[Hippocampus DG→CA3→CA2→CA1]
     C -->|5ms| E[Striatum D1/D2]
     C -->|3ms| F[Prefrontal Cortex]
     D -->|5ms| F

@@ -149,18 +149,20 @@ Parallel mode defaults to CPU device:
 ### Configuration
 
 ```python
-from thalia.config import ThaliaConfig, BrainConfig
+from thalia.config import BrainConfig
+from thalia.core import BrainBuilder
 
-# Enable parallel mode
-config = ThaliaConfig(
-    global_=GlobalConfig(device="cpu"),  # CPU required
-    brain=BrainConfig(
-        parallel=True,  # Enable multiprocessing
-        ...
-    ),
+# Configure brain with device and timing
+brain_config = BrainConfig(
+    device="cpu",  # CPU required for multiprocessing
+    dt_ms=1.0,
+    # Note: Parallel mode requires OS-level process management
+    # See multiprocessing documentation
 )
 
-brain = DynamicBrain.from_thalia_config(config)
+builder = BrainBuilder(brain_config)
+# Add components...
+brain = builder.build()
 ```
 
 ## Consequences
@@ -282,23 +284,30 @@ brain = DynamicBrain.from_thalia_config(config)
 ### Existing Code (Sequential)
 
 ```python
-# No changes needed - sequential mode is default
-config = ThaliaConfig(
-    brain=BrainConfig(parallel=False),  # or omit (default)
-)
-brain = DynamicBrain.from_thalia_config(config)
+# Sequential mode is the default and standard approach
+from thalia.config import BrainConfig
+from thalia.core import BrainBuilder
+
+brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+builder = BrainBuilder(brain_config)
+# Add components...
+brain = builder.build()
 ```
 
 ### Enabling Parallel Mode
 
 ```python
-# Minimal change to enable parallelism
-config = ThaliaConfig(
-    global_=GlobalConfig(device="cpu"),  # Required
-    brain=BrainConfig(parallel=True),    # Enable
-)
-brain = DynamicBrain.from_thalia_config(config)
+# Note: Parallel processing requires external orchestration
+# BrainConfig focuses on single-process execution
+from thalia.config import BrainConfig
+from thalia.core import BrainBuilder
 
+brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+builder = BrainBuilder(brain_config)
+# Add components...
+brain = builder.build()
+
+# For multi-process training, use Python's multiprocessing module
 # Training scripts need __main__ guard on Windows
 if __name__ == "__main__":
     main()  # Your training loop

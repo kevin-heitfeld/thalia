@@ -4,6 +4,8 @@
 **Status**: Implemented
 **Related**: ADR-008 (Neural Component Consolidation), component-parity.md
 
+> **⚠️ Terminology Note**: This document uses `NeuralComponent` in examples as a conceptual name. In the actual codebase, brain regions inherit from `NeuralRegion` (`thalia.core.neural_region`) and implement the `BrainComponent` protocol (`thalia.core.protocols.component`).
+
 ## Overview
 
 As of December 11, 2025, Thalia enforces the `BrainComponent` protocol through an abstract base class (`BrainComponentBase`). This ensures all neural components (regions and pathways) implement the complete interface at compile time.
@@ -55,10 +57,10 @@ NeuralComponent                    # Unified base for ALL components
 
 Regions                            Pathways
     │                                  │
-    ├── Striatum                       ├── SpikingPathway
-    ├── Hippocampus                    ├── VisualPathway
-    ├── LayeredCortex                  ├── LanguagePathway
-    ├── PredictiveCortex               └── ...
+    ├── Striatum                       ├── AxonalProjection (spike routing)
+    ├── Hippocampus                    ├── VisualPathway (sensory encoding)
+    ├── LayeredCortex                  ├── LanguagePathway (sensory encoding)
+    ├── PredictiveCortex               └── AuditoryPathway (sensory encoding)
     ├── Prefrontal
     ├── Cerebellum
     └── ...
@@ -124,15 +126,15 @@ All components MUST implement:
 ### For New Components
 
 ```python
-from thalia.regions.base import NeuralComponent
-from thalia.config.base import RegionConfig
+from thalia.core.neural_region import NeuralRegion
+from thalia.core.base.component_config import NeuralComponentConfig
 
-class MyNewRegion(NeuralComponent):
+class MyNewRegion(NeuralRegion):
     """My new brain region."""
 
-    def __init__(self, config: RegionConfig):
-        super().__init__(config)
-        # NeuralComponent sets device and dtype automatically
+    def __init__(self, n_neurons: int, config: NeuralComponentConfig, device: str = "cpu"):
+        super().__init__(n_neurons, config, device=device)
+        # NeuralRegion handles core functionality (neurons, mixins)
         # Just initialize your weights and neurons
         self.weights = self._initialize_weights()
         self.neurons = self._create_neurons()
@@ -210,39 +212,6 @@ For each component:
 - [ ] Optional: Override `grow_output()` for output dimension growth
 - [ ] Optional: Override `check_health()` for custom health checks
 - [ ] Optional: Override `set_oscillator_phases()` if using oscillators
-
-## Testing Interface Compliance
-
-Use the provided test script to verify all components implement the interface:
-
-```bash
-python temp/test_component_enforcement.py
-```
-
-Output:
-```
-Testing Component Interface Enforcement
-
-======================================================================
-
-1. Testing Brain Regions:
-----------------------------------------------------------------------
-✓ Striatum                       - PASS
-✓ TrisynapticHippocampus         - PASS
-✓ LayeredCortex                  - PASS
-✓ PredictiveCortex               - PASS
-✓ Prefrontal                     - PASS
-✓ Cerebellum                     - PASS
-
-2. Testing Neural Pathways:
-----------------------------------------------------------------------
-✓ SpikingPathway                 - PASS
-✓ VisualPathway                  - PASS
-✓ LanguagePathway                - PASS
-
-======================================================================
-✓ All components implement the BrainComponent interface correctly!
-```
 
 ## Benefits
 

@@ -40,7 +40,7 @@ This guide explains the **state management pattern** used consistently across al
 **Implementation**:
 ```python
 from dataclasses import dataclass
-from thalia.regions.base import RegionState
+from thalia.core.region_state import RegionState
 
 @dataclass
 class MyRegionState(RegionState):

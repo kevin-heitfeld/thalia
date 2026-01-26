@@ -1,7 +1,7 @@
 # Architecture Guide
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This guide provides architectural diagrams and design patterns for the Thalia framework.
@@ -197,12 +197,10 @@ graph TD
 
 ```mermaid
 graph TD
-    Global[ThaliaConfig<br/>Global settings]
     Brain[BrainConfig<br/>Architecture]
     Regional[*RegionConfig<br/>Region-specific]
     Builder[BrainBuilder<br/>Size specification]
 
-    Global --> Brain
     Brain --> Regional
     Builder --> Regional
     Regional --> Cortex[LayeredCortexConfig]

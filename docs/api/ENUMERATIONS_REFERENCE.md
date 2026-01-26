@@ -1,19 +1,19 @@
 # Enumerations Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all enumeration types used in Thalia.
 
-Total: 44 enumerations
+Total: 42 enumerations
 
 ## 📑 Table of Contents
 
 Jump to category:
 
 - [Thalia/Components](#thaliacomponents) (3 enums)
-- [Thalia/Config](#thaliaconfig) (6 enums)
+- [Thalia/Config](#thaliaconfig) (4 enums)
 - [Thalia/Constants](#thaliaconstants) (1 enums)
 - [Thalia/Core](#thaliacore) (2 enums)
 - [Thalia/Datasets](#thaliadatasets) (8 enums)
@@ -123,37 +123,6 @@ Curriculum stages matching main training plan.
 - `GRAMMAR` — Stage 2 (grammar, composition)
 - `READING` — Stage 3 (reading, planning)
 - `ABSTRACT` — Stage 4 (abstract reasoning)
-
----
-
-#### [``DecodingType``](../../src/thalia/config/language_config.py#L31) (Enum)
-
-Types of spike decoding strategies.
-
-**Source**: [`thalia/config/language_config.py`](../../src/thalia/config/language_config.py)
-
-**Members**:
-
-- `RATE` — 'rate'
-- `TEMPORAL` — 'temporal'
-- `POPULATION` — 'population'
-- `ATTENTION` — 'attention'
-
----
-
-#### [``EncodingType``](../../src/thalia/config/language_config.py#L21) (Enum)
-
-Types of spike encoding strategies.
-
-**Source**: [`thalia/config/language_config.py`](../../src/thalia/config/language_config.py)
-
-**Members**:
-
-- `RATE` — 'rate'
-- `TEMPORAL` — 'temporal'
-- `PHASE` — 'phase'
-- `BURST` — 'burst'
-- `SDR` — 'sdr'
 
 ---
 

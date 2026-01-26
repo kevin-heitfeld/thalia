@@ -1,29 +1,14 @@
 # Usage Examples
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs usage examples extracted from docstrings and training scripts.
 
-Total: 4 examples
+Total: 3 examples
 
 ## Examples by Category
-
-### Component
-
-#### Example:
-
-**Source**: `thalia\core\neural_region.py`
-
-```python
-self.clear_port_outputs()
-                # process layers ...
-                self.set_port_output("l6a", l6a_spikes)
-                return self.get_port_output("default")
-```
-
----
 
 ### Learning
 

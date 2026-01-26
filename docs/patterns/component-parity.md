@@ -94,7 +94,7 @@ class LayeredCortex(NeuralRegion):
 ```
 
 **Key Features**:
-- **Inheritance**: `nn.Module + 4 mixins` (no BrainComponentBase)
+- **Inheritance**: `nn.Module + 7 mixins` (BrainComponent, Neuromodulator, Growth, Resettable, Diagnostics, StateLoading, LearningStrategy)
 - **Synaptic Weights**: `Dict[str, Tensor]` per source at dendrites
 - **Learning Strategies**: `Dict[str, LearningStrategy]` per source
 - **Forward**: `Dict[str, Tensor] → Tensor` with automatic learning
@@ -240,8 +240,8 @@ class BrainComponent(Protocol):
     def grow_output(self, n_new: int, ...) -> None: ...
     def get_capacity_metrics(self) -> CapacityMetrics: ...
 
-# Step 2: NeuralComponent base implements for both regions and pathways
-class NeuralComponent(BrainComponent):
+# Step 2: NeuralRegion base implements growth for all regions
+class NeuralRegion(nn.Module, BrainComponentMixin, ...):
     def grow_input(self, n_new, initialization, sparsity):
         # Expand input weight columns when upstream grows
         ...
@@ -254,14 +254,13 @@ class NeuralComponent(BrainComponent):
         from thalia.coordination.growth import GrowthManager
         return GrowthManager(self.name).get_capacity_metrics(self)
 
-# Step 3: Both regions and pathways inherit unified implementation
-class Striatum(NeuralComponent):
-    # Inherits growth methods from NeuralComponent
+# Step 3: All regions inherit unified implementation from NeuralRegion
+class Striatum(NeuralRegion):
+    # Inherits growth methods from NeuralRegion
     pass
 
-class SpikingPathway(NeuralComponent):
-    # Inherits growth methods from NeuralComponent
-    pass
+# Note: Pathways (AxonalProjection) don't grow - they're pure spike routing
+# Growth happens at regions, which own synaptic weights
 
 # Step 4: Tests for both
 def test_region_growth(striatum): ...
@@ -270,13 +269,13 @@ def test_pathway_growth(cortex_to_hippo): ...
 
 ## Why Pathways Matter
 
-**Pathways are active learning components:**
+**Pathways:**
 
-1. **Inter-region pathways** (SpikingPathway):
-   - Learn via STDP during forward passes
-   - Adapt connection strengths continuously
-   - Can become saturated (too strong) or silent (too weak)
-   - Need to grow when connected regions grow
+1. **Axonal projections** (AxonalProjection):
+   - Pure spike routing with axonal delays (NO learning)
+   - NO synaptic weights (weights belong to target regions)
+   - Multi-source concatenation and delay buffering
+   - Biologically accurate: axons transmit, dendrites integrate
 
 2. **Sensory pathways** (SensoryPathway):
    - Transform raw inputs (images, audio, tokens) to spikes
@@ -308,7 +307,7 @@ If you find code that only works with regions:
 
 **Before:**
 ```python
-def analyze_learning(region: NeuralComponent) -> Dict:
+def analyze_learning(region: NeuralRegion) -> Dict:
     """Analyze learning in brain region only."""
     metrics = region.get_diagnostics()
     health = region.check_health()
@@ -317,10 +316,10 @@ def analyze_learning(region: NeuralComponent) -> Dict:
 
 **After:**
 ```python
-from thalia.regions.base import NeuralComponent
+from thalia.core.protocols.component import BrainComponent
 
-def analyze_learning(component: NeuralComponent) -> Dict:
-    """Analyze learning in any neural component (region or pathway)."""
+def analyze_learning(component: BrainComponent) -> Dict:
+    """Analyze any component (region or pathway) via protocol."""
     metrics = component.get_diagnostics()
     health = component.check_health()
     return {"metrics": metrics, "health": health}

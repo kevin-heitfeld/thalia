@@ -1,7 +1,7 @@
 # Datasets Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all dataset classes and factory functions for curriculum training stages.

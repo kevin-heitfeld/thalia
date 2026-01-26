@@ -36,7 +36,7 @@ This ensures the correct environment is activated with all dependencies (pytest,
 - **Goal**: Match or exceed LLM capabilities using biologically-plausible mechanisms
 
 **Key Components**:
-- **NeuralRegion**: Base class (nn.Module + 4 mixins) for brain regions
+- **NeuralRegion**: Base class (nn.Module + 7 mixins: BrainComponent, Neuromodulator, Growth, Resettable, Diagnostics, StateLoading, LearningStrategy) for brain regions
 - **Learning Strategies**: Pluggable learning rules (STDP, BCM, Hebbian, Three-factor, etc.)
 - **AxonalProjection**: Pure spike routing with delays (NO weights)
 - **Synaptic Weights**: Stored at target dendrites in `region.synaptic_weights` dict
@@ -46,7 +46,7 @@ This ensures the correct environment is activated with all dependencies (pytest,
 ### 1. Brain Regions AND Pathways are Specialized
 Each region uses pluggable learning strategies:
 - **Striatum**: `create_striatum_strategy()` → Three-factor (eligibility × dopamine)
-- **Hippocampus**: `create_hippocampus_strategy()` → STDP (one-shot capable)
+- **Hippocampus**: `create_hippocampus_strategy()` → STDP (one-shot capable, DG→CA3→CA2→CA1)
 - **Cortex**: `create_cortex_strategy()` → STDP + BCM (composite)
 - **Cerebellum**: `create_cerebellum_strategy()` → Error-corrective (delta rule)
 - **Prefrontal**: Gated Hebbian (custom implementation)
@@ -177,7 +177,7 @@ Select-String -Path src\* -Pattern "CircularDelayBuffer" -Recurse
 ## Implemented Features (December 2025)
 
 ### Core Systems ✅
-- **Brain Regions**: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA1), Striatum (D1/D2 pathways), PFC, Cerebellum, Thalamus
+- **Brain Regions**: Cortex (laminar L4→L2/3→L5), Hippocampus (DG→CA3→CA2→CA1 with social memory), Striatum (D1/D2 pathways), PFC, Cerebellum, Thalamus
 - **Neurons**: ConductanceLIF (conductance-based, voltage-dependent currents) - ONLY neuron model
 - **Learning Rules**: STDP, BCM, Hebbian, three-factor (dopamine-gated), error-corrective
 - **Neuromodulators**: Dopamine, acetylcholine, norepinephrine (centralized management via NeuromodulatorManager)

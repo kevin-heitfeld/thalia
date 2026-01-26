@@ -4,7 +4,7 @@
 **Purpose**: Understanding Thalia's mixin system
 
 > **ðŸ“š For complete method signatures and parameters of core NeuralRegion mixins, see [MIXINS_REFERENCE.md](../api/MIXINS_REFERENCE.md)**
-
+> **⚠️ Terminology Note**: Code examples use `NeuralComponent` as a conceptual base class name. In actual code, regions inherit from `NeuralRegion` (`thalia.core.neural_region`), which provides the same mixin functionality.
 This guide focuses on **usage patterns** and **when to use** different mixins (both core and specialized).
 
 ---

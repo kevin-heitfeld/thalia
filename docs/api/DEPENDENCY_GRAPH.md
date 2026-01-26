@@ -1,7 +1,7 @@
 # Dependency Graph
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This document visualizes the dependency relationships between Thalia modules.
@@ -143,7 +143,7 @@ graph TB
 # Layer 1 (Foundation)
 from thalia.core.protocols import NeuralComponent
 from thalia.core.errors import ConfigurationError
-from thalia.config import ThaliaConfig
+from thalia.config import BrainConfig
 
 # Layer 2 (Components)
 from thalia.components.neurons import ConductanceLIF

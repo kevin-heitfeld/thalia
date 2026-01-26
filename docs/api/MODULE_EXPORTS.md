@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 46 modules, 468 exports
+Total: 46 modules, 465 exports
 
 ## 📑 Table of Contents
 
@@ -38,7 +38,6 @@ Quick jump to module:
 **Exports** (20):
 
 - `__version__`
-- `ThaliaConfig`
 - `BrainConfig`
 - `ComponentGraph`
 - `ConnectionGraph`
@@ -57,6 +56,7 @@ Quick jump to module:
 - `DynamicBrain`
 - `NeuralComponentConfig`
 - `Striatum`
+- `StriatumConfig`
 
 **Usage**:
 
@@ -192,16 +192,6 @@ from thalia.components.synapses import InitStrategy
 
 **Exports** (20):
 
-- `ThaliaConfig`
-- `print_config`
-- `validate_thalia_config`
-- `validate_brain_config`
-- `validate_global_consistency`
-- `validate_region_sizes`
-- `check_config_and_warn`
-- `ConfigValidationError`
-- `ValidatedConfig`
-- `ValidatorRegistry`
 - `BaseConfig`
 - `BaseLearningConfig`
 - `ModulatedLearningConfig`
@@ -210,13 +200,23 @@ from thalia.components.synapses import InitStrategy
 - `BrainConfig`
 - `CortexType`
 - `NeuromodulationConfig`
-- `TrainingConfig`
+- `CurriculumStage`
+- `get_curriculum_growth_config`
 - `LayeredCortexConfig`
+- `PredictiveCortexConfig`
+- `HippocampusConfig`
+- `StriatumConfig`
+- `PrefrontalConfig`
+- `CerebellumConfig`
+- `ThalamicRelayConfig`
+- `MultimodalIntegrationConfig`
+- `LayerSizeCalculator`
+- `BiologicalRatios`
 
 **Usage**:
 
 ```python
-from thalia.config import ThaliaConfig
+from thalia.config import BaseConfig
 ```
 
 ---
@@ -480,7 +480,7 @@ from thalia.io import BrainCheckpoint
 
 **Source**: [`thalia/language/__init__.py`](../../src/thalia/language/__init__.py)
 
-**Exports** (9):
+**Exports** (7):
 
 - `SpikeEncoder`
 - `SpikeEncoderConfig`
@@ -489,8 +489,6 @@ from thalia.io import BrainCheckpoint
 - `SpikeDecoderConfig`
 - `OscillatoryPositionEncoder`
 - `PositionEncoderConfig`
-- `LanguageBrainInterface`
-- `LanguageInterfaceConfig`
 
 **Usage**:
 
@@ -657,11 +655,10 @@ from thalia.memory import MemoryPressureDetector
 
 **Source**: [`thalia/mixins/__init__.py`](../../src/thalia/mixins/__init__.py)
 
-**Exports** (7):
+**Exports** (6):
 
 - `DeviceMixin`
 - `ResettableMixin`
-- `ConfigurableMixin`
 - `DiagnosticCollectorMixin`
 - `DiagnosticsMixin`
 - `GrowthMixin`

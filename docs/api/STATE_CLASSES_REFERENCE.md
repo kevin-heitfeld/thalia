@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-25 23:23:15
+> Last updated: 2026-01-26 13:45:45
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.
@@ -62,8 +62,6 @@ Total region states: 9
 
 | Field | Type | Default |
 |-------|------|----------|
-| `spikes` | `Optional[torch.Tensor]` | `None` |
-| `membrane` | `Optional[torch.Tensor]` | `None` |
 | `dopamine` | `float` | `DA_BASELINE_STANDARD` |
 | `acetylcholine` | `float` | `ACH_BASELINE` |
 | `norepinephrine` | `float` | `NE_BASELINE` |
@@ -171,7 +169,7 @@ Total region states: 9
 
 ---
 
-### [``PredictiveCortexState``](../../src/thalia/regions/cortex/state.py#L251)
+### [``PredictiveCortexState``](../../src/thalia/regions/cortex/state.py#L247)
 
 **Base Class**: `BaseRegionState`  
 **Version**: 1  

@@ -1,6 +1,6 @@
 # Biological Port Migration Complete
 
-**Date:** December 2025  
+**Date:** December 2025
 **Status:** ✅ Complete (Task #5 from biological port migration)
 
 ## Overview
@@ -144,5 +144,5 @@ Existing code using implicit default ports continues to work without changes.
 
 - **ADR-015**: Port-Based Routing for Biologically-Accurate Connections
 - **Thalamus Feedback**: `docs/design/L6_TRN_FEEDBACK_LOOP.md`
-- **Hippocampal Circuit**: Trisynaptic pathway (EC→DG→CA3→CA1)
+- **Hippocampal Circuit**: Trisynaptic pathway (EC→DG→CA3→CA2→CA1 with social memory)
 - **Striatal Pathways**: D1/D2 opponent pathways for action selection

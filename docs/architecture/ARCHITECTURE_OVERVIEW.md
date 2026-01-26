@@ -1,6 +1,6 @@
 # Thalia Architecture Overview
 
-**Last Updated**: December 21, 2025
+**Last Updated**: January 26, 2026
 
 ## Introduction
 
@@ -75,20 +75,25 @@ DynamicBrain (Component-Based Architecture)
 │   └── ConsolidationManager (memory replay & offline learning)
 ├── Brain Regions (brain.components["name"])
 │   ├── NeuralRegion
-│   │   ├── Inheritance: nn.Module + 4 mixins
+│   │   ├── Inheritance: nn.Module + 7 mixins
+│   │   │   ├── BrainComponentMixin (oscillator phase properties)
 │   │   │   ├── NeuromodulatorMixin (DA/ACh/NE)
 │   │   │   ├── GrowthMixin (dynamic expansion)
 │   │   │   ├── ResettableMixin (state management)
-│   │   │   └── DiagnosticsMixin (health monitoring)
+│   │   │   ├── DiagnosticsMixin (health monitoring)
+│   │   │   ├── StateLoadingMixin (checkpoint loading)
+│   │   │   └── LearningStrategyMixin (pluggable learning rules)
 │   │   ├── Synaptic Weights: Dict[source_name, Tensor]
 │   │   ├── Learning Strategies: Dict[source_name, Strategy]
 │   │   └── Forward: Dict[str, Tensor] → Tensor
-│   ├── LayeredCortex (L4→L2/3→L5 microcircuit)
-│   ├── TrisynapticHippocampus (DG→CA3→CA2→CA1)
+│   ├── LayeredCortex (L4→L2/3→L5→L6a/L6b laminar microcircuit)
+│   ├── PredictiveCortex (Predictive coding with error-driven learning)
+│   ├── TrisynapticHippocampus (DG→CA3→CA2→CA1 with social memory)
 │   ├── Striatum (D1/D2 pathways, three-factor learning)
 │   ├── Prefrontal (working memory, gated Hebbian)
 │   ├── Cerebellum (error-corrective, motor learning)
-│   └── Thalamus (sensory relay, attention gating)
+│   ├── Thalamus (sensory relay, attention gating)
+│   └── MultimodalIntegration (cross-modal binding and integration)
 ├── Axonal Projections (brain.connections[(src, tgt)])
 │   ├── AxonalProjection (pure spike routing, NO weights)
 │   ├── CircularDelayBuffer (1-20ms axonal delays)
@@ -276,15 +281,22 @@ Hierarchical planning and temporal abstraction:
 
 **Function**: Sensory processing and feature extraction
 
+**Implementations**:
+- **LayeredCortex**: 6-layer canonical microcircuit (L4→L2/3→L5→L6a/L6b)
+- **PredictiveCortex**: Predictive coding with local error-driven learning
+
 **Learning Rules**:
 - BCM (Bienenstock-Cooper-Munro) for feature selectivity
 - STDP (Spike-Timing-Dependent Plasticity)
 - Lateral inhibition for competition
+- Predictive coding (error-based local learning)
 
 **Key Features**:
 - Multi-modal processing (vision, audio, text)
 - Hierarchical feature extraction
 - Sparse coding
+- Corticothalamic feedback (L6a→TRN, L6b→Relay)
+- Predictive error minimization (PredictiveCortex)
 
 #### Hippocampus
 
@@ -309,7 +321,7 @@ Hierarchical planning and temporal abstraction:
 
 #### Prefrontal Cortex (PFC)
 
-**Location**: `src/thalia/regions/prefrontal.py`
+**Location**: `src/thalia/regions/prefrontal/prefrontal.py`
 
 **Function**: Working memory, planning, cognitive control
 
@@ -354,7 +366,7 @@ Hierarchical planning and temporal abstraction:
 
 #### Cerebellum
 
-**Location**: `src/thalia/regions/cerebellum_region.py`
+**Location**: `src/thalia/regions/cerebellum/cerebellum.py`
 
 **Function**: Motor learning and error correction with coordinated plasticity
 
@@ -383,7 +395,7 @@ Hierarchical planning and temporal abstraction:
 
 #### Thalamus
 
-**Location**: `src/thalia/regions/thalamus.py`
+**Location**: `src/thalia/regions/thalamus/thalamus.py`
 
 **Function**: Sensory relay, gating, and attentional modulation
 
@@ -399,6 +411,24 @@ Hierarchical planning and temporal abstraction:
 - Developmental progression: Shifts from reactive (bottom-up) to proactive (top-down)
 
 **See**: `src/thalia/pathways/attention/` for attention pathway implementations
+
+#### MultimodalIntegration
+
+**Location**: `src/thalia/regions/multisensory.py`
+
+**Function**: Cross-modal binding and integration of multiple sensory modalities
+
+**Learning Rules**:
+- Hebbian plasticity for strengthening co-active cross-modal connections
+- BCM rule for competitive learning within modality pools
+- STDP for spike-timing dependent temporal binding
+
+**Key Features**:
+- Separate processing pools for visual, auditory, and language inputs
+- Gamma-band (40 Hz) synchronization for feature binding
+- Cross-modal attention and enhancement
+- Audiovisual speech integration (McGurk effect)
+- Embodied language grounding (words → perceptual features)
 
 ---
 
@@ -479,11 +509,14 @@ Centralized systems (neuromodulators, oscillators) compute once and broadcast to
 
 ### 2. Mixin-Based Functionality
 
-Regions compose functionality via mixins:
-- `NeuromodulatedMixin` - Dopamine/NE/ACh receptivity
-- `OscillatorMixin` - Oscillator phase tracking
-- `IntrinsicMotivationMixin` - Curiosity/novelty
-- `CheckpointMixin` - State serialization
+Regions compose functionality via 7 mixins (from `NeuralRegion` base class):
+- `BrainComponentMixin` - Oscillator phase properties and defaults
+- `NeuromodulatorMixin` - Dopamine/ACh/NE handling
+- `GrowthMixin` - Dynamic neuron expansion (grow_input/grow_output)
+- `ResettableMixin` - State reset helpers
+- `DiagnosticsMixin` - Health monitoring and metrics
+- `StateLoadingMixin` - Common state restoration logic
+- `LearningStrategyMixin` - Pluggable learning rules (STDP, BCM, three-factor)
 
 **See**: `../patterns/mixins.md`
 
@@ -495,7 +528,7 @@ All functionality implemented for BOTH regions AND pathways.
 
 ### 4. State Management
 
-Use `RegionState` for neural state, direct attributes for learning parameters.
+Use region-specific state dataclasses (inheriting from `RegionState`) for mutable neural state, direct attributes for configuration and learning parameters.
 
 **See**: `../patterns/state-management.md`
 
@@ -503,21 +536,47 @@ Use `RegionState` for neural state, direct attributes for learning parameters.
 
 ## Configuration
 
-### ThaliaConfig
+### BrainConfig
 
-**Location**: `src/thalia/config/`
+**Location**: `src/thalia/config/brain_config.py`
 
-Hierarchical configuration:
+Brain-level configuration for device, timing, and oscillators:
 ```python
-ThaliaConfig
-├── global_ (device, dtype, seed)
-├── brain (region sizes, connections)
-├── learning (rates, rules)
-├── curriculum (training stages)
-└── neuromodulation (DA, NE, ACh parameters)
+from thalia.config import BrainConfig
+
+brain_config = BrainConfig(
+    device="cpu",  # or "cuda"
+    dt_ms=1.0,     # Simulation timestep
+    encoding_timesteps=10,
+    delay_timesteps=5,
+    test_timesteps=10,
+)
 ```
 
-**See**: `../design/curriculum_strategy.md`
+### BrainBuilder
+
+**Location**: `src/thalia/core/brain_builder.py`
+
+Fluent API for constructing brain architectures:
+```python
+from thalia.core import BrainBuilder
+from thalia.config import LayerSizeCalculator
+
+builder = BrainBuilder(brain_config)
+calc = LayerSizeCalculator()
+
+# Add components with semantic sizes
+thalamus_sizes = calc.thalamus_from_relay(128)
+builder.add_component("thalamus", "thalamus", **thalamus_sizes)
+builder.add_component("cortex", "cortex", l4_size=128, l23_size=192, l5_size=128)
+
+# Connect components with explicit ports
+builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal")
+
+brain = builder.build()
+```
+
+**See**: `../patterns/component-parity.md` for component registry details
 
 ---
 

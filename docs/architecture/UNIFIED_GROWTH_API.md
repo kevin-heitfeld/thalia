@@ -41,9 +41,18 @@ component.grow_output(n_new: int)
 
 ## Implementation Status
 
-### ✅ SpikingPathway
-- `grow_input()`: Expands input (pre-synaptic) dimension
-- `grow_output()`: Expands output (post-synaptic) dimension
+### ✅ AxonalProjection
+- **NO growth needed**: Pure spike routing, NO weights
+- Growth happens at target regions which own synaptic weights
+- AxonalProjection automatically adapts to source/target size changes
+
+### ⚠️ Note on Growth
+In the current architecture:
+- **Regions grow**: They own neurons and synaptic weights
+- **Pathways don't grow**: AxonalProjection is weightless routing
+- **Sensory pathways**: May have encoding parameters that can grow
+
+The examples below show the growth API design, but AxonalProjection itself doesn't need growth.
 
 ### ✅ LayeredCortex
 - `grow_input()`: Expands `w_input_l4` columns for upstream growth
@@ -115,29 +124,30 @@ Comprehensive test suite: `tests/unit/test_unified_growth_api.py`
 
 ## Usage Examples
 
-### Growing a Pathway
+### Example: Growing a Region (Current Architecture)
 ```python
-# Visual pathway from retina to thalamus
-visual_pathway = SpikingPathway(
-    config=PathwayConfig(n_input=784, n_output=128)
+# Primary visual cortex with multi-source inputs
+v1 = LayeredCortex(
+    config=LayeredCortexConfig(...),
+    sizes={"l4_size": 128, "l23_size": 192, "l5_size": 128, ...},
+    device=device
 )
 
-# Retina grows from 784 → 804
-visual_pathway.grow_input(20)  # [128, 784] → [128, 804]
+# Add input source (creates synaptic weights)
+v1.add_input_source("thalamus", n_input=128, learning_strategy="stdp")
 
-# Thalamus needs more neurons
-visual_pathway.grow_output(10)  # [128, 804] → [138, 804]
+# If thalamus grows from 128 → 138 neurons
+# Region grows its synaptic weights for that source
+v1.grow_source("thalamus", new_size=138)  # [n_output, 128] → [n_output, 138]
+
+# Region itself grows output
+v1.grow_output(30)  # Adds neurons across all layers proportionally
 ```
 
-### Growing a Region
+### Historical Example: Pathway Growth (Deprecated in v2.0+)
 ```python
-# Primary visual cortex
-v1 = LayeredCortex(
-    config=LayeredCortexConfig(n_input=128, n_output=256)
-)
-
-# Thalamus upstream grows from 128 → 138
-v1.grow_input(10)  # Expands w_input_l4: [L4, 128] → [L4, 138]
+# NOTE: This pattern is from v1.0 when pathways had weights
+# In v2.0+, use AxonalProjection (weightless) + region synaptic weights
 
 # V1 itself expands (will add ~95 to output due to layer ratios)
 v1.grow_output(40)  # Adds L4:40, L2/3:60, L5:40, L6a:10, L6b:10 → output +100

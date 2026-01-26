@@ -8,27 +8,25 @@ This guide helps you get started with Thalia's curriculum training system for de
 
 ```python
 from thalia.core.dynamic_brain import DynamicBrain, BrainBuilder
-from thalia.config import ThaliaConfig, GlobalConfig, BrainConfig, RegionSizes
+from thalia.config import BrainConfig, LayerSizeCalculator
 from thalia.config.curriculum_growth import CurriculumStage, get_curriculum_growth_config
 from thalia.training.curriculum.stage_manager import CurriculumTrainer, StageConfig
 
-# 1. Create brain with ThaliaConfig or use preset
-config = ThaliaConfig(
-    global_=GlobalConfig(device="cpu"),
-    brain=BrainConfig(
-        sizes=RegionSizes(
-            input_size=400,
-            cortex_size=10000,
-            hippocampus_size=2000,
-            pfc_size=5000,
-            n_actions=4,
-        ),
-    ),
-)
-brain = BrainBuilder.preset("default", global_config)
+# 1. Create brain with BrainBuilder
+brain_config = BrainConfig(device="cpu", dt_ms=1.0)
+builder = BrainBuilder(brain_config)
+calc = LayerSizeCalculator()
 
-# Alternative: Use preset architecture
-# brain = BrainBuilder.preset("sensorimotor", GlobalConfig(device="cpu"))
+# Add components with explicit sizes
+thalamus_sizes = calc.thalamus_from_relay(128)
+builder.add_component("thalamus", "thalamus", **thalamus_sizes)
+builder.add_component("cortex", "cortex", l4_size=128, l23_size=192, l5_size=128, l6a_size=26, l6b_size=128)
+
+# Connect components
+builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal")
+
+# Build brain
+brain = builder.build()
 
 # 2. Initialize trainer
 trainer = CurriculumTrainer(
@@ -117,16 +115,16 @@ CurriculumTrainer
 
 Training follows human cognitive development:
 
-| Stage | Name | Duration | Key Tasks |
-|-------|------|----------|-----------|
-| -0.5 | Sensorimotor | 4 weeks | Motor control, reaching, manipulation |
-| 0 | Phonology | 8 weeks | MNIST, sequences, phoneme discrimination |
-| 1 | Toddler | 8 weeks | CIFAR-10, N-back, object permanence |
-| 2 | Grammar | 10 weeks | Composition, multilingual, executive function |
-| 3 | Reading | 12 weeks | Decoding, comprehension, planning |
-| 4 | Abstract | 16 weeks | Reasoning, analogies, metacognition |
-| 5 | Expert | 20 weeks | Domain expertise, multi-modal |
-| 6 | LLM-level | 24+ weeks | Full language capabilities |
+| Stage | Enum Value | Name | Duration | Key Tasks |
+|-------|------------|------|----------|-----------|---|
+| -1 | SENSORIMOTOR | Sensorimotor | 4 weeks | Motor control, reaching, manipulation |
+| 0 | PHONOLOGY | Phonology | 8 weeks | Phoneme discrimination, temporal sequences |
+| 1 | TODDLER | Toddler | 8 weeks | CIFAR-10, N-back, object permanence |
+| 2 | GRAMMAR | Grammar | 10 weeks | Composition, multilingual, executive function |
+| 3 | READING | Reading | 12 weeks | Decoding, comprehension, planning |
+| 4 | ABSTRACT | Abstract | 16 weeks | Reasoning, analogies, metacognition |
+
+**Note**: Stages 5 (Expert) and 6 (LLM-level) are planned but not yet implemented in the codebase.
 
 See [`curriculum_strategy.md`](design/curriculum_strategy.md) for complete details.
 

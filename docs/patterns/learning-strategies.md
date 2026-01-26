@@ -373,31 +373,39 @@ if hasattr(region.learning_strategy, "eligibility"):
 
 ---
 
-## Pathway Integration
+## Region Learning
 
-Pathways also use strategies (component parity):
+Learning happens at **target regions**, not pathways:
 
 ```python
-class SpikingPathway(NeuralComponent):
-    def __init__(self, config):
-        super().__init__(config)
+class NeuralRegion:
+    def __init__(self, n_neurons, config, device="cpu"):
+        super().__init__()
+        # Synaptic weights: one matrix per input source
+        self.synaptic_weights: Dict[str, torch.Tensor] = {}
+        # Learning strategies: one per input source
+        self.learning_strategies: Dict[str, LearningStrategy] = {}
 
-        # Add learning strategy
-        self.learning_strategy = create_strategy(
-            "stdp",
-            learning_rate=config.learning_rate,
-            a_plus=0.01,
-            a_minus=0.005,
-        )
+    def add_input_source(self, source_name: str, n_input: int, learning_strategy: str = "stdp"):
+        """Add input source with dedicated synaptic weights and learning rule."""
+        # Initialize weights for this source
+        self.synaptic_weights[source_name] = WeightInitializer.sparse_random(...)
+        # Create learning strategy for this source
+        self.learning_strategies[source_name] = create_strategy(learning_strategy, ...)
 
-    def forward(self, input_spikes, **kwargs):
-        # Standard forward pass
-        output_spikes = self._process(input_spikes)
+    def forward(self, inputs: Dict[str, torch.Tensor], **kwargs):
+        # Process each source with its own weights and learning
+        for source_name, source_spikes in inputs.items():
+            weights = self.synaptic_weights[source_name]
+            strategy = self.learning_strategies[source_name]
 
-        # Apply learning if enabled
-        if self.learning_enabled:
-            new_weights, metrics = self.learning_strategy.compute_update(
-                weights=self.weights,
+            # Apply synaptic weights
+            synaptic_input = source_spikes @ weights.T
+
+            # Apply learning if enabled
+            if self.learning_enabled:
+                new_weights, metrics = strategy.compute_update(
+                    weights=weights,
                 pre_spikes=input_spikes,
                 post_spikes=output_spikes,
             )

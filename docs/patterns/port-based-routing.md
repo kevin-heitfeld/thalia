@@ -191,8 +191,9 @@ spec = ConnectionSpec(
 ```
 
 **3. Runtime Routing** (handled by pathway):
-- **AxonalProjection**: Slices source output based on port
-- **SpikingPathway**: Forwards entire output (port handled by source region)
+- **AxonalProjection**: Concatenates multi-source inputs with port-specific slicing
+- Port slicing happens during build (input size inference)
+- Runtime: direct tensor concatenation, no dynamic routing overhead
 
 ### Adding Port Support to New Regions
 
