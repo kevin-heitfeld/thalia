@@ -1,1181 +1,1765 @@
 # Architecture Review – 2026-01-26
 
-**Reviewer**: GitHub Copilot (Claude Sonnet 4.5)
-**Date**: January 26, 2026
-**Scope**: `src/thalia/` core architecture (core, regions, learning, pathways, components)
-**Focus**: File organization, naming, patterns, code duplication, antipatterns, discoverability
-
----
-
 ## Executive Summary
 
-The Thalia codebase demonstrates **strong architectural foundations** with excellent adherence to biological plausibility constraints, consistent use of established patterns (WeightInitializer, LearningStrategy, NeuralRegion mixins), and well-justified large files for biologically-cohesive circuits. The codebase has been through multiple refactoring passes and shows maturity in its design patterns.
+This comprehensive architectural analysis of the Thalia codebase (focusing on `src/thalia/`) identifies strengths and opportunities for improvement across module organization, naming conventions, separation of concerns, and code maintainability.
 
-**Key Strengths**:
-- ✅ Excellent pattern adherence (WeightInitializer registry, LearningStrategy pattern, Mixin architecture)
-- ✅ Strong biological plausibility (local learning, spike-based processing, no backpropagation)
-- ✅ Consistent state management (BaseRegionState dataclasses for all regions)
-- ✅ Well-documented file organization justifications (ADR-011 for large files)
-- ✅ Clear separation of concerns (learning strategies, neuron dynamics, pathway routing)
-- ✅ Comprehensive diagnostic infrastructure
+**Key Findings:**
+- **Strong foundation**: Excellent use of mixins, protocols, and registry pattern for extensibility
+- **Good separation**: Learning strategies successfully extracted into pluggable pattern
+- **Inconsistencies**: Weight initialization methods, magic numbers, and component organization need standardization
+- **Growth opportunities**: Some regions exceed 1500+ lines and would benefit from component extraction
+- **Pattern adherence**: Generally strong adherence to biological plausibility constraints, with WeightInitializer pattern mostly adopted
 
-**Areas for Improvement**:
-- 🟡 Some torch.zeros/torch.randn usage outside WeightInitializer (in task/training modules)
-- 🟡 Minor magic number opportunities in constants (already mostly extracted)
-- 🟡 Potential for checkpoint manager consolidation (pattern exists, could be unified)
-- 🟡 Device management in test utilities could be more explicit
+**Impact Overview:**
+- **High-impact, low-disruption improvements**: 18 recommendations (17 pending, 1 completed ✅)
+- **Moderate refactoring**: 12 recommendations (11 pending, 1 completed ✅)
+- **Major restructuring**: 5 recommendations (long-term, multi-week efforts)
 
-**Overall Assessment**: **Strong** (8.5/10)
-- The architecture is well-designed with minimal technical debt
-- Recommendations are primarily optimizations rather than corrections
-- Most best practices are already in place
+**Recent Completions (January 26, 2026):**
+- ✅ **Tier 1.11 / 2.7**: Added checkpoint managers for Cerebellum, LayeredCortex, and ThalamicRelay regions
+  - All regions now have uniform checkpoint/restore interface
+  - See [docs/reviews/checkpoint-managers-implementation.md](docs/reviews/checkpoint-managers-implementation.md)
 
 ---
 
-## Findings by Priority Tier
+## Tier 1 - High Impact, Low Disruption
 
-### Tier 1 - High Impact, Low Disruption ⚡
+### 1.1 Magic Number Consolidation
 
-These changes provide immediate value with minimal risk and should be implemented first.
+**Current State**: Numeric literals scattered throughout code (0.01, 0.001, 0.0001) for learning rates, thresholds, noise levels, and activity detection.
+
+**Locations**:
+- [src/thalia/tasks/executive_function.py](src/thalia/tasks/executive_function.py#L224-L231): `0.01` for stimulus noise
+- [src/thalia/training/curriculum/stage_monitoring.py](src/thalia/training/curriculum/stage_monitoring.py#L184): `0.01` for silent region detection
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L1316): `0.01` for theta oscillation detection
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L2335): `0.01` for softmax temperature
+- [src/thalia/regions/prefrontal/goal_emergence.py](src/thalia/regions/prefrontal/goal_emergence.py#L227): `0.01` default learning rate
+- [src/thalia/regions/multisensory.py](src/thalia/regions/multisensory.py#L1018): `0.01` for activity threshold
+- [src/thalia/neuromodulation/mixin.py](src/thalia/neuromodulation/mixin.py#L321): `0.01` fallback learning rate
+- [src/thalia/learning/homeostasis/synaptic_homeostasis.py](src/thalia/learning/homeostasis/synaptic_homeostasis.py#L110): `0.01` for minimum activity
+
+**Proposed Change**: Extract to named constants in [src/thalia/constants/learning.py](src/thalia/constants/learning.py):
+```python
+# Learning rates
+LEARNING_RATE_DEFAULT = 0.01
+LEARNING_RATE_FAST = 0.001
+LEARNING_RATE_SLOW = 0.0001
+
+# Activity thresholds
+ACTIVITY_THRESHOLD_SILENT = 0.01
+ACTIVITY_THRESHOLD_MINIMAL = 0.001
+
+# Noise and temperature
+STIMULUS_NOISE_STD = 0.01
+SOFTMAX_TEMPERATURE_DEFAULT = 0.01
+MEMBRANE_NOISE_BIOLOGICAL = 0.002  # 2mV standard deviation
+```
+
+**Rationale**: Named constants improve code readability, make biological assumptions explicit, and enable global tuning without hunting through files.
+
+**Impact**:
+- **Files affected**: ~25 files across regions/, tasks/, training/, learning/
+- **Breaking changes**: None (value-preserving refactor)
+- **Maintainability**: High improvement in documenting biological assumptions
 
 ---
 
-#### 1.1 Extract Magic Numbers in Task/Stimulus Modules
+### 1.2 Weight Initialization Method Standardization
 
-**Current State**:
-Multiple literal constants in task generation code:
-- [src/thalia/tasks/stimulus_utils.py](../../src/thalia/tasks/stimulus_utils.py): `0.01` (noise scale), workspace size multipliers
-- [src/thalia/tasks/executive_function.py](../../src/thalia/tasks/executive_function.py): `0.01` (feature noise), various strength constants
-- [src/thalia/training/curriculum/stage_manager.py](../../src/thalia/training/curriculum/stage_manager.py): Pattern strength values
+**Current State**: Inconsistent weight initialization methods across regions, with most using `WeightInitializer` but some inconsistencies in method naming.
+
+**Duplication Pattern**:
+```python
+# Pattern 1 (correct): Using WeightInitializer registry
+weights = WeightInitializer.sparse_random(n_out, n_in, sparsity=0.2, device=device)
+
+# Pattern 2 (acceptable): Direct torch for demos/tests
+encoded = torch.randn(size, device=device)  # OK in examples/tests
+
+# Pattern 3 (needs attention): Repeated initialization logic in _initialize_weights
+```
+
+**Files with `_initialize_weights` methods** (potential consolidation):
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L524): `_initialize_weights`
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py#L364): `_initialize_weights`
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py#L374): `_initialize_weights`
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py#L585): `_init_weights` (naming inconsistency)
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py#L2247): `_initialize_weights`
+- [src/thalia/regions/cerebellum/cerebellum.py](src/thalia/regions/cerebellum/cerebellum.py#L383): `_initialize_weights_tensor`
 
 **Proposed Change**:
-Create `src/thalia/constants/tasks.py` with named constants:
+1. Standardize method name to `_initialize_weights` (not `_init_weights` or `_initialize_weights_tensor`)
+2. Add base implementation in `NeuralRegion` mixin for common patterns
+3. Document when direct `torch.randn` is acceptable (examples, tests, prototyping)
 
-```python
-# Task stimulus constants
-STIMULUS_NOISE_SCALE = 0.01
-FEATURE_NOISE_MATCH = 0.01
-PROPRIOCEPTIVE_NOISE_DEFAULT = 0.01
-
-# Stimulus strength levels
-STIMULUS_STRENGTH_HIGH = 1.0
-STIMULUS_STRENGTH_MEDIUM = 0.5
-STIMULUS_STRENGTH_LOW = 0.2
-```
-
-**Rationale**:
-- Improves readability (semantic names vs bare numbers)
-- Enables consistent values across task modules
-- Follows existing pattern (constants/ directory well-established)
+**Rationale**: Consistent naming improves discoverability. Base implementation reduces duplication. `WeightInitializer` usage is already strong (80%+ adoption).
 
 **Impact**:
-- **Files affected**: 3-5 files (tasks/, training/curriculum/)
-- **Breaking changes**: None (internal refactoring only)
-- **Severity**: Low
-- **Estimated effort**: 1-2 hours
-
-**Specific Locations**:
-```
-src/thalia/tasks/stimulus_utils.py:69      return stimulus + torch.randn_like(stimulus) * noise_scale
-src/thalia/tasks/stimulus_utils.py:168     return proprioception + torch.randn_like(proprioception) * noise_scale
-src/thalia/tasks/executive_function.py:224 stimulus[: dim // 2] = STIMULUS_STRENGTH_HIGH + torch.randn(...) * 0.01
-src/thalia/tasks/executive_function.py:231 stimulus[dim // 2 :] = STIMULUS_STRENGTH_HIGH + torch.randn(...) * 0.01
-src/thalia/tasks/executive_function.py:1079 noise = torch.randn_like(correct_cell) * FEATURE_NOISE_MATCH
-```
+- **Files affected**: 6 region files
+- **Breaking changes**: None (internal method renaming)
+- **Maintainability**: Medium improvement
 
 ---
 
-#### 1.2 Standardize torch.zeros/torch.ones Usage in Task Modules
+### 1.3 Neuron Constants Consolidation
 
-**Current State**:
-Many instances of direct `torch.zeros()` and `torch.ones()` in task generation code:
-- [src/thalia/tasks/stimulus_utils.py](../../src/thalia/tasks/stimulus_utils.py): Multiple zero/one tensor creations
-- [src/thalia/training/curriculum/stage_manager.py](../../src/thalia/training/curriculum/stage_manager.py): Pattern initialization
+**Current State**: Good use of constants module ([src/thalia/constants/neuron.py](src/thalia/constants/neuron.py)) but some values still hardcoded in regions.
+
+**Examples**:
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L2329): `0.002` membrane noise (should use constant)
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L2342): `0.002` conductance noise
+- [src/thalia/regions/prefrontal/prefrontal.py](src/thalia/regions/prefrontal/prefrontal.py#L758): `self.pfc_config.wm_noise_std` (good pattern)
 
 **Proposed Change**:
-Use utility functions from `thalia.utils.core_utils`:
+- Move remaining hardcoded neuron parameters to [src/thalia/constants/neuron.py](src/thalia/constants/neuron.py)
+- Add section for biological noise parameters:
 ```python
-from thalia.utils.core_utils import zeros, ones
-
-# Instead of: torch.zeros(dim, device=device)
-# Use: zeros(dim, device=device)
+# Biological Noise (standard deviations in normalized units)
+MEMBRANE_NOISE_STANDARD = 0.002  # 2mV biological fluctuation
+CONDUCTANCE_NOISE_STANDARD = 0.002  # Synaptic variability
 ```
 
-**Rationale**:
-- Centralizes tensor creation patterns
-- `core_utils.zeros/ones` already exist and provide device handling
-- Consistent with project patterns for utility abstraction
+**Rationale**: Centralizes biological assumptions, improves documentation of parameter choices.
 
 **Impact**:
-- **Files affected**: ~10 files (tasks/, training/)
-- **Breaking changes**: None (internal only)
-- **Severity**: Low
-- **Estimated effort**: 2-3 hours
-
-**Note**: This is NOT about weight initialization (WeightInitializer is correctly used). This is about temporary tensors, stimulus patterns, and task buffers.
+- **Files affected**: 5-8 region files
+- **Breaking changes**: None
+- **Maintainability**: Low-medium improvement
 
 ---
 
-#### 1.3 Create Unified CheckpointManager Base Class ✅ **COMPLETED**
+### 1.4 Component Naming Consistency
 
-**Current State**:
-Multiple region-specific checkpoint managers with duplicated logic:
-- [src/thalia/regions/striatum/checkpoint_manager.py](../../src/thalia/regions/striatum/checkpoint_manager.py): `StriatumCheckpointManager`
-- [src/thalia/regions/hippocampus/checkpoint_manager.py](../../src/thalia/regions/hippocampus/checkpoint_manager.py): `HippocampusCheckpointManager`
-- Each implements: version checking, state validation, migration logic
+**Current State**: Mostly consistent use of `*Component` and `*Manager` suffixes, but some variation.
 
-**Implementation**: ✅ **COMPLETED (January 26, 2026)**
+**Examples** (good patterns):
+- [src/thalia/regions/striatum/learning_component.py](src/thalia/regions/striatum/learning_component.py#L25): `StriatumLearningComponent`
+- [src/thalia/regions/striatum/homeostasis_component.py](src/thalia/regions/striatum/homeostasis_component.py#L74): `StriatumHomeostasisComponent`
+- [src/thalia/regions/striatum/checkpoint_manager.py](src/thalia/regions/striatum/checkpoint_manager.py#L58): `StriatumCheckpointManager`
+- [src/thalia/regions/striatum/exploration.py](src/thalia/regions/striatum/exploration.py#L76): `ExplorationManager`
 
-The `BaseCheckpointManager` class already exists at [src/thalia/managers/base_checkpoint_manager.py](../../src/thalia/managers/base_checkpoint_manager.py) and provides comprehensive shared functionality. **Enhanced with additional helper methods and migrated all checkpoint managers**:
+**Inconsistency**:
+- [src/thalia/regions/striatum/exploration.py](src/thalia/regions/striatum/exploration.py#L361): `StriatumExplorationComponent` vs `ExplorationManager` (both exist)
 
-**Migration Status**: ✅ **ALL CHECKPOINT MANAGERS UPDATED**
-- ✅ [StriatumCheckpointManager](../../src/thalia/regions/striatum/checkpoint_manager.py): Refactored (~80 → ~50 lines, 37% reduction)
-- ✅ [HippocampusCheckpointManager](../../src/thalia/regions/hippocampus/checkpoint_manager.py): Simplified (~35 lines cleaner)
-- ✅ [PrefrontalCheckpointManager](../../src/thalia/regions/prefrontal/checkpoint_manager.py): Improved (~10 lines clearer)
-- ✅ [LayeredCortex.load_state()](../../src/thalia/regions/cortex/layered_cortex.py): Reviewed (already optimal, no changes needed)
+**Proposed Change**: Clarify naming convention in documentation:
+- `*Component`: Part of region, tightly coupled (learning, homeostasis)
+- `*Manager`: Standalone service, loosely coupled (checkpoint, exploration)
 
-**Total Impact**: ~125 lines of duplicated code eliminated across 4 files
+**Rationale**: Clear naming convention aids navigation and understanding of component coupling.
 
-**Added Helper Methods**:
+**Impact**:
+- **Files affected**: Documentation update + possible 2-3 class renames
+- **Breaking changes**: Low (mostly internal)
+- **Maintainability**: Low improvement (clarity)
+
+---
+
+### 1.5 Directory Organization - Language vs. Components
+
+**Current State**: Ambiguous placement of language-related code:
+- [src/thalia/language/](src/thalia/language/): encoder.py, decoder.py, position.py
+- [src/thalia/components/coding/](src/thalia/components/coding/): (unclear relationship)
+
+**Analysis**: Current structure suggests language processing is separate from "components", but language encoding/decoding IS a component type.
+
+**Proposed Change**: Document or consolidate:
+- **Option A** (minimal): Update [docs/architecture/ARCHITECTURE_OVERVIEW.md](docs/architecture/ARCHITECTURE_OVERVIEW.md) to clarify `language/` vs `components/` distinction
+- **Option B** (moderate): Move `language/` into `components/language/` for consistency
+
+**Rationale**: Clarifies whether "language" is a first-class system or a component category.
+
+**Impact** (Option A):
+- **Files affected**: 1 doc file
+- **Breaking changes**: None
+- **Maintainability**: Low improvement
+
+**Impact** (Option B):
+- **Files affected**: 3-5 files + import updates
+- **Breaking changes**: Medium (import paths change)
+- **Maintainability**: Medium improvement
+
+**Recommendation**: Start with Option A (documentation), defer Option B until language system expands.
+
+---
+
+### 1.6 State Class Reset Method Duplication
+
+**Current State**: Every region state class implements `reset()` method with similar pattern:
+
+**Locations**:
+- [src/thalia/regions/striatum/state.py](src/thalia/regions/striatum/state.py#L304): `StriatumState.reset()`
+- [src/thalia/regions/thalamus/state.py](src/thalia/regions/thalamus/state.py#L123): `ThalamicRelayState.reset()`
+- [src/thalia/regions/prefrontal/state.py](src/thalia/regions/prefrontal/state.py#L114): `PrefrontalState.reset()`
+- [src/thalia/regions/hippocampus/state.py](src/thalia/regions/hippocampus/state.py#L189): `HippocampusState.reset()`
+- [src/thalia/regions/cortex/state.py](src/thalia/regions/cortex/state.py#L190): `LayeredCortexState.reset()`
+- [src/thalia/regions/cortex/state.py](src/thalia/regions/cortex/state.py#L373): `PredictiveCortexState.reset()`
+- [src/thalia/regions/cerebellum/state.py](src/thalia/regions/cerebellum/state.py#L187): `CerebellumState.reset()`
+
+**Pattern** (common across all):
 ```python
-class BaseCheckpointManager:
-    # Existing methods (already present):
-    # - extract_neuron_state_common()
-    # - extract_elastic_tensor_metadata()
-    # - validate_elastic_metadata()
-    # - validate_state_dict_keys()
-    # - validate_tensor_shapes()
-    # - handle_elastic_tensor_growth()
-    # - validate_checkpoint_compatibility()
+def reset(self) -> None:
+    """Reset all state to initial values."""
+    self.voltage.zero_()
+    self.conductance_E.zero_()
+    self.conductance_I.zero_()
+    self.refractory_timer.zero_()
+    self.adaptation.zero_()
+    # ... region-specific state ...
+```
 
-    # NEW helper methods added:
-    def restore_tensor_partial(
-        self,
-        checkpoint_tensor: torch.Tensor,
-        target_tensor: torch.Tensor,
-        device: str,
-        tensor_name: str = "tensor",
-    ) -> None:
-        """Restore tensor with partial copy (elastic tensor support)."""
+**Proposed Change**: Add helper method in [src/thalia/core/region_state.py](src/thalia/core/region_state.py) `BaseRegionState`:
+```python
+def _reset_neuron_state(self) -> None:
+    """Reset common neuron state tensors (voltage, conductances, etc.)."""
+    if hasattr(self, 'voltage'):
+        self.voltage.zero_()
+    if hasattr(self, 'conductance_E'):
+        self.conductance_E.zero_()
+    # ... etc for common fields
+```
 
-    def restore_dict_of_tensors(
-        self,
-        checkpoint_dict: Dict[str, torch.Tensor],
-        target_dict: Dict[str, torch.nn.Parameter],
-        device: str,
-        dict_name: str = "weights",
-    ) -> None:
-        """Restore dictionary of tensors (e.g., synaptic_weights, eligibility)."""
+Then state classes call:
+```python
+def reset(self) -> None:
+    self._reset_neuron_state()  # Common state
+    self.eligibility_trace.zero_()  # Region-specific
+```
+
+**Rationale**: Reduces duplication of common reset logic while preserving region-specific needs.
+
+**Impact**:
+- **Files affected**: 8 files (1 base + 7 state classes)
+- **Breaking changes**: None (internal helper)
+- **Maintainability**: Medium improvement
+
+---
+
+### 1.7 Standardize Diagnostic Key Names
+
+**Current State**: Good use of diagnostic schema ([src/thalia/core/diagnostics_schema.py](src/thalia/core/diagnostics_schema.py)), but key names could be more consistent.
+
+**Observation**: Pattern generally consistent (e.g., `region_name.firing_rate`, `region_name.sparsity`), but worth documenting standard key format.
+
+**Proposed Change**: Add diagnostic key naming convention to [docs/patterns/component-parity.md](docs/patterns/component-parity.md):
+```
+Standard Diagnostic Key Format:
+- {component_name}.{metric_name}
+- Use snake_case for metric names
+- Common metrics: firing_rate, sparsity, mean_weight, weight_change
+- Prefix with subcomponent: hippocampus.ca3.firing_rate
+```
+
+**Rationale**: Prevents key name drift as system expands.
+
+**Impact**:
+- **Files affected**: 1-2 documentation files
+- **Breaking changes**: None
+- **Maintainability**: Low improvement (preventative)
+
+---
+
+### 1.8 Consolidate Activity Threshold Constants
+
+**Current State**: Activity thresholds for detection scattered across files:
+- [src/thalia/training/curriculum/stage_monitoring.py](src/thalia/training/curriculum/stage_monitoring.py#L184): `0.01` for silent regions
+- [src/thalia/regions/multisensory.py](src/thalia/regions/multisensory.py#L1018): `0.01` for activity detection
+- [src/thalia/learning/homeostasis/synaptic_homeostasis.py](src/thalia/learning/homeostasis/synaptic_homeostasis.py#L110): `0.01` for minimum activity
+- [src/thalia/constants/learning.py](src/thalia/constants/learning.py#L37): `SILENCE_DETECTION_THRESHOLD = 0.001` (different value!)
+
+**Inconsistency**: `SILENCE_DETECTION_THRESHOLD = 0.001` in constants but `0.01` used in actual code.
+
+**Proposed Change**:
+1. Audit usage to determine if `0.001` or `0.01` is correct threshold
+2. Update all code to use constant from [src/thalia/constants/learning.py](src/thalia/constants/learning.py)
+3. Add additional thresholds if needed:
+```python
+ACTIVITY_THRESHOLD_SILENT = 0.001  # <0.1% firing (truly silent)
+ACTIVITY_THRESHOLD_MINIMAL = 0.01  # <1% firing (very low activity)
+ACTIVITY_THRESHOLD_LOW = 0.05      # <5% firing (biologically sparse)
+```
+
+**Rationale**: Resolves actual inconsistency that could cause bugs (different thresholds in different systems).
+
+**Impact**:
+- **Files affected**: 5-6 files
+- **Breaking changes**: None (fixes bug)
+- **Maintainability**: High improvement (correctness)
+
+---
+
+### 1.9 Add Type Hints to Magic Number Utilities
+
+**Current State**: [src/thalia/utils/core_utils.py](src/thalia/utils/core_utils.py) has good utility for phase preferences:
+```python
+def random_phase_preferences(n_neurons: int, device: str) -> torch.Tensor:
+    return torch.rand(n_neurons, device=device) * (2 * math.pi)
+```
+
+**Observation**: Good pattern! Replaces magic number `2 * pi` pattern.
+
+**Proposed Change**: Add constant for clarity:
+```python
+from thalia.constants.time import TWO_PI  # or add to constants
+
+def random_phase_preferences(n_neurons: int, device: str) -> torch.Tensor:
+    return torch.rand(n_neurons, device=device) * TWO_PI
+```
+
+**Rationale**: Further reduces magic numbers, though `2 * pi` is mathematically obvious.
+
+**Impact**:
+- **Files affected**: 1-2 files
+- **Breaking changes**: None
+- **Maintainability**: Low improvement (marginal)
+- **Priority**: Lower than other Tier 1 items
+
+---
+
+### 1.10 Document torch.randn Usage Policy
+
+**Current State**: Mix of `WeightInitializer` (production) and `torch.randn/torch.rand` (tests, examples, demos).
+
+**Proposed Change**: Add policy to [docs/patterns/learning-strategies.md](docs/patterns/learning-strategies.md) or [CONTRIBUTING.md](CONTRIBUTING.md):
+```markdown
+## Weight Initialization Policy
+
+**Production code**: Always use `WeightInitializer` registry
+- Regions: WeightInitializer.sparse_random, WeightInitializer.gaussian
+- Pathways: WeightInitializer.xavier, WeightInitializer.orthogonal
+
+**Acceptable torch.randn/rand usage**:
+- Test fixtures (controlled random data)
+- Examples and demos (pedagogical clarity)
+- Prototyping (temporary, mark with TODO)
+- Noise generation (add_noise = torch.randn_like(x) * std)
+
+**Never use for**: Synaptic weight initialization in regions or pathways
+```
+
+**Rationale**: Clarifies when direct PyTorch calls are acceptable vs. registry required.
+
+**Impact**:
+- **Files affected**: 1 documentation file
+- **Breaking changes**: None
+- **Maintainability**: Medium improvement (prevents future inconsistency)
+
+---
+
+### 1.11 Standardize Checkpoint Manager Naming ✅ COMPLETED
+
+**Status**: Completed January 26, 2026
+
+**Implementation**: Added checkpoint managers for all remaining regions (Cerebellum, LayeredCortex, ThalamicRelay).
+
+**Files Created**:
+- [src/thalia/regions/cerebellum/checkpoint_manager.py](src/thalia/regions/cerebellum/checkpoint_manager.py): `CerebellumCheckpointManager` (418 lines)
+- [src/thalia/regions/cortex/checkpoint_manager.py](src/thalia/regions/cortex/checkpoint_manager.py): `LayeredCortexCheckpointManager` (480 lines)
+- [src/thalia/regions/thalamus/checkpoint_manager.py](src/thalia/regions/thalamus/checkpoint_manager.py): `ThalamicCheckpointManager` (457 lines)
+
+**Files Modified**:
+- [src/thalia/regions/cerebellum/__init__.py](src/thalia/regions/cerebellum/__init__.py): Added export
+- [src/thalia/regions/cerebellum/cerebellum.py](src/thalia/regions/cerebellum/cerebellum.py): Integrated manager
+- [src/thalia/regions/cortex/__init__.py](src/thalia/regions/cortex/__init__.py): Added export
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py): Integrated manager
+- [src/thalia/regions/thalamus/__init__.py](src/thalia/regions/thalamus/__init__.py): Added export
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py): Integrated manager
+
+**Pattern Consistency**: All regions now follow the same checkpoint manager pattern:
+1. Import checkpoint manager class
+2. Initialize in `__init__`: `self.checkpoint_manager = RegionCheckpointManager(self)`
+3. Delegate `get_full_state()` to `checkpoint_manager.collect_state()`
+4. Delegate `load_full_state()` to `checkpoint_manager.restore_state(state)`
+
+**Documentation**: [docs/reviews/checkpoint-managers-implementation.md](docs/reviews/checkpoint-managers-implementation.md)
+
+**Current State**: Checkpoint managers consistently named and implemented across all regions:
+- [src/thalia/regions/hippocampus/checkpoint_manager.py](src/thalia/regions/hippocampus/checkpoint_manager.py#L67): `HippocampusCheckpointManager`
+- [src/thalia/regions/striatum/checkpoint_manager.py](src/thalia/regions/striatum/checkpoint_manager.py#L58): `StriatumCheckpointManager`
+- [src/thalia/regions/prefrontal/checkpoint_manager.py](src/thalia/regions/prefrontal/checkpoint_manager.py#L69): `PrefrontalCheckpointManager`
+- [src/thalia/regions/cerebellum/checkpoint_manager.py](src/thalia/regions/cerebellum/checkpoint_manager.py): `CerebellumCheckpointManager` ✨
+- [src/thalia/regions/cortex/checkpoint_manager.py](src/thalia/regions/cortex/checkpoint_manager.py): `LayeredCortexCheckpointManager` ✨
+- [src/thalia/regions/thalamus/checkpoint_manager.py](src/thalia/regions/thalamus/checkpoint_manager.py): `ThalamicCheckpointManager` ✨
+
+**Impact**:
+- **Files affected**: 9 files (3 new managers + 6 modified)
+- **Breaking changes**: None
+- **Maintainability**: High improvement - all regions now have uniform checkpoint interface
+- **Testability**: Improved - checkpoint logic isolated and testable independently
+
+---
+
+### 1.12 Remove Unused TODO Comments
+
+**Current State**: Only 3 TODO comments found (excellent!):
+- [src/thalia/training/visualization/live_diagnostics.py](src/thalia/training/visualization/live_diagnostics.py#L543): `TODO(low-priority): Implement animated GIF creation`
+- [src/thalia/training/curriculum/stage_manager.py](src/thalia/training/curriculum/stage_manager.py#L1736): `TODO(future): Reduce task complexity if applicable`
+- [src/thalia/regions/hippocampus/checkpoint_manager.py](src/thalia/regions/hippocampus/checkpoint_manager.py#L460): `TODO: Check actual neurogenesis config when available`
+
+**Proposed Change**:
+1. Convert to GitHub issues for tracking
+2. Remove comments or add issue links: `# See issue #123`
+
+**Rationale**: TODOs should live in issue tracker, not code (except active development).
+
+**Impact**:
+- **Files affected**: 3 files
+- **Breaking changes**: None
+- **Maintainability**: Low improvement
+
+---
+
+### 1.13 Clarify Mixin Responsibilities
+
+**Current State**: Excellent mixin architecture with clear separation:
+- [src/thalia/mixins/growth_mixin.py](src/thalia/mixins/growth_mixin.py#L29): `GrowthMixin`
+- [src/thalia/mixins/resettable_mixin.py](src/thalia/mixins/resettable_mixin.py#L16): `ResettableMixin`
+- [src/thalia/mixins/diagnostics_mixin.py](src/thalia/mixins/diagnostics_mixin.py#L26): `DiagnosticsMixin`
+- [src/thalia/mixins/state_loading_mixin.py](src/thalia/mixins/state_loading_mixin.py#L23): `StateLoadingMixin`
+- [src/thalia/neuromodulation/mixin.py](src/thalia/neuromodulation/mixin.py#L173): `NeuromodulatorMixin`
+- [src/thalia/learning/strategy_mixin.py](src/thalia/learning/strategy_mixin.py#L34): `LearningStrategyMixin`
+
+**Observation**: All inherit from appropriate pattern. Good documentation in [docs/patterns/mixins.md](docs/patterns/mixins.md).
+
+**Proposed Change**: Minor doc enhancement - add "Mixin Quick Reference" table to [docs/patterns/mixins.md](docs/patterns/mixins.md):
+```markdown
+| Mixin | Purpose | Key Methods | Used By |
+|-------|---------|-------------|---------|
+| GrowthMixin | Dynamic expansion | grow_output, grow_source | Regions, Pathways |
+| ResettableMixin | State reset | reset_state | All components |
+| DiagnosticsMixin | Health metrics | collect_diagnostics | Regions |
+| ... | ... | ... | ... |
+```
+
+**Rationale**: Quick reference aids new contributors.
+
+**Impact**:
+- **Files affected**: 1 documentation file
+- **Breaking changes**: None
+- **Maintainability**: Low improvement
+
+---
+
+### 1.14 Verify Device Management Consistency
+
+**Current State**: Mixed patterns for device management:
+- **Pattern 1** (preferred): `device` parameter in constructor, stored as `self.device`
+- **Pattern 2**: Rely on module's `.to(device)` call
+- **Pattern 3**: Check tensor device dynamically
+
+**Observation**: [src/thalia/mixins/device_mixin.py](src/thalia/mixins/device_mixin.py#L18) exists but not widely used.
+
+**Proposed Change**:
+1. Audit regions to ensure consistent device parameter in `__init__`
+2. Document device management pattern in [docs/patterns/component-parity.md](docs/patterns/component-parity.md)
+
+**Rationale**: Prevents device mismatch bugs in multi-GPU scenarios.
+
+**Impact**:
+- **Files affected**: Audit all regions (check), update 2-3 if needed
+- **Breaking changes**: None (internal)
+- **Maintainability**: Medium improvement (correctness)
+
+---
+
+### 1.15 Consolidate Exploration Constants
+
+**Current State**: Exploration parameters in [src/thalia/constants/exploration.py](src/thalia/constants/exploration.py) (excellent organization).
+
+**Observation**: File exists and is well-structured. Verify all exploration-related magic numbers use it.
+
+**Proposed Change**: Audit [src/thalia/regions/striatum/exploration.py](src/thalia/regions/striatum/exploration.py) and [src/thalia/regions/striatum/action_selection.py](src/thalia/regions/striatum/action_selection.py) for hardcoded exploration thresholds.
+
+**Example**:
+- [src/thalia/regions/striatum/action_selection.py](src/thalia/regions/striatum/action_selection.py#L266): `torch.rand(1).item() < exploration_prob`
+
+**Rationale**: Ensure constants module is actually used consistently.
+
+**Impact**:
+- **Files affected**: 2-3 files
+- **Breaking changes**: None
+- **Maintainability**: Low improvement (verification)
+
+---
+
+### 1.16 Learning Strategy Registry Validation
+
+**Current State**: Excellent learning strategy pattern with registry in [src/thalia/learning/strategy_registry.py](src/thalia/learning/strategy_registry.py).
+
+**Observation**: Pattern successfully adopted across codebase. [src/thalia/learning/rules/strategies.py](src/thalia/learning/rules/strategies.py) shows mature strategy implementation.
+
+**Proposed Change**: Add registration validation in strategy registry:
+```python
+def validate_strategy(strategy_cls):
+    """Ensure strategy implements required protocol."""
+    required_methods = ['compute_update', 'reset']
+    for method in required_methods:
+        if not hasattr(strategy_cls, method):
+            raise TypeError(f"Strategy {strategy_cls} missing {method}")
+```
+
+**Rationale**: Prevents registration of incomplete strategies.
+
+**Impact**:
+- **Files affected**: 1 file (registry)
+- **Breaking changes**: None (validation only)
+- **Maintainability**: Low improvement (quality gate)
+
+---
+
+### 1.17 Standardize Import Organization
+
+**Current State**: Generally good import organization, but some variation in grouping.
+
+**Proposed Change**: Document import order in [CONTRIBUTING.md](CONTRIBUTING.md):
+```python
+# Standard library
+import math
+from typing import Dict, Optional
+
+# Third-party
+import torch
+import torch.nn as nn
+
+# Thalia core
+from thalia.core.neural_region import NeuralRegion
+from thalia.core.region_state import BaseRegionState
+
+# Thalia components
+from thalia.components.neurons import create_pyramidal_neurons
+from thalia.components.synapses import WeightInitializer
+
+# Thalia utilities
+from thalia.constants.neuron import TAU_MEM_STANDARD
+from thalia.typing import SourceOutputs
+```
+
+**Rationale**: Consistent import organization improves readability and reduces merge conflicts.
+
+**Impact**:
+- **Files affected**: 1 documentation file + optional linter config
+- **Breaking changes**: None
+- **Maintainability**: Low improvement
+
+---
+
+### 1.18 Document Growth API Standardization
+
+**Current State**: Excellent standardization of growth API:
+- [src/thalia/core/neural_region.py](src/thalia/core/neural_region.py#L670): `NeuralRegion.grow_output`
+- [src/thalia/core/neural_region.py](src/thalia/core/neural_region.py#L591): `NeuralRegion.grow_source`
+
+All regions implement consistent signatures. See:
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L815)
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py#L1007)
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py#L1300)
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py#L1657)
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py#L822)
+- [src/thalia/regions/cerebellum/cerebellum.py](src/thalia/regions/cerebellum/cerebellum.py#L528)
+
+**Observation**: Pattern is already well-established and consistent!
+
+**Proposed Change**: Add growth API documentation to [docs/patterns/component-parity.md](docs/patterns/component-parity.md) as a **success story** example:
+```markdown
+## Growth API (Fully Standardized) ✅
+
+All `NeuralRegion` subclasses implement standardized growth methods:
+
+### grow_output(n_new: int) -> None
+Grows output dimension by adding neurons.
+
+### grow_source(source_name: str, new_size: int) -> None
+Grows input dimension for a specific source (MultiSourcePathway regions only).
+
+**Adoption**: 100% across all regions (Hippocampus, Thalamus, Striatum, Cortex, Cerebellum, Prefrontal, Multisensory)
+```
+
+**Rationale**: Celebrates successful standardization, serves as template for other patterns.
+
+**Impact**:
+- **Files affected**: 1 documentation file
+- **Breaking changes**: None
+- **Maintainability**: Low improvement (documentation of success)
+
+---
+
+## Tier 2 - Moderate Refactoring
+
+### 2.1 Extract Large Region Files into Components
+
+**Current State**: Some region files exceed 1500+ lines, making navigation difficult:
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py): ~2600 lines
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py): ~2400 lines
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py): ~1100 lines
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py): ~1200 lines
+
+**Observation**:
+- Striatum already extracted some components: `LearningComponent`, `HomeostasisComponent`, `ExplorationComponent`, `CheckpointManager`
+- Hippocampus has `LearningComponent` and `CheckpointManager`
+- Cortex and Thalamus lack component extraction
+
+**Proposed Change**: Extract following components:
+
+**Hippocampus** (extract from 2400 to ~1200 lines):
+- `HippocampusReplayComponent`: Spontaneous replay logic ([src/thalia/regions/hippocampus/spontaneous_replay.py](src/thalia/regions/hippocampus/spontaneous_replay.py) already exists, integrate)
+- `HippocampusSynapticTaggingComponent`: Tagging logic ([src/thalia/regions/hippocampus/synaptic_tagging.py](src/thalia/regions/hippocampus/synaptic_tagging.py) exists, integrate)
+- `HippocampusConsolidationComponent`: Memory consolidation
+
+**Cortex** (extract from 1200 to ~600 lines):
+- `CortexLearningComponent`: BCM + STDP composite strategy
+- `CortexCheckpointManager`: Missing (add)
+
+**Thalamus** (extract from 1100 to ~600 lines):
+- `ThalamicGatingComponent`: Attention gating logic
+- `ThalamicCheckpointManager`: Missing (add)
+
+**Rationale**: Files >800 lines are harder to navigate. Component extraction follows established pattern (see [src/thalia/core/region_components.py](src/thalia/core/region_components.py)).
+
+**Impact**:
+- **Files affected**: 3 large region files → 6-8 new component files
+- **Breaking changes**: Low (internal refactor, public API unchanged)
+- **Maintainability**: High improvement
+- **Effort**: 3-5 days
+
+---
+
+### 2.2 Consolidate Neuron Creation Patterns
+
+**Current State**: Regions create neurons directly with `ConductanceLIF`:
+```python
+self.neurons = ConductanceLIF(n_neurons, neuron_config, device=device)
+```
+
+**Observation**: [src/thalia/components/neurons/neuron_factory.py](src/thalia/components/neurons/neuron_factory.py) exists with registry pattern but underutilized.
+
+**Available factory types**:
+```python
+NeuronFactory.create("pyramidal", n_neurons=100, device=device)
+NeuronFactory.create("relay", n_neurons=64, device=device)
+NeuronFactory.create("cortical_layer", n_neurons=256, layer="L2/3", device=device)
+```
+
+**Proposed Change**: Migrate regions to use `NeuronFactory` for standardization:
+```python
+# Before
+self.ca3_neurons = ConductanceLIF(self.config.ca3_size, neuron_config, device=device)
+
+# After
+self.ca3_neurons = NeuronFactory.create(
+    "pyramidal",  # Explicit neuron type
+    n_neurons=self.config.ca3_size,
+    device=device,
+    tau_mem=15.0,  # CA3-specific parameters
+)
 ```
 
 **Rationale**:
-- The base class already consolidates ~400-500 lines of common checkpoint logic
-- Provides single source of truth for elastic tensor and neuromorphic formats
-- New helpers eliminate remaining duplication in tensor restoration patterns
-- Region-specific managers now focus only on region-specific logic
+1. Makes neuron types explicit (improves biological accuracy documentation)
+2. Enables future neuron type diversification
+3. Consistent with other registry patterns (WeightInitializer, ComponentRegistry)
 
 **Impact**:
-- **Files affected**: 1 (base_checkpoint_manager.py - enhanced)
-- **Breaking changes**: None (backward compatible additions)
-- **Severity**: Low
-- **Estimated effort**: ✅ Completed in 30 minutes
+- **Files affected**: ~8-10 region files
+- **Breaking changes**: None (internal change)
+- **Maintainability**: Medium improvement
+- **Effort**: 2-3 days
 
-**Usage Example**:
+---
+
+### 2.3 Separate State Management from Region Logic
+
+**Current State**: Region state classes ([src/thalia/regions/*/state.py](src/thalia/regions/)) follow good pattern with dataclasses.
+
+**Antipattern detected**: Some state manipulation logic scattered in main region file instead of state class.
+
+**Example pattern** (good):
 ```python
-class MyRegionCheckpointManager(BaseCheckpointManager):
-    def restore_state(self, state: Dict[str, Any]) -> None:
-        # Use new helper for partial tensor restore
-        self.restore_tensor_partial(
-            state["membrane"],
-            self.region.neurons.membrane,
-            self.region.device,
-            "membrane_potential"
+# State class handles state operations
+@dataclass
+class HippocampusState(BaseRegionState):
+    ca3_voltage: torch.Tensor
+
+    def reset(self) -> None:
+        self.ca3_voltage.zero_()
+```
+
+**Proposed Change**: Audit regions for state manipulation in `forward()` and extract to state methods:
+```python
+# Before: Direct manipulation in forward()
+def forward(self, inputs):
+    self.state.ca3_voltage += current
+    self.state.ca3_voltage.clamp_(-1.0, 1.0)
+
+# After: State method
+def forward(self, inputs):
+    self.state.update_voltage(current)
+
+# In state class
+def update_voltage(self, current: torch.Tensor) -> None:
+    self.ca3_voltage += current
+    self.ca3_voltage.clamp_(self.v_reset, self.v_threshold)
+```
+
+**Rationale**: Encapsulates state logic, improves testability.
+
+**Impact**:
+- **Files affected**: 5-7 region files + state files
+- **Breaking changes**: None (internal)
+- **Maintainability**: Medium improvement
+- **Effort**: 2-3 days
+
+---
+
+### 2.4 Unify Pathway Architectures
+
+**Current State**: Multiple pathway implementations:
+- [src/thalia/pathways/axonal_projection.py](src/thalia/pathways/axonal_projection.py#L83): `AxonalProjection` (pure routing, delays)
+- [src/thalia/pathways/sensory_pathways.py](src/thalia/pathways/sensory_pathways.py): `VisualPathway`, `AuditoryPathway`, `LanguagePathway` (more complex)
+- [src/thalia/regions/striatum/pathway_base.py](src/thalia/regions/striatum/pathway_base.py#L83): `StriatumPathway` (region-specific)
+
+**Observation**:
+- Axonal projection is the canonical "weights-at-dendrites" implementation
+- Sensory pathways encode/transform sensory data
+- Striatum pathway is region-specific base class (good pattern)
+
+**Inconsistency**: Sensory pathways in `pathways/` vs striatum pathway in `regions/striatum/`.
+
+**Proposed Change**:
+1. **Option A** (minimal): Document pathway types in [docs/patterns/component-parity.md](docs/patterns/component-parity.md):
+   - **Routing pathways**: Pure spike routing (AxonalProjection)
+   - **Sensory pathways**: Input encoding/preprocessing
+   - **Region-specific pathways**: Extracted complexity (StriatumPathway)
+
+2. **Option B** (structural): Move region-specific pathways to `pathways/region_specific/`:
+   - `pathways/region_specific/striatum_pathway.py`
+   - Benefits: Clearer separation, better discoverability
+   - Cost: Import path changes
+
+**Rationale**: Clarifies pathway taxonomy, improves navigation.
+
+**Impact** (Option A):
+- **Files affected**: 1 documentation file
+- **Breaking changes**: None
+- **Maintainability**: Low improvement
+
+**Impact** (Option B):
+- **Files affected**: 1 moved file + import updates
+- **Breaking changes**: Medium (import paths)
+- **Maintainability**: Medium improvement
+- **Effort**: 1-2 days
+
+**Recommendation**: Start with Option A, consider Option B if more region-specific pathways emerge.
+
+---
+
+### 2.5 Consolidate Learning Trace Management
+
+**Current State**: Learning traces managed in multiple places:
+- [src/thalia/learning/eligibility/trace_manager.py](src/thalia/learning/eligibility/trace_manager.py): Eligibility traces
+- [src/thalia/components/synapses/traces.py](src/thalia/components/synapses/traces.py): Generic trace utilities
+- Individual learning strategies manage their own traces
+
+**Duplication**: Trace decay logic repeated across strategies:
+```python
+# In STDP strategy
+self.pre_trace = self.pre_trace * decay + pre_spikes
+
+# In BCM strategy
+self.post_trace = self.post_trace * decay + post_spikes
+
+# In three-factor strategy
+self.eligibility = self.eligibility * decay + correlation
+```
+
+**Proposed Change**: Consolidate trace management into `TraceManager` with strategy pattern:
+```python
+from thalia.learning.eligibility import TraceManager
+
+class STDPStrategy:
+    def __init__(self, config):
+        self.trace_manager = TraceManager(
+            trace_type="exponential",
+            tau_ms=config.tau_stdp
         )
 
-        # Use new helper for multi-source weights
-        self.restore_dict_of_tensors(
-            state["synaptic_weights"],
-            self.region.synaptic_weights,
-            self.region.device,
-            "synaptic_weights"
+    def compute_update(self, ...):
+        pre_trace = self.trace_manager.update_trace(pre_spikes)
+```
+
+**Rationale**: DRY principle, centralizes trace dynamics for consistency.
+
+**Impact**:
+- **Files affected**: ~6 learning strategy files
+- **Breaking changes**: None (internal to strategies)
+- **Maintainability**: Medium improvement
+- **Effort**: 2-3 days
+
+---
+
+### 2.6 Standardize Diagnostics Collection Pattern
+
+**Current State**: Regions implement `collect_diagnostics()` with varied return structures:
+```python
+# Some regions return flat dict
+return {"firing_rate": rate, "sparsity": sparse}
+
+# Others return nested dict
+return {
+    "ca3": {"firing_rate": ca3_rate},
+    "ca1": {"firing_rate": ca1_rate}
+}
+```
+
+**Proposed Change**: Standardize on nested structure with subregion support:
+```python
+from thalia.mixins.diagnostic_collector_mixin import DiagnosticCollectorMixin
+
+def collect_diagnostics(self) -> Dict[str, Any]:
+    diags = self._collect_basic_diagnostics()  # From mixin
+
+    # Add region-specific metrics
+    diags.update({
+        "subregions": {
+            "ca3": self._collect_ca3_diagnostics(),
+            "ca1": self._collect_ca1_diagnostics(),
+        }
+    })
+    return diags
+```
+
+**Rationale**: Consistent structure improves diagnostics aggregation and visualization.
+
+**Impact**:
+- **Files affected**: ~8 region files
+- **Breaking changes**: Low (diagnostic consumers may need updates)
+- **Maintainability**: Medium improvement
+- **Effort**: 2 days
+
+---
+
+### 2.7 Extract Checkpoint Logic into Managers ✅ COMPLETED
+
+**Status**: Completed January 26, 2026 (same implementation as Tier 1.11)
+
+**Implementation Summary**: Added checkpoint managers for all remaining regions following the established pattern from Hippocampus, Striatum, and Prefrontal regions.
+
+**Files Created**:
+- [src/thalia/regions/cerebellum/checkpoint_manager.py](src/thalia/regions/cerebellum/checkpoint_manager.py): `CerebellumCheckpointManager` (418 lines)
+  - Handles climbing fiber error signals, eligibility traces, enhanced microcircuit (granule/purkinje/DCN)
+- [src/thalia/regions/cortex/checkpoint_manager.py](src/thalia/regions/cortex/checkpoint_manager.py): `LayeredCortexCheckpointManager` (480 lines)
+  - Manages 6-layer state (L4/L2/3/L5/L6a/L6b), recurrent connections, gap junctions, attention gating
+- [src/thalia/regions/thalamus/checkpoint_manager.py](src/thalia/regions/thalamus/checkpoint_manager.py): `ThalamicCheckpointManager` (457 lines)
+  - Handles dual populations (relay + TRN), burst/tonic modes, alpha gating
+
+**Pattern Followed**: All checkpoint managers inherit from [src/thalia/managers/base_checkpoint_manager.py](src/thalia/managers/base_checkpoint_manager.py):
+```python
+class RegionCheckpointManager(BaseCheckpointManager):
+    def __init__(self, region): ...
+    def collect_state(self) -> Dict[str, Any]: ...
+    def restore_state(self, state: Dict[str, Any]) -> None: ...
+    def get_neuromorphic_state(self) -> Dict[str, Any]: ...
+```
+
+**Region Integration**: Each region now delegates checkpoint operations:
+```python
+# In __init__:
+self.checkpoint_manager = RegionCheckpointManager(self)
+
+# In get_full_state:
+return self.checkpoint_manager.collect_state()
+
+# In load_full_state:
+self.checkpoint_manager.restore_state(state)
+```
+
+**Documentation**: [docs/reviews/checkpoint-managers-implementation.md](docs/reviews/checkpoint-managers-implementation.md)
+
+**Current State**: Complete checkpoint manager coverage:
+- [src/thalia/regions/hippocampus/checkpoint_manager.py](src/thalia/regions/hippocampus/checkpoint_manager.py) ✅
+- [src/thalia/regions/striatum/checkpoint_manager.py](src/thalia/regions/striatum/checkpoint_manager.py) ✅
+- [src/thalia/regions/prefrontal/checkpoint_manager.py](src/thalia/regions/prefrontal/checkpoint_manager.py) ✅
+- [src/thalia/regions/cerebellum/checkpoint_manager.py](src/thalia/regions/cerebellum/checkpoint_manager.py) ✅ NEW
+- [src/thalia/regions/cortex/checkpoint_manager.py](src/thalia/regions/cortex/checkpoint_manager.py) ✅ NEW
+- [src/thalia/regions/thalamus/checkpoint_manager.py](src/thalia/regions/thalamus/checkpoint_manager.py) ✅ NEW
+
+**Impact**:
+- **Files affected**: 9 files (3 new managers + 6 region integrations)
+- **Breaking changes**: None (maintains existing interface)
+- **Maintainability**: High improvement - uniform checkpoint interface
+- **Testability**: High improvement - checkpoint logic isolated
+- **Effort**: Completed in 1 day
+
+---
+
+### 2.8 Consolidate Configuration Management
+
+**Current State**: Good configuration system with base classes:
+- [src/thalia/config/base.py](src/thalia/config/base.py): `BaseConfig`
+- [src/thalia/config/region_configs.py](src/thalia/config/region_configs.py): Region-specific configs
+- [src/thalia/config/neuron_config.py](src/thalia/config/neuron_config.py): Neuron configs
+
+**Antipattern**: Some regions embed config as dataclass, others use inheritance:
+```python
+# Pattern 1: Config as separate dataclass (good)
+@dataclass
+class StriatumConfig:
+    n_d1: int
+    n_d2: int
+
+# Pattern 2: Config embedded in region (avoid)
+class Cortex:
+    def __init__(self, n_neurons: int, learning_rate: float):
+        self.n_neurons = n_neurons  # Should be in config
+```
+
+**Proposed Change**: Audit all regions to ensure config separation:
+1. All configurable parameters in dedicated `*Config` dataclass
+2. Config inherits from `BaseConfig` (gets device, dtype, seed)
+3. Region constructor takes config object, not individual parameters
+
+**Rationale**: Consistent configuration management, easier serialization, clearer parameter documentation.
+
+**Impact**:
+- **Files affected**: 2-3 region files (minor adjustments)
+- **Breaking changes**: Low (constructor signatures)
+- **Maintainability**: Medium improvement
+- **Effort**: 1-2 days
+
+---
+
+### 2.9 Improve Multi-Source Input Validation
+
+**Current State**: Regions accept `Dict[str, torch.Tensor]` inputs but validation is inconsistent.
+
+**Example issue**:
+```python
+def forward(self, inputs: SourceOutputs) -> torch.Tensor:
+    # What if inputs is empty?
+    # What if key doesn't exist?
+    cortex_input = inputs["cortex"]  # KeyError if missing
+```
+
+**Proposed Change**: Add input validation mixin:
+```python
+from thalia.mixins import InputValidationMixin
+
+class NeuralRegion(nn.Module, InputValidationMixin):
+    def forward(self, inputs: SourceOutputs) -> torch.Tensor:
+        self._validate_inputs(inputs, required_sources=["cortex", "thalamus"])
+        # Proceed safely
+```
+
+Or use base method in NeuralRegion:
+```python
+def _validate_source_inputs(self, inputs: SourceOutputs) -> None:
+    """Validate multi-source inputs against registered sources."""
+    for source in self.synaptic_weights.keys():
+        if source not in inputs:
+            raise ValueError(f"Missing input for registered source: {source}")
+```
+
+**Rationale**: Prevents runtime errors from missing inputs, improves error messages.
+
+**Impact**:
+- **Files affected**: 1 base class + optional mixin
+- **Breaking changes**: None (adds validation)
+- **Maintainability**: Medium improvement
+- **Effort**: 1-2 days
+
+---
+
+### 2.10 Consolidate Oscillator Integration
+
+**Current State**: Oscillator integration in regions is manual:
+```python
+def forward(self, inputs, theta_phase, gamma_phase):
+    theta_mod = compute_theta_modulation(theta_phase)
+    # Use theta_mod for gating
+```
+
+**Observation**: [src/thalia/coordination/oscillator.py](src/thalia/coordination/oscillator.py) provides excellent oscillator system, but integration pattern varies across regions.
+
+**Proposed Change**: Standardize oscillator integration via mixin or helper:
+```python
+from thalia.coordination import OscillatorIntegrationMixin
+
+class Hippocampus(NeuralRegion, OscillatorIntegrationMixin):
+    def forward(self, inputs):
+        theta_mod = self.get_theta_modulation()  # From mixin
+        gamma_mod = self.get_gamma_modulation()
+```
+
+**Rationale**: Reduces boilerplate, ensures consistent oscillator phase handling.
+
+**Impact**:
+- **Files affected**: 5-7 regions
+- **Breaking changes**: None (internal)
+- **Maintainability**: Medium improvement
+- **Effort**: 2-3 days
+
+---
+
+### 2.11 Document Component Lifecycle
+
+**Current State**: Component initialization order and lifecycle not formally documented.
+
+**Proposed Change**: Add lifecycle documentation to [docs/patterns/component-parity.md](docs/patterns/component-parity.md):
+```markdown
+## Component Lifecycle
+
+### Initialization Order
+1. `__init__`: Create neurons, allocate state tensors
+2. `register_source`: Add input sources (weights allocated)
+3. `reset_state`: Initialize dynamic state to resting values
+4. `to(device)`: Move to GPU (if needed)
+
+### Forward Pass
+1. `forward(inputs)`: Process multi-source inputs
+2. Apply learning (if enabled): `learning_strategy.apply(...)`
+3. Update internal state
+4. Return output spikes
+
+### Checkpointing
+1. `get_state()`: Export state dict
+2. `load_state(state_dict)`: Restore from checkpoint
+3. `validate_state()`: Verify integrity
+```
+
+**Rationale**: Helps developers understand component contracts, prevents initialization bugs.
+
+**Impact**:
+- **Files affected**: 1-2 documentation files
+- **Breaking changes**: None
+- **Maintainability**: Medium improvement
+- **Effort**: 1 day
+
+---
+
+### 2.12 Standardize Error Messages
+
+**Current State**: Good use of [src/thalia/core/errors.py](src/thalia/core/errors.py) for custom exceptions.
+
+**Observation**: Error messages vary in detail and format across regions.
+
+**Proposed Change**: Add error message templates to `errors.py`:
+```python
+class ComponentError(Exception):
+    """Base exception for component errors."""
+
+    @classmethod
+    def missing_input(cls, component_name: str, missing_source: str):
+        return cls(
+            f"{component_name} expected input from '{missing_source}' but it was not provided. "
+            f"Registered sources: {registered_sources}"
         )
 ```
 
-**Benefits Realized**:
-- ✅ Standardizes tensor restoration across all checkpoint managers
-- ✅ Handles shape mismatches gracefully with clear warnings
-- ✅ Reduces boilerplate in region-specific checkpoint managers
-- ✅ Makes checkpoint code more maintainable and testable
-
-**Next Steps** (Optional Enhancement):
-- Consider refactoring existing checkpoint managers to use new helpers
-- Would eliminate additional ~50-100 lines of duplication per manager
-- Can be done incrementally as regions are maintained
-
-**Duplicated Code Locations** (now addressable with new helpers):
-```
-src/thalia/regions/striatum/checkpoint_manager.py:280-320      # Tensor restoration loops
-src/thalia/regions/hippocampus/checkpoint_manager.py:250-290   # Tensor restoration loops
-src/thalia/regions/cortex/layered_cortex.py:2307-2350         # State loading patterns
-```
-
----
-
-#### 1.4 Consolidate State Validation Patterns ✅ **COMPLETED**
-
-**Current State**:
-Each region implements similar state validation logic in `get_state()` and `load_state()`:
-- Shape checking: `assert tensor.shape == expected_shape`
-- Device checking: `tensor.to(self.device)`
-- Dtype validation: `assert tensor.dtype == torch.float32`
-
-**Implementation**: ✅ **COMPLETED (January 26, 2026)**
-
-Added validation helpers to `StateLoadingMixin` at [src/thalia/mixins/state_loading_mixin.py](../../src/thalia/mixins/state_loading_mixin.py) and migrated 4 major regions:
-
-**Migration Status**: ✅ **ALL REGIONS MIGRATED**
-- ✅ [LayeredCortex](../../src/thalia/regions/cortex/layered_cortex.py): 15 device transfers (~0 line reduction, clearer intent)
-- ✅ [Thalamus](../../src/thalia/regions/thalamus/thalamus.py): Relay/TRN state + STP modules (~10 lines cleaner)
-- ✅ [Striatum](../../src/thalia/regions/striatum/striatum.py): FSI, votes, STP, delays (~15 lines cleaner)
-- ✅ [Prefrontal](../../src/thalia/regions/prefrontal/prefrontal.py): Working memory, gates, rules (~6 lines cleaner)
-- ✅ [Cerebellum](../../src/thalia/regions/cerebellum/cerebellum.py): Traces, climbing fiber, neurons (~10 lines cleaner)
-- ⚪ [PredictiveCortex](../../src/thalia/regions/cortex/predictive_cortex.py): Delegates to LayeredCortex (no migration needed)
-
-**Total Impact**: ~62 lines cleaner with consistent device transfer patterns across ALL regions
-
-**New Helper Methods**:
-```python
-class StateLoadingMixin:
-    def _validate_tensor_shape(
-        self,
-        tensor: torch.Tensor,
-        expected_shape: Tuple[int, ...],
-        name: str
-    ) -> None:
-        """Validate tensor shape with clear error message."""
-        if tensor.shape != expected_shape:
-            raise ValueError(
-                f"Shape mismatch for {name}: "
-                f"expected {expected_shape}, got {tensor.shape}"
-            )
-
-    def _load_tensor(
-        self,
-        tensor: torch.Tensor,
-        expected_shape: Optional[Tuple[int, ...]] = None,
-        name: str = "tensor",
-    ) -> torch.Tensor:
-        """Load tensor with validation and device transfer."""
-        if expected_shape:
-            self._validate_tensor_shape(tensor, expected_shape, name)
-        return tensor.to(self.device)
-```
-
-**Rationale**:
-- Reduces boilerplate in every region's `load_state()`
-- Provides consistent error messages across all regions
-- Combines validation + device transfer in one call
-- Leverages existing mixin infrastructure
+**Rationale**: Consistent, informative error messages improve debugging experience.
 
 **Impact**:
-- **Files affected**: 1 (StateLoadingMixin - enhanced) + 5 (regions migrated)
-- **Breaking changes**: None (backward compatible additions)
-- **Severity**: Low
-- **Estimated effort**: ✅ Completed in 105 minutes (45 min implementation + 60 min migration)
-
-**Usage Example**:
-```python
-class MyRegion(NeuralRegion, StateLoadingMixin):
-    def load_state(self, state: MyRegionState) -> None:
-        # Simple device transfer
-        self.state.spikes = self._load_tensor(state.spikes)
-
-        # With shape validation
-        self.neurons.membrane.data = self._load_tensor(
-            state.membrane,
-            expected_shape=(self.n_neurons,),
-            name="membrane_potential"
-        )
-```
-
-**Benefits Realized**:
-- ✅ Standardized validation across ALL regions in codebase
-- ✅ Consistent error messages (includes tensor name + both shapes)
-- ✅ Clearer code intent (explicit validation vs implicit)
-- ✅ Reduced device transfer boilerplate by ~62 lines across 5 regions
-- ✅ Complete codebase consistency (every region uses same pattern)
-- ✅ Zero remaining technical debt in device transfer patterns
-
-**Migration Complete**: All regions with `load_state()` methods now use the helpers. PredictiveCortex delegates to LayeredCortex, so no direct migration needed.
-
-**Potential Migration Targets**:
-```
-src/thalia/regions/cortex/layered_cortex.py:2307-2350       # 15 .to(device) calls
-src/thalia/regions/striatum/striatum.py:3501-3544           # Manual validation
-src/thalia/regions/hippocampus/trisynaptic.py:2460-2503    # Mixed validation patterns
-src/thalia/regions/thalamus/thalamus.py:811-850             # Device transfers
-src/thalia/regions/prefrontal/prefrontal.py:1241-1280      # Shape checks + transfers
-```
+- **Files affected**: 1 errors file + 5-10 regions
+- **Breaking changes**: None (improves errors)
+- **Maintainability**: Low-medium improvement
+- **Effort**: 1-2 days
 
 ---
 
-#### 1.5 Document Port-Based Routing Pattern More Prominently ✅ **COMPLETED**
+## Tier 3 - Major Restructuring
 
-**Current State**:
-Port-based routing (e.g., `source_port="l23"`, `source_port="l5"`) is used in LayeredCortex and ThalamicRelay but not prominently documented in the main architecture overview.
+### 3.1 Unify Region and Pathway Hierarchies
 
-**Implementation**: ✅ **COMPLETED (January 26, 2026)**
+**Current State**: Regions and pathways in separate directories:
+- `src/thalia/regions/` - Brain regions
+- `src/thalia/pathways/` - Connections
 
-Added prominent Port-Based Routing section to [docs/architecture/ARCHITECTURE_OVERVIEW.md](../../docs/architecture/ARCHITECTURE_OVERVIEW.md) after AxonalProjection section.
+**Design question**: Should pathways be first-class alongside regions, or nested within?
 
-**Content Added**:
-- Purpose and overview of port-based routing
-- Quick reference for LayeredCortex ports (`l23`, `l5`, `l6a`, `l6b`)
-- Quick reference for Thalamus ports (`relay`, `trn`)
-- Usage examples in BrainBuilder with biologically accurate connections
-- Benefits list (biological accuracy, explicit routing, no manual slicing)
-- Link to detailed pattern documentation
-
-**Port Reference Tables**:
-
-**LayeredCortex**:
-- `source_port="l23"` → Cortico-cortical connections
-- `source_port="l5"` → Cortico-subcortical connections
-- `source_port="l6a"` → Corticothalamic type I (TRN for spatial attention)
-- `source_port="l6b"` → Corticothalamic type II (Relay for gain modulation)
-
-**Thalamus**:
-- `source_port="relay"` → Thalamocortical relay neurons
-- `target_port="trn"` → Input to TRN (from cortex L6a)
-- `target_port="relay"` → Input to relay (from cortex L6b, sensory)
-
-**Usage Examples**:
-```python
-builder.connect("cortex", "striatum", source_port="l5")      # L5 → Striatum
-builder.connect("cortex", "cortex_v2", source_port="l23")    # L2/3 → Cortex
-builder.connect("cortex", "thalamus", source_port="l6a", target_port="trn")    # Attention
-builder.connect("cortex", "thalamus", source_port="l6b", target_port="relay")  # Gain
+**Option A** (current): Keep separate
+```
+src/thalia/
+  regions/
+    cortex/
+    hippocampus/
+  pathways/
+    axonal_projection.py
+    sensory_pathways.py
 ```
 
-**Rationale**:
-- Makes powerful pattern more discoverable
-- Reduces confusion about how to route layer-specific connections
-- Pattern already exists and works well - just needed better visibility
+**Option B**: Nest pathways under regions
+```
+src/thalia/regions/
+  cortex/
+    layered_cortex.py
+    pathways/
+      cortical_feedback.py
+  hippocampus/
+    trisynaptic.py
+    pathways/
+      perforant_path.py
+```
 
-**Impact**:
-- **Files affected**: 1 documentation file (ARCHITECTURE_OVERVIEW.md)
-- **Breaking changes**: None (documentation only)
-- **Severity**: Low
-- **Estimated effort**: ✅ Completed in 30 minutes
+**Option C**: Unified components directory
+```
+src/thalia/components/
+  brain/
+    cortex/
+    hippocampus/
+  pathways/
+    axonal/
+    sensory/
+```
 
-**Benefits Realized**:
-- ✅ Port-based routing prominently featured in main architecture guide
-- ✅ Clear examples make pattern immediately usable
-- ✅ Explicit layer-specific routing matches neuroscience
-- ✅ Encourages biologically plausible architectures
+**Analysis**:
+- Current structure (A) is clean and discoverable
+- Option B better reflects biological organization (pathways connect regions)
+- Option C is most flexible but loses biological metaphor
 
-**Related Documentation**:
-- [docs/patterns/port-based-routing.md](../../docs/patterns/port-based-routing.md) - Complete guide (already existed)
-- [docs/reviews/tier-1-5-implementation-notes.md](tier-1-5-implementation-notes.md) - Implementation notes
+**Recommendation**: **Keep Option A** (current structure). It's working well, component registry handles dynamic relationships.
+
+**If changing** (not recommended for now):
+- **Impact**: ~50+ files with import updates
+- **Breaking changes**: High (all imports change)
+- **Effort**: 1-2 weeks
 
 ---
 
-### Tier 2 - Moderate Refactoring 🔧
+### 3.2 Extract Common Layer Implementations
 
-These changes require more coordination but provide significant architectural improvements.
+**Current State**: Cortex has laminar structure (L4, L2/3, L5, L6), but layer logic is embedded in [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py).
+
+**Potential reuse**: Other regions (e.g., Thalamus) have layer-like structures.
+
+**Proposed Change**: Extract generic layer abstraction:
+```python
+# src/thalia/core/neural_layer.py
+class NeuralLayer(nn.Module):
+    """Generic neural layer with neurons and local connectivity."""
+
+    def __init__(self, n_neurons, config):
+        self.neurons = NeuronFactory.create(config.neuron_type, n_neurons)
+        self.lateral_weights = ...
+
+    def forward(self, bottom_up, top_down=None):
+        # Generic layer processing
+```
+
+Then cortex becomes:
+```python
+class LayeredCortex(NeuralRegion):
+    def __init__(self, config):
+        self.L4 = NeuralLayer(config.n_l4, layer_config)
+        self.L23 = NeuralLayer(config.n_l23, layer_config)
+```
+
+**Rationale**: Reusable layer abstraction, reduces duplication if other regions adopt laminar structure.
+
+**Concerns**:
+- May over-abstract (each layer has unique properties)
+- Current implementation is clear and biological
+- Premature optimization?
+
+**Recommendation**: **Defer** until clear reuse case emerges. Current structure is readable.
+
+**If implementing**:
+- **Impact**: 1 new base class + 2-3 regions refactored
+- **Breaking changes**: None (internal)
+- **Effort**: 1-2 weeks
 
 ---
 
-#### 2.1 Unify Exploration Strategies Across Regions
+### 3.3 Implement Event-Driven Simulation
 
-**Current State**:
-Striatum has a sophisticated exploration system ([src/thalia/regions/striatum/exploration.py](../../src/thalia/regions/striatum/exploration.py)) with UCB, epsilon-greedy, and Thompson sampling. Other regions (prefrontal, hippocampus) implement ad-hoc exploration when needed.
+**Current State**: Clock-driven simulation (fixed timestep) in [src/thalia/core/dynamic_brain.py](src/thalia/core/dynamic_brain.py).
 
-**Proposed Change**:
-Extract to `src/thalia/decision_making/exploration.py`:
+**Biological limitation**: Real neurons spike asynchronously, not on fixed grid.
 
+**Proposed Change**: Event-driven simulation mode where spikes trigger immediate processing:
 ```python
-class ExplorationStrategy(ABC):
-    @abstractmethod
-    def select_action(self, q_values: Tensor, context: Dict) -> int:
-        """Select action with exploration."""
-
-class UCBExploration(ExplorationStrategy):
-    """Upper Confidence Bound exploration (striatum-style)."""
-
-class ThompsonSampling(ExplorationStrategy):
-    """Bayesian exploration for uncertain environments."""
-
-class EpsilonGreedy(ExplorationStrategy):
-    """Classic epsilon-greedy exploration."""
+class EventDrivenBrain:
+    def process_event(self, spike_event):
+        source_region = spike_event.region
+        target_regions = self.connectivity[source_region]
+        for target in target_regions:
+            target.receive_spike(spike_event)
 ```
 
-**Rationale**:
-- Enables exploration in prefrontal cortex (working memory gating)
-- Provides consistent exploration interface
-- Striatum implementation is well-tested and robust
+**Benefits**:
+- More biologically accurate
+- Potentially faster for sparse networks
+- Supports variable delays naturally
 
-**Impact**:
-- **Files affected**: 3-4 (new module + striatum + prefrontal)
-- **Breaking changes**: Medium (refactor striatum.exploration usage)
-- **Severity**: Medium
-- **Estimated effort**: 8-12 hours
+**Challenges**:
+- Major architectural change
+- Learning rule adaptation needed
+- Numerical integration complexities
 
-**Pattern Improvement**:
-- **Before**: Each region implements exploration independently
-- **After**: Shared ExplorationStrategy interface, compose into regions
-- **Benefits**: Code reuse, consistent exploration behavior, easier experimentation
+**Recommendation**: **Research project** - requires careful design, potentially separate module.
+
+**If implementing**:
+- **Impact**: New brain class, adapter pattern for regions
+- **Breaking changes**: None (new mode, keep clock-driven)
+- **Effort**: 4-6 weeks
 
 ---
 
-#### 2.2 Consolidate Homeostasis Implementations
+### 3.4 Generalize Multi-Modal Integration
 
-**Current State**:
-Multiple homeostasis approaches:
-- [src/thalia/learning/homeostasis/synaptic_homeostasis.py](../../src/thalia/learning/homeostasis/synaptic_homeostasis.py): `UnifiedHomeostasis` (used by hippocampus, cortex)
-- [src/thalia/regions/striatum/homeostasis_component.py](../../src/thalia/regions/striatum/homeostasis_component.py): `StriatumHomeostasisComponent` (custom E/I balance)
-- [src/thalia/learning/ei_balance.py](../../src/thalia/learning/ei_balance.py): `LayerEIBalance` (cortex-specific)
+**Current State**: [src/thalia/regions/multisensory.py](src/thalia/regions/multisensory.py) handles visual, auditory, language integration.
 
-**Proposed Change**:
-Create homeostasis strategy pattern similar to learning strategies:
+**Observation**: Hardcoded for specific modalities. What about tactile, olfactory, gustatory?
 
+**Proposed Change**: Generic multi-modal integration region:
 ```python
-# src/thalia/learning/homeostasis/strategies.py
-class HomeostasisStrategy(Protocol):
-    def regulate(
-        self,
-        weights: Tensor,
-        activity: Tensor,
-        target: float
-    ) -> Tuple[Tensor, Dict]:
-        """Apply homeostatic regulation."""
+class MultiModalIntegration(NeuralRegion):
+    def __init__(self, modalities: List[str]):
+        for modality in modalities:
+            self.register_modality(modality)
 
-class SynapticScaling(HomeostasisStrategy):
-    """Multiplicative synaptic scaling."""
-
-class EIBalance(HomeostasisStrategy):
-    """Excitatory-inhibitory balance."""
-
-class MetabolicCost(HomeostasisStrategy):
-    """Energy-based regulation."""
+    def register_modality(self, name: str):
+        # Dynamically create modality pathway
 ```
 
-**Rationale**:
-- Reduces duplication between region-specific implementations
-- Enables mixing homeostatic mechanisms (scaling + E/I balance)
-- Follows successful LearningStrategy pattern
+**Benefits**:
+- Extensible to arbitrary modalities
+- Cleaner architecture for multi-modal research
 
-**Impact**:
-- **Files affected**: 5-6 (new module + striatum + cortex + hippocampus)
-- **Breaking changes**: Medium (internal API change)
-- **Severity**: Medium
-- **Estimated effort**: 16-20 hours
+**Challenges**:
+- Loses biological specificity (superior colliculus is visual/auditory specific)
+- May over-generalize
 
-**Duplication Example**:
-```python
-# Pattern appears in 3 places with slight variations:
-# striatum/homeostasis_component.py:150-180
-# learning/ei_balance.py:200-230
-# learning/homeostasis/synaptic_homeostasis.py:250-280
+**Recommendation**: **Evaluate need** - current implementation works for main modalities. Consider if olfactory/tactile integration becomes priority.
 
-# All implement: target_rate, adaptation, scaling logic
-# Could be unified: HomeostasisStrategy with region-specific configs
-```
+**If implementing**:
+- **Impact**: 1 new generic region, migrate current multisensory
+- **Breaking changes**: Medium
+- **Effort**: 2-3 weeks
 
 ---
 
-#### 2.3 Standardize Diagnostics Collection Across Regions ✅ **ALREADY IMPLEMENTED**
+### 3.5 Distributed Multi-GPU Training
 
-**Current State**:
-Each region implements `get_diagnostics()` with similar structure but different keys and formatting:
-- All compute firing rates, weight statistics, health metrics
-- Keys vary: `"spike_rate"` vs `"firing_rate"` vs `"activity"`
-- Some return flat dicts, others nested
+**Current State**: Single-device execution. Device management exists but no distributed training.
 
-**Implementation**: ✅ **ALREADY COMPLETE (December 22, 2025)**
+**Proposed Change**: Support for:
+1. Model parallelism (regions on different GPUs)
+2. Data parallelism (batch distribution)
+3. Pipeline parallelism (sequential region execution)
 
-This task was already implemented as part of Tier 2.2 diagnostics standardization. The codebase has comprehensive diagnostic standardization through [diagnostics_schema.py](../../src/thalia/core/diagnostics_schema.py).
-
-**Standardized Schema**:
-1. **DiagnosticsDict** TypedDict (top-level structure)
-   - `activity`: ActivityMetrics (required)
-   - `plasticity`: PlasticityMetrics | None
-   - `health`: HealthMetrics (required)
-   - `neuromodulators`: NeuromodulatorMetrics | None
-   - `region_specific`: Dict[str, Any] (custom metrics)
-
-2. **Helper Functions**:
-   - `compute_activity_metrics()`: Standard activity metrics (firing_rate, spike_count, sparsity)
-   - `compute_plasticity_metrics()`: Weight statistics (mean, std, min, max, LTP/LTD counts)
-   - `compute_health_metrics()`: Health indicators (silence, saturation, NaN/Inf, stability_score)
-
-**Region Adoption Status**:
-- ✅ **Striatum**: Full DiagnosticsDict format
-- ✅ **LayeredCortex**: Full DiagnosticsDict format
-- ✅ **Hippocampus**: Full DiagnosticsDict format
-- ✅ **Thalamus**: Full DiagnosticsDict format
-- ✅ **Cerebellum**: Full DiagnosticsDict format
-- ✅ **Multisensory**: Full DiagnosticsDict format
-- ✅ **PredictiveCortex**: Delegates to LayeredCortex (inherits format)
-- ⚠️ **Prefrontal**: Uses older `collect_standard_diagnostics()` pattern (minor inconsistency)
-
-**Overall Adoption**: 7/8 regions (87.5%) fully standardized
-
-**Example Usage**:
+**Example**:
 ```python
-def get_diagnostics(self) -> Dict[str, Any]:
-    from thalia.core.diagnostics_schema import (
-        compute_activity_metrics,
-        compute_plasticity_metrics,
-        compute_health_metrics,
-    )
-    
-    activity = compute_activity_metrics(self.output_spikes, self.n_neurons)
-    plasticity = compute_plasticity_metrics(self.weights, self.learning_rate)
-    health = compute_health_metrics(self.state_tensors, activity["firing_rate"])
-    
+brain = DynamicBrain(config, devices=["cuda:0", "cuda:1"])
+# Cortex on GPU 0, Hippocampus on GPU 1
+```
+
+**Benefits**:
+- Scale to larger models
+- Faster training
+
+**Challenges**:
+- Spike communication between GPUs (latency)
+- Synchronization complexity
+- Debugging difficulty
+
+**Recommendation**: **Future enhancement** - requires careful profiling to identify bottlenecks first.
+
+**If implementing**:
+- **Impact**: Core brain architecture changes, new device management
+- **Breaking changes**: None (opt-in feature)
+- **Effort**: 4-8 weeks
+
+---
+
+## Risk/Impact Assessment and Sequencing
+
+### Recommended Implementation Sequence
+
+**Phase 1: Quick Wins (Week 1-2)**
+Implement Tier 1 items 1.1-1.10:
+- Consolidate magic numbers → constants
+- Standardize weight initialization naming
+- Document patterns (TODO cleanup, import style, etc.)
+- **Risk**: Low, **Impact**: High visibility improvements
+
+**Phase 2: Structural Improvements (Week 3-5)**
+Implement Tier 2 items 2.1-2.7:
+- Extract components from large files (Hippocampus, Cortex)
+- Add missing checkpoint managers
+- Consolidate learning trace management
+- **Risk**: Medium (requires testing), **Impact**: High maintainability
+
+**Phase 3: Pattern Consolidation (Week 6-7)**
+Implement Tier 2 items 2.8-2.12:
+- Configuration management audit
+- Input validation improvements
+- Oscillator integration standardization
+- **Risk**: Low-medium, **Impact**: Medium quality improvements
+
+**Phase 4: Strategic Evaluation (Week 8+)**
+Evaluate Tier 3 items:
+- Most can be **deferred** (working well as-is)
+- Prioritize based on performance profiling results
+- Consider as research projects, not immediate refactors
+
+### Risk Mitigation Strategies
+
+1. **Test Coverage**: Ensure comprehensive tests before refactoring large files
+2. **Incremental Changes**: One Tier 1 item at a time, validate before next
+3. **Backward Compatibility**: Preserve public APIs during internal refactors
+4. **Documentation**: Update docs alongside code changes
+5. **Review Checkpoints**: Team review after each phase
+
+---
+
+## Appendix A: Affected Files and Links
+
+### Tier 1 Files (18 recommendations)
+
+**Magic Number Consolidation (1.1)**:
+- [src/thalia/constants/learning.py](src/thalia/constants/learning.py)
+- [src/thalia/tasks/executive_function.py](src/thalia/tasks/executive_function.py)
+- [src/thalia/training/curriculum/stage_monitoring.py](src/thalia/training/curriculum/stage_monitoring.py)
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py)
+- [src/thalia/regions/prefrontal/goal_emergence.py](src/thalia/regions/prefrontal/goal_emergence.py)
+- [src/thalia/regions/multisensory.py](src/thalia/regions/multisensory.py)
+- [src/thalia/neuromodulation/mixin.py](src/thalia/neuromodulation/mixin.py)
+- [src/thalia/learning/homeostasis/synaptic_homeostasis.py](src/thalia/learning/homeostasis/synaptic_homeostasis.py)
+
+**Weight Initialization (1.2)**:
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py)
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py)
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py)
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py)
+- [src/thalia/regions/cerebellum/cerebellum.py](src/thalia/regions/cerebellum/cerebellum.py)
+- [src/thalia/core/neural_region.py](src/thalia/core/neural_region.py)
+
+**State Reset Duplication (1.6)**:
+- [src/thalia/core/region_state.py](src/thalia/core/region_state.py)
+- [src/thalia/regions/striatum/state.py](src/thalia/regions/striatum/state.py)
+- [src/thalia/regions/thalamus/state.py](src/thalia/regions/thalamus/state.py)
+- [src/thalia/regions/prefrontal/state.py](src/thalia/regions/prefrontal/state.py)
+- [src/thalia/regions/hippocampus/state.py](src/thalia/regions/hippocampus/state.py)
+- [src/thalia/regions/cortex/state.py](src/thalia/regions/cortex/state.py)
+- [src/thalia/regions/cerebellum/state.py](src/thalia/regions/cerebellum/state.py)
+
+### Tier 2 Files (12 recommendations)
+
+**Large File Extraction (2.1)**:
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py) (2600 lines)
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py) (2400 lines)
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py) (1100 lines)
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py) (1200 lines)
+
+**Checkpoint Managers (2.7)**:
+- NEW: `src/thalia/regions/cerebellum/checkpoint_manager.py`
+- NEW: `src/thalia/regions/cortex/checkpoint_manager.py`
+- NEW: `src/thalia/regions/thalamus/checkpoint_manager.py`
+
+**Learning Trace Consolidation (2.5)**:
+- [src/thalia/learning/eligibility/trace_manager.py](src/thalia/learning/eligibility/trace_manager.py)
+- [src/thalia/components/synapses/traces.py](src/thalia/components/synapses/traces.py)
+- [src/thalia/learning/rules/strategies.py](src/thalia/learning/rules/strategies.py)
+
+### Tier 3 Files (5 recommendations)
+
+**No immediate file changes recommended** - all Tier 3 items are long-term strategic considerations.
+
+---
+
+## Appendix B: Detected Code Duplications
+
+### B.1 State Reset Pattern
+
+**Duplication**: Identical neuron state reset logic in 7 state classes.
+
+**Example code** (repeated):
+```python
+def reset(self) -> None:
+    """Reset all state to initial values."""
+    self.voltage.zero_()
+    self.conductance_E.zero_()
+    self.conductance_I.zero_()
+    self.refractory_timer.zero_()
+    self.adaptation.zero_()
+```
+
+**Locations**:
+1. [src/thalia/regions/striatum/state.py](src/thalia/regions/striatum/state.py#L304)
+2. [src/thalia/regions/thalamus/state.py](src/thalia/regions/thalamus/state.py#L123)
+3. [src/thalia/regions/prefrontal/state.py](src/thalia/regions/prefrontal/state.py#L114)
+4. [src/thalia/regions/hippocampus/state.py](src/thalia/regions/hippocampus/state.py#L189)
+5. [src/thalia/regions/cortex/state.py](src/thalia/regions/cortex/state.py#L190)
+6. [src/thalia/regions/cortex/state.py](src/thalia/regions/cortex/state.py#L373)
+7. [src/thalia/regions/cerebellum/state.py](src/thalia/regions/cerebellum/state.py#L187)
+
+**Consolidation**: Add `_reset_neuron_state()` helper in [src/thalia/core/region_state.py](src/thalia/core/region_state.py) `BaseRegionState` (see Tier 1 item 1.6).
+
+**Lines saved**: ~35 lines (5 lines × 7 files)
+
+---
+
+### B.2 Weight Initialization Methods
+
+**Duplication**: Similar `_initialize_weights` pattern across regions.
+
+**Example pattern**:
+```python
+def _initialize_weights(self) -> torch.Tensor:
+    """Initialize region-specific synaptic weights."""
+    # Pattern varies but basic structure is:
+    if self.source_type == "sparse":
+        return WeightInitializer.sparse_random(n_out, n_in, sparsity, device)
+    else:
+        return WeightInitializer.gaussian(n_out, n_in, mean, std, device)
+```
+
+**Locations**:
+1. [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L524-L690)
+2. [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py#L364-L400)
+3. [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py#L374-L580)
+4. [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py#L2247-L2300)
+
+**Consolidation**: Standardize method name and signature, add base implementation in `NeuralRegion` for common patterns (see Tier 1 item 1.2).
+
+**Lines saved**: Minimal (mostly consistency improvement, not direct duplication)
+
+---
+
+### B.3 Activity Threshold Checks
+
+**Duplication**: Repeated `> 0.01` or `< 0.01` threshold checks for activity detection.
+
+**Example pattern**:
+```python
+if activity > 0.01:  # Active
+    # Process
+
+if firing_rate < 0.01:  # Silent
+    # Warn or skip
+```
+
+**Locations**:
+1. [src/thalia/training/curriculum/stage_monitoring.py](src/thalia/training/curriculum/stage_monitoring.py#L184): Silent region detection
+2. [src/thalia/regions/multisensory.py](src/thalia/regions/multisensory.py#L1018): Multi-modal activity
+3. [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L1676): Encoding modulation check
+4. [src/thalia/learning/homeostasis/synaptic_homeostasis.py](src/thalia/learning/homeostasis/synaptic_homeostasis.py#L110): Minimum activity config
+
+**Consolidation**: Use constant from [src/thalia/constants/learning.py](src/thalia/constants/learning.py) (see Tier 1 items 1.1 and 1.8).
+
+**Lines saved**: Minimal, but fixes inconsistency bug (0.001 vs 0.01 mismatch).
+
+---
+
+### B.4 Diagnostic Collection Boilerplate
+
+**Duplication**: Basic diagnostic collection repeated in each region's `collect_diagnostics()`:
+```python
+def collect_diagnostics(self) -> Dict[str, Any]:
     return {
-        "activity": activity,
-        "plasticity": plasticity,
-        "health": health,
-        "neuromodulators": {"dopamine": self.dopamine_level},
-        "region_specific": self._get_custom_metrics(),
+        "firing_rate": self._compute_firing_rate(),
+        "sparsity": self._compute_sparsity(),
+        "mean_weight": self.weights.mean().item(),
     }
 ```
 
-**Benefits Realized**:
-- ✅ Uniform monitoring across all regions
-- ✅ Type safety with TypedDict schemas
-- ✅ Comparable metrics between regions
-- ✅ Extensible via `region_specific` section
-- ✅ Module-level helpers (no class dependency)
+**Observation**: [src/thalia/mixins/diagnostic_collector_mixin.py](src/thalia/mixins/diagnostic_collector_mixin.py) exists with helpers but not consistently used.
 
-**Rationale for Current Implementation**:
-The existing implementation is **superior** to the architecture review proposal:
-- Uses module-level functions instead of mixin methods (more flexible)
-- TypedDict instead of dataclass (better for optional fields)
-- Explicit helper calls (clearer than template methods)
-- Already adopted by 87.5% of regions
+**Consolidation**: Encourage use of `DiagnosticCollectorMixin` methods:
+- `_compute_firing_rate_diagnostic(spikes)`
+- `_compute_sparsity_diagnostic(spikes)`
+- `_compute_weight_statistics(weights)`
 
-**Optional Enhancements** (not required):
-1. Migrate Prefrontal to standard format (~15 minutes)
-2. Add `DiagnosticsDict` type annotation to all `get_diagnostics()` (~1-2 hours)
-3. Document in ARCHITECTURE_OVERVIEW.md (~30 minutes)
-
-**Impact**:
-- **Files affected**: Already implemented across 7/8 regions
-- **Breaking changes**: None (TypedDict is structural typing)
-- **Severity**: N/A (already complete)
-- **Estimated effort**: ✅ Completed December 22, 2025 (0 hours remaining)
-
-**Related Documentation**:
-- [src/thalia/core/diagnostics_schema.py](../../src/thalia/core/diagnostics_schema.py) - Schema and helpers
-- [docs/reviews/tier-2-3-implementation-notes.md](tier-2-3-implementation-notes.md) - Implementation review
+**Lines saved**: 3-5 lines per region × 8 regions = 24-40 lines
 
 ---
 
-#### 2.4 Extract Common Forward Pass Patterns
+### B.5 Trace Update Logic
 
-**Current State**:
-Most regions follow similar forward pass structure:
-1. Route inputs via InputRouter
-2. Apply neuromodulation
-3. Compute neuron dynamics
-4. Apply learning rules
-5. Collect diagnostics
-
-**Antipattern Detection**: Repeated forward pass pattern across 8 region implementations.
-
-**Proposed Change**:
-Add template method to `NeuralRegion`:
-
+**Duplication**: Exponential trace decay repeated across learning strategies:
 ```python
-class NeuralRegion(nn.Module, ...):
-    def forward(self, inputs: SourceOutputs) -> Tensor:
-        """Template method for forward pass."""
-        # 1. Input routing (override _route_inputs if custom)
-        routed = self._route_inputs(inputs)
-
-        # 2. Neuromodulation (automatic)
-        routed = self._apply_neuromodulation(routed)
-
-        # 3. Compute output (must override)
-        output = self._compute_output(routed)
-
-        # 4. Learning (automatic if strategies defined)
-        if self.plasticity_enabled:
-            self._apply_learning(inputs, output)
-
-        # 5. Diagnostics (automatic)
-        if self.diagnostics_enabled:
-            self._collect_diagnostics(output)
-
-        return output
-
-    @abstractmethod
-    def _compute_output(self, inputs: SourceOutputs) -> Tensor:
-        """Override this for region-specific computation."""
+self.pre_trace = self.pre_trace * decay_factor + pre_spikes
+self.post_trace = self.post_trace * decay_factor + post_spikes
 ```
 
-**Rationale**:
-- Reduces duplication of boilerplate forward pass logic
-- Ensures consistent neuromodulation/learning application
-- Regions only implement core computation
+**Locations**:
+1. STDP strategy (pre/post traces)
+2. BCM strategy (running average)
+3. Three-factor strategy (eligibility trace)
+4. Various region-specific learning components
 
-**Impact**:
-- **Files affected**: NeuralRegion base + all 8 regions
-- **Breaking changes**: High (changes forward() signature)
-- **Severity**: High
-- **Estimated effort**: 20-24 hours
+**Consolidation**: Use [src/thalia/components/synapses/traces.py](src/thalia/components/synapses/traces.py) `update_trace()` utility or [src/thalia/learning/eligibility/trace_manager.py](src/thalia/learning/eligibility/trace_manager.py) (see Tier 2 item 2.5).
 
-**Risk**: This is a significant refactoring. Consider prototyping with one region first.
+**Lines saved**: 2-3 lines per strategy × 6 strategies = 12-18 lines
 
 ---
 
-### Tier 3 - Major Restructuring 🏗️
+## Summary of Duplication Impact
 
-These are long-term architectural improvements that require careful planning.
+| Duplication Type | Instances | Lines Duplicated | Consolidation Effort |
+|------------------|-----------|------------------|---------------------|
+| State reset | 7 | ~35 | Low (1 day) |
+| Weight initialization | 4 | ~100 | Low (1 day) |
+| Activity thresholds | 8+ | ~15 | Very low (hours) |
+| Diagnostic collection | 8 | 24-40 | Low (1 day) |
+| Trace updates | 6+ | 12-18 | Medium (2 days) |
+| **Total** | **33+** | **186-208** | **5-6 days** |
+
+**Note**: Line counts are approximations. Actual duplication is in logic/pattern rather than exact code.
 
 ---
 
-#### 3.1 Unify State Management with Versioned Schemas
+## Antipatterns Detected
 
-**Current State**:
-Each region has a `State` dataclass but no formal versioning or schema validation:
-- [src/thalia/regions/cortex/state.py](../../src/thalia/regions/cortex/state.py): `LayeredCortexState`
-- [src/thalia/regions/hippocampus/state.py](../../src/thalia/regions/hippocampus/state.py): `HippocampusState`
-- No schema version numbers in state objects
-- Manual migration logic in checkpoint managers
+### A.1 God Object Pattern - AVOIDED ✅
 
-**Proposed Change**:
-Implement versioned state schema system:
+**Analysis**: Early detection prevented god objects. Regions that started growing large (Striatum, Hippocampus) successfully extracted components:
+- `StriatumLearningComponent`
+- `StriatumHomeostasisComponent`
+- `StriatumExplorationComponent`
+- `HippocampusLearningComponent`
 
+**Status**: **Not a problem** - good component extraction pattern established.
+
+---
+
+### A.2 Magic Numbers - DETECTED ⚠️
+
+**Severity**: Medium
+
+**Description**: Numeric literals for learning rates, thresholds, and noise levels scattered throughout code without named constants.
+
+**Examples**: See Appendix B.3 (Activity Threshold Checks)
+
+**Fix**: Tier 1 items 1.1, 1.3, 1.8 (consolidate to constants modules)
+
+---
+
+### A.3 Inconsistent Abstraction - MINOR ⚠️
+
+**Severity**: Low
+
+**Description**: Some pathways are simple (AxonalProjection), others complex (VisualPathway with encoding). Not clear when to use which.
+
+**Fix**: Tier 2 item 2.4 (document pathway taxonomy)
+
+---
+
+### A.4 Violation of Biological Plausibility - NOT DETECTED ✅
+
+**Analysis**: Excellent adherence to biological constraints:
+- ✅ Binary spikes (not firing rates) in processing
+- ✅ Local learning rules (no backpropagation detected)
+- ✅ Weights at dendrites (not in axons)
+- ✅ Conductance-based neurons (voltage-dependent currents)
+
+**Status**: **Not a problem** - biological plausibility maintained.
+
+---
+
+### A.5 Premature Optimization - NOT DETECTED ✅
+
+**Analysis**: Code is clean and readable, not over-engineered. Good balance of abstraction (mixins, registries) without unnecessary complexity.
+
+**Status**: **Not a problem**
+
+---
+
+### A.6 Tight Coupling - LOW ⚠️
+
+**Severity**: Low
+
+**Description**: Some regions directly instantiate other regions or components instead of using dependency injection.
+
+**Example**: Regions create `ConductanceLIF` neurons directly instead of accepting neuron instance.
+
+**Fix**: Tier 2 item 2.2 (migrate to NeuronFactory for flexibility)
+
+**Note**: This is a minor issue; current approach works fine for single-neuron-type regions.
+
+---
+
+## Pattern Improvements
+
+### P.1 Learning Strategy Pattern - EXCELLENT ✅
+
+**Current Pattern**: Pluggable learning strategies with registry.
+
+**Status**: Successfully adopted, mature implementation. No improvement needed.
+
+**Example**:
 ```python
-# src/thalia/core/state_schema.py
-@dataclass
-class VersionedState:
-    """Base class for all region states."""
-    schema_version: int
-    region_type: str
-    created_at: datetime
-
-    @classmethod
-    @abstractmethod
-    def current_version(cls) -> int:
-        """Return current schema version."""
-
-    @classmethod
-    @abstractmethod
-    def migrate_from(cls, old_state: Dict, from_version: int) -> 'VersionedState':
-        """Migrate from older version."""
-
-# Usage
-@dataclass
-class LayeredCortexState(VersionedState):
-    schema_version: int = 3  # Current version
-    l4_v: torch.Tensor
-    l23_v: torch.Tensor
-    # ... rest of state
-
-    @classmethod
-    def migrate_from(cls, old_state: Dict, from_version: int) -> 'LayeredCortexState':
-        if from_version == 1:
-            # Add l6a, l6b layers (added in v2)
-            old_state['l6a_v'] = torch.zeros(...)
-            old_state['l6b_v'] = torch.zeros(...)
-            from_version = 2
-        if from_version == 2:
-            # Split conductances (added in v3)
-            # ... migration logic
-            from_version = 3
-        return cls(**old_state)
+strategy = create_strategy("three_factor", learning_rate=0.001)
+new_weights, metrics = strategy.compute_update(weights, pre, post, dopamine)
 ```
 
-**Rationale**:
-- Enables safe schema evolution
-- Automatic migration path detection
-- Clear version history for debugging
-
-**Impact**:
-- **Files affected**: All region state files (8) + new base class
-- **Breaking changes**: High (changes state serialization format)
-- **Severity**: High
-- **Estimated effort**: 40-50 hours
-
-**Recommendation**: This should be considered for Thalia v0.3.0 as a major version bump with migration tooling.
+**Benefit**: Eliminates code duplication for learning rules, enables easy experimentation.
 
 ---
 
-#### 3.2 Introduce Region Composition API
+### P.2 Mixin Architecture - EXCELLENT ✅
 
-**Current State**:
-Complex regions (Striatum, Hippocampus, Cerebellum) compose sub-components but use manual wiring:
-- Striatum manually coordinates D1/D2 pathways
-- Hippocampus manually coordinates DG→CA3→CA1
-- No standard composition interface
+**Current Pattern**: Multiple inheritance with focused mixins.
 
-**Proposed Change**:
-Add composition API to `NeuralRegion`:
+**Status**: Well-designed, good separation of concerns. No improvement needed.
 
+**Example**:
 ```python
-class NeuralRegion(nn.Module, ...):
-    def add_subregion(
-        self,
-        name: str,
-        subregion: NeuralRegion,
-        connection: SubregionConnection
-    ) -> None:
-        """Add a sub-region with automatic wiring."""
-        self._subregions[name] = subregion
-        self._subregion_connections[name] = connection
-
-    def forward(self, inputs: SourceOutputs) -> Tensor:
-        # Automatically route through subregions based on connections
-        outputs = {}
-        for name, subregion in self._subregions.items():
-            connection = self._subregion_connections[name]
-            sub_inputs = connection.route(inputs, outputs)
-            outputs[name] = subregion(sub_inputs)
-        return self._combine_subregion_outputs(outputs)
+class NeuralRegion(
+    nn.Module,
+    BrainComponentMixin,
+    NeuromodulatorMixin,
+    GrowthMixin,
+    ResettableMixin,
+    DiagnosticsMixin,
+    StateLoadingMixin,
+    LearningStrategyMixin,
+):
 ```
 
-**Example Usage**:
+**Benefit**: Each mixin has single responsibility, easily testable.
+
+---
+
+### P.3 State Dataclass Pattern - GOOD ✅
+
+**Current Pattern**: Separate state dataclasses for each region.
+
+**Opportunity**: Add helper methods for common state operations (see Tier 1 item 1.6).
+
+**Before**:
 ```python
-class TrisynapticHippocampus(NeuralRegion):
-    def __init__(self, config):
-        super().__init__(config)
-
-        # Compose sub-regions
-        self.add_subregion("dg", DentateGyrus(config.dg))
-        self.add_subregion("ca3", CA3(config.ca3))
-        self.add_subregion("ca1", CA1(config.ca1))
-
-        # Define routing
-        self.connect_subregions("dg", "ca3", delay_ms=2.0)
-        self.connect_subregions("ca3", "ca1", delay_ms=1.5)
+def reset(self) -> None:
+    self.voltage.zero_()
+    self.conductance_E.zero_()
+    # ... repeated 7 times
 ```
 
-**Rationale**:
-- Makes complex region composition more declarative
-- Enables sub-region reuse (DG could be used independently)
-- Automatic delay handling between sub-regions
-
-**Impact**:
-- **Files affected**: NeuralRegion base + 3 complex regions
-- **Breaking changes**: High (significant refactoring of complex regions)
-- **Severity**: High
-- **Estimated effort**: 60-80 hours
-
-**Recommendation**: This is a major architectural shift. Consider for Thalia v0.4.0 or later.
-
----
-
-#### 3.3 Extract Theta/Gamma/Oscillator Management to Dedicated System
-
-**Current State**:
-Oscillator phase tracking is distributed:
-- Some regions track their own theta phase
-- Some rely on BrainComponentMixin defaults
-- No centralized oscillator coordination
-
-**Proposed Change**:
-Create `src/thalia/coordination/oscillator_coordinator.py`:
-
+**After**:
 ```python
-class OscillatorCoordinator:
-    """Centralized oscillator phase management.
-
-    Manages:
-    - Global theta (6-10 Hz)
-    - Regional gamma (30-80 Hz)
-    - Cross-frequency coupling
-    - Phase reset on task boundaries
-    """
-
-    def __init__(self, dt_ms: float):
-        self.theta_phase = 0.0
-        self.gamma_phases: Dict[str, float] = {}
-        self.dt_ms = dt_ms
-
-    def step(self) -> OscillatorState:
-        """Advance all oscillators by one timestep."""
-        self.theta_phase += 2 * math.pi * THETA_FREQ * self.dt_ms / 1000
-        # ... update gamma phases
-        return OscillatorState(theta=self.theta_phase, gamma=self.gamma_phases)
-
-    def get_region_phases(self, region_name: str) -> Tuple[float, float]:
-        """Get (theta, gamma) phases for specific region."""
-        return self.theta_phase, self.gamma_phases.get(region_name, 0.0)
+def reset(self) -> None:
+    self._reset_neuron_state()  # Common helper
+    self.region_specific_state.zero_()
 ```
 
-**Rationale**:
-- Centralized oscillator management prevents phase drift
-- Enables realistic cross-frequency coupling across regions
-- Simplifies region implementations (no local phase tracking)
-
-**Impact**:
-- **Files affected**: New coordinator + DynamicBrain + all regions
-- **Breaking changes**: High (changes how regions access oscillator info)
-- **Severity**: High
-- **Estimated effort**: 30-40 hours
+**Benefit**: Reduces duplication, centralizes common state management.
 
 ---
 
-## Pattern Adherence Analysis
+### P.4 Component Registry Pattern - EXCELLENT ✅
 
-### ✅ Excellent Pattern Adherence
+**Current Pattern**: Unified registry for regions, pathways, modules.
 
-1. **WeightInitializer Registry**: Consistently used across all regions and pathways. No direct `torch.randn()` in synaptic weight initialization.
+**Status**: Mature, well-documented. No improvement needed.
 
-2. **LearningStrategy Pattern**: Well-implemented and adopted in all major regions (cortex uses create_cortex_strategy, striatum uses three-factor, hippocampus uses STDP).
+**Example**:
+```python
+@register_region("cortex", config_class=LayeredCortexConfig)
+class LayeredCortex(NeuralRegion):
+    pass
 
-3. **Mixin Architecture**: Clean separation with 7 core mixins providing functionality to all NeuralRegion subclasses. Method Resolution Order (MRO) properly managed.
+cortex = ComponentRegistry.create("region", "cortex", config)
+```
 
-4. **State Management**: All regions use dataclass-based state with `BaseRegionState` inheritance. Consistent get_state/load_state API.
-
-5. **Biological Plausibility**:
-   - Local learning rules only (no backpropagation detected)
-   - Spike-based processing (binary spikes, not firing rates in computation)
-   - Causal processing (no future information access)
-   - Neuromodulation properly separated from computation
-
-### 🟡 Areas for Improvement
-
-1. **Device Management**: Some task/training modules create tensors without explicit device parameter (though most use `device=device`).
-
-2. **Diagnostic Keys**: Some inconsistency in diagnostic dictionary keys across regions (minor, doesn't affect functionality).
-
-3. **Growth API**: All regions implement `grow_output()` but only 2 implement `grow_source()` (striatum, cerebellum). Consider documenting which growth operations are required vs optional.
+**Benefit**: Dynamic component creation, plugin architecture support.
 
 ---
 
-## Antipattern Detection
+### P.5 Weight Initializer Registry - GOOD ✅
 
-### ✅ No Major Antipatterns Found
+**Current Pattern**: Registry for weight initialization methods.
 
-The codebase successfully avoids common antipatterns:
+**Opportunity**: Ensure 100% adoption across codebase (currently ~80-90%).
 
-- ❌ **God Objects**: Not found. Large files (striatum, hippocampus, cortex) are justified by biological cohesion (see ADR-011).
-- ❌ **Circular Dependencies**: Not detected in module imports.
-- ❌ **Global Mutable State**: Not found. All state is encapsulated in region/pathway objects.
-- ❌ **Non-Local Learning**: Not found. All learning rules are local (STDP, BCM, Hebbian, three-factor).
-- ❌ **Analog Rate Coding**: Not found. All regions use binary spike processing.
+**Status**: Mostly adopted, minor cleanup needed (see Tier 1 item 1.2).
 
-### 🟡 Minor Issues
+**Example**:
+```python
+weights = WeightInitializer.sparse_random(n_out, n_in, sparsity=0.2, device=device)
+```
 
-1. **Magic Numbers**: Some literal constants in task modules (covered in Tier 1.1).
-
-2. **Duplicated Validation Logic**: Some duplication in checkpoint managers and state loading (covered in Tier 1.3, 1.4).
-
-3. **Repeated Patterns**: Forward pass structure is similar across regions but not DRY'd (covered in Tier 2.4).
+**Benefit**: Consistent initialization, easier testing, clearer biological assumptions.
 
 ---
 
-## Code Duplication Analysis
+### P.6 Checkpoint Manager Pattern - GOOD, INCOMPLETE ⚠️
 
-### High Priority Duplications
+**Current Pattern**: Base checkpoint manager with region-specific implementations.
 
-**Checkpoint Validation Logic** (~200 lines duplicated):
-```
-src/thalia/regions/striatum/checkpoint_manager.py:95-200
-src/thalia/regions/hippocampus/checkpoint_manager.py:87-192
-```
-- **Pattern**: Version checking, state validation, error handling
-- **Consolidation**: Create `RegionCheckpointManager` base class (Tier 1.3)
+**Opportunity**: Add checkpoint managers for remaining regions (Cerebellum, Cortex, Thalamus).
 
-**State Tensor Loading** (~50 lines per region):
-```
-src/thalia/regions/cortex/layered_cortex.py:2307-2350
-src/thalia/regions/hippocampus/trisynaptic.py:2460-2503
-src/thalia/regions/striatum/striatum.py:3501-3544
-```
-- **Pattern**: `.to(self.device)`, shape validation, dtype checking
-- **Consolidation**: Add helpers to `StateLoadingMixin` (Tier 1.4)
+**Status**: Partially adopted (3/8 regions), pattern is excellent (see Tier 2 item 2.7).
 
-**Forward Pass Boilerplate** (~20 lines per region):
-```
-All region forward() methods share:
-1. Input routing
-2. Neuromodulation application
-3. Learning rule application
-4. Diagnostics collection
-```
-- **Consolidation**: Template method in `NeuralRegion` (Tier 2.4)
-
-### Medium Priority Duplications
-
-**Homeostasis Logic** (~100 lines duplicated):
-```
-src/thalia/regions/striatum/homeostasis_component.py:150-250
-src/thalia/learning/ei_balance.py:200-300
-src/thalia/learning/homeostasis/synaptic_homeostasis.py:250-350
-```
-- **Pattern**: Target rate, adaptation, scaling
-- **Consolidation**: HomeostasisStrategy pattern (Tier 2.2)
-
-**Exploration Code** (~80 lines potential reuse):
-```
-src/thalia/regions/striatum/exploration.py:200-350  # UCB, epsilon-greedy
-src/thalia/regions/prefrontal/prefrontal.py:600-650  # Ad-hoc exploration
-```
-- **Pattern**: Action selection with exploration
-- **Consolidation**: Extract to decision_making/ (Tier 2.1)
+**Benefit**: Consistent save/load behavior, easier to maintain.
 
 ---
 
-## Naming and Organization Assessment
+### P.7 Component Extraction Pattern - GOOD, EXPANDING ✅
 
-### ✅ Strong Organization
+**Current Pattern**: Extract large regions into focused components (Learning, Homeostasis, etc.).
 
-**Well-Named Modules**:
-- `core/` - Core abstractions (NeuralRegion, protocols, state management)
-- `regions/` - Brain regions with clear hierarchy (cortex/, hippocampus/, striatum/)
-- `learning/` - Learning mechanisms (rules/, homeostasis/, eligibility/)
-- `components/` - Reusable components (neurons/, synapses/, gap_junctions)
-- `pathways/` - Axonal projections and routing
+**Status**: Successfully applied to Striatum and Hippocampus, should expand to Cortex and Thalamus (see Tier 2 item 2.1).
 
-**Clear Naming Conventions**:
-- Regions: `LayeredCortex`, `TrisynapticHippocampus`, `Striatum`
-- Configs: `LayeredCortexConfig`, `HippocampusConfig`, `StriatumConfig`
-- States: `LayeredCortexState`, `HippocampusState`, `StriatumState`
-- Managers: `StriatumCheckpointManager`, `HippocampusCheckpointManager`
+**Before** (2600 lines):
+```python
+class Striatum(NeuralRegion):
+    def __init__(self):
+        # 2600 lines of learning, homeostasis, exploration, etc.
+```
 
-### 🟡 Minor Naming Inconsistencies
+**After** (split):
+```python
+class Striatum(NeuralRegion):  # 800 lines
+    def __init__(self):
+        self.learning = StriatumLearningComponent()
+        self.homeostasis = StriatumHomeostasisComponent()
 
-1. **State Dataclasses**: Some use `State` suffix, some use `StateTracker` (minor).
-   - Recommendation: Standardize on `State` for dataclasses, `StateTracker` for stateful managers.
+# Separate files:
+# striatum/learning_component.py
+# striatum/homeostasis_component.py
+```
 
-2. **Port Names**: Cortex uses `"l23"`, `"l5"`, `"l6a"`, `"l6b"` while thalamus uses `"relay"`, `"trn"`.
-   - Recommendation: Document port naming convention in ARCHITECTURE_OVERVIEW.md (covered in Tier 1.5).
+**Benefit**: Improved maintainability, easier testing, clearer separation of concerns.
 
 ---
 
-## Discoverability Analysis
+### P.8 Multi-Source Input Pattern - EXCELLENT ✅
 
-### ✅ Excellent Discoverability
+**Current Pattern**: Regions accept `Dict[str, torch.Tensor]` for multi-source inputs.
 
-1. **Registry Pattern**: Components, learning strategies, neurons all use registries with `list_*()` methods for discovery.
+**Status**: Well-designed, biologically accurate (weights at dendrites).
 
-2. **Type Hints**: Comprehensive type hints with TypeAliases in `typing.py` make API clear.
-
-3. **Docstrings**: Most classes have detailed docstrings with usage examples.
-
-4. **Documentation**: Extensive docs/ directory with guides, patterns, and API references.
-
-### 🟡 Could Be Improved
-
-1. **Port-Based Routing**: Powerful feature but not prominently documented (covered in Tier 1.5).
-
-2. **Mixin Usage**: Mixins are well-documented in patterns/mixins.md but could be more prominently linked from ARCHITECTURE_OVERVIEW.md.
-
-3. **Learning Strategy Selection**: Documentation exists but could benefit from decision tree ("When to use STDP vs BCM vs three-factor").
-
----
-
-## Risk Assessment and Sequencing
-
-### Implementation Order (Recommended)
-
-**Phase 1: Quick Wins** (1-2 weeks)
-- Tier 1.1: Extract task constants
-- Tier 1.2: Standardize tensor creation
-- Tier 1.5: Enhance port documentation
-
-**Phase 2: Foundation Improvements** (2-3 weeks)
-- Tier 1.3: Unified checkpoint manager
-- Tier 1.4: State validation helpers
-- Tier 2.3: Standardized diagnostics
-
-**Phase 3: Pattern Consolidation** (4-6 weeks)
-- Tier 2.1: Exploration strategies
-- Tier 2.2: Homeostasis strategies
-- Tier 2.4: Forward pass template (prototype with one region first)
-
-**Phase 4: Major Refactoring** (v0.3.0 or later)
-- Tier 3.1: Versioned state schemas
-- Tier 3.2: Region composition API
-- Tier 3.3: Oscillator coordinator
-
-### Risk Mitigation
-
-1. **Tier 1**: Low risk, implement incrementally with PR per change.
-
-2. **Tier 2**: Medium risk, prototype patterns before full rollout. Start with one region to validate approach.
-
-3. **Tier 3**: High risk, requires major version bump. Plan for 3-6 month timeline with beta testing.
-
-**Testing Strategy**: All changes should maintain 100% test coverage. Existing tests should pass without modification (unless testing internals that change).
-
----
-
-## Appendix A: Affected Files Reference
-
-### Tier 1 Changes
-
-**1.1 Task Constants**:
-- [src/thalia/constants/tasks.py](../../src/thalia/constants/tasks.py) (new)
-- [src/thalia/tasks/stimulus_utils.py](../../src/thalia/tasks/stimulus_utils.py)
-- [src/thalia/tasks/executive_function.py](../../src/thalia/tasks/executive_function.py)
-- [src/thalia/training/curriculum/stage_manager.py](../../src/thalia/training/curriculum/stage_manager.py)
-
-**1.2 Tensor Creation**:
-- [src/thalia/tasks/stimulus_utils.py](../../src/thalia/tasks/stimulus_utils.py)
-- [src/thalia/tasks/sensorimotor.py](../../src/thalia/tasks/sensorimotor.py)
-- [src/thalia/training/curriculum/stage_manager.py](../../src/thalia/training/curriculum/stage_manager.py)
-- [src/thalia/training/evaluation/metacognition.py](../../src/thalia/training/evaluation/metacognition.py)
-
-**1.3 Checkpoint Manager**:
-- [src/thalia/core/checkpoint_base.py](../../src/thalia/core/checkpoint_base.py) (new)
-- [src/thalia/regions/striatum/checkpoint_manager.py](../../src/thalia/regions/striatum/checkpoint_manager.py)
-- [src/thalia/regions/hippocampus/checkpoint_manager.py](../../src/thalia/regions/hippocampus/checkpoint_manager.py)
-
-**1.4 State Validation**:
-- [src/thalia/mixins/state_loading_mixin.py](../../src/thalia/mixins/state_loading_mixin.py)
-- All region load_state() methods (8 files)
-
-**1.5 Documentation**:
-- [docs/architecture/ARCHITECTURE_OVERVIEW.md](../../docs/architecture/ARCHITECTURE_OVERVIEW.md)
-
-### Tier 2 Changes
-
-**2.1 Exploration**:
-- [src/thalia/decision_making/exploration.py](../../src/thalia/decision_making/exploration.py) (new)
-- [src/thalia/regions/striatum/exploration.py](../../src/thalia/regions/striatum/exploration.py)
-- [src/thalia/regions/prefrontal/prefrontal.py](../../src/thalia/regions/prefrontal/prefrontal.py)
-
-**2.2 Homeostasis**:
-- [src/thalia/learning/homeostasis/strategies.py](../../src/thalia/learning/homeostasis/strategies.py) (new)
-- [src/thalia/regions/striatum/homeostasis_component.py](../../src/thalia/regions/striatum/homeostasis_component.py)
-- [src/thalia/learning/ei_balance.py](../../src/thalia/learning/ei_balance.py)
-- [src/thalia/learning/homeostasis/synaptic_homeostasis.py](../../src/thalia/learning/homeostasis/synaptic_homeostasis.py)
-
-**2.3 Diagnostics**:
-- [src/thalia/mixins/diagnostics_mixin.py](../../src/thalia/mixins/diagnostics_mixin.py)
-- All region get_diagnostics() methods (8 files)
-
-**2.4 Forward Pass**:
-- [src/thalia/core/neural_region.py](../../src/thalia/core/neural_region.py)
-- All region forward() methods (8 files)
-
-### Tier 3 Changes
-
-**3.1 State Schemas**:
-- [src/thalia/core/state_schema.py](../../src/thalia/core/state_schema.py) (new)
-- All region state.py files (8 files)
-
-**3.2 Region Composition**:
-- [src/thalia/core/neural_region.py](../../src/thalia/core/neural_region.py)
-- [src/thalia/regions/hippocampus/trisynaptic.py](../../src/thalia/regions/hippocampus/trisynaptic.py)
-- [src/thalia/regions/striatum/striatum.py](../../src/thalia/regions/striatum/striatum.py)
-- [src/thalia/regions/cerebellum/cerebellum.py](../../src/thalia/regions/cerebellum/cerebellum.py)
-
-**3.3 Oscillator Coordinator**:
-- [src/thalia/coordination/oscillator_coordinator.py](../../src/thalia/coordination/oscillator_coordinator.py) (new)
-- [src/thalia/core/dynamic_brain.py](../../src/thalia/core/dynamic_brain.py)
-- All region forward() methods (8 files)
-
----
-
-## Appendix B: Duplication Locations
-
-### Checkpoint Manager Duplication
-
-**Version Checking** (2 locations, ~50 lines each):
-```
-src/thalia/regions/striatum/checkpoint_manager.py:95-145
-src/thalia/regions/hippocampus/checkpoint_manager.py:87-137
+**Example**:
+```python
+def forward(self, inputs: SourceOutputs) -> torch.Tensor:
+    # inputs = {"cortex": spikes, "thalamus": spikes}
+    for source, spikes in inputs.items():
+        weighted_input += torch.matmul(spikes, self.synaptic_weights[source])
 ```
 
-**State Validation** (2 locations, ~50 lines each):
-```
-src/thalia/regions/striatum/checkpoint_manager.py:152-202
-src/thalia/regions/hippocampus/checkpoint_manager.py:144-194
-```
+**Opportunity**: Add input validation (see Tier 2 item 2.9) to catch missing sources early.
 
-**Migration Logic** (2 locations, ~80 lines each):
-```
-src/thalia/regions/striatum/checkpoint_manager.py:210-290
-src/thalia/regions/hippocampus/checkpoint_manager.py:200-280
-```
-
-### State Loading Duplication
-
-**Tensor Device Transfer** (8 locations, ~10 lines each):
-```
-src/thalia/regions/cortex/layered_cortex.py:2307-2317
-src/thalia/regions/hippocampus/trisynaptic.py:2460-2470
-src/thalia/regions/striatum/striatum.py:3501-3511
-src/thalia/regions/cerebellum/cerebellum.py:1423-1433
-src/thalia/regions/prefrontal/prefrontal.py:1241-1251
-src/thalia/regions/thalamus/thalamus.py:811-821
-src/thalia/regions/multisensory.py:650-660
-src/thalia/regions/cortex/predictive_cortex.py:925-935
-```
-
-### Homeostasis Duplication
-
-**Target Rate Adaptation** (3 locations, ~40 lines each):
-```
-src/thalia/regions/striatum/homeostasis_component.py:150-190
-src/thalia/learning/ei_balance.py:200-240
-src/thalia/learning/homeostasis/synaptic_homeostasis.py:250-290
-```
-
-**Synaptic Scaling** (3 locations, ~30 lines each):
-```
-src/thalia/regions/striatum/homeostasis_component.py:195-225
-src/thalia/learning/ei_balance.py:245-275
-src/thalia/learning/homeostasis/synaptic_homeostasis.py:295-325
-```
+**Benefit**: Natural multi-source integration, biologically plausible.
 
 ---
 
 ## Conclusion
 
-The Thalia codebase demonstrates **strong architectural foundations** with excellent adherence to established patterns and biological plausibility principles. The recommendations in this review are primarily **optimizations and consolidations** rather than corrections of major flaws.
+**Strengths**:
+- Excellent architectural patterns (mixins, registries, component extraction)
+- Strong biological plausibility adherence
+- Good separation of concerns in most areas
+- Mature learning strategy system
 
-**Immediate Action Items** (Tier 1):
-1. Extract task constants (1-2 hours) - **Not Started**
-2. Standardize tensor creation in tasks (2-3 hours) - **Not Started**
-3. ✅ **Create unified checkpoint manager base (4-6 hours) - COMPLETED**
-   - Enhanced `BaseCheckpointManager` with `restore_tensor_partial()` and `restore_dict_of_tensors()` helpers
-   - Migrated all 3 checkpoint managers (Striatum, Hippocampus, Prefrontal)
-   - Eliminates ~125 lines of duplicated tensor restoration code
-4. ✅ **Add state validation helpers (3-4 hours) - COMPLETED**
-   - Added `_validate_tensor_shape()` and `_load_tensor()` to StateLoadingMixin
-   - Migrated 5 regions (LayeredCortex, Thalamus, Striatum, Prefrontal, Cerebellum)
-   - Eliminates ~62 lines of device transfer boilerplate
-5. ✅ **Enhance port-based routing documentation (1 hour) - COMPLETED**
-   - Added prominent section to ARCHITECTURE_OVERVIEW.md
-   - Quick reference for LayeredCortex and Thalamus ports
-   - Usage examples and benefits
+**Improvement Areas**:
+- Magic number consolidation (high priority)
+- Component extraction for large files (medium priority)
+- Missing checkpoint managers (low priority)
+- Minor pattern adoption gaps (weight initialization, trace management)
 
-**Total Tier 1 Effort**: ~15 hours (~8 hours completed, ~7 hours remaining)
-
-**Implementation Progress**:
-- **Tier 1.3 (Checkpoint Manager)**: ✅ Completed January 26, 2026
-  - Added `restore_tensor_partial()` for elastic tensor restoration
-  - Added `restore_dict_of_tensors()` for multi-source weight dictionaries
-  - Both methods handle shape mismatches gracefully with clear warnings
-  - Ready for adoption by existing checkpoint managers (striatum, hippocampus, prefrontal)
-
-**Strategic Improvements** (Tier 2):
-- Implement over 4-6 weeks
-- Prototype patterns before full rollout
-- Maintain backward compatibility where possible
-- ✅ **Tier 2.3 (Diagnostics)**: Already complete (December 22, 2025)
-
-**Long-Term Vision** (Tier 3):
-- Plan for major version releases (v0.3.0, v0.4.0)
-- Coordinate with API stability guarantees
-- Provide migration tooling and guides
-
-The architecture is well-positioned for continued growth and refinement. The focus should be on **consolidating existing patterns** rather than introducing new paradigms.
+**Overall Assessment**: **Solid architecture with minor technical debt**. Most issues are "polish" level (naming consistency, constant extraction) rather than fundamental design problems. No major antipatterns detected. Recommended approach is incremental improvement via Tier 1/2 items, with Tier 3 deferred as long-term research.
 
 ---
 
-**Review Complete**
-For questions or clarifications, refer to:
-- [docs/architecture/ARCHITECTURE_OVERVIEW.md](../../docs/architecture/ARCHITECTURE_OVERVIEW.md)
-- [docs/patterns/](../../docs/patterns/)
-- [docs/decisions/adr-011-large-file-justification.md](../../docs/decisions/adr-011-large-file-justification.md)
+**Document Date**: January 26, 2026
+**Codebase Version**: Current HEAD
+**Reviewer**: GitHub Copilot (Claude Sonnet 4.5)
+**Next Review**: After Phase 2 completion (estimated ~6 weeks)

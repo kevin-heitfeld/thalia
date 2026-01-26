@@ -91,6 +91,7 @@ from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
 from thalia.utils.input_routing import InputRouter
 
+from .checkpoint_manager import ThalamicCheckpointManager
 from .state import ThalamicRelayState
 
 
@@ -260,6 +261,12 @@ class ThalamicRelay(NeuralRegion):
                 interneuron_mask=None,  # All TRN neurons are interneurons
                 device=self.device,
             )
+
+        # =====================================================================
+        # CHECKPOINT MANAGER
+        # =====================================================================
+        # Handles state serialization/deserialization
+        self.checkpoint_manager = ThalamicCheckpointManager(self)
 
         # =====================================================================
         # CENTER-SURROUND RECEPTIVE FIELDS
@@ -1141,10 +1148,10 @@ class ThalamicRelay(NeuralRegion):
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get full state for checkpointing."""
-        state = self.get_state()
-        return state.to_dict()
+        # Delegate to checkpoint manager
+        return self.checkpoint_manager.collect_state()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load full state from checkpoint."""
-        state_obj = ThalamicRelayState.from_dict(state, device=str(self.device))
-        self.load_state(state_obj)
+        # Delegate to checkpoint manager
+        self.checkpoint_manager.restore_state(state)

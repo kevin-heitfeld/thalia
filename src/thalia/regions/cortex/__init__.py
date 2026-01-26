@@ -12,12 +12,14 @@ Date: December 2025
 
 from __future__ import annotations
 
+from .checkpoint_manager import LayeredCortexCheckpointManager
 from .layered_cortex import LayeredCortex
 from .predictive_cortex import PredictiveCortex
 from .state import LayeredCortexState, PredictiveCortexState
 
 __all__ = [
     "LayeredCortex",
+    "LayeredCortexCheckpointManager",
     "LayeredCortexState",
     "PredictiveCortex",
     "PredictiveCortexState",

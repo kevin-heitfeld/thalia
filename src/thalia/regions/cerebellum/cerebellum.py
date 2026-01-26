@@ -63,6 +63,7 @@ from thalia.utils.core_utils import clamp_weights
 from thalia.utils.input_routing import InputRouter
 from thalia.utils.oscillator_utils import compute_theta_encoding_retrieval
 
+from .checkpoint_manager import CerebellumCheckpointManager
 from .deep_nuclei import DeepCerebellarNuclei
 from .granule_layer import GranuleCellLayer
 from .purkinje_cell import EnhancedPurkinjeCell
@@ -194,6 +195,12 @@ class Cerebellum(NeuralRegion):
 
         # Initialize state for NeuromodulatorMixin
         self.state = NeuralComponentState()
+
+        # =====================================================================
+        # CHECKPOINT MANAGER
+        # =====================================================================
+        # Handles state serialization/deserialization
+        self.checkpoint_manager = CerebellumCheckpointManager(self)
 
         self.climbing_fiber = ClimbingFiberSystem(
             purkinje_size=self.purkinje_size,
@@ -1331,11 +1338,8 @@ class Cerebellum(NeuralRegion):
         - enhanced_state: Granule layer, Purkinje cells, DCN (if use_enhanced)
         - config: Configuration for validation
         """
-        state = self.get_state()
-        state_dict = state.to_dict()
-        # Add config to dict for checkpoint validation
-        state_dict["config"] = asdict(self.config)
-        return state_dict
+        # Delegate to checkpoint manager
+        return self.checkpoint_manager.collect_state()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
@@ -1343,8 +1347,8 @@ class Cerebellum(NeuralRegion):
         Args:
             state: State dictionary from get_full_state()
         """
-        state_obj = CerebellumState.from_dict(state, device=str(self.device))
-        self.load_state(state_obj)
+        # Delegate to checkpoint manager
+        self.checkpoint_manager.restore_state(state)
 
     # ========================================================================
     # REGIONSTATE PROTOCOL IMPLEMENTATION (Phase 3.1)

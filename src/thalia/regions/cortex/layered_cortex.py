@@ -123,6 +123,7 @@ from thalia.utils.oscillator_utils import (
     compute_theta_encoding_retrieval,
 )
 
+from .checkpoint_manager import LayeredCortexCheckpointManager
 from .state import LayeredCortexState
 
 
@@ -327,6 +328,12 @@ class LayeredCortex(NeuralRegion):
 
         # State
         self.state: LayeredCortexState = LayeredCortexState()  # type: ignore[assignment]
+
+        # =====================================================================
+        # CHECKPOINT MANAGER
+        # =====================================================================
+        # Handles state serialization/deserialization
+        self.checkpoint_manager = LayeredCortexCheckpointManager(self)
 
         # Theta phase for encoding/retrieval modulation
         self._theta_phase = 0.0
@@ -2207,15 +2214,8 @@ class LayeredCortex(NeuralRegion):
         - neuromodulator_state: Current dopamine, norepinephrine, etc.
         - config: Configuration for validation
         """
-        state_obj = self.get_state()
-        state = state_obj.to_dict()
-
-        # Add synaptic weights (required for checkpointing)
-        state["synaptic_weights"] = {
-            name: weights.detach().clone() for name, weights in self.synaptic_weights.items()
-        }
-
-        return state
+        # Delegate to checkpoint manager
+        return self.checkpoint_manager.collect_state()
 
     def load_full_state(self, state: Dict[str, Any]) -> None:
         """Load complete state from checkpoint.
@@ -2223,14 +2223,8 @@ class LayeredCortex(NeuralRegion):
         Args:
             state: State dictionary from get_full_state()
         """
-        state_obj = LayeredCortexState.from_dict(state, device=str(self.device))
-        self.load_state(state_obj)
-
-        # Restore synaptic weights
-        if "synaptic_weights" in state:
-            for name, weights in state["synaptic_weights"].items():
-                if name in self.synaptic_weights:
-                    self.synaptic_weights[name].data = weights.to(self.device)
+        # Delegate to checkpoint manager
+        self.checkpoint_manager.restore_state(state)
 
     def get_state(self) -> LayeredCortexState:
         """Get current state as LayeredCortexState (RegionState protocol).
