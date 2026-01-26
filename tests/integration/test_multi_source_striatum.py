@@ -40,10 +40,10 @@ class TestMultiSourceWeightStructure:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -84,10 +84,10 @@ class TestMultiSourceWeightStructure:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -95,7 +95,7 @@ class TestMultiSourceWeightStructure:
         # Initialize eligibility traces by running forward pass once
         dummy_inputs = {
             "cortex:l5": torch.zeros(32, device=striatum.device),
-            "hippocampus": torch.zeros(64, device=striatum.device),
+            "hippocampus:ca1": torch.zeros(64, device=striatum.device),
         }
         striatum(dummy_inputs)
 
@@ -128,8 +128,8 @@ class TestMultiSourceWeightStructure:
             "striatum", "striatum", n_actions=4, neurons_per_action=10, stp_enabled=True
         )
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "striatum", source_port="l5")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -160,10 +160,10 @@ class TestMultiSourceForwardPass:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -193,10 +193,10 @@ class TestMultiSourceForwardPass:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -292,10 +292,10 @@ class TestMultiSourceLearning:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -323,10 +323,10 @@ class TestMultiSourceLearning:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -368,8 +368,8 @@ class TestMultiSourceGrowth:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "striatum", source_port="l5")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]

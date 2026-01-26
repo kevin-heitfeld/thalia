@@ -47,8 +47,8 @@ def health_brain() -> DynamicBrain:
     builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=16)
 
     # Add connections
-    builder.connect("cortex", "hippocampus", "axonal_projection")
-    builder.connect("cortex", "pfc", "axonal_projection")
+    builder.connect("cortex", "hippocampus", source_port="l23", target_port="default", pathway_type="axonal_projection")
+    builder.connect("cortex", "pfc", source_port="l5", target_port="default", pathway_type="axonal_projection")
 
     # Build brain (event-driven mode is default)
     # Ensure ComponentRegistry is set up for event-driven execution
@@ -91,8 +91,8 @@ def criticality_brain() -> DynamicBrain:
     builder.add_component("pfc", "prefrontal", input_size=64, n_neurons=16)
 
     # Add connections
-    builder.connect("cortex", "hippocampus", "axonal_projection")
-    builder.connect("cortex", "pfc", "axonal_projection")
+    builder.connect("cortex", "hippocampus", source_port="l23", target_port="default", pathway_type="axonal_projection")
+    builder.connect("cortex", "pfc", source_port="l5", target_port="default", pathway_type="axonal_projection")
 
     # Build brain (event-driven mode is default)
     # Ensure ComponentRegistry is set up for event-driven execution

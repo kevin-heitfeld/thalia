@@ -55,10 +55,10 @@ def brain_with_multi_eligibility(brain_config):
     )
 
     # Connect pathways
-    builder.connect("thalamus", "cortex")
-    builder.connect("cortex", "hippocampus", source_port="l23")
-    builder.connect("cortex", "striatum", source_port="l5")
-    builder.connect("hippocampus", "striatum")
+    builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+    builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+    builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+    builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
     brain = builder.build()
     striatum = brain.components["striatum"]
@@ -267,10 +267,10 @@ class TestSingleTimescaleMode:
         )
 
         # Connect pathways
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
