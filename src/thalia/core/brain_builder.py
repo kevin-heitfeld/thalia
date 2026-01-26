@@ -1176,6 +1176,8 @@ class BrainBuilder:
                     "source": spec.source,
                     "target": spec.target,
                     "pathway_type": spec.pathway_type,
+                    "source_port": spec.source_port,
+                    "target_port": spec.target_port,
                     "config_params": spec.config_params,
                 }
                 for spec in self._connections
@@ -1218,6 +1220,8 @@ class BrainBuilder:
             builder.connect(
                 source=conn["source"],
                 target=conn["target"],
+                source_port=conn.get("source_port"),
+                target_port=conn.get("target_port"),
                 pathway_type=conn["pathway_type"],
                 **conn["config_params"],
             )

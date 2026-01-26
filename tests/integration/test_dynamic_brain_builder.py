@@ -53,7 +53,7 @@ class TestDynamicBrainIntegration:
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(32)
             )  # n_input inferred!
-            .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
+            .connect("input", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=5.0)
             .build()
         )
 
@@ -82,8 +82,8 @@ class TestDynamicBrainIntegration:
             .add_component(
                 "region_c", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
             )  # n_input inferred from region_b
-            .connect("region_a", "region_b", pathway_type="axonal_projection", axonal_delay_ms=3.0)
-            .connect("region_b", "region_c", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("region_a", "region_b", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("region_b", "region_c", source_port="l23", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
 
@@ -112,10 +112,10 @@ class TestDynamicBrainIntegration:
             .add_component(
                 "sink", "layered_cortex", **LayerSizeCalculator().cortex_from_output(8)
             )  # n_input=32 inferred (16+16)
-            .connect("source", "branch1", pathway_type="axonal_projection", axonal_delay_ms=3.0)
-            .connect("source", "branch2", pathway_type="axonal_projection", axonal_delay_ms=3.0)
-            .connect("branch1", "sink", pathway_type="axonal_projection", axonal_delay_ms=3.0)
-            .connect("branch2", "sink", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("source", "branch1", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("source", "branch2", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("branch1", "sink", source_port="l23", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("branch2", "sink", source_port="l5", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
 
@@ -207,7 +207,7 @@ class TestPresetArchitectures:
             "custom_region", "prefrontal", input_size=256, n_neurons=64
         )  # Custom PFC region
         builder.connect(
-            "cortex", "custom_region", pathway_type="axonal_projection", axonal_delay_ms=5.0
+            "cortex", "custom_region", source_port="l23", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=5.0
         )
         brain = builder.build()
 
@@ -238,7 +238,7 @@ class TestBuilderValidation:
         with pytest.raises((ValueError, KeyError)):
             BrainBuilder(brain_config).add_component(
                 "input", "thalamic_relay", n_input=32, n_output=32
-            ).connect("input", "nonexistent").build()
+            ).connect("input", "nonexistent", source_port=None, target_port=None).build()
 
     def test_invalid_preset(self, device, brain_config):
         """Test error with invalid preset name."""
@@ -257,7 +257,7 @@ class TestSaveAndLoad:
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(16)
             )  # n_input inferred
-            .connect("input", "cortex", pathway_type="axonal_projection", axonal_delay_ms=5.0)
+            .connect("input", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=5.0)
         )
 
         # Save spec
@@ -551,11 +551,11 @@ class TestStateManagement:
             .add_component("pfc", "prefrontal", input_size=20, n_neurons=12)
             .add_component("striatum", "striatum", n_actions=3, neurons_per_action=2)
             .add_component("cerebellum", "cerebellum", purkinje_size=10)
-            .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
-            .connect("cortex", "hippocampus", pathway_type="axonal_projection", axonal_delay_ms=5.0)
-            .connect("cortex", "pfc", pathway_type="axonal_projection", axonal_delay_ms=4.0)
-            .connect("pfc", "striatum", pathway_type="axonal_projection", axonal_delay_ms=3.0)
-            .connect("cortex", "cerebellum", pathway_type="axonal_projection", axonal_delay_ms=4.0)
+            .connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("cortex", "hippocampus", source_port="l5", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=5.0)
+            .connect("cortex", "pfc", source_port="l23", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=4.0)
+            .connect("pfc", "striatum", source_port="executive", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("cortex", "cerebellum", source_port="l5", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=4.0)
             .build()
         )
 
@@ -708,7 +708,7 @@ class TestStateManagement:
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
             )
-            .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
 
@@ -727,7 +727,7 @@ class TestStateManagement:
             .add_component(
                 "cortex", "layered_cortex", **LayerSizeCalculator().cortex_from_output(20)
             )
-            .connect("thalamus", "cortex", pathway_type="axonal_projection", axonal_delay_ms=3.0)
+            .connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection", axonal_delay_ms=3.0)
             .build()
         )
         brain2.load_full_state(state)
