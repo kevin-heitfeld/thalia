@@ -39,7 +39,12 @@ class TestOscillatorManagerIntegration:
                 "layered_cortex",
                 **LayerSizeCalculator().cortex_from_output(32),
             )
-            .connect("input", "cortex", pathway_type="axonal_projection")
+            .connect(
+                "input", "cortex",
+                source_port="relay",
+                target_port="feedforward",
+                pathway_type="axonal_projection"
+            )
             .build()
         )
         return brain
