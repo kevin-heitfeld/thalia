@@ -1115,6 +1115,13 @@ class TrisynapticHippocampus(NeuralRegion):
         # Update n_output to match new CA1 size
         self.n_output = new_ca1_size
 
+        # 8.5. Update port sizes
+        # Update registered port sizes to reflect new layer sizes
+        self._port_sizes["dg"] = self.dg_size
+        self._port_sizes["ca3"] = self.ca3_size
+        self._port_sizes["ca2"] = self.ca2_size
+        self._port_sizes["ca1"] = self.ca1_size
+
         # 9. Validate growth completed correctly
         # Note: Hippocampus has multi-layer architecture, so skip neuron check
         # (CA1 neurons are n_output, but DG/CA3/CA2 neurons scale differently)

@@ -867,7 +867,8 @@ class PredictiveCortex(NeuralRegion):
         self._cumulative_l5_spikes = 0
 
         # Register output port (port-based routing support)
-        self.register_output_port("default", self.config.n_representation)
+        # PredictiveCortex output is L2/3 + L5 (error + representation layers)
+        self.register_output_port("default", self._output_size)
 
     def reset_state(self) -> None:
         """Reset all states for new sequence."""
@@ -1031,6 +1032,12 @@ class PredictiveCortex(NeuralRegion):
         self.n_neurons = self._output_size  # Keep n_neurons in sync
 
         # Note: Config no longer stores sizes - they're instance variables only
+
+        # =====================================================================
+        # 2.5. UPDATE PORT SIZE
+        # =====================================================================
+        # PredictiveCortex uses single "default" output port
+        self._port_sizes["default"] = self._output_size
 
         # =====================================================================
         # 3. RECREATE PREDICTION LAYER with new sizes

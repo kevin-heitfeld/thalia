@@ -174,26 +174,6 @@ class TestDynamicBrainIntegration:
 class TestPresetArchitectures:
     """Integration tests for preset brain architectures."""
 
-    def test_minimal_preset_execution(self, device, brain_config):
-        """Test minimal preset builds and executes."""
-        brain = BrainBuilder.preset("minimal", brain_config)
-
-        assert isinstance(brain, DynamicBrain)
-
-        # Check expected components exist (input, process, output)
-        assert "input" in brain.components
-        assert "process" in brain.components
-        assert "output" in brain.components
-
-        # Execute forward pass
-        input_data = {"input": torch.randn(64, device=device)}
-        result = brain.forward(input_data, n_timesteps=10)
-
-        # All regions should produce output
-        assert "input" in result["outputs"]
-        assert "process" in result["outputs"]
-        assert "output" in result["outputs"]
-
     def test_default_preset_execution(self, device, brain_config):
         """Test default preset builds and executes."""
         brain = BrainBuilder.preset("default", brain_config)
@@ -384,21 +364,6 @@ class TestRLInterface:
         assert len(rewards) == n_steps
         assert all(isinstance(a, int) for a in actions)
 
-    def test_rl_without_striatum_raises(self, device, brain_config):
-        """Test that RL methods raise error if no striatum present."""
-        # Build brain without striatum (minimal preset has no striatum)
-        brain = BrainBuilder.preset("minimal", brain_config)
-
-        input_data = {"input": torch.randn(64, device=device)}
-        brain.forward(input_data, n_timesteps=10)
-
-        # Should raise ValueError
-        with pytest.raises(ValueError, match="Striatum component not found"):
-            brain.select_action()
-
-        with pytest.raises(ValueError, match="Striatum component not found"):
-            brain.deliver_reward(external_reward=1.0)
-
     def test_deliver_reward_without_action_allowed(self, device, brain_config):
         """Test that deliver_reward works without prior select_action().
 
@@ -475,15 +440,6 @@ class TestNeuromodulationAndConsolidation:
                 # Dopamine should have been broadcast
                 assert striatum.state.dopamine >= 0.0
 
-    def test_consolidate_requires_hippocampus(self, device, brain_config):
-        """Test that consolidate raises error without hippocampus."""
-        # Build brain without hippocampus (minimal preset)
-        brain = BrainBuilder.preset("minimal", brain_config)
-
-        # Should raise ValueError
-        with pytest.raises(ValueError, match="Hippocampus component required"):
-            brain.consolidate(duration_ms=1)
-
     def test_consolidate_basic(self, device, brain_config):
         """Test basic consolidation functionality."""
         brain = BrainBuilder.preset("default", brain_config)
@@ -559,32 +515,6 @@ class TestDiagnosticsAndGrowth:
             assert "growth_recommended" in metrics
             assert "growth_reason" in metrics
             assert isinstance(metrics["growth_recommended"], bool)
-
-    def test_auto_grow_basic(self, device, brain_config):
-        """Test basic auto-growth functionality."""
-        brain = BrainBuilder.preset("minimal", brain_config)
-
-        # Get initial sizes
-        initial_sizes = {
-            name: comp.n_output
-            for name, comp in brain.components.items()
-            if hasattr(comp, "n_output")
-        }
-
-        # Try auto-growth (may or may not grow depending on metrics)
-        growth_actions = brain.auto_grow(threshold=0.8)
-
-        # Should return dict (may be empty)
-        assert isinstance(growth_actions, dict)
-
-        # If anything grew, verify sizes increased
-        for component_name, neurons_added in growth_actions.items():
-            assert neurons_added > 0
-            component = brain.components[component_name]
-            if hasattr(component, "n_output"):
-                new_size = component.n_output
-                old_size = initial_sizes[component_name]
-                assert new_size == old_size + neurons_added
 
     def test_check_growth_needs_structure(self, device, brain_config):
         """Test structure of growth needs report."""

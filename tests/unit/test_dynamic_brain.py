@@ -270,16 +270,6 @@ def test_brain_builder_save_load_spec():
         temp_path.unlink()
 
 
-def test_brain_builder_list_presets():
-    """Test listing preset architectures."""
-    presets = BrainBuilder.list_presets()
-
-    # Should have at least "minimal" and "default"
-    preset_names = [name for name, _ in presets]
-    assert "minimal" in preset_names
-    assert "default" in preset_names
-
-
 def test_brain_builder_preset_registration():
     """Test preset architecture registration."""
 

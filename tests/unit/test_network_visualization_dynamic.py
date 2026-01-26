@@ -84,9 +84,12 @@ def test_export_graphviz_basic(tmp_path, small_test_brain):
     # Check that neuron counts are present (format: "XN")
     assert "N" in content, "Should contain neuron count labels"
 
-    # Verify pathways exist (format: "source" -> "target")
+    # Verify pathways exist (format: "source" -> "target" or "source" -> "target:port")
     assert "->" in content, "Should contain pathway connections"
-    assert '"thalamus" -> "cortex"' in content, "Should have thalamus to cortex pathway"
+    # Port-based routing: edges now include target ports (e.g., "cortex:feedforward")
+    assert (
+        '"thalamus" -> "cortex"' in content or '"thalamus" -> "cortex:feedforward"' in content
+    ), "Should have thalamus to cortex pathway (with or without port)"
 
     # Check that weights are formatted correctly (0.000 format)
     weight_pattern = r"\d+\.\d{3}"

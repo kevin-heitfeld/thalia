@@ -1108,7 +1108,14 @@ class LayeredCortex(NeuralRegion):
         # Instance variables already updated above (l4_size, l23_size, etc.)
         # No config update needed - config contains only behavioral params
 
-        # 8. Validate growth manually (standard validation doesn't apply to multi-layer growth)
+        # 8. Update port sizes to reflect new layer sizes
+        self._port_sizes["l23"] = self.l23_size
+        self._port_sizes["l5"] = self.l5_size
+        self._port_sizes["l4"] = self.l4_size
+        self._port_sizes["l6a"] = self.l6a_size
+        self._port_sizes["l6b"] = self.l6b_size
+
+        # 9. Validate growth manually (standard validation doesn't apply to multi-layer growth)
         # Cortex grows L2/3 + L5 by exactly n_new, but L4/L6 grow proportionally
         # Verify: actual output growth matches expected
         actual_growth = new_total_output - old_total_output

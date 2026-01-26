@@ -1627,7 +1627,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             )
 
         # =====================================================================
-        # 7. VALIDATE GROWTH
+        # 7. UPDATE PORT SIZES
+        # =====================================================================
+        # Update registered port sizes to reflect new pathway sizes
+        self._port_sizes["d1"] = self.d1_size
+        self._port_sizes["d2"] = self.d2_size
+
+        # =====================================================================
+        # 8. VALIDATE GROWTH
         # =====================================================================
         # Validate at neuron level (total d1+d2), not action level
         old_total_neurons = (self.d1_size + self.d2_size) - (n_new_d1 + n_new_d2)

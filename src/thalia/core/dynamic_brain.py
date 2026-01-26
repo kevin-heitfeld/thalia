@@ -520,7 +520,8 @@ class DynamicBrain(nn.Module):
         minimizing latency through the network.
 
         For circular dependencies (recurrent connections), breaks cycles by
-        choosing the alphabetically first component in the cycle.
+        prioritizing components that typically receive direct sensory input
+        (e.g., thalamus), then alphabetically for remaining cycles.
 
         Returns:
             List of component names in dependency-respecting order
@@ -534,9 +535,15 @@ class DynamicBrain(nn.Module):
         # Build dependency graph: component -> list of components it depends on
         dependencies: Dict[str, Set[str]] = {name: set() for name in self.components.keys()}
 
-        for src, tgt in self.connections.keys():
+        # Extract source component names from connection keys (strip :port suffix if present)
+        def get_component_name(key: str) -> str:
+            return key.split(":")[0] if ":" in key else key
+
+        for src_key, tgt_key in self.connections.keys():
+            src = get_component_name(src_key)
+            tgt = get_component_name(tgt_key)
             # tgt depends on src (needs src's output)
-            if tgt in dependencies:  # tgt might not exist if connection is to port
+            if tgt in dependencies and src in self.components:
                 dependencies[tgt].add(src)
 
         # Kahn's algorithm with alphabetical tiebreaking
@@ -560,8 +567,13 @@ class DynamicBrain(nn.Module):
                         queue.sort()
 
         # Handle cycles: any remaining components have circular dependencies
-        # Add them in alphabetical order (breaks cycles arbitrarily but deterministically)
-        remaining = sorted([name for name, degree in in_degree.items() if degree > 0])
+        # Prioritize sensory entry points (thalamus, entorhinal cortex) to execute first,
+        # as feedback connections can tolerate 1-timestep delay
+        remaining = [name for name, degree in in_degree.items() if degree > 0]
+
+        # Sort by priority: sensory regions first, then alphabetically
+        sensory_priority = {"thalamus": 0, "entorhinal": 1, "ec": 1}
+        remaining.sort(key=lambda name: (sensory_priority.get(name, 99), name))
         sorted_order.extend(remaining)
 
         # Cache result
@@ -735,14 +747,25 @@ class DynamicBrain(nn.Module):
                 self._reusable_component_inputs.clear()
 
                 # OPTIMIZATION: Direct lookup instead of iterating all connections
-                for src, pathway in self._component_connections.get(comp_name, []):
-                    if src in self._output_cache and self._output_cache[src] is not None:
+                # NOTE: _component_connections uses compound keys (e.g., "cortex:feedforward")
+                # but execution order uses base names (e.g., "cortex"), so check all keys
+                # that start with the component name
+                for conn_key, connections in self._component_connections.items():
+                    # Extract base component name from compound key
+                    target_comp = conn_key.split(":")[0] if ":" in conn_key else conn_key
+                    if target_comp != comp_name:
+                        continue
+
+                    # Process all incoming connections for this target
+                    for src, pathway in connections:
                         # Port-Based Routing:
-                        # Pass region object (not just tensor) so pathway can call get_port_output()
-                        # for port-specific routing (e.g., L6a→TRN, L6b→relay)
-                        source_region = self.components[src]
-                        delayed_outputs = pathway.forward({src: source_region})
-                        self._reusable_component_inputs.update(delayed_outputs)
+                        # Pass region object (not cached output) so pathway can call get_port_output()
+                        # for port-specific routing (e.g., L6a→TRN, L6b→relay).
+                        # The pathway handles delays internally using cached outputs via delay buffers.
+                        if src in self.components:
+                            source_region = self.components[src]
+                            delayed_outputs = pathway.forward({src: source_region})
+                            self._reusable_component_inputs.update(delayed_outputs)
 
                 # Also check if this component received direct sensory input
                 if comp_name in sensory_inputs_this_timestep:

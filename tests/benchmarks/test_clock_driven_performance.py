@@ -66,37 +66,6 @@ class TestClockDrivenPerformance:
         # Sanity check: should be at least 100 timesteps/sec on CPU
         assert timesteps_per_sec > 100, f"Too slow: {timesteps_per_sec:.1f} timesteps/sec"
 
-    @pytest.mark.slow
-    def test_benchmark_minimal_brain_10000_steps(self, brain_config):
-        """Benchmark 10000 timesteps of minimal brain (fewer components)."""
-        brain = BrainBuilder.preset("minimal", brain_config)
-
-        # Warm-up
-        sensory_spikes = torch.rand(64, device=brain_config.device) > 0.5
-        brain.forward({"input": sensory_spikes}, n_timesteps=10)
-        brain.reset_state()
-
-        # Timed run
-        start = time.perf_counter()
-        for _ in range(10):
-            sensory_spikes = torch.rand(64, device=brain_config.device) > 0.5
-            brain.forward({"input": sensory_spikes}, n_timesteps=1000)
-        elapsed = time.perf_counter() - start
-
-        timesteps_per_sec = 10000 / elapsed
-        ms_per_timestep = (elapsed / 10000) * 1000
-
-        print(f"\n{'='*60}")
-        print("Minimal Brain (10000 timesteps)")
-        print(f"{'='*60}")
-        print(f"Total time: {elapsed:.3f}s")
-        print(f"Throughput: {timesteps_per_sec:.1f} timesteps/sec")
-        print(f"Latency: {ms_per_timestep:.3f} ms/timestep")
-        print(f"{'='*60}\n")
-
-        # Minimal brain should be faster
-        assert timesteps_per_sec > 200, f"Too slow: {timesteps_per_sec:.1f} timesteps/sec"
-
 
 if __name__ == "__main__":
     config = BrainConfig(device="cpu", dt_ms=1.0)
@@ -108,7 +77,6 @@ if __name__ == "__main__":
 
     try:
         suite.test_benchmark_default_brain_1000_steps(config)
-        suite.test_benchmark_minimal_brain_10000_steps(config)
 
         print("\n" + "=" * 60)
         print("ALL BENCHMARKS PASSED")

@@ -16,11 +16,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from thalia.config.brain_config import BrainConfig
 from thalia.config.size_calculator import LayerSizeCalculator
-from thalia.core.component_spec import ComponentSpec, ConnectionSpec
-from thalia.core.dynamic_brain import DynamicBrain
-from thalia.core.protocols.component import BrainComponent
 from thalia.managers.component_registry import ComponentRegistry
 from thalia.pathways.axonal_projection import AxonalProjection
+
+from .component_spec import ComponentSpec, ConnectionSpec
+from .dynamic_brain import DynamicBrain
+from .protocols.component import BrainComponent
 
 # Size parameter names that should be separated from behavioral config
 SIZE_PARAMS = {
@@ -36,21 +37,21 @@ SIZE_PARAMS = {
     "dg_size",
     "ca3_size",
     "ca2_size",
-    "ca1_size",  # Hippocampus
+    "ca1_size",
     "relay_size",
-    "trn_size",  # Thalamus
+    "trn_size",
     "purkinje_size",
     "granule_size",
     "basket_size",
     "stellate_size",
-    "dcn_size",  # Cerebellum
+    "dcn_size",
     "n_neurons",
     "n_actions",
-    "neurons_per_action",  # Generic + Striatum
+    "neurons_per_action",
     "d1_size",
-    "d2_size",  # Striatum pathways
-    "input_sources",  # Striatum multi-source
-    "total_neurons",  # Computed size metadata
+    "d2_size",
+    "input_sources",
+    "total_neurons",
 }
 
 
@@ -223,9 +224,9 @@ class BrainBuilder:
         self,
         source: str,
         target: str,
+        source_port: str,
+        target_port: str,
         pathway_type: str = "axonal_projection",
-        source_port: str = ...,  # type: ignore[assignment]
-        target_port: str = ...,  # type: ignore[assignment]
         **config_params: Any,
     ) -> BrainBuilder:
         """Connect two components with a pathway.
@@ -233,13 +234,13 @@ class BrainBuilder:
         Args:
             source: Source component name
             target: Target component name
-            pathway_type: Pathway registry name:
-                - "axonal_projection": AxonalProjection (pure spike routing, NO weights)
-                - Other registered pathway types
             source_port: Output port on source (e.g., 'l23', 'l5', 'relay', 'ca1', 'd1', 'executive', 'prediction')
                 REQUIRED: Must explicitly specify port for biological accuracy.
             target_port: Input port on target (e.g., 'feedforward', 'l6a_feedback', 'l6b_feedback')
                 REQUIRED: Must explicitly specify port for biological accuracy.
+            pathway_type: Pathway registry name:
+                - "axonal_projection": AxonalProjection (pure spike routing, NO weights)
+                - Other registered pathway types
             **config_params: Pathway configuration parameters
                 For axonal pathways, can specify 'axonal_delay_ms' (default: 2.0)
 
@@ -254,21 +255,6 @@ class BrainBuilder:
             raise ValueError(f"Source component '{source}' not found")
         if target not in self._components:
             raise ValueError(f"Target component '{target}' not found")
-
-        # Validate ports are specified (mandatory parameters)
-        if source_port is ...:  # type: ignore[comparison-overlap]
-            raise ValueError(
-                f"Connection {source}→{target}: source_port is required. "
-                f"Must specify explicit port for biological accuracy "
-                f"(e.g., 'l23', 'l5', 'relay', 'ca1', 'd1', 'executive', 'prediction')."
-            )
-
-        if target_port is ...:  # type: ignore[comparison-overlap]
-            raise ValueError(
-                f"Connection {source}→{target}: target_port is required. "
-                f"Must specify explicit port for biological accuracy "
-                f"(e.g., 'feedforward', 'l6a_feedback', 'l6b_feedback')."
-            )
 
         # Create connection spec with ports
         spec = ConnectionSpec(
@@ -695,7 +681,6 @@ class BrainBuilder:
 
     def _initialize_target_weights(
         self,
-        brain: DynamicBrain,
         components: Dict[str, BrainComponent],
         connection_specs: Dict[Tuple[str, str], Any],
     ) -> None:
@@ -1149,7 +1134,7 @@ class BrainBuilder:
         # === INITIALIZE TARGET REGION WEIGHTS ===
         # After pathways are created, notify target regions about their input sources
         # so they can initialize synaptic weights (multi-source architecture)
-        self._initialize_target_weights(brain, components, connection_specs_dict)
+        self._initialize_target_weights(components, connection_specs_dict)
 
         return brain
 
@@ -1233,7 +1218,7 @@ class BrainBuilder:
         """Register a preset architecture.
 
         Args:
-            name: Preset name (e.g., "default", "minimal")
+            name: Preset name (e.g., "default")
             description: Human-readable description
             builder_fn: Function that configures a BrainBuilder
         """
@@ -1339,52 +1324,6 @@ class PresetArchitecture:
 # ============================================================================
 
 
-def _build_minimal(builder: BrainBuilder, **overrides: Any) -> None:
-    """Minimal 3-component brain for testing.
-
-    Architecture:
-        input (64) → process (128) → output (64)
-
-    **Pathway Types**:
-    - Input stage uses "thalamic_relay" region (has relay neurons)
-    - Connections use AXONAL projections (v2.0 architecture)
-
-    **Semantic Configs**:
-    - Thalamus: input_size, relay_size
-    - Cortex: layer_sizes (computed from size parameter)
-    """
-    calc = LayerSizeCalculator()
-
-    input_size = overrides.get("input_size", 64)
-    process_size = overrides.get("process_size", 128)
-    output_size = overrides.get("output_size", 64)
-
-    # Input interface - uses thalamic relay (which has real neurons for sensory filtering)
-    # Must specify input_size, relay_size, and trn_size explicitly (no incoming connections)
-    builder.add_component(
-        "input", "thalamic_relay", input_size=input_size, relay_size=input_size, trn_size=0
-    )
-
-    # Processing components - input_size inferred from connections
-    builder.add_component("process", "layered_cortex", **calc.cortex_from_output(process_size))
-    builder.add_component("output", "layered_cortex", **calc.cortex_from_output(output_size))
-
-    # Connections use axonal projections (pure spike routing)
-    # Explicit ports for biological accuracy
-    builder.connect(
-        "input", "process",
-        pathway_type="axonal",
-        source_port="relay",
-        target_port="feedforward"
-    )
-    builder.connect(
-        "process", "output",
-        pathway_type="axonal",
-        source_port="l5",
-        target_port="feedforward",
-    )
-
-
 def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     """Default 6-region architecture for general-purpose learning.
 
@@ -1464,11 +1403,11 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Distance: ~2-3cm, conduction velocity: ~10-20 m/s → 2-3ms delay
     # Uses 'relay' port: Only relay neurons project to cortex (TRN provides lateral inhibition)
     builder.connect(
-        "thalamus",
-        "cortex",
-        pathway_type="axonal",
+        source="thalamus",
+        target="cortex",
         source_port="relay",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=2.5,
     )
 
@@ -1490,19 +1429,19 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # - Refractory periods (tau_ref): post-spike delays
     # These neural dynamics add ~10-20ms to total loop period, producing gamma oscillations
     builder.connect(
-        "cortex",
-        "thalamus",
-        pathway_type="axonal",
+        source="cortex",
+        target="thalamus",
         source_port="l6a",
         target_port="l6a_feedback",
+        pathway_type="axonal",
         axonal_delay_ms=10.0,
     )
     builder.connect(
-        "cortex",
-        "thalamus",
-        pathway_type="axonal",
+        source="cortex",
+        target="thalamus",
         source_port="l6b",
         target_port="l6b_feedback",
+        pathway_type="axonal",
         axonal_delay_ms=5.0,
     )
 
@@ -1511,20 +1450,20 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Distance: ~3-5cm, conduction velocity: ~5-10 m/s → 5-8ms delay
     # Uses 'l5' port: L5 subcortical output to hippocampus
     builder.connect(
-        "cortex",
-        "hippocampus",
-        pathway_type="axonal",
+        source="cortex",
+        target="hippocampus",
         source_port="l5",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=6.5,
     )
     # Uses 'ca1' port: CA1 is the primary output layer of hippocampus to cortex
     builder.connect(
-        "hippocampus",
-        "cortex",
-        pathway_type="axonal",
+        source="hippocampus",
+        target="cortex",
         source_port="ca1",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=6.5,
     )
 
@@ -1532,11 +1471,11 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Corticocortical long-range connections (Miller & Cohen 2001)
     # Distance: ~5-10cm, conduction velocity: ~3-8 m/s → 10-15ms delay
     builder.connect(
-        "cortex",
-        "pfc",
-        pathway_type="axonal",
+        source="cortex",
+        target="pfc",
         source_port="l23",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=12.5,
     )
 
@@ -1547,28 +1486,28 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # - Hippocampus → Striatum: Moderate, longer distance (~4-6cm) → 7-10ms
     # - PFC → Striatum: Variable, longest distance (~6-10cm) → 12-18ms
     builder.connect(
-        "cortex",
-        "striatum",
-        pathway_type="axonal",
+        source="cortex",
+        target="striatum",
         source_port="l5",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=4.0,
     )
     # Uses 'ca1' port: CA1 provides contextual information for action selection
     builder.connect(
-        "hippocampus",
-        "striatum",
-        pathway_type="axonal",
+        source="hippocampus",
+        target="striatum",
         source_port="ca1",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=8.5,
     )
     builder.connect(
-        "pfc",
-        "striatum",
-        pathway_type="axonal",
+        source="pfc",
+        target="striatum",
         source_port="executive",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=15.0,
     )
 
@@ -1576,11 +1515,11 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Via thalamus (MD/VA nuclei), total distance ~8-12cm (Haber 2003)
     # Includes striatum→thalamus→PFC relay → 15-20ms total delay
     builder.connect(
-        "striatum",
-        "pfc",
-        pathway_type="axonal",
+        source="striatum",
+        target="pfc",
         source_port="d1",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=17.5,
     )
 
@@ -1589,41 +1528,35 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Corticopontocerebellar pathway: via pontine nuclei (Schmahmann 1996)
     # Distance: ~10-15cm total, includes relay → 20-30ms delay
     builder.connect(
-        "cortex",
-        "cerebellum",
-        pathway_type="axonal",
+        source="cortex",
+        target="cerebellum",
         source_port="l5",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=25.0,
     )  # Sensorimotor input
     # PFC → Cerebellum: similar pathway length
     builder.connect(
-        "pfc",
-        "cerebellum",
-        pathway_type="axonal",
+        source="pfc",
+        target="cerebellum",
         source_port="executive",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=25.0,
     )  # Goal/context input
     # Cerebellum → Cortex: via thalamus (VL/VA nuclei), moderately fast
     # Distance: ~8-12cm, includes thalamic relay → 15-20ms delay
     builder.connect(
-        "cerebellum",
-        "cortex",
-        pathway_type="axonal",
+        source="cerebellum",
+        target="cortex",
         source_port="prediction",
         target_port="feedforward",
+        pathway_type="axonal",
         axonal_delay_ms=17.5,
     )  # Forward model predictions
 
 
 # Register built-in presets
-BrainBuilder.register_preset(
-    name="minimal",
-    description="Minimal 3-component brain for testing (input→process→output)",
-    builder_fn=_build_minimal,
-)
-
 BrainBuilder.register_preset(
     name="default",
     description="Default 6-region architecture for general-purpose learning",

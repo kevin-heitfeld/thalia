@@ -330,20 +330,28 @@ class NeuralRegion(
             port_name: Name of the port (required). Must specify explicit port.
 
         Returns:
-            Spike tensor from the specified port
+            Spike tensor from the specified port. Returns zeros if port is
+            registered but hasn't been set yet (e.g., first timestep or
+            circular dependencies).
 
         Raises:
-            ValueError: If port not found or no output set
+            ValueError: If port not registered
 
         Example:
             >>> spikes = cortex.get_port_output("l6a")  # Get L6a output
             >>> spikes = thalamus.get_port_output("relay")  # Get relay output
         """
-        if port_name not in self._port_outputs:
+        # Check if port is registered
+        if port_name not in self._registered_ports:
             raise ValueError(
-                f"No output set for port '{port_name}' in {self.__class__.__name__}. "
-                f"Available outputs: {sorted(self._port_outputs.keys())}"
+                f"Port '{port_name}' not registered in {self.__class__.__name__}. "
+                f"Available ports: {sorted(self._registered_ports)}"
             )
+
+        # If port is registered but not set yet, return zeros
+        if port_name not in self._port_outputs:
+            size = self._port_sizes[port_name]
+            return torch.zeros(size, dtype=torch.bool, device=self.device)
 
         return self._port_outputs[port_name]
 

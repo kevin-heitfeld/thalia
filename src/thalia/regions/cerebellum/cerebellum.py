@@ -602,7 +602,13 @@ class Cerebellum(NeuralRegion):
         # (granule size is determined by input * expansion, not output)
 
         # =====================================================================
-        # 6. VALIDATE GROWTH
+        # 6. UPDATE PORT SIZES
+        # =====================================================================
+        # Update registered port sizes to reflect new output size
+        self._port_sizes["prediction"] = self.purkinje_size
+
+        # =====================================================================
+        # 7. VALIDATE GROWTH
         # =====================================================================
         # Skip neuron check since enhanced mode uses purkinje_cells list
         # instead of self.neurons, and classic mode already grew neurons

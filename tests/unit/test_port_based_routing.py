@@ -126,16 +126,17 @@ class TestBrainBuilderPortBasedConnections:
 
         # Connect using L2/3 output specifically
         builder.connect(
-            "cortex", "hippocampus", source_port="l23", pathway_type="axonal_projection"
+            "cortex", "hippocampus", source_port="l23", target_port="feedforward", pathway_type="axonal_projection"
         )
 
         # Build and verify connection exists with correct routing
         brain = builder.build()
         assert len(brain.connections) == 1
-        assert ("cortex", "hippocampus") in brain.connections
+        # Connection key includes target port when specified
+        assert ("cortex", "hippocampus:feedforward") in brain.connections
 
         # Verify hippocampus receives input from cortex
-        pathway = brain.connections[("cortex", "hippocampus")]
+        pathway = brain.connections[("cortex", "hippocampus:feedforward")]
         assert hasattr(pathway, "forward")  # Valid pathway exists
 
     def test_connect_with_target_port(self, brain_config):
@@ -155,7 +156,7 @@ class TestBrainBuilderPortBasedConnections:
         )
 
         # Connect to top_down input specifically
-        builder.connect("pfc", "cortex", target_port="top_down", pathway_type="axonal_projection")
+        builder.connect("pfc", "cortex", source_port="executive", target_port="top_down", pathway_type="axonal_projection")
 
         conn = builder._connections[0]
         assert conn.target_port == "top_down"
@@ -202,11 +203,11 @@ class TestBrainBuilderPortBasedConnections:
 
         # Feedforward path
         builder.connect(
-            "thalamus", "cortex", target_port="feedforward", pathway_type="axonal_projection"
+            "thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection"
         )
 
         # Top-down path
-        builder.connect("pfc", "cortex", target_port="top_down", pathway_type="axonal_projection")
+        builder.connect("pfc", "cortex", source_port="executive", target_port="top_down", pathway_type="axonal_projection")
 
         # Build and verify connections exist
         brain = builder.build()
@@ -243,9 +244,9 @@ class TestLayerSpecificCorticalRouting:
             "hippocampus", "hippocampus", dg_size=128, ca3_size=96, ca2_size=32, ca1_size=64
         )
 
-        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection")
         builder.connect(
-            "cortex", "hippocampus", source_port="l23", pathway_type="axonal_projection"
+            "cortex", "hippocampus", source_port="l23", target_port="feedforward", pathway_type="axonal_projection"
         )
 
         brain = builder.build()
@@ -275,9 +276,9 @@ class TestLayerSpecificCorticalRouting:
             "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"cortex": 32}
         )
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")  # Cortico-cortical
-        builder.connect("cortex", "striatum", source_port="l5")  # Cortico-subcortical
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="feedforward")  # Cortico-cortical
+        builder.connect("cortex", "striatum", source_port="l5", target_port="feedforward")  # Cortico-subcortical
 
         brain = builder.build()
 
@@ -312,10 +313,10 @@ class TestMultipleInputPorts:
         )
 
         # Feedforward from thalamus
-        builder.connect("thalamus", "cortex", target_port="feedforward")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
 
         # Top-down from PFC
-        builder.connect("pfc", "cortex", target_port="top_down")
+        builder.connect("pfc", "cortex", source_port="executive", target_port="top_down")
 
         brain = builder.build()
 
@@ -323,13 +324,9 @@ class TestMultipleInputPorts:
         # thalamus = brain.components["thalamus"]
 
         # Cortex should have received inputs from both sources
-        # Check thalamus → feedforward connection
-        assert (
-            "thalamus:feedforward" in cortex.synaptic_weights
-            or "thalamus" in cortex.synaptic_weights
-        )
-        # Check PFC → top_down connection
-        assert "pfc:top_down" in cortex.synaptic_weights or "pfc" in cortex.synaptic_weights
+        # Weight keys use "source:source_port" format (not target port)
+        assert "thalamus:relay" in cortex.synaptic_weights
+        assert "pfc:executive" in cortex.synaptic_weights
 
     def test_hippocampus_multiple_inputs(self, brain_config):
         """Test hippocampus receiving both cortical and direct entorhinal inputs."""
@@ -344,11 +341,11 @@ class TestMultipleInputPorts:
         )
 
         # Main cortical input (L2/3)
-        builder.connect("thalamus", "cortex")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
         builder.connect("cortex", "hippocampus", source_port="l23", target_port="cortical")
 
         # Direct entorhinal input
-        builder.connect("thalamus", "hippocampus", target_port="ec_l3")
+        builder.connect("thalamus", "hippocampus", source_port="relay", target_port="ec_l3")
 
         brain = builder.build()
 
@@ -361,9 +358,9 @@ class TestMultipleInputPorts:
         assert "cortex:l23" in hippo.input_sources
         assert hippo.input_sources["cortex:l23"] == cortex.l23_size  # cortical = 96
 
-        # ec_l3 should be registered as input source
-        assert "thalamus" in hippo.input_sources
-        assert hippo.input_sources["thalamus"] == 64  # entorhinal from thalamus
+        # ec_l3 should be registered as input source with "source:port" format
+        assert "thalamus:relay" in hippo.input_sources
+        assert hippo.input_sources["thalamus:relay"] == 64  # entorhinal from thalamus
 
 
 class TestPortBasedForwardPass:
@@ -384,9 +381,9 @@ class TestPortBasedForwardPass:
             "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"cortex": 32}
         )
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="feedforward")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="feedforward")
 
         brain = builder.build()
 
@@ -422,8 +419,8 @@ class TestBackwardCompatibility:
             "cortex", "cortex", l4_size=64, l23_size=96, l5_size=32, l6a_size=0, l6b_size=0
         )
 
-        # Old-style connection without ports
-        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
+        # Old-style connection without ports - NOW REQUIRES PORTS
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection")
 
         brain = builder.build()
 
@@ -431,11 +428,11 @@ class TestBackwardCompatibility:
         assert "thalamus" in brain.components
         assert "cortex" in brain.components
 
-        # Should have proper connection (cortex receives from thalamus)
+        # Should have proper connection (cortex receives from thalamus with port-based naming)
         cortex = brain.components["cortex"]
         thalamus = brain.components["thalamus"]
-        assert "thalamus" in cortex.synaptic_weights
-        assert cortex.synaptic_weights["thalamus"].shape[1] == thalamus.relay_size
+        assert "thalamus:relay" in cortex.synaptic_weights
+        assert cortex.synaptic_weights["thalamus:relay"].shape[1] == thalamus.relay_size
 
     def test_mixing_port_and_traditional(self, brain_config):
         """Test mixing port-based and traditional connections."""
@@ -452,10 +449,10 @@ class TestBackwardCompatibility:
             "striatum", "striatum", n_actions=4, neurons_per_action=1, input_sources={"cortex": 32}
         )
 
-        # Mix of old and new style
-        builder.connect("thalamus", "cortex")  # Old style
-        builder.connect("cortex", "hippocampus", source_port="l23")  # New style
-        builder.connect("cortex", "striatum", source_port="l5")  # New style
+        # Mix of old and new style - ALL NOW REQUIRE PORTS
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")  # Explicit ports required
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="feedforward")  # New style
+        builder.connect("cortex", "striatum", source_port="l5", target_port="feedforward")  # New style
 
         brain = builder.build()
 
@@ -571,7 +568,7 @@ class TestEndToEndPortBasedRouting:
         )
 
         # Feedforward: thalamus → cortex L4
-        builder.connect("thalamus", "cortex", pathway_type="axonal_projection")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward", pathway_type="axonal_projection")
 
         # Feedback: L6a → TRN (attentional gating)
         builder.connect(
@@ -653,13 +650,13 @@ class TestEndToEndPortBasedRouting:
         )
 
         # Feedforward path
-        builder.connect("thalamus", "cortex")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
 
         # Cortico-cortical (L2/3 → hippocampus)
-        builder.connect("cortex", "hippocampus", source_port="l23")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="feedforward")
 
         # Cortico-subcortical (L5 → striatum)
-        builder.connect("cortex", "striatum", source_port="l5")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="feedforward")
 
         # Cortico-thalamic feedback
         builder.connect("cortex", "thalamus", source_port="l6a", target_port="l6a_feedback")

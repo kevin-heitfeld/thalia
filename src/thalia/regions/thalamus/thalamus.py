@@ -1105,6 +1105,11 @@ class ThalamicRelay(NeuralRegion):
         self.n_output = new_n_relay
         self.total_neurons = new_n_relay + new_n_trn
 
+        # 7.5. Update port sizes
+        # Update registered port sizes to reflect new layer sizes
+        self._port_sizes["relay"] = self.relay_size
+        self._port_sizes["trn"] = self.trn_size
+
         # 8. Rebuild center-surround filter with new output size
         self._build_center_surround_filter()
 

@@ -104,7 +104,7 @@ class TestV2WeightPlacement:
         # Check all internal weights are in synaptic_weights
         required_weights = [
             # External sources (from BrainBuilder default preset)
-            "thalamus",  # External: Thalamus → L4
+            "thalamus:relay",  # External: Thalamus:relay → L4 (port-based naming)
             # Internal cortical weights
             "l4_l23",  # Internal: L4 → L2/3
             "l23_recurrent",  # Internal: L2/3 → L2/3
@@ -163,11 +163,11 @@ class TestV2WeightPlacement:
         initial_l4_l23 = cortex.synaptic_weights["l4_l23"].data.clone()
 
         # Run forward pass to generate activity (get thalamus input size from weights)
-        thalamus_input_size = cortex.synaptic_weights["thalamus"].shape[1]
+        thalamus_input_size = cortex.synaptic_weights["thalamus:relay"].shape[1]
         input_spikes = torch.zeros(thalamus_input_size, dtype=torch.bool)
         input_spikes[:10] = True  # Activate first 10 neurons
 
-        cortex.forward({"thalamus": input_spikes})
+        cortex.forward({"thalamus:relay": input_spikes})
 
         # Apply plasticity
         cortex._apply_plasticity()
@@ -193,9 +193,9 @@ class TestEnhancements:
 
         # Set dopamine and run forward (get thalamus input size from weights)
         cortex.state.dopamine = 0.6
-        thalamus_input_size = cortex.synaptic_weights["thalamus"].shape[1]
+        thalamus_input_size = cortex.synaptic_weights["thalamus:relay"].shape[1]
         dummy_input = torch.zeros(thalamus_input_size, dtype=torch.bool, device="cpu")
-        output_with_da = cortex.forward({"thalamus": dummy_input})
+        output_with_da = cortex.forward({"thalamus:relay": dummy_input})
 
         # Behavioral test: Layer-specific DA should affect learning/output
         # Get diagnostics to verify DA is being used per-layer

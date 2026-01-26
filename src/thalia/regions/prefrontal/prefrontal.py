@@ -1009,6 +1009,10 @@ class Prefrontal(NeuralRegion):
         self.n_output = new_n_output
         self.total_neurons = new_n_output
 
+        # 6.5. Update port sizes
+        # Update registered port sizes to reflect new output size
+        self._port_sizes["executive"] = self.n_neurons
+
         # 7. Validate growth completed correctly (skip config check - using n_neurons not n_output)
         self._validate_output_growth(old_n_output, n_new, check_config=False)
 
