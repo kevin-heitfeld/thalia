@@ -126,33 +126,42 @@ def grow_output(self, n_new: int) -> None:
         >>> region.n_output  # 120
     """
 
-def grow_input(self, n_new: int) -> None:
-    """Grow input dimension to accept more inputs.
+def grow_source(self, source_name: str, new_size: int) -> None:
+    """Grow input dimension for a specific source (v3.0+ multi-source architecture).
 
-    Called when upstream components grow their outputs.
-    This expands the component's receptive field.
+    Replaces grow_input() - all regions now use per-source growth.
+    Called when one source region grows its output.
+    Only that source's synaptic weight matrix expands.
 
     Args:
-        n_new: Number of input dimensions to add
+        source_name: Name of the input source (e.g., 'thalamus', 'cortex:l5')
+        new_size: New total size for this source
 
     Effects:
-        - Expands input-related weight matrices (adds columns)
+        - Expands synaptic_weights[source_name] matrix (adds columns)
         - Does NOT add neurons (neuron count unchanged)
-        - Expands input-side state tensors (traces, buffers)
-        - Updates config.n_input
+        - Other sources remain completely untouched
+        - Updates input_sizes[source_name] and config.n_input
 
     Example:
-        >>> region.n_input  # 256
-        >>> region.grow_input(32)
-        >>> region.n_input  # 288
+        >>> region.input_sizes['thalamus']  # 256
+        >>> region.grow_source('thalamus', 288)
+        >>> region.input_sizes['thalamus']  # 288
+        >>> region.input_sizes['cortex']  # 512 (unchanged!)
     """
 ```
 
-### Multi-Source Pathway Growth
+### Multi-Source Architecture
 
 ```python
+# All regions now maintain separate weight matrices per input source
+region.synaptic_weights = {
+    'thalamus': torch.tensor([n_neurons, 256]),  # Thalamic input
+    'cortex:l5': torch.tensor([n_neurons, 512]),  # Cortical input
+}
+
 def grow_source(self, source_name: str, new_size: int) -> None:
-    """Grow input dimension for a specific source (MultiSourcePathway only).
+    """Grow input dimension for a specific source (standard for all regions).
 
     Called when one source region in a multi-source connection grows.
     Only that source's contribution to the total input expands.
@@ -197,12 +206,12 @@ list_code_usages(symbolName="NeuralComponent")
 - `reset_state()` - Clear state between episodes
 - `get_diagnostics()` - Return health metrics
 - `grow_output(n_new)` - Add output neurons
-- `grow_input(n_new)` - Expand receptive field
+- `grow_source(source_name, new_size)` - Expand specific input source
 
 **Steps:**
 1. Create `src/thalia/regions/<name>/<name>.py`
 2. Create `<Name>Config` dataclass
-3. Inherit from `NeuralComponent`
+3. Inherit from `NeuralRegion` (includes growth methods via GrowthMixin)
 4. Add `@register_region("name", config_class=<Name>Config)`
 5. Implement required methods
 6. Update `docs/architecture/ARCHITECTURE_OVERVIEW.md`
@@ -216,9 +225,10 @@ grep_search(query="check_growth", isRegexp=False, includePattern="src/thalia/tra
 
 # Find growth implementations
 list_code_usages(symbolName="grow_output")
-list_code_usages(symbolName="grow_input")
+list_code_usages(symbolName="grow_source")
 
-# Find pathway growth coordination
+# Find GrowthManager coordination
+grep_search(query="GrowthManager", isRegexp=False, includePattern="src/thalia/coordination/**")
 semantic_search(query="pathway growth coordination when components change size")
 ```
 

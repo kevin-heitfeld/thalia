@@ -140,7 +140,7 @@ Select-String -Path src\* -Pattern "@register_pathway" -Recurse
 
 # Find growth implementations
 Select-String -Path src\* -Pattern "def grow_output" -Recurse
-Select-String -Path src\* -Pattern "def grow_input" -Recurse
+Select-String -Path src\* -Pattern "def grow_source" -Recurse
 
 # Find learning strategies
 Select-String -Path src\* -Pattern "create_strategy" -Recurse
@@ -226,12 +226,6 @@ def grow_output(self, n_new: int) -> None:
     """Grow output dimension by adding neurons.
 
     Effects: Expands weights (adds rows), adds neurons, updates config.n_output
-    """
-
-def grow_input(self, n_new: int) -> None:
-    """Grow input dimension to accept more inputs.
-
-    Effects: Expands weights (adds columns), NO new neurons, updates config.n_input
     """
 
 def grow_source(self, source_name: str, new_size: int) -> None:

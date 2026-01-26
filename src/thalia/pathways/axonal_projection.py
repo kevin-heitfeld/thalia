@@ -384,17 +384,6 @@ class AxonalProjection(RoutingComponent):
     # GROWTH API (RoutingComponent-specific)
     # =================================================================
 
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
-    ) -> None:
-        """Routing components don't have input dimension.
-
-        Note: Axons grow via grow_source() instead.
-        """
-
     def grow_output(
         self,
         n_new: int,

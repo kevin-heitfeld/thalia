@@ -1,7 +1,7 @@
 # Mixins Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 13:45:45
+> Last updated: 2026-01-26 14:17:33
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all mixin classes used by `NeuralRegion`. These mixins provide standard functionality to all brain regions.
@@ -41,7 +41,7 @@ class NeuralRegion(nn.Module,
 
 ---
 
-### [``GrowthMixin``](../../src/thalia/mixins/growth_mixin.py#L45)
+### [``GrowthMixin``](../../src/thalia/mixins/growth_mixin.py#L29)
 
 **Source**: [`thalia/mixins/growth_mixin.py`](../../src/thalia/mixins/growth_mixin.py)
 
@@ -49,7 +49,7 @@ class NeuralRegion(nn.Module,
 
 **Public Methods**:
 
-- [`named_modules()`](../../src/thalia/mixins/growth_mixin.py#L71)
+- [`named_modules()`](../../src/thalia/mixins/growth_mixin.py#L55)
 
 ---
 

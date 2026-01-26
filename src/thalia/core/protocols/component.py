@@ -63,7 +63,6 @@ class BrainComponent(Protocol):
        - Maintain membrane potentials, spike history, traces
 
     3. **Growth** (Curriculum Learning):
-       - grow_input(): Expand input dimension (pathways only)
        - grow_output(): Expand output dimension (regions and pathways)
        - get_capacity_metrics(): Report utilization for growth decisions
 
@@ -226,45 +225,6 @@ class BrainComponent(Protocol):
     # =========================================================================
     # Growth (Curriculum Learning) - Unified API
     # =========================================================================
-
-    @abstractmethod
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
-    ) -> None:
-        """
-        Grow component's input dimension without disrupting existing circuits.
-
-        **CRITICAL for curriculum learning**: As upstream components grow, this
-        component must adapt to accept more input connections.
-
-        For regions:
-        - Expands input weights [n_output, n_input] → [n_output, n_input + n_new]
-        - New synapses start with sparse random connections
-        - Existing weights unchanged
-
-        For pathways:
-        - Expands source dimension to match upstream region growth
-        - Maintains connectivity when source region grows
-        - Preserves existing connection strengths
-
-        Args:
-            n_new: Number of input neurons/units to add
-            initialization: Weight init strategy ('sparse_random', 'xavier', etc.)
-            sparsity: Connection sparsity for new neurons (0.0 = none, 1.0 = all)
-
-        Example:
-            >>> # Upstream region grows
-            >>> cortex.grow_output(20)
-            >>> # Downstream components must adapt
-            >>> hippocampus.grow_input(20)
-            >>> cortex_to_hippo_pathway.grow_input(20)
-
-        Raises:
-            NotImplementedError: If component doesn't support input growth yet
-        """
 
     # === GROWTH METHODS ===
     @abstractmethod
@@ -442,19 +402,6 @@ class BrainComponentMixin:
 
     Subclasses override specific methods as needed.
     """
-
-    def grow_input(
-        self,
-        n_new: int,
-        initialization: str = "sparse_random",
-        sparsity: float = 0.1,
-    ) -> None:
-        """Default: raise NotImplementedError with helpful message."""
-        raise NotImplementedError(
-            f"{self.__class__.__name__}.grow_input() not yet implemented. "
-            f"Input growth is essential for curriculum learning when upstream components grow. "
-            f"See docs/architecture/UNIFIED_GROWTH_API.md for implementation guide."
-        )
 
     def grow_output(
         self,
@@ -640,24 +587,6 @@ class RoutingComponent(nn.Module):
     - Motor decoders (convert spikes to actions)
 
     Key Principle: If it only routes/transforms without learning, it's a RoutingComponent.
-
-    Usage:
-        class AxonalProjection(RoutingComponent):
-            def __init__(self, sources, device, dt_ms):
-                config = SimpleNamespace(device=device)
-                super().__init__(config)
-                self.sources = sources
-                self._init_delay_buffers()
-
-            def forward(self, source_outputs):
-                # Route spikes with delays, NO learning
-                return self._apply_delays_and_concatenate(source_outputs)
-
-            def grow_input(self, n_new, **kwargs):
-                pass  # Routing components don't have input dimension
-
-            def grow_output(self, n_new, **kwargs):
-                raise NotImplementedError("Use grow_source() instead")
     """
 
     def __init__(self, config: Any):

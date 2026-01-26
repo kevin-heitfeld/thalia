@@ -61,7 +61,7 @@ class NeuralRegion(
     - nn.Module: PyTorch module functionality (FIRST for proper __init__)
     - BrainComponentMixin: Oscillator phase properties and defaults
     - NeuromodulatorMixin: Dopamine, acetylcholine, norepinephrine control
-    - GrowthMixin: Dynamic expansion (grow_input/grow_output)
+    - GrowthMixin: Dynamic expansion (grow_output)
     - ResettableMixin: State reset helpers
     - DiagnosticsMixin: Health monitoring and metrics
     - StateLoadingMixin: Common state restoration (load_state with helpers)

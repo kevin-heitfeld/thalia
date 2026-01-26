@@ -56,7 +56,7 @@ Key methods to jump to:
   • select_action() - Action selection logic
   • update_eligibility() - Eligibility trace management
   • apply_three_factor_learning() - Dopamine-gated plasticity
-  • grow_output() / grow_input() - Neurogenesis
+  • grow_output() / grow_source() - Neurogenesis
   • get_diagnostics() - Health monitoring
 
 WHY THIS FILE IS LARGE
@@ -1318,12 +1318,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             n_new: Number of new actions to add (each action = neurons_per_action neurons)
             initialization: Weight init strategy ('xavier', 'sparse_random', 'uniform')
             sparsity: Connection sparsity for new neurons (0.0 = no connections, 1.0 = fully connected)
-
-        Example:
-            >>> striatum = Striatum(StriatumConfig(n_output=2, neurons_per_action=10))
-            >>> # Currently: 2 actions × 10 neurons = 20 total neurons
-            >>> striatum.grow_output(n_new=1)  # Add 1 action
-            >>> # Now: 3 actions × 10 neurons/action/pathway × 2 pathways = 60 total neurons
         """
         # Calculate actual number of neurons to add PER PATHWAY (population coding)
         # neurons_per_action means "neurons per action PER PATHWAY"
@@ -1656,9 +1650,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             n_new: Number of new actions to add
             initialization: Weight init strategy
             sparsity: Connection sparsity for new neurons
-
-        Example:
-            >>> striatum.grow_actions(n_new=2)  # Add 2 actions
         """
         self.grow_output(n_new, initialization, sparsity)
 
@@ -1685,14 +1676,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             new_size: New total size for this source's input dimension
             initialization: Weight init strategy ('xavier', 'sparse_random', 'uniform')
             sparsity: Connection sparsity for new weights (0.0 = no connections)
-
-        Example:
-            >>> # Cortex L5 grows from 200 to 220 neurons
-            >>> cortex.grow_output(20)  # L5 now has 220 neurons
-            >>> # Update axonal projection
-            >>> cortex_to_striatum.grow_source('cortex:l5', new_size=220)
-            >>> # Update striatum weights
-            >>> striatum.grow_source('cortex:l5', new_size=220)
 
         Raises:
             KeyError: If source not found in synaptic_weights

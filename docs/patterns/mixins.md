@@ -148,10 +148,10 @@ class MyRegion(NeuralComponent, GrowthMixin):
 ```
 
 **STP Direction Semantics**:
-- `direction='pre'`: Grow during `grow_input()` only (tracks external inputs)
+- `direction='pre'`: Grow during `grow_source()` only (tracks external inputs)
 - `direction='post'`: Grow during `grow_output()` only (tracks outputs)
 - `direction='both'`: Non-recurrent STP that participates in both contexts
-  - During `grow_input()`: grows 'pre' dimension
+  - During `grow_source()`: grows 'pre' dimension (input columns)
   - During `grow_output()`: grows 'post' dimension
 - `recurrent=True`: For recurrent STP (same population)
   - During `grow_output()`: grows BOTH 'pre' and 'post' dimensions

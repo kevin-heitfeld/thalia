@@ -40,7 +40,7 @@ BrainComponentMixin                # Default implementations
     ├── Provides: Default check_health() (returns healthy)
     │   Provides: Default get_capacity_metrics() (uses GrowthManager)
     │   Provides: Default set_oscillator_phases() (stores but doesn't use)
-    │   Provides: Default grow_input() (raises helpful NotImplementedError)
+    │   Provides: Default grow_source() (raises helpful NotImplementedError)
     │   Provides: Default grow_output() (raises helpful NotImplementedError)
     │
     └── Can be overridden: Subclasses customize as needed
@@ -105,7 +105,7 @@ All components MUST implement:
 - `set_oscillator_phases(phases, signals, theta_slot, coupled_amplitudes) -> None`
 
 ### Growth (Curriculum Learning)
-- `grow_input(n_new, initialization, sparsity) -> None`
+- `grow_source(source_name, new_size, initialization, sparsity) -> None`
 - `grow_output(n_new, initialization, sparsity) -> None`
 - `get_capacity_metrics() -> CapacityMetrics`
 
@@ -171,7 +171,7 @@ class MyNewRegion(NeuralRegion):
         self.weights.data.copy_(state['weights'].to(self.device))
 
     # Optional: Override defaults from BrainComponentMixin
-    def grow_input(self, n_new: int, initialization: str, sparsity: float):
+    def grow_source(self, source_name: str, new_size: int, initialization: str, sparsity: float):
         # Custom input dimension growth
         ...
 
@@ -208,7 +208,7 @@ For each component:
 - [ ] Implements `load_full_state()` - restore from checkpoint
 - [ ] Has `device` property (automatic if inherits from `NeuralComponent`)
 - [ ] Has `dtype` property (automatic if inherits from `NeuralComponent`)
-- [ ] Optional: Override `grow_input()` for input dimension growth
+- [ ] Optional: Override `grow_source()` for source-specific growth
 - [ ] Optional: Override `grow_output()` for output dimension growth
 - [ ] Optional: Override `check_health()` for custom health checks
 - [ ] Optional: Override `set_oscillator_phases()` if using oscillators
@@ -242,6 +242,23 @@ TypeError: Can't instantiate abstract class MyRegion with abstract methods 'get_
 - Clear separation: required (abstract) vs optional (mixin)
 
 ## Default Implementations
+
+### 4. Growth Methods - Routing vs Learning Components
+
+**Learning Components** (regions with synaptic weights):
+```python
+def grow_source(self, source_name, new_size, initialization, sparsity):
+    # Implemented: Expand synaptic weights for specific source
+    raise NotImplementedError(
+        f"{self.__class__.__name__}.grow_source() not yet implemented. "
+        f"Source growth is essential for multi-source curriculum learning."
+    )
+```
+
+**Routing Components** (AxonalProjection - pure spike routing):
+- Has `grow_source()` to update routing when sources grow (NO grow_output)
+- Use `grow_source(source_name, new_size)` for routing metadata updates
+- GrowthManager automatically calls grow_source() on pathways during cascading growth
 
 Components can use default implementations from `BrainComponentMixin`:
 
@@ -279,11 +296,11 @@ def set_oscillator_phases(self, phases, signals, theta_slot, coupled_amplitudes)
 
 **Override if**: You want to use oscillator phases in your forward pass
 
-### 4. `grow_input()` and `grow_output()` - Raise helpful errors
+### 4. `grow_source()` and `grow_output()` - Raise helpful errors
 ```python
-def grow_input(self, n_new, initialization, sparsity):
+def grow_source(self, source_name, new_size, initialization, sparsity):
     raise NotImplementedError(
-        f"{self.__class__.__name__}.grow_input() not yet implemented. "
+        f"{self.__class__.__name__}.grow_source() not yet implemented. "
         f"This is required for handling upstream region growth. "
         f"See src/thalia/mixins/growth_mixin.py for implementation guide."
     )
@@ -309,7 +326,7 @@ class MinimalRegion(NeuralComponent):
     def get_full_state(self): ...
     def load_full_state(self, state): ...
     # Uses default: check_health, get_capacity_metrics, set_oscillator_phases
-    # Must implement: grow_input, grow_output (or use defaults with NotImplementedError)
+    # Must implement: grow_source, grow_output (or use defaults with NotImplementedError)
 ```
 
 ### Pattern 2: Full-Featured Region (Custom Implementations)
@@ -322,7 +339,7 @@ class FullRegion(NeuralComponent):
     def load_full_state(self, state): ...
     def check_health(self): ...          # Custom health checks
     def get_capacity_metrics(self): ...  # Custom capacity metrics
-    def grow_input(self, n_new): ...     # Handles upstream growth
+    def grow_source(self, source_name, new_size): ...     # Handles upstream source growth
     def grow_output(self, n_new): ...    # Supports curriculum growth
     def set_oscillator_phases(self, phases): ...  # Uses oscillators
 ```

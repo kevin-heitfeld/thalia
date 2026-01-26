@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 13:45:45
+> Last updated: 2026-01-26 14:17:33
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -178,7 +178,7 @@ Total: **8** regions
 
 ### `cortex`
 
-**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L169)
+**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L136)
 
 **Aliases**: `layered_cortex`
 
@@ -192,7 +192,7 @@ Total: **8** regions
 
 ### `hippocampus`
 
-**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L153)
+**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L112)
 
 **Aliases**: `trisynaptic, trisynaptic_hippocampus`
 

@@ -7,25 +7,9 @@ ConductanceLIF.grow_neurons() for neuron population growth.
 Utility Methods:
 - _expand_weights(): Expand weight matrix by adding output neurons
 - _expand_state_tensors(): Expand state tensors (traces, memory, etc.)
-- _update_parameter(): Safely update Parameter data (Phase 1 improvement)
-- _auto_grow_stp_modules(): Automatically grow all STP modules (Phase 1 improvement)
-- _validate_growth(): Post-growth validation checks (Phase 1 improvement)
-
-Growth Checklist (for implementers of grow_output):
-1. ✅ Primary neurons - self.neurons.grow_neurons(n_new)
-2. ✅ Weight matrices - Add rows for new neurons
-3. ✅ STP modules - Call _auto_grow_stp_modules('post', n_new) or manual stp.grow(n_new, target='post')
-4. ✅ State buffers - Expand activity tracking, gates, memory
-5. ✅ Interneurons - FSI, TRN, or other inhibitory populations (if applicable)
-6. ✅ Config updates - config.n_output, region-specific sizes
-7. ✅ Subcomponents - Deep nuclei, granule layers, pathways (if applicable)
-
-Growth Checklist (for implementers of grow_input):
-1. ✅ Weight matrices - Add columns for new inputs
-2. ✅ STP modules - Call _auto_grow_stp_modules('pre', n_new) or manual stp.grow(n_new, target='pre')
-3. ✅ Input filters - Center-surround, preprocessing layers (if applicable)
-4. ✅ Config updates - config.n_input
-5. ❌ NO neuron growth - Input growth does NOT add neurons
+- _update_parameter(): Safely update Parameter data
+- _auto_grow_stp_modules(): Automatically grow all STP modules
+- _validate_growth(): Post-growth validation checks
 """
 
 from __future__ import annotations
@@ -342,11 +326,6 @@ class GrowthMixin:
             weight_param_name: Name of weight parameter attribute (default: 'weights')
             init_method: Initialization method ('xavier', 'sparse_random', 'uniform')
             sparsity: Sparsity for sparse_random initialization
-
-        Example:
-            >>> def grow_input(self, n_new: int) -> None:
-            ...     self._expand_weights_input(n_new, init_method='xavier')
-            ...     self.config = replace(self.config, n_input=self.config.n_input + n_new)
         """
         current_weights = getattr(self, weight_param_name)
         n_output = current_weights.shape[0]
@@ -737,18 +716,6 @@ class GrowthMixin:
         Returns:
             Number of STP modules grown
 
-        Example:
-            >>> # In grow_output():
-            >>> def grow_output(self, n_new):
-            ...     self.neurons.grow_neurons(n_new)
-            ...     self._expand_weights(n_new)
-            ...     self._auto_grow_stp_modules('post', n_new)  # Auto-handles all STP
-
-            >>> # In grow_input():
-            >>> def grow_input(self, n_new):
-            ...     self._expand_input_weights(n_new)
-            ...     self._auto_grow_stp_modules('pre', n_new)  # Auto-handles all STP
-
         Note:
             This uses PyTorch's module tree traversal to find all STP instances.
             For manual control, call stp.grow(n_new, target=direction) directly.
@@ -843,15 +810,6 @@ class GrowthMixin:
 
         Raises:
             AssertionError: If validation fails
-
-        Example:
-            >>> def grow_input(self, n_new):
-            ...     old_n_input = self.config.n_input
-            ...
-            ...     # ... perform growth ...
-            ...
-            ...     # Validate at the end
-            ...     self._validate_input_growth(old_n_input, n_new)
 
         Note:
             Input growth does NOT add neurons (only expands weight columns),

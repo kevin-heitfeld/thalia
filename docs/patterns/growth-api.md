@@ -15,11 +15,12 @@ Growth allows brain regions to add capacity during training without discarding l
 - **Synaptogenesis**: New connections form between existing neurons
 - **Structural plasticity**: Dendrites and axons grow/retract
 
-### Three Growth Operations
+### Two Growth Operations
 
 1. **`grow_output(n_new)`**: Add neurons (grow the region itself)
-2. **`grow_input(n_new)`**: Accept more input sources (grow sensory capacity)
-3. **`grow_source(source_name, new_size)`**: Expand specific input pathway (multi-source only)
+2. **`grow_source(source_name, new_size)`**: Expand specific input source
+
+**Note**: Replaced `grow_input()` with `grow_source()` to support multi-source architecture where each input source has a separate weight matrix.
 
 ---
 
@@ -88,76 +89,18 @@ def grow_output(self, n_new: int) -> None:
 
 ---
 
-### `grow_input(n_new: int) -> None`
-
-**Purpose**: Expand input dimension to accept more incoming connections.
-
-**Effects**:
-- ✅ Expands weight matrices (adds **columns**)
-- ❌ **Does NOT** add neurons
-- ✅ Updates `config.n_input`
-- ✅ Preserves **all** existing weights
-- ✅ New connections initialized biologically
-
-**Contract**:
-```python
-def grow_input(self, n_new: int) -> None:
-    """Expand input dimension by n_new.
-
-    Guarantees:
-    - Old connections unchanged
-    - New connections biologically initialized
-    - No new neurons added
-    - Existing circuits continue functioning
-    """
-```
-
-**Example**:
-```python
-# Before: Accept 500 inputs
-hippocampus = TrisynapticHippocampus(config)  # n_input=500
-
-# Grow: Accept 200 more inputs
-hippocampus.grow_input(200)
-
-# After: Accept 700 inputs
-assert hippocampus.config.n_input == 700
-assert hippocampus.weights.shape[1] == 700  # Columns expanded
-assert hippocampus.n_neurons == 100  # Unchanged!
-```
-
-**Implementation Pattern**:
-```python
-def grow_input(self, n_new: int) -> None:
-    """Standard implementation pattern."""
-    # 1. Grow weight matrices (add columns)
-    self.weights = self._expand_weights(
-        self.weights,
-        n_output=self.weights.shape[0],
-        n_input=self.n_input + n_new,
-        expansion_type="input",
-    )
-
-    # 2. Update config (NO neuron growth)
-    self.config.n_input += n_new
-    self.n_input += n_new
-
-    # 3. Grow input-specific structures
-    # E.g., learning traces for new inputs
-```
-
----
-
 ### `grow_source(source_name: str, new_size: int) -> None`
 
-**Purpose**: Expand capacity for specific input source in multi-source pathways.
+**Purpose**: Expand capacity for specific input source in multi-source architecture.
 
-**Applies to**: Regions using `MultiSourcePathway` (e.g., `LayeredCortex`, `MultisensoryRegion`)
+**Replaces**: `grow_input(n_new)` - removed in v3.0+ in favor of per-source growth
+
+**Applies to**: All regions with multi-source inputs (standard architecture)
 
 **Effects**:
-- ✅ Resizes weight matrix for specific source
+- ✅ Resizes weight matrix for specified source only
 - ✅ Updates `input_sizes[source_name]`
-- ✅ Preserves other sources (untouched)
+- ✅ Preserves other sources completely untouched
 - ❌ **Does NOT** add neurons
 
 **Contract**:
@@ -178,35 +121,39 @@ def grow_source(self, source_name: str, new_size: int) -> None:
 
 **Example**:
 ```python
-# Before: Thalamus=100, Cortex:L5=200
+# Before: Thalamus=100, Hippocampus=200
 cortex = LayeredCortex(config)
-cortex.input_sizes = {'thalamus': 100, 'cortex:l5': 200}
+cortex.input_sizes = {'thalamus': 100, 'hippocampus': 200}
 
 # Grow: Expand thalamus source to 150
 cortex.grow_source('thalamus', 150)
 
-# After: Thalamus=150, Cortex:L5=200 (unchanged)
+# After: Thalamus=150, Hippocampus=200 (unchanged)
 assert cortex.input_sizes['thalamus'] == 150
-assert cortex.input_sizes['cortex:l5'] == 200  # Untouched!
+assert cortex.input_sizes['hippocampus'] == 200  # Untouched!
+assert cortex.synaptic_weights['thalamus'].shape == (n_neurons, 150)
+assert cortex.synaptic_weights['hippocampus'].shape == (n_neurons, 200)  # Same!
 ```
 
 **Implementation Pattern**:
 ```python
 def grow_source(self, source_name: str, new_size: int) -> None:
-    """Standard implementation for multi-source regions."""
+    """Standard implementation from NeuralRegion base class."""
     if source_name not in self.synaptic_weights:
         raise ValueError(f"Unknown source: {source_name}")
 
     old_size = self.input_sizes[source_name]
     n_new = new_size - old_size
 
-    # 1. Grow weight matrix for this source
-    self.synaptic_weights[source_name] = self._expand_weights(
-        self.synaptic_weights[source_name],
+    # 1. Grow weight matrix for THIS SOURCE ONLY
+    old_weights = self.synaptic_weights[source_name]  # [n_output, old_size]
+    new_weights = self._expand_weights(
+        old_weights,
         n_output=self.n_neurons,
-        n_input=new_size,
+        n_input=new_size,  # Expand columns
         expansion_type="input",
     )
+    self.synaptic_weights[source_name] = new_weights  # [n_output, new_size]
 
     # 2. Update input size tracking
     self.input_sizes[source_name] = new_size
@@ -215,6 +162,13 @@ def grow_source(self, source_name: str, new_size: int) -> None:
     # 3. Update config
     self.config.n_input = self.n_input
 ```
+
+**Multi-Source Architecture**:
+- Each input source has **separate weight matrix** in `synaptic_weights` dict
+- GrowthManager coordinates cascading growth:
+  1. Source region grows output → calls `projection.grow_source(source_name, new_size)`
+  2. Projection updates routing → calls `target_region.grow_source(source_name, new_size)`
+- AxonalProjection also has `grow_source()` but NO `grow_output()` (pure routing)
 
 ---
 
@@ -253,11 +207,13 @@ new_weights = torch.randn(100, 50, device=self.device) * 0.1
 ```python
 def grow_region_symmetrically(region, n_new):
     """Grow both input and output dimensions."""
-    region.grow_input(n_new)   # Accept more inputs
+    region.grow_source('upstream_region', new_size)  # Accept more from specific source
     region.grow_output(n_new)  # Add more neurons
 ```
 
 **Use Case**: Balanced expansion (e.g., sensory cortex growing with thalamus)
+
+**Note**: Use `grow_source()` instead of `grow_input()` for per-source expansion
 
 ---
 
@@ -339,25 +295,32 @@ def test_grow_output():
     # Check new weights initialized
     assert region.weights[old_n_neurons:, :].abs().sum() > 0
 
-def test_grow_input():
-    """Verify grow_input() preserves weights, no neurons added."""
+def test_grow_source():
+    """Verify grow_source() preserves weights for specific source, no neurons added."""
     region = MyRegion(config)
-    old_weights = region.weights.clone()
+    source_name = 'thalamus'
+    old_weights = region.synaptic_weights[source_name].clone()
     old_n_neurons = region.n_neurons
+    old_size = region.input_sizes[source_name]
 
-    region.grow_input(30)
+    region.grow_source(source_name, old_size + 30)
 
     # Check NO new neurons
     assert region.n_neurons == old_n_neurons
 
     # Check old weights preserved
     assert torch.allclose(
-        region.weights[:, :old_weights.shape[1]],
+        region.synaptic_weights[source_name][:, :old_size],
         old_weights
     )
 
     # Check new columns initialized
-    assert region.weights[:, old_weights.shape[1]:].abs().sum() > 0
+    assert region.synaptic_weights[source_name][:, old_size:].abs().sum() > 0
+
+    # Check other sources unchanged
+    for other_source in region.synaptic_weights:
+        if other_source != source_name:
+            assert region.synaptic_weights[other_source].shape == original_shapes[other_source]
 ```
 
 ---

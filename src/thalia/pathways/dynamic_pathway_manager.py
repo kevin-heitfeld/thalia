@@ -167,12 +167,6 @@ class DynamicPathwayManager:
                         pathway.grow_source(src, new_size)
                     except Exception:
                         pass  # Pathway may not support growth
-                elif hasattr(pathway, "grow_input"):
-                    # Fallback for single-source pathways without grow_source
-                    try:
-                        pathway.grow_input(growth_amount)
-                    except Exception:
-                        pass  # Pathway may not support growth
 
             # Grow pathway output dimension if this component is the target
             if grow_inputs and tgt == component_name:

@@ -13,64 +13,65 @@ Previously, regions and pathways had inconsistent growth APIs:
 - **Regions**: Only `add_neurons()` - couldn't handle upstream growth
 - **Pathways**: `grow_source()` and `grow_target()` - unclear directionality
 
-**Key Discovery**: Both regions AND pathways have asymmetric dimensions (`n_input ≠ n_output`) and both need bidirectional growth support.
+**Key Discovery**: Multi-source architecture requires per-source growth instead of global input growth.
 
 ## Unified API
 
-All neural components now support:
+All neural regions now support:
 
 ```python
-# Grow input dimension (upstream growth)
-component.grow_input(n_new: int)
+# Grow input from specific source (multi-source architecture)
+region.grow_source(source_name: str, new_size: int)
 
 # Grow output dimension (internal neuron population)
-component.grow_output(n_new: int)
+region.grow_output(n_new: int)
 ```
 
 ### API Semantics
 
-- **`grow_input(n)`**: Expand input weight matrix **columns** to accept larger input
-  - Weight shape: `[n_output, n_input]` → `[n_output, n_input + n]`
-  - Preserves existing learned weights
+- **`grow_source(source_name, new_size)`**: Expand synaptic weight columns for specific input source
+  - Weight shape per source: `[n_output, old_size]` → `[n_output, new_size]`
+  - Preserves existing learned weights for that source
+  - Other sources remain completely unchanged
   - Initializes new input weights small to avoid disruption
 
 - **`grow_output(n)`**: Expand output neuron population
-  - Weight shape: `[n_output, n_input]` → `[n_output + n, n_input]`
+  - Weight shape for ALL sources: `[n_output, n_input]` → `[n_output + n, n_input]`
   - Creates new neurons with new output weights
   - For regions: distributes growth across layers based on ratios
+  - Expands ALL synaptic weight matrices (adds rows to each source)
 
 ## Implementation Status
 
 ### ✅ AxonalProjection
-- **NO growth needed**: Pure spike routing, NO weights
-- Growth happens at target regions which own synaptic weights
-- AxonalProjection automatically adapts to source/target size changes
+- **Has `grow_source()`**: Updates routing metadata when a source grows
+- **NO `grow_output()`**: Pure spike routing with NO weights or learnable parameters
+- **Growth coordination**: GrowthManager calls grow_source() on pathways during cascading growth
+- **Automatic adaptation**: Updates total output size and delay buffers when sources change
 
 ### ⚠️ Note on Growth
 In the current architecture:
-- **Regions grow**: They own neurons and synaptic weights
-- **Pathways don't grow**: AxonalProjection is weightless routing
+- **Regions**: Own synaptic weights per source, implement `grow_source()`/`grow_output()`
+- **AxonalProjection**: Pure routing, has `grow_source()` but NOT `grow_output()`
 - **Sensory pathways**: May have encoding parameters that can grow
 
-The examples below show the growth API design, but AxonalProjection itself doesn't need growth.
-
 ### ✅ LayeredCortex
-- `grow_input()`: Expands `w_input_l4` columns for upstream growth
+- `grow_source(source_name, new_size)`: Expands synaptic weights for specific source (e.g., "thalamus", "cortex:l6a")
 - `grow_output()`: Distributes growth across L4/L2/3/L5/L6a/L6b maintaining layer ratios
-- **Includes**: `w_l23_inhib`, `l23_phase_prefs`, STP module expansion
+- **Multi-source**: Separate weight matrices per source, grows each independently
 
 ### ✅ TrisynapticHippocampus
-- `grow_input()`: Expands EC input weights (`w_ec_dg`, `w_ec_ca3`)
+- `grow_source(source_name, new_size)`: Expands synaptic weights for specific source (e.g., "ec_l3", "cortex")
 - `grow_output()`: Distributes growth across DG/CA3/CA2/CA1 layers
 
 ### ✅ Striatum
-- `grow_input()`: Expands D1/D2 pathway weight columns
+- `grow_source(source_name, new_size)`: Expands D1/D2 weights for specific cortical/thalamic source
 - `grow_output()`: Grows action space (n_actions)
 
-### ✅ GrowthCoordinator
-- Updated to propagate input growth to downstream regions
-- After pathway grows input, calls `target_region.grow_input()`
-- Maintains connectivity consistency across growth
+### ✅ GrowthManager
+- Propagates growth through multi-source architecture
+- When region grows: calls `projection.grow_source()` AND `target_region.grow_source()`
+- Maintains connectivity consistency across all sources
 
 ## Important Notes
 
@@ -97,30 +98,19 @@ When growing:
 - **Input dimension**: Add **columns** (dimension 1)
 - **Output dimension**: Add **rows** (dimension 0)
 
-### Backward Compatibility
-
-⚠️ **Old API Removed** (December 2025):
-- `add_neurons()` → **REMOVED** - Use `grow_output()`
-- `grow_source()` → **REMOVED** - Use `grow_input()`
-- `grow_target()` → **REMOVED** - Use `grow_output()`
-
-All code must now use the unified `grow_input()` / `grow_output()` API.
-
 ## Testing
 
 Comprehensive test suite: `tests/unit/test_unified_growth_api.py`
 
-**Test Coverage** (10 tests, all passing):
-1. ✅ Pathway `grow_input()` expands input dimension
-2. ✅ Pathway `grow_output()` expands output dimension
-3. ✅ Cortex `grow_input()` expands input weights
-4. ✅ Cortex `grow_output()` expands neuron population (with layer ratios!)
-5. ✅ Hippocampus `grow_input()` expands EC weights
-6. ✅ Striatum `grow_input()` expands D1/D2 weights
-7. ✅ Bidirectional pathway growth (input then output)
-8. ✅ Bidirectional region growth (input then output)
-9. ✅ Forward pass after unified growth
-10. ✅ Backward compatibility with old methods
+**Test Coverage** (v3.0+ tests):
+1. ✅ Region `grow_source()` expands weights for specific source
+2. ✅ Region `grow_output()` expands neuron population
+3. ✅ AxonalProjection `grow_source()` updates routing
+4. ✅ Multi-source growth (cortex + thalamus → striatum)
+5. ✅ GrowthManager coordination (propagates through pathways + regions)
+6. ✅ Forward pass after multi-source growth
+
+**Note**: AxonalProjection has `grow_source()` but not `grow_output()` (raises NotImplementedError).
 
 ## Usage Examples
 
@@ -151,23 +141,6 @@ v1.grow_output(30)  # Adds neurons across all layers proportionally
 
 # V1 itself expands (will add ~95 to output due to layer ratios)
 v1.grow_output(40)  # Adds L4:40, L2/3:60, L5:40, L6a:10, L6b:10 → output +100
-```
-
-### End-to-End Growth with GrowthCoordinator
-```python
-coordinator = GrowthCoordinator(brain)
-
-# Grow pathway - automatically propagates to target region
-coordinator.coordinate_growth(
-    pathway_name="thalamus_to_cortex",
-    n_new_source=10,  # Thalamus grows by 10
-    n_new_target=20   # Cortex grows by 20 (actual: ~50 with ratios)
-)
-
-# Coordinator automatically:
-# 1. Grows pathway input dimension
-# 2. Grows pathway output dimension
-# 3. Grows target region input dimension (NEW!)
 ```
 
 ## Future Work

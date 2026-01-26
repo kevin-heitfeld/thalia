@@ -1,12 +1,12 @@
 # Module Exports Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 13:45:45
+> Last updated: 2026-01-26 14:17:33
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all public exports (`__all__`) from Thalia modules. These are the recommended imports for external code.
 
-Total: 46 modules, 465 exports
+Total: 46 modules, 464 exports
 
 ## 📑 Table of Contents
 
@@ -252,10 +252,9 @@ from thalia.constants import architecture
 
 **Source**: [`thalia/coordination/__init__.py`](../../src/thalia/coordination/__init__.py)
 
-**Exports** (9):
+**Exports** (8):
 
 - `CapacityMetrics`
-- `GrowthCoordinator`
 - `GrowthEvent`
 - `GrowthManager`
 - `BrainOscillator`

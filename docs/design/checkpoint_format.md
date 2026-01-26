@@ -480,8 +480,8 @@ class BrainCheckpoint:
 **Completed Work**:
 - ✅ `src/thalia/io/checkpoint.py` - Complete state serialization (integrated with binary format)
 - ✅ `src/thalia/coordination/growth.py` - GrowthManager with capacity metrics and history tracking
-- ✅ `src/thalia/regions/base.py` - NeuralComponent.grow_input() and grow_output() abstract methods
-- ✅ `src/thalia/regions/striatum/striatum.py` - Full grow_input/grow_output implementation with population coding
+- ✅ `src/thalia/core/neural_region.py` - NeuralRegion.grow_source() and grow_output() methods
+- ✅ `src/thalia/regions/striatum/striatum.py` - Full grow_source/grow_output implementation with population coding
 - ✅ `tests/unit/test_checkpoint_state.py` - 18 state roundtrip tests (all passing)
 - ✅ `tests/unit/test_growth_comprehensive.py` - 13 growth tests (all passing)
 - ✅ Growth history tracking in metadata
@@ -519,14 +519,15 @@ class NeuralComponent:
 
 **Growth API**:
 ```python
-class NeuralComponent:
-    def grow_input(
+class NeuralRegion:
+    def grow_source(
         self,
-        n_new: int,
+        source_name: str,
+        new_size: int,
         initialization: str = 'sparse_random',
         sparsity: float = 0.1
     ) -> None:
-        """Expand input dimension (add weight matrix columns)"""
+        """Expand input from specific source (add columns to that source's weight matrix)"""
 
     def grow_output(
         self,
@@ -534,7 +535,7 @@ class NeuralComponent:
         initialization: str = 'sparse_random',
         sparsity: float = 0.1
     ) -> None:
-        """Expand output dimension (add neurons/rows to weights)"""
+        """Expand output dimension (add neurons/rows to all weight matrices)"""
 
     def prune_synapses(
         self,
@@ -1238,8 +1239,8 @@ brain = BrainCheckpoint.load("stage3.delta.thalia", resolve_deltas=True)
 
 **Phase 2 (✅ COMPLETE - December 7, 2025)**: Growth Support
 - ✅ RegionState management (integrated with checkpoint system)
-- ✅ Growth mechanisms (unified grow_input/grow_output API)
-- ✅ Weight matrix expansion (preserves existing connections)
+- ✅ Growth mechanisms (multi-source grow_source/grow_output API)
+- ✅ Weight matrix expansion (preserves existing connections per source)
 - ✅ Neuron parameter expansion (all data structures expanded)
 - ✅ Growth history tracking (metadata['growth_history'])
 - ✅ Checkpoint validation for growth (n_actions vs n_output)

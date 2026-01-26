@@ -89,7 +89,7 @@ class StriatumPathway(nn.Module, GrowthMixin, ResettableMixin):
     with its own weights, eligibility traces, and learning dynamics.
 
     **Mixins Used**:
-    - GrowthMixin: Provides _expand_weights() helper for grow() and grow_input()
+    - GrowthMixin: Provides _expand_weights() helper for grow()
     - ResettableMixin: Enforces reset_state() interface
 
     Key responsibilities:

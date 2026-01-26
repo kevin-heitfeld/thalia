@@ -1,7 +1,7 @@
 # API Index
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 13:45:45
+> Last updated: 2026-01-26 14:17:34
 > Generated from: `scripts/generate_api_docs.py`
 
 Comprehensive searchable index of all Thalia API components.

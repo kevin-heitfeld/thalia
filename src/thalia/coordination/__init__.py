@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from thalia.coordination.growth import (
     CapacityMetrics,
-    GrowthCoordinator,
     GrowthEvent,
     GrowthManager,
 )
@@ -22,7 +21,6 @@ from thalia.coordination.oscillator import (
 __all__ = [
     # Growth
     "CapacityMetrics",
-    "GrowthCoordinator",
     "GrowthEvent",
     "GrowthManager",
     # Oscillator

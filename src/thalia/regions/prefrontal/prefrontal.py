@@ -539,11 +539,11 @@ class Prefrontal(NeuralRegion):
         # =====================================================================
         # Registration: Opt-in auto-growth for STP modules
 
-        # Feedforward STP (input -> n_output): grows during grow_input (pre) and grow_output (post)
+        # Feedforward STP (input -> n_output): grows during grow_source (pre) and grow_output (post)
         self._register_stp("stp_feedforward", direction="both", recurrent=False)
 
         # Recurrent STP (n_output -> n_output): ONLY grows during grow_output (both pre and post)
-        # NOT during grow_input - recurrent connections track n_output, not n_input
+        # NOT during grow_source - recurrent connections track n_output, not n_input
         self._register_stp("stp_recurrent", direction="post", recurrent=True)
 
         return neurons

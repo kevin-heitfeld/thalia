@@ -155,10 +155,11 @@ def grow_output(self, n_new: int) -> None:
     Effects: Expands all synaptic_weights (adds rows), adds neurons, updates n_neurons
     """
 
-def grow_input(self, n_new: int) -> None:
-    """Expand input dimension to accept more inputs.
+def grow_source(self, source_name: str, new_size: int) -> None:
+    """Expand input from specific source (multi-source architecture).
 
-    Effects: Expands all synaptic_weights (adds columns), NO new neurons
+    Effects: Expands synaptic_weights[source_name] columns only
+    Other sources remain unchanged
     """
 
 def get_capacity_metrics(self) -> CapacityMetrics:
@@ -234,20 +235,25 @@ def test_cortex_spike_precision():
 ### Example: Unified Growth API
 
 ```python
-# Step 1: Protocol defines both methods (enforced)
+# Step 1: Protocol defines interface
 class BrainComponent(Protocol):
-    def grow_input(self, n_new: int, ...) -> None: ...
+    def grow_source(self, source_name: str, new_size: int, ...) -> None: ...
     def grow_output(self, n_new: int, ...) -> None: ...
     def get_capacity_metrics(self) -> CapacityMetrics: ...
 
 # Step 2: NeuralRegion base implements growth for all regions
 class NeuralRegion(nn.Module, BrainComponentMixin, ...):
-    def grow_input(self, n_new, initialization, sparsity):
-        # Expand input weight columns when upstream grows
-        ...
+    def grow_source(self, source_name, new_size, initialization, sparsity):
+        # Expand synaptic weight columns for specific source
+        # Multi-source: each source has separate weight matrix
+        if source_name in self.synaptic_weights:
+            old_weights = self.synaptic_weights[source_name]
+            # Expand columns: [n_output, old_size] -> [n_output, new_size]
+            ...
 
     def grow_output(self, n_new, initialization, sparsity):
         # Expand neuron population (output dimension)
+        # Grows all weight matrices (adds rows)
         ...
 
     def get_capacity_metrics(self):
@@ -259,8 +265,8 @@ class Striatum(NeuralRegion):
     # Inherits growth methods from NeuralRegion
     pass
 
-# Note: Pathways (AxonalProjection) don't grow - they're pure spike routing
-# Growth happens at regions, which own synaptic weights
+# AxonalProjection also has grow_source() but NO grow_output()
+# It updates routing metadata when sources grow (no weights)
 
 # Step 4: Tests for both
 def test_region_growth(striatum): ...

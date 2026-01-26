@@ -26,41 +26,6 @@ This implements the classic hippocampal trisynaptic circuit for episodic memory:
 
 **All processing is spike-based** (no rate accumulation, ADR-004).
 
-FILE ORGANIZATION (~2350 lines)
-================================
-Lines 1-150:     Module docstring, imports, class registration
-Lines 151-400:   __init__() and weight initialization
-Lines 401-650:   DG forward pass (pattern separation)
-Lines 651-900:   CA3 forward pass (pattern completion + recurrence)
-Lines 901-1100:  CA1 forward pass (comparison and output)
-Lines 1101-1350: Learning methods (STDP, acetylcholine modulation)
-Lines 1351-1600: Episodic memory (store, retrieve, replay)
-Lines 1601-1850: Growth and neurogenesis
-Lines 1851-2050: Diagnostics and health checks
-Lines 2051-2350: Utility methods and state management
-
-QUICK NAVIGATION
-================
-VSCode shortcuts:
-  • Ctrl+Shift+O (Cmd+Shift+O on Mac) - "Go to Symbol" for method jumping
-  • Ctrl+K Ctrl+0 - Collapse all regions to see file outline
-  • Ctrl+K Ctrl+J - Expand all regions
-  • Ctrl+G - Go to specific line number
-  • Ctrl+F - Search within file
-
-Key methods to jump to:
-  • __init__() - Circuit initialization (DG, CA3, CA1 setup)
-  • forward() - Main trisynaptic forward pass
-  • _process_dg() - Dentate gyrus pattern separation
-  • _process_ca3() - CA3 pattern completion + recurrence
-  • _process_ca1() - CA1 comparison and output
-  • _apply_learning() - Theta-gated STDP learning
-  • store_episode() / retrieve_episode() - Episodic memory
-  • replay() - Memory consolidation via replay
-  • grow_output() / grow_input() - Neurogenesis
-  • set_oscillator_phases() - Theta modulation control
-  • get_diagnostics() - Trisynaptic circuit health
-
 WHY THIS FILE IS LARGE
 ======================
 The DG→CA3→CA1 circuit is a single biological computation that must execute
@@ -74,12 +39,6 @@ Components ARE extracted where orthogonal:
 - StimulusGating: Stimulus-triggered inhibition (used by multiple regions)
 
 See: docs/decisions/adr-011-large-file-justification.md
-
-References:
-- Marr (1971): Simple memory model
-- Treves & Rolls (1994): Pattern separation in DG
-- Hasselmo et al. (2002): Theta rhythm and encoding/retrieval
-- Colgin (2013): Theta-gamma coupling in hippocampus
 """
 
 from __future__ import annotations

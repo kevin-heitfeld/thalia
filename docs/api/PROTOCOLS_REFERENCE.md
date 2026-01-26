@@ -1,7 +1,7 @@
 # Protocols Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 13:45:45
+> Last updated: 2026-01-26 14:17:33
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all Protocol classes defining interfaces for duck-typed components in Thalia.
@@ -30,9 +30,6 @@ def reset_state():
 def set_oscillator_phases(phases: Dict[str, float], signals: Dict[str, float] | None, theta_slot: int, coupled_amplitudes: Dict[str, float] | None):
     ...
 
-def grow_input(n_new: int, initialization: str, sparsity: float):
-    ...
-
 def grow_output(n_new: int, initialization: str, sparsity: float):
     ...
 
@@ -49,6 +46,9 @@ def get_full_state():
     ...
 
 def load_full_state(state: Dict[str, Any]):
+    ...
+
+def device():
     ...
 
 ```

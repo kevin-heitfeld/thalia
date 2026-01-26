@@ -408,18 +408,6 @@ def validate_growth_coordination(
 
     Raises:
         IntegrationError: If any connected pathway has wrong dimensions
-
-    Example:
-        >>> # After growing cortex
-        >>> validate_growth_coordination(
-        ...     "cortex",
-        ...     old_size=256,
-        ...     new_size=276,
-        ...     connected_pathways={
-        ...         "thalamus_to_cortex": (100, 276),  # Target grew ✓
-        ...         "cortex_to_hippocampus": (276, 150),  # Source grew ✓
-        ...     }
-        ... )
     """
     if new_size <= old_size:
         raise ValueError(f"Region '{region_name}' size did not grow: {old_size} → {new_size}")
@@ -451,8 +439,8 @@ def validate_growth_coordination(
             f"Growth of '{region_name}' broke {len(errors)} pathway(s):\n"
             + "\n".join(f"  • {e}" for e in errors)
             + f"\n\nRegion grew by {growth_amount} neurons ({old_size} → {new_size}), "
-            "but connected pathways were not updated. Use GrowthCoordinator "
-            "or DynamicPathwayManager.grow_connected_pathways() to coordinate growth."
+            "but connected pathways were not updated. Use "
+            "DynamicPathwayManager.grow_connected_pathways() to coordinate growth."
         )
 
 

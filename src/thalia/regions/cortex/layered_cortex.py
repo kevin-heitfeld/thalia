@@ -49,39 +49,6 @@ Architecture (based on canonical cortical microcircuit):
     │   - Dense, high-gamma firing      │
     └───────────────────────────────────┘
 
-FILE ORGANIZATION (~2000 lines)
-================================
-Lines 1-150:     Module docstring, imports, class registration
-Lines 151-350:   __init__() and layer initialization (L4/L2/3/L5/L6a/L6b)
-Lines 351-500:   L4 forward pass (input processing)
-Lines 501-700:   L2/3 forward pass (recurrent processing)
-Lines 701-850:   L5 forward pass (output generation)
-Lines 851-950:   L6a forward pass (corticothalamic type I → TRN)
-Lines 951-1050:  L6b forward pass (corticothalamic type II → relay)
-Lines 1051-1200: Learning (BCM + STDP for inter-layer connections)
-Lines 1201-1350: Growth and homeostasis
-Lines 1351-2000: Diagnostics and utility methods
-
-QUICK NAVIGATION
-================
-VSCode shortcuts:
-  • Ctrl+Shift+O (Cmd+Shift+O on Mac) - "Go to Symbol" for method jumping
-  • Ctrl+K Ctrl+0 - Collapse all regions to see file outline
-  • Ctrl+K Ctrl+J - Expand all regions
-  • Ctrl+G - Go to specific line number
-  • Ctrl+F - Search within file
-
-Key methods to jump to:
-  • __init__() - Layer initialization and weight setup
-  • forward() - Main forward pass (L4→L2/3→L5 cascade)
-  • _process_l4() - Layer 4 feedforward processing
-  • _process_l23() - Layer 2/3 recurrent processing
-  • _process_l5() - Layer 5 output generation
-  • _apply_learning() - BCM + STDP learning
-  • grow_output() / grow_input() - Layer growth
-  • set_oscillator_phases() - Theta/gamma modulation
-  • get_diagnostics() - Layer-wise health metrics
-
 WHY THIS FILE IS LARGE
 ======================
 The L4→L2/3→L5 cascade is a single biological computation within one timestep.

@@ -1,7 +1,7 @@
 # State Classes Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 13:45:45
+> Last updated: 2026-01-26 14:17:33
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all state classes used for serialization in Thalia's checkpoint system. State classes inherit from `RegionState`, `BaseRegionState`, or `PathwayState`.

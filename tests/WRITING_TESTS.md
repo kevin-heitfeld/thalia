@@ -1970,45 +1970,6 @@ def test_stdp_learning():
 
 ---
 
-### Pattern 6: Coordination via Public Methods
-
-**Problem:** Tests verify helper methods instead of end-to-end coordination.
-
-❌ **BEFORE (Brittle):**
-```python
-def test_find_input_pathways():
-    coordinator = GrowthCoordinator(brain)
-
-    # Testing private helper method
-    input_pathways = coordinator._find_input_pathways('cortex')
-    assert len(input_pathways) == 2
-```
-
-✅ **AFTER (Robust):**
-```python
-def test_coordinate_growth_updates_input_pathways():
-    """Test that growing a region also grows connected pathways."""
-    brain = create_test_brain()
-    coordinator = GrowthCoordinator(brain)
-
-    # Record initial pathway dimensions
-    pathway = brain.pathway_manager.pathways['visual_to_cortex']
-    initial_output_size = pathway.output_size
-
-    # Grow region via public API
-    events = coordinator.coordinate_growth(
-        region_name='cortex',
-        n_new_neurons=100,
-        reason='test'
-    )
-
-    # Verify BEHAVIOR: pathway updated to match new region size
-    assert pathway.output_size == initial_output_size + 100
-    assert len(events) >= 2  # Region + pathway events
-```
-
----
-
 ## Test Quality Audit (December 21, 2025)
 
 ### Audit Summary

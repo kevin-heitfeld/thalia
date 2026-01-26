@@ -14,7 +14,7 @@
 - **Integration Pathways**: SpikingAttentionPathway, SpikingReplayPathway, SpikingPathway (all inherit from NeuralComponent)
 - **Sensory Pathways**: RetinalEncoder, AuditoryPathway, LanguagePathway (ADR-007: now use `forward()`)
 - **Cleanup Complete**: All squeeze(0)/unsqueeze(0) workarounds removed from core regions and pathways
-- **Growth System**: Unified grow_input/grow_output API implemented for 1D neuron states
+- **Growth System**: Multi-source grow_source/grow_output API implemented for 1D neuron states
 - **Core Neuron Models**: LIFNeuron, ConductanceLIF fully migrated to 1D (17/25 tests passing)
 - **Core Tests**: test_brain_regions.py (34/34), test_pathway_protocol.py (19/19), test_growth_comprehensive.py updated
 - **Deprecations**: ensure_batch_dim() and ensure_batch_dims() marked deprecated with warnings

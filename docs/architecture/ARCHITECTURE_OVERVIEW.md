@@ -512,7 +512,7 @@ Centralized systems (neuromodulators, oscillators) compute once and broadcast to
 Regions compose functionality via 7 mixins (from `NeuralRegion` base class):
 - `BrainComponentMixin` - Oscillator phase properties and defaults
 - `NeuromodulatorMixin` - Dopamine/ACh/NE handling
-- `GrowthMixin` - Dynamic neuron expansion (grow_input/grow_output)
+- `GrowthMixin` - Dynamic neuron expansion (grow_source/grow_output for multi-source architecture)
 - `ResettableMixin` - State reset helpers
 - `DiagnosticsMixin` - Health monitoring and metrics
 - `StateLoadingMixin` - Common state restoration logic
