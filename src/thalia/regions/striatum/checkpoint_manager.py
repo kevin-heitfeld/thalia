@@ -275,100 +275,118 @@ class StriatumCheckpointManager(BaseCheckpointManager):
             if should_grow:
                 s.grow_output(n_new=n_grow_actions)
 
-        # 1. RESTORE NEURON STATE
+        # 1. RESTORE NEURON STATE using base class helper
         if s.d1_pathway.neurons is not None and neuron_state.get("membrane_potential") is not None:
             # Ensure neurons are initialized
             if s.d1_pathway.neurons.membrane is None:
                 s.d1_pathway.neurons.reset_state()
 
-            membrane = neuron_state["membrane_potential"].to(s.device)
-            # Partial restore: only copy up to checkpoint size
-            n_restore = min(membrane.shape[0], s.d1_pathway.neurons.membrane.shape[0])
-            s.d1_pathway.neurons.membrane[:n_restore] = membrane[:n_restore]
+            self.restore_tensor_partial(
+                neuron_state["membrane_potential"],
+                s.d1_pathway.neurons.membrane,
+                s.device,
+                "membrane_potential"
+            )
 
         # 2. RESTORE PATHWAY STATE (Multi-source architecture)
         pathway_state = state["pathway_state"]
 
-        # Restore D1 pathway neuron state (elastic: only restore up to checkpoint size)
+        # Restore D1 pathway neuron state using base class helper
+        if s.d1_pathway.neurons.membrane is None:
+            s.d1_pathway.neurons.reset_state()
+
         if pathway_state.get("d1_neuron_membrane") is not None:
-            if s.d1_pathway.neurons.membrane is None:
-                s.d1_pathway.neurons.reset_state()
-            checkpoint_membrane = pathway_state["d1_neuron_membrane"].to(s.device)
-            n_restore = min(checkpoint_membrane.shape[0], s.d1_pathway.neurons.membrane.shape[0])
-            s.d1_pathway.neurons.membrane[:n_restore] = checkpoint_membrane[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d1_neuron_membrane"],
+                s.d1_pathway.neurons.membrane,
+                s.device,
+                "d1_neuron_membrane"
+            )
 
         if pathway_state.get("d1_neuron_g_E") is not None:
-            if s.d1_pathway.neurons.g_E is None:
-                s.d1_pathway.neurons.reset_state()
-            checkpoint_g_E = pathway_state["d1_neuron_g_E"].to(s.device)
-            n_restore = min(checkpoint_g_E.shape[0], s.d1_pathway.neurons.g_E.shape[0])
-            s.d1_pathway.neurons.g_E[:n_restore] = checkpoint_g_E[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d1_neuron_g_E"],
+                s.d1_pathway.neurons.g_E,
+                s.device,
+                "d1_neuron_g_E"
+            )
 
         if pathway_state.get("d1_neuron_g_I") is not None:
-            if s.d1_pathway.neurons.g_I is None:
-                s.d1_pathway.neurons.reset_state()
-            checkpoint_g_I = pathway_state["d1_neuron_g_I"].to(s.device)
-            n_restore = min(checkpoint_g_I.shape[0], s.d1_pathway.neurons.g_I.shape[0])
-            s.d1_pathway.neurons.g_I[:n_restore] = checkpoint_g_I[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d1_neuron_g_I"],
+                s.d1_pathway.neurons.g_I,
+                s.device,
+                "d1_neuron_g_I"
+            )
 
         if pathway_state.get("d1_neuron_refractory") is not None:
-            if s.d1_pathway.neurons.refractory is None:
-                s.d1_pathway.neurons.reset_state()
-            checkpoint_refr = pathway_state["d1_neuron_refractory"].to(s.device)
-            n_restore = min(checkpoint_refr.shape[0], s.d1_pathway.neurons.refractory.shape[0])
-            s.d1_pathway.neurons.refractory[:n_restore] = checkpoint_refr[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d1_neuron_refractory"],
+                s.d1_pathway.neurons.refractory,
+                s.device,
+                "d1_neuron_refractory"
+            )
 
-        # Restore D2 pathway neuron state (elastic: only restore up to checkpoint size)
+        # Restore D2 pathway neuron state using base class helper
+        if s.d2_pathway.neurons.membrane is None:
+            s.d2_pathway.neurons.reset_state()
+
         if pathway_state.get("d2_neuron_membrane") is not None:
-            if s.d2_pathway.neurons.membrane is None:
-                s.d2_pathway.neurons.reset_state()
-            checkpoint_membrane = pathway_state["d2_neuron_membrane"].to(s.device)
-            n_restore = min(checkpoint_membrane.shape[0], s.d2_pathway.neurons.membrane.shape[0])
-            s.d2_pathway.neurons.membrane[:n_restore] = checkpoint_membrane[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d2_neuron_membrane"],
+                s.d2_pathway.neurons.membrane,
+                s.device,
+                "d2_neuron_membrane"
+            )
 
         if pathway_state.get("d2_neuron_g_E") is not None:
-            if s.d2_pathway.neurons.g_E is None:
-                s.d2_pathway.neurons.reset_state()
-            checkpoint_g_E = pathway_state["d2_neuron_g_E"].to(s.device)
-            n_restore = min(checkpoint_g_E.shape[0], s.d2_pathway.neurons.g_E.shape[0])
-            s.d2_pathway.neurons.g_E[:n_restore] = checkpoint_g_E[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d2_neuron_g_E"],
+                s.d2_pathway.neurons.g_E,
+                s.device,
+                "d2_neuron_g_E"
+            )
 
         if pathway_state.get("d2_neuron_g_I") is not None:
-            if s.d2_pathway.neurons.g_I is None:
-                s.d2_pathway.neurons.reset_state()
-            checkpoint_g_I = pathway_state["d2_neuron_g_I"].to(s.device)
-            n_restore = min(checkpoint_g_I.shape[0], s.d2_pathway.neurons.g_I.shape[0])
-            s.d2_pathway.neurons.g_I[:n_restore] = checkpoint_g_I[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d2_neuron_g_I"],
+                s.d2_pathway.neurons.g_I,
+                s.device,
+                "d2_neuron_g_I"
+            )
 
         if pathway_state.get("d2_neuron_refractory") is not None:
-            if s.d2_pathway.neurons.refractory is None:
-                s.d2_pathway.neurons.reset_state()
-            checkpoint_refr = pathway_state["d2_neuron_refractory"].to(s.device)
-            n_restore = min(checkpoint_refr.shape[0], s.d2_pathway.neurons.refractory.shape[0])
-            s.d2_pathway.neurons.refractory[:n_restore] = checkpoint_refr[:n_restore]
+            self.restore_tensor_partial(
+                pathway_state["d2_neuron_refractory"],
+                s.d2_pathway.neurons.refractory,
+                s.device,
+                "d2_neuron_refractory"
+            )
 
-        # Multi-source weights
-        for key, weights in pathway_state["synaptic_weights"].items():
-            if key in s.synaptic_weights:
-                # Restore weight data
-                s.synaptic_weights[key].data = weights.to(s.device)
-            else:
-                warnings.warn(
-                    f"Checkpoint has source '{key}' but current brain doesn't. "
-                    "Skipping this source weight.",
-                    UserWarning,
-                )
+        # Multi-source weights using base class helper
+        self.restore_dict_of_tensors(
+            pathway_state["synaptic_weights"],
+            s.synaptic_weights,
+            s.device,
+            "synaptic_weights"
+        )
 
-        # Restore multi-source eligibility traces
+        # Restore multi-source eligibility traces using base class helper
         if "eligibility_d1" in pathway_state and hasattr(s, "_eligibility_d1"):
-            for key, elig in pathway_state["eligibility_d1"].items():
-                if key in s._eligibility_d1:
-                    s._eligibility_d1[key] = elig.to(s.device)
+            self.restore_dict_of_tensors(
+                pathway_state["eligibility_d1"],
+                s._eligibility_d1,
+                s.device,
+                "eligibility_d1"
+            )
 
         if "eligibility_d2" in pathway_state and hasattr(s, "_eligibility_d2"):
-            for key, elig in pathway_state["eligibility_d2"].items():
-                if key in s._eligibility_d2:
-                    s._eligibility_d2[key] = elig.to(s.device)
+            self.restore_dict_of_tensors(
+                pathway_state["eligibility_d2"],
+                s._eligibility_d2,
+                s.device,
+                "eligibility_d2"
+            )
 
         # Restore per-source STP modules
         if "stp_modules" in pathway_state and hasattr(s, "stp_modules"):

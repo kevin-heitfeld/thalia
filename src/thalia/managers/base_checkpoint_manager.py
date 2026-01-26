@@ -65,63 +65,6 @@ class BaseCheckpointManager(ABC):
 
     Growth Handling:
         - handle_elastic_tensor_growth(): Auto-grow logic for checkpoints
-
-    Usage:
-        class MyRegionCheckpointManager(BaseCheckpointManager):
-            def __init__(self, region):
-                super().__init__(format_version="1.0.0")
-                self.region = region
-
-            def collect_state(self) -> Dict[str, Any]:
-                # Use helper for common neuron state
-                neuron_state = self.extract_neuron_state_common(
-                    self.region.neurons,
-                    self.region.n_neurons,
-                    self.region.device
-                )
-
-                # Add elastic tensor metadata
-                neuron_state.update(
-                    self.extract_elastic_tensor_metadata(
-                        self.region.n_neurons_active,
-                        self.region.n_neurons_capacity
-                    )
-                )
-
-                return {"neuron_state": neuron_state, ...}
-
-            def restore_state(self, state: Dict[str, Any]) -> None:
-                # Validate keys
-                self.validate_state_dict_keys(
-                    state,
-                    ["neuron_state", "pathway_state"],
-                    "checkpoint"
-                )
-
-                # Validate and handle elastic growth
-                neuron_state = state["neuron_state"]
-                is_valid, msg = self.validate_elastic_metadata(neuron_state)
-                if not is_valid:
-                    raise ValueError(msg)
-
-                # Handle auto-growth if needed
-                needs_growth, n_units, warning = self.handle_elastic_tensor_growth(
-                    neuron_state["n_neurons_active"],
-                    self.region.n_neurons_active,
-                    neurons_per_unit=self.region.neurons_per_action
-                )
-                if needs_growth:
-                    import warnings
-                    warnings.warn(warning, UserWarning)
-                    self.region.grow_output(n_units)
-
-            def _get_neurons_data(self) -> list[Dict[str, Any]]:
-                # Extract per-neuron data with incoming synapses
-                ...
-
-            def _get_learning_state(self) -> Dict[str, Any]:
-                # Extract STP, STDP, etc.
-                ...
     """
 
     def __init__(self, format_version: str = "1.0.0"):
@@ -453,6 +396,97 @@ class BaseCheckpointManager(ABC):
             f"remaining {current_active - checkpoint_active} keep current state."
         )
         return False, 0, warning
+
+    def restore_tensor_partial(
+        self,
+        checkpoint_tensor: torch.Tensor,
+        target_tensor: torch.Tensor,
+        device: str,
+        tensor_name: str = "tensor",
+    ) -> None:
+        """Restore tensor with partial copy (elastic tensor support).
+
+        Consolidates the common pattern of copying checkpoint tensor to target
+        tensor, handling size mismatches gracefully.
+
+        Args:
+            checkpoint_tensor: Tensor from checkpoint
+            target_tensor: Target tensor to restore into
+            device: Device to move tensor to
+            tensor_name: Name for warning messages
+
+        Example:
+            >>> self.restore_tensor_partial(
+            ...     state["membrane"],
+            ...     region.neurons.membrane,
+            ...     region.device,
+            ...     "membrane_potential"
+            ... )
+        """
+        if checkpoint_tensor is None:
+            return
+
+        checkpoint_tensor = checkpoint_tensor.to(device)
+        n_restore = min(checkpoint_tensor.shape[0], target_tensor.shape[0])
+
+        if n_restore < checkpoint_tensor.shape[0]:
+            warnings.warn(
+                f"{tensor_name}: Checkpoint has {checkpoint_tensor.shape[0]} elements but "
+                f"current has {target_tensor.shape[0]}. Restoring first {n_restore} only.",
+                UserWarning,
+            )
+
+        target_tensor[:n_restore] = checkpoint_tensor[:n_restore]
+
+    def restore_dict_of_tensors(
+        self,
+        checkpoint_dict: Dict[str, torch.Tensor],
+        target_dict: Dict[str, torch.nn.Parameter],
+        device: str,
+        dict_name: str = "weights",
+    ) -> None:
+        """Restore dictionary of tensors (e.g., synaptic_weights, eligibility traces).
+
+        Consolidates the common pattern of restoring multi-source weight dictionaries.
+
+        Args:
+            checkpoint_dict: Dict of tensors from checkpoint
+            target_dict: Target ParameterDict to restore into
+            device: Device to move tensors to
+            dict_name: Name for warning messages
+
+        Example:
+            >>> self.restore_dict_of_tensors(
+            ...     state["synaptic_weights"],
+            ...     region.synaptic_weights,
+            ...     region.device,
+            ...     "synaptic_weights"
+            ... )
+        """
+        for key, tensor in checkpoint_dict.items():
+            if key in target_dict:
+                # Restore with shape validation
+                checkpoint_tensor = tensor.to(device)
+                target_tensor = target_dict[key]
+
+                if checkpoint_tensor.shape != target_tensor.shape:
+                    warnings.warn(
+                        f"{dict_name}['{key}']: Shape mismatch - "
+                        f"checkpoint {checkpoint_tensor.shape} vs current {target_tensor.shape}. "
+                        f"Attempting partial restore.",
+                        UserWarning,
+                    )
+                    # Use partial restore for mismatched shapes
+                    n_rows = min(checkpoint_tensor.shape[0], target_tensor.shape[0])
+                    n_cols = min(checkpoint_tensor.shape[1], target_tensor.shape[1])
+                    target_tensor.data[:n_rows, :n_cols] = checkpoint_tensor[:n_rows, :n_cols]
+                else:
+                    target_dict[key].data = checkpoint_tensor
+            else:
+                warnings.warn(
+                    f"{dict_name}: Source '{key}' in checkpoint but not in current region. Skipping.",
+                    UserWarning,
+                )
 
     # ==================== ABSTRACT METHODS (region-specific) ====================
 

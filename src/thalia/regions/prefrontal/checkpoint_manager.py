@@ -225,12 +225,12 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
                             if source_idx < inhib_weights_restored.shape[1]:
                                 inhib_weights_restored[i, source_idx] = weight
 
-        # Apply restored weights
+        # Apply restored weights (already on correct device from zeros_like)
         pfc.synaptic_weights["default"].data = ff_weights_restored
         pfc.rec_weights.data = rec_weights_restored
         pfc.inhib_weights.data = inhib_weights_restored
 
-        # Apply restored neuron state
+        # Apply restored neuron state (already on correct device)
         pfc.state.membrane = membrane_restored
         pfc.state.working_memory = wm_restored
         pfc.state.update_gate = update_gate_restored
@@ -256,11 +256,10 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         # Restore region state
         region_state = state["region_state"]
         # Note: spikes no longer stored in base state (removed from BaseRegionState)
-        pfc.state.active_rule = (
-            region_state["active_rule"].to(pfc.device)
-            if region_state["active_rule"] is not None
-            else None
-        )
+        if region_state["active_rule"] is not None:
+            pfc.state.active_rule = region_state["active_rule"].to(pfc.device)
+        else:
+            pfc.state.active_rule = None
 
     # =========================================================================
     # HYBRID FORMAT - Auto-Selection Between Elastic and Neuromorphic

@@ -387,44 +387,32 @@ class HippocampusCheckpointManager(BaseCheckpointManager):
 
         # Restore trisynaptic state
         tri_state = region_state["trisynaptic_state"]
-        h.state.dg_spikes = (
-            tri_state["dg_spikes"].to(h.device) if tri_state["dg_spikes"] is not None else None
-        )
-        h.state.ca3_spikes = (
-            tri_state["ca3_spikes"].to(h.device) if tri_state["ca3_spikes"] is not None else None
-        )
-        h.state.ca1_spikes = (
-            tri_state["ca1_spikes"].to(h.device) if tri_state["ca1_spikes"] is not None else None
-        )
-        h.state.ca3_membrane = (
-            tri_state["ca3_membrane"].to(h.device)
-            if tri_state["ca3_membrane"] is not None
-            else None
-        )
-        h.state.ca3_persistent = (
-            tri_state["ca3_persistent"].to(h.device)
-            if tri_state["ca3_persistent"] is not None
-            else None
-        )
-        h.state.sample_trace = (
-            tri_state["sample_trace"].to(h.device)
-            if tri_state["sample_trace"] is not None
-            else None
-        )
-        h.state.dg_trace = (
-            tri_state["dg_trace"].to(h.device) if tri_state["dg_trace"] is not None else None
-        )
-        h.state.ca3_trace = (
-            tri_state["ca3_trace"].to(h.device) if tri_state["ca3_trace"] is not None else None
-        )
-        h.state.nmda_trace = (
-            tri_state["nmda_trace"].to(h.device) if tri_state["nmda_trace"] is not None else None
-        )
-        h.state.stored_dg_pattern = (
-            tri_state["stored_dg_pattern"].to(h.device)
-            if tri_state["stored_dg_pattern"] is not None
-            else None
-        )
+
+        # Restore spike and membrane state tensors (with optional handling)
+        if tri_state["dg_spikes"] is not None and h.state.dg_spikes is not None:
+            h.state.dg_spikes = tri_state["dg_spikes"].to(h.device)
+        if tri_state["ca3_spikes"] is not None and h.state.ca3_spikes is not None:
+            h.state.ca3_spikes = tri_state["ca3_spikes"].to(h.device)
+        if tri_state["ca1_spikes"] is not None and h.state.ca1_spikes is not None:
+            h.state.ca1_spikes = tri_state["ca1_spikes"].to(h.device)
+        if tri_state["ca3_membrane"] is not None and h.state.ca3_membrane is not None:
+            h.state.ca3_membrane = tri_state["ca3_membrane"].to(h.device)
+        if tri_state["ca3_persistent"] is not None and h.state.ca3_persistent is not None:
+            h.state.ca3_persistent = tri_state["ca3_persistent"].to(h.device)
+
+        # Restore trace tensors
+        if tri_state["sample_trace"] is not None and h.state.sample_trace is not None:
+            h.state.sample_trace = tri_state["sample_trace"].to(h.device)
+        if tri_state["dg_trace"] is not None and h.state.dg_trace is not None:
+            h.state.dg_trace = tri_state["dg_trace"].to(h.device)
+        if tri_state["ca3_trace"] is not None and h.state.ca3_trace is not None:
+            h.state.ca3_trace = tri_state["ca3_trace"].to(h.device)
+        if tri_state["nmda_trace"] is not None and h.state.nmda_trace is not None:
+            h.state.nmda_trace = tri_state["nmda_trace"].to(h.device)
+        if tri_state["stored_dg_pattern"] is not None and h.state.stored_dg_pattern is not None:
+            h.state.stored_dg_pattern = tri_state["stored_dg_pattern"].to(h.device)
+
+        # Restore scalar value
         h.state.ffi_strength = tri_state["ffi_strength"]
 
     # =========================================================================
