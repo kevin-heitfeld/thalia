@@ -51,8 +51,6 @@ class ThalamicRelayState(BaseRegionState):
         """
         return {
             # Base region state
-            "spikes": self.spikes,
-            "membrane": self.membrane,
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
             "norepinephrine": self.norepinephrine,
@@ -103,8 +101,6 @@ class ThalamicRelayState(BaseRegionState):
 
         return cls(
             # Base region state
-            spikes=transfer_tensor(data.get("spikes")),
-            membrane=transfer_tensor(data.get("membrane")),
             dopamine=data.get("dopamine", 0.2),
             acetylcholine=data.get("acetylcholine", 0.0),
             norepinephrine=data.get("norepinephrine", 0.0),
@@ -126,7 +122,7 @@ class ThalamicRelayState(BaseRegionState):
 
     def reset(self) -> None:
         """Reset state to default values (in-place mutation)."""
-        # Reset base state (spikes, membrane, neuromodulators with DA_BASELINE_STANDARD)
+        # Reset base state (neuromodulators with DA_BASELINE_STANDARD)
         super().reset()
 
         # Reset thalamus-specific state

@@ -3437,15 +3437,13 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         )
 
         return StriatumState(
-            # Base state
-            spikes=(
-                self.state_tracker.recent_spikes.detach().clone()
-                if self.state_tracker.recent_spikes is not None
-                else None
-            ),
-            membrane=membrane,
-            # D1/D2 pathways
-            d1_pathway_state=d1_pathway_state,  # type: ignore[arg-type]
+            # Base state (neuromodulators only)
+            dopamine=dopamine,
+            acetylcholine=acetylcholine,
+            norepinephrine=norepinephrine,
+            # FSI state
+            fsi_membrane=membrane,
+            # D1/D2 pathways\n            d1_pathway_state=d1_pathway_state,  # type: ignore[arg-type]
             d2_pathway_state=d2_pathway_state,  # type: ignore[arg-type]
             # Vote accumulation
             d1_votes_accumulated=self.state_tracker._d1_votes_accumulated.detach().clone(),
@@ -3515,10 +3513,6 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
                 if hasattr(self, "stp_modules")
                 else {}
             ),
-            # Neuromodulators
-            dopamine=dopamine,
-            acetylcholine=acetylcholine,
-            norepinephrine=norepinephrine,
         )
 
     def load_state(self, state: StriatumState) -> None:
@@ -3548,26 +3542,14 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
         if state.d2_pathway_state is not None:
             self.d2_pathway.load_state(state.d2_pathway_state)  # type: ignore[arg-type]
 
-        # Restore neuron membrane state
-        if state.membrane is not None:
-            # Split concatenated membrane into D1 and D2 parts
-            if (
-                self.d1_pathway.neurons is not None
-                and hasattr(self.d1_pathway.neurons, "membrane")
-                and self.d1_pathway.neurons.membrane is not None
-            ):
-                d1_membrane = state.membrane[: self.d1_size].to(self.device)
-                self.d1_pathway.neurons.membrane.data = d1_membrane
-
-            if (
-                self.d2_pathway.neurons is not None
-                and hasattr(self.d2_pathway.neurons, "membrane")
-                and self.d2_pathway.neurons.membrane is not None
-            ):
-                d2_membrane = state.membrane[self.d1_size : self.d1_size + self.d2_size].to(
-                    self.device
-                )
-                self.d2_pathway.neurons.membrane.data = d2_membrane
+        # Restore FSI membrane state
+        if (
+            state.fsi_membrane is not None
+            and self.fsi_neurons is not None
+            and hasattr(self.fsi_neurons, "membrane")
+            and self.fsi_neurons.membrane is not None
+        ):
+            self.fsi_neurons.membrane.data = state.fsi_membrane.to(self.device)
 
         # Restore vote accumulation
         if state.d1_votes_accumulated is not None:

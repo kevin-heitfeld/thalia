@@ -737,10 +737,6 @@ class ThalamicRelay(NeuralRegion):
         self.state.trn_membrane = trn_membrane  # [n_trn]
         self.state.current_mode = current_mode  # [n_relay]
 
-        # Store for component state (BrainComponent protocol)
-        self.state.membrane = self.state.relay_membrane
-        self.state.spikes = self.state.relay_spikes
-
         # =====================================================================
         # 7. PORT-BASED ROUTING OUTPUTS
         # =====================================================================
@@ -783,8 +779,6 @@ class ThalamicRelay(NeuralRegion):
         # Return new state with all fields
         return ThalamicRelayState(
             # Base region state
-            spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
-            membrane=self.state.membrane.clone() if self.state.membrane is not None else None,
             dopamine=self.state.dopamine,
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
@@ -821,8 +815,6 @@ class ThalamicRelay(NeuralRegion):
             state: ThalamicRelayState to restore
         """
         # Restore base region state
-        self.state.spikes = state.spikes.clone() if state.spikes is not None else None
-        self.state.membrane = state.membrane.clone() if state.membrane is not None else None
         self.state.dopamine = state.dopamine
         self.state.acetylcholine = state.acetylcholine
         self.state.norepinephrine = state.norepinephrine

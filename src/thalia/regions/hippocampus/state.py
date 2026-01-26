@@ -87,8 +87,6 @@ class HippocampusState(BaseRegionState):
         """
         return {
             # Base region state
-            "spikes": self.spikes,
-            "membrane": self.membrane,
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
             "norepinephrine": self.norepinephrine,
@@ -152,8 +150,6 @@ class HippocampusState(BaseRegionState):
 
         return cls(
             # Base region state
-            spikes=transfer_tensor(data.get("spikes")),
-            membrane=transfer_tensor(data.get("membrane")),
             dopamine=data.get("dopamine", 0.2),
             acetylcholine=data.get("acetylcholine", 0.0),
             norepinephrine=data.get("norepinephrine", 0.0),

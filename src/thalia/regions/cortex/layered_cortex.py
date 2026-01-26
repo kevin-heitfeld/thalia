@@ -1679,8 +1679,6 @@ class LayeredCortex(NeuralRegion):
         if self.state.l6b_trace is not None:
             update_trace(self.state.l6b_trace, l6b_spikes, tau=cfg.tau_plus_ms, dt_ms=dt_ms)
 
-        self.state.spikes = l5_spikes
-
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity()
 
@@ -2289,8 +2287,6 @@ class LayeredCortex(NeuralRegion):
 
         return LayeredCortexState(
             # Base region state
-            spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
-            membrane=self.state.membrane.clone() if self.state.membrane is not None else None,
             dopamine=self.state.dopamine,
             acetylcholine=self.state.acetylcholine,
             norepinephrine=self.state.norepinephrine,
@@ -2364,10 +2360,6 @@ class LayeredCortex(NeuralRegion):
             not runtime state. Use load_full_state() for complete checkpoint loading.
         """
         # Restore base region state
-        if state.spikes is not None:
-            self.state.spikes = state.spikes.to(self.device)
-        if state.membrane is not None:
-            self.state.membrane = state.membrane.to(self.device)
         self.state.dopamine = state.dopamine
         self.state.acetylcholine = state.acetylcholine
         self.state.norepinephrine = state.norepinephrine

@@ -30,6 +30,11 @@ from typing import Any, Dict, Optional
 import pytest
 import torch
 
+from thalia.constants.neuromodulation import (
+    ACH_BASELINE,
+    DA_BASELINE_STANDARD,
+    NE_BASELINE,
+)
 from thalia.core.region_state import (
     BaseRegionState,
     get_state_version,
@@ -161,65 +166,59 @@ class ComplexRegionState:
 
 
 def test_base_region_state_init(device):
-    """BaseRegionState: Initialize with default None values."""
+    """BaseRegionState: Initialize with default values."""
     state = BaseRegionState()
 
     assert state.STATE_VERSION == 1
-    assert state.spikes is None
-    assert state.membrane is None
+    assert state.dopamine == DA_BASELINE_STANDARD
+    assert state.acetylcholine == ACH_BASELINE
+    assert state.norepinephrine == NE_BASELINE
 
 
 def test_base_region_state_with_data(device):
-    """BaseRegionState: Initialize with tensor data."""
-    spikes = torch.rand(100, device=device)
-    membrane = torch.rand(100, device=device)
+    """BaseRegionState: Initialize with custom neuromodulator values."""
+    state = BaseRegionState(dopamine=0.5, acetylcholine=0.3, norepinephrine=0.2)
 
-    state = BaseRegionState(spikes=spikes, membrane=membrane)
-
-    assert torch.equal(state.spikes, spikes)
-    assert torch.equal(state.membrane, membrane)
+    assert state.dopamine == 0.5
+    assert state.acetylcholine == 0.3
+    assert state.norepinephrine == 0.2
 
 
 def test_base_region_state_to_dict(device):
     """BaseRegionState: Serialize to dictionary."""
-    spikes = torch.rand(100, device=device)
-    membrane = torch.rand(100, device=device)
-    state = BaseRegionState(spikes=spikes, membrane=membrane)
+    state = BaseRegionState(dopamine=0.5, acetylcholine=0.3)
 
     state_dict = state.to_dict()
 
     assert state_dict["state_version"] == 1
-    assert torch.equal(state_dict["spikes"], spikes)
-    assert torch.equal(state_dict["membrane"], membrane)
+    assert state_dict["dopamine"] == 0.5
+    assert state_dict["acetylcholine"] == 0.3
 
 
 def test_base_region_state_from_dict(device):
     """BaseRegionState: Deserialize from dictionary."""
-    spikes = torch.rand(100, device=device)
-    membrane = torch.rand(100, device=device)
     data = {
         "state_version": 1,
-        "spikes": spikes,
-        "membrane": membrane,
+        "dopamine": 0.5,
+        "acetylcholine": 0.3,
     }
 
     state = BaseRegionState.from_dict(data, device=device)
 
     assert state.STATE_VERSION == 1
-    assert torch.equal(state.spikes, spikes)
-    assert torch.equal(state.membrane, membrane)
+    assert state.dopamine == 0.5
+    assert state.acetylcholine == 0.3
 
 
 def test_base_region_state_reset(device):
-    """BaseRegionState: Reset clears all state fields."""
-    spikes = torch.rand(100, device=device)
-    membrane = torch.rand(100, device=device)
-    state = BaseRegionState(spikes=spikes, membrane=membrane)
+    """BaseRegionState: Reset resets neuromodulators to baseline."""
+    state = BaseRegionState(dopamine=0.8, acetylcholine=0.5)
 
     state.reset()
 
-    assert state.spikes is None
-    assert state.membrane is None
+    assert state.dopamine == DA_BASELINE_STANDARD
+    assert state.acetylcholine == ACH_BASELINE
+    assert state.norepinephrine == NE_BASELINE
 
 
 # =====================================================================
@@ -229,37 +228,31 @@ def test_base_region_state_reset(device):
 
 def test_base_region_state_device_transfer_cpu_to_cpu(device):
     """BaseRegionState: Transfer from CPU to CPU (no-op)."""
-    spikes = torch.rand(100, device="cpu")
-    state = BaseRegionState(spikes=spikes)
+    state = BaseRegionState(dopamine=0.5)
 
     transferred = transfer_state(state, device="cpu")
 
-    assert transferred.spikes.device.type == "cpu"
-    assert torch.equal(transferred.spikes, spikes)
+    assert transferred.dopamine == 0.5
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_base_region_state_device_transfer_cpu_to_cuda():
     """BaseRegionState: Transfer from CPU to CUDA."""
-    spikes = torch.rand(100, device="cpu")
-    state = BaseRegionState(spikes=spikes)
+    state = BaseRegionState(dopamine=0.5)
 
     transferred = transfer_state(state, device="cuda")
 
-    assert transferred.spikes.device.type == "cuda"
-    assert torch.allclose(transferred.spikes.cpu(), spikes)
+    assert transferred.dopamine == 0.5
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_base_region_state_device_transfer_cuda_to_cpu():
     """BaseRegionState: Transfer from CUDA to CPU."""
-    spikes = torch.rand(100, device="cuda")
-    state = BaseRegionState(spikes=spikes)
+    state = BaseRegionState(dopamine=0.5)
 
     transferred = transfer_state(state, device="cpu")
 
-    assert transferred.spikes.device.type == "cpu"
-    assert torch.allclose(transferred.spikes, spikes.cpu())
+    assert transferred.dopamine == 0.5
 
 
 # =====================================================================
@@ -269,9 +262,7 @@ def test_base_region_state_device_transfer_cuda_to_cpu():
 
 def test_save_and_load_region_state(device, temp_checkpoint_dir):
     """save_region_state + load_region_state: Round-trip serialization."""
-    spikes = torch.rand(100, device=device)
-    membrane = torch.rand(100, device=device)
-    state = BaseRegionState(spikes=spikes, membrane=membrane)
+    state = BaseRegionState(dopamine=0.7, acetylcholine=0.4)
 
     checkpoint_path = temp_checkpoint_dir / "test_state.pt"
     save_region_state(state, checkpoint_path)
@@ -279,8 +270,8 @@ def test_save_and_load_region_state(device, temp_checkpoint_dir):
     loaded_state = load_region_state(BaseRegionState, checkpoint_path, device=device)
 
     assert loaded_state.STATE_VERSION == 1
-    assert torch.equal(loaded_state.spikes, spikes)
-    assert torch.equal(loaded_state.membrane, membrane)
+    assert loaded_state.dopamine == 0.7
+    assert loaded_state.acetylcholine == 0.4
 
 
 def test_save_region_state_creates_parent_dirs(temp_checkpoint_dir):
@@ -449,24 +440,25 @@ def test_complex_region_state_partial_fields(device):
 
 
 def test_base_region_state_empty_state(device):
-    """BaseRegionState: Serialize/deserialize with all None fields."""
+    """BaseRegionState: Serialize/deserialize with default values."""
     state = BaseRegionState()
 
     state_dict = state.to_dict()
     loaded = BaseRegionState.from_dict(state_dict, device=device)
 
-    assert loaded.spikes is None
-    assert loaded.membrane is None
+    assert loaded.dopamine == DA_BASELINE_STANDARD
+    assert loaded.acetylcholine == ACH_BASELINE
+    assert loaded.norepinephrine == NE_BASELINE
 
 
-def test_transfer_state_with_none_fields(device):
-    """transfer_state: Handle None fields gracefully."""
-    state = BaseRegionState(spikes=None, membrane=None)
+def test_transfer_state_with_default_values(device):
+    """transfer_state: Handle default values correctly."""
+    state = BaseRegionState(dopamine=0.3, acetylcholine=0.2)
 
     transferred = transfer_state(state, device=device)
 
-    assert transferred.spikes is None
-    assert transferred.membrane is None
+    assert transferred.dopamine == 0.3
+    assert transferred.acetylcholine == 0.2
 
 
 def test_save_load_with_nested_dicts(device, temp_checkpoint_dir):

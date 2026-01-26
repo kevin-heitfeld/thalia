@@ -195,7 +195,7 @@ class TestL6TRNFeedbackIntegration:
         # Get cortex response to attended
         cortex = brain.components["cortex"]
         attended_response = (
-            cortex.state.spikes.sum().item() if cortex.state.spikes is not None else 0
+            cortex.state.l23_spikes.sum().item() if cortex.state.l23_spikes is not None else 0
         )
 
         # Reset and present unattended pattern
@@ -204,7 +204,7 @@ class TestL6TRNFeedbackIntegration:
             brain(unattended_input, n_timesteps=1)
 
         unattended_response = (
-            cortex.state.spikes.sum().item() if cortex.state.spikes is not None else 0
+            cortex.state.l23_spikes.sum().item() if cortex.state.l23_spikes is not None else 0
         )
 
         # Contract: both patterns should elicit responses

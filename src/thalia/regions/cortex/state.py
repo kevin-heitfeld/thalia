@@ -88,8 +88,6 @@ class LayeredCortexState(BaseRegionState):
         """
         return {
             # Base region state
-            "spikes": self.spikes,
-            "membrane": self.membrane,
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
             "norepinephrine": self.norepinephrine,
@@ -155,8 +153,6 @@ class LayeredCortexState(BaseRegionState):
 
         return cls(
             # Base region state
-            spikes=transfer_tensor(data.get("spikes")),
-            membrane=transfer_tensor(data.get("membrane")),
             dopamine=data.get("dopamine", DA_BASELINE_STANDARD),
             acetylcholine=data.get("acetylcholine", ACH_BASELINE),
             norepinephrine=data.get("norepinephrine", NE_BASELINE),
@@ -197,7 +193,7 @@ class LayeredCortexState(BaseRegionState):
         Zeros all tensors and resets scalars to defaults.
         This is called when starting a new simulation or resetting the region.
         """
-        # Reset base state (spikes, membrane, neuromodulators)
+        # Reset base state (neuromodulators)
         super().reset()
 
         # Reset input spikes
@@ -291,7 +287,7 @@ class PredictiveCortexState(BaseRegionState):
         Returns:
             Dictionary with all state fields
         """
-        # Start with base fields (spikes, membrane, neuromodulators)
+        # Start with base fields (neuromodulators)
         data = super().to_dict()
 
         # Add predictive cortex-specific fields
@@ -343,8 +339,6 @@ class PredictiveCortexState(BaseRegionState):
 
         return cls(
             # Base region state
-            spikes=transfer_tensor(data.get("spikes")),
-            membrane=transfer_tensor(data.get("membrane")),
             dopamine=data.get("dopamine", 0.2),
             acetylcholine=data.get("acetylcholine", 0.0),
             norepinephrine=data.get("norepinephrine", 0.0),

@@ -757,9 +757,6 @@ class Prefrontal(NeuralRegion):
         noise = torch.randn_like(new_wm) * self.pfc_config.wm_noise_std
         self.state.working_memory = (new_wm + noise).clamp(min=0, max=1)
 
-        # Store state
-        self.state.spikes = output_spikes
-
         # Output shape check
         assert output_spikes.shape == (self.n_neurons,), (
             f"PrefrontalCortex.forward: output_spikes has shape {output_spikes.shape} "
@@ -1113,9 +1110,6 @@ class Prefrontal(NeuralRegion):
                 "recurrent": self.rec_weights.data,
                 "inhibition": self.inhib_weights.data,
             },
-            spike_tensors={
-                "output": self.state.spikes,  # type: ignore[dict-item]
-            },
             custom_metrics=custom,
         )
 
@@ -1228,8 +1222,6 @@ class Prefrontal(NeuralRegion):
             stp_feedforward_state = self.stp_feedforward.get_state()
 
         return PrefrontalState(
-            spikes=self.state.spikes.clone() if self.state.spikes is not None else None,
-            membrane=self.neurons.v.clone() if hasattr(self.neurons, "v") else None,
             working_memory=(
                 self.state.working_memory.clone() if self.state.working_memory is not None else None
             ),
@@ -1267,12 +1259,6 @@ class Prefrontal(NeuralRegion):
         Args:
             state: PrefrontalState to restore from
         """
-        # Restore basic state
-        if state.spikes is not None:
-            self.state.spikes = state.spikes.to(self.device).clone()
-        if state.membrane is not None and hasattr(self.neurons, "v"):
-            self.neurons.v = state.membrane.to(self.device).clone()
-
         # Restore PFC-specific state
         if state.working_memory is not None:
             self.state.working_memory = state.working_memory.to(self.device).clone()

@@ -255,9 +255,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
 
         # Restore region state
         region_state = state["region_state"]
-        pfc.state.spikes = (
-            region_state["spikes"].to(pfc.device) if region_state["spikes"] is not None else None
-        )
+        # Note: spikes no longer stored in base state (removed from BaseRegionState)
         pfc.state.active_rule = (
             region_state["active_rule"].to(pfc.device)
             if region_state["active_rule"] is not None
@@ -322,11 +320,7 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         neurons = []
 
         n_neurons = pfc.n_neurons  # Use instance variable, not config
-        membrane = (
-            pfc.state.membrane
-            if pfc.state.membrane is not None
-            else torch.zeros(n_neurons, device=pfc.device)
-        )
+        membrane = torch.zeros(n_neurons, device=pfc.device)
         wm = (
             pfc.state.working_memory
             if pfc.state.working_memory is not None
@@ -394,7 +388,6 @@ class PrefrontalCheckpointManager(BaseCheckpointManager):
         pfc = self.prefrontal
 
         return {
-            "spikes": pfc.state.spikes.detach().clone() if pfc.state.spikes is not None else None,
             "active_rule": (
                 pfc.state.active_rule.detach().clone()
                 if pfc.state.active_rule is not None

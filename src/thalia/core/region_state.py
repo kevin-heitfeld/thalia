@@ -138,20 +138,12 @@ class BaseRegionState(RegionState):
     Regions can inherit from this or implement RegionState directly.
 
     Common fields:
-    - spikes: Recent spike history
-    - membrane: Membrane potentials
-    - dopamine, acetylcholine, norepinephrine: Neuromodulator levels
     - STATE_VERSION: Version number for migration
+    - dopamine, acetylcholine, norepinephrine: Neuromodulator levels
     """
 
     STATE_VERSION: int = 1
     """State format version for backward compatibility."""
-
-    spikes: Optional[torch.Tensor] = None
-    """Recent spike output [n_neurons] (bool or float)."""
-
-    membrane: Optional[torch.Tensor] = None
-    """Current membrane potentials [n_neurons] (float)."""
 
     # Neuromodulators (required by NeuromodulatorMixin)
     # Default to biologically plausible tonic baseline levels
@@ -168,8 +160,6 @@ class BaseRegionState(RegionState):
         """Serialize common state fields."""
         return {
             "state_version": self.STATE_VERSION,
-            "spikes": self.spikes,
-            "membrane": self.membrane,
             "dopamine": self.dopamine,
             "acetylcholine": self.acetylcholine,
             "norepinephrine": self.norepinephrine,
@@ -183,18 +173,7 @@ class BaseRegionState(RegionState):
             # Future: Handle version migration
             pass
 
-        # Transfer tensors to target device
-        spikes = data.get("spikes")
-        if spikes is not None and isinstance(spikes, torch.Tensor):
-            spikes = spikes.to(device)
-
-        membrane = data.get("membrane")
-        if membrane is not None and isinstance(membrane, torch.Tensor):
-            membrane = membrane.to(device)
-
         return cls(
-            spikes=spikes,
-            membrane=membrane,
             dopamine=data.get("dopamine", DA_BASELINE_STANDARD),
             acetylcholine=data.get("acetylcholine", ACH_BASELINE),
             norepinephrine=data.get("norepinephrine", NE_BASELINE),
@@ -202,8 +181,6 @@ class BaseRegionState(RegionState):
 
     def reset(self) -> None:
         """Reset common state fields."""
-        self.spikes = None
-        self.membrane = None
         self.dopamine = DA_BASELINE_STANDARD
         self.acetylcholine = ACH_BASELINE
         self.norepinephrine = NE_BASELINE

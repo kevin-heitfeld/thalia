@@ -203,9 +203,6 @@ class StriatumState(BaseRegionState):
         """
         return {
             "state_version": self.STATE_VERSION,
-            # Base state (spikes, membrane from BaseRegionState)
-            "spikes": self.spikes,
-            "membrane": self.membrane,
             # D1/D2 pathways
             "d1_pathway_state": self.d1_pathway_state,
             "d2_pathway_state": self.d2_pathway_state,
@@ -262,9 +259,6 @@ class StriatumState(BaseRegionState):
             return x
 
         return cls(
-            # Base state
-            spikes=to_device(data.get("spikes")),
-            membrane=to_device(data.get("membrane")),
             # FSI state (backward compatible)
             fsi_membrane=to_device(data.get("fsi_membrane")),
             # D1/D2 pathways

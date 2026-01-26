@@ -2275,10 +2275,6 @@ class TrisynapticHippocampus(NeuralRegion):
         if self.state.ca2_trace is not None:
             update_trace(self.state.ca2_trace, ca2_spikes, tau=self.config.tau_plus_ms, dt_ms=dt_ms)
 
-        # Store spikes in base state for compatibility
-        # CA1 spikes ARE the output - downstream learns from these patterns!
-        self.state.spikes = ca1_spikes
-
         # Apply continuous plasticity (learning happens as part of forward dynamics)
         self._apply_plasticity(input_spikes, ca1_spikes, dt_ms)
 

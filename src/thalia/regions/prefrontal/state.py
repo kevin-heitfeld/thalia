@@ -15,7 +15,7 @@ class PrefrontalState(BaseRegionState):
     """State for prefrontal cortex region.
 
     Implements RegionState protocol for checkpoint compatibility.
-    Inherits from BaseRegionState for common fields (spikes, membrane, neuromodulators).
+    Inherits from BaseRegionState for common fields (neuromodulators).
 
     PFC-specific state:
     - working_memory: Active maintenance of task-relevant information
@@ -26,11 +26,9 @@ class PrefrontalState(BaseRegionState):
     STATE_VERSION: int = 1
 
     # Inherited from BaseRegionState:
-    # - spikes: Optional[torch.Tensor] = None
-    # - membrane: Optional[torch.Tensor] = None
-    # - dopamine: float = 0.0
-    # - acetylcholine: float = 0.0
-    # - norepinephrine: float = 0.0
+    # - dopamine: float = DA_BASELINE_STANDARD
+    # - acetylcholine: float = ACH_BASELINE
+    # - norepinephrine: float = NE_BASELINE
 
     # PFC-specific state fields
     working_memory: Optional[torch.Tensor] = None
@@ -103,8 +101,6 @@ class PrefrontalState(BaseRegionState):
             }
 
         return cls(
-            spikes=base_state.spikes,
-            membrane=base_state.membrane,
             working_memory=wm,
             update_gate=gate,
             active_rule=rule,
@@ -117,7 +113,7 @@ class PrefrontalState(BaseRegionState):
 
     def reset(self) -> None:
         """Reset state to initial conditions."""
-        # Reset base fields (spikes, membrane, neuromodulators with DA_BASELINE_STANDARD)
+        # Reset base fields (neuromodulators with DA_BASELINE_STANDARD)
         super().reset()
 
         # Reset PFC-specific state

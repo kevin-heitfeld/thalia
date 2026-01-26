@@ -15,9 +15,7 @@ from thalia.mixins.state_loading_mixin import StateLoadingMixin
 class MockRegionState(BaseRegionState):
     """Mock state class for testing."""
 
-    # Common fields
-    spikes: Optional[torch.Tensor] = None
-    membrane: Optional[torch.Tensor] = None
+    # Region-specific fields (not in base)
     g_exc: Optional[torch.Tensor] = None
     g_inh: Optional[torch.Tensor] = None
     g_adaptation: Optional[torch.Tensor] = None
@@ -26,29 +24,21 @@ class MockRegionState(BaseRegionState):
     eligibility_trace: Optional[torch.Tensor] = None
     bcm_threshold: Optional[torch.Tensor] = None
 
-    # Neuromodulators
-    dopamine: Optional[float] = None
-    acetylcholine: Optional[float] = None
-    norepinephrine: Optional[float] = None
-
     # STP state
     stp_state: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
-        return {
-            "spikes": self.spikes,
-            "membrane": self.membrane,
+        base_dict = super().to_dict()
+        base_dict.update({
             "g_exc": self.g_exc,
             "g_inh": self.g_inh,
             "g_adaptation": self.g_adaptation,
             "eligibility_trace": self.eligibility_trace,
             "bcm_threshold": self.bcm_threshold,
-            "dopamine": self.dopamine,
-            "acetylcholine": self.acetylcholine,
-            "norepinephrine": self.norepinephrine,
             "stp_state": self.stp_state,
-        }
+        })
+        return base_dict
 
 
 class MockRegion(StateLoadingMixin):
@@ -160,8 +150,6 @@ class TestStateLoadingMixin:
         """Test full load_state() integration."""
         # Create mock state
         state = MockRegionState(
-            spikes=torch.zeros(100, device=device),
-            membrane=torch.randn(100, device=device),
             g_exc=torch.rand(100, device=device),
             g_inh=torch.rand(100, device=device),
             eligibility_trace=torch.rand(100, device=device),
@@ -175,7 +163,6 @@ class TestStateLoadingMixin:
         region.load_state(state)
 
         # Verify all components restored
-        assert torch.allclose(region.neurons.membrane, state.membrane)
         assert torch.allclose(region.neurons.g_E, state.g_exc)
         assert torch.allclose(region.neurons.g_I, state.g_inh)
         assert torch.allclose(region.eligibility_trace, state.eligibility_trace)
@@ -188,23 +175,22 @@ class TestStateLoadingMixin:
         """Test device transfer during restoration."""
         # Create state on CPU
         state = MockRegionState(
-            membrane=torch.randn(100),  # CPU
-            g_exc=torch.rand(100),
+            g_exc=torch.rand(100),  # CPU
+            g_inh=torch.rand(100),
         )
 
         # Load (should transfer to region.device)
         region.load_state(state)
 
         # Verify tensors on correct device
-        assert region.neurons.membrane.device == region.device
         assert region.neurons.g_E.device == region.device
 
     def test_missing_state_fields(self, region, device):
         """Test handling of missing/None state fields."""
         # Create partial state
         state = MockRegionState(
-            membrane=torch.randn(100, device=device),
-            g_exc=None,  # Missing
+            g_exc=torch.rand(100, device=device),
+            g_inh=None,  # Missing
             eligibility_trace=None,
         )
 
@@ -212,4 +198,4 @@ class TestStateLoadingMixin:
         region.load_state(state)
 
         # Verify present field restored
-        assert torch.allclose(region.neurons.membrane, state.membrane)
+        assert torch.allclose(region.neurons.g_E, state.g_exc)

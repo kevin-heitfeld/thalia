@@ -307,14 +307,13 @@ class ActionSelectionMixin:
         Useful for analyzing decision confidence with population coding.
 
         Args:
-            spikes: Spike tensor to analyze. If None, uses last output.
+            spikes: Spike tensor to analyze. If None, returns zeros (no cached spikes).
 
         Returns:
             Tensor of shape (n_actions,) with vote counts per action.
         """
         if spikes is None:
-            spikes = self.state.spikes
-        if spikes is None:
+            # No cached spikes in state - caller must provide
             return torch.zeros(self.n_actions, device=self.device)
 
         spikes = spikes.squeeze()

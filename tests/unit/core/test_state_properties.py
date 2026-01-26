@@ -113,168 +113,35 @@ def trace_tensor(draw, n_neurons):
     return torch.rand(n_neurons) * draw(st.floats(min_value=0.0, max_value=2.0))
 
 
-class TestStateRoundtrip:
-    """Test that state can roundtrip through save/load without loss."""
-
-    @given(n_neurons=st.integers(min_value=10, max_value=500))
-    @settings(max_examples=50, deadline=None)
-    def test_spike_state_roundtrip(self, n_neurons):
-        """Property: Spike state preserved through save/load cycle."""
-        # Generate random spikes
-        spike_prob = torch.rand(1).item()
-        spikes = torch.rand(n_neurons) < spike_prob
-
-        # Create state
-        state = BaseRegionState(spikes=spikes)
-
-        # Roundtrip through dict
-        data = state.to_dict()
-        loaded = BaseRegionState.from_dict(data, device="cpu")
-
-        # Verify exact preservation
-        assert torch.equal(spikes, loaded.spikes), "Spikes not preserved in roundtrip"
-
-    @given(
-        n_neurons=st.integers(min_value=10, max_value=500),
-        v_range=st.tuples(
-            st.floats(min_value=-80, max_value=-60),
-            st.floats(min_value=-50, max_value=20),
-        ),
-    )
-    @settings(max_examples=50, deadline=None)
-    def test_membrane_state_roundtrip(self, n_neurons, v_range):
-        """Property: Membrane potentials preserved through save/load cycle."""
-        v_min, v_max = v_range
-        assume(v_max > v_min)
-
-        # Generate membrane potentials
-        membrane = torch.rand(n_neurons) * (v_max - v_min) + v_min
-
-        # Create state
-        state = BaseRegionState(membrane=membrane)
-
-        # Roundtrip
-        data = state.to_dict()
-        loaded = BaseRegionState.from_dict(data, device="cpu")
-
-        # Verify preservation
-        assert torch.allclose(membrane, loaded.membrane, atol=1e-6), "Membrane not preserved"
-
-    @given(
-        n_neurons=st.integers(min_value=10, max_value=500),
-        has_membrane=st.booleans(),
-    )
-    @settings(max_examples=50, deadline=None)
-    def test_combined_state_roundtrip(self, n_neurons, has_membrane):
-        """Property: Combined spike + membrane state preserved through save/load cycle."""
-        # Generate spikes
-        spikes = torch.rand(n_neurons) < 0.3
-
-        # Optionally generate membrane
-        membrane = None
-        if has_membrane:
-            membrane = torch.rand(n_neurons) * 40 - 70  # [-70, -30] mV
-
-        # Create state
-        state = BaseRegionState(spikes=spikes, membrane=membrane)
-
-        # Roundtrip
-        data = state.to_dict()
-        loaded = BaseRegionState.from_dict(data, device="cpu")
-
-        # Verify preservation
-        assert torch.equal(spikes, loaded.spikes), "Spikes not preserved"
-        if has_membrane:
-            assert torch.allclose(membrane, loaded.membrane, atol=1e-6), "Membrane not preserved"
-
-
-class TestBiologicalBounds:
-    """Test that biological constraints are maintained."""
-
-    @given(
-        n_neurons=st.integers(min_value=10, max_value=200),
-        v_range=st.tuples(
-            st.floats(min_value=-80, max_value=-60),
-            st.floats(min_value=-50, max_value=20),
-        ),
-    )
-    @settings(max_examples=30, deadline=None)
-    def test_membrane_stays_in_biological_range(self, n_neurons, v_range):
-        """Property: Membrane potentials always stay in [-80mV, +50mV] range."""
-        v_min, v_max = v_range
-        assume(v_max > v_min)
-
-        membrane = torch.rand(n_neurons) * (v_max - v_min) + v_min
-        state = BaseRegionState(membrane=membrane)
-
-        # Roundtrip
-        data = state.to_dict()
-        loaded = BaseRegionState.from_dict(data, device="cpu")
-
-        # Check bounds
-        assert loaded.membrane is not None, "Membrane should not be None"
-        assert (
-            loaded.membrane >= -85
-        ).all(), f"Membrane below K+ reversal: {loaded.membrane.min():.1f}mV"
-        assert (
-            loaded.membrane <= 60
-        ).all(), f"Membrane above Na+ reversal: {loaded.membrane.max():.1f}mV"
-
-    @given(spike_prob=st.floats(min_value=0.0, max_value=1.0))
-    @settings(max_examples=50, deadline=None)
-    def test_spikes_are_binary(self, spike_prob):
-        """Property: Spikes are always 0 or 1 (binary)."""
-        n_neurons = 100
-        spikes = torch.rand(n_neurons) < spike_prob
-
-        # Check binary
-        assert ((spikes == 0) | (spikes == 1)).all(), "Spikes must be binary"
-        assert (spikes >= 0).all(), "No negative spikes"
-        assert (spikes <= 1).all(), "No spikes > 1"
-
-    @given(
-        da_level=st.floats(min_value=0.0, max_value=1.5),
-        ne_level=st.floats(min_value=0.0, max_value=1.0),
-    )
-    @settings(max_examples=50, deadline=None)
-    def test_neuromodulators_in_valid_range(self, da_level, ne_level):
-        """Property: Neuromodulator levels stay in biological range."""
-        # Dopamine: [0, 1.5] (tonic + phasic)
-        # Norepinephrine: [0, 1.0]
-        assert 0 <= da_level <= 1.5, f"Dopamine {da_level:.3f} out of range"
-        assert 0 <= ne_level <= 1.0, f"Norepinephrine {ne_level:.3f} out of range"
-
-
 class TestMultiRegionIndependence:
     """Test that region states are independent in checkpoints."""
 
     @given(
         n_regions=st.integers(min_value=2, max_value=5),
-        neurons_per_region=st.integers(min_value=20, max_value=100),
     )
     @settings(max_examples=20, deadline=None)
-    def test_regions_have_independent_states(self, n_regions, neurons_per_region):
+    def test_regions_have_independent_states(self, n_regions):
         """Property: Modifying one region's state doesn't affect others."""
-        # Create multiple region states
+        # Create multiple region states with different neuromodulator levels
         states = {}
         for i in range(n_regions):
-            spikes = torch.rand(neurons_per_region) < 0.3
-            states[f"region_{i}"] = BaseRegionState(spikes=spikes)
+            dopamine_level = float(i) / n_regions  # Different levels for each region
+            states[f"region_{i}"] = BaseRegionState(dopamine=dopamine_level)
 
         # Save states
         saved_states = {name: state.to_dict() for name, state in states.items()}
 
         # Modify one region
-        states["region_0"].spikes[:] = 1.0
+        states["region_0"].dopamine = 0.999
 
         # Load other regions - should be unchanged
         for i in range(1, n_regions):
             name = f"region_{i}"
-            original_spikes = BaseRegionState.from_dict(saved_states[name], device="cpu").spikes
-            current_spikes = states[name].spikes
+            original_dopamine = BaseRegionState.from_dict(saved_states[name], device="cpu").dopamine
+            current_dopamine = states[name].dopamine
 
-            assert torch.equal(
-                original_spikes, current_spikes
+            assert (
+                original_dopamine == current_dopamine
             ), f"{name} was affected by region_0 modification"
 
     @given(seed=st.integers(min_value=0, max_value=10000))
@@ -505,39 +372,35 @@ class TestStateConsistency:
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
-    def test_empty_spike_tensor(self):
-        """Property: Empty spike tensors handled correctly."""
-        # Zero spikes (all False)
-        spikes = torch.zeros(50, dtype=torch.bool)
-        state = BaseRegionState(spikes=spikes)
+    def test_zero_neuromodulators(self):
+        """Property: Zero neuromodulator levels handled correctly."""
+        state = BaseRegionState(dopamine=0.0, acetylcholine=0.0, norepinephrine=0.0)
 
         data = state.to_dict()
         loaded = BaseRegionState.from_dict(data, device="cpu")
 
-        assert torch.equal(spikes, loaded.spikes)
-        assert loaded.spikes.sum() == 0
+        assert loaded.dopamine == 0.0
+        assert loaded.acetylcholine == 0.0
+        assert loaded.norepinephrine == 0.0
 
-    def test_full_spike_tensor(self):
-        """Property: Full spike tensors (all spiking) handled correctly."""
-        # All spikes (all True)
-        spikes = torch.ones(50, dtype=torch.bool)
-        state = BaseRegionState(spikes=spikes)
+    def test_max_neuromodulators(self):
+        """Property: Maximum neuromodulator levels handled correctly."""
+        state = BaseRegionState(dopamine=1.0, acetylcholine=1.0, norepinephrine=1.0)
 
         data = state.to_dict()
         loaded = BaseRegionState.from_dict(data, device="cpu")
 
-        assert torch.equal(spikes, loaded.spikes)
-        assert loaded.spikes.sum() == 50
+        assert loaded.dopamine == 1.0
+        assert loaded.acetylcholine == 1.0
+        assert loaded.norepinephrine == 1.0
 
-    @given(n_neurons=st.integers(min_value=1, max_value=10))
+    @given(dopamine=st.floats(min_value=0.0, max_value=1.0, allow_nan=False))
     @settings(max_examples=20, deadline=None)
-    def test_minimal_region_size(self, n_neurons):
-        """Property: Very small regions handled correctly."""
-        spikes = torch.rand(n_neurons) < 0.5
-        state = BaseRegionState(spikes=spikes)
+    def test_neuromodulator_roundtrip(self, dopamine):
+        """Property: Neuromodulator values preserved through serialization."""
+        state = BaseRegionState(dopamine=dopamine)
 
         data = state.to_dict()
         loaded = BaseRegionState.from_dict(data, device="cpu")
 
-        assert torch.equal(spikes, loaded.spikes)
-        assert loaded.spikes.shape == (n_neurons,)
+        assert abs(loaded.dopamine - dopamine) < 1e-6
