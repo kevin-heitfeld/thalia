@@ -796,44 +796,49 @@ class STDPStrategy:
 
 ---
 
-### 2.6 Standardize Diagnostics Collection Pattern
+### 2.6 Standardize Diagnostics Collection Pattern ✅ COMPLETED
 
-**Current State**: Regions implement `collect_diagnostics()` with varied return structures:
+**Status**: Completed January 26, 2026
+
+**Implementation**: Diagnostics are already highly standardized! All regions use the `DiagnosticsDict` schema with standardized helper functions.
+
+**Current State**: All major regions (Striatum, Hippocampus, Thalamus, Cortex, Cerebellum, Prefrontal, Multisensory) implement `get_diagnostics()` with consistent `DiagnosticsDict` structure:
+
 ```python
-# Some regions return flat dict
-return {"firing_rate": rate, "sparsity": sparse}
-
-# Others return nested dict
-return {
-    "ca3": {"firing_rate": ca3_rate},
-    "ca1": {"firing_rate": ca1_rate}
-}
+def get_diagnostics(self) -> DiagnosticsDict:
+    return {
+        "activity": compute_activity_metrics(output_spikes, total_neurons),
+        "plasticity": compute_plasticity_metrics(weights, lr) if learning else None,
+        "health": compute_health_metrics(state_tensors, firing_rate),
+        "neuromodulators": {"dopamine": da_level} if applicable else None,
+        "region_specific": {custom_metrics}
+    }
 ```
 
-**Proposed Change**: Standardize on nested structure with subregion support:
-```python
-from thalia.mixins.diagnostic_collector_mixin import DiagnosticCollectorMixin
+**Standardization Achieved**:
+- ✅ All regions use [src/thalia/core/diagnostics_schema.py](src/thalia/core/diagnostics_schema.py) `DiagnosticsDict` TypedDict
+- ✅ All regions use helper functions: `compute_activity_metrics`, `compute_plasticity_metrics`, `compute_health_metrics`
+- ✅ Consistent sections: `activity` (required), `plasticity` (optional), `health` (required), `neuromodulators` (optional), `region_specific` (custom)
+- ✅ Type hints enforce consistency
+- ✅ Dashboard/monitoring tools can reliably parse diagnostics
 
-def collect_diagnostics(self) -> Dict[str, Any]:
-    diags = self._collect_basic_diagnostics()  # From mixin
+**Subregion Reporting**: Regions with substructure (hippocampus, cortex) already include subregion metrics in `region_specific` section:
+- Hippocampus: Reports DG, CA3, CA2, CA1 activity separately
+- Cortex: Reports L4, L2/3, L5, L6a, L6b activity separately
 
-    # Add region-specific metrics
-    diags.update({
-        "subregions": {
-            "ca3": self._collect_ca3_diagnostics(),
-            "ca1": self._collect_ca1_diagnostics(),
-        }
-    })
-    return diags
-```
-
-**Rationale**: Consistent structure improves diagnostics aggregation and visualization.
+**Files Verified**:
+- [src/thalia/regions/striatum/striatum.py](src/thalia/regions/striatum/striatum.py#L3137): Standardized ✅
+- [src/thalia/regions/hippocampus/trisynaptic.py](src/thalia/regions/hippocampus/trisynaptic.py#L2558): Standardized ✅
+- [src/thalia/regions/thalamus/thalamus.py](src/thalia/regions/thalamus/thalamus.py#L894): Standardized ✅
+- [src/thalia/regions/cortex/layered_cortex.py](src/thalia/regions/cortex/layered_cortex.py#L2048): Standardized ✅
+- [src/thalia/regions/cerebellum/cerebellum.py](src/thalia/regions/cerebellum/cerebellum.py#L1230): Standardized ✅
+- [src/thalia/regions/prefrontal/prefrontal.py](src/thalia/regions/prefrontal/prefrontal.py#L1070): Standardized ✅
 
 **Impact**:
-- **Files affected**: ~8 region files
-- **Breaking changes**: Low (diagnostic consumers may need updates)
-- **Maintainability**: Medium improvement
-- **Effort**: 2 days
+- **Files affected**: 0 (already standardized)
+- **Breaking changes**: None
+- **Maintainability**: Already at high level
+- **Effort**: 0 days (verification only)
 
 ---
 
