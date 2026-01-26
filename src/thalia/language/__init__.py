@@ -13,20 +13,16 @@ Components:
 
 from __future__ import annotations
 
-from thalia.language.decoder import (
+from .decoder import (
     SpikeDecoder,
     SpikeDecoderConfig,
 )
-from thalia.language.encoder import (
+from .encoder import (
     SparseDistributedRepresentation,
     SpikeEncoder,
     SpikeEncoderConfig,
 )
-from thalia.language.model import (
-    LanguageBrainInterface,
-    LanguageInterfaceConfig,
-)
-from thalia.language.position import (
+from .position import (
     OscillatoryPositionEncoder,
     PositionEncoderConfig,
 )
@@ -42,7 +38,4 @@ __all__ = [
     # Position
     "OscillatoryPositionEncoder",
     "PositionEncoderConfig",
-    # Model (Brain Integration)
-    "LanguageBrainInterface",
-    "LanguageInterfaceConfig",
 ]

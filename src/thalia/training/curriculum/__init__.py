@@ -15,7 +15,7 @@ Date: December 12, 2025
 
 from __future__ import annotations
 
-from thalia.training.curriculum.curriculum import (
+from .curriculum import (
     CurriculumDifficultyCalibrator,
     DifficultyCalibratorConfig,
     InterleavedCurriculumSampler,
@@ -30,35 +30,38 @@ from thalia.training.curriculum.curriculum import (
     TestingPhaseProtocol,
     TransitionWeekConfig,
 )
-from thalia.training.curriculum.logger import (
+from .logger import (
     CurriculumLogger,
     LogLevel,
     StageLog,
 )
-from thalia.training.curriculum.noise_scheduler import (
+from .noise_scheduler import (
     NoiseProfile,
     NoiseScheduler,
     NoiseSchedulerConfig,
     NoiseType,
 )
-from thalia.training.curriculum.safety_system import (
+from .safety_system import (
     CurriculumSafetySystem,
     SafetyStatus,
 )
-from thalia.training.curriculum.stage_evaluation import (
+from .stage_configs import (
+    get_sensorimotor_config,
+)
+from .stage_evaluation import (
     check_system_health,
     evaluate_stage_phonology,
     evaluate_stage_sensorimotor,
     evaluate_stage_toddler,
     generate_evaluation_report,
 )
-from thalia.training.curriculum.stage_gates import (
+from .stage_gates import (
     GateDecision,
     GateResult,
     GracefulDegradationManager,
     Stage1SurvivalGate,
 )
-from thalia.training.curriculum.stage_manager import (
+from .stage_manager import (
     ActiveMechanism,
     CognitiveLoadMonitor,
     CurriculumTrainer,
@@ -67,7 +70,7 @@ from thalia.training.curriculum.stage_manager import (
     TaskConfig,
     TrainingResult,
 )
-from thalia.training.curriculum.stage_monitoring import (
+from .stage_monitoring import (
     ContinuousMonitor,
     InterventionType,
     MonitoringMetrics,
@@ -113,6 +116,8 @@ __all__ = [
     "Stage1Monitor",
     "InterventionType",
     "MonitoringMetrics",
+    # Stage configurations
+    "get_sensorimotor_config",
     # Stage evaluation
     "evaluate_stage_sensorimotor",
     "evaluate_stage_phonology",

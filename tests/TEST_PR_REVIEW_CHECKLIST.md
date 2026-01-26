@@ -114,8 +114,8 @@ brain.regions = {'cortex': Mock()}  # ❌ Mock regions
 **Correct approach:**
 ```python
 # ✅ Use real brain
-config = ThaliaConfig(...)
-brain = DynamicBrain.from_thalia_config(config)
+config = BrainConfig(...)
+brain = BrainBuilder.preset("default", brain_config=config)
 ```
 
 ---
@@ -189,7 +189,7 @@ When reviewing test PRs, ask:
 - Explicit configs: `Config(learning_rate=0.01)`
 - Behavioral validation: "Does it spike correctly?"
 - Edge cases: silent, saturated, invalid inputs
-- Real components: `DynamicBrain.from_thalia_config()`
+- Real components: `BrainBuilder.preset()`
 - Clear assertions: `assert d1_time < d2_time, "D1 should arrive first"`
 
 ### ❌ Bad Test Patterns

@@ -3,20 +3,6 @@ THALIA - Thinking Architecture via Learning Integrated Attractors
 
 A framework for building genuinely thinking spiking neural networks.
 
-Quick Start (External Users):
-=============================
-
-    from thalia import ThaliaConfig, DynamicBrain
-    from thalia import Striatum, TrisynapticHippocampus, LayeredCortex
-    from thalia import ConductanceLIF, WeightInitializer
-
-    # Create regions directly
-    striatum = Striatum(StriatumConfig(n_input=256, n_output=64))
-
-    # Or use full brain system (DynamicBrain)
-    config = ThaliaConfig(...)
-    brain = BrainBuilder.preset("default", config)
-
 Internal Development:
 ====================
 
@@ -53,7 +39,6 @@ from thalia.config import (
     PredictiveCortexConfig,
     PrefrontalConfig,
     StriatumConfig,
-    ThaliaConfig,
 )
 
 # Oscillators
@@ -144,7 +129,6 @@ __all__ = [
     # Version
     "__version__",
     # Configuration
-    "ThaliaConfig",
     "BrainConfig",
     # Type Aliases
     "ComponentGraph",

@@ -26,14 +26,6 @@ class BaseLearningConfig(BaseConfig):
     - weight_bounds: Min/max weight constraints
 
     Region configs can inherit from this to avoid duplicating these fields.
-
-    Usage:
-        @dataclass
-        class MyRegionConfig(BaseLearningConfig):
-            # Inherits learning_rate, learning_enabled, etc.
-            n_input: int = 100
-            n_output: int = 50
-            # Add region-specific fields
     """
 
     learning_rate: float = 0.01
@@ -60,13 +52,6 @@ class ModulatedLearningConfig(BaseLearningConfig):
     for regions that use dopamine/acetylcholine/norepinephrine gating.
 
     Used by: Striatum, Prefrontal, regions with three-factor learning
-
-    Usage:
-        @dataclass
-        class StriatumConfig(NeuralComponentConfig):
-            learning: ModulatedLearningConfig = field(
-                default_factory=ModulatedLearningConfig
-            )
     """
 
     modulator_threshold: float = 0.1
@@ -92,11 +77,6 @@ class STDPLearningConfig(BaseLearningConfig):
     Provides STDP-specific parameters for regions using timing-based learning.
 
     Used by: Hippocampus, Cortex, regions with temporal learning
-
-    Usage:
-        @dataclass
-        class CortexConfig(NeuralComponentConfig):
-            learning: STDPLearningConfig = field(default_factory=STDPLearningConfig)
     """
 
     tau_plus_ms: float = 20.0
@@ -123,13 +103,6 @@ class HebbianLearningConfig(BaseLearningConfig):
     increases when pre- and postsynaptic neurons are coactive.
 
     Used by: Multisensory integration, simple associative regions
-
-    Usage:
-        @dataclass
-        class MultisensoryConfig(HebbianLearningConfig):
-            # Inherits Hebbian parameters
-            n_visual: int = 256
-            n_auditory: int = 128
     """
 
     hebbian_decay: float = 0.0
@@ -148,13 +121,6 @@ class ErrorCorrectiveLearningConfig(BaseLearningConfig):
     separate rates for potentiation (LTP) and depression (LTD).
 
     Used by: Cerebellum (climbing fiber errors), error-driven regions
-
-    Usage:
-        @dataclass
-        class CerebellumConfig(ErrorCorrectiveLearningConfig):
-            # Inherits LTP/LTD rates, error parameters
-            n_purkinje: int = 256
-            granule_expansion_factor: float = 4.0
     """
 
     learning_rate_ltp: float = 0.01
@@ -171,30 +137,6 @@ class ErrorCorrectiveLearningConfig(BaseLearningConfig):
 
     eligibility_tau_ms: float = 20.0
     """Time constant for eligibility trace decay (ms)"""
-
-
-# =============================================================================
-# CONFIGURATION INHERITANCE EXAMPLES
-# =============================================================================
-#
-# Example 1: Simple region with basic learning
-# ============================================
-# @dataclass
-# class ThalamicRelayConfig(BaseLearningConfig):
-#     n_input: int = 100
-#     n_output: int = 100
-#     # Inherits: learning_rate, learning_enabled, weight_bounds
-#
-# Example 2: Region with neuromodulated learning
-# ===============================================
-# @dataclass
-# class StriatumConfig(NeuralComponentConfig):
-#     n_input: int = 50
-#     n_output: int = 4
-#     learning: ModulatedLearningConfig = field(default_factory=ModulatedLearningConfig)
-#     # Nested learning config instead of flat fields
-#
-# =============================================================================
 
 
 __all__ = [

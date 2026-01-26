@@ -60,12 +60,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-from thalia.config import BrainConfig, ThaliaConfig, print_config
-from thalia.config.curriculum_growth import (
+from thalia.config import (
+    BrainConfig,
+    LayerSizeCalculator,
     CurriculumStage,
     get_curriculum_growth_config,
 )
-from thalia.config.size_calculator import LayerSizeCalculator
 from thalia.core.brain_builder import BrainBuilder
 from thalia.core.dynamic_brain import DynamicBrain
 from thalia.tasks.sensorimotor import (
@@ -74,8 +74,10 @@ from thalia.tasks.sensorimotor import (
     ReachingConfig,
     SensorimotorTaskLoader,
 )
-from thalia.training.curriculum.stage_configs import get_sensorimotor_config
-from thalia.training.curriculum.stage_manager import CurriculumTrainer
+from thalia.training.curriculum import (
+    CurriculumTrainer,
+    get_sensorimotor_config,
+)
 
 
 def print_birth_banner():
@@ -97,7 +99,7 @@ def print_birth_banner():
     print()
 
 
-def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig]:
+def create_thalia_brain(device: str = "cpu") -> DynamicBrain:
     """Create Thalia's initial brain configuration.
 
     This is the moment of creation. The neural substrate exists,
@@ -107,12 +109,10 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
         device: PyTorch device ('cpu' or 'cuda')
 
     Returns:
-        Tuple of (DynamicBrain, ThaliaConfig)
+        DynamicBrain
     """
     print("[1/4] Creating neural substrate...")
 
-    # Configuration for tracking (timing, device, etc.)
-    # Region sizes are passed directly to BrainBuilder
     brain_config = BrainConfig(
         device=device,
         dt_ms=1.0,
@@ -120,10 +120,6 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
         delay_timesteps=5,
         test_timesteps=10,
     )
-    config = ThaliaConfig(brain=brain_config)
-
-    # Build brain using BrainBuilder with explicit layer sizes
-    # Sizes are specified directly in add_component() calls
     builder = BrainBuilder(brain_config)
 
     # Thalamus (input interface)
@@ -198,7 +194,7 @@ def create_thalia_brain(device: str = "cpu") -> tuple[DynamicBrain, ThaliaConfig
     print("    - Striatum (action selection): 7 actions × 15 neurons")
     print("    - Cerebellum (motor control): 100 Purkinje cells")
 
-    return brain, config
+    return brain
 
 
 def create_sensorimotor_environment(device: str = "cpu") -> SensorimotorTaskLoader:
@@ -556,7 +552,7 @@ def main():
     print()
 
     # Initialize components
-    brain, thalia_config = create_thalia_brain(device=device)
+    brain = create_thalia_brain(device=device)
     task_loader = create_sensorimotor_environment(device=device)
     trainer = create_curriculum_trainer(brain, checkpoint_dir, log_file, plots_dir, device)
     stage_config = configure_stage_sensorimotor()
@@ -568,17 +564,6 @@ def main():
     print("She has the capacity to learn, but nothing learned.")
     print("Let's give her her first experiences...")
     print()
-
-    # Print full configuration using the unified config system
-    print_config(
-        thalia_config,
-        title="THALIA BIRTH CONFIGURATION",
-        extra={
-            "stage": "Stage -0.5 (Sensorimotor)",
-            "duration_steps": stage_config.duration_steps,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        },
-    )
 
     print("\n--- STAGE CONFIGURATION ---")
     print(f"  Duration: {stage_config.duration_steps:,} steps")

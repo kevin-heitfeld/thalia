@@ -991,7 +991,7 @@ def test_visualize_real_brain(tmp_path):
     brain_config=BrainConfig(
         device="cpu",
     ),
-    brain = DynamicBrain.from_thalia_config(brain_config)
+    brain = BrainBuilder.preset("default", brain_config)
 
     # Test with REAL components
     output_file = tmp_path / "topology.dot"
@@ -1617,8 +1617,8 @@ def test_softmax_selection():
 ❌ **BAD:**
 ```python
 def test_something():
-    config = ThaliaConfig(...)  # Repeated in every test
-    brain = DynamicBrain.from_thalia_config(config)
+    config = BrainConfig(...)  # Repeated in every test
+    brain = BrainBuilder.preset("default", brain_config=config)
     # Test code
 ```
 
@@ -1627,8 +1627,8 @@ def test_something():
 @pytest.fixture
 def test_brain():
     """Create standard brain for tests."""
-    config = ThaliaConfig(...)
-    return DynamicBrain.from_thalia_config(config)
+    config = BrainConfig(...)
+    return BrainBuilder.preset("default", brain_config=config)
 
 def test_something(test_brain):
     # Use fixture

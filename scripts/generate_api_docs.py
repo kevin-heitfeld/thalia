@@ -4761,7 +4761,7 @@ class APIDocGenerator:
             f.write("# Layer 1 (Foundation)\n")
             f.write("from thalia.core.protocols import NeuralComponent\n")
             f.write("from thalia.core.errors import ConfigurationError\n")
-            f.write("from thalia.config import ThaliaConfig\n\n")
+            f.write("from thalia.config import BrainConfig\n\n")
 
             f.write("# Layer 2 (Components)\n")
             f.write("from thalia.components.neurons import ConductanceLIF\n")
@@ -5008,12 +5008,10 @@ class APIDocGenerator:
             f.write("## ⚙️ Configuration Hierarchy\n\n")
             f.write("```mermaid\n")
             f.write("graph TD\n")
-            f.write("    Global[ThaliaConfig<br/>Global settings]\n")
             f.write("    Brain[BrainConfig<br/>Architecture]\n")
             f.write("    Regional[*RegionConfig<br/>Region-specific]\n")
             f.write("    Builder[BrainBuilder<br/>Size specification]\n\n")
 
-            f.write("    Global --> Brain\n")
             f.write("    Brain --> Regional\n")
             f.write("    Builder --> Regional\n")
             f.write("    Regional --> Cortex[LayeredCortexConfig]\n")

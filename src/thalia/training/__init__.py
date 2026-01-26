@@ -22,7 +22,7 @@ Date: December 12, 2025
 from __future__ import annotations
 
 # Import from reorganized subdirectories
-from thalia.training.curriculum import (  # Curriculum mechanics; Stage manager; Noise scheduling; Stage evaluation; Logger
+from .curriculum import (  # Curriculum mechanics; Stage manager; Noise scheduling; Stage evaluation; Logger
     ActiveMechanism,
     CognitiveLoadMonitor,
     CurriculumDifficultyCalibrator,
@@ -56,7 +56,7 @@ from thalia.training.curriculum import (  # Curriculum mechanics; Stage manager;
     evaluate_stage_toddler,
     generate_evaluation_report,
 )
-from thalia.training.datasets import (  # Task loaders; Data pipeline
+from .datasets import (  # Task loaders; Data pipeline
     BaseTaskLoader,
     DataConfig,
     PhonologyConfig,
@@ -68,14 +68,14 @@ from thalia.training.datasets import (  # Task loaders; Data pipeline
     create_phonology_loader,
     create_sensorimotor_loader,
 )
-from thalia.training.evaluation import (
+from .evaluation import (
     CalibrationMetrics,
     CalibrationPrediction,
     CalibrationSample,
     MetacognitiveCalibrator,
     create_simple_task_generator,
 )
-from thalia.training.visualization import (
+from .visualization import (
     LiveDiagnostics,
     TrainingMonitor,
     quick_diagnostics,
