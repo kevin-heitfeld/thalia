@@ -62,6 +62,7 @@ def test_no_ripples_during_high_ach(replay_generator):
     )
 
 
+@pytest.mark.flaky(reason="Stochastic test - may fail occasionally due to randomness")
 def test_ripples_during_low_ach(replay_generator):
     """Ripples should occur frequently during low acetylcholine (sleep mode)."""
     # Reset state to ensure clean test

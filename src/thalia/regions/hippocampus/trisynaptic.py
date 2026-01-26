@@ -1286,10 +1286,11 @@ class TrisynapticHippocampus(NeuralRegion):
         # NORMAL MODE: Standard Trisynaptic Processing (DG→CA3→CA1)
         # =====================================================================
         # Route inputs - try common aliases for entorhinal cortex input
+        # Support port-based routing: cortex:l23 is the standard port for cortical input
         routed = InputRouter.route(
             inputs,
             port_mapping={
-                "ec": ["ec", "cortex", "input", "default"],
+                "ec": ["ec", "cortex:l23", "cortex", "input", "default"],
             },
             defaults={"ec": torch.zeros(self.input_size, device=self.device)},
             component_name="TrisynapticHippocampus",

@@ -846,12 +846,25 @@ class BrainBuilder:
                 source_identifier = (
                     f"{spec.source}:{spec.source_port}" if spec.source_port else spec.source
                 )
+
+                # Stronger weights for cortex→hippocampus (cortico-hippocampal pathway)
+                # This pathway needs to reliably drive hippocampus from sparse cortical activity
+                # Much stronger than typical connections because hippocampus has high threshold
+                if spec.source in ("cortex", "layered_cortex") and target_name == "hippocampus":
+                    weight_scale = 5.0  # Very strong (like external sensory input)
+                    sparsity = 0.8  # Very dense connection
+                else:
+                    weight_scale = 0.3  # Default for most connections
+                    sparsity = 0.2  # Default sparsity
+
                 # Register this source with target component
                 # Each source will have separate synaptic weights
                 target_comp.add_input_source(
                     source_name=source_identifier,
                     n_input=source_size,
                     learning_strategy="bcm",  # Default learning rule (can be customized later)
+                    sparsity=sparsity,
+                    weight_scale=weight_scale,
                 )
 
         return projection
@@ -978,12 +991,15 @@ class BrainBuilder:
 
             if not has_incoming and input_size > 0 and hasattr(component, "add_input_source"):
                 # Component is an input interface - register direct input source
-                # Use stronger weights for cortex to compensate for theta modulation
-                weight_scale = 1.5 if spec.registry_name in ("cortex", "layered_cortex") else 0.5
+                # Use strong, dense weights for direct sensory input (not sparse recurrent)
+                # External input needs to reliably drive neurons (like thalamic input to cortex)
+                # Dense connectivity (80%) mimics how thalamus densely innervates L4
+                weight_scale = 5.0 if spec.registry_name in ("cortex", "layered_cortex") else 2.0
+                sparsity = 0.8  # 80% connection probability (very dense, like thalamocortical)
                 component.add_input_source(
                     source_name="input",  # DynamicBrain uses "input" for direct sensory input
                     n_input=input_size,
-                    sparsity=0.2,
+                    sparsity=sparsity,
                     weight_scale=weight_scale,
                 )
 

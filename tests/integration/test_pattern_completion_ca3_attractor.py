@@ -2,14 +2,11 @@
 Integration Tests: CA3 Pattern Completion with Biologically-Realistic Protocols
 
 These tests validate that pattern storage and retrieval work through CA3
-attractor dynamics and Hebbian learning, without requiring an explicit
-episode buffer.
-
-Phase 4 Goal: Memory IS the weights, not an explicit buffer.
+attractor dynamics and Hebbian learning.
 
 **Pattern Storage**: CA3 recurrent weights (Hebbian learning during forward())
 **Pattern Retrieval**: CA3 attractor dynamics (pattern completion)
-**Priority**: Synaptic tags (Phase 1)
+**Priority**: Synaptic tags
 
 IMPORTANT: These tests use biologically-realistic protocols with proper
 inter-trial intervals (ITI) to account for neuronal adaptation. CA3 neurons
@@ -27,6 +24,7 @@ import pytest
 import torch
 
 from thalia.config import BrainConfig
+from thalia.core.brain_builder import BrainBuilder
 
 
 @pytest.fixture
@@ -43,8 +41,6 @@ def brain_with_hippocampus():
 
     # Build minimal brain with direct cortex → hippocampus connection
     # Cortex acts as input layer (like sensory cortex receiving thalamic input)
-    from thalia.core.brain_builder import BrainBuilder
-
     builder = BrainBuilder(config)
 
     # Add cortex as input interface (simplified sensory input)
@@ -59,25 +55,86 @@ def brain_with_hippocampus():
         l6b_size=0,
     )
 
-    # Add hippocampus receiving from cortex L2/3
-    cortex_output_size = 96 + 32  # L23 + L5
+    # Add hippocampus receiving from cortex L2/3 (main cortico-hippocampal pathway)
+    cortex_l23_size = 96  # L2/3 output
     builder.add_component(
         "hippocampus",
         "hippocampus",
-        input_size=cortex_output_size,
+        input_size=cortex_l23_size,
         dg_size=256,
         ca3_size=128,
         ca2_size=64,
         ca1_size=128,
+        theta_gamma_enabled=False,  # Disable for cleaner dopamine comparison tests
     )
 
-    # Connect cortex → hippocampus
-    builder.connect("cortex", "hippocampus", pathway_type="axonal", axonal_delay_ms=1.0)
+    # Connect cortex → hippocampus (L2/3 to entorhinal cortex pathway)
+    builder.connect(
+        "cortex",
+        "hippocampus",
+        source_port="l23",  # L2/3 projects to hippocampus via entorhinal cortex
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=1.0,
+    )
 
     brain = builder.build()
     hippocampus = brain.components["hippocampus"]
 
     # Enable plasticity for Hebbian learning
+    hippocampus.plasticity_enabled = True
+
+    return brain, hippocampus
+
+
+@pytest.fixture
+def brain_with_hippocampus_theta_gamma():
+    """Brain with hippocampus WITH theta-gamma enabled for synaptic tagging tests.
+
+    Synaptic tagging requires theta-gamma oscillations to mark recently-active
+    synapses for consolidation. This fixture enables theta_gamma_enabled=True.
+    """
+    config = BrainConfig(
+        dt_ms=1.0,
+        device="cpu",
+    )
+
+    builder = BrainBuilder(config)
+
+    builder.add_component(
+        "cortex",
+        "cortex",
+        input_size=64,
+        l4_size=64,
+        l23_size=96,
+        l5_size=32,
+        l6a_size=0,
+        l6b_size=0,
+    )
+
+    cortex_l23_size = 96
+    builder.add_component(
+        "hippocampus",
+        "hippocampus",
+        input_size=cortex_l23_size,
+        dg_size=256,
+        ca3_size=128,
+        ca2_size=64,
+        ca1_size=128,
+        theta_gamma_enabled=True,  # Enable for synaptic tagging
+    )
+
+    builder.connect(
+        "cortex",
+        "hippocampus",
+        source_port="l23",
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=1.0,
+    )
+
+    brain = builder.build()
+    hippocampus = brain.components["hippocampus"]
     hippocampus.plasticity_enabled = True
 
     return brain, hippocampus
@@ -91,27 +148,27 @@ def test_pattern_completion_from_ca3_weights(brain_with_hippocampus):
     """
     brain, hippocampus = brain_with_hippocampus
     input_size = 64
-    zeros = torch.zeros(input_size, device=brain.device)
+    zeros = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
 
     # Create a distinct pattern
-    full_pattern = torch.zeros(input_size, device=brain.device)
-    full_pattern[10:30] = 1.0  # 20 active neurons
+    full_pattern = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    full_pattern[10:30] = True  # 20 active neurons
 
     # ENCODING: Store pattern via Hebbian learning with proper ITI
     # Biological protocol: 500ms inter-trial interval allows adaptation to decay
     for trial in range(10):
-        brain.forward({"cortex": full_pattern}, n_timesteps=50)
         hippocampus.set_neuromodulators(dopamine=0.8, acetylcholine=0.7)  # Encoding state
+        brain.forward({"cortex": full_pattern}, n_timesteps=50)
 
         # Inter-trial interval: 500ms rest (10 × 50ms)
+        hippocampus.set_neuromodulators(dopamine=0.1)
         for _ in range(10):
             brain.forward({"cortex": zeros}, n_timesteps=50)
-            hippocampus.set_neuromodulators(dopamine=0.1)
 
     # CONSOLIDATION: Allow full recovery (2 seconds)
+    hippocampus.set_neuromodulators(dopamine=0.1)
     for _ in range(40):  # 40 × 50ms = 2 seconds
         brain.forward({"cortex": zeros}, n_timesteps=50)
-        hippocampus.set_neuromodulators(dopamine=0.1)
 
     # RETRIEVAL: Present partial cue in retrieval state (low ACh enables recurrence)
     partial_cue = full_pattern.clone()
@@ -137,38 +194,41 @@ def test_multiple_patterns_via_ca3_weights(brain_with_hippocampus):
     """CA3 should store multiple patterns via Hebbian weight updates with proper ITI."""
     brain, hippocampus = brain_with_hippocampus
     input_size = 64
-    zeros = torch.zeros(input_size, device=brain.device)
+    zeros = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
 
     # Pattern 1: First neurons active
-    pattern_1 = torch.zeros(input_size, device=brain.device)
-    pattern_1[0:10] = 1.0
+    pattern_1 = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    pattern_1[0:10] = True
 
     # Pattern 2: Different neurons active (distinct)
-    pattern_2 = torch.zeros(input_size, device=brain.device)
-    pattern_2[30:40] = 1.0
+    pattern_2 = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    pattern_2[30:40] = True
 
     # Get initial weights
     ca3_weights_before = hippocampus.synaptic_weights["ca3_ca3"].clone()
 
     # Store pattern 1 with ITI
     for trial in range(10):
-        brain.forward({"cortex": pattern_1}, n_timesteps=50)
         hippocampus.set_neuromodulators(dopamine=0.8)
+        brain.forward({"cortex": pattern_1}, n_timesteps=50)
 
         # ITI: 500ms rest
+        hippocampus.set_neuromodulators(dopamine=0.1)
         for _ in range(10):
             brain.forward({"cortex": zeros}, n_timesteps=50)
 
     # Inter-pattern rest: 1 second
+    hippocampus.set_neuromodulators(dopamine=0.1)
     for _ in range(20):
         brain.forward({"cortex": zeros}, n_timesteps=50)
 
     # Store pattern 2 with ITI
     for trial in range(10):
-        brain.forward({"cortex": pattern_2}, n_timesteps=50)
         hippocampus.set_neuromodulators(dopamine=0.8)
+        brain.forward({"cortex": pattern_2}, n_timesteps=50)
 
         # ITI: 500ms rest
+        hippocampus.set_neuromodulators(dopamine=0.1)
         for _ in range(10):
             brain.forward({"cortex": zeros}, n_timesteps=50)
 
@@ -190,20 +250,21 @@ def test_hebbian_learning_stores_patterns_automatically(brain_with_hippocampus):
     """
     brain, hippocampus = brain_with_hippocampus
     input_size = 64
-    zeros = torch.zeros(input_size, device=brain.device)
+    zeros = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
 
     # Get initial CA3 weights
     ca3_weights_before = hippocampus.synaptic_weights["ca3_ca3"].clone()
 
     # Present pattern with ITI to maintain some spiking activity
-    test_pattern = torch.zeros(input_size, device=brain.device)
-    test_pattern[5:15] = 1.0
+    test_pattern = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    test_pattern[5:15] = True
 
     for trial in range(8):  # Fewer trials but with ITI
-        brain.forward({"cortex": test_pattern}, n_timesteps=50)
         hippocampus.set_neuromodulators(dopamine=0.7)
+        brain.forward({"cortex": test_pattern}, n_timesteps=50)
 
         # ITI: 500ms rest
+        hippocampus.set_neuromodulators(dopamine=0.1)
         for _ in range(10):
             brain.forward({"cortex": zeros}, n_timesteps=50)
 
@@ -218,9 +279,14 @@ def test_hebbian_learning_stores_patterns_automatically(brain_with_hippocampus):
     )
 
 
-def test_synaptic_tags_provide_priority(brain_with_hippocampus):
-    """Priority should come from synaptic tags."""
-    brain, hippocampus = brain_with_hippocampus
+def test_synaptic_tags_provide_priority(brain_with_hippocampus_theta_gamma):
+    """Synaptic tags mark recently-active synapses for priority consolidation.
+
+    Tests emergent priority mechanism. Active synapses get tagged, and dopamine
+    gates their consolidation.
+    """
+    brain, hippocampus = brain_with_hippocampus_theta_gamma
+
     input_size = 64  # Cortex input size from fixture
 
     # Check that synaptic tagging exists
@@ -229,11 +295,11 @@ def test_synaptic_tags_provide_priority(brain_with_hippocampus):
     ), "Should use synaptic tagging for priority"
 
     # Present a pattern (use multiple timesteps for neurons to spike)
-    test_pattern = torch.zeros(input_size, device=brain.device)
-    test_pattern[10:20] = 1.0
+    test_pattern = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    test_pattern[10:20] = True
 
-    brain.forward({"cortex": test_pattern}, n_timesteps=50)
     hippocampus.set_neuromodulators(dopamine=0.9)  # High reward → strong tags
+    brain.forward({"cortex": test_pattern}, n_timesteps=50)
 
     # Check that tags were created
     assert hippocampus.synaptic_tagging is not None, "Synaptic tagging should be active"
@@ -247,22 +313,24 @@ def test_ca3_attractor_settles_to_stored_pattern(brain_with_hippocampus):
     """CA3 attractor dynamics should settle to stored pattern given partial cue."""
     brain, hippocampus = brain_with_hippocampus
     input_size = 64
-    zeros = torch.zeros(input_size, device=brain.device)
+    zeros = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
 
     # Store a strong pattern with ITI
-    strong_pattern = torch.zeros(input_size, device=brain.device)
-    strong_pattern[15:25] = 1.0
+    strong_pattern = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    strong_pattern[15:25] = True
 
     # Repeat many times to create strong attractor
     for trial in range(12):
-        brain.forward({"cortex": strong_pattern}, n_timesteps=50)
         hippocampus.set_neuromodulators(dopamine=0.9)
+        brain.forward({"cortex": strong_pattern}, n_timesteps=50)
 
         # ITI: 500ms rest
+        hippocampus.set_neuromodulators(dopamine=0.1)
         for _ in range(10):
             brain.forward({"cortex": zeros}, n_timesteps=50)
 
     # Consolidation: 2 seconds
+    hippocampus.set_neuromodulators(dopamine=0.1)
     for _ in range(40):
         brain.forward({"cortex": zeros}, n_timesteps=50)
 
@@ -285,14 +353,17 @@ def test_ca3_attractor_settles_to_stored_pattern(brain_with_hippocampus):
 def test_pattern_storage_scales_with_dopamine(brain_with_hippocampus):
     """Pattern storage strength should scale with dopamine (biological gating).
 
-    Tests dopamine modulation by measuring weight changes between CA3 neurons
-    that represent the stored pattern (pattern-specific synapses).
+    Tests dopamine modulation by measuring EARLY weight change velocity (first few updates)
+    before saturation effects mask the dopamine difference.
+
+    With high learning rate (0.1), weights quickly approach weight_max=1.0, making
+    comparison impossible after many updates. Solution: measure change velocity early.
     """
     brain, hippocampus = brain_with_hippocampus
     input_size = 64
 
-    test_pattern = torch.zeros(input_size, device=brain.device)
-    test_pattern[20:30] = 1.0
+    test_pattern = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    test_pattern[20:30] = True
 
     # Get initial weights
     ca3_weights_before = hippocampus.synaptic_weights["ca3_ca3"].clone()
@@ -300,13 +371,14 @@ def test_pattern_storage_scales_with_dopamine(brain_with_hippocampus):
     # Low dopamine condition (weak learning)
     hippocampus.set_neuromodulators(dopamine=0.1)
 
-    # Present pattern to activate CA3 neurons
-    # Track ensemble across multiple timesteps
+    # Present pattern ONCE to measure instantaneous learning velocity
+    # Key insight: dopamine effect is clearest early, before saturation
+    brain.forward({"cortex": test_pattern}, n_timesteps=10)
+
+    # Get which neurons activated (identify ensemble from this single presentation)
     ca3_active_neurons_low = torch.zeros(hippocampus.ca3_neurons.n_neurons, dtype=torch.bool, device=brain.device)
-    for _ in range(5):
-        brain.forward({"cortex": test_pattern}, n_timesteps=1)
-        if hippocampus.state.ca3_spikes is not None:
-            ca3_active_neurons_low |= hippocampus.state.ca3_spikes
+    if hippocampus.state.ca3_spikes is not None:
+        ca3_active_neurons_low = hippocampus.state.ca3_spikes.clone()
 
     ca3_pattern_neurons_low = ca3_active_neurons_low.nonzero(as_tuple=True)[0]
     assert len(ca3_pattern_neurons_low) > 5, f"At least 5 CA3 neurons should activate, got {len(ca3_pattern_neurons_low)}"
@@ -317,14 +389,10 @@ def test_pattern_storage_scales_with_dopamine(brain_with_hippocampus):
     # These are the synapses that should strengthen most during pattern storage
     weight_delta_low = ca3_weights_low_da - ca3_weights_before
 
-    # Extract submatrix of pattern neuron recurrent connections
-    pattern_synapses_delta_low = weight_delta_low[ca3_pattern_neurons_low][:, ca3_pattern_neurons_low]
-    mean_pattern_change_low = pattern_synapses_delta_low.abs().mean().item()
-
     # Reset for fair comparison
     hippocampus.new_trial()
     hippocampus.set_neuromodulators(dopamine=0.0)
-    zeros = torch.zeros(input_size, device=brain.device)
+    zeros = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
     brain.forward({"cortex": zeros}, n_timesteps=2)
     hippocampus.synaptic_weights["ca3_ca3"].data = ca3_weights_before.clone()
     if hippocampus.ca3_neurons.g_adapt is not None:
@@ -333,24 +401,20 @@ def test_pattern_storage_scales_with_dopamine(brain_with_hippocampus):
     # High dopamine condition (strong learning)
     hippocampus.set_neuromodulators(dopamine=0.9)
 
-    # Track ensemble across multiple timesteps
+    # Present pattern ONCE - same protocol as low DA
+    brain.forward({"cortex": test_pattern}, n_timesteps=10)
+
+    # Get which neurons activated (identify ensemble from this single presentation)
     ca3_active_neurons_high = torch.zeros(hippocampus.ca3_neurons.n_neurons, dtype=torch.bool, device=brain.device)
-    for _ in range(5):
-        brain.forward({"cortex": test_pattern}, n_timesteps=1)
-        if hippocampus.state.ca3_spikes is not None:
-            ca3_active_neurons_high |= hippocampus.state.ca3_spikes
+    if hippocampus.state.ca3_spikes is not None:
+        ca3_active_neurons_high = hippocampus.state.ca3_spikes.clone()
 
     ca3_pattern_neurons_high = ca3_active_neurons_high.nonzero(as_tuple=True)[0]
     assert len(ca3_pattern_neurons_high) > 5, f"At least 5 CA3 neurons should activate, got {len(ca3_pattern_neurons_high)}"
 
-    ca3_weights_high_da = hippocampus.synaptic_weights["ca3_ca3"]
+    ca3_weights_high_da = hippocampus.synaptic_weights["ca3_ca3"].clone()
     weight_delta_high = ca3_weights_high_da - ca3_weights_before
 
-    pattern_synapses_delta_high = weight_delta_high[ca3_pattern_neurons_high][:, ca3_pattern_neurons_high]
-    mean_pattern_change_high = pattern_synapses_delta_high.abs().mean().item()
-
-    # Expected ratio: da_gain(0.9) / da_gain(0.1) = 1.82 / 0.38 = 4.79x
-    # IMPORTANT: Must compare same synapses! Use intersection of pattern neurons from both conditions
     # Otherwise we're measuring different synapses with different baseline activities
     common_neurons = torch.tensor(list(set(ca3_pattern_neurons_low.tolist()) & set(ca3_pattern_neurons_high.tolist())), device=brain.device)
 
@@ -367,14 +431,12 @@ def test_pattern_storage_scales_with_dopamine(brain_with_hippocampus):
     ratio = mean_pattern_change_high_common / mean_pattern_change_low_common if mean_pattern_change_low_common > 0 else 0.0
 
     # Expected theoretical ratio: da_gain(0.9) / da_gain(0.1) = 1.82 / 0.38 = 4.79x
-    # But biological constraints reduce this:
-    # - Weight clamping [0,1] saturates strong learning
-    # - Heterosynaptic LTD (10-20%) on inactive synapses
-    # - Stochastic spiking creates variability
-    # Accept 1.5x as threshold (biological systems show ~2x in practice)
+    # With single presentation and theta_gamma disabled, we should see closer to theoretical
+    # However, saturation still occurs (starting weights ~0.05), plus stochastic effects
+    # Accept >=1.5x as meaningful dopamine gating effect
     assert mean_pattern_change_high_common > mean_pattern_change_low_common * 1.5, (
         f"High dopamine should gate stronger learning (three-factor rule). "
-        f"Expected ~1.5-2x ratio (accounting for biological constraints), got {ratio:.2f}x. "
+        f"Expected >=1.5x ratio (single presentation, theta_gamma disabled), got {ratio:.2f}x. "
         f"(on {len(common_neurons)} common pattern neurons)"
     )
 
@@ -384,22 +446,24 @@ def test_pattern_completion_works_for_different_sizes(brain_with_hippocampus, pa
     """CA3 pattern completion should work for various pattern sizes with proper ITI."""
     brain, hippocampus = brain_with_hippocampus
     input_size = 64
-    zeros = torch.zeros(input_size, device=brain.device)
+    zeros = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
 
     # Create pattern of given size
-    pattern = torch.zeros(input_size, device=brain.device)
-    pattern[0:pattern_size] = 1.0
+    pattern = torch.zeros(input_size, dtype=torch.bool, device=brain.device)
+    pattern[0:pattern_size] = True
 
     # Store pattern with ITI
     for trial in range(10):
-        brain.forward({"cortex": pattern}, n_timesteps=50)
         hippocampus.set_neuromodulators(dopamine=0.8)
+        brain.forward({"cortex": pattern}, n_timesteps=50)
 
         # ITI: 500ms rest
+        hippocampus.set_neuromodulators(dopamine=0.1)
         for _ in range(10):
             brain.forward({"cortex": zeros}, n_timesteps=50)
 
     # Consolidation: 2 seconds
+    hippocampus.set_neuromodulators(dopamine=0.1)
     for _ in range(40):
         brain.forward({"cortex": zeros}, n_timesteps=50)
 
