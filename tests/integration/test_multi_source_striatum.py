@@ -53,8 +53,8 @@ class TestMultiSourceWeightStructure:
         assert "cortex:l5_d2" in striatum.synaptic_weights
 
         # Check hippocampus source has D1 and D2 weights
-        assert "hippocampus_d1" in striatum.synaptic_weights
-        assert "hippocampus_d2" in striatum.synaptic_weights
+        assert "hippocampus:ca1_d1" in striatum.synaptic_weights
+        assert "hippocampus:ca1_d2" in striatum.synaptic_weights
 
         # Verify weight dimensions match input sizes
         cortex = brain.components["cortex"]
@@ -62,11 +62,11 @@ class TestMultiSourceWeightStructure:
 
         assert striatum.synaptic_weights["cortex:l5_d1"].shape == (striatum.d1_size, cortex.l5_size)
         assert striatum.synaptic_weights["cortex:l5_d2"].shape == (striatum.d2_size, cortex.l5_size)
-        assert striatum.synaptic_weights["hippocampus_d1"].shape == (
+        assert striatum.synaptic_weights["hippocampus:ca1_d1"].shape == (
             striatum.d1_size,
             hippo.n_output,
         )
-        assert striatum.synaptic_weights["hippocampus_d2"].shape == (
+        assert striatum.synaptic_weights["hippocampus:ca1_d2"].shape == (
             striatum.d2_size,
             hippo.n_output,
         )
@@ -102,8 +102,8 @@ class TestMultiSourceWeightStructure:
         # Check eligibility traces exist for each source-pathway
         assert "cortex:l5_d1" in striatum._eligibility_d1
         assert "cortex:l5_d2" in striatum._eligibility_d2
-        assert "hippocampus_d1" in striatum._eligibility_d1
-        assert "hippocampus_d2" in striatum._eligibility_d2
+        assert "hippocampus:ca1_d1" in striatum._eligibility_d1
+        assert "hippocampus:ca1_d2" in striatum._eligibility_d2
 
         # Verify eligibility dimensions match weights
         assert (
@@ -111,8 +111,8 @@ class TestMultiSourceWeightStructure:
             == striatum.synaptic_weights["cortex:l5_d1"].shape
         )
         assert (
-            striatum._eligibility_d2["cortex:l5_d2"].shape
-            == striatum.synaptic_weights["cortex:l5_d2"].shape
+            striatum._eligibility_d1["hippocampus:ca1_d1"].shape
+            == striatum.synaptic_weights["hippocampus:ca1_d1"].shape
         )
 
     def test_stp_modules_per_source(self, brain_config):
@@ -163,7 +163,7 @@ class TestMultiSourceForwardPass:
         builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
         builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
         builder.connect("cortex", "striatum", source_port="l5", target_port="default")
-        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -196,7 +196,7 @@ class TestMultiSourceForwardPass:
         builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
         builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
         builder.connect("cortex", "striatum", source_port="l5", target_port="default")
-        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -237,10 +237,10 @@ class TestMultiSourceLearning:
         )
         builder.add_component("striatum", "striatum", n_actions=4, neurons_per_action=10)
 
-        builder.connect("thalamus", "cortex")
-        builder.connect("cortex", "hippocampus", source_port="l23")
-        builder.connect("cortex", "striatum", source_port="l5")
-        builder.connect("hippocampus", "striatum")
+        builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+        builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
+        builder.connect("cortex", "striatum", source_port="l5", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -248,13 +248,13 @@ class TestMultiSourceLearning:
         # Initialize eligibility traces by running forward pass once
         dummy_inputs = {
             "cortex:l5": torch.zeros(32, device=striatum.device),
-            "hippocampus": torch.zeros(64, device=striatum.device),
+            "hippocampus:ca1": torch.zeros(64, device=striatum.device),
         }
         striatum(dummy_inputs)
 
         # Store initial eligibility traces
         initial_elig_cortex_d1 = striatum._eligibility_d1["cortex:l5_d1"].clone()
-        initial_elig_hippo_d1 = striatum._eligibility_d1["hippocampus_d1"].clone()
+        initial_elig_hippo_d1 = striatum._eligibility_d1["hippocampus:ca1_d1"].clone()
 
         # Run forward with cortex input only (strong input to guarantee activity)
         # Run multiple times to ensure some striatum neurons fire
@@ -269,7 +269,7 @@ class TestMultiSourceLearning:
             striatum._eligibility_d1["cortex:l5_d1"], initial_elig_cortex_d1
         )
         hippo_unchanged = torch.allclose(
-            striatum._eligibility_d1["hippocampus_d1"], initial_elig_hippo_d1
+            striatum._eligibility_d1["hippocampus:ca1_d1"], initial_elig_hippo_d1
         )
 
         assert cortex_changed, (
@@ -295,7 +295,7 @@ class TestMultiSourceLearning:
         builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
         builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
         builder.connect("cortex", "striatum", source_port="l5", target_port="default")
-        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
@@ -326,18 +326,18 @@ class TestMultiSourceLearning:
         builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
         builder.connect("cortex", "hippocampus", source_port="l23", target_port="default")
         builder.connect("cortex", "striatum", source_port="l5", target_port="default")
-        builder.connect("hippocampus", "striatum", source_port="default", target_port="default")
+        builder.connect("hippocampus", "striatum", source_port="ca1", target_port="default")
 
         brain = builder.build()
         striatum = brain.components["striatum"]
 
         # Build eligibility by running forward pass
-        inputs = {"cortex:l5": torch.rand(32) > 0.7, "hippocampus": torch.rand(64) > 0.7}
+        inputs = {"cortex:l5": torch.rand(32) > 0.7, "hippocampus:ca1": torch.rand(64) > 0.7}
         striatum(inputs)
 
         # Store weights before learning
         cortex_d1_before = striatum.synaptic_weights["cortex:l5_d1"].clone()
-        hippo_d1_before = striatum.synaptic_weights["hippocampus_d1"].clone()
+        hippo_d1_before = striatum.synaptic_weights["hippocampus:ca1_d1"].clone()
 
         # Apply high dopamine and run forward pass (triggers continuous learning)
         striatum.set_neuromodulators(dopamine=1.0)  # High dopamine
@@ -345,7 +345,7 @@ class TestMultiSourceLearning:
 
         # Both sources should have weight changes
         cortex_d1_after = striatum.synaptic_weights["cortex:l5_d1"]
-        hippo_d1_after = striatum.synaptic_weights["hippocampus_d1"]
+        hippo_d1_after = striatum.synaptic_weights["hippocampus:ca1_d1"]
 
         cortex_changed = not torch.allclose(cortex_d1_before, cortex_d1_after)
         hippo_changed = not torch.allclose(hippo_d1_before, hippo_d1_after)
