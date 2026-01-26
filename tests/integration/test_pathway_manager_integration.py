@@ -37,7 +37,10 @@ class TestPathwayManagerIntegration:
                 **LayerSizeCalculator().cortex_from_output(32),
             )
             .connect(
-                "input", "cortex", pathway_type="axonal_projection"
+                "input", "cortex",
+                source_port="relay",  # ThalamicRelay output port
+                target_port="feedforward",  # Cortex L4 input port
+                pathway_type="axonal_projection"
             )  # Routing pathway (no weights)
             .build()
         )
@@ -60,11 +63,11 @@ class TestPathwayManagerIntegration:
         # Should have pathway entries
         assert len(pathway_diag) > 0
 
-        # Check for input_to_cortex pathway
-        assert "input_to_cortex" in pathway_diag
+        # Check for input_to_cortex:feedforward pathway (port-based routing)
+        assert "input_to_cortex:feedforward" in pathway_diag
 
-        # Should have weight statistics
-        cortex_pathway_diag = pathway_diag["input_to_cortex"]
+        # Should have pathway statistics
+        cortex_pathway_diag = pathway_diag["input_to_cortex:feedforward"]
         assert isinstance(cortex_pathway_diag, dict)
 
     def test_pathway_manager_get_all_pathways(self, simple_brain):
@@ -72,10 +75,10 @@ class TestPathwayManagerIntegration:
         pathways = simple_brain.pathway_manager.get_all_pathways()
 
         assert isinstance(pathways, dict)
-        assert "input_to_cortex" in pathways
+        assert "input_to_cortex:feedforward" in pathways
 
         # Should be pathway instance
-        pathway = pathways["input_to_cortex"]
+        pathway = pathways["input_to_cortex:feedforward"]
         assert hasattr(pathway, "forward")
 
     def test_full_state_includes_pathways(self, simple_brain):
