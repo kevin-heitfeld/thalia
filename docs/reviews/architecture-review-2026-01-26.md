@@ -319,42 +319,64 @@ src/thalia/regions/prefrontal/prefrontal.py:1241-1280      # Shape checks + tran
 
 ---
 
-#### 1.5 Document Port-Based Routing Pattern More Prominently
+#### 1.5 Document Port-Based Routing Pattern More Prominently ✅ **COMPLETED**
 
 **Current State**:
 Port-based routing (e.g., `source_port="l23"`, `source_port="l5"`) is used in LayeredCortex and ThalamicRelay but not prominently documented in the main architecture overview.
 
-**Proposed Change**:
-Add section to [docs/architecture/ARCHITECTURE_OVERVIEW.md](../../docs/architecture/ARCHITECTURE_OVERVIEW.md):
+**Implementation**: ✅ **COMPLETED (January 26, 2026)**
 
-```markdown
-### Port-Based Routing
+Added prominent Port-Based Routing section to [docs/architecture/ARCHITECTURE_OVERVIEW.md](../../docs/architecture/ARCHITECTURE_OVERVIEW.md) after AxonalProjection section.
 
-Regions with internal structure can expose multiple output ports:
+**Content Added**:
+- Purpose and overview of port-based routing
+- Quick reference for LayeredCortex ports (`l23`, `l5`, `l6a`, `l6b`)
+- Quick reference for Thalamus ports (`relay`, `trn`)
+- Usage examples in BrainBuilder with biologically accurate connections
+- Benefits list (biological accuracy, explicit routing, no manual slicing)
+- Link to detailed pattern documentation
+
+**Port Reference Tables**:
 
 **LayeredCortex**:
 - `source_port="l23"` → Cortico-cortical connections
 - `source_port="l5"` → Cortico-subcortical connections
-- `source_port="l6a"` → Corticothalamic type I (TRN)
-- `source_port="l6b"` → Corticothalamic type II (relay)
+- `source_port="l6a"` → Corticothalamic type I (TRN for spatial attention)
+- `source_port="l6b"` → Corticothalamic type II (Relay for gain modulation)
 
-**Usage in BrainBuilder**:
+**Thalamus**:
+- `source_port="relay"` → Thalamocortical relay neurons
+- `target_port="trn"` → Input to TRN (from cortex L6a)
+- `target_port="relay"` → Input to relay (from cortex L6b, sensory)
+
+**Usage Examples**:
 ```python
-builder.connect("cortex", "striatum", source_port="l5")  # L5 → Striatum
-builder.connect("cortex", "cortex_v2", source_port="l23")  # L2/3 → Cortex
-```
+builder.connect("cortex", "striatum", source_port="l5")      # L5 → Striatum
+builder.connect("cortex", "cortex_v2", source_port="l23")    # L2/3 → Cortex
+builder.connect("cortex", "thalamus", source_port="l6a", target_port="trn")    # Attention
+builder.connect("cortex", "thalamus", source_port="l6b", target_port="relay")  # Gain
 ```
 
 **Rationale**:
 - Makes powerful pattern more discoverable
 - Reduces confusion about how to route layer-specific connections
-- Pattern already exists and works well
+- Pattern already exists and works well - just needed better visibility
 
 **Impact**:
-- **Files affected**: 1 documentation file
+- **Files affected**: 1 documentation file (ARCHITECTURE_OVERVIEW.md)
 - **Breaking changes**: None (documentation only)
 - **Severity**: Low
-- **Estimated effort**: 1 hour
+- **Estimated effort**: ✅ Completed in 30 minutes
+
+**Benefits Realized**:
+- ✅ Port-based routing prominently featured in main architecture guide
+- ✅ Clear examples make pattern immediately usable
+- ✅ Explicit layer-specific routing matches neuroscience
+- ✅ Encourages biologically plausible architectures
+
+**Related Documentation**:
+- [docs/patterns/port-based-routing.md](../../docs/patterns/port-based-routing.md) - Complete guide (already existed)
+- [docs/reviews/tier-1-5-implementation-notes.md](tier-1-5-implementation-notes.md) - Implementation notes
 
 ---
 
@@ -1071,11 +1093,18 @@ The Thalia codebase demonstrates **strong architectural foundations** with excel
 2. Standardize tensor creation in tasks (2-3 hours) - **Not Started**
 3. ✅ **Create unified checkpoint manager base (4-6 hours) - COMPLETED**
    - Enhanced `BaseCheckpointManager` with `restore_tensor_partial()` and `restore_dict_of_tensors()` helpers
-   - Eliminates remaining tensor restoration duplication across checkpoint managers
-4. Add state validation helpers (3-4 hours) - **Not Started**
-5. Enhance port-based routing documentation (1 hour) - **Not Started**
+   - Migrated all 3 checkpoint managers (Striatum, Hippocampus, Prefrontal)
+   - Eliminates ~125 lines of duplicated tensor restoration code
+4. ✅ **Add state validation helpers (3-4 hours) - COMPLETED**
+   - Added `_validate_tensor_shape()` and `_load_tensor()` to StateLoadingMixin
+   - Migrated 5 regions (LayeredCortex, Thalamus, Striatum, Prefrontal, Cerebellum)
+   - Eliminates ~62 lines of device transfer boilerplate
+5. ✅ **Enhance port-based routing documentation (1 hour) - COMPLETED**
+   - Added prominent section to ARCHITECTURE_OVERVIEW.md
+   - Quick reference for LayeredCortex and Thalamus ports
+   - Usage examples and benefits
 
-**Total Tier 1 Effort**: ~15 hours (~30 minutes completed, ~14.5 hours remaining)
+**Total Tier 1 Effort**: ~15 hours (~8 hours completed, ~7 hours remaining)
 
 **Implementation Progress**:
 - **Tier 1.3 (Checkpoint Manager)**: ✅ Completed January 26, 2026

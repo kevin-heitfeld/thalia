@@ -173,6 +173,53 @@ delayed_spikes = projection(source_outputs)  # Dict[str, Tensor]
 
 ---
 
+### Port-Based Routing
+
+**Purpose**: Layer-specific routing for biologically accurate connectivity patterns
+
+Multi-layer regions (e.g., LayeredCortex) can expose specific internal outputs through named **ports**, enabling targeted connections that match biological projection patterns.
+
+#### Available Ports
+
+**LayeredCortex**:
+- `source_port="l23"` → Cortico-cortical connections (L2/3 pyramidal neurons)
+- `source_port="l5"` → Cortico-subcortical connections (L5 pyramidal neurons)
+- `source_port="l6a"` → Corticothalamic type I → TRN (spatial attention)
+- `source_port="l6b"` → Corticothalamic type II → Relay (gain modulation)
+
+**Thalamus**:
+- `source_port="relay"` → Thalamocortical relay neurons
+- `source_port="trn"` → Thalamic reticular nucleus (inhibitory gating)
+- `target_port="trn"` → Input to TRN (from cortex L6a)
+- `target_port="relay"` → Input to relay (from cortex L6b, ascending sensory)
+
+#### Usage in BrainBuilder
+
+```python
+from thalia.core.brain_builder import BrainBuilder
+
+builder = BrainBuilder(global_config)
+
+# Biologically accurate cortical projections
+builder.connect("v1", "v2", source_port="l23")          # Cortico-cortical
+builder.connect("motor", "striatum", source_port="l5")  # Cortico-subcortical
+builder.connect("pfc", "thalamus", source_port="l6a", target_port="trn")   # Attention gating
+builder.connect("pfc", "thalamus", source_port="l6b", target_port="relay") # Gain modulation
+
+# Thalamo-cortical pathways
+builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforward")
+```
+
+**Benefits**:
+- ✅ **Biological accuracy**: Matches anatomical projection patterns
+- ✅ **Explicit routing**: Clear intent in architecture definitions
+- ✅ **No manual slicing**: Builder handles output selection automatically
+- ✅ **Flexible connectivity**: Same region, multiple projection types
+
+**For Complete Documentation**: See [docs/patterns/port-based-routing.md](../patterns/port-based-routing.md)
+
+---
+
 ### 3. NeuralRegion
 
 **Location**: `src/thalia/core/neural_region.py`
