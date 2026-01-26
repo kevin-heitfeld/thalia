@@ -50,7 +50,7 @@ def enhanced_cerebellum_brain(brain_config, device):
     builder.add_component(
         "cerebellum",
         "cerebellum",
-        input_size=256,
+        input_size=128,  # Matches cortex l5_size
         granule_size=256,
         purkinje_size=64,
         use_enhanced_microcircuit=True,
@@ -59,8 +59,20 @@ def enhanced_cerebellum_brain(brain_config, device):
     )
 
     # Connect
-    builder.connect("thalamus", "cortex", pathway_type="axonal")
-    builder.connect("cortex", "cerebellum", pathway_type="axonal")
+    builder.connect(
+        "thalamus",
+        "cortex",
+        source_port="relay",
+        target_port="feedforward",
+        pathway_type="axonal",
+    )
+    builder.connect(
+        "cortex",
+        "cerebellum",
+        source_port="l5",
+        target_port="feedforward",
+        pathway_type="axonal",
+    )
 
     return builder.build()
 
@@ -275,7 +287,13 @@ class TestEnhancedCerebellumIntegration:
             use_enhanced_microcircuit=True,
             granule_sparsity=0.03,
         )
-        builder.connect("thalamus", "cerebellum", pathway_type="axonal")
+        builder.connect(
+            "thalamus",
+            "cerebellum",
+            source_port="relay",
+            target_port="feedforward",
+            pathway_type="axonal",
+        )
 
         brain = builder.build()
 
@@ -348,18 +366,34 @@ class TestMultiRegionCoordination:
         builder.add_component(
             "cerebellum",
             "cerebellum",
-            input_size=256,
+            input_size=128,  # Matches cortex l5_size
             granule_size=256,
             purkinje_size=64,
             use_enhanced_microcircuit=True,
         )
 
         # Connections
-        builder.connect("thalamus", "cortex", pathway_type="axonal")
         builder.connect(
-            "cortex", "thalamus", pathway_type="axonal", source_port="l6a"
+            "thalamus",
+            "cortex",
+            source_port="relay",
+            target_port="feedforward",
+            pathway_type="axonal",
+        )
+        builder.connect(
+            "cortex",
+            "thalamus",
+            source_port="l6a",
+            target_port="l6a_feedback",
+            pathway_type="axonal",
         )  # L6a feedback to TRN
-        builder.connect("cortex", "cerebellum", pathway_type="axonal")
+        builder.connect(
+            "cortex",
+            "cerebellum",
+            source_port="l5",
+            target_port="feedforward",
+            pathway_type="axonal",
+        )
 
         brain = builder.build()
 
@@ -428,14 +462,26 @@ class TestSystemRobustness:
         builder.add_component(
             "cerebellum",
             "cerebellum",
-            input_size=256,
+            input_size=128,  # Matches cortex l5_size
             granule_size=256,
             purkinje_size=64,
             use_enhanced_microcircuit=True,
         )
 
-        builder.connect("thalamus", "cortex", pathway_type="axonal")
-        builder.connect("cortex", "cerebellum", pathway_type="axonal")
+        builder.connect(
+            "thalamus",
+            "cortex",
+            source_port="relay",
+            target_port="feedforward",
+            pathway_type="axonal",
+        )
+        builder.connect(
+            "cortex",
+            "cerebellum",
+            source_port="l5",
+            target_port="feedforward",
+            pathway_type="axonal",
+        )
 
         brain = builder.build()
 
