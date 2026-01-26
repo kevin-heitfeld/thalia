@@ -3,11 +3,16 @@
 This mixin provides helper methods for loading common state components (neuron state,
 conductances, neuromodulators, STP, etc.) to eliminate ~200-300 lines of duplication
 across 15-18 region implementations.
+
+**(Jan 2026):**
+- State validation helpers (_validate_tensor_shape, _load_tensor)
+- Consistent error messages for shape mismatches
+- Automatic device transfer with validation
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import torch
 
@@ -42,6 +47,72 @@ class StateLoadingMixin:
     # Type annotation for device (must be provided by implementing class)
     if TYPE_CHECKING:
         device: torch.device
+
+    # =========================================================================
+    # VALIDATION HELPERS
+    # =========================================================================
+
+    def _validate_tensor_shape(
+        self,
+        tensor: torch.Tensor,
+        expected_shape: Tuple[int, ...],
+        name: str,
+    ) -> None:
+        """Validate tensor shape with clear error message.
+
+        Args:
+            tensor: Tensor to validate
+            expected_shape: Expected shape tuple
+            name: Name of tensor for error message
+
+        Raises:
+            ValueError: If shape doesn't match expected
+
+        Example:
+            self._validate_tensor_shape(
+                state.membrane,
+                (self.n_neurons,),
+                "membrane_potential"
+            )
+        """
+        if tensor.shape != expected_shape:
+            raise ValueError(
+                f"Shape mismatch for {name}: expected {expected_shape}, got {tensor.shape}"
+            )
+
+    def _load_tensor(
+        self,
+        tensor: torch.Tensor,
+        expected_shape: Optional[Tuple[int, ...]] = None,
+        name: str = "tensor",
+    ) -> torch.Tensor:
+        """Load tensor with optional validation and device transfer.
+
+        Args:
+            tensor: Tensor to load
+            expected_shape: Optional expected shape for validation
+            name: Name of tensor for error messages
+
+        Returns:
+            Tensor moved to self.device
+
+        Raises:
+            ValueError: If expected_shape provided and doesn't match
+
+        Example:
+            membrane = self._load_tensor(
+                state.membrane,
+                expected_shape=(self.n_neurons,),
+                name="membrane_potential"
+            )
+        """
+        if expected_shape is not None:
+            self._validate_tensor_shape(tensor, expected_shape, name)
+        return tensor.to(self.device)
+
+    # =========================================================================
+    # COMMON STATE RESTORATION HELPERS
+    # =========================================================================
 
     def _restore_neuron_state(self, state_dict: Dict[str, Any]) -> None:
         """Restore neuron membrane potentials and refractory state.
