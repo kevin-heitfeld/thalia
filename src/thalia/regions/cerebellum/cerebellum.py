@@ -1442,24 +1442,24 @@ class Cerebellum(NeuralRegion):
             state: CerebellumState to restore from.
         """
         # Restore traces
-        self._trace_manager.input_trace.copy_(state.input_trace.to(self.device))  # type: ignore[union-attr]
-        self._trace_manager.output_trace.copy_(state.output_trace.to(self.device))  # type: ignore[union-attr]
-        self._trace_manager.eligibility.copy_(state.stdp_eligibility.to(self.device))  # type: ignore[union-attr]
+        self._trace_manager.input_trace.copy_(self._load_tensor(state.input_trace))  # type: ignore[union-attr]
+        self._trace_manager.output_trace.copy_(self._load_tensor(state.output_trace))  # type: ignore[union-attr]
+        self._trace_manager.eligibility.copy_(self._load_tensor(state.stdp_eligibility))  # type: ignore[union-attr]
 
         # Restore climbing fiber error
-        self.climbing_fiber.error.copy_(state.climbing_fiber_error.to(self.device))  # type: ignore[union-attr]
+        self.climbing_fiber.error.copy_(self._load_tensor(state.climbing_fiber_error))  # type: ignore[union-attr]
 
         # Restore IO membrane (gap junction state)
         if state.io_membrane is not None:
-            self._io_membrane = state.io_membrane.to(self.device)
+            self._io_membrane = self._load_tensor(state.io_membrane)
 
         # Restore classic neuron state (if not using enhanced microcircuit)
         if not self.use_enhanced and self.neurons is not None:
             if state.v_mem is not None and state.g_exc is not None and state.g_inh is not None:
                 neuron_state = {
-                    "membrane": state.v_mem.to(self.device),  # Map to ConductanceLIF "membrane" key
-                    "g_E": state.g_exc.to(self.device),  # Map to ConductanceLIF "g_E" key
-                    "g_I": state.g_inh.to(self.device),  # Map to ConductanceLIF "g_I" key
+                    "membrane": self._load_tensor(state.v_mem),  # Map to ConductanceLIF "membrane" key
+                    "g_E": self._load_tensor(state.g_exc),  # Map to ConductanceLIF "g_E" key
+                    "g_I": self._load_tensor(state.g_inh),  # Map to ConductanceLIF "g_I" key
                     "g_adapt": None,  # Not tracked in CerebellumState
                     "refractory": None,  # Not tracked in CerebellumState
                 }
