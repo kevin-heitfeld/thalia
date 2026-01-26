@@ -220,6 +220,91 @@ builder.connect("thalamus", "cortex", source_port="relay", target_port="feedforw
 
 ---
 
+### Diagnostics Collection
+
+**Purpose**: Standardized monitoring across all brain regions
+
+All regions return diagnostics in a consistent `DiagnosticsDict` format, enabling unified monitoring, dashboards, and health tracking. The schema uses TypedDict for structural typing without requiring class instantiation.
+
+#### Standard Schema
+
+```python
+from thalia.core.diagnostics_schema import DiagnosticsDict
+
+DiagnosticsDict = {
+    "activity": ActivityMetrics,         # Required - firing rates, sparsity
+    "plasticity": PlasticityMetrics,     # Optional - weight statistics, learning
+    "health": HealthMetrics,             # Required - stability, issues
+    "neuromodulators": NeuromodulatorMetrics,  # Optional - DA, ACh, NE levels
+    "region_specific": dict[str, Any]    # Custom metrics (e.g., D1/D2 votes, WM slots)
+}
+```
+
+**ActivityMetrics**: `firing_rate`, `spike_count`, `sparsity`, `active_neurons`, `total_neurons`
+**PlasticityMetrics**: `weight_mean`, `weight_std`, `weight_min`, `weight_max`, `learning_rate_effective`, `num_potentiated`, `num_depressed`
+**HealthMetrics**: `is_silent`, `is_saturated`, `has_nan`, `has_inf`, `stability_score`, `issues` (list)
+**NeuromodulatorMetrics**: `dopamine`, `acetylcholine`, `norepinephrine`, `modulator_gate`
+
+#### Helper Functions
+
+```python
+from thalia.core.diagnostics_schema import (
+    compute_activity_metrics,
+    compute_plasticity_metrics,
+    compute_health_metrics,
+)
+
+def get_diagnostics(self) -> DiagnosticsDict:
+    # Standard activity metrics
+    activity = compute_activity_metrics(self.output_spikes, self.n_neurons)
+
+    # Plasticity metrics (if learning enabled)
+    plasticity = None
+    if self.learning_enabled:
+        plasticity = compute_plasticity_metrics(
+            self.weights,
+            learning_rate=self.learning_rate
+        )
+
+    # Health metrics
+    health = compute_health_metrics(
+        state_tensors={
+            "membrane": self.neurons.membrane,
+            "spikes": self.output_spikes,
+        },
+        firing_rate=activity["firing_rate"]
+    )
+
+    # Region-specific custom metrics
+    region_specific = {
+        "d1_votes": self.d1_votes.item(),
+        "d2_votes": self.d2_votes.item(),
+        # ... custom region metrics
+    }
+
+    return {
+        "activity": activity,
+        "plasticity": plasticity,
+        "health": health,
+        "neuromodulators": {"dopamine": self.dopamine_level} if hasattr(self, "dopamine_level") else None,
+        "region_specific": region_specific,
+    }
+```
+
+**Adoption Status**: 8/8 regions (100%) use DiagnosticsDict format
+- ✅ Striatum, LayeredCortex, Hippocampus, Thalamus, Cerebellum, Multisensory, PredictiveCortex, Prefrontal
+
+**Benefits**:
+- ✅ **Uniform monitoring**: Same metrics across all regions
+- ✅ **Type safety**: TypedDict provides editor autocomplete and type checking
+- ✅ **Comparable metrics**: Standardized names enable cross-region comparison
+- ✅ **Extensible**: `region_specific` section for custom metrics
+- ✅ **Flexible helpers**: Module-level functions work without class dependencies
+
+**For Complete Schema Documentation**: See [src/thalia/core/diagnostics_schema.py](../../src/thalia/core/diagnostics_schema.py)
+
+---
+
 ### 3. NeuralRegion
 
 **Location**: `src/thalia/core/neural_region.py`

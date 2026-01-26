@@ -1,7 +1,7 @@
 # Visualization Functions Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 14:17:33
+> Last updated: 2026-01-26 15:21:38
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all visualization and plotting functions for analyzing brain topology, training progress, and diagnostic metrics.

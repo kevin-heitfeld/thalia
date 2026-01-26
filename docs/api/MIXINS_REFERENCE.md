@@ -1,7 +1,7 @@
 # Mixins Reference
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 14:17:33
+> Last updated: 2026-01-26 15:21:38
 > Generated from: `scripts/generate_api_docs.py`
 
 This document catalogs all mixin classes used by `NeuralRegion`. These mixins provide standard functionality to all brain regions.
@@ -22,7 +22,7 @@ class NeuralRegion(nn.Module,
 
 ## Mixin Classes
 
-### [``DiagnosticsMixin``](../../src/thalia/mixins/diagnostics_mixin.py#L40)
+### [``DiagnosticsMixin``](../../src/thalia/mixins/diagnostics_mixin.py#L26)
 
 **Source**: [`thalia/mixins/diagnostics_mixin.py`](../../src/thalia/mixins/diagnostics_mixin.py)
 
@@ -30,14 +30,9 @@ class NeuralRegion(nn.Module,
 
 **Public Methods**:
 
-- [`weight_diagnostics(weights, prefix, include_histogram)`](../../src/thalia/mixins/diagnostics_mixin.py#L51)
-- [`spike_diagnostics(spikes, prefix, dt_ms)`](../../src/thalia/mixins/diagnostics_mixin.py#L102)
-- [`trace_diagnostics(trace, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L140)
-- [`learning_diagnostics(ltp, ltd, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L165)
-- [`membrane_diagnostics(membrane, threshold, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L192)
-- [`similarity_diagnostics(pattern_a, pattern_b, prefix, eps)`](../../src/thalia/mixins/diagnostics_mixin.py#L220)
-- [`collect_all_diagnostics(weights, spikes, traces)`](../../src/thalia/mixins/diagnostics_mixin.py#L262)
-- [`collect_standard_diagnostics(region_name, weight_matrices, spike_tensors, trace_tensors, custom_metrics)`](../../src/thalia/mixins/diagnostics_mixin.py#L296)
+- [`weight_diagnostics(weights, prefix, include_histogram)`](../../src/thalia/mixins/diagnostics_mixin.py#L37)
+- [`spike_diagnostics(spikes, prefix, dt_ms)`](../../src/thalia/mixins/diagnostics_mixin.py#L88)
+- [`trace_diagnostics(trace, prefix)`](../../src/thalia/mixins/diagnostics_mixin.py#L126)
 
 ---
 

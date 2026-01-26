@@ -50,6 +50,7 @@ from thalia.constants.neuron import (
     V_THRESHOLD_STANDARD,
 )
 from thalia.core.component_state import NeuralComponentState
+from thalia.core.diagnostics_schema import DiagnosticsDict
 from thalia.core.neural_region import NeuralRegion
 from thalia.learning import EligibilitySTDPConfig as STDPConfig
 from thalia.learning import EligibilityTraceManager
@@ -1219,7 +1220,7 @@ class Cerebellum(NeuralRegion):
         # this method for API consistency with other regions
         return
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

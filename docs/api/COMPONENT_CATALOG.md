@@ -1,7 +1,7 @@
 # Component Catalog
 
 > **Auto-generated documentation** - Do not edit manually!
-> Last updated: 2026-01-26 14:17:33
+> Last updated: 2026-01-26 15:21:37
 > Generated from: `scripts/generate_api_docs.py`
 
 ![Components](https://img.shields.io/badge/Regions-8-blue) ![Pathways](https://img.shields.io/badge/Pathways-4-green) ![Auto-Generated](https://img.shields.io/badge/Status-Auto--Generated-brightgreen)
@@ -166,7 +166,7 @@ Total: **8** regions
 
 ### `cerebellum`
 
-**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum/cerebellum.py#L134)
+**Class**: [`Cerebellum`](../../src/thalia/regions/cerebellum/cerebellum.py#L135)
 
 **Config Class**: [`CerebellumConfig`](../../src/thalia/config/region_configs.py#L319)
 
@@ -178,7 +178,7 @@ Total: **8** regions
 
 ### `cortex`
 
-**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L136)
+**Class**: [`LayeredCortex`](../../src/thalia/regions/cortex/layered_cortex.py#L137)
 
 **Aliases**: `layered_cortex`
 
@@ -192,7 +192,7 @@ Total: **8** regions
 
 ### `hippocampus`
 
-**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L112)
+**Class**: [`TrisynapticHippocampus`](../../src/thalia/regions/hippocampus/trisynaptic.py#L113)
 
 **Aliases**: `trisynaptic, trisynaptic_hippocampus`
 
@@ -206,7 +206,7 @@ Total: **8** regions
 
 ### `multimodal_integration`
 
-**Class**: [`MultimodalIntegration`](../../src/thalia/regions/multisensory.py#L116)
+**Class**: [`MultimodalIntegration`](../../src/thalia/regions/multisensory.py#L117)
 
 **Aliases**: `multimodal`
 
@@ -220,7 +220,7 @@ Total: **8** regions
 
 ### `predictive_cortex`
 
-**Class**: [`PredictiveCortex`](../../src/thalia/regions/cortex/predictive_cortex.py#L685)
+**Class**: [`PredictiveCortex`](../../src/thalia/regions/cortex/predictive_cortex.py#L686)
 
 **Aliases**: `predictive`
 
@@ -234,7 +234,7 @@ Total: **8** regions
 
 ### `prefrontal`
 
-**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L260)
+**Class**: [`Prefrontal`](../../src/thalia/regions/prefrontal/prefrontal.py#L261)
 
 **Aliases**: `pfc`
 
@@ -248,7 +248,7 @@ Total: **8** regions
 
 ### `striatum`
 
-**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L165)
+**Class**: [`Striatum`](../../src/thalia/regions/striatum/striatum.py#L166)
 
 **Aliases**: `basal_ganglia`
 
@@ -262,7 +262,7 @@ Total: **8** regions
 
 ### `thalamus`
 
-**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus/thalamus.py#L104)
+**Class**: [`ThalamicRelay`](../../src/thalia/regions/thalamus/thalamus.py#L105)
 
 **Aliases**: `thalamic_relay`
 

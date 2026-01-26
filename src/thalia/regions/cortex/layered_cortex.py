@@ -102,6 +102,7 @@ from thalia.constants.oscillator import (
     L23_RECURRENT_RETRIEVAL_SCALE,
 )
 from thalia.core.diagnostics_schema import (
+    DiagnosticsDict,
     compute_activity_metrics,
     compute_health_metrics,
     compute_plasticity_metrics,
@@ -2037,7 +2038,7 @@ class LayeredCortex(NeuralRegion):
                 if hasattr(strategy, "update_temporal_parameters"):
                     strategy.update_temporal_parameters(dt_ms)
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get comprehensive diagnostics in standardized LayeredCortexDiagnostics format.
 
         Returns consolidated diagnostic information about:

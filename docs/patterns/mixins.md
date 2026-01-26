@@ -44,23 +44,6 @@ Thalia uses **mixins** to share functionality across brain regions without deep 
 **Key Methods**:
 - `weight_diagnostics()` - Weight statistics (mean, std, sparsity)
 - `spike_diagnostics()` - Firing rates and spike statistics
-- `collect_standard_diagnostics()` - Full diagnostic report
-
-**Usage Pattern**:
-```python
-class MyRegion(NeuralComponent, DiagnosticsMixin):
-    def forward(self, x):
-        output = self._compute(x)
-
-        # Collect diagnostics for monitoring
-        diagnostics = self.collect_standard_diagnostics(
-            region_name="my_region",
-            weight_matrices={"weights": self.weights},
-            spike_tensors={"output": output}
-        )
-
-        return output
-```
 
 ---
 
@@ -355,23 +338,6 @@ effective_lr = self.get_effective_learning_rate(
 ---
 
 ## Usage Patterns
-
-### Diagnostic Monitoring Pattern
-
-```python
-class MyRegion(NeuralRegion):
-    def forward(self, x):
-        output = self._compute(x)
-
-        # Collect comprehensive diagnostics
-        diagnostics = self.collect_standard_diagnostics(
-            region_name="my_region",
-            weight_matrices={"weights": self.weights},
-            spike_tensors={"output": output}
-        )
-
-        return output
-```
 
 ### Neuromodulator-Gated Learning Pattern
 

@@ -86,6 +86,7 @@ from thalia.constants.regions import (
     THALAMUS_TRN_FEEDBACK_SPARSITY,
     THALAMUS_TRN_FEEDFORWARD_SPARSITY,
 )
+from thalia.core.diagnostics_schema import DiagnosticsDict
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
 from thalia.utils.input_routing import InputRouter
@@ -883,7 +884,7 @@ class ThalamicRelay(NeuralRegion):
         self._alpha_phase = 0.0
         self._alpha_amplitude = 1.0
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

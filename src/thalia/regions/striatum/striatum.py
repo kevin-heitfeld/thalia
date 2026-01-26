@@ -133,6 +133,7 @@ from thalia.constants.neuron import (
     V_THRESHOLD_STANDARD,
 )
 from thalia.core.diagnostics_schema import (
+    DiagnosticsDict,
     compute_activity_metrics,
     compute_health_metrics,
     compute_plasticity_metrics,
@@ -3133,7 +3134,7 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
     # DIAGNOSTIC METHODS
     # =========================================================================
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:

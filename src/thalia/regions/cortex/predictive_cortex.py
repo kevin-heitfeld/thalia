@@ -86,6 +86,7 @@ from thalia.config.region_configs import (
     PredictiveCodingConfig,
     PredictiveCortexConfig,
 )
+from thalia.core.diagnostics_schema import DiagnosticsDict
 from thalia.core.neural_region import NeuralRegion
 from thalia.managers.component_registry import register_region
 from thalia.mixins.diagnostics_mixin import DiagnosticsMixin
@@ -1264,50 +1265,9 @@ class PredictiveCortex(NeuralRegion):
 
         return output
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get layer-specific diagnostics using DiagnosticsMixin helpers.
-
-        Uses the same format as LayeredCortex for consistency.
-
-        Note: Reports both instantaneous (l4_active_count) and cumulative
-        (l4_cumulative_spikes) counts. During consolidation phases with
-        zero input, instantaneous L4 will be 0 but cumulative shows
-        total activity since last reset.
-        """
-        diag: Dict[str, Any] = {
-            "l4_size": self.l4_size,
-            "l23_size": self.l23_size,
-            "l5_size": self.l5_size,
-            "l6_size": self.l6_size,
-            "last_plasticity_delta": getattr(self, "_last_plasticity_delta", 0.0),
-            # Cumulative spike counts (since last reset_state)
-            "l4_cumulative_spikes": getattr(self, "_cumulative_l4_spikes", 0),
-            "l23_cumulative_spikes": getattr(self, "_cumulative_l23_spikes", 0),
-            "l5_cumulative_spikes": getattr(self, "_cumulative_l5_spikes", 0),
-            "l6_cumulative_spikes": getattr(self, "_cumulative_l6_spikes", 0),
-        }
-
-        # Spike diagnostics for each layer (same format as LayeredCortex)
-        # These are INSTANTANEOUS counts from the last forward pass
-        state = self.state  # type: PredictiveCortexState
-        if state.l4_spikes is not None:
-            diag.update(self.spike_diagnostics(state.l4_spikes, "l4"))
-        if state.l23_spikes is not None:
-            diag.update(self.spike_diagnostics(state.l23_spikes, "l23"))
-        if state.l5_spikes is not None:
-            diag.update(self.spike_diagnostics(state.l5_spikes, "l5"))
-
-        # Weight diagnostics from prediction layer (if available)
-        if self.prediction_layer is not None:
-            pred_diag = self.prediction_layer.get_diagnostics()
-            diag.update({f"pred_{k}": v for k, v in pred_diag.items()})
-            # Add weight diagnostics for consistency with LayeredCortex
-            if hasattr(self.prediction_layer, "W_pred"):
-                diag.update(self.weight_diagnostics(self.prediction_layer.W_pred.data, "pred"))
-            if hasattr(self.prediction_layer, "W_encode"):
-                diag.update(self.weight_diagnostics(self.prediction_layer.W_encode.data, "encode"))
-
-        return diag
+    def get_diagnostics(self) -> DiagnosticsDict:
+        """Delegate to LayeredCortex."""
+        return self.cortex.get_diagnostics()
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get complete state for checkpointing.

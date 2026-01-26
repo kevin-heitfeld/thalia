@@ -57,6 +57,7 @@ from thalia.constants.oscillator import (
     PFC_RECURRENT_GAIN_MIN,
     PFC_RECURRENT_GAIN_RANGE,
 )
+from thalia.core.diagnostics_schema import DiagnosticsDict
 from thalia.core.errors import ConfigurationError
 from thalia.core.neural_region import NeuralRegion
 from thalia.learning import LearningStrategyRegistry, STDPConfig
@@ -1066,16 +1067,53 @@ class Prefrontal(NeuralRegion):
                 if hasattr(strategy, "update_temporal_parameters"):
                     strategy.update_temporal_parameters(dt_ms)
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostics using DiagnosticsMixin helpers.
+    def get_diagnostics(self) -> DiagnosticsDict:
+        """Get diagnostics using standard DiagnosticsDict format.
 
         Reports working memory state, gating, and weight statistics.
         """
+        from thalia.core.diagnostics_schema import (
+            compute_activity_metrics,
+            compute_health_metrics,
+            compute_plasticity_metrics,
+        )
+
         cfg = self.pfc_config
 
-        # Custom metrics specific to PFC
-        custom = {
-            "n_output": self.n_neurons,
+        # Activity metrics
+        activity = compute_activity_metrics(self.output_spikes, self.n_neurons)
+
+        # Plasticity metrics (if learning enabled)
+        plasticity = None
+        if self.learning_enabled:
+            # Average across all weight matrices
+            all_weights = torch.cat(
+                [
+                    self.synaptic_weights["default"].flatten(),
+                    self.rec_weights.flatten(),
+                    self.inhib_weights.flatten(),
+                ]
+            )
+            plasticity = compute_plasticity_metrics(
+                all_weights, learning_rate=self.stdp.learning_rate
+            )
+
+        # Health metrics
+        health = compute_health_metrics(
+            state_tensors={
+                "membrane": self.neurons.membrane,
+                "ge": self.neurons.ge,
+                "gi": self.neurons.gi,
+                "working_memory": self.state.working_memory,
+            },
+            firing_rate=activity["firing_rate"],
+        )
+
+        # Neuromodulator metrics
+        neuromodulators = {"dopamine": self.state.dopamine}
+
+        # Region-specific metrics
+        region_specific = {
             "gate_mean": (
                 self.state.update_gate.mean().item() if self.state.update_gate is not None else 0.0
             ),
@@ -1097,21 +1135,17 @@ class Prefrontal(NeuralRegion):
                 if self.state.working_memory is not None
                 else 0
             ),
-            "dopamine_level": self.state.dopamine,
             "config_w_min": cfg.w_min,
             "config_w_max": cfg.w_max,
         }
 
-        # Use collect_standard_diagnostics for weight and spike statistics
-        return self.collect_standard_diagnostics(
-            region_name="prefrontal",
-            weight_matrices={
-                "feedforward": self.synaptic_weights["default"].data,
-                "recurrent": self.rec_weights.data,
-                "inhibition": self.inhib_weights.data,
-            },
-            custom_metrics=custom,
-        )
+        return {
+            "activity": activity,
+            "plasticity": plasticity,
+            "health": health,
+            "neuromodulators": neuromodulators,
+            "region_specific": region_specific,
+        }
 
     # =========================================================================
     # EMERGENT GOAL SYSTEM (NEW - Biologically Plausible)

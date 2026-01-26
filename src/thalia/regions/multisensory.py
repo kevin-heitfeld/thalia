@@ -102,6 +102,7 @@ from thalia.components.synapses import WeightInitializer
 from thalia.config.region_configs import MultimodalIntegrationConfig
 from thalia.constants.learning import SILENCE_DETECTION_THRESHOLD
 from thalia.coordination import SinusoidalOscillator
+from thalia.core.diagnostics_schema import DiagnosticsDict
 from thalia.core.neural_region import NeuralRegion
 from thalia.learning import create_strategy
 from thalia.managers.component_registry import register_region
@@ -742,7 +743,7 @@ class MultimodalIntegration(NeuralRegion):
             integration_pool_size=self.integration_pool_size,
         )
 
-    def get_diagnostics(self) -> dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get diagnostic information in standardized DiagnosticsDict format.
 
         Returns:

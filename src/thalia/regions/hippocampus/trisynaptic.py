@@ -75,6 +75,7 @@ from thalia.constants.oscillator import (
     GAMMA_LEARNING_MODULATION_SCALE,
 )
 from thalia.core.diagnostics_schema import (
+    DiagnosticsDict,
     compute_activity_metrics,
     compute_health_metrics,
     compute_plasticity_metrics,
@@ -2554,7 +2555,7 @@ class TrisynapticHippocampus(NeuralRegion):
         """
         self.set_neuromodulators(acetylcholine=level)
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> DiagnosticsDict:
         """Get comprehensive diagnostics in standardized DiagnosticsDict format.
 
         Returns consolidated diagnostic information about:
