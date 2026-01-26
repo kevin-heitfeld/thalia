@@ -1328,11 +1328,18 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     """Default 6-region architecture for general-purpose learning.
 
     Architecture:
-        Thalamus → Cortex ⇄ Hippocampus
-                     ↓
-                    PFC ⇄ Striatum
+        Thalamus → Cortex ⇄ Hippocampus ⇄ PFC
+                     ↓           ↓         ↓
+                   Striatum ← → PFC
                      ↓
                 Cerebellum
+
+    **Enhanced Connectivity (Phase 1 - January 2026)**:
+    Added 5 critical feedback loops and shortcuts:
+    - PFC ⇄ Hippocampus: Goal-directed memory & episodic planning
+    - PFC → Cortex: Top-down attention & cognitive control
+    - Thalamus → Hippocampus: Direct sensory-to-memory pathway
+    - Thalamus → Striatum: Subcortical habits & reflexes
 
     This preset provides a balanced 6-region architecture suitable for:
     - Vision and audition (thalamocortical processing)
@@ -1554,6 +1561,86 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         pathway_type="axonal",
         axonal_delay_ms=17.5,
     )  # Forward model predictions
+
+    # =====================================================================
+    # PHASE 1 ENHANCEMENTS: Missing Feedback Loops and Shortcuts
+    # Added: January 2026 (Connectivity Gap Analysis)
+    # =====================================================================
+
+    # PFC ⇄ Hippocampus: Bidirectional memory-executive integration
+    # Critical for goal-directed memory retrieval and episodic future thinking
+    # Evidence: Simons & Spiers (2003), Preston & Eichenbaum (2013)
+
+    # PFC → Hippocampus: Top-down memory retrieval, schema application
+    # PFC guides hippocampal retrieval via direct monosynaptic pathway
+    # Distance: ~5-7cm, conduction velocity: ~3-5 m/s → 12-18ms delay
+    # Enables: goal-directed memory search, schema-based encoding modulation
+    builder.connect(
+        source="pfc",
+        target="hippocampus",
+        source_port="executive",
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=15.0,
+    )
+
+    # Hippocampus → PFC: Memory-guided decision making
+    # Hippocampal replay guides PFC working memory and planning
+    # Distance: ~5-7cm, similar pathway to reverse direction → 10-15ms delay
+    # Enables: episodic future thinking, memory-guided decisions
+    # Evidence: Eichenbaum (2017), Wikenheiser & Redish (2015)
+    builder.connect(
+        source="hippocampus",
+        target="pfc",
+        source_port="ca1",
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=12.0,
+    )
+
+    # PFC → Cortex: Top-down attention and cognitive control
+    # PFC biases cortical processing via direct feedback projections
+    # Corticocortical feedback: ~5-8cm, conduction velocity: ~3-6 m/s → 10-15ms
+    # Enables: attentional bias, cognitive control over perception, working memory maintenance
+    # Evidence: Miller & Cohen (2001), Desimone & Duncan (1995), Buschman & Miller (2007)
+    builder.connect(
+        source="pfc",
+        target="cortex",
+        source_port="executive",
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=12.0,
+    )
+
+    # Thalamus → Hippocampus: Direct sensory-to-memory pathway (bypass cortex)
+    # Nucleus reuniens provides direct thalamic input to hippocampus
+    # Fast subcortical route for unfiltered sensory encoding
+    # Distance: ~4-6cm, conduction velocity: ~5-8 m/s → 6-10ms delay
+    # Enables: fast sensory encoding, subcortical memory formation
+    # Evidence: Vertes et al. (2007), Dolleman-Van der Weel et al. (1997), Cassel et al. (2013)
+    builder.connect(
+        source="thalamus",
+        target="hippocampus",
+        source_port="relay",
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=8.0,
+    )
+
+    # Thalamus → Striatum: Thalamostriatal pathway for habitual responses
+    # Direct sensory-action pathway bypassing cortex (Smith et al. 2004, 2009, 2014)
+    # Fast subcortical route for stimulus-response habits
+    # Distance: ~3-5cm, conduction velocity: ~6-10 m/s → 4-7ms delay
+    # Enables: fast habitual responses, stimulus-response learning, subcortical reflexes
+    # Evidence: Ellender et al. (2013), Mandelbaum et al. (2019)
+    builder.connect(
+        source="thalamus",
+        target="striatum",
+        source_port="relay",
+        target_port="feedforward",
+        pathway_type="axonal",
+        axonal_delay_ms=5.0,
+    )
 
 
 # Register built-in presets
