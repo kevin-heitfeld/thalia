@@ -466,3 +466,38 @@ class ThalamicCheckpointManager(BaseCheckpointManager):
                 "relay_state": self._get_relay_state(),
             },
         )
+
+    # ==================== REQUIRED ABSTRACT METHODS ====================
+
+    def _get_region(self) -> Any:
+        """Get the region instance managed by this checkpoint manager."""
+        return self.thalamus
+
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get region-specific criteria for format selection."""
+        return {
+            "n_neurons": self.thalamus.n_relay + self.thalamus.n_trn,
+            "growth_enabled": False,  # Thalamus currently doesn't support growth
+            "region_type": "thalamus",
+        }
+
+    def _should_use_neuromorphic(self) -> bool:
+        """Determine if neuromorphic format should be used.
+
+        For thalamus: Use elastic tensor format (more efficient).
+        """
+        return False  # Use elastic tensor format
+
+    def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
+        """Load thalamic state from neuromorphic format.
+
+        Currently not implemented as thalamus uses elastic tensor format.
+        If needed in future, would handle relay/TRN neuron restoration.
+
+        Args:
+            state: Neuromorphic checkpoint dict
+        """
+        raise NotImplementedError(
+            "Thalamus uses elastic tensor format. "
+            "Use collect_state()/restore_state() for checkpointing."
+        )

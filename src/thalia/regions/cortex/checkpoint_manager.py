@@ -88,7 +88,7 @@ class LayeredCortexCheckpointManager(BaseCheckpointManager):
             "l5_size": c.l5_size,
             "l6a_size": c.l6a_size,
             "l6b_size": c.l6b_size,
-            "total_neurons": c.total_neurons,
+            "total_neurons": c.l4_size + c.l23_size + c.l5_size + c.l6a_size + c.l6b_size,
         }
 
         # Extract each layer's neuron state
@@ -188,7 +188,11 @@ class LayeredCortexCheckpointManager(BaseCheckpointManager):
 
         # Homeostasis state
         if hasattr(c, "homeostasis") and c.homeostasis is not None:
-            learning_state["homeostasis"] = c.homeostasis.get_state()
+            if hasattr(c.homeostasis, "get_state"):
+                learning_state["homeostasis"] = c.homeostasis.get_state()
+            else:
+                # UnifiedHomeostasis doesn't have get_state(), just skip it
+                learning_state["homeostasis"] = None
 
         # E/I balance state
         if hasattr(c, "ei_balance") and c.ei_balance is not None:
@@ -277,9 +281,16 @@ class LayeredCortexCheckpointManager(BaseCheckpointManager):
         if hasattr(c, "phase_preferences"):
             region_state["phase_preferences"] = c.phase_preferences.clone()
 
-        # Stimulus gating state
+        # Stimulus gating state (StimulusGating doesn't have get_state method)
         if hasattr(c, "stimulus_gating") and c.stimulus_gating is not None:
-            region_state["stimulus_gating"] = c.stimulus_gating.get_state()
+            region_state["stimulus_gating"] = {
+                "threshold": c.stimulus_gating.threshold,
+                "max_inhibition": c.stimulus_gating.max_inhibition,
+                "decay_rate": c.stimulus_gating.decay_rate,
+                "steepness": c.stimulus_gating.steepness,
+                "current_inhibition": c.stimulus_gating._current_inhibition,
+                "prev_input": c.stimulus_gating._prev_input.clone() if c.stimulus_gating._prev_input is not None else None,
+            }
 
         return region_state
 
@@ -486,4 +497,46 @@ class LayeredCortexCheckpointManager(BaseCheckpointManager):
                 "recurrent_state": self._get_recurrent_state(),
                 "attention_state": self._get_attention_state(),
             },
+        )
+
+    # ==================== REQUIRED ABSTRACT METHODS ====================
+
+    def _get_region(self) -> Any:
+        """Get the region instance managed by this checkpoint manager."""
+        return self.cortex
+
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get region-specific criteria for format selection."""
+        total_neurons = (
+            self.cortex.n_l4
+            + self.cortex.n_l23
+            + self.cortex.n_l5
+            + self.cortex.n_l6a
+            + self.cortex.n_l6b
+        )
+        return {
+            "n_neurons": total_neurons,
+            "growth_enabled": False,  # LayeredCortex currently doesn't support growth
+            "region_type": "layered_cortex",
+        }
+
+    def _should_use_neuromorphic(self) -> bool:
+        """Determine if neuromorphic format should be used.
+
+        For cortex: Use elastic tensor format (more efficient for large layers).
+        """
+        return False  # Use elastic tensor format
+
+    def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
+        """Load cortical state from neuromorphic format.
+
+        Currently not implemented as cortex uses elastic tensor format.
+        If needed in future, would handle layer-by-layer neuron restoration.
+
+        Args:
+            state: Neuromorphic checkpoint dict
+        """
+        raise NotImplementedError(
+            "LayeredCortex uses elastic tensor format. "
+            "Use collect_state()/restore_state() for checkpointing."
         )

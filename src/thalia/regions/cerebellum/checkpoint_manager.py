@@ -41,6 +41,7 @@ Date: January 26, 2026 (Architecture Review Task 1.11 / 2.7)
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Dict
 
 from thalia.managers import BaseCheckpointManager
@@ -119,6 +120,7 @@ class CerebellumCheckpointManager(BaseCheckpointManager):
 
         return {
             "format_version": self.format_version,
+            "config": asdict(c.config),
             "neuron_state": neuron_state,
             "learning_state": learning_state,
             "climbing_fiber_state": climbing_fiber_state,
@@ -145,7 +147,11 @@ class CerebellumCheckpointManager(BaseCheckpointManager):
 
         # Homeostasis state
         if hasattr(c, "homeostasis") and c.homeostasis is not None:
-            learning_state["homeostasis"] = c.homeostasis.get_state()
+            if hasattr(c.homeostasis, "get_state"):
+                learning_state["homeostasis"] = c.homeostasis.get_state()
+            else:
+                # UnifiedHomeostasis doesn't have get_state(), just skip it
+                learning_state["homeostasis"] = None
 
         # Learning rate and error history
         learning_state["learning_rate"] = c.config.learning_rate
@@ -340,4 +346,39 @@ class CerebellumCheckpointManager(BaseCheckpointManager):
                     else {}
                 ),
             },
+        )
+
+    # ==================== REQUIRED ABSTRACT METHODS ====================
+
+    def _get_region(self) -> Any:
+        """Get the region instance managed by this checkpoint manager."""
+        return self.cerebellum
+
+    def _get_selection_criteria(self) -> Dict[str, Any]:
+        """Get region-specific criteria for format selection."""
+        return {
+            "n_neurons": self.cerebellum.n_granule + self.cerebellum.n_purkinje,
+            "growth_enabled": False,  # Cerebellum currently doesn't support growth
+            "region_type": "cerebellum",
+        }
+
+    def _should_use_neuromorphic(self) -> bool:
+        """Determine if neuromorphic format should be used.
+
+        For cerebellum: Use elastic tensor format (more efficient for large granule layer).
+        """
+        return False  # Use elastic tensor format
+
+    def load_neuromorphic_state(self, state: Dict[str, Any]) -> None:
+        """Load cerebellar state from neuromorphic format.
+
+        Currently not implemented as cerebellum uses elastic tensor format.
+        If needed in future, would handle neuron-by-neuron restoration.
+
+        Args:
+            state: Neuromorphic checkpoint dict
+        """
+        raise NotImplementedError(
+            "Cerebellum uses elastic tensor format. "
+            "Use collect_state()/restore_state() for checkpointing."
         )

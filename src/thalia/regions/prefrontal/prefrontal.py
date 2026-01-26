@@ -1085,7 +1085,7 @@ class Prefrontal(NeuralRegion):
 
         # Plasticity metrics (if learning enabled)
         plasticity = None
-        if self.learning_enabled:
+        if self.config.learning_rate > 0:
             # Average across all weight matrices
             all_weights = torch.cat(
                 [
@@ -1095,15 +1095,15 @@ class Prefrontal(NeuralRegion):
                 ]
             )
             plasticity = compute_plasticity_metrics(
-                all_weights, learning_rate=self.stdp.learning_rate
+                all_weights, learning_rate=self.config.learning_rate
             )
 
         # Health metrics
         health = compute_health_metrics(
             state_tensors={
                 "membrane": self.neurons.membrane,
-                "ge": self.neurons.ge,
-                "gi": self.neurons.gi,
+                "g_E": self.neurons.g_E,
+                "g_I": self.neurons.g_I,
                 "working_memory": self.state.working_memory,
             },
             firing_rate=activity["firing_rate"],
