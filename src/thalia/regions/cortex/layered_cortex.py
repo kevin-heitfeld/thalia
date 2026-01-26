@@ -2333,46 +2333,46 @@ class LayeredCortex(NeuralRegion):
 
         # Restore input
         if state.input_spikes is not None:
-            self.state.input_spikes = state.input_spikes.to(self.device)
+            self.state.input_spikes = self._load_tensor(state.input_spikes)
 
         # Restore layer spike states
         if state.l4_spikes is not None:
-            self.state.l4_spikes = state.l4_spikes.to(self.device)
+            self.state.l4_spikes = self._load_tensor(state.l4_spikes)
         if state.l23_spikes is not None:
-            self.state.l23_spikes = state.l23_spikes.to(self.device)
+            self.state.l23_spikes = self._load_tensor(state.l23_spikes)
         if state.l5_spikes is not None:
-            self.state.l5_spikes = state.l5_spikes.to(self.device)
+            self.state.l5_spikes = self._load_tensor(state.l5_spikes)
         if state.l6a_spikes is not None:
-            self.state.l6a_spikes = state.l6a_spikes.to(self.device)
+            self.state.l6a_spikes = self._load_tensor(state.l6a_spikes)
         if state.l6b_spikes is not None:
-            self.state.l6b_spikes = state.l6b_spikes.to(self.device)
+            self.state.l6b_spikes = self._load_tensor(state.l6b_spikes)
 
         # Restore L2/3 recurrent activity
         if state.l23_recurrent_activity is not None:
-            self.state.l23_recurrent_activity = state.l23_recurrent_activity.to(self.device)
+            self.state.l23_recurrent_activity = self._load_tensor(state.l23_recurrent_activity)
 
         # Restore STDP traces
         if state.l4_trace is not None:
-            self.state.l4_trace = state.l4_trace.to(self.device)
+            self.state.l4_trace = self._load_tensor(state.l4_trace)
         if state.l23_trace is not None:
-            self.state.l23_trace = state.l23_trace.to(self.device)
+            self.state.l23_trace = self._load_tensor(state.l23_trace)
         if state.l5_trace is not None:
-            self.state.l5_trace = state.l5_trace.to(self.device)
+            self.state.l5_trace = self._load_tensor(state.l5_trace)
         if state.l6a_trace is not None:
-            self.state.l6a_trace = state.l6a_trace.to(self.device)
+            self.state.l6a_trace = self._load_tensor(state.l6a_trace)
         if state.l6b_trace is not None:
-            self.state.l6b_trace = state.l6b_trace.to(self.device)
+            self.state.l6b_trace = self._load_tensor(state.l6b_trace)
 
         # Restore modulation state
         if state.top_down_modulation is not None:
-            self.state.top_down_modulation = state.top_down_modulation.to(self.device)
+            self.state.top_down_modulation = self._load_tensor(state.top_down_modulation)
         self.state.ffi_strength = state.ffi_strength
         self.state.alpha_suppression = state.alpha_suppression
 
         # Restore gamma attention
         self.state.gamma_attention_phase = state.gamma_attention_phase
         if state.gamma_attention_gate is not None:
-            self.state.gamma_attention_gate = state.gamma_attention_gate.to(self.device)
+            self.state.gamma_attention_gate = self._load_tensor(state.gamma_attention_gate)
 
         # Restore plasticity monitoring
         self.state.last_plasticity_delta = state.last_plasticity_delta
@@ -2383,6 +2383,6 @@ class LayeredCortex(NeuralRegion):
 
         # Restore gap junction state
         if state.l23_membrane is not None:
-            self.state.l23_membrane = state.l23_membrane.to(self.device)
+            self.state.l23_membrane = self._load_tensor(state.l23_membrane)
 
     # endregion

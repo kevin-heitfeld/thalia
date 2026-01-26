@@ -1261,11 +1261,11 @@ class Prefrontal(NeuralRegion):
         """
         # Restore PFC-specific state
         if state.working_memory is not None:
-            self.state.working_memory = state.working_memory.to(self.device).clone()
+            self.state.working_memory = self._load_tensor(state.working_memory).clone()
         if state.update_gate is not None:
-            self.state.update_gate = state.update_gate.to(self.device).clone()
+            self.state.update_gate = self._load_tensor(state.update_gate).clone()
         if state.active_rule is not None:
-            self.state.active_rule = state.active_rule.to(self.device).clone()
+            self.state.active_rule = self._load_tensor(state.active_rule).clone()
 
         # Neuromodulators already restored by super().load_state() via _restore_neuromodulators()
 

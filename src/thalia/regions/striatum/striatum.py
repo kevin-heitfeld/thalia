@@ -3532,22 +3532,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             and hasattr(self.fsi_neurons, "membrane")
             and self.fsi_neurons.membrane is not None
         ):
-            self.fsi_neurons.membrane.data = state.fsi_membrane.to(self.device)
+            self.fsi_neurons.membrane.data = self._load_tensor(state.fsi_membrane)
 
         # Restore vote accumulation
         if state.d1_votes_accumulated is not None:
-            self.state_tracker._d1_votes_accumulated.data = state.d1_votes_accumulated.to(
-                self.device
+            self.state_tracker._d1_votes_accumulated.data = self._load_tensor(
+                state.d1_votes_accumulated
             )
         if state.d2_votes_accumulated is not None:
-            self.state_tracker._d2_votes_accumulated.data = state.d2_votes_accumulated.to(
-                self.device
+            self.state_tracker._d2_votes_accumulated.data = self._load_tensor(
+                state.d2_votes_accumulated
             )
 
         # Restore action selection
         self.state_tracker.last_action = state.last_action
         if state.recent_spikes is not None:
-            self.state_tracker.recent_spikes.data = state.recent_spikes.to(self.device)
+            self.state_tracker.recent_spikes.data = self._load_tensor(state.recent_spikes)
 
         # Restore exploration
         self.state_tracker.exploring = state.exploring
@@ -3571,22 +3571,22 @@ class Striatum(NeuralRegion, ActionSelectionMixin):
             for key, stp_state in state.stp_modules_state.items():
                 if key in self.stp_modules:
                     if stp_state["u"] is not None and self.stp_modules[key].u is not None:
-                        self.stp_modules[key].u.data = stp_state["u"].to(self.device)  # type: ignore[union-attr]
+                        self.stp_modules[key].u.data = self._load_tensor(stp_state["u"])  # type: ignore[union-attr]
                     if stp_state["x"] is not None and self.stp_modules[key].x is not None:
-                        self.stp_modules[key].x.data = stp_state["x"].to(self.device)  # type: ignore[union-attr]
+                        self.stp_modules[key].x.data = self._load_tensor(stp_state["x"])  # type: ignore[union-attr]
 
         # Restore goal modulation (optional)
         if state.pfc_modulation_d1 is not None and hasattr(self, "pfc_modulation_d1"):
-            self.pfc_modulation_d1.data = state.pfc_modulation_d1.to(self.device)  # type: ignore[union-attr]
+            self.pfc_modulation_d1.data = self._load_tensor(state.pfc_modulation_d1)  # type: ignore[union-attr]
         if state.pfc_modulation_d2 is not None and hasattr(self, "pfc_modulation_d2"):
-            self.pfc_modulation_d2.data = state.pfc_modulation_d2.to(self.device)  # type: ignore[union-attr]
+            self.pfc_modulation_d2.data = self._load_tensor(state.pfc_modulation_d2)  # type: ignore[union-attr]
 
         # Restore delay buffers (optional)
         if state.d1_delay_buffer is not None and hasattr(self, "_d1_delay_buffer"):
-            self._d1_delay_buffer = state.d1_delay_buffer.to(self.device)
+            self._d1_delay_buffer = self._load_tensor(state.d1_delay_buffer)
             self._d1_delay_ptr = state.d1_delay_ptr
         if state.d2_delay_buffer is not None and hasattr(self, "_d2_delay_buffer"):
-            self._d2_delay_buffer = state.d2_delay_buffer.to(self.device)
+            self._d2_delay_buffer = self._load_tensor(state.d2_delay_buffer)
             self._d2_delay_ptr = state.d2_delay_ptr
 
         # Restore homeostasis

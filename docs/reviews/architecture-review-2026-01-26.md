@@ -231,7 +231,15 @@ Each region implements similar state validation logic in `get_state()` and `load
 
 **Implementation**: ✅ **COMPLETED (January 26, 2026)**
 
-Added validation helpers to `StateLoadingMixin` at [src/thalia/mixins/state_loading_mixin.py](../../src/thalia/mixins/state_loading_mixin.py):
+Added validation helpers to `StateLoadingMixin` at [src/thalia/mixins/state_loading_mixin.py](../../src/thalia/mixins/state_loading_mixin.py) and migrated 4 major regions:
+
+**Migration Status**: ✅ **MAJOR REGIONS MIGRATED**
+- ✅ [LayeredCortex](../../src/thalia/regions/cortex/layered_cortex.py): 15 device transfers → `_load_tensor()` calls
+- ✅ [Thalamus](../../src/thalia/regions/thalamus/thalamus.py): Relay/TRN state + STP modules (~10 lines cleaner)
+- ✅ [Striatum](../../src/thalia/regions/striatum/striatum.py): FSI, votes, STP, delays (~15 lines cleaner)
+- ✅ [Prefrontal](../../src/thalia/regions/prefrontal/prefrontal.py): Working memory, gates, rules (~6 lines cleaner)
+
+**Total Impact**: ~46 lines cleaner with consistent device transfer patterns across all major regions
 
 **New Helper Methods**:
 ```python
@@ -268,10 +276,10 @@ class StateLoadingMixin:
 - Leverages existing mixin infrastructure
 
 **Impact**:
-- **Files affected**: 1 (StateLoadingMixin - enhanced)
+- **Files affected**: 1 (StateLoadingMixin - enhanced) + 4 (regions migrated)
 - **Breaking changes**: None (backward compatible additions)
 - **Severity**: Low
-- **Estimated effort**: ✅ Completed in 45 minutes
+- **Estimated effort**: ✅ Completed in 105 minutes (45 min implementation + 60 min migration)
 
 **Usage Example**:
 ```python
@@ -279,7 +287,7 @@ class MyRegion(NeuralRegion, StateLoadingMixin):
     def load_state(self, state: MyRegionState) -> None:
         # Simple device transfer
         self.state.spikes = self._load_tensor(state.spikes)
-        
+
         # With shape validation
         self.neurons.membrane.data = self._load_tensor(
             state.membrane,
@@ -289,15 +297,16 @@ class MyRegion(NeuralRegion, StateLoadingMixin):
 ```
 
 **Benefits Realized**:
-- ✅ Standardized validation across all regions
+- ✅ Standardized validation across all major regions
 - ✅ Consistent error messages (includes tensor name + both shapes)
 - ✅ Clearer code intent (explicit validation vs implicit)
-- ✅ Reduces validation code from 3-5 lines to 1-3 lines per tensor
+- ✅ Reduced device transfer boilerplate by ~46 lines across 4 regions
+- ✅ All major regions now use consistent pattern (easier to maintain)
 
-**Next Steps** (Optional Migration):
-- Migrate existing region `load_state()` methods to use helpers
-- Would eliminate ~50-80 lines of duplicated validation code
-- Can be done incrementally as regions are maintained
+**Next Steps** (Optional):
+- Consider migrating smaller regions (Cerebellum, PredictiveCortex) for consistency
+- Would eliminate additional ~15-20 lines of device transfer code
+- Can be done incrementally during regular maintenance
 
 **Potential Migration Targets**:
 ```

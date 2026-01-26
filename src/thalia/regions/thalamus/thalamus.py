@@ -821,41 +821,41 @@ class ThalamicRelay(NeuralRegion):
 
         # Restore relay neuron state
         self.state.relay_spikes = (
-            state.relay_spikes.clone() if state.relay_spikes is not None else None
+            self._load_tensor(state.relay_spikes).clone() if state.relay_spikes is not None else None
         )
         self.state.relay_membrane = (
-            state.relay_membrane.clone() if state.relay_membrane is not None else None
+            self._load_tensor(state.relay_membrane).clone() if state.relay_membrane is not None else None
         )
 
         # Restore TRN state
-        self.state.trn_spikes = state.trn_spikes.clone() if state.trn_spikes is not None else None
+        self.state.trn_spikes = self._load_tensor(state.trn_spikes).clone() if state.trn_spikes is not None else None
         self.state.trn_membrane = (
-            state.trn_membrane.clone() if state.trn_membrane is not None else None
+            self._load_tensor(state.trn_membrane).clone() if state.trn_membrane is not None else None
         )
 
         # Restore mode state
         self.state.current_mode = (
-            state.current_mode.clone() if state.current_mode is not None else None
+            self._load_tensor(state.current_mode).clone() if state.current_mode is not None else None
         )
         self.state.burst_counter = (
-            state.burst_counter.clone() if state.burst_counter is not None else None
+            self._load_tensor(state.burst_counter).clone() if state.burst_counter is not None else None
         )
 
         # Restore gating state
-        self.state.alpha_gate = state.alpha_gate.clone() if state.alpha_gate is not None else None
+        self.state.alpha_gate = self._load_tensor(state.alpha_gate).clone() if state.alpha_gate is not None else None
 
         # Restore STP state if modules are enabled
         if self.stp_sensory_relay is not None and state.stp_sensory_relay_state is not None:
             if state.stp_sensory_relay_state.get("u") is not None:
-                self.stp_sensory_relay.u = state.stp_sensory_relay_state["u"].clone()
+                self.stp_sensory_relay.u = self._load_tensor(state.stp_sensory_relay_state["u"]).clone()
             if state.stp_sensory_relay_state.get("x") is not None:
-                self.stp_sensory_relay.x = state.stp_sensory_relay_state["x"].clone()
+                self.stp_sensory_relay.x = self._load_tensor(state.stp_sensory_relay_state["x"]).clone()
 
         if self.stp_l6_feedback is not None and state.stp_l6_feedback_state is not None:
             if state.stp_l6_feedback_state.get("u") is not None:
-                self.stp_l6_feedback.u = state.stp_l6_feedback_state["u"].clone()
+                self.stp_l6_feedback.u = self._load_tensor(state.stp_l6_feedback_state["u"]).clone()
             if state.stp_l6_feedback_state.get("x") is not None:
-                self.stp_l6_feedback.x = state.stp_l6_feedback_state["x"].clone()
+                self.stp_l6_feedback.x = self._load_tensor(state.stp_l6_feedback_state["x"]).clone()
 
     def reset_state(self) -> None:
         """Reset thalamic state."""
