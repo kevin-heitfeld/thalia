@@ -10,14 +10,6 @@ Components:
   * Motor decoding (spikes → torques)
   * Motor babbling, reaching tasks
   * Cerebellum training support
-
-Usage:
-    from thalia.environments import SensorimotorWrapper
-
-    wrapper = SensorimotorWrapper('Reacher-v4')
-    obs_spikes = wrapper.reset()
-    motor_spikes = brain.motor_cortex(obs_spikes)
-    obs_spikes, reward, done, truncated = wrapper.step(motor_spikes)
 """
 
 from __future__ import annotations

@@ -254,6 +254,116 @@ class MedialSeptumConfig(NeuralRegionConfig):
 
 
 # ============================================================================
+# Reward Encoder Config
+# ============================================================================
+
+
+@dataclass
+class RewardEncoderConfig(NeuralRegionConfig):
+    """Configuration for reward encoder region.
+
+    The reward encoder provides a spike-based interface for delivering external
+    reward signals to VTA. It uses population coding to convert scalar reward
+    values into naturalistic spike patterns, abstracting away the complexity
+    of hypothalamic and limbic reward pathways.
+
+    Biological motivation:
+    - Real brains process rewards through lateral hypothalamus, amygdala, etc.
+    - This region serves as a simplified placeholder for those pathways
+    - Enables clean external interface while maintaining spike-based signaling
+    - Can be expanded to full limbic system in future versions
+    """
+
+    n_neurons: int = 100
+    """Number of neurons (split 50/50 for positive/negative rewards)."""
+
+    reward_noise: float = 0.1
+    """Variability in spike encoding for biological realism (10% noise)."""
+
+
+# ============================================================================
+# Substantia Nigra pars Reticulata (SNr) Config
+# ============================================================================
+
+
+@dataclass
+class SNrConfig(NeuralRegionConfig):
+    """Configuration for SNr (substantia nigra pars reticulata) region.
+
+    The SNr is the primary output nucleus of the basal ganglia, consisting of
+    tonically-active GABAergic neurons that gate thalamic output and provide
+    value feedback to VTA for dopamine-based reinforcement learning.
+
+    Key features:
+    - Tonic firing at 50-70 Hz baseline
+    - Disinhibition mechanism: Striatum D1 reduces SNr → releases thalamus
+    - Value encoding: Firing rate inversely proportional to state value
+    - Closed-loop TD learning: Striatum → SNr → VTA → Striatum
+    """
+
+    n_neurons: int = 10000
+    """Number of GABAergic output neurons (~10-15k in humans)."""
+
+    baseline_drive: float = 25.0
+    """Tonic drive in mV to maintain ~60 Hz spontaneous firing."""
+
+    d1_inhibition_weight: float = 0.8
+    """Strength of D1 (direct/Go) pathway inhibition."""
+
+    d2_excitation_weight: float = 0.6
+    """Strength of D2 (indirect/NoGo) pathway excitation via GPe/STN."""
+
+    tau_mem: float = 8.0
+    """Fast membrane time constant for rapid response."""
+
+    v_threshold: float = 0.8
+    """Low threshold enables tonic firing."""
+
+    tau_ref: float = 1.5
+    """Short refractory period for high-frequency firing."""
+
+
+# ============================================================================
+# Ventral Tegmental Area (VTA) Config
+# ============================================================================
+
+
+@dataclass
+class VTAConfig(NeuralRegionConfig):
+    """Configuration for VTA (ventral tegmental area) region.
+
+    The VTA is the brain's primary dopamine source, computing reward prediction
+    errors (RPE) through burst/pause dynamics. It forms the core of the
+    reinforcement learning system by broadcasting teaching signals to all regions.
+
+    Key features:
+    - Dopamine neurons: Tonic (4-5 Hz) + phasic (burst/pause)
+    - RPE computation: δ = r - V(s)
+    - Closed-loop TD learning with SNr feedback
+    - Adaptive normalization to prevent saturation
+    """
+
+    n_da_neurons: int = 20000
+    """Number of dopamine neurons with burst/pause dynamics (~20-30k in humans)."""
+
+    n_gaba_neurons: int = 4000
+    """Number of GABAergic interneurons for homeostatic control."""
+
+    rpe_gain: float = 15.0
+    """Gain for converting RPE to membrane current (mV per RPE unit).
+
+    Positive RPE → depolarization → burst (15-20 Hz)
+    Negative RPE → hyperpolarization → pause (<1 Hz)
+    """
+
+    gamma: float = 0.99
+    """TD learning discount factor for future reward weighting."""
+
+    rpe_normalization: bool = True
+    """Enable adaptive RPE normalization to prevent saturation."""
+
+
+# ============================================================================
 # Cerebellum Config
 # ============================================================================
 
@@ -461,7 +571,9 @@ class CortexConfig(NeuralRegionConfig):
     # This is how the cortex naturally "clears" old representations when new input arrives
     # Always enabled (fundamental cortical mechanism)
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
-    ffi_strength: float = 0.8  # How much FFI suppresses L2/3 recurrent activity
+    ffi_strength: float = 0.05  # REDUCED for sustained symbol presentation (was 0.8)
+    # When presenting same symbol for multiple timesteps (sequence learning),
+    # strong FFI blocks cortex after first spike, preventing hippocampus from receiving input.
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
     # =========================================================================
@@ -688,7 +800,9 @@ class HippocampusConfig(NeuralRegionConfig):
     # FEEDFORWARD INHIBITION (FFI)
     # =========================================================================
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
-    ffi_strength: float = 0.3  # Reduced from 0.8 - DG needs to be more active for learning
+    ffi_strength: float = 0.05  # REDUCED for sustained symbol presentation (was 0.3)
+    # When presenting same symbol for multiple timesteps (sequence learning),
+    # strong FFI blocks activity after first spike. Reduce to allow learning.
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
     # =========================================================================
