@@ -216,7 +216,7 @@ def compute_state_delta(
     Only includes regions with changed weights or grown neurons.
 
     Args:
-        current_state: Current brain state (from get_full_state())
+        current_state: Current brain state
         base_state: Base brain state
         threshold: Minimum weight change threshold
 
@@ -540,7 +540,7 @@ def load_delta_checkpoint(
         file_data = decompress_data(file_data, compression)
 
     # Parse decompressed data
-    f = io.BytesIO(file_data)  # type: ignore[assignment]
+    f = io.BytesIO(file_data)
 
     # Read header
     header_bytes = f.read(64)

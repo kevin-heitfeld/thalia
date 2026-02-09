@@ -10,24 +10,12 @@ Key Features:
 - Region size proportional to neuron count
 - Export to Graphviz DOT format
 - Connectivity matrix heatmaps
-
-Usage:
-    from thalia.visualization import visualize_brain_topology
-
-    # Create NetworkX graph
-    G = visualize_brain_topology(brain)
-
-    # Show interactive plot
-    plt.show()
-
-    # Or export to DOT for external rendering
-    export_topology_to_graphviz(brain, "brain_topology.dot")
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -38,9 +26,9 @@ try:
 
     NETWORKX_AVAILABLE = True
 except ImportError:
-    NETWORKX_AVAILABLE = False
+    NETWORKX_AVAILABLE = False  # type: ignore[assignment]
 
-from thalia.constants.visualization import (
+from .constants import (
     ARC_RADIUS,
     DEFAULT_NODE_SIZE_SCALE,
     EDGE_ALPHA_DEFAULT,
@@ -53,9 +41,12 @@ from thalia.constants.visualization import (
     NODE_ALPHA_DEFAULT,
 )
 
+if TYPE_CHECKING:
+    from thalia.brain import DynamicBrain
+
 
 def visualize_brain_topology(
-    brain: Any,
+    brain: DynamicBrain,
     layout: str = "hierarchical",
     figsize: Tuple[int, int] = (16, 12),
     node_size_scale: float = DEFAULT_NODE_SIZE_SCALE,
@@ -77,10 +68,6 @@ def visualize_brain_topology(
 
     Raises:
         ImportError: If networkx is not installed
-
-    Example:
-        >>> G = visualize_brain_topology(brain, layout='hierarchical')
-        >>> plt.savefig('brain_topology.png', dpi=300)
     """
     if not NETWORKX_AVAILABLE:
         raise ImportError(
@@ -226,7 +213,7 @@ def visualize_brain_topology(
 
 
 def export_topology_to_graphviz(
-    brain: Any,
+    brain: DynamicBrain,
     output_path: str,
     include_weights: bool = True,
 ) -> None:
@@ -238,10 +225,6 @@ def export_topology_to_graphviz(
         brain: DynamicBrain instance
         output_path: Path to save .dot file
         include_weights: Whether to include edge weights
-
-    Example:
-        >>> export_topology_to_graphviz(brain, "topology.dot")
-        >>> # Then render with: dot -Tpng -O topology.dot
     """
     output_path_obj = Path(output_path)
 
@@ -275,7 +258,7 @@ def export_topology_to_graphviz(
 
 
 def plot_connectivity_matrix(
-    brain: Any,
+    brain: DynamicBrain,
     figsize: Tuple[int, int] = (12, 10),
     cmap: str = "viridis",
 ) -> None:
@@ -340,19 +323,9 @@ def _get_neuron_count(region: Any) -> int:
 
     Returns:
         Number of neurons in the region, or 0 if unavailable
-
-    Note:
-        Tries multiple attribute paths: n_neurons, config.n_neurons, membrane.shape[0]
     """
-    # Try various attributes
-    if hasattr(region, "n_neurons"):
-        return int(region.n_neurons)
-    elif hasattr(region, "config") and hasattr(region.config, "n_neurons"):
-        return int(region.config.n_neurons)
-    elif hasattr(region, "membrane") and hasattr(region.membrane, "shape"):
-        return int(region.membrane.shape[0])
-    else:
-        return 0
+    # TODO: Standardize neuron count access across all region types
+    return 0
 
 
 def _get_region_type(name: str) -> str:

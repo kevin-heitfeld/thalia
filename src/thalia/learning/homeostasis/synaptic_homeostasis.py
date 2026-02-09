@@ -61,44 +61,25 @@ messy and redundant - evolution stacked these over millions of years.
 - Intrinsic plasticity (threshold adaptation)
 - Heterosynaptic LTD (competitive weakening)
 - Various soft bounds and rate limiters
-
-Usage:
-======
-    homeostasis = UnifiedHomeostasis(
-        weight_budget=1.0,      # Total weight sum per neuron
-        activity_target=0.1,    # Target fraction of neurons active
-        diversity_target=0.5,   # Target weight diversity (entropy)
-    )
-
-    # After each weight update:
-    weights = homeostasis.normalize_weights(weights)
-
-    # After each forward pass (optional):
-    activity = homeostasis.normalize_activity(activity)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
-from thalia.config.base import BaseConfig
-from thalia.constants.learning import EMA_DECAY_FAST
-from thalia.utils.core_utils import clamp_weights
+from thalia.utils import clamp_weights
 
 
 @dataclass
-class UnifiedHomeostasisConfig(BaseConfig):
-    """Configuration for unified homeostatic regulation.
+class UnifiedHomeostasisConfig:
+    """Configuration for unified homeostatic regulation."""
 
-    Inherits device, dtype, seed from BaseConfig.
-
-    This replaces the many parameters of BCM, synaptic scaling, etc.
-    with a minimal set of target values that define the constraints.
-    """
+    device: str = "cpu"  # Device to run on: 'cpu', 'cuda', 'cuda:0', etc.
+    seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
 
     # Weight constraints
     weight_budget: float = 1.0  # Target sum of weights per row (neuron)
@@ -107,17 +88,12 @@ class UnifiedHomeostasisConfig(BaseConfig):
 
     # Activity constraints
     activity_target: float = 0.1  # Target fraction of neurons active
-    activity_min: float = 0.01  # Minimum activity (prevent dead neurons)
-    activity_max: float = 0.5  # Maximum activity (prevent seizure)
 
     # Normalization settings
-    normalize_rows: bool = True  # Normalize each neuron's input weights
-    normalize_cols: bool = False  # Normalize each input's output weights
     soft_normalization: bool = True  # Use soft (multiplicative) vs hard normalization
     normalization_rate: float = 0.1  # How fast to approach target (soft only)
 
     # Competition settings
-    enable_competition: bool = True  # Enable competitive weight adjustment
     competition_strength: float = 0.1  # Strength of winner-take-all effect
 
 
@@ -139,10 +115,6 @@ class UnifiedHomeostasis(nn.Module):
     def __init__(self, config: Optional[UnifiedHomeostasisConfig] = None):
         super().__init__()
         self.config = config or UnifiedHomeostasisConfig()
-
-        # Running statistics for soft normalization
-        self._weight_ema: Optional[torch.Tensor] = None
-        self._activity_ema: float = self.config.activity_target
 
     def normalize_weights(
         self,
@@ -318,9 +290,6 @@ class UnifiedHomeostasis(nn.Module):
         Returns:
             Competitively adjusted weights
         """
-        if not self.config.enable_competition:
-            return weights
-
         cfg = self.config
 
         # Identify winners (neurons with highest total weight)
@@ -402,7 +371,7 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         n_actions: int,
         neurons_per_action: int = 1,
         config: Optional[UnifiedHomeostasisConfig] = None,
-        target_rate: float = 0.05,  # Target firing rate (fraction of timesteps)
+        target_activity: float = 0.05,  # Target firing rate (fraction of timesteps)
         excitability_tau: float = 100.0,  # Time constant for excitability modulation
         d2_neurons_per_action: Optional[int] = None,  # If different from D1
     ):
@@ -416,8 +385,7 @@ class StriatumHomeostasis(UnifiedHomeostasis):
 
         self.d1_size = n_actions * self.d1_neurons_per_action
         self.d2_size = n_actions * self.d2_neurons_per_action
-        self.n_neurons = self.d1_size  # For backward compatibility (used in some methods)
-        self.target_rate = target_rate
+        self.target_activity = target_activity
         self.excitability_tau = excitability_tau
 
         # Get device from config
@@ -444,25 +412,20 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         self,
         d1_spikes: torch.Tensor,
         d2_spikes: torch.Tensor,
-        decay: float = EMA_DECAY_FAST,
+        decay: float = 0.99,
     ) -> None:
         """Update running average of D1/D2 activity.
 
         Called every timestep to track firing rates.
 
         Args:
-            d1_spikes: D1 spike tensor [batch, n_neurons] or [n_neurons]
-            d2_spikes: D2 spike tensor [batch, n_neurons] or [n_neurons]
+            d1_spikes: D1 spike tensor [n_neurons] or [n_neurons]
+            d2_spikes: D2 spike tensor [n_neurons] or [n_neurons]
             decay: Exponential decay for running average
         """
         # Squeeze to 1D if needed
         d1 = d1_spikes.squeeze().float()
         d2 = d2_spikes.squeeze().float()
-
-        # Handle batch dimension
-        if d1.dim() > 1:
-            d1 = d1.mean(dim=0)
-            d2 = d2.mean(dim=0)
 
         # Update running averages
         self.d1_activity_avg: torch.Tensor = decay * self.d1_activity_avg + (1 - decay) * d1
@@ -480,8 +443,8 @@ class StriatumHomeostasis(UnifiedHomeostasis):
             Tuple of (d1_excitability, d2_excitability) modulation factors
         """
         # Error from target rate
-        d1_error = self.d1_activity_avg - self.target_rate
-        d2_error = self.d2_activity_avg - self.target_rate
+        d1_error = self.d1_activity_avg - self.target_activity
+        d2_error = self.d2_activity_avg - self.target_activity
 
         # Modulation: high activity → lower excitability
         # excitability = 1 - error/tau, clamped to [0.5, 2.0]
@@ -596,42 +559,6 @@ class StriatumHomeostasis(UnifiedHomeostasis):
 
         return weights
 
-    def get_state(self) -> Dict[str, Any]:
-        """Get current homeostasis state for checkpointing.
-
-        Returns:
-            Dictionary with current state
-        """
-        state = {
-            "weight_ema": (
-                self._weight_ema.detach().clone() if self._weight_ema is not None else None
-            ),
-            "activity_ema": self._activity_ema,
-        }
-
-        # Add striatum-specific state if present
-        if hasattr(self, "action_budgets"):
-            state["action_budgets"] = self.action_budgets.detach().clone()
-
-        return state
-
-    def load_state(self, state: Dict[str, Any]) -> None:
-        """Restore homeostasis state from checkpoint.
-
-        Args:
-            state: Dictionary from get_state()
-        """
-        if state["weight_ema"] is not None:
-            self._weight_ema = state["weight_ema"].to(self.config.device)
-        else:
-            self._weight_ema = None
-
-        self._activity_ema = state["activity_ema"]
-
-        # Restore striatum-specific state if present
-        if "action_budgets" in state and hasattr(self, "action_budgets"):
-            self.action_budgets = state["action_budgets"].to(self.config.device)
-
     def grow(self, n_new_d1: int, n_new_d2: int) -> None:
         """Grow the striatum homeostasis to support more D1 and D2 neurons.
 
@@ -642,7 +569,6 @@ class StriatumHomeostasis(UnifiedHomeostasis):
         # Update sizes
         self.d1_size += n_new_d1
         self.d2_size += n_new_d2
-        self.n_neurons = self.d1_size  # For backward compatibility
 
         # Expand D1 activity tracking buffers
         new_d1_activity = torch.zeros(n_new_d1, device=self.d1_activity_avg.device)
@@ -683,15 +609,15 @@ class UnifiedHomeostasisGrowable:
             self.d2_size += n_new_neurons
 
         # Expand activity tracking buffers [n_neurons]
-        new_d1_activity = torch.zeros(n_new_neurons, device=self.d1_activity_avg.device)  # type: ignore[union-attr]
-        self.d1_activity_avg: torch.Tensor = torch.cat([self.d1_activity_avg, new_d1_activity])  # type: ignore[assignment]
+        new_d1_activity = torch.zeros(n_new_neurons, device=self.d1_activity_avg.device)
+        self.d1_activity_avg: torch.Tensor = torch.cat([self.d1_activity_avg, new_d1_activity])
 
-        new_d2_activity = torch.zeros(n_new_neurons, device=self.d2_activity_avg.device)  # type: ignore[union-attr]
-        self.d2_activity_avg: torch.Tensor = torch.cat([self.d2_activity_avg, new_d2_activity])  # type: ignore[assignment]
+        new_d2_activity = torch.zeros(n_new_neurons, device=self.d2_activity_avg.device)
+        self.d2_activity_avg: torch.Tensor = torch.cat([self.d2_activity_avg, new_d2_activity])
 
         # Expand excitability buffers [n_neurons] - start at neutral (1.0)
-        new_d1_excitability = torch.ones(n_new_neurons, device=self.d1_excitability.device)  # type: ignore[union-attr]
-        self.d1_excitability: torch.Tensor = torch.cat([self.d1_excitability, new_d1_excitability])  # type: ignore[assignment]
+        new_d1_excitability = torch.ones(n_new_neurons, device=self.d1_excitability.device)
+        self.d1_excitability: torch.Tensor = torch.cat([self.d1_excitability, new_d1_excitability])
 
-        new_d2_excitability = torch.ones(n_new_neurons, device=self.d2_excitability.device)  # type: ignore[union-attr]
-        self.d2_excitability: torch.Tensor = torch.cat([self.d2_excitability, new_d2_excitability])  # type: ignore[assignment]
+        new_d2_excitability = torch.ones(n_new_neurons, device=self.d2_excitability.device)
+        self.d2_excitability: torch.Tensor = torch.cat([self.d2_excitability, new_d2_excitability])

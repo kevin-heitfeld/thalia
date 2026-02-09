@@ -44,7 +44,7 @@ Example:
 from __future__ import annotations
 
 from .checkpoint import BrainCheckpoint
-from .checkpoint_manager import CheckpointManager, load_checkpoint, save_checkpoint
+from .checkpoint_manager import CheckpointManager
 from .compression import CompressionError, compress_file, decompress_file
 from .delta import load_delta_checkpoint, save_delta_checkpoint
 from .precision import PRECISION_POLICIES, PrecisionPolicy, get_precision_statistics
@@ -52,8 +52,6 @@ from .precision import PRECISION_POLICIES, PrecisionPolicy, get_precision_statis
 __all__ = [
     "BrainCheckpoint",
     "CheckpointManager",
-    "save_checkpoint",
-    "load_checkpoint",
     "compress_file",
     "decompress_file",
     "CompressionError",

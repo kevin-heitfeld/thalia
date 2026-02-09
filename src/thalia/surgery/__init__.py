@@ -32,68 +32,16 @@ Use Cases:
    - Identify critical pathways
    - Optimize for efficiency
 
-Example Usage:
-==============
-
-    from thalia.surgery import (
-        lesion_region, ablate_pathway, add_region_to_trained_brain,
-        temporary_lesion, freeze_region
-    )
-    from thalia.core.dynamic_brain import DynamicBrain
-    from thalia.io.checkpoint import BrainCheckpoint
-
-    # Load trained brain
-    brain = BrainCheckpoint.load("checkpoints/trained_brain.pkl")
-
-    # Lesion study: Remove hippocampus
-    lesion_region(brain, "hippocampus")
-    performance_after_lesion = evaluate(brain)
-
-    # Ablation study: Remove cortex→PFC pathway
-    ablate_pathway(brain, "cortex_to_pfc")
-    performance_without_pathway = evaluate(brain)
-
-    # Temporary lesion (reversible)
-    with temporary_lesion(brain, "prefrontal"):
-        # PFC is lesioned only in this block
-        performance = evaluate(brain)
-    # PFC is restored
-
-    # Freeze region (disable learning)
-    freeze_region(brain, "cortex")
-    # Train on new task (cortex weights won't change)
-
-    # Add new region for new capability
-    from thalia.regions.motor import MotorCortexConfig
-    new_region_config = MotorCortexConfig(n_input=100, n_output=50)
-    add_region_to_trained_brain(
-        brain,
-        region_name="motor_cortex",
-        region_config=new_region_config,
-        input_pathway_from="cortex",
-    )
-
 Biological Inspiration:
 =======================
 - Phineas Gage: Frontal lobe damage → personality changes
 - H.M.: Hippocampal lesion → no new episodic memories
 - Split-brain patients: Corpus callosum cut → hemisphere independence
 - Stroke recovery: Brain rewires to compensate
-
-References:
-===========
-- docs/design/curriculum_strategy.md - Continual learning
-- docs/patterns/component-parity.md - Region/pathway consistency
-
-Author: Thalia Project
-Date: December 12, 2025 (Tier 3 Implementation)
 """
 
 from __future__ import annotations
 
-from .growth import (
-    add_region_to_trained_brain,
-)
 from .lesion import (
     lesion_region,
     partial_lesion,
@@ -118,6 +66,4 @@ __all__ = [
     "unfreeze_region",
     "freeze_pathway",
     "unfreeze_pathway",
-    # Growth operations
-    "add_region_to_trained_brain",
 ]

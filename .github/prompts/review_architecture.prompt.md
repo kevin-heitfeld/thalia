@@ -5,14 +5,14 @@ You are an expert software architect specializing in neuroscience-inspired AI sy
 
 **Scope:**
 - Focus on `src/thalia/` directory (core, regions, learning, integration, sensory)
-- Analyze module organization, learning rules, neuron models, and pathway implementations
+- Analyze module organization, learning rules, neuron models, and axonal projection implementations
 - Review adherence to biological plausibility constraints (local learning, spike-based processing)
 
 **Analysis Criteria:**
 1. **File/Module Organization**: Are files logically grouped? Do directory names reflect their contents?
-2. **Naming Consistency**: Do file names, class names, and region/pathway names accurately describe their purpose?
-3. **Separation of Concerns**: Is learning logic properly separated from neuron dynamics, state management, and pathway routing?
-4. **Pattern Adherence**: Does the code follow documented patterns (BrainComponent protocol, RegionState management, WeightInitializer registry, local learning rules)?
+2. **Naming Consistency**: Do file names, class names, and region names accurately describe their purpose?
+3. **Separation of Concerns**: Is learning logic properly separated from neuron dynamics, state management, and axonal projection routing?
+4. **Pattern Adherence**: Does the code follow documented patterns (e.g., use of WeightInitializer, learning strategy patterns)?
 5. **Discoverability**: Can developers easily locate functionality based on naming and structure?
 6. **Code Duplication**: Are there repeated code blocks, similar functions, or duplicated logic that should be consolidated into shared utilities or base classes?
 7. **Antipattern Detection**: Identify antipatterns such as:
@@ -44,10 +44,10 @@ Provide recommendations in three priority tiers:
 **Tier 2 - Moderate Refactoring** (strategic improvements):
 - Module consolidation or splitting for better cohesion
 - Architectural pattern violations that should be corrected
-- Region/pathway boundary adjustments
+- Region boundary adjustments
 - Pattern replacements (e.g., mixin adoption, learning strategy pattern)
 - Complexity reduction through decomposition
-- Decoupling tightly coupled regions or pathways
+- Decoupling tightly coupled regions
 
 **Tier 3 - Major Restructuring** (long-term considerations):
 - Fundamental architectural changes (if any)
@@ -70,9 +70,9 @@ Provide recommendations in three priority tiers:
 
 **Output & File Delivery:**
 - Write the complete analysis to a markdown file so it is captured in the repository history.
-- Target path: `docs/reviews/architecture-review-YYYY-MM-DD.md` (use current date, e.g., `architecture-review-2025-11-01.md`).
+- Target path: `temp/ai_reviews/architecture-review-YYYY-MM-DD.md` (use current date, e.g., `architecture-review-2025-11-01.md`).
 - To avoid response length limits, output the markdown file in small sections if needed.
-- If `docs/reviews/` does not exist, create it.
+- If `temp/ai_reviews/` does not exist, create it.
 - File structure:
    1. Title: `# Architecture Review – YYYY-MM-DD`
    2. Brief summary (3-5 bullets)

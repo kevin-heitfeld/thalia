@@ -37,7 +37,6 @@ class GapJunctionConfig:
     """Configuration for gap junction coupling.
 
     Attributes:
-        enabled: Whether to apply gap junction coupling
         coupling_strength: Gap junction conductance relative to leak (g_gap/g_L)
             Biological range: 0.05-0.3 (Galarreta & Hestrin 2001)
         connectivity_threshold: Minimum shared input for coupling (0-1)
@@ -47,7 +46,6 @@ class GapJunctionConfig:
         interneuron_only: Only couple inhibitory neurons (biological default)
     """
 
-    enabled: bool = True
     coupling_strength: float = 0.1  # g_gap = 10% of leak conductance
     connectivity_threshold: float = 0.3  # Share ≥30% of inputs for coupling
     max_neighbors: int = 8  # Limit to 8 neighbors for efficiency
@@ -67,18 +65,6 @@ class GapJunctionCoupling(nn.Module):
 
     This creates attractive dynamics where coupled neurons' voltages converge,
     leading to synchronous firing patterns.
-
-    Usage:
-        >>> # Create gap junction network from afferent connectivity
-        >>> config = GapJunctionConfig(enabled=True, coupling_strength=0.1)
-        >>> gap_junctions = GapJunctionCoupling(
-        ...     n_neurons=100,
-        ...     afferent_weights=input_weights,  # [n_neurons, n_input]
-        ...     config=config,
-        ...     device="cpu"
-        ... )
-        >>> # During neuron forward pass
-        >>> coupling_current = gap_junctions(voltages)  # Add to I_total
     """
 
     def __init__(
@@ -105,13 +91,6 @@ class GapJunctionCoupling(nn.Module):
         self.n_neurons = n_neurons
         self.config = config
         self.device = device or afferent_weights.device
-
-        if not config.enabled:
-            # Disabled: no coupling
-            self.register_buffer(
-                "coupling_matrix", torch.zeros(n_neurons, n_neurons, device=self.device)
-            )
-            return
 
         # Determine which neurons get gap junctions
         if config.interneuron_only:
@@ -227,17 +206,14 @@ class GapJunctionCoupling(nn.Module):
         Returns:
             Coupling current [n_neurons] to add to neuron input
         """
-        if not self.config.enabled:
-            return torch.zeros_like(voltages)
-
         # Compute voltage differences: V[j] - V[i] for all coupled pairs
         # coupling_matrix[i,j] * voltages[j] gives contribution from j to i
-        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix  # type: ignore[assignment]
+        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix
         neighbor_contribution = coupling_matrix_tensor @ voltages  # [n_neurons]
 
         # Subtract own voltage scaled by total coupling
         # This ensures I_gap = Σ g[i,j] * (V[j] - V[i])
-        total_coupling_per_neuron: torch.Tensor = coupling_matrix_tensor.sum(dim=1)  # type: ignore[operator]
+        total_coupling_per_neuron: torch.Tensor = coupling_matrix_tensor.sum(dim=1)
         self_contribution = total_coupling_per_neuron * voltages
 
         coupling_current = neighbor_contribution - self_contribution
@@ -255,26 +231,18 @@ class GapJunctionCoupling(nn.Module):
                 - avg_neighbors: Average number of neighbors per coupled neuron
                 - coupling_density: Fraction of possible connections present
         """
-        if not self.config.enabled:
-            return {
-                "n_coupled_neurons": 0,
-                "n_connections": 0,
-                "avg_neighbors": 0.0,
-                "coupling_density": 0.0,
-            }
-
         # Count neurons with at least one gap junction
-        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix  # type: ignore[assignment]
-        has_coupling = (coupling_matrix_tensor.sum(dim=1) > 0) | (  # type: ignore[operator]
+        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix
+        has_coupling = (coupling_matrix_tensor.sum(dim=1) > 0) | (
             coupling_matrix_tensor.sum(dim=0) > 0
-        )  # type: ignore[operator]
+        )
         n_coupled = int(has_coupling.sum().item())
 
         # Count total connections (undirected, so divide by 2)
-        n_connections = int((coupling_matrix_tensor > 0).sum().item()) // 2  # type: ignore[operator]
+        n_connections = int((coupling_matrix_tensor > 0).sum().item()) // 2
 
         # Average neighbors per coupled neuron
-        neighbors_per_neuron = (coupling_matrix_tensor > 0).sum(dim=1).float()  # type: ignore[operator]
+        neighbors_per_neuron = (coupling_matrix_tensor > 0).sum(dim=1).float()
         avg_neighbors = neighbors_per_neuron[has_coupling].mean().item() if n_coupled > 0 else 0.0
 
         # Coupling density among interneurons
@@ -288,20 +256,6 @@ class GapJunctionCoupling(nn.Module):
             "avg_neighbors": avg_neighbors,
             "coupling_density": coupling_density,
         }
-
-    def __repr__(self) -> str:
-        """String representation of gap junction network."""
-        if not self.config.enabled:
-            return f"GapJunctionCoupling(disabled, {self.n_neurons} neurons)"
-
-        stats = self.get_coupling_stats()
-        return (
-            f"GapJunctionCoupling("
-            f"{stats['n_coupled_neurons']}/{self.n_neurons} coupled, "
-            f"{stats['n_connections']} connections, "
-            f"g_gap={self.config.coupling_strength:.3f}, "
-            f"density={stats['coupling_density']:.2%})"
-        )
 
 
 def create_gap_junction_coupling(
@@ -345,7 +299,6 @@ def create_gap_junction_coupling(
         ... )
     """
     config = GapJunctionConfig(
-        enabled=True,
         coupling_strength=coupling_strength,
         connectivity_threshold=connectivity_threshold,
         max_neighbors=max_neighbors,
@@ -359,10 +312,3 @@ def create_gap_junction_coupling(
         interneuron_mask=interneuron_mask,
         device=device,
     )
-
-
-__all__ = [
-    "GapJunctionCoupling",
-    "GapJunctionConfig",
-    "create_gap_junction_coupling",
-]

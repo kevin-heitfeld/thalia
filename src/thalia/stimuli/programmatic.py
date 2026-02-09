@@ -16,18 +16,6 @@ class Programmatic(StimulusPattern):
     - Algorithmic patterns (e.g., moving gratings)
     - Closed-loop feedback (input depends on output)
     - Infinite/unbounded sequences
-
-    Example:
-        >>> # Moving sine wave
-        >>> def moving_wave(t_ms):
-        ...     phase = 2 * np.pi * t_ms / 1000.0
-        ...     pattern = torch.sin(torch.linspace(0, 2*np.pi, 128) + phase)
-        ...     return (pattern > 0).to(torch.bool)
-        >>>
-        >>> stim = Programmatic(moving_wave, device=device)
-        >>>
-        >>> input_t0 = stim.get_input(0, dt_ms=1.0)    # Calls moving_wave(0.0)
-        >>> input_t100 = stim.get_input(100, dt_ms=1.0) # Calls moving_wave(100.0)
     """
 
     def __init__(

@@ -16,16 +16,6 @@ class Sustained(StimulusPattern):
     - Visual pattern shown continuously
     - Constant pressure on skin
     - Sustained auditory tone
-
-    Example:
-        >>> # Show visual pattern for 500ms
-        >>> pattern = torch.randn(128, dtype=torch.bool)
-        >>> stim = Sustained(pattern, duration_ms=500)
-        >>>
-        >>> # Query at any time during duration
-        >>> input_t0 = stim.get_input(0, dt_ms=1.0)   # Returns pattern
-        >>> input_t500 = stim.get_input(500, dt_ms=1.0)  # Returns pattern
-        >>> input_t600 = stim.get_input(600, dt_ms=1.0)  # Returns None
     """
 
     def __init__(

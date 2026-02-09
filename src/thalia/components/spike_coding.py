@@ -1,0 +1,374 @@
+"""
+Spike Coding - Unified base classes for encoding/decoding patterns.
+
+This module consolidates common patterns across different encoder/decoder implementations:
+- SpikeEncoder: Base class for converting data → spikes
+- SpikeDecoder: Base class for converting spikes → data
+
+The key insight: Once any modality is converted to spikes, processing is unified.
+Different modalities need different front-end encoders, but they all produce spike
+patterns that can be processed by the same downstream circuits.
+
+Consolidation Benefits:
+=======================
+1. Reduces code duplication (~200 lines saved)
+2. Ensures consistent spike coding across modalities
+3. Makes it easy to add new modalities
+4. Centralized improvement of encoding strategies
+
+Author: Thalia Project
+Date: December 2025
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+import torch
+import torch.nn as nn
+
+from thalia.constants import DEFAULT_DT_MS
+
+
+class CodingStrategy(Enum):
+    """Spike coding strategies (shared across encoders/decoders)."""
+
+    RATE = "rate"  # Spike count encodes value
+    TEMPORAL = "temporal"  # Spike timing encodes value
+    POPULATION = "population"  # Population codes
+    PHASE = "phase"  # Phase relative to oscillation
+    BURST = "burst"  # Burst patterns
+    SDR = "sdr"  # Sparse distributed representation
+    WTA = "wta"  # Winner-take-all
+
+
+@dataclass
+class SpikeCodingConfig:
+    """Base configuration for spike coding operations.
+
+    All encoders/decoders should inherit from this to ensure
+    compatible parameters.
+    """
+
+    # Core dimensions
+    n_neurons: int = 1024
+    n_timesteps: int = 20
+
+    # Temporal parameters
+    dt_ms: float = DEFAULT_DT_MS
+    tau_ms: float = 20.0  # Integration time constant
+
+    # Coding strategy
+    coding_strategy: CodingStrategy = CodingStrategy.RATE
+
+    # Sparsity (for SDR/population codes)
+    sparsity: float = 0.05  # Target fraction of active neurons
+
+    # Phase coding
+    oscillation_frequency_hz: float = 8.0  # Theta rhythm
+
+    # Temperature for decoding
+    temperature: float = 1.0
+
+    # Device
+    device: str = "cpu"
+
+    @property
+    def decay_factor(self) -> float:
+        """Exponential decay factor for leaky integration."""
+        return 1.0 - self.dt_ms / self.tau_ms
+
+    @property
+    def oscillation_period_ms(self) -> float:
+        """Period of oscillation in ms."""
+        return 1000.0 / self.oscillation_frequency_hz
+
+
+class SpikeEncoder(nn.Module, ABC):
+    """
+    Abstract base class for spike encoders.
+
+    Subclasses implement modality-specific encoding:
+    - TokenEncoder: text tokens → spikes
+    - ImageEncoder: images → spikes
+    - AudioEncoder: audio → spikes
+    - etc.
+
+    All produce compatible spike patterns: [batch, seq_len, n_timesteps, n_neurons]
+    """
+
+    def __init__(self, config: SpikeCodingConfig):
+        super().__init__()
+        self.config = config
+        self.device = torch.device(config.device)
+
+        # Initialize strategy-specific components
+        self._init_encoding_strategy()
+
+    def _init_encoding_strategy(self) -> None:
+        """Initialize components based on coding strategy."""
+        strategy = self.config.coding_strategy
+
+        if strategy == CodingStrategy.RATE:
+            # Rate coding: Convert activations to spike probabilities
+            self.rate_scale = nn.Parameter(torch.ones(self.config.n_neurons))
+
+        elif strategy == CodingStrategy.TEMPORAL:
+            # Temporal coding: Latency encodes value
+            self.latency_scale = nn.Parameter(torch.ones(self.config.n_neurons))
+
+        elif strategy in (CodingStrategy.PHASE, CodingStrategy.BURST):
+            # Phase/burst coding: Track oscillation phase
+            self.register_buffer("phase", torch.tensor(0.0))
+            self.phase_increment = (
+                2 * 3.14159 * self.config.dt_ms / self.config.oscillation_period_ms
+            )
+
+    @abstractmethod
+    def encode(self, input_data: Any) -> torch.Tensor:
+        """
+        Encode input data to spike patterns.
+
+        Args:
+            input_data: Modality-specific input
+
+        Returns:
+            spikes: [batch, seq_len, n_timesteps, n_neurons]
+        """
+        pass
+
+    def forward(self, input_data: Any) -> torch.Tensor:
+        """Forward pass delegates to encode()."""
+        return self.encode(input_data)
+
+    def _apply_coding_strategy(
+        self,
+        features: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Apply spike coding strategy to features.
+
+        Args:
+            features: Continuous features [batch, seq_len, n_neurons]
+
+        Returns:
+            spikes: Binary spike trains [batch, seq_len, n_timesteps, n_neurons]
+        """
+        batch, seq_len, n_neurons = features.shape
+        strategy = self.config.coding_strategy
+
+        if strategy == CodingStrategy.RATE:
+            # Rate coding: Spike probability proportional to feature strength
+            # features should be in [0, 1] range
+            features_expanded = features.unsqueeze(2).expand(
+                batch, seq_len, self.config.n_timesteps, n_neurons
+            )
+            spike_prob = torch.sigmoid(features_expanded * self.rate_scale)
+            spikes = torch.bernoulli(spike_prob)
+
+        elif strategy == CodingStrategy.TEMPORAL:
+            # Temporal coding: Stronger features spike earlier
+            spikes = torch.zeros(
+                batch,
+                seq_len,
+                self.config.n_timesteps,
+                n_neurons,
+                device=self.device,
+            )
+
+            # Convert features to latencies: higher value = earlier spike
+            latencies = (1.0 - features.clamp(0, 1)) * self.config.n_timesteps
+            latencies = (latencies * self.latency_scale).long()
+
+            # Generate spikes at computed latencies
+            for b in range(batch):
+                for s in range(seq_len):
+                    for n in range(n_neurons):
+                        t = int(latencies[b, s, n].item())
+                        if 0 <= t < self.config.n_timesteps:
+                            spikes[b, s, t, n] = 1.0
+
+        elif strategy == CodingStrategy.POPULATION:
+            # Population coding: Distribute across neurons
+            # Similar to rate but with population-level normalization
+            features_expanded = features.unsqueeze(2).expand(
+                batch, seq_len, self.config.n_timesteps, n_neurons
+            )
+            # Add noise for population variability
+            noise = torch.randn_like(features_expanded) * 0.1
+            spike_prob = torch.sigmoid(features_expanded + noise)
+            spikes = torch.bernoulli(spike_prob)
+
+        elif strategy == CodingStrategy.SDR:
+            # Sparse Distributed Representation: Top-k activation
+            spikes = torch.zeros(
+                batch,
+                seq_len,
+                self.config.n_timesteps,
+                n_neurons,
+                device=self.device,
+            )
+
+            # Select top-k neurons based on feature strength
+            k = int(self.config.sparsity * n_neurons)
+            _, top_indices = torch.topk(features, k, dim=-1)
+
+            # Create sparse pattern repeated over time
+            for t in range(self.config.n_timesteps):
+                # Add temporal jitter
+                if torch.rand(1).item() < 0.5:  # 50% chance of spike per timestep
+                    for b in range(batch):
+                        for s in range(seq_len):
+                            spikes[b, s, t, top_indices[b, s]] = 1.0
+
+        elif strategy == CodingStrategy.PHASE:
+            # Phase coding: spike timing encodes information
+            # Higher activation = earlier spikes within theta cycle
+            spikes = torch.zeros(
+                batch,
+                seq_len,
+                self.config.n_timesteps,
+                n_neurons,
+                device=self.device,
+            )
+
+            for b in range(batch):
+                for s in range(seq_len):
+                    # Normalize activations to [0, 1]
+                    act = features[b, s]
+                    act_norm = (act - act.min()) / (act.max() - act.min() + 1e-8)
+
+                    # Convert to spike times: higher value = earlier spike
+                    spike_times = ((1.0 - act_norm) * (self.config.n_timesteps - 1)).long()
+
+                    # Create spikes at calculated times
+                    for n in range(n_neurons):
+                        t = int(spike_times[n].item())
+                        if 0 <= t < self.config.n_timesteps:
+                            spikes[b, s, t, n] = 1.0
+
+        else:
+            raise NotImplementedError(f"Coding strategy {strategy} not implemented")
+
+        return spikes
+
+
+class SpikeDecoder(nn.Module, ABC):
+    """
+    Abstract base class for spike decoders.
+
+    Subclasses implement modality-specific decoding:
+    - TokenDecoder: spikes → token probabilities
+    - MotorDecoder: spikes → motor commands
+    - etc.
+
+    All accept spike patterns: [batch, seq_len, n_timesteps, n_neurons]
+    """
+
+    def __init__(self, config: SpikeCodingConfig):
+        super().__init__()
+        self.config = config
+        self.device = torch.device(config.device)
+
+        # Integration state for temporal processing
+        self.register_buffer(
+            "integration_state",
+            torch.zeros(1, config.n_neurons),
+        )
+
+        # Initialize strategy-specific components
+        self._init_decoding_strategy()
+
+    def _init_decoding_strategy(self) -> None:
+        """Initialize components based on coding strategy."""
+        strategy = self.config.coding_strategy
+
+        if strategy == CodingStrategy.TEMPORAL:
+            # Track first spike times for latency decoding
+            self.register_buffer(
+                "first_spike_time",
+                torch.full((1, self.config.n_neurons), float("inf")),
+            )
+
+        elif strategy == CodingStrategy.WTA:
+            # Lateral inhibition for winner-take-all
+            # (Subclasses define size)
+            pass
+
+    def decode(self, spikes: torch.Tensor) -> Any:
+        """
+        Decode spike patterns to output.
+
+        Args:
+            spikes: [batch, seq_len, n_timesteps, n_neurons]
+
+        Returns:
+            output: Modality-specific output
+
+        Note:
+            This provides a default rate-code implementation.
+            Subclasses should override for better strategies.
+        """
+        # Default implementation: rate-code decoding
+        # Subclasses should override for modality-specific behavior
+        return self._integrate_spikes(spikes)
+
+    def forward(self, spikes: torch.Tensor) -> Any:
+        """Forward pass delegates to decode()."""
+        return self.decode(spikes)
+
+    def _integrate_spikes(
+        self,
+        spikes: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Integrate spikes over time using coding strategy.
+
+        Args:
+            spikes: [batch, seq_len, n_timesteps, n_neurons]
+
+        Returns:
+            features: [batch, seq_len, n_neurons]
+        """
+        batch, seq_len, n_timesteps, n_neurons = spikes.shape
+        strategy = self.config.coding_strategy
+        decay = self.config.decay_factor
+
+        if strategy == CodingStrategy.RATE:
+            # Rate decoding: Count spikes, normalize by time
+            features = spikes.sum(dim=2) / n_timesteps
+
+        elif strategy == CodingStrategy.TEMPORAL:
+            # Temporal decoding: Earlier spikes weighted more
+            features = torch.zeros(batch, seq_len, n_neurons, device=self.device)
+            for t in range(n_timesteps):
+                weight = (n_timesteps - t) / n_timesteps
+                features += spikes[:, :, t, :] * weight
+
+        elif strategy == CodingStrategy.POPULATION:
+            # Population decoding: Leaky integration
+            features = torch.zeros(batch, seq_len, n_neurons, device=self.device)
+            state = torch.zeros(batch, n_neurons, device=self.device)
+
+            for s in range(seq_len):
+                for t in range(n_timesteps):
+                    state = state * decay + spikes[:, s, t, :]
+                features[:, s, :] = state
+
+        elif strategy in (CodingStrategy.SDR, CodingStrategy.WTA):
+            # SDR/WTA: Sum spikes over time (binary patterns)
+            features = spikes.sum(dim=2)
+            # Threshold to maintain sparsity
+            if strategy == CodingStrategy.SDR:
+                k = int(self.config.sparsity * n_neurons)
+                threshold = torch.kthvalue(features, n_neurons - k, dim=-1, keepdim=True)[0]
+                features = (features >= threshold).float() * features
+
+        else:
+            # Default: Simple spike count
+            features = spikes.sum(dim=2)
+
+        return features

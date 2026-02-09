@@ -55,12 +55,6 @@ class TemporalSequenceDataset:
     - Temporal prediction (hippocampus)
     - Pattern completion (cortex)
     - Violation detection (prediction error)
-
-    Usage:
-        >>> config = SequenceConfig(n_symbols=5, sequence_length=10)
-        >>> dataset = TemporalSequenceDataset(config)
-        >>> sequence, targets, pattern_type = dataset.generate_sequence()
-        >>> # sequence.shape = (sequence_length, n_symbols) for one-hot
     """
 
     def __init__(self, config: SequenceConfig):
@@ -108,55 +102,6 @@ class TemporalSequenceDataset:
         targets = self._generate_targets(symbol_sequence)
 
         return sequence, targets, pattern_type
-
-    def generate_batch(
-        self,
-        batch_size: int,
-        balance_patterns: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, List[PatternType]]:
-        """
-        Generate batch of sequences.
-
-        Args:
-            batch_size: Number of sequences
-            balance_patterns: Whether to balance pattern types
-
-        Returns:
-            sequences: (batch_size, length, n_symbols)
-            targets: (batch_size, length, n_symbols)
-            pattern_types: List of pattern types
-        """
-        sequences: list[torch.Tensor] = []
-        targets_list: list[torch.Tensor] = []
-        pattern_types: list[PatternType] = []
-
-        if balance_patterns:
-            # Generate equal numbers of each pattern
-            n_per_pattern = batch_size // len(self.config.pattern_types)
-            remainder = batch_size % len(self.config.pattern_types)
-
-            for pattern_type in self.config.pattern_types:
-                n = n_per_pattern + (1 if remainder > 0 else 0)
-                remainder -= 1
-
-                for _ in range(n):
-                    seq, tgt, pt = self.generate_sequence(pattern_type=pattern_type)
-                    sequences.append(seq)
-                    targets_list.append(tgt)
-                    pattern_types.append(pt)
-        else:
-            # Random pattern sampling
-            for _ in range(batch_size):
-                seq, tgt, pt = self.generate_sequence()
-                sequences.append(seq)
-                targets_list.append(tgt)
-                pattern_types.append(pt)
-
-        return (
-            torch.stack(sequences),
-            torch.stack(targets_list),
-            pattern_types,
-        )
 
     def _generate_abc(self) -> List[int]:
         """Generate A→B→C linear sequence pattern."""

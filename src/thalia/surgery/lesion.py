@@ -16,10 +16,8 @@ from typing import TYPE_CHECKING, Dict, Optional
 
 import torch
 
-from thalia.typing import SynapticWeights
-
 if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
+    from thalia.brain import DynamicBrain
 
 
 @dataclass
@@ -27,7 +25,7 @@ class LesionState:
     """Saved state for lesion reversal."""
 
     region_name: str
-    original_weights: SynapticWeights
+    original_weights: Dict[str, torch.Tensor]
     original_plasticity: bool
     lesion_type: str  # "complete" or "partial"
     lesioned_indices: Optional[torch.Tensor] = None
@@ -54,10 +52,6 @@ def lesion_region(
                     Options: "cortex", "hippocampus", "prefrontal",
                             "striatum", "cerebellum", "thalamus"
         save_for_restore: Whether to save original state for restoration
-
-    Example:
-        >>> lesion_region(brain, "hippocampus")
-        >>> # Brain now has no episodic memory formation
     """
     # Get region implementation
     region_impl = _get_region(brain, region_name)
@@ -66,17 +60,8 @@ def lesion_region(
     if save_for_restore:
         _save_lesion_state(brain, region_name, "complete")
 
-    # Disable plasticity
-    if hasattr(region_impl, "plasticity_enabled"):
-        region_impl.plasticity_enabled = False
-
     # Zero all weights
     _zero_region_weights(region_impl)
-
-    # Reset state to zero
-    region_impl.reset_state()
-
-    print(f"✂️  Lesioned region: {region_name}")
 
 
 def partial_lesion(
@@ -94,10 +79,6 @@ def partial_lesion(
         region_name: Name of region to partially lesion
         lesion_fraction: Fraction of neurons to lesion (0.0-1.0)
         save_for_restore: Whether to save state for restoration
-
-    Example:
-        >>> partial_lesion(brain, "cortex", lesion_fraction=0.3)
-        >>> # 30% of cortical neurons are silenced
     """
     region_impl = _get_region(brain, region_name)
 
@@ -113,14 +94,8 @@ def partial_lesion(
         state = _save_lesion_state(brain, region_name, "partial")
         state.lesioned_indices = lesioned_indices
 
-    # Disable plasticity
-    if hasattr(region_impl, "plasticity_enabled"):
-        region_impl.plasticity_enabled = False
-
     # Zero weights for lesioned neurons
     _zero_neurons_weights(region_impl, lesioned_indices)
-
-    print(f"✂️  Partially lesioned region: {region_name} ({lesion_fraction:.0%})")
 
 
 @contextmanager
@@ -135,11 +110,6 @@ def temporary_lesion(
         brain: The brain to modify
         region_name: Name of region to temporarily lesion
         lesion_fraction: Fraction of neurons to lesion (1.0 = complete)
-
-    Example:
-        >>> with temporary_lesion(brain, "hippocampus"):
-        ...     performance = evaluate_memory_task(brain)
-        >>> # Hippocampus is restored after block
     """
     # Save state
     if lesion_fraction >= 1.0:
@@ -176,17 +146,8 @@ def restore_region(
     # Restore weights
     _restore_weights(region_impl, state.original_weights)
 
-    # Restore plasticity
-    if hasattr(region_impl, "plasticity_enabled"):
-        region_impl.plasticity_enabled = state.original_plasticity
-
     # Remove from cache
     del _lesion_cache[region_name]
-
-    print(f"✅ Restored region: {region_name}")
-
-
-# Helper functions
 
 
 def _get_region(brain: "DynamicBrain", region_name: str):
@@ -214,21 +175,11 @@ def _get_region(brain: "DynamicBrain", region_name: str):
 
     attr_name = name_map[region_name]
 
-    # Use brain.components for direct access
-    if attr_name not in brain.components:
+    # Use brain.regions for direct access
+    if attr_name not in brain.regions:
         raise ValueError(f"Region '{attr_name}' not found in brain")
 
-    return brain.components[attr_name]
-
-
-def _get_region_size(region_impl) -> int:
-    """Get number of neurons in region."""
-    if hasattr(region_impl, "n_output"):
-        return int(region_impl.n_output)
-    elif hasattr(region_impl, "config") and hasattr(region_impl.config, "n_output"):
-        return int(region_impl.config.n_output)
-    else:
-        raise ValueError("Cannot determine region size")
+    return brain.regions[attr_name]
 
 
 def _save_lesion_state(
@@ -245,14 +196,11 @@ def _save_lesion_state(
     for name, param in region_impl.named_parameters():
         original_weights[name] = param.data.clone()
 
-    # Save plasticity state
-    original_plasticity = getattr(region_impl, "plasticity_enabled", True)
-
     # Create state object
     state = LesionState(
         region_name=region_name,
         original_weights=original_weights,
-        original_plasticity=original_plasticity,
+        original_plasticity=True,
         lesion_type=lesion_type,
     )
 
@@ -275,7 +223,7 @@ def _zero_neurons_weights(region_impl, neuron_indices: torch.Tensor) -> None:
     """
     # Zero output weights (rows in weight matrices)
     for name, param in region_impl.named_parameters():
-        if param.requires_grad and "weight" in name and param.dim() >= 2:
+        if "weight" in name and param.dim() >= 2:
             # Get valid indices for this parameter's output dimension
             n_outputs = param.shape[0]
             # Only use indices that are valid for this layer
@@ -284,7 +232,7 @@ def _zero_neurons_weights(region_impl, neuron_indices: torch.Tensor) -> None:
                 param.data[valid_indices] = 0.0
 
 
-def _restore_weights(region_impl, original_weights: SynapticWeights) -> None:
+def _restore_weights(region_impl, original_weights: Dict[str, torch.Tensor]) -> None:
     """Restore weights from saved state."""
     for name, param in region_impl.named_parameters():
         if name in original_weights:

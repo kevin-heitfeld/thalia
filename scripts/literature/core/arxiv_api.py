@@ -242,10 +242,6 @@ def search_by_category(category, keywords=None, max_results=20):
     -------
     list of arxiv.Result
         List of papers in the category
-
-    Examples
-    --------
-    >>> papers = search_by_category('hep-th', keywords='string theory')
     """
     if keywords:
         query = f"cat:{category} AND all:{keywords}"

@@ -15,9 +15,6 @@ Implementation:
 - Cache-friendly (contiguous tensor storage)
 - GPU-compatible (pure tensor operations)
 - Growable (can expand buffer size dynamically)
-
-Author: Thalia Project
-Date: December 21, 2025
 """
 
 from __future__ import annotations
@@ -36,17 +33,6 @@ class CircularDelayBuffer:
 
     Memory: O(max_delay × size) per buffer
     Read/Write: O(1) per operation
-
-    Example:
-        >>> # 5ms delay for 128 neurons
-        >>> buffer = CircularDelayBuffer(max_delay=5, size=128, device="cpu")
-        >>>
-        >>> # Each timestep: write current spikes, read delayed spikes
-        >>> for t in range(100):
-        ...     current_spikes = get_spikes()  # [128] binary tensor
-        ...     buffer.write(current_spikes)
-        ...     delayed_spikes = buffer.read(delay=5)  # Spikes from t-5
-        ...     buffer.advance()
 
     Args:
         max_delay: Maximum delay in timesteps (buffer size = max_delay + 1)
@@ -82,6 +68,20 @@ class CircularDelayBuffer:
 
         # Current write position (0 to max_delay, wraps around)
         self.ptr = 0
+
+    def to(self, device: str) -> CircularDelayBuffer:
+        """Move buffer to different device.
+
+        Args:
+            device: Target device ('cpu', 'cuda', etc.)
+
+        Returns:
+            Self (for chaining)
+        """
+        if device != self.device:
+            self.buffer = self.buffer.to(device)
+            self.device = device
+        return self
 
     def write(self, spikes: torch.Tensor) -> None:
         """Write spikes to current buffer position.
@@ -179,12 +179,6 @@ class CircularDelayBuffer:
         This method resizes the buffer and interpolates existing spike history
         to preserve temporal information.
 
-        Example:
-            - delay_ms = 5.0ms
-            - old_dt = 1.0ms → 5 steps
-            - new_dt = 0.5ms → 10 steps
-            Buffer expands from 6 to 11 slots, interpolating spike history
-
         Args:
             new_dt_ms: New simulation timestep in milliseconds
             delay_ms: Delay duration in milliseconds (fixed)
@@ -257,56 +251,3 @@ class CircularDelayBuffer:
 
         # Reset pointer to end (most recent is at buffer[-1])
         self.ptr = new_delay_steps
-
-    def to(self, device: str) -> CircularDelayBuffer:
-        """Move buffer to different device.
-
-        Args:
-            device: Target device ('cpu', 'cuda', etc.)
-
-        Returns:
-            Self (for chaining)
-        """
-        if device != self.device:
-            self.buffer = self.buffer.to(device)
-            self.device = device
-        return self
-
-    def state_dict(self) -> dict:
-        """Get buffer state for checkpointing.
-
-        Returns:
-            Dict containing buffer tensor and pointer position
-        """
-        return {
-            "buffer": self.buffer,
-            "ptr": self.ptr,
-            "max_delay": self.max_delay,
-            "size": self.size,
-        }
-
-    def load_state_dict(self, state: dict) -> None:
-        """Restore buffer state from checkpoint.
-
-        Args:
-            state: Dict from state_dict()
-
-        Raises:
-            ValueError: If state dimensions don't match
-        """
-        if state["max_delay"] != self.max_delay:
-            raise ValueError(
-                f"max_delay mismatch: expected {self.max_delay}, " f"got {state['max_delay']}"
-            )
-        if state["size"] != self.size:
-            raise ValueError(f"size mismatch: expected {self.size}, " f"got {state['size']}")
-
-        self.buffer = state["buffer"].to(dtype=self.dtype, device=self.device)
-        self.ptr = state["ptr"]
-
-    def __repr__(self) -> str:
-        return (
-            f"CircularDelayBuffer(max_delay={self.max_delay}, "
-            f"size={self.size}, device='{self.device}', "
-            f"dtype={self.dtype}, ptr={self.ptr})"
-        )

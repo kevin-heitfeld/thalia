@@ -4,57 +4,30 @@ Factory functions for creating standard neuron populations.
 This module provides convenience factory functions for creating common neuron types,
 reducing boilerplate configuration code and centralizing biological parameter choices.
 
-Usage:
-======
-    from thalia.components.neurons import NeuronFactory, create_pyramidal_neurons
-
-    # Direct function call (traditional approach)
-    dg_neurons = create_pyramidal_neurons(n_neurons=128, device=device)
-
-    # Using registry (dynamic approach)
-    neurons = NeuronFactory.create("pyramidal", n_neurons=128, device=device)
-
-    # List available neuron types
-    available = NeuronFactory.list_types()
-    print(available)  # ['pyramidal', 'relay', 'trn', 'cortical_layer']
-
-    # Custom overrides for regional specialization
-    ca3_neurons = NeuronFactory.create(
-        "pyramidal",
-        n_neurons=32,
-        device=device,
-        adapt_increment=0.1,  # CA3-specific adaptation
-        tau_adapt=100.0,
-    )
-
-    # Relay neurons with specific configuration
-    relay = NeuronFactory.create("relay", n_neurons=64, device=device)
-
 Author: Thalia Project
 Date: December 2025
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List
+from enum import Enum
+from typing import Any, Callable, Dict, List
 
 import torch
 
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
-from thalia.constants.neuron import (
-    E_EXCITATORY,
-    E_INHIBITORY,
-    E_LEAK,
-    FAST_SPIKING_INTERNEURON,
-    G_LEAK_STANDARD,
-    TAU_MEM_FAST,
-    TAU_MEM_STANDARD,
-    TAU_REF_FAST,
-    TAU_SYN_EXCITATORY,
-    TAU_SYN_INHIBITORY,
-    V_RESET_STANDARD,
-    V_THRESHOLD_STANDARD,
-)
+from .neuron import ConductanceLIF, ConductanceLIFConfig
+
+
+class NeuronType(Enum):
+    """Enumeration of standard neuron types for factory registration."""
+
+    PYRAMIDAL = "pyramidal"
+    RELAY = "relay"
+    TRN = "trn"
+    CORTICAL_LAYER = "cortical_layer"
+    FAST_SPIKING = "fast_spiking"
+    MSN_D1 = "msn_d1"
+    MSN_D2 = "msn_d2"
 
 
 class NeuronFactory:
@@ -63,36 +36,17 @@ class NeuronFactory:
 
     Provides standardized neuron creation methods used across Thalia.
     Supports both direct function calls and dynamic registry-based creation.
-
-    Examples:
-        # Registry-based creation
-        >>> pyramidal = NeuronFactory.create("pyramidal", n_neurons=100, device=device)
-        >>> relay = NeuronFactory.create("relay", n_neurons=50, device=device)
-
-        # List available types
-        >>> types = NeuronFactory.list_types()
-        >>> print(types)  # ['pyramidal', 'relay', 'trn', 'cortical_layer']
-
-        # Check if type exists
-        >>> if NeuronFactory.has_type("pyramidal"):
-        ...     neurons = NeuronFactory.create("pyramidal", 100, device)
     """
 
     # Registry of neuron factory functions
-    _registry: Dict[str, Callable] = {}
+    _registry: Dict[NeuronType, Callable] = {}
 
     @classmethod
-    def register(cls, neuron_type: str):
+    def register(cls, neuron_type: NeuronType) -> Callable[[Callable], Callable]:
         """Decorator to register a neuron factory function.
 
         Args:
             neuron_type: Identifier for the neuron type (e.g., "pyramidal", "relay")
-
-        Examples:
-            >>> @NeuronFactory.register("custom")
-            ... def create_custom_neurons(n_neurons, device, **overrides):
-            ...     config = ConductanceLIFConfig(...)
-            ...     return ConductanceLIF(n_neurons, config, device)
         """
 
         def decorator(func: Callable) -> Callable:
@@ -103,12 +57,16 @@ class NeuronFactory:
 
     @classmethod
     def create(
-        cls, neuron_type: str, n_neurons: int, device: torch.device, **overrides
+        cls,
+        neuron_type: NeuronType,
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
     ) -> ConductanceLIF:
         """Create neurons by type name.
 
         Args:
-            neuron_type: Type identifier (e.g., "pyramidal", "relay", "trn", "cortical_layer")
+            neuron_type: Type identifier for the neuron population
             n_neurons: Number of neurons to create
             device: Device for tensor allocation
             **overrides: Custom parameters to override defaults
@@ -118,13 +76,6 @@ class NeuronFactory:
 
         Raises:
             ValueError: If neuron_type is not registered
-
-        Examples:
-            >>> neurons = NeuronFactory.create("pyramidal", 128, device)
-            >>> relay = NeuronFactory.create("relay", 64, device, v_threshold=0.9)
-            >>> l23 = NeuronFactory.create(
-            ...     "cortical_layer", 256, device, layer="L2/3", adapt_increment=0.4
-            ... )
         """
         if neuron_type not in cls._registry:
             available = ", ".join(sorted(cls._registry.keys()))
@@ -139,21 +90,16 @@ class NeuronFactory:
         return result
 
     @classmethod
-    def list_types(cls) -> List[str]:
+    def list_neuron_types(cls) -> List[str]:
         """Get list of available neuron types.
 
         Returns:
             Sorted list of registered neuron type names
-
-        Examples:
-            >>> types = NeuronFactory.list_types()
-            >>> print(types)
-            ['cortical_layer', 'pyramidal', 'relay', 'trn']
         """
-        return sorted(cls._registry.keys())
+        return sorted([key.name for key in cls._registry.keys()])
 
     @classmethod
-    def has_type(cls, neuron_type: str) -> bool:
+    def has_type(cls, neuron_type: NeuronType) -> bool:
         """Check if a neuron type is registered.
 
         Args:
@@ -161,337 +107,388 @@ class NeuronFactory:
 
         Returns:
             True if the type is registered, False otherwise
-
-        Examples:
-            >>> if NeuronFactory.has_type("pyramidal"):
-            ...     neurons = NeuronFactory.create("pyramidal", 100, device)
         """
         return neuron_type in cls._registry
 
+    @staticmethod
+    def create_pyramidal_neurons(
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create standard pyramidal neuron population.
 
-@NeuronFactory.register("pyramidal")
-def create_pyramidal_neurons(
-    n_neurons: int,
-    device: torch.device,
-    **overrides,
-) -> ConductanceLIF:
-    """Create standard pyramidal neuron population.
+        Standard pyramidal neurons with typical cortical/hippocampal parameters:
+        - τ_mem = 20ms (standard integration window)
+        - Fast excitatory (AMPA, 5ms)
+        - Slower inhibitory (GABA_A, 10ms)
+        - Standard threshold and reversal potentials
 
-    Standard pyramidal neurons with typical cortical/hippocampal parameters:
-    - τ_mem = 20ms (standard integration window)
-    - Fast excitatory (AMPA, 5ms)
-    - Slower inhibitory (GABA_A, 10ms)
-    - Standard threshold and reversal potentials
+        Args:
+            n_neurons: Number of neurons in population
+            device: Device for tensor allocation
+            **overrides: Custom parameters to override defaults (e.g., adapt_increment, tau_adapt)
 
-    Args:
-        n_neurons: Number of neurons in population
-        device: Device for tensor allocation
-        **overrides: Custom parameters to override defaults (e.g., adapt_increment, tau_adapt)
+        Returns:
+            ConductanceLIF neuron population with standard pyramidal configuration
+        """
+        config = ConductanceLIFConfig(
+            g_L=0.05,
+            tau_E=5.0,
+            tau_I=10.0,
+            v_threshold=1.0,
+            v_reset=0.0,
+            E_L=0.0,
+            E_E=3.0,
+            E_I=-0.5,
+            tau_mem=20.0,
+            **overrides,
+        )
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
 
-    Returns:
-        ConductanceLIF neuron population with standard pyramidal configuration
+    @staticmethod
+    def create_relay_neurons(
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create thalamic relay neuron population.
 
-    Examples:
-        # Standard pyramidal neurons (hippocampus DG, CA1)
-        >>> dg_neurons = create_pyramidal_neurons(128, device)
+        Thalamic relay neurons with typical sensory relay properties:
+        - Standard membrane dynamics (τ_mem = 20ms)
+        - Fast excitatory transmission (5ms, sensory input)
+        - Slower inhibitory (10ms, from TRN)
+        - Standard excitability parameters
 
-        # With spike-frequency adaptation (CA3, to prevent runaway recurrence)
-        >>> ca3_neurons = create_pyramidal_neurons(
-        ...     32, device, adapt_increment=0.1, tau_adapt=100.0
-        ... )
+        Args:
+            n_neurons: Number of relay neurons
+            device: Device for tensor allocation
+            **overrides: Custom parameters to override defaults
 
-        # Cortical L2/3 with strong adaptation
-        >>> l23_neurons = create_pyramidal_neurons(
-        ...     256, device, adapt_increment=0.3, tau_adapt=150.0
-        ... )
-    """
-    config = ConductanceLIFConfig(
-        g_L=G_LEAK_STANDARD,
-        tau_E=TAU_SYN_EXCITATORY,
-        tau_I=TAU_SYN_INHIBITORY,
-        v_threshold=V_THRESHOLD_STANDARD,
-        v_reset=V_RESET_STANDARD,
-        E_L=E_LEAK,
-        E_E=E_EXCITATORY,
-        E_I=E_INHIBITORY,
-        tau_mem=TAU_MEM_STANDARD,
-        **overrides,  # Allow customization
-    )
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
-    return neurons
+        Returns:
+            ConductanceLIF neuron population configured for thalamic relay
+        """
+        config = ConductanceLIFConfig(
+            v_threshold=1.0,
+            v_reset=0.0,
+            E_L=0.0,
+            E_E=3.0,
+            E_I=-0.5,
+            g_L=0.05,
+            tau_mem=20.0,
+            tau_E=5.0,  # Fast excitatory (sensory input)
+            tau_I=10.0,  # Slower inhibitory (from TRN)
+            tau_ref=2.0,  # Short refractory period for relay neurons (2ms vs 5ms cortical)
+            **overrides,
+        )
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
 
+    @staticmethod
+    def create_trn_neurons(
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create thalamic reticular nucleus (TRN) inhibitory neuron population.
 
-@NeuronFactory.register("relay")
-def create_relay_neurons(
-    n_neurons: int,
-    device: torch.device,
-    **overrides,
-) -> ConductanceLIF:
-    """Create thalamic relay neuron population.
+        TRN neurons are inhibitory (GABAergic) with faster dynamics than relay neurons:
+        - Faster membrane dynamics (τ_mem = 16ms, 0.8x standard)
+        - Faster conductance leak (1.2x standard for quicker responses)
+        - Very fast excitatory (4ms, from relay/cortex)
+        - Fast inhibitory (8ms, recurrent TRN)
 
-    Thalamic relay neurons with typical sensory relay properties:
-    - Standard membrane dynamics (τ_mem = 20ms)
-    - Fast excitatory transmission (5ms, sensory input)
-    - Slower inhibitory (10ms, from TRN)
-    - Standard excitability parameters
+        Args:
+            n_neurons: Number of TRN neurons
+            device: Device for tensor allocation
+            **overrides: Custom parameters to override defaults
 
-    Args:
-        n_neurons: Number of relay neurons
-        device: Device for tensor allocation
-        **overrides: Custom parameters to override defaults
+        Returns:
+            ConductanceLIF neuron population configured for TRN
+        """
+        config = ConductanceLIFConfig(
+            v_threshold=1.0,
+            v_reset=0.0,
+            E_L=0.0,
+            E_E=3.0,
+            E_I=-0.5,
+            g_L=0.06,  # Slightly faster dynamics
+            tau_mem=16.0,  # Faster membrane
+            tau_E=4.0,  # Very fast excitatory
+            tau_I=8.0,  # Fast inhibitory
+            **overrides,
+        )
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
 
-    Returns:
-        ConductanceLIF neuron population configured for thalamic relay
+    @staticmethod
+    def create_cortical_layer_neurons(
+        n_neurons: int,
+        layer: str,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create layer-specific cortical neurons.
 
-    Examples:
-        # Standard relay neurons
-        >>> relay_neurons = create_relay_neurons(64, device)
+        Creates neurons configured for specific cortical layers with appropriate
+        properties:
+        - L4: Fast sensory integration, standard threshold
+        - L2/3: Recurrent processing with strong adaptation (prevents frozen attractors)
+        - L5: Output layer, slightly lower threshold for reliable output
+        - L6a: Corticothalamic type I (projects to TRN, inhibitory modulation)
+        - L6b: Corticothalamic type II (projects to relay, excitatory modulation)
 
-        # Matrix relay with custom threshold
-        >>> matrix_relay = create_relay_neurons(32, device, v_threshold=0.9)
-    """
-    config = ConductanceLIFConfig(
-        v_threshold=V_THRESHOLD_STANDARD,
-        v_reset=V_RESET_STANDARD,
-        E_L=E_LEAK,
-        E_E=E_EXCITATORY,
-        E_I=E_INHIBITORY,
-        g_L=G_LEAK_STANDARD,
-        tau_mem=TAU_MEM_STANDARD,
-        tau_E=TAU_SYN_EXCITATORY,  # Fast excitatory (sensory input)
-        tau_I=TAU_SYN_INHIBITORY,  # Slower inhibitory (from TRN)
-        **overrides,
-    )
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
-    return neurons
+        Args:
+            n_neurons: Number of neurons in the layer
+            layer: Layer identifier ("L4", "L2/3", "L5", "L6a", "L6b", or legacy "L6")
+            device: Device for tensor allocation
+            **overrides: Custom parameters to override layer defaults
 
+        Returns:
+            ConductanceLIF neuron population configured for the specified layer
 
-@NeuronFactory.register("trn")
-def create_trn_neurons(
-    n_neurons: int,
-    device: torch.device,
-    **overrides,
-) -> ConductanceLIF:
-    """Create thalamic reticular nucleus (TRN) inhibitory neuron population.
-
-    TRN neurons are inhibitory (GABAergic) with faster dynamics than relay neurons:
-    - Faster membrane dynamics (τ_mem = 16ms, 0.8x standard)
-    - Faster conductance leak (1.2x standard for quicker responses)
-    - Very fast excitatory (4ms, from relay/cortex)
-    - Fast inhibitory (8ms, recurrent TRN)
-
-    Args:
-        n_neurons: Number of TRN neurons
-        device: Device for tensor allocation
-        **overrides: Custom parameters to override defaults
-
-    Returns:
-        ConductanceLIF neuron population configured for TRN
-
-    Examples:
-        # Standard TRN neurons
-        >>> trn_neurons = create_trn_neurons(32, device)
-    """
-    config = ConductanceLIFConfig(
-        v_threshold=V_THRESHOLD_STANDARD,
-        v_reset=V_RESET_STANDARD,
-        E_L=E_LEAK,
-        E_E=E_EXCITATORY,
-        E_I=E_INHIBITORY,
-        g_L=G_LEAK_STANDARD * 1.2,  # Slightly faster dynamics
-        tau_mem=TAU_MEM_STANDARD * 0.8,  # Faster membrane
-        tau_E=4.0,  # Very fast excitatory
-        tau_I=8.0,  # Fast inhibitory
-        **overrides,
-    )
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
-    return neurons
-
-
-@NeuronFactory.register("cortical_layer")
-def create_cortical_layer_neurons(
-    n_neurons: int,
-    layer: str,
-    device: torch.device,
-    **overrides,
-) -> ConductanceLIF:
-    """Create layer-specific cortical neurons.
-
-    Creates neurons configured for specific cortical layers with appropriate
-    properties:
-    - L4: Fast sensory integration, standard threshold
-    - L2/3: Recurrent processing with strong adaptation (prevents frozen attractors)
-    - L5: Output layer, slightly lower threshold for reliable output
-    - L6a: Corticothalamic type I (projects to TRN, inhibitory modulation)
-    - L6b: Corticothalamic type II (projects to relay, excitatory modulation)
-
-    Args:
-        n_neurons: Number of neurons in the layer
-        layer: Layer identifier ("L4", "L2/3", "L5", "L6a", "L6b", or legacy "L6")
-        device: Device for tensor allocation
-        **overrides: Custom parameters to override layer defaults
-
-    Returns:
-        ConductanceLIF neuron population configured for the specified layer
-
-    Examples:
-        # L4 sensory neurons
-        >>> l4 = create_cortical_layer_neurons(512, "L4", device)
-
-        # L2/3 with custom adaptation
-        >>> l23 = create_cortical_layer_neurons(
-        ...     256, "L2/3", device, adapt_increment=0.4
-        ... )
-
-        # L5 output layer
-        >>> l5 = create_cortical_layer_neurons(128, "L5", device)
-
-        # L6a/L6b corticothalamic feedback
-        >>> l6a = create_cortical_layer_neurons(32, "L6a", device)
-        >>> l6b = create_cortical_layer_neurons(16, "L6b", device)
-
-    Raises:
-        ValueError: If layer is not one of "L4", "L2/3", "L5", "L6a", "L6b", "L6"
-    """
-    # Base config for all layers
-    base_config = {
-        "tau_E": 5.0,
-        "tau_I": 10.0,
-        "E_E": 3.0,
-        "E_I": -0.5,
-        "g_L": G_LEAK_STANDARD,
-        "tau_mem": TAU_MEM_STANDARD,
-    }
-
-    # Layer-specific customization
-    if layer == "L4":
-        # L4: Fast integration, sensitive to sensory input
-        layer_config = {
-            **base_config,
-            "v_threshold": 1.0,
+        Raises:
+            ValueError: If layer is not one of "L4", "L2/3", "L5", "L6a", "L6b", "L6"
+        """
+        # Base config for all layers
+        base_config = {
+            "tau_E": 5.0,
+            "tau_I": 10.0,
+            "E_E": 3.0,
+            "E_I": -0.5,
+            "g_L": 0.05,
+            "tau_mem": 20.0,
         }
-    elif layer == "L2/3":
-        # L2/3: Recurrent processing with adaptation
-        layer_config = {
-            **base_config,
-            "v_threshold": 1.0,
-            "adapt_increment": 0.3,  # Strong SFA to prevent frozen attractors
-            "tau_adapt": 150.0,
-        }
-    elif layer == "L5":
-        # L5: Output layer, slightly lower threshold
-        layer_config = {
-            **base_config,
-            "v_threshold": 0.9,
-        }
-    elif layer in ["L6", "L6a", "L6b"]:
-        # L6/L6a/L6b: Corticothalamic feedback layers
-        # L6a (type I) → TRN: Inhibitory modulation, low gamma (25-35 Hz)
-        # L6b (type II) → relay: Excitatory modulation, high gamma (60-80 Hz)
 
-        if layer == "L6a":
-            # L6a: Slower firing for low gamma (25-35 Hz)
-            # Longer refractory period (10ms) limits maximum rate to ~100Hz
-            # Combined with inhibition → sparse firing → low gamma oscillations
+        # Layer-specific customization
+        if layer == "L4":
+            # L4: Fast integration, sensitive to sensory input
             layer_config = {
                 **base_config,
                 "v_threshold": 1.0,
-                "tau_mem": 15.0,  # Slower dynamics
-                "tau_ref": 10.0,  # Long refractory for low-frequency firing
             }
+        elif layer == "L2/3":
+            # L2/3: Recurrent processing with adaptation
+            layer_config = {
+                **base_config,
+                "v_threshold": 1.0,
+                "adapt_increment": 0.3,  # Strong SFA to prevent frozen attractors
+                "tau_adapt": 150.0,
+            }
+        elif layer == "L5":
+            # L5: Output layer, slightly lower threshold
+            layer_config = {
+                **base_config,
+                "v_threshold": 0.9,
+            }
+        elif layer in ["L6", "L6a", "L6b"]:
+            # L6/L6a/L6b: Corticothalamic feedback layers
+            # L6a (type I) → TRN: Inhibitory modulation, low gamma (25-35 Hz)
+            # L6b (type II) → relay: Excitatory modulation, high gamma (60-80 Hz)
+
+            if layer == "L6a":
+                # L6a: Slower firing for low gamma (25-35 Hz)
+                # Longer refractory period (10ms) limits maximum rate to ~100Hz
+                # Combined with inhibition → sparse firing → low gamma oscillations
+                layer_config = {
+                    **base_config,
+                    "v_threshold": 1.0,
+                    "tau_mem": 15.0,  # Slower dynamics
+                    "tau_ref": 10.0,  # Long refractory for low-frequency firing
+                }
+            else:
+                # L6b/L6: Standard configuration for higher frequency firing
+                layer_config = {
+                    **base_config,
+                    "v_threshold": 1.0,
+                    "tau_mem": 15.0,  # Slower dynamics for feedback control
+                }
         else:
-            # L6b/L6: Standard configuration for higher frequency firing
-            layer_config = {
-                **base_config,
-                "v_threshold": 1.0,
-                "tau_mem": 15.0,  # Slower dynamics for feedback control
-            }
-    else:
-        raise ValueError(
-            f"Unknown cortical layer '{layer}'. Must be one of: 'L4', 'L2/3', 'L5', 'L6a', 'L6b', 'L6'"
+            raise ValueError(
+                f"Unknown cortical layer '{layer}'. Must be one of: 'L4', 'L2/3', 'L5', 'L6a', 'L6b', 'L6'"
+            )
+
+        # Apply overrides
+        layer_config.update(overrides)
+
+        config = ConductanceLIFConfig(**layer_config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
+
+    @staticmethod
+    def create_fast_spiking_neurons(
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create fast-spiking interneuron population (parvalbumin+).
+
+        Fast-spiking interneurons (FSI) are characterized by:
+        - Fast membrane time constant (tau_mem ~5-10ms)
+        - Short refractory period (tau_ref ~2ms)
+        - High leak conductance (fast membrane decay)
+        - Provide feedforward/feedback inhibition
+        - Dense gap junction networks for synchronization
+        - Critical for gamma oscillations (30-80 Hz)
+
+        Common uses:
+        - Striatal FSI (~2% of striatum, parvalbumin+)
+        - Cortical basket cells and chandelier cells
+        - Hippocampal basket cells
+        - Cerebellar basket cells
+
+        Biology: Koós & Tepper (1999), Gittis et al. (2010)
+
+        Args:
+            n_neurons: Number of FSI neurons to create
+            device: Device for tensor allocation ("cpu" or "cuda")
+            **overrides: Custom parameters to override defaults
+
+        Returns:
+            ConductanceLIF neuron population configured as FSI
+        """
+        # Fast-spiking configuration (parvalbumin+ interneurons)
+        # Start with preset and apply overrides
+        fsi_config = {
+            "tau_mem": 10.0,
+            "v_rest": 0.0,
+            "v_reset": 0.0,
+            "v_threshold": 1.0,
+            "tau_ref": 1.0,
+            "g_leak": 0.10,
+        }
+        fsi_config.update(overrides)
+
+        config = ConductanceLIFConfig(
+            v_threshold=fsi_config["v_threshold"],
+            v_reset=fsi_config["v_reset"],
+            E_L=fsi_config["v_rest"],
+            E_E=3.0,
+            E_I=-0.5,
+            tau_E=5.0,
+            tau_I=10.0,
+            tau_ref=fsi_config["tau_ref"],  # Fast refractory
+            g_L=fsi_config["g_leak"],  # High leak
+            tau_mem=fsi_config["tau_mem"],  # Fast dynamics
         )
 
-    # Apply overrides
-    layer_config.update(overrides)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
 
-    config = ConductanceLIFConfig(**layer_config)  # type: ignore[arg-type]
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
-    return neurons
+    @staticmethod
+    def create_msn_d1_neurons(
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create D1-MSN population (direct pathway / GO).
+
+        D1-type Medium Spiny Neurons express D1 dopamine receptors and form
+        the direct (GO) pathway in the basal ganglia:
+        - DA burst (positive RPE) → LTP → stronger GO signal
+        - DA dip (negative RPE) → LTD → weaker GO signal
+
+        Biology:
+        - Comprise ~50% of striatal neurons
+        - Project to GPi/SNr (output nuclei)
+        - Enable action selection via disinhibition
+        - Show spike-frequency adaptation (Ca2+-dependent K+ channels)
+
+        Key parameters:
+        - Standard membrane dynamics (τ_mem = 20ms)
+        - Spike-frequency adaptation (τ_adapt = 100ms, increment = 0.1)
+        - Standard threshold and reversal potentials
+
+        Reference: Gerfen & Surmeier (2011), Tepper et al. (2010)
+
+        Args:
+            n_neurons: Number of D1-MSN neurons to create
+            device: Device for tensor allocation ("cpu" or "cuda")
+            **overrides: Custom parameters to override defaults
+
+        Returns:
+            ConductanceLIF neuron population configured as D1-MSN
+        """
+        config = ConductanceLIFConfig(
+            v_threshold=1.0,
+            v_reset=0.0,
+            E_L=0.0,
+            E_E=3.0,
+            E_I=-0.5,
+            tau_E=5.0,
+            tau_I=10.0,
+            tau_ref=2.0,
+            tau_mem=20.0,
+            tau_adapt=100.0,
+            adapt_increment=0.1,
+            **overrides,
+        )
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
+
+    @staticmethod
+    def create_msn_d2_neurons(
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> ConductanceLIF:
+        """Create D2-MSN population (indirect pathway / NOGO).
+
+        D2-type Medium Spiny Neurons express D2 dopamine receptors with
+        INVERTED dopamine response, forming the indirect (NOGO) pathway:
+        - DA burst (positive RPE) → LTD → weaker NOGO signal
+        - DA dip (negative RPE) → LTP → stronger NOGO signal
+
+        This inversion is the key biological insight:
+        - When wrong action is punished → D2 strengthens → inhibits action next time
+        - When correct action is rewarded → D2 weakens → allows action
+
+        Biology:
+        - Comprise ~50% of striatal neurons
+        - Project to GPe (external pallidum) → indirect pathway
+        - Oppose action selection via increased inhibition
+        - Show spike-frequency adaptation (identical to D1)
+
+        Key parameters:
+        - Identical neuron properties to D1-MSN
+        - Differentiation is in synaptic learning (three-factor rule)
+        - Standard membrane dynamics (τ_mem = 20ms)
+        - Spike-frequency adaptation (τ_adapt = 100ms, increment = 0.1)
+
+        Reference: Gerfen & Surmeier (2011), Tepper et al. (2010)
+
+        Args:
+            n_neurons: Number of D2-MSN neurons to create
+            device: Device for tensor allocation ("cpu" or "cuda")
+            **overrides: Custom parameters to override defaults
+
+        Returns:
+            ConductanceLIF neuron population configured as D2-MSN
+        """
+        config = ConductanceLIFConfig(
+            v_threshold=1.0,
+            v_reset=0.0,
+            E_L=0.0,
+            E_E=3.0,
+            E_I=-0.5,
+            tau_E=5.0,
+            tau_I=10.0,
+            tau_ref=2.0,
+            tau_mem=20.0,
+            tau_adapt=100.0,
+            adapt_increment=0.1,
+            **overrides,
+        )
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
+        return neurons
 
 
-@NeuronFactory.register("fast_spiking")
-def create_fast_spiking_neurons(
-    n_neurons: int, device: torch.device, **overrides
-) -> ConductanceLIF:
-    """Create fast-spiking interneuron population (parvalbumin+).
-
-    Fast-spiking interneurons (FSI) are characterized by:
-    - Fast membrane time constant (tau_mem ~5-10ms)
-    - Short refractory period (tau_ref ~2ms)
-    - High leak conductance (fast membrane decay)
-    - Provide feedforward/feedback inhibition
-    - Dense gap junction networks for synchronization
-    - Critical for gamma oscillations (30-80 Hz)
-
-    Common uses:
-    - Striatal FSI (~2% of striatum, parvalbumin+)
-    - Cortical basket cells and chandelier cells
-    - Hippocampal basket cells
-    - Cerebellar basket cells
-
-    Biology: Koós & Tepper (1999), Gittis et al. (2010)
-
-    Args:
-        n_neurons: Number of FSI neurons to create
-        device: Device for tensor allocation ("cpu" or "cuda")
-        **overrides: Custom parameters to override defaults
-
-    Returns:
-        ConductanceLIF neuron population configured as FSI
-
-    Examples:
-        >>> from thalia.components.neurons import create_fast_spiking_neurons
-        >>> fsi = create_fast_spiking_neurons(n_neurons=20, device="cpu")
-
-        # With custom parameters
-        >>> fsi = create_fast_spiking_neurons(
-        ...     n_neurons=20,
-        ...     device="cpu",
-        ...     tau_mem=8.0,  # Slightly slower FSI
-        ... )
-
-        # Via registry
-        >>> from thalia.components.neurons import NeuronFactory
-        >>> fsi = NeuronFactory.create("fast_spiking", n_neurons=20, device="cpu")
-    """
-    # Fast-spiking configuration (parvalbumin+ interneurons)
-    # Start with preset and apply overrides
-    fsi_config = {**FAST_SPIKING_INTERNEURON}
-    fsi_config.update(overrides)
-
-    # Build conductance-based config
-    config = ConductanceLIFConfig(
-        v_threshold=fsi_config.get("v_threshold", V_THRESHOLD_STANDARD),
-        v_reset=fsi_config.get("v_reset", V_RESET_STANDARD),
-        E_L=fsi_config.get("v_rest", E_LEAK),
-        E_E=E_EXCITATORY,
-        E_I=E_INHIBITORY,
-        tau_E=TAU_SYN_EXCITATORY,
-        tau_I=TAU_SYN_INHIBITORY,
-        tau_ref=fsi_config.get("tau_ref", TAU_REF_FAST),  # Fast refractory
-        g_L=fsi_config.get("g_leak", G_LEAK_STANDARD),  # High leak
-        tau_mem=fsi_config.get("tau_mem", TAU_MEM_FAST),  # Fast dynamics
-    )
-
-    neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
-    return neurons
-
-
-__all__ = [
-    "NeuronFactory",
-    "create_pyramidal_neurons",
-    "create_relay_neurons",
-    "create_trn_neurons",
-    "create_cortical_layer_neurons",
-    "create_fast_spiking_neurons",
-]
+# Register standard neuron types
+NeuronFactory.register(NeuronType.PYRAMIDAL)(NeuronFactory.create_pyramidal_neurons)
+NeuronFactory.register(NeuronType.RELAY)(NeuronFactory.create_relay_neurons)
+NeuronFactory.register(NeuronType.TRN)(NeuronFactory.create_trn_neurons)
+NeuronFactory.register(NeuronType.CORTICAL_LAYER)(NeuronFactory.create_cortical_layer_neurons)
+NeuronFactory.register(NeuronType.FAST_SPIKING)(NeuronFactory.create_fast_spiking_neurons)
+NeuronFactory.register(NeuronType.MSN_D1)(NeuronFactory.create_msn_d1_neurons)
+NeuronFactory.register(NeuronType.MSN_D2)(NeuronFactory.create_msn_d2_neurons)

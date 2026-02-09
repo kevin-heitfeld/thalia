@@ -5,34 +5,55 @@ General utility functions for the Thalia framework.
 
 from __future__ import annotations
 
-from thalia.utils.core_utils import (
-    assert_single_instance,
-    clamp_weights,
-    cosine_similarity_safe,
-    ensure_1d,
-    ones_like_config,
-    zeros_like_config,
+from .delay_buffer import (
+    CircularDelayBuffer,
 )
-from thalia.utils.delay_buffer import CircularDelayBuffer
-from thalia.utils.oscillator_utils import (
+from .layer_size_calculator import (
+    BiologicalRatios,
+    LayerSizeCalculator,
+)
+from .neuromodulation import (
+    compute_ne_gain,
+)
+from .numerical_validation import (
+    set_numerical_validation,
+    validate_finite,
+)
+from .oscillator_utils import (
     compute_ach_recurrent_suppression,
     compute_learning_rate_modulation,
-    compute_oscillator_modulated_gain,
-    compute_theta_encoding_retrieval,
-    compute_theta_gamma_coupling_gate,
+)
+from .spike_utils import (
+    validate_spike_tensor,
+    validate_spike_tensors,
+    compute_firing_rate,
+    compute_spike_count,
+    cosine_similarity_safe,
+)
+from .weight_utils import (
+    clamp_weights,
 )
 
 __all__ = [
-    "clamp_weights",
-    "cosine_similarity_safe",
-    "ensure_1d",
-    "zeros_like_config",
-    "ones_like_config",
-    "assert_single_instance",
+    # Delay Buffer
     "CircularDelayBuffer",
-    "compute_theta_encoding_retrieval",
+    # Layer Size Calculation
+    "LayerSizeCalculator",
+    "BiologicalRatios",
+    # Neuromodulation
+    "compute_ne_gain",
+    # Numerical Validation
+    "set_numerical_validation",
+    "validate_finite",
+    # Oscillator Utilities
     "compute_ach_recurrent_suppression",
-    "compute_theta_gamma_coupling_gate",
-    "compute_oscillator_modulated_gain",
     "compute_learning_rate_modulation",
+    # Spike Utilities
+    "validate_spike_tensor",
+    "validate_spike_tensors",
+    "compute_firing_rate",
+    "compute_spike_count",
+    "cosine_similarity_safe",
+    # Weight Utilities
+    "clamp_weights",
 ]

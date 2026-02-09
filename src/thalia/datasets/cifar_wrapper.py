@@ -144,33 +144,6 @@ class CIFARForThalia:
 
         return spikes, label
 
-    def get_batch(
-        self,
-        indices: List[int],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Get batch of spike-encoded images.
-
-        Args:
-            indices: List of image indices
-
-        Returns:
-            spikes: (batch_size, n_timesteps, C, H, W) or (batch, T, C*H*W)
-            labels: (batch_size,) class labels
-        """
-        spikes_list = []
-        labels_list = []
-
-        for idx in indices:
-            spikes, label = self[idx]
-            spikes_list.append(spikes)
-            labels_list.append(label)
-
-        return (
-            torch.stack(spikes_list),
-            torch.tensor(labels_list, dtype=torch.long, device=self.config.device),
-        )
-
     def _rate_encode(self, image: torch.Tensor) -> torch.Tensor:
         """
         Rate coding: Firing probability proportional to pixel intensity.
@@ -330,8 +303,8 @@ class CIFARForThalia:
         Compute classification accuracy.
 
         Args:
-            predictions: (batch_size, n_classes) logits or probabilities
-            labels: (batch_size,) true class labels
+            predictions: (n_classes) logits or probabilities
+            labels: (1,) true class labels
 
         Returns:
             accuracy: Fraction correct

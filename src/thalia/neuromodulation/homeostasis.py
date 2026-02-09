@@ -88,9 +88,6 @@ class NeuromodulatorHomeostasisConfig:
     Controls how receptor sensitivity adapts to sustained neuromodulator levels.
     """
 
-    # Enable/disable homeostatic regulation
-    enabled: bool = True
-
     # Adaptation timescale (exponential smoothing)
     # tau = 0.999 → ~1000 timesteps to adapt
     tau: float = 0.999
@@ -155,9 +152,6 @@ class NeuromodulatorHomeostasis:
         Args:
             current_level: Current neuromodulator level (any scale)
         """
-        if not self.config.enabled:
-            return
-
         self._update_count += 1
 
         # Update running average of neuromodulator level (slow EMA)
@@ -210,34 +204,6 @@ class NeuromodulatorHomeostasis:
         """
         return self._avg_level
 
-    def get_state(self) -> dict:
-        """Get state for checkpointing.
-
-        Returns:
-            State dictionary
-        """
-        return {
-            "receptor_sensitivity": self._receptor_sensitivity,
-            "avg_level": self._avg_level,
-            "update_count": self._update_count,
-        }
-
-    def set_state(self, state: dict) -> None:
-        """Restore from checkpoint.
-
-        Args:
-            state: State dictionary from get_state()
-        """
-        self._receptor_sensitivity = state["receptor_sensitivity"]
-        self._avg_level = state["avg_level"]
-        self._update_count = state["update_count"]
-
-    def reset(self) -> None:
-        """Reset to initial state."""
-        self._receptor_sensitivity = 1.0
-        self._avg_level = self.config.target_level
-        self._update_count = 0
-
     def check_health(self) -> dict:
         """Check homeostatic regulator health.
 
@@ -278,15 +244,6 @@ class NeuromodulatorCoordination:
     1. DA-ACh: Dopamine modulates acetylcholine release
     2. NE-ACh: Arousal modulates encoding strength
     3. DA-NE: Reward and uncertainty interact for learning
-
-    Usage:
-        coord = NeuromodulatorCoordination()
-
-        # Coordinate ACh with DA (suppress encoding if high reward, low novelty)
-        modulated_ach = coord.coordinate_da_ach(dopamine=0.8, acetylcholine=0.3)
-
-        # Coordinate ACh with NE (optimal encoding at moderate arousal)
-        modulated_ach = coord.coordinate_ne_ach(norepinephrine=0.5, acetylcholine=0.6)
     """
 
     @staticmethod
@@ -386,11 +343,3 @@ def inverted_u_function(x: float, peak: float = 0.5, width: float = 0.5) -> floa
     """
     deviation = (x - peak) / width
     return math.exp(-0.5 * deviation * deviation)
-
-
-__all__ = [
-    "NeuromodulatorHomeostasisConfig",
-    "NeuromodulatorHomeostasis",
-    "NeuromodulatorCoordination",
-    "inverted_u_function",
-]

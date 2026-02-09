@@ -30,29 +30,6 @@ Benefits:
 4. **Versioning**: Track checkpoint format version
 5. **Migration**: Handle old checkpoint formats
 6. **Debugging**: Inspect checkpoint contents without loading
-
-Usage Example:
-==============
-    # Create checkpoint manager
-    manager = CheckpointManager(brain)
-
-    # Save checkpoint
-    info = manager.save(
-        path="checkpoints/epoch_100.ckpt",
-        metadata={"epoch": 100, "loss": 0.42}
-    )
-
-    # Load checkpoint
-    manager.load("checkpoints/epoch_100.ckpt")
-
-    # Validate checkpoint
-    is_valid, issues = manager.validate("checkpoints/epoch_100.ckpt")
-
-    # Get metadata only
-    meta = manager.get_metadata("checkpoints/epoch_100.ckpt")
-
-Author: Thalia Project
-Date: December 11, 2025
 """
 
 from __future__ import annotations
@@ -69,7 +46,7 @@ from thalia.io.checkpoint import BrainCheckpoint
 from thalia.io.precision import PrecisionPolicy
 
 if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
+    from thalia.brain import DynamicBrain
 
 
 class CheckpointManager:
@@ -120,14 +97,6 @@ class CheckpointManager:
 
         Returns:
             Dict containing save info (size, time, components saved)
-
-        Example:
-            >>> manager = CheckpointManager(brain)
-            >>> info = manager.save(
-            ...     "checkpoints/epoch_100.ckpt",
-            ...     metadata={"epoch": 100, "loss": 0.42, "accuracy": 0.85}
-            ... )
-            >>> print(f"Saved {info['size_mb']:.2f} MB in {info['time_s']:.2f}s")
         """
         # Use defaults if not specified
         if compression is None:
@@ -187,11 +156,6 @@ class CheckpointManager:
 
         Raises:
             ValueError: If checkpoint invalid or config mismatch (when strict=True)
-
-        Example:
-            >>> manager = CheckpointManager(brain)
-            >>> info = manager.load("checkpoints/epoch_100.ckpt")
-            >>> print(f"Loaded checkpoint from epoch {info['metadata']['epoch']}")
         """
         path = Path(path)
 
@@ -200,7 +164,7 @@ class CheckpointManager:
 
         # Use brain's device if not specified
         if device is None:
-            device = self.brain.config.device
+            device = self.brain.device
 
         # Load checkpoint using BrainCheckpoint API
         start_time = time.time()
@@ -208,15 +172,10 @@ class CheckpointManager:
         end_time = time.time()
 
         # checkpoint_data IS the state dict (has regions, metadata, config, etc.)
-        state = checkpoint_data
         metadata = checkpoint_data.get("metadata", {})
 
-        # Validate config if strict mode
-        if strict:
-            self._validate_config(state)
-
-        # Load state into brain
-        self.brain.load_full_state(state)
+        # TODO: Load state into brain
+        # self.brain.load_state(state)
 
         # Return load info
         return {
@@ -226,10 +185,7 @@ class CheckpointManager:
             "components_loaded": self._count_components(),
         }
 
-    def validate(
-        self,
-        path: Union[str, Path],
-    ) -> Tuple[bool, Optional[str]]:
+    def validate(self, path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
         """Validate checkpoint file integrity and compatibility.
 
         Args:
@@ -239,12 +195,6 @@ class CheckpointManager:
             Tuple of (is_valid, error_message)
             - is_valid: True if checkpoint is valid
             - error_message: None if valid, error string if invalid
-
-        Example:
-            >>> manager = CheckpointManager(brain)
-            >>> is_valid, error = manager.validate("checkpoints/epoch_100.ckpt")
-            >>> if not is_valid:
-            ...     print(f"Checkpoint invalid: {error}")
         """
         path = Path(path)
 
@@ -256,23 +206,12 @@ class CheckpointManager:
             # Use BrainCheckpoint validation
             BrainCheckpoint.validate(path)
 
-            # Load metadata only to check config
-            info = BrainCheckpoint.info(path)
-            state = info.get("state", {})
-            config = state.get("config", {})
-
-            # Validate config dimensions
-            self._validate_config(state)
-
             return True, None
 
         except Exception as e:
             return False, str(e)
 
-    def get_metadata(
-        self,
-        path: Union[str, Path],
-    ) -> Dict[str, Any]:
+    def get_metadata(self, path: Union[str, Path]) -> Dict[str, Any]:
         """Get checkpoint metadata without loading full state.
 
         Args:
@@ -280,11 +219,6 @@ class CheckpointManager:
 
         Returns:
             Dict containing metadata (epoch, loss, timestamp, etc.)
-
-        Example:
-            >>> manager = CheckpointManager(brain)
-            >>> meta = manager.get_metadata("checkpoints/epoch_100.ckpt")
-            >>> print(f"Checkpoint from {meta['saved_at']}, loss={meta['loss']}")
         """
         path = Path(path)
 
@@ -300,15 +234,9 @@ class CheckpointManager:
 
         Returns:
             Dict mapping component type to component names
-
-        Example:
-            >>> manager = CheckpointManager(brain)
-            >>> components = manager.list_components()
-            >>> print(f"Regions: {components['regions']}")
-            >>> print(f"Pathways: {len(components['pathways'])} pathways")
         """
         return {
-            "regions": list(self.brain.components.keys()),
+            "regions": list(self.brain.regions.keys()),
             "pathways": list(self.brain.connections.keys()),
             "neuromodulators": ["vta", "lc", "nb"],  # VTA, LC, NB
             "oscillators": ["delta", "theta", "alpha", "beta", "gamma"],
@@ -322,99 +250,8 @@ class CheckpointManager:
             Dict with component counts
         """
         return {
-            "regions": len(self.brain.components),
+            "regions": len(self.brain.regions),
             "pathways": len(self.brain.connections),
             "neuromodulators": 3,  # VTA, LC, NB
             "oscillators": 5,  # delta, theta, alpha, beta, gamma
         }
-
-    def _validate_config(self, state: Dict[str, Any]) -> None:
-        """Validate checkpoint config matches brain config.
-
-        Args:
-            state: State dict from checkpoint
-
-        Raises:
-            ValueError: If config dimensions don't match
-        """
-        config = state.get("config", {})
-
-        # Check critical dimensions (use getattr with None to handle missing attributes)
-        if config.get("input_size") != getattr(self.brain.config, "input_size", None):
-            raise ValueError(
-                f"Config mismatch: input_size {config.get('input_size')} "
-                f"!= {getattr(self.brain.config, 'input_size', None)}"
-            )
-
-        if config.get("cortex_size") != getattr(self.brain.config, "cortex_size", None):
-            raise ValueError(
-                f"Config mismatch: cortex_size {config.get('cortex_size')} "
-                f"!= {getattr(self.brain.config, 'cortex_size', None)}"
-            )
-
-        if config.get("hippocampus_size") != getattr(self.brain.config, "hippocampus_size", None):
-            raise ValueError(
-                f"Config mismatch: hippocampus_size {config.get('hippocampus_size')} "
-                f"!= {getattr(self.brain.config, 'hippocampus_size', None)}"
-            )
-
-        if config.get("pfc_size") != getattr(self.brain.config, "pfc_size", None):
-            raise ValueError(
-                f"Config mismatch: pfc_size {config.get('pfc_size')} "
-                f"!= {getattr(self.brain.config, 'pfc_size', None)}"
-            )
-
-        if config.get("n_actions") != getattr(self.brain.config, "n_actions", None):
-            raise ValueError(
-                f"Config mismatch: n_actions {config.get('n_actions')} "
-                f"!= {getattr(self.brain.config, 'n_actions', None)}"
-            )
-
-
-# =============================================================================
-# Convenience Functions
-# =============================================================================
-
-
-def save_checkpoint(
-    brain: DynamicBrain,
-    path: Union[str, Path],
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Convenience function to save a checkpoint.
-
-    Args:
-        brain: DynamicBrain instance
-        path: Path to save checkpoint
-        **kwargs: Additional arguments passed to CheckpointManager.save()
-
-    Returns:
-        Dict containing save info
-
-    Example:
-        >>> info = save_checkpoint(brain, "checkpoints/epoch_100.ckpt", metadata={"epoch": 100})
-    """
-    manager = CheckpointManager(brain)
-    return manager.save(path, **kwargs)
-
-
-def load_checkpoint(
-    brain: DynamicBrain,
-    path: Union[str, Path],
-    **kwargs: Any,
-) -> Dict[str, Any]:
-    """Convenience function to load a checkpoint.
-
-    Args:
-        brain: DynamicBrain instance
-        path: Path to checkpoint file
-        **kwargs: Additional arguments passed to CheckpointManager.load()
-
-    Returns:
-        Dict containing load info
-
-    Example:
-        >>> info = load_checkpoint(brain, "checkpoints/epoch_100.ckpt")
-    """
-    manager = CheckpointManager(brain)
-    return manager.load(path, **kwargs)

@@ -19,24 +19,6 @@ Biological Motivation:
 Real brains have multiple overlapping homeostatic mechanisms that detect
 and correct deviations from healthy operating regimes. This monitor
 provides similar oversight for artificial neural networks.
-
-Usage:
-======
-    from thalia.diagnostics.health_monitor import HealthMonitor, HealthConfig
-
-    monitor = HealthMonitor(HealthConfig())
-
-    # Check brain health
-    report = monitor.check_health(brain.get_diagnostics())
-
-    if not report.is_healthy:
-        print(f"Warning: {report.summary}")
-        for issue in report.issues:
-            print(f"  - {issue.description}")
-            print(f"    Recommendation: {issue.recommendation}")
-
-Author: Thalia Project
-Date: December 2025
 """
 
 from __future__ import annotations
@@ -44,6 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+from .oscillator_health import OscillatorHealthMonitor
 
 
 class HealthIssue(Enum):
@@ -91,8 +75,8 @@ class HealthConfig:
     """
 
     # Spike rate bounds (fraction of neurons active per timestep)
-    spike_rate_min: float = 0.01  # Below this = activity collapse
-    spike_rate_max: float = 0.5  # Above this = seizure risk
+    spike_rate_min: float = 0.001  # Below this (0.1%) = activity collapse
+    spike_rate_max: float = 0.8  # Above this (80%) = seizure risk
 
     # Weight magnitude bounds
     weight_min: float = 0.001  # Below this = weight collapse
@@ -167,45 +151,27 @@ class HealthMonitor:
     issues early before they cause mysterious failures.
     """
 
-    def __init__(
-        self, config: Optional[HealthConfig] = None, enable_oscillator_monitoring: bool = True
-    ):
+    def __init__(self, config: Optional[HealthConfig] = None):
         """Initialize health monitor.
 
         Args:
             config: Health configuration (uses defaults if None)
-            enable_oscillator_monitoring: Enable oscillator health monitoring
         """
         self.config = config or HealthConfig()
-        self.enable_oscillator_monitoring = enable_oscillator_monitoring
 
         # History for tracking trends
         self._spike_rate_history: List[float] = []
         self._weight_mean_history: List[float] = []
         self._max_history_len = 100
 
-        # Oscillator health monitor (optional)
-        self.oscillator_monitor = None
-        if enable_oscillator_monitoring:
-            try:
-                from .oscillator_health import OscillatorHealthMonitor
-
-                self.oscillator_monitor = OscillatorHealthMonitor()
-            except ImportError:
-                # Graceful degradation if oscillator_health not available
-                self.enable_oscillator_monitoring = False
+        # Oscillator health monitor
+        self.oscillator_monitor = OscillatorHealthMonitor()
 
     def check_health(self, diagnostics: Dict[str, Any]) -> HealthReport:
         """Check network health from diagnostic data.
 
         Args:
             diagnostics: Dictionary of diagnostic metrics
-                Expected keys:
-                - spike_counts: Dict[region_name, int]
-                - cortex: Dict with weight diagnostics
-                - robustness_ei_ratio: float (if E/I balance enabled)
-                - criticality: Dict with branching_ratio (if enabled)
-                - dopamine: Dict with global/tonic/phasic
 
         Returns:
             HealthReport with detected issues
@@ -217,9 +183,54 @@ class HealthMonitor:
         spike_counts = diagnostics.get("spike_counts", {})
         total_spikes = sum(spike_counts.values())
 
-        # Estimate spike rate (rough approximation)
-        # This is total spikes / total neurons (need better metric)
-        avg_spike_rate = total_spikes / max(1, len(spike_counts) * 100)
+        # Calculate total neurons from region diagnostics
+        # Each region reports its architecture in region_specific or activity sections
+        regions_diag = diagnostics.get("regions", {})
+        total_neurons = 0
+
+        for region_name, region_diag in regions_diag.items():
+            # Try multiple sources for neuron count (regions report differently)
+            neuron_count = 0
+
+            # Method 1: Direct n_neurons (simple regions)
+            if "n_neurons" in region_diag:
+                neuron_count = region_diag["n_neurons"]
+
+            # Method 2: Sum of layer/population sizes (cortex, striatum)
+            elif "region_specific" in region_diag:
+                region_spec = region_diag["region_specific"]
+
+                # Cortex: sum all layer sizes
+                if "architecture" in region_spec:
+                    arch = region_spec["architecture"]
+                    neuron_count = sum(
+                        arch.get(f"{layer}_size", 0)
+                        for layer in ["l4", "l23", "l5", "l6a", "l6b"]
+                    )
+
+                # Striatum: neurons_per_action * n_actions + FSI
+                elif "n_actions" in region_spec and "neurons_per_action" in region_spec:
+                    n_actions = region_spec["n_actions"]
+                    neurons_per_action = region_spec["neurons_per_action"]
+                    neuron_count = n_actions * neurons_per_action
+                    # Note: FSI neurons are separate but typically small (~4)
+
+            # Method 3: From activity metrics total_neurons field
+            elif "activity" in region_diag and "total_neurons" in region_diag["activity"]:
+                neuron_count = region_diag["activity"]["total_neurons"]
+
+            # Fallback: estimate from n_sources (crude approximation)
+            if neuron_count == 0 and "n_sources" in region_diag:
+                neuron_count = region_diag["n_sources"] * 100
+
+            total_neurons += neuron_count
+
+        # Absolute fallback if no region info found
+        if total_neurons == 0:
+            total_neurons = len(spike_counts) * 100
+
+        # Calculate average spike rate (fraction of neurons spiking per timestep)
+        avg_spike_rate = total_spikes / max(1, total_neurons)
 
         # Track history
         self._spike_rate_history.append(avg_spike_rate)
@@ -375,7 +386,7 @@ class HealthMonitor:
         # CHECK 6: Oscillator Health (if enabled)
         # =====================================================================
 
-        if self.enable_oscillator_monitoring and self.oscillator_monitor:
+        if self.oscillator_monitor:
             oscillator_data = diagnostics.get("oscillators", {})
             if oscillator_data:
                 try:

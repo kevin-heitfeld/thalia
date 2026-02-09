@@ -95,8 +95,8 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 
-from thalia.components.coding.spike_utils import compute_firing_rate
 from thalia.diagnostics import auto_diagnostics
+from thalia.utils import compute_firing_rate
 
 
 @dataclass
@@ -198,17 +198,6 @@ class IntrinsicPlasticity(nn.Module):
             # Derive from tau: lr ≈ dt_ms / tau_threshold
             self._effective_lr = dt_ms / self.config.tau_threshold
 
-    def reset_state(self, initial_threshold: float = 1.0):
-        """Reset all state to initial values."""
-        # Ensure temporal factors are initialized (use dt=1.0 if not set)
-        if self._rate_decay is None:
-            self.update_temporal_parameters(1.0)
-
-        self.rate_avg.fill_(self.config.target_rate)
-        self.thresholds.fill_(initial_threshold)
-        self._total_adaptation = 0.0
-        self._update_count = 0
-
     def update(
         self,
         spikes: torch.Tensor,
@@ -237,7 +226,7 @@ class IntrinsicPlasticity(nn.Module):
 
         # Ensure temporal factors are initialized
         if self._rate_decay is None or self._effective_lr is None:
-            self.update_temporal_parameters(1.0)
+            self.update_temporal_parameters(dt_ms=1.0)
 
         # Update running average of rate
         assert self._rate_decay is not None and self._effective_lr is not None
@@ -361,15 +350,6 @@ class PopulationIntrinsicPlasticity(nn.Module):
             # Derive from tau: lr ≈ dt_ms / tau_threshold
             self._effective_lr = dt_ms / self.config.tau_threshold
 
-    def reset_state(self):
-        """Reset to initial state."""
-        # Ensure temporal factors are initialized (use dt=1.0 if not set)
-        if self._rate_decay is None:
-            self.update_temporal_parameters(1.0)
-
-        self._rate_avg = self.config.target_rate
-        self._excitability = 1.0
-
     def update(self, spikes: torch.Tensor) -> float:
         """Update with current spikes and return excitability modulation.
 
@@ -386,7 +366,7 @@ class PopulationIntrinsicPlasticity(nn.Module):
 
         # Ensure temporal factors are initialized
         if self._rate_decay is None or self._effective_lr is None:
-            self.update_temporal_parameters(1.0)
+            self.update_temporal_parameters(dt_ms=1.0)
 
         # Update running average
         assert self._rate_decay is not None and self._effective_lr is not None

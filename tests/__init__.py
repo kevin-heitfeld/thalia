@@ -1,1 +1,0 @@
-"""Thalia test suite package."""

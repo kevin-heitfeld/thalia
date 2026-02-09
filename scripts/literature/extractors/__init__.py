@@ -5,4 +5,9 @@ from .equation_renderer import EquationRenderer
 from .search_index import SearchIndex
 from .table_extractor import TableExtractor
 
-__all__ = ["ContentExtractor", "SearchIndex", "EquationRenderer", "TableExtractor"]
+__all__ = [
+    "ContentExtractor",
+    "SearchIndex",
+    "EquationRenderer",
+    "TableExtractor",
+]

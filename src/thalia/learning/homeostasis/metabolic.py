@@ -158,20 +158,6 @@ class MetabolicConstraint(nn.Module):
         """
         self._energy_decay = float(torch.exp(torch.tensor(-dt_ms / self.config.tau_energy)).item())
 
-    def reset_state(self):
-        """Reset all state."""
-        # Ensure decay factor is initialized (use dt=1.0 if not set)
-        if self._energy_decay is None:
-            self.update_temporal_parameters(1.0)
-
-        self._energy_avg = 0.0
-        self._gain = 1.0
-        self._total_energy = 0.0
-        self._total_spikes = 0
-        self._total_penalties = 0.0
-        self._timesteps = 0
-        self._energy_history.clear()
-
     def compute_cost(
         self,
         spikes: torch.Tensor,
@@ -231,7 +217,7 @@ class MetabolicConstraint(nn.Module):
 
         # Ensure decay factor is initialized
         if self._energy_decay is None:
-            self.update_temporal_parameters(1.0)
+            self.update_temporal_parameters(dt_ms=1.0)
 
         # Update running average
         assert self._energy_decay is not None
@@ -394,11 +380,6 @@ class RegionalMetabolicBudget:
         # Per-region trackers
         self.region_costs: Dict[str, float] = {r: 0.0 for r in region_budgets}
         self.region_penalties: Dict[str, float] = {r: 0.0 for r in region_budgets}
-
-    def reset_state(self):
-        """Reset all tracking."""
-        self.region_costs = {r: 0.0 for r in self.region_budgets}
-        self.region_penalties = {r: 0.0 for r in self.region_budgets}
 
     def update_region(
         self,

@@ -1,92 +1,88 @@
 """
-Training Infrastructure for THALIA.
+Curriculum Management for THALIA Training.
 
-This module provides training utilities that use LOCAL learning rules
-rather than backpropagation. All learning is biologically inspired:
-
-- STDP: Spike-Timing Dependent Plasticity
-- BCM: Bienenstock-Cooper-Munro sliding threshold
-- Three-Factor: Eligibility traces + neuromodulatory signals
-- Hebbian: Activity correlation-based learning
-
-Organization:
-- curriculum/: Stage management, curriculum strategies, evaluation
-- datasets/: Task loaders, data pipeline, constants
-- evaluation/: Metacognition, metrics
-- visualization/: Monitoring, live diagnostics
-
-Author: Thalia Project
-Date: December 12, 2025
+This module provides curriculum strategies and stage management:
+- Interleaved curriculum sampling
+- Spaced repetition
+- Difficulty calibration
+- Stage transition protocols
+- Stage evaluation and milestone checking
+- Safety system (stage gates, monitoring, graceful degradation)
 """
 
 from __future__ import annotations
 
-# Import from reorganized subdirectories
-from .curriculum import (  # Curriculum mechanics; Stage manager; Noise scheduling; Stage evaluation; Logger
-    ActiveMechanism,
-    CognitiveLoadMonitor,
+from .critical_periods import (
+    CriticalPeriodWindow,
+    CriticalPeriodConfig,
+    CriticalPeriodGating,
+)
+from .curriculum import (
+    CurriculumStage,
     CurriculumDifficultyCalibrator,
-    CurriculumLogger,
-    CurriculumTrainer,
     DifficultyCalibratorConfig,
     InterleavedCurriculumSampler,
     InterleavedCurriculumSamplerConfig,
-    LogLevel,
-    MechanismPriority,
-    NoiseProfile,
-    NoiseScheduler,
-    NoiseSchedulerConfig,
-    NoiseType,
     ProductiveFailureConfig,
     ProductiveFailurePhase,
     SpacedRepetitionScheduler,
     SpacedRepetitionSchedulerConfig,
-    StageConfig,
-    StageLog,
     StageTransitionConfig,
     StageTransitionProtocol,
-    TaskConfig,
     TestingPhaseConfig,
     TestingPhaseProtocol,
-    TrainingResult,
     TransitionWeekConfig,
-    check_system_health,
-    evaluate_stage_phonology,
-    evaluate_stage_sensorimotor,
-    evaluate_stage_toddler,
-    generate_evaluation_report,
 )
-from .datasets import (  # Task loaders; Data pipeline
-    BaseTaskLoader,
-    DataConfig,
-    PhonologyConfig,
-    PhonologyTaskLoader,
-    SensorimotorConfig,
-    SensorimotorTaskLoader,
-    TaskLoaderRegistry,
-    TextDataPipeline,
-    create_phonology_loader,
-    create_sensorimotor_loader,
+from .curriculum_growth import (
+    get_curriculum_growth_config,
 )
-from .evaluation import (
-    CalibrationMetrics,
-    CalibrationPrediction,
-    CalibrationSample,
-    MetacognitiveCalibrator,
-    create_simple_task_generator,
+from .curriculum_trainer import (
+    ActiveMechanism,
+    CognitiveLoadMonitor,
+    CurriculumTrainer,
+    MechanismPriority,
+    TaskConfig,
+    TrainingResult,
 )
-from .visualization import (
-    LiveDiagnostics,
-    TrainingMonitor,
-    quick_diagnostics,
-    quick_monitor,
+from .logger import (
+    CurriculumLogger,
+    LogLevel,
+    StageLog,
+)
+from .noise_scheduler import (
+    NoiseProfile,
+    NoiseScheduler,
+    NoiseSchedulerConfig,
+    NoiseType,
+)
+from .safety_system import (
+    CurriculumSafetySystem,
+    SafetyStatus,
+)
+from .stage_configs import (
+    StageConfig,
+    get_bootstrap_config,
+    get_sensorimotor_config,
+)
+from .stage_gates import (
+    GateDecision,
+    GateResult,
+    GracefulDegradationManager,
+)
+from .stage_monitoring import (
+    ContinuousMonitor,
+    InterventionType,
+    MonitoringMetrics,
+    Stage1Monitor,
 )
 
 __all__ = [
-    # Core training
-    "TextDataPipeline",
-    "DataConfig",
+    # Critical periods
+    "CriticalPeriodWindow",
+    "CriticalPeriodConfig",
+    "CriticalPeriodGating",
     # Curriculum mechanics
+    "CurriculumStage",
     "InterleavedCurriculumSampler",
     "InterleavedCurriculumSamplerConfig",
     "SpacedRepetitionScheduler",
@@ -100,48 +96,35 @@ __all__ = [
     "StageTransitionProtocol",
     "StageTransitionConfig",
     "TransitionWeekConfig",
-    # Curriculum trainer
+    "get_curriculum_growth_config",
+    # Stage manager
     "CurriculumTrainer",
     "StageConfig",
     "TaskConfig",
     "TrainingResult",
-    # Cognitive load monitoring
     "MechanismPriority",
     "ActiveMechanism",
     "CognitiveLoadMonitor",
+    # Stage configs
+    "get_bootstrap_config",
+    "get_sensorimotor_config",
     # Noise scheduling
     "NoiseScheduler",
     "NoiseSchedulerConfig",
     "NoiseProfile",
     "NoiseType",
-    # Stage evaluation
-    "evaluate_stage_sensorimotor",
-    "evaluate_stage_phonology",
-    "evaluate_stage_toddler",
-    "check_system_health",
-    "generate_evaluation_report",
-    # Logging
+    # Safety system
+    "CurriculumSafetySystem",
+    "SafetyStatus",
+    "GracefulDegradationManager",
+    "GateResult",
+    "GateDecision",
+    "ContinuousMonitor",
+    "Stage1Monitor",
+    "InterventionType",
+    "MonitoringMetrics",
+    # Logger
     "CurriculumLogger",
     "LogLevel",
     "StageLog",
-    # Metacognition
-    "MetacognitiveCalibrator",
-    "CalibrationSample",
-    "CalibrationPrediction",
-    "CalibrationMetrics",
-    "create_simple_task_generator",
-    # Task loaders
-    "BaseTaskLoader",
-    "SensorimotorTaskLoader",
-    "SensorimotorConfig",
-    "PhonologyTaskLoader",
-    "PhonologyConfig",
-    "TaskLoaderRegistry",
-    "create_sensorimotor_loader",
-    "create_phonology_loader",
-    # Monitoring
-    "TrainingMonitor",
-    "quick_monitor",
-    "LiveDiagnostics",
-    "quick_diagnostics",
 ]

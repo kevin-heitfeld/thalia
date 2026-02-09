@@ -256,8 +256,6 @@ def search_papers(args):
 
     # Try to load database for better titles
     try:
-        from ..core import LiteratureDatabase
-
         db = LiteratureDatabase()
         has_db = True
     except Exception:  # noqa: BLE001

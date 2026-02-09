@@ -20,28 +20,6 @@ serious dysfunction:
 - **Alpha suppression**: Attention and consciousness impairments
 - **Gamma disruption**: Feature binding failures (schizophrenia)
 - **Loss of coupling**: Coordination breakdown across regions
-
-Usage:
-======
-    from thalia.diagnostics.oscillator_health import OscillatorHealthMonitor
-
-    monitor = OscillatorHealthMonitor()
-
-    # Check oscillator health
-    report = monitor.check_health(
-        phases=brain.oscillators.get_phases(),
-        frequencies=brain.oscillators.get_frequencies(),
-        amplitudes=brain.oscillators.get_effective_amplitudes(),
-        couplings=brain.oscillators.couplings,
-    )
-
-    if not report.is_healthy:
-        print(f"Oscillator issue: {report.summary}")
-        for issue in report.issues:
-            print(f"  - {issue.description}")
-
-Author: Thalia Project
-Date: December 2025
 """
 
 from __future__ import annotations

@@ -7,40 +7,25 @@ and management infrastructure for global neuromodulatory signals.
 
 from __future__ import annotations
 
-from thalia.neuromodulation.homeostasis import (
-    NeuromodulatorHomeostasis,
-    NeuromodulatorHomeostasisConfig,
-)
-from thalia.neuromodulation.manager import NeuromodulatorManager
-from thalia.neuromodulation.mixin import NeuromodulatorMixin
-from thalia.neuromodulation.systems import (
-    VTA,
-    LocusCoeruleus,
-    LocusCoeruleusConfig,
-    LocusCoeruleusSystem,
-    NucleusBasalis,
-    NucleusBasalisConfig,
-    NucleusBasalisSystem,
-    VTAConfig,
-    VTADopamineSystem,
-)
+from .homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
+from .locus_coeruleus import LocusCoeruleusConfig, LocusCoeruleusSystem
+from .nucleus_basalis import NucleusBasalisConfig, NucleusBasalisSystem
+from .vta import VTAConfig, VTADopamineSystem
+from .manager import NeuromodulatorManager
 
 __all__ = [
+    # Homeostasis
+    "NeuromodulatorHomeostasis",
+    "NeuromodulatorHomeostasisConfig",
     # Locus Coeruleus (Norepinephrine)
-    "LocusCoeruleus",
     "LocusCoeruleusConfig",
     "LocusCoeruleusSystem",
     # Nucleus Basalis (Acetylcholine)
-    "NucleusBasalis",
     "NucleusBasalisConfig",
     "NucleusBasalisSystem",
     # VTA (Dopamine)
-    "VTA",
     "VTAConfig",
     "VTADopamineSystem",
-    # Manager and utilities
-    "NeuromodulatorHomeostasis",
-    "NeuromodulatorHomeostasisConfig",
+    # Manager
     "NeuromodulatorManager",
-    "NeuromodulatorMixin",
 ]

@@ -1,0 +1,748 @@
+"""
+Dynamic Brain - Component Graph Executor
+
+This module implements a flexible brain architecture where the brain is
+treated as a directed graph of neural components (regions and axons).
+
+DynamicBrain supports:
+- Arbitrary number of regions and axons
+- Flexible topologies (not limited to fixed connectivity)
+- User-defined custom regions via NeuralRegionRegistry
+- Dynamic region addition/removal
+- Plugin architecture for external regions
+- Clock-driven execution with axonal delays
+
+Architecture:
+    DynamicBrain = Graph of components
+    - nodes: regions (NeuralRegion)
+    - edges: axons (AxonalProjection)
+    - execution: clock-driven sequential
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Tuple, cast
+
+import torch
+import torch.nn as nn
+
+from thalia.neuromodulation import NeuromodulatorManager
+from thalia.typing import (
+    BrainSpikesDict,
+    RegionSpikesDict,
+    RegionName,
+    SpikesSourceKey,
+    compound_key,
+    parse_compound_key,
+)
+from thalia.utils import compute_firing_rate, validate_spike_tensors
+
+from .axonal_projection import AxonalProjection
+from .configs import BrainConfig, NeuralRegionConfig
+from .oscillator import OscillatorManager
+from .regions import (
+    NeuralRegion,
+    Cerebellum,
+    Cortex,
+    Hippocampus,
+    MedialSeptum,
+    Prefrontal,
+    Striatum,
+    Thalamus,
+)
+
+
+class DynamicBrain(nn.Module):
+    """Dynamic brain constructed from graph.
+
+    DynamicBrain builds arbitrary topologies from registered regions:
+    - Flexible graph vs. hardcoded regions
+    - User-extensible via NeuralRegionRegistry
+    - Arbitrary connectivity patterns
+    - Plugin support for external regions
+    """
+
+    # =========================================================================
+    # PROPERTIES
+    # =========================================================================
+
+    @property
+    def device(self) -> torch.device:
+        """Device where tensors are located."""
+        return torch.device(self.config.device)
+
+    @property
+    def dt_ms(self) -> float:
+        """Timestep duration in milliseconds."""
+        return self.config.dt_ms
+
+    @property
+    def current_time(self) -> float:
+        """Get current simulation time in milliseconds."""
+        return self._current_time
+
+    @property
+    def cerebellum(self) -> Optional[Cerebellum]:
+        """Get cerebellum region if present."""
+        return cast(Optional[Cerebellum], self.regions["cerebellum"]) if "cerebellum" in self.regions else None
+
+    @property
+    def cortex(self) -> Optional[Cortex]:
+        """Get cortex region if present."""
+        return cast(Optional[Cortex], self.regions["cortex"]) if "cortex" in self.regions else None
+
+    @property
+    def hippocampus(self) -> Optional[Hippocampus]:
+        """Get hippocampus region if present."""
+        return cast(Optional[Hippocampus], self.regions["hippocampus"]) if "hippocampus" in self.regions else None
+
+    @property
+    def medial_septum(self) -> Optional[MedialSeptum]:
+        """Get medial septum region if present."""
+        return cast(Optional[MedialSeptum], self.regions["medial_septum"]) if "medial_septum" in self.regions else None
+
+    @property
+    def prefrontal(self) -> Optional[Prefrontal]:
+        """Get prefrontal cortex region if present."""
+        return cast(Optional[Prefrontal], self.regions["prefrontal"]) if "prefrontal" in self.regions else None
+
+    @property
+    def striatum(self) -> Optional[Striatum]:
+        """Get striatum region if present."""
+        return cast(Optional[Striatum], self.regions["striatum"]) if "striatum" in self.regions else None
+
+    @property
+    def thalamus(self) -> Optional[Thalamus]:
+        """Get thalamus region if present."""
+        return cast(Optional[Thalamus], self.regions["thalamus"]) if "thalamus" in self.regions else None
+
+    # =========================================================================
+    # INITIALIZATION
+    # =========================================================================
+
+    def __init__(
+        self,
+        config: BrainConfig,
+        regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]],
+        connections: Dict[Tuple[RegionName, SpikesSourceKey], AxonalProjection],
+    ):
+        """Initialize DynamicBrain from graph.
+
+        Args:
+            config: Brain configuration (device, dt_ms, oscillators, etc.)
+            regions: Dict mapping region names to instances
+            connections: Dict mapping (source, target) tuples to pathways
+        """
+        super().__init__()
+
+        # DISABLE GRADIENTS
+        # Thalia uses local learning rules (STDP, BCM, Hebbian, three-factor)
+        # that do NOT require backpropagation. Disabling gradients provides:
+        # - Performance boost (no autograd overhead)
+        # - Memory savings (no gradient storage)
+        # - Biological plausibility (no non-local error signals)
+        torch.set_grad_enabled(False)
+
+        # =================================================================
+        # BRAIN CONFIG & COMPONENTS
+        # =================================================================
+        self.config = config
+
+        # Store regions as nn.ModuleDict for proper parameter tracking
+        self.regions = nn.ModuleDict(regions)
+
+        # Store connections with tuple keys for easy lookup
+        # Also register in ModuleDict for parameter tracking
+        self.connections: Dict[Tuple[RegionName, SpikesSourceKey], AxonalProjection] = connections
+        self._connection_modules = nn.ModuleDict(
+            {f"{src}_to_{tgt}": pathway for (src, tgt), pathway in connections.items()}
+        )
+
+        # Current simulation time
+        self._current_time: float = 0.0
+
+        # =================================================================
+        # OSCILLATOR MANAGER
+        # =================================================================
+        self.oscillators = OscillatorManager(
+            dt_ms=self.dt_ms,
+            device=self.device,
+            delta_freq=self.config.delta_frequency_hz,
+            theta_freq=self.config.theta_frequency_hz,
+            alpha_freq=self.config.alpha_frequency_hz,
+            beta_freq=self.config.beta_frequency_hz,
+            gamma_freq=self.config.gamma_frequency_hz,
+            ripple_freq=self.config.ripple_frequency_hz,
+            couplings=None,  # Use default couplings (theta-gamma, etc.)
+        )
+
+        # =================================================================
+        # NEUROMODULATOR SYSTEMS
+        # =================================================================
+        self.neuromodulator_manager = NeuromodulatorManager()
+
+        # =================================================================
+        # REINFORCEMENT LEARNING STATE
+        # =================================================================
+        self._last_action: Optional[int] = None
+
+        # =================================================================
+        # INITIALIZE TEMPORAL PARAMETERS
+        # =================================================================
+        # Broadcast dt_ms to all regions for initial setup
+        # Regions compute decay factors, phase increments, etc.
+        self.set_timestep(self.dt_ms)
+
+    # =========================================================================
+    # FORWARD PASS
+    # =========================================================================
+
+    def forward(self, input_spikes: Optional[BrainSpikesDict] = None) -> BrainSpikesDict:
+        """Run one timestep of the brain."""
+        if input_spikes is None:
+            input_spikes = {}
+        else:
+            for region_name, spikes in input_spikes.items():
+                validate_spike_tensors(spikes, context=f"{self.__class__.__name__}.forward")
+
+        # === CLOCK-DRIVEN EXECUTION (ADR-003) ===
+        # All regions execute every timestep.
+        # Axonal delays are handled by pathway CircularDelayBuffers.
+        # This ensures continuous dynamics: membrane decay, recurrent connections,
+        # oscillators, and short-term plasticity all evolve every timestep.
+
+        # =====================================================================
+        # SPIKE PROPAGATION
+        # =====================================================================
+        # At timestep T:
+        # 1. Read delayed outputs from buffers (spikes sent at T-delay)
+        # 2. Combine with external input_spikes
+        # 3. Execute regions → produce outputs at T
+        # 4. Write outputs to buffers → will be read at T+delay
+        #
+        # At T=0: buffers are empty, so delayed_outputs are zeros
+        # At T>=delay: buffers have data, delayed_outputs have actual spikes
+        # =====================================================================
+
+        # STEP 1: Read delayed outputs from all pathways (spikes from T-delay)
+        region_inputs: BrainSpikesDict = {name: {} for name in self.regions.keys()}
+
+        for (_src, _tgt), pathway in cast(Dict[Tuple[RegionName, SpikesSourceKey], AxonalProjection], self.connections).items():
+            # Read delayed outputs WITHOUT writing or advancing
+            delayed_outputs: BrainSpikesDict = pathway.read_delayed_outputs()
+
+            # Parse target region from compound key "target:port" (connection tuple)
+            target_region, _target_port = parse_compound_key(_tgt)
+
+            # Route inputs by SOURCE name (biological: synapses ARE the routing)
+            for source_region, port_dict in delayed_outputs.items():
+                if target_region not in region_inputs:
+                    region_inputs[target_region] = {}
+
+                for source_port, delayed_tensor in port_dict.items():
+                    # Construct source_name key matching synaptic_weights keys
+                    # e.g., "thalamus:relay", "hippocampus:ca1"
+                    source_name = compound_key(source_region, source_port)
+
+                    # Combine if source already has input from another pathway (logical OR)
+                    if source_name in region_inputs[target_region]:
+                        region_inputs[target_region][source_name] = (
+                            region_inputs[target_region][source_name] | delayed_tensor
+                        )
+                    else:
+                        region_inputs[target_region][source_name] = delayed_tensor
+
+        # STEP 2: Combine with external sensory input_spikes
+        for region_name, port_inputs in input_spikes.items():
+            if region_name not in region_inputs:
+                region_inputs[region_name] = {}
+
+            for port_name, port_input in port_inputs.items():
+                # Combine sensory with pathway inputs (logical OR)
+                if port_name in region_inputs[region_name]:
+                    region_inputs[region_name][port_name] = (
+                        region_inputs[region_name][port_name] | port_input
+                    )
+                else:
+                    region_inputs[region_name][port_name] = port_input
+
+        # STEP 3: Execute all regions with combined inputs → produce outputs at T
+        outputs: BrainSpikesDict = {}
+        for region_name, region in cast(Dict[RegionName, NeuralRegion[NeuralRegionConfig]], self.regions).items():
+            # Get accumulated inputs for this region (empty dict if no inputs)
+            region_input: RegionSpikesDict = region_inputs.get(region_name, {})
+
+            # Execute region (empty dict is valid for recurrent/spontaneous activity)
+            region_output: RegionSpikesDict = region.forward(region_input)
+
+            # Store output
+            outputs[region_name] = region_output
+
+        # STEP 4: Write current outputs to pathways and advance buffers
+        for (src, _tgt), pathway in cast(Dict[Tuple[RegionName, RegionName], AxonalProjection], self.connections).items():
+            # Write source region's current output to buffer (for T+delay reads)
+            if src in outputs:
+                source_output: BrainSpikesDict = {src: outputs[src]}
+                pathway.write_and_advance(source_output)
+
+        # Advance simulation time
+        self._current_time += self.dt_ms
+
+        return outputs
+
+    def consolidate(self, duration_ms: float) -> Dict[str, Any]:
+        """Trigger memory consolidation via spontaneous replay.
+
+        No explicit coordination - just set acetylcholine low and run brain forward.
+        Hippocampus spontaneously replays high-priority patterns via sharp-wave ripples.
+
+        Biological mechanism:
+        1. Lower acetylcholine (0.1) → sleep/rest mode
+        2. Hippocampus CA3 spontaneously reactivates stored patterns
+        3. Replay probability ∝ synaptic tag strength (Frey-Morris tagging)
+        4. Ripples occur at ~1-3 Hz during low ACh
+        5. Restore acetylcholine (0.7) → awake/encoding mode
+
+        Args:
+            duration_ms: Consolidation duration in milliseconds (default 1000ms = 1 second)
+
+        Returns:
+            Dict with consolidation statistics:
+                - ripples: Number of sharp-wave ripples detected
+                - duration_ms: Total consolidation duration
+                - ripple_rate_hz: Ripples per second
+
+        Raises:
+            ValueError: If hippocampus not present in brain
+        """
+        # Check for hippocampus
+        if self.hippocampus is None:
+            raise ValueError(
+                "Hippocampus required for consolidation. "
+                "Brain must include 'hippocampus' region."
+            )
+
+        # Enter consolidation mode (low acetylcholine)
+        self.hippocampus.enter_consolidation_mode()
+        self.hippocampus.set_neuromodulators(acetylcholine=0.1)
+
+        # Run brain forward - replay happens automatically
+        n_timesteps = int(duration_ms / self.dt_ms)
+        ripple_count = 0
+
+        for _ in range(n_timesteps):
+            self.forward(None)  # No sensory input during sleep
+            if self.hippocampus.ripple_detected:
+                ripple_count += 1
+
+        # Return to encoding mode (high acetylcholine)
+        self.hippocampus.set_neuromodulators(acetylcholine=0.7)
+        self.hippocampus.exit_consolidation_mode()
+
+        # Compute ripple rate
+        ripple_rate_hz = ripple_count / (duration_ms / 1000.0) if duration_ms > 0 else 0.0
+
+        return {
+            "ripples": ripple_count,
+            "duration_ms": duration_ms,
+            "ripple_rate_hz": ripple_rate_hz,
+        }
+
+    def select_action(self, explore: bool = True) -> tuple[int, float]:
+        """Select action based on current striatum state.
+
+        Uses striatum to select actions based on accumulated evidence.
+
+        Args:
+            explore: Whether to allow exploration (epsilon-greedy)
+
+        Returns:
+            (action, confidence): Selected action index and confidence [0, 1]
+
+        Raises:
+            ValueError: If striatum not found in brain
+        """
+        if self.striatum is None:
+            raise ValueError(
+                "Striatum not found. Cannot select action. "
+                "Brain must include 'striatum' region for RL tasks."
+            )
+
+        # Striatum has finalize_action method for action selection
+        result = self.striatum.finalize_action(explore=explore)
+
+        # Extract action from result dict
+        action = result["selected_action"]
+
+        # Compute confidence from probabilities or net votes
+        probs = result.get("probs")
+        if probs is not None:
+            # Softmax case: use max probability as confidence
+            confidence = float(probs.max().item())
+        else:
+            # Argmax case: use normalized net votes as confidence
+            net_votes = result["net_votes"]
+            if net_votes.sum() > 0:
+                confidence = float(net_votes[action].item() / net_votes.sum().item())
+            else:
+                confidence = 1.0 / len(net_votes)  # Uniform if no votes
+
+        # Store for deliver_reward
+        self._last_action = action
+
+        return action, confidence
+
+    def deliver_reward(self, external_reward: Optional[float] = None) -> None:
+        """Deliver reward signal and update exploration statistics.
+
+        **Continuous Learning Architecture**: Learning happens automatically in striatum's
+        forward() pass using broadcast dopamine. This method broadcasts dopamine globally
+        and updates exploration statistics.
+
+        Uses striatum to select actions based on accumulated evidence.
+        The brain broadcasts reward as dopamine signal to all regions,
+        which use three-factor learning (eligibility × dopamine × lr)
+        for continuous synaptic updates.
+
+        Action values emerge from D1-D2 synaptic weight competition - no Q-values!
+
+        Args:
+            external_reward: Task-based reward value (typically -1 to +1),
+                           or None for pure intrinsic reward
+
+        Raises:
+            ValueError: If striatum not found
+
+        Note:
+            Actual learning happens continuously in striatum.forward() using
+            the broadcast dopamine level. This method only broadcasts dopamine
+            and updates exploration - no discrete learning trigger.
+        """
+        if self.striatum is None:
+            raise ValueError(
+                "Striatum not found. Cannot deliver reward. "
+                "Brain must include 'striatum' region for RL tasks."
+            )
+
+        # Compute total reward (external + intrinsic if available)
+        intrinsic_reward = self._compute_intrinsic_reward()
+        if external_reward is None:
+            total_reward = intrinsic_reward
+        else:
+            total_reward = external_reward + intrinsic_reward
+            total_reward = max(-2.0, min(2.0, total_reward))
+
+        # Deliver reward to VTA and broadcast dopamine globally
+        # This ensures all regions (hippocampus, prefrontal, striatum, etc.) receive
+        # dopamine signal for synaptic tagging and learning
+        expected_value = 0.0  # TODO: Simplified: no value prediction yet
+        self.neuromodulator_manager.vta.deliver_reward(
+            external_reward=total_reward,
+            expected_value=expected_value,
+        )
+        # Broadcast updated dopamine to all regions
+        self.neuromodulator_manager.broadcast_to_regions(self.regions)
+
+        # Update exploration statistics based on reward
+        # Striatum applies continuous learning automatically in forward() using broadcast dopamine
+        self.striatum.update_performance(total_reward)
+
+    # =========================================================================
+    # NEUROMODULATION
+    # =========================================================================
+
+    def _update_neuromodulators(self) -> None:
+        """Update centralized neuromodulator systems and broadcast to regions.
+
+        Updates VTA (dopamine), locus coeruleus (norepinephrine), and nucleus
+        basalis (acetylcholine) based on intrinsic reward, uncertainty, and
+        prediction error. Then broadcasts signals to all regions.
+
+        This is called automatically during forward() to maintain neuromodulator
+        dynamics every timestep.
+
+        Neuromodulator Sources:
+            - VTA: Tonic from intrinsic reward, phasic from RPE
+            - LC: Arousal from uncertainty
+            - NB: Encoding strength from prediction error
+
+        Note:
+            For now, intrinsic reward and uncertainty are simplified.
+            Full implementation with curiosity and metacognition will be
+            added in later phases.
+        """
+        # TODO: This is currently not called in forward().
+
+        # Compute signals for neuromodulator updates
+        intrinsic_reward = self._compute_intrinsic_reward()
+        uncertainty = self._compute_uncertainty()
+        prediction_error = self._compute_prediction_error()
+
+        # Update neuromodulator systems
+        self.neuromodulator_manager.vta.update(dt_ms=self.dt_ms, intrinsic_reward=intrinsic_reward)
+        self.neuromodulator_manager.locus_coeruleus.update(
+            dt_ms=self.dt_ms, uncertainty=uncertainty
+        )
+        self.neuromodulator_manager.nucleus_basalis.update(
+            dt_ms=self.dt_ms, prediction_error=prediction_error
+        )
+
+        # Get current neuromodulator levels
+        dopamine = self.neuromodulator_manager.vta.get_global_dopamine()
+        norepinephrine = self.neuromodulator_manager.locus_coeruleus.get_norepinephrine()
+
+        # Apply DA-NE coordination
+        dopamine, norepinephrine = self.neuromodulator_manager.coordination.coordinate_da_ne(
+            dopamine, norepinephrine, prediction_error
+        )
+
+        # Broadcast to all regions
+        self.neuromodulator_manager.broadcast_to_regions(self.regions)
+
+    def _get_cortex_l4_activity(self) -> Optional[float]:
+        """Helper to get cortex L4 activity for neuromodulator computations."""
+        if self.cortex is not None:
+            return compute_firing_rate(self.cortex.l4_spikes)
+        return None
+
+    def _get_hippocampus_ca1_activity(self) -> Optional[float]:
+        """Helper to get hippocampus CA1 activity for neuromodulator computations."""
+        if self.hippocampus is not None:
+            return compute_firing_rate(self.hippocampus.ca1_spikes)
+        return None
+
+    def _compute_intrinsic_reward(self) -> float:
+        """Compute intrinsic reward from the brain's internal objectives.
+
+        This implements the free energy principle: the brain rewards itself
+        for minimizing prediction error (surprise). Intrinsic reward is
+        ALWAYS computed - it's the brain's continuous self-evaluation.
+
+        Sources:
+        1. **Cortex predictive coding**: Low prediction error → good model of the world → reward
+        2. **Hippocampus pattern completion**: High similarity → successful recall → reward
+
+        This is biologically plausible:
+        - VTA dopamine neurons respond to internal prediction errors
+        - Curiosity and "eureka" moments are intrinsically rewarding
+        - The brain learns even without external feedback
+
+        Returns:
+            Intrinsic reward in range [-1, 1]
+        """
+        reward = 0.0
+        n_sources = 0
+
+        # =====================================================================
+        # 1. CORTEX PREDICTIVE CODING (free energy minimization)
+        # =====================================================================
+        # Low prediction error = good model of the world = reward
+        # L4 activity = prediction error
+        # L4 = input - (L5+L6 prediction), so low L4 = good prediction = reward
+        l4_activity = self._get_cortex_l4_activity()
+        if l4_activity is not None:
+            # L4 activity is prediction error (0 = perfect prediction, 1 = max error)
+            # Map to reward: 0 → +1, 0.5 → 0, 1 → -1
+            cortex_reward = 1.0 - 2.0 * l4_activity
+            cortex_reward = max(-1.0, min(1.0, cortex_reward))
+            reward += cortex_reward
+            n_sources += 1
+
+        # =====================================================================
+        # 2. HIPPOCAMPUS PATTERN COMPLETION (memory recall quality)
+        # =====================================================================
+        # High pattern similarity = successful memory retrieval = reward
+        # Biology: VTA observes CA1 output activity. Strong coherent firing = successful recall.
+        # We infer similarity from CA1 spike rate (observable signal).
+        ca1_activity = self._get_hippocampus_ca1_activity()
+        if ca1_activity is not None:
+            # CA1 firing rate as proxy for retrieval quality
+            # High rate = strong recall, low rate = weak/no recall
+
+            # Map CA1 activity [0, 1] to reward [-1, 1]
+            # 0.5 activity = neutral (0 reward), >0.5 = positive, <0.5 = negative
+            hippo_reward = 2.0 * ca1_activity - 1.0
+            # Weight slightly less than cortex (memory is secondary to prediction)
+            reward += 0.5 * hippo_reward
+            n_sources += 1
+
+        # =====================================================================
+        # Average across sources
+        # =====================================================================
+        if n_sources > 0:
+            reward = reward / n_sources
+        else:
+            # No signals → assume moderate intrinsic reward
+            reward = 0.0
+
+        return max(-1.0, min(1.0, reward))
+
+    def _compute_uncertainty(self) -> float:
+        """Compute current task uncertainty for arousal modulation.
+
+        Uncertainty drives norepinephrine release from locus coeruleus.
+        High uncertainty → high arousal → increased neural gain.
+
+        Sources:
+        1. Prediction error magnitude (cortex)
+        2. Value estimate variance (striatum)
+        3. Novelty detection
+
+        Returns:
+            Uncertainty estimate in [0, 1]
+        """
+        uncertainty = 0.0
+        n_sources = 0
+
+        # Cortex prediction error as uncertainty proxy
+        # L4 activity directly represents prediction error magnitude
+        l4_activity = self._get_cortex_l4_activity()
+        if l4_activity is not None:
+            # High L4 activity = high prediction error = high uncertainty
+            cortex_uncertainty = l4_activity
+            uncertainty += cortex_uncertainty
+            n_sources += 1
+
+        # Average across sources
+        if n_sources > 0:
+            uncertainty = float(uncertainty) / n_sources
+        else:
+            # No signals → assume moderate uncertainty
+            uncertainty = 0.3
+
+        return float(max(0.0, min(1.0, uncertainty)))
+
+    def _compute_prediction_error(self) -> float:
+        """Compute current prediction error for ACh modulation.
+
+        Prediction error drives ACh release from nucleus basalis.
+        High PE → novelty → ACh burst → encoding mode.
+
+        Sources:
+        1. Cortex free energy (prediction error magnitude)
+        2. Hippocampus retrieval mismatch
+
+        Returns:
+            Prediction error estimate in [0, 1]
+        """
+        prediction_error = 0.0
+        n_sources = 0
+
+        # Cortex predictive coding error
+        # L4 = input - (L5+L6 prediction), so L4 activity = prediction error magnitude
+        l4_activity = self._get_cortex_l4_activity()
+        if l4_activity is not None:
+            # L4 activity directly represents prediction error [0, 1]
+            cortex_pe = l4_activity
+            prediction_error += cortex_pe
+            n_sources += 1
+
+        # Average across sources
+        if n_sources > 0:
+            prediction_error = float(prediction_error) / n_sources
+        else:
+            # No signals → assume low PE (familiar context)
+            prediction_error = 0.2
+
+        return float(max(0.0, min(1.0, prediction_error)))
+
+    # =========================================================================
+    # ADAPTIVE TIMESTEP AND OSCILLATOR COORDINATION
+    # =========================================================================
+
+    def set_timestep(self, new_dt_ms: float) -> None:
+        """Change simulation timestep adaptively during training.
+
+        Updates dt_ms and propagates temporal parameter updates to:
+        - All regions (neurons, STP, learning strategies)
+        - Oscillator manager (phase increments)
+        - Pathway manager (delay buffers)
+
+        Use cases:
+        - Memory replay: 10x speedup (dt=10ms) during consolidation
+        - Critical learning: Slow down to 0.1ms for precise timing
+        - Energy efficiency: Larger dt when dynamics are stable
+
+        Args:
+            new_dt_ms: New timestep in milliseconds (must be positive)
+
+        Raises:
+            ValueError: If new_dt_ms <= 0
+        """
+        if new_dt_ms <= 0:
+            raise ValueError(f"dt_ms must be positive, got {new_dt_ms}")
+
+        # Update brain dt
+        self.config.dt_ms = new_dt_ms
+
+        # Update all regions
+        for region in self.regions.values():
+            region.update_temporal_parameters(new_dt_ms)
+
+        # Update all connections/pathways
+        for pathway in self.connections.values():
+            pathway.update_temporal_parameters(new_dt_ms)
+
+    def _broadcast_oscillator_phases(self) -> None:
+        """Broadcast oscillator phases to all regions.
+
+        Advances oscillators by dt_ms and updates all regions with current
+        phases for all frequency bands (delta, theta, alpha, beta, gamma, ripple).
+
+        This enables:
+        - Delta slow-wave sleep consolidation
+        - Theta-driven encoding/retrieval in hippocampus
+        - Alpha attention gating
+        - Beta motor control and working memory
+        - Gamma feature binding in cortex
+        - Ripple sharp-wave replay
+
+        **Note on Emergent Oscillations**:
+
+        **Theta (4-12 Hz)**: Disabled - emerges from medial septum pacemaker neurons
+        (cholinergic and GABAergic) that phase-lock hippocampal OLM interneurons.
+        OLM dendritic inhibition creates emergent encoding/retrieval separation.
+        This is biologically accurate: hippocampal theta arises from septal drive,
+        not a central oscillator.
+
+        **Gamma (30-80 Hz)**: Disabled - two gamma frequencies naturally emerge from
+        L6a-TRN-relay (~40Hz) and L6b-relay (~60Hz) feedback loops. This is biologically
+        accurate: cortical gamma arises from corticothalamic interactions, not a
+        central oscillator.
+        """
+        # Advance oscillators
+        self.oscillators.advance(dt_ms=self.dt_ms)
+
+        # Get all phases, signals, and coupled amplitudes
+        phases = self.oscillators.get_phases()
+        signals = self.oscillators.get_signals()
+        coupled_amplitudes = self.oscillators.get_coupled_amplitudes()
+
+        # Broadcast directly to all regions
+        for region in self.regions.values():
+            region.set_oscillator_phases(phases, signals, coupled_amplitudes)
+
+    # =========================================================================
+    # DIAGNOSTICS
+    # =========================================================================
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get comprehensive diagnostic information from all subsystems."""
+        neuromodulators = self.neuromodulator_manager.get_diagnostics()
+        oscillators = self.oscillators.get_state()
+
+        regions_diag: Dict[str, Any] = {}
+        for region_name, region in cast(Dict[str, NeuralRegion[NeuralRegionConfig]], self.regions).items():
+            regions_diag[region_name] = region.get_diagnostics()
+
+        connections_diag: Dict[str, Any] = {}
+        for (src, tgt), connection in cast(Dict[Tuple[str, str], AxonalProjection], self.connections).items():
+            connection_name = f"{src}_to_{tgt}"
+            connections_diag[connection_name] = connection.get_diagnostics()
+
+        return {
+            "neuromodulators": neuromodulators,
+            "oscillators": oscillators,
+            "regions": regions_diag,
+            "connections": connections_diag,
+        }

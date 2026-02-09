@@ -16,14 +16,6 @@ class Transient(StimulusPattern):
     - Brief visual flash
     - Touch/tap on skin
     - Brief auditory click
-
-    Example:
-        >>> # Brief flash at t=0
-        >>> pattern = torch.ones(128, dtype=torch.bool)
-        >>> stim = Transient(pattern, onset_ms=0, duration_ms=1.0)
-        >>>
-        >>> input_t0 = stim.get_input(0, dt_ms=1.0)   # Returns pattern
-        >>> input_t1 = stim.get_input(1, dt_ms=1.0)   # Returns None
     """
 
     def __init__(

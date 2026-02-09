@@ -4,21 +4,20 @@ Spike trace utilities for STDP and eligibility-based learning.
 This module provides reusable trace management for spike-timing dependent
 plasticity and related learning rules. Traces are exponentially decaying
 signals that accumulate spike history for computing synaptic updates.
-
-Author: Thalia Project
-Date: December 2025
 """
 
 from __future__ import annotations
 
 import torch
 
+from thalia.constants import DEFAULT_DT_MS
+
 
 def update_trace(
     trace: torch.Tensor,
     spikes: torch.Tensor,
     tau: float,
-    dt_ms: float = 1.0,
+    dt_ms: float = DEFAULT_DT_MS,
     decay_type: str = "exponential",
     amplitude: float = 1.0,
 ) -> torch.Tensor:

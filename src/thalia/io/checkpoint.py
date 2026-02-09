@@ -57,7 +57,7 @@ def _convert_to_json_serializable(obj: Any) -> Any:
         # Preserve dataclass type information for reconstruction
         return {
             "_dataclass": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
-            "_fields": {k: _convert_to_json_serializable(v) for k, v in asdict(obj).items()},  # type: ignore[arg-type]
+            "_fields": {k: _convert_to_json_serializable(v) for k, v in asdict(obj).items()},
         }
     elif isinstance(obj, dict):
         return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
@@ -137,17 +137,6 @@ class BrainCheckpoint:
 
         Returns:
             Summary dict with file info
-
-        Example:
-            >>> # Uncompressed FP32
-            >>> BrainCheckpoint.save(brain, "checkpoint.thalia")
-
-            >>> # FP16 with zstd compression (~75% total size reduction)
-            >>> BrainCheckpoint.save(brain, "checkpoint.thalia.zst", precision_policy='fp16')
-
-            >>> # Custom precision policy
-            >>> policy = PrecisionPolicy(weights='fp16', biases='fp32', membrane='fp32')
-            >>> BrainCheckpoint.save(brain, "checkpoint.thalia", precision_policy=policy)
         """
         from .compression import compress_data, detect_compression
 
@@ -158,8 +147,8 @@ class BrainCheckpoint:
         if compression is None:
             compression = detect_compression(path)
 
-        # Get brain state
-        state = brain.get_full_state()
+        # TODO: Get brain state
+        # state = brain.get_state()
 
         # Apply precision policy if specified
         policy = get_precision_policy(precision_policy)
@@ -179,15 +168,13 @@ class BrainCheckpoint:
                 "thalia_version": THALIA_VERSION,
                 "checkpoint_format_version": f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}",
                 "pytorch_version": torch.__version__,
-                "device": str(getattr(brain, "device", getattr(brain.config, "device", "unknown"))),
+                "device": str(brain.device),
                 "training_steps": state.get("training_steps", 0),
                 # Include non-region state
                 "config": state.get("config", {}),
                 "theta": state.get("theta", {}),
                 "scheduler": state.get("scheduler", {}),
                 "trial_state": state.get("trial_state", {}),
-                # Growth history tracking
-                "growth_history": getattr(brain, "_growth_history", []),
                 # Precision information
                 "precision_policy": str(precision_policy) if precision_policy else "fp32",
                 "precision_stats": precision_stats,
@@ -302,7 +289,7 @@ class BrainCheckpoint:
                 uncompressed_data = f.read()
 
             # Compress
-            compressed_data = compress_data(uncompressed_data, compression, compression_level)  # type: ignore[arg-type]
+            compressed_data = compress_data(uncompressed_data, compression, compression_level)
 
             # Overwrite with compressed version
             with open(path, "wb") as f:
@@ -360,17 +347,7 @@ class BrainCheckpoint:
             regions_to_load: Optional list of region names to load (None = all)
 
         Returns:
-            State dict suitable for brain.load_full_state()
-
-        Example:
-            >>> # Load uncompressed
-            >>> brain = BrainCheckpoint.load("checkpoint.thalia")
-
-            >>> # Load compressed (auto-detects)
-            >>> brain = BrainCheckpoint.load("checkpoint.thalia.zst")
-
-            >>> # Load delta checkpoint (auto-reconstructs)
-            >>> brain = BrainCheckpoint.load("stage3.delta.thalia")
+            State dict
         """
         from .compression import decompress_data, detect_compression
         from .delta import DELTA_MAGIC, load_delta_checkpoint
@@ -414,7 +391,7 @@ class BrainCheckpoint:
             return load_delta_checkpoint(path, device=device)
 
         # Now parse the decompressed data (checksum already validated)
-        f = io.BytesIO(file_data)  # type: ignore[assignment]
+        f = io.BytesIO(file_data)
         reader = BinaryReader(f)
 
         # Read header
@@ -542,21 +519,6 @@ class BrainCheckpoint:
 
         Returns:
             Summary dict with statistics
-
-        Example:
-            >>> # Save base checkpoint first
-            >>> BrainCheckpoint.save(brain, "stage0.thalia")
-
-            >>> # Train to stage 1
-            >>> train_stage(brain, stage=1)
-
-            >>> # Save delta with FP16 + compression (massive savings)
-            >>> BrainCheckpoint.save_delta(
-            ...     brain,
-            ...     "stage1.delta.thalia.zst",
-            ...     base_checkpoint="stage0.thalia",
-            ...     precision_policy='fp16'
-            ... )
         """
         from .compression import compress_file
         from .delta import save_delta_checkpoint
@@ -564,8 +526,8 @@ class BrainCheckpoint:
         path = Path(path)
         base_checkpoint = Path(base_checkpoint)
 
-        # Get current state
-        current_state = brain.get_full_state()
+        # TODO: Get current state
+        # current_state = brain.get_state()
 
         # Apply precision policy if specified
         if precision_policy is not None:
@@ -595,7 +557,7 @@ class BrainCheckpoint:
             compress_file(
                 uncompressed_path,
                 compressed_path,
-                compression=compression,  # type: ignore[arg-type]
+                compression=compression,
                 level=compression_level,
             )
 
@@ -736,7 +698,7 @@ def _serialize_value(value: Any, writer: BinaryWriter) -> Any:
         # Serialize dataclass with tensors properly handled
         return {
             "_dataclass": f"{value.__class__.__module__}.{value.__class__.__name__}",
-            "_fields": {k: _serialize_value(v, writer) for k, v in asdict(value).items()},  # type: ignore[arg-type]
+            "_fields": {k: _serialize_value(v, writer) for k, v in asdict(value).items()},
         }
     elif isinstance(value, Enum):
         # Enums are simple - just return the value
@@ -766,7 +728,7 @@ def _serialize_region_state(region_state: Dict[str, Any], writer: BinaryWriter) 
     Returns:
         JSON dict with tensor references
     """
-    result: Dict[str, Any] = _serialize_value(region_state, writer)  # type: ignore[assignment]
+    result: Dict[str, Any] = _serialize_value(region_state, writer)
     return result
 
 

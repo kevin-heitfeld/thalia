@@ -7,40 +7,21 @@ spiking neural networks in Thalia.
 
 from __future__ import annotations
 
-# Spike coding
-from .coding import (
-    CodingStrategy,
-    RateDecoder,
-    RateEncoder,
-    SpikeCodingConfig,
-    SpikeDecoder,
-    SpikeEncoder,
-    compute_firing_rate,
-    compute_spike_count,
-    compute_spike_density,
-    compute_spike_similarity,
-    is_saturated,
-    is_silent,
+from .gap_junctions import (
+    GapJunctionConfig,
+    GapJunctionCoupling,
 )
-
-# Neuron models
 from .neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
-    DendriticBranch,
-    DendriticBranchConfig,
-    DendriticNeuron,
-    DendriticNeuronConfig,
-    compute_branch_selectivity,
-    create_clustered_input,
-    create_cortical_layer_neurons,
-    create_pyramidal_neurons,
-    create_relay_neurons,
-    create_scattered_input,
-    create_trn_neurons,
+    NeuronFactory,
 )
-
-# Synaptic mechanisms
+from .spike_coding import (
+    CodingStrategy,
+    SpikeCodingConfig,
+    SpikeDecoder,
+    SpikeEncoder,
+)
 from .synapses import (
     STP_PRESETS,
     InitStrategy,
@@ -51,6 +32,7 @@ from .synapses import (
     STPType,
     WeightInitializer,
     get_stp_config,
+    create_heterogeneous_stp_configs,
     list_presets,
     update_trace,
 )
@@ -59,19 +41,8 @@ __all__ = [
     # Neuron models
     "ConductanceLIF",
     "ConductanceLIFConfig",
-    # Neuron factory functions
-    "create_pyramidal_neurons",
-    "create_relay_neurons",
-    "create_trn_neurons",
-    "create_cortical_layer_neurons",
-    # Dendritic computation
-    "DendriticBranch",
-    "DendriticBranchConfig",
-    "DendriticNeuron",
-    "DendriticNeuronConfig",
-    "compute_branch_selectivity",
-    "create_clustered_input",
-    "create_scattered_input",
+    # Neuron factory
+    "NeuronFactory",
     # Weight Initialization
     "InitStrategy",
     "WeightInitializer",
@@ -84,6 +55,7 @@ __all__ = [
     "STP_PRESETS",
     "STPPreset",
     "get_stp_config",
+    "create_heterogeneous_stp_configs",
     "list_presets",
     # Spike Traces
     "update_trace",
@@ -92,13 +64,7 @@ __all__ = [
     "SpikeCodingConfig",
     "SpikeEncoder",
     "SpikeDecoder",
-    "RateEncoder",
-    "RateDecoder",
-    "compute_spike_similarity",
-    # Spike Utils
-    "compute_firing_rate",
-    "compute_spike_count",
-    "compute_spike_density",
-    "is_silent",
-    "is_saturated",
+    # Gap Junctions
+    "GapJunctionConfig",
+    "GapJunctionCoupling",
 ]

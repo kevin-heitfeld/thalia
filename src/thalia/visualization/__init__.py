@@ -9,6 +9,12 @@ Provides tools for visualizing:
 
 from __future__ import annotations
 
+from .live_diagnostics import (
+    LiveDiagnostics,
+)
+from .monitor import (
+    TrainingMonitor,
+)
 from .network_graph import (
     export_topology_to_graphviz,
     plot_connectivity_matrix,
@@ -16,7 +22,9 @@ from .network_graph import (
 )
 
 __all__ = [
-    "visualize_brain_topology",
+    "LiveDiagnostics",
+    "TrainingMonitor",
     "export_topology_to_graphviz",
     "plot_connectivity_matrix",
+    "visualize_brain_topology",
 ]

@@ -17,15 +17,6 @@ class Sequential(StimulusPattern):
     - Speech waveform
     - Hand-written trajectory
     - Sensory sequences in experiments
-
-    Example:
-        >>> # Movie frames
-        >>> frames = [torch.randn(128) for _ in range(100)]
-        >>> stim = Sequential(frames)
-        >>>
-        >>> input_t0 = stim.get_input(0, dt_ms=1.0)   # Returns frames[0]
-        >>> input_t50 = stim.get_input(50, dt_ms=1.0)  # Returns frames[50]
-        >>> input_t100 = stim.get_input(100, dt_ms=1.0) # Returns None
     """
 
     def __init__(

@@ -1,8 +1,8 @@
 """
 Sensorimotor Environment Wrapper - Gymnasium + MuJoCo integration.
 
-This module wraps Gymnasium MuJoCo environments for Thalia's spiking neural networks,
-providing the foundation for Stage -0.5 (Sensorimotor Grounding) training.
+This module wraps Gymnasium MuJoCo environments providing the foundation
+for sensorimotor tasks such as reaching and object manipulation.
 
 Key Features:
 =============
@@ -42,50 +42,11 @@ Supported Environments:
 **Pusher-v4**:
 - 3-DOF arm pushing objects
 - More complex manipulation
-- Stage -0.5 advanced tasks
 
 **HalfCheetah-v4**:
 - Full-body locomotion
 - Complex coordination
 - Optional stretch goal
-
-Usage:
-======
-
-    from thalia.environments.sensorimotor_wrapper import (
-        SensorimotorWrapper,
-        SensorimotorConfig,
-    )
-
-    # Create wrapper
-    wrapper = SensorimotorWrapper(
-        env_name='Reacher-v4',
-        config=SensorimotorConfig(
-            spike_encoding='rate',
-            n_neurons_per_dof=50,
-        )
-    )
-
-    # Reset environment
-    obs_spikes = wrapper.reset()
-    # → torch.Tensor[n_neurons_total] (binary spikes)
-
-    # Interact
-    for step in range(1000):
-        # Brain produces motor spikes
-        motor_spikes = brain.motor_cortex(obs_spikes)
-
-        # Step environment
-        obs_spikes, reward, terminated, truncated = wrapper.step(motor_spikes)
-
-        if terminated or truncated:
-            obs_spikes = wrapper.reset()
-
-    # Motor babbling task
-    wrapper.motor_babbling(brain, n_steps=10000)
-
-    # Reaching task
-    success_rate = wrapper.reaching_task(brain, n_trials=100)
 
 Biological Mapping:
 ===================
@@ -104,15 +65,6 @@ Biological Mapping:
 - Forward model: predict sensory consequences of actions
 - Inverse model: compute actions to achieve desired state
 - Error-corrective learning (supervised)
-
-References:
-===========
-- Georgopoulos et al. (1986): Population vector coding
-- Wolpert & Kawato (1998): Internal models in cerebellum
-- Todorov & Jordan (2002): Optimal feedback control
-
-Author: Thalia Project
-Date: December 2025
 """
 
 from __future__ import annotations
@@ -174,15 +126,6 @@ class SensorimotorWrapper:
 
     Converts continuous observations (joint angles, velocities) to spike patterns,
     and spike patterns to motor commands (torques).
-
-    Example:
-        >>> wrapper = SensorimotorWrapper('Reacher-v4')
-        >>> obs_spikes = wrapper.reset()
-        >>> obs_spikes.shape
-        torch.Size([400])  # 8 DOF × 50 neurons/DOF
-        >>>
-        >>> motor_spikes = torch.rand(100) > 0.9  # 10% firing
-        >>> obs_spikes, reward, done, truncated = wrapper.step(motor_spikes)
     """
 
     def __init__(self, env_name: Optional[str] = None, config: Optional[SensorimotorConfig] = None):
@@ -400,8 +343,8 @@ class SensorimotorWrapper:
         # Clip to action bounds
         action_clipped = np.clip(
             action_noisy,
-            self.env.action_space.low,  # type: ignore[attr-defined]
-            self.env.action_space.high,  # type: ignore[attr-defined]
+            self.env.action_space.low,
+            self.env.action_space.high,
         )
 
         return action_clipped
@@ -424,8 +367,8 @@ class SensorimotorWrapper:
         spikes_reshaped = spikes_np.reshape(self.action_dim, self.config.n_neurons_per_dof)
 
         # Preferred values (evenly spaced in action space)
-        action_low = self.env.action_space.low  # type: ignore[attr-defined]
-        action_high = self.env.action_space.high  # type: ignore[attr-defined]
+        action_low = self.env.action_space.low
+        action_high = self.env.action_space.high
 
         action = np.zeros(self.action_dim)
         for i in range(self.action_dim):
@@ -457,8 +400,8 @@ class SensorimotorWrapper:
         firing_rates = spikes_reshaped.mean(axis=1)  # Average over neurons
 
         # Scale to action range
-        action_low = self.env.action_space.low  # type: ignore[attr-defined]
-        action_high = self.env.action_space.high  # type: ignore[attr-defined]
+        action_low = self.env.action_space.low
+        action_high = self.env.action_space.high
         action: np.ndarray = action_low + firing_rates * (action_high - action_low)
 
         return action

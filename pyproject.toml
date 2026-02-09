@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Thinking Architecture via Learning Integrated Attractors - A framework for genuinely thinking spiking neural networks"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 authors = [
     { name = "THALIA Contributors" }
 ]
@@ -26,9 +26,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
@@ -105,7 +103,7 @@ per-file-ignores = [
 ]
 
 [tool.bandit]
-exclude_dirs = ["tests", "temp", "docs"]
+exclude_dirs = ["docs", "temp", "tests"]
 skips = [
     "B101",  # assert_used - we use asserts in tests
     "B601",  # paramiko_calls
@@ -131,7 +129,6 @@ source = ["src/thalia"]
 omit = [
     "*/tests/*",
     "*/temp/*",
-    "*/experiments/*",
     "*/__pycache__/*",
 ]
 branch = true
@@ -199,16 +196,17 @@ disable = [
     "missing-function-docstring",  # Helper functions often self-documenting
 
     # === Design Decisions (intentional patterns) ===
-    "too-many-arguments",          # Config classes need many params
-    "too-many-instance-attributes",  # Brain regions are complex
-    "too-many-locals",             # Forward passes have many intermediate values
-    "too-many-branches",           # State machines need branches
-    "too-many-statements",         # Complex initialization is fine
     "too-few-public-methods",      # Protocols, mixins, utilities
+    "too-many-arguments",          # Config classes need many params
+    "too-many-branches",           # State machines need branches
+    "too-many-instance-attributes",  # Brain regions are complex
+    "too-many-lines",              # Some modules are long due to complexity
+    "too-many-locals",             # Forward passes have many intermediate values
+    "too-many-statements",         # Complex initialization is fine
     "too-many-public-methods",     # Brain API is intentionally rich
 
     # === Protected Access (intentional for internal APIs) ===
-    "protected-access",            # _impl access is part of our architecture
+    "protected-access",            # Internal APIs often need to access protected members of other classes
 
     # === Unused Variables (often wrong) ===
     "unused-argument",             # Protocol methods, hooks, callbacks
@@ -219,9 +217,6 @@ disable = [
 
     # === Fixme Comments (we use TODO.md) ===
     "fixme",                       # We track TODOs separately
-
-    # === Duplicate Code (acceptable in tests, configs) ===
-    "duplicate-code",              # Test setup often similar
 
     # === Invalid Names (research code patterns) ===
     "invalid-name",                # x, y, z, W, b are standard in ML
@@ -242,10 +237,7 @@ max-line-length = 100  # Slightly more lenient than black (88)
 good-names = [
     "i", "j", "k",       # Loop indices
     "x", "y", "z",       # Coordinates, inputs
-    "W", "b",            # Weights, biases
     "lr", "dt",          # Learning rate, timestep
-    "CA1", "CA3", "DG",  # Hippocampus regions
-    "L23", "L4", "L5",   # Cortical layers
     "fc", "bn",          # Fully connected, batch norm
     "fn",                # Function callback
     "f", "g", "h",       # Generic functions

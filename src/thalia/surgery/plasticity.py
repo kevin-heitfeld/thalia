@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from thalia.core.dynamic_brain import DynamicBrain
+    from thalia.brain import DynamicBrain
 
 
 def freeze_region(
@@ -30,26 +30,7 @@ def freeze_region(
     Args:
         brain: The brain to modify
         region_name: Name of region to freeze
-
-    Example:
-        >>> freeze_region(brain, "cortex")
-        >>> # Cortical features are now fixed
-        >>> train_on_new_task(brain)
-        >>> # Cortex weights didn't change
     """
-    from .lesion import _get_region
-
-    region_impl = _get_region(brain, region_name)
-
-    # Disable plasticity
-    if hasattr(region_impl, "plasticity_enabled"):
-        region_impl.plasticity_enabled = False
-
-    # Freeze parameters
-    for param in region_impl.parameters():
-        param.requires_grad = False
-
-    print(f"❄️  Frozen region: {region_name} (plasticity disabled)")
 
 
 def unfreeze_region(
@@ -61,24 +42,7 @@ def unfreeze_region(
     Args:
         brain: The brain to modify
         region_name: Name of region to unfreeze
-
-    Example:
-        >>> unfreeze_region(brain, "cortex")
-        >>> # Cortex can learn again
     """
-    from .lesion import _get_region
-
-    region_impl = _get_region(brain, region_name)
-
-    # Enable plasticity
-    if hasattr(region_impl, "plasticity_enabled"):
-        region_impl.plasticity_enabled = True
-
-    # Unfreeze parameters
-    for param in region_impl.parameters():
-        param.requires_grad = True
-
-    print(f"🔥 Unfrozen region: {region_name} (plasticity enabled)")
 
 
 def freeze_pathway(
@@ -90,24 +54,7 @@ def freeze_pathway(
     Args:
         brain: The brain to modify
         pathway_name: Name of pathway to freeze
-
-    Example:
-        >>> freeze_pathway(brain, "cortex_to_hippocampus")
-        >>> # Cortex→hippocampus connection is fixed
     """
-    from .ablation import _get_pathway
-
-    pathway = _get_pathway(brain, pathway_name)
-
-    # Disable plasticity
-    if hasattr(pathway, "plasticity_enabled"):
-        pathway.plasticity_enabled = False
-
-    # Freeze parameters
-    for param in pathway.parameters():
-        param.requires_grad = False
-
-    print(f"❄️  Frozen pathway: {pathway_name}")
 
 
 def unfreeze_pathway(
@@ -120,16 +67,3 @@ def unfreeze_pathway(
         brain: The brain to modify
         pathway_name: Name of pathway to unfreeze
     """
-    from .ablation import _get_pathway
-
-    pathway = _get_pathway(brain, pathway_name)
-
-    # Enable plasticity
-    if hasattr(pathway, "plasticity_enabled"):
-        pathway.plasticity_enabled = True
-
-    # Unfreeze parameters
-    for param in pathway.parameters():
-        param.requires_grad = True
-
-    print(f"🔥 Unfrozen pathway: {pathway_name}")

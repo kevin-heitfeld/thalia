@@ -6,8 +6,7 @@
     "**/node_modules",
     "**/__pycache__",
     "**/.venv",
-    "**/temp",
-    "**/experiments/notebooks"
+    "**/temp"
   ],
   "ignore": [
     "src/thalia/**/*.pyi"
@@ -18,7 +17,7 @@
   "stubPath": "typings",
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
-  "pythonVersion": "3.11",
+  "pythonVersion": "3.13",
   "pythonPlatform": "All",
   "typeCheckingMode": "standard",
   "reportUnknownMemberType": false,

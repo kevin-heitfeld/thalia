@@ -313,53 +313,6 @@ class GrammarDataset:
 
         return phrase_indices, is_grammatical, rule
 
-    def generate_batch(
-        self,
-        batch_size: int,
-        balance_rules: bool = True,
-        balance_violations: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor, List[GrammarRule]]:
-        """
-        Generate batch of phrases.
-
-        Args:
-            batch_size: Number of phrases
-            balance_rules: Equal distribution of rules
-            balance_violations: 50% grammatical, 50% violations
-
-        Returns:
-            phrases: (batch_size, max_length) padded word indices
-            labels: (batch_size,) grammatical (1) or violation (0)
-            rules: List of grammar rules tested
-        """
-        phrases = []
-        labels = []
-        rules = []
-
-        for _ in range(batch_size):
-            # Maybe force violation for balance
-            force_violation = False
-            if balance_violations and np.random.random() < 0.5:
-                force_violation = True
-
-            phrase, is_gram, rule = self.generate_phrase(force_violation=force_violation)
-            phrases.append(phrase)
-            labels.append(1 if is_gram else 0)
-            rules.append(rule)
-
-        # Pad phrases to same length
-        max_len = max(len(p) for p in phrases)
-        padded = []
-        for phrase in phrases:
-            padded_phrase = phrase + [self.vocab.pad_idx] * (max_len - len(phrase))
-            padded.append(padded_phrase)
-
-        return (
-            torch.tensor(padded, dtype=torch.long, device=self.config.device),
-            torch.tensor(labels, dtype=torch.float, device=self.config.device),
-            rules,
-        )
-
     def _generate_sv_agreement(self) -> Tuple[List[str], bool]:
         """
         Generate subject-verb agreement phrase.
@@ -532,8 +485,8 @@ class GrammarDataset:
         Compute grammaticality judgment accuracy.
 
         Args:
-            predictions: (batch_size,) predicted grammaticality (0 or 1)
-            labels: (batch_size,) true grammaticality (0 or 1)
+            predictions: (1,) predicted grammaticality (0 or 1)
+            labels: (1,) true grammaticality (0 or 1)
 
         Returns:
             accuracy: Fraction correct

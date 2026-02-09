@@ -26,11 +26,6 @@ Biological basis:
 - Residual calcium in presynaptic terminal (facilitation)
 - Vesicle pool dynamics (readily releasable, recycling, reserve)
 
-References:
-- Tsodyks & Markram (1997): The neural code between neocortical pyramidal neurons
-- Markram et al. (1998): Differential signaling via the same axon
-- Abbott & Regehr (2004): Synaptic computation (review)
-
 Computational benefits:
 - Temporal filtering (high-pass or low-pass depending on synapse type)
 - Gain control (automatic normalization of bursts)
@@ -42,12 +37,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 
-from thalia.utils.core_utils import clamp_weights
+from thalia.utils import clamp_weights
 
 from .weight_init import WeightInitializer
 
@@ -152,20 +148,6 @@ class ShortTermPlasticity(nn.Module):
             If None, uses per-presynaptic-neuron STP (shared across targets)
         config: STP configuration parameters
         per_synapse: If True, track u,x per synapse; if False, per pre-neuron
-
-    Example:
-        >>> # Per-synapse STP (most accurate) - ADR-005: 1D tensors
-        >>> stp = ShortTermPlasticity(n_pre=100, n_post=50, per_synapse=True)
-        >>> stp.reset_state()
-        >>>
-        >>> for t in range(100):
-        ...     pre_spikes = ...  # [n_pre] (1D)
-        ...     efficacy = stp(pre_spikes)  # [n_pre, n_post] or [n_pre]
-        ...     # Modulate weights: effective_w = w * efficacy
-
-        >>> # Depressing synapse for pyramidal→interneuron
-        >>> config = STPConfig.from_type(STPType.DEPRESSING)
-        >>> stp_dep = ShortTermPlasticity(n_pre=80, n_post=20, config=config)
     """
 
     def __init__(
@@ -192,7 +174,7 @@ class ShortTermPlasticity(nn.Module):
         self.register_buffer("recovery_d", torch.tensor(0.0, dtype=torch.float32))
         self.register_buffer("recovery_f", torch.tensor(0.0, dtype=torch.float32))
 
-        # State variables (initialized on first forward or reset)
+        # State variables (initialized on first forward)
         self.u: Optional[torch.Tensor] = None  # Release probability (facilitation)
         self.x: Optional[torch.Tensor] = None  # Available resources (depression)
 
@@ -200,13 +182,13 @@ class ShortTermPlasticity(nn.Module):
         """Update decay factors when brain timestep changes.
 
         Recomputes cached decay/recovery factors based on new dt.
-        Called by DynamicBrain._broadcast_temporal_update().
+        Called by DynamicBrain.set_timestep().
 
         Args:
             dt_ms: New simulation timestep in milliseconds
         """
         self._dt_ms = dt_ms
-        device = self.U.device  # type: ignore[union-attr]
+        device = self.U.device
 
         # Recompute depression decay: exp(-dt / tau_d)
         self.decay_d = torch.tensor(
@@ -230,32 +212,6 @@ class ShortTermPlasticity(nn.Module):
             (1.0 - self.decay_f.item()) * self.config.U, device=device, dtype=torch.float32
         )
 
-    def reset_state(self) -> None:
-        """Reset STP state to baseline (ADR-005: 1D tensors).
-
-        - u starts at U (baseline release probability)
-        - x starts at 1 (full vesicle pool)
-        - Uses 1D tensors per single-brain architecture
-        """
-        if self._dt_ms is None:
-            # Auto-initialize with default dt_ms if not set (for testing/standalone use)
-            # In production, DynamicBrain calls update_temporal_parameters() during init
-            self.update_temporal_parameters(dt_ms=1.0)  # Default 1ms timestep
-
-        device = self.U.device  # type: ignore[union-attr]
-
-        shape: tuple[int, int] | tuple[int]
-        if self.per_synapse:
-            assert self.n_post is not None, "n_post must be set for per_synapse mode"
-            shape = (self.n_pre, self.n_post)
-        else:
-            shape = (self.n_pre,)
-
-        # Cast device from parameter for mypy (register_buffer returns Union[Tensor, Module])
-        dev = torch.device(str(device)) if device else torch.device("cpu")
-        self.u = torch.full(shape, self.config.U, device=dev, dtype=torch.float32)
-        self.x = torch.ones(shape, device=dev, dtype=torch.float32)
-
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
         """Compute STP efficacy for current timestep (ADR-005: 1D tensors).
 
@@ -276,9 +232,6 @@ class ShortTermPlasticity(nn.Module):
             pre_spikes.shape[0] == self.n_pre
         ), f"STP.forward: pre_spikes has {pre_spikes.shape[0]} neurons, expected {self.n_pre}"
 
-        if self.u is None:
-            self.reset_state()
-
         # Expand pre_spikes if per_synapse
         if self.per_synapse:
             # [n_pre] → [n_pre, 1] for broadcasting to [n_pre, n_post]
@@ -289,13 +242,22 @@ class ShortTermPlasticity(nn.Module):
         # === Continuous dynamics (between spikes) ===
         # u decays toward U: u(t+dt) = u(t)*decay_f + U*(1-decay_f)
         # x recovers toward 1: x(t+dt) = x(t)*decay_d + 1*(1-decay_d)
-        self.u = self.u * self.decay_f + self.recovery_f  # type: ignore[operator]
-        self.x = self.x * self.decay_d + self.recovery_d  # type: ignore[operator]
+
+        # Initialize state variables if needed (first forward pass or after loading)
+        if self.u is None:
+            shape = (self.n_pre, self.n_post) if self.per_synapse else (self.n_pre,)
+            self.u = torch.full(shape, self.U.item(), device=pre_spikes.device, dtype=torch.float32)
+        if self.x is None:
+            shape = (self.n_pre, self.n_post) if self.per_synapse else (self.n_pre,)
+            self.x = torch.ones(shape, device=pre_spikes.device, dtype=torch.float32)
+
+        self.u = self.u * self.decay_f + self.recovery_f
+        self.x = self.x * self.decay_d + self.recovery_d
 
         # === Spike-triggered dynamics ===
         # Compute efficacy BEFORE applying spike effects
         # This is the u*x at the moment of the spike
-        efficacy = self.u * self.x  # type: ignore[operator]
+        efficacy = self.u * self.x
 
         # On spike: u jumps up (facilitation), x drops (depression)
         # u → u + U(1-u) = u(1-U) + U = lerp toward 1 with step U
@@ -307,23 +269,23 @@ class ShortTermPlasticity(nn.Module):
 
         # Apply spike effects (only where spikes occurred)
         # Depression first (uses current u): x decreases by u*x
-        u_tensor: torch.Tensor = self.u  # type: ignore[assignment]
-        x_tensor: torch.Tensor = self.x  # type: ignore[assignment]
-        U_tensor: torch.Tensor = self.U  # type: ignore[assignment]
+        u_tensor: torch.Tensor = self.u
+        x_tensor: torch.Tensor = self.x
+        U_tensor: torch.Tensor = self.U
 
         u_for_release = u_tensor.clone()  # Save u before facilitation
         x_release = u_for_release * x_tensor
-        self.x = x_tensor - spikes * x_release  # type: ignore[assignment]
+        self.x = x_tensor - spikes * x_release
 
         # Facilitation second: u increases toward 1
         u_jump = U_tensor * (1.0 - u_tensor)
-        self.u = u_tensor + spikes * u_jump  # type: ignore[assignment]
+        self.u = u_tensor + spikes * u_jump
 
         # Clamp to valid range (numerical safety)
-        u_clamped: torch.Tensor = self.u  # type: ignore[assignment]
-        x_clamped: torch.Tensor = self.x  # type: ignore[assignment]
-        self.u = torch.clamp(u_clamped, 0.0, 1.0)  # type: ignore[assignment]
-        self.x = torch.clamp(x_clamped, 0.0, 1.0)  # type: ignore[assignment]
+        u_clamped: torch.Tensor = self.u
+        x_clamped: torch.Tensor = self.x
+        self.u = torch.clamp(u_clamped, 0.0, 1.0)
+        self.x = torch.clamp(x_clamped, 0.0, 1.0)
 
         # Return efficacy (not modulated by spikes - that's the synaptic response)
         # The caller uses this to scale the PSP/PSC
@@ -338,36 +300,7 @@ class ShortTermPlasticity(nn.Module):
         Useful for analysis or when you need the current state
         without advancing the simulation.
         """
-        if self.u is None or self.x is None:
-            raise RuntimeError("STP state not initialized. Call reset_state() first.")
         return self.u * self.x
-
-    def get_state(self) -> dict[str, Optional[torch.Tensor]]:
-        """Get current STP state for analysis/saving."""
-        efficacy_value: Optional[torch.Tensor] = None
-        if self.u is not None and self.x is not None:
-            u_tensor: torch.Tensor = self.u
-            x_tensor: torch.Tensor = self.x
-            efficacy_value = (u_tensor * x_tensor).clone()
-
-        return {
-            "u": self.u.clone() if self.u is not None else None,
-            "x": self.x.clone() if self.x is not None else None,
-            "efficacy": efficacy_value,
-        }
-
-    def load_state(self, state: dict[str, Optional[torch.Tensor]]) -> None:
-        """Restore STP state from checkpoint.
-
-        Args:
-            state: Dictionary from get_state()
-        """
-        if state["u"] is not None:
-            u_device = self.U.device  # type: ignore[union-attr]
-            self.u = state["u"].to(u_device)  # type: ignore[arg-type]
-        if state["x"] is not None:
-            x_device = self.U.device  # type: ignore[union-attr]
-            self.x = state["x"].to(x_device)  # type: ignore[arg-type]
 
     def grow(self, n_new: int, target: str = "pre") -> None:
         """Grow STP dimensions by adding new neurons.
@@ -387,36 +320,36 @@ class ShortTermPlasticity(nn.Module):
             if self.u is not None and self.x is not None:
                 if self.per_synapse:
                     # Add new rows: [old_n_pre, n_post] → [new_n_pre, n_post]
-                    u_device = self.U.device  # type: ignore[union-attr]
+                    u_device = self.U.device
                     assert self.n_post is not None, "n_post must be set for per_synapse mode"
                     shape_2d: tuple[int, int] = (n_new, self.n_post)  # Explicit type for mypy
                     new_u = torch.full(
                         shape_2d,
                         self.config.U,
-                        device=u_device,  # type: ignore[arg-type]
+                        device=u_device,
                         dtype=torch.float32,
                     )
-                    x_device = self.x.device  # type: ignore[union-attr]
+                    x_device = self.x.device
                     new_x = torch.ones(
                         shape_2d,
-                        device=x_device,  # type: ignore[arg-type]
+                        device=x_device,
                         dtype=torch.float32,
                     )
                     self.u = torch.cat([self.u, new_u], dim=0)
                     self.x = torch.cat([self.x, new_x], dim=0)
                 else:
                     # Add new elements: [old_n_pre] → [new_n_pre]
-                    u_device_1d = self.u.device  # type: ignore[union-attr]
-                    x_device_1d = self.x.device  # type: ignore[union-attr]
+                    u_device_1d = self.u.device
+                    x_device_1d = self.x.device
                     new_u = torch.full(
                         (n_new,),
                         self.config.U,
-                        device=u_device_1d,  # type: ignore[arg-type]
+                        device=u_device_1d,
                         dtype=torch.float32,
                     )
                     new_x = torch.ones(
                         (n_new,),
-                        device=x_device_1d,  # type: ignore[arg-type]
+                        device=x_device_1d,
                         dtype=torch.float32,
                     )
                     self.u = torch.cat([self.u, new_u], dim=0)
@@ -432,17 +365,17 @@ class ShortTermPlasticity(nn.Module):
             if self.u is not None and self.x is not None:
                 if self.per_synapse:
                     # Add new columns: [n_pre, old_n_post] → [n_pre, new_n_post]
-                    u_device_post = self.u.device  # type: ignore[union-attr]
-                    x_device_post = self.x.device  # type: ignore[union-attr]
+                    u_device_post = self.u.device
+                    x_device_post = self.x.device
                     new_u = torch.full(
                         (self.n_pre, n_new),
                         self.config.U,
-                        device=u_device_post,  # type: ignore[arg-type]
+                        device=u_device_post,
                         dtype=torch.float32,
                     )
                     new_x = torch.ones(
                         (self.n_pre, n_new),
-                        device=x_device_post,  # type: ignore[arg-type]
+                        device=x_device_post,
                         dtype=torch.float32,
                     )
                     self.u = torch.cat([self.u, new_u], dim=1)
@@ -452,14 +385,6 @@ class ShortTermPlasticity(nn.Module):
                     pass
         else:
             raise ValueError(f"Unknown target: {target}. Use 'pre' or 'post'.")
-
-    def __repr__(self) -> str:
-        synapse_str = f"{self.n_pre}→{self.n_post}" if self.n_post else f"{self.n_pre}"
-        return (
-            f"ShortTermPlasticity({synapse_str}, "
-            f"U={self.config.U:.2f}, τ_d={self.config.tau_d:.0f}ms, "
-            f"τ_f={self.config.tau_f:.0f}ms)"
-        )
 
 
 class STPSynapse(nn.Module):
@@ -480,17 +405,6 @@ class STPSynapse(nn.Module):
         w_min: Minimum weight
         w_max: Maximum weight
         per_synapse_stp: If True, track STP per synapse (more memory)
-
-    Example:
-        >>> synapse = STPSynapse(
-        ...     n_pre=100, n_post=50,
-        ...     stp_config=STPConfig.from_type(STPType.DEPRESSING)
-        ... )
-        >>> synapse.reset_state(batch_size=1)
-        >>>
-        >>> for t in range(100):
-        ...     pre_spikes = ...
-        ...     post_current = synapse(pre_spikes)
     """
 
     def __init__(
@@ -525,10 +439,6 @@ class STPSynapse(nn.Module):
             per_synapse=per_synapse_stp,
         )
         self.per_synapse_stp = per_synapse_stp
-
-    def reset_state(self) -> None:
-        """Reset STP state."""
-        self.stp.reset_state()
 
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
         """Transmit spikes through synapse with STP modulation.
@@ -572,14 +482,376 @@ class STPSynapse(nn.Module):
             # efficacy is (batch, n_pre), broadcast to (batch, n_pre, 1)
             return w * efficacy.unsqueeze(-1)
 
-    def get_stp_state(self) -> dict:
-        """Get STP state for analysis."""
-        return self.stp.get_state()
 
-    def __repr__(self) -> str:
-        return (
-            f"STPSynapse({self.n_pre}→{self.n_post}, "
-            f"U={self.stp.config.U:.2f}, "
-            f"τ_d={self.stp.config.tau_d:.0f}ms, "
-            f"τ_f={self.stp.config.tau_f:.0f}ms)"
+# =============================================================================
+# STP presets and utilities
+# =============================================================================
+
+@dataclass(frozen=True)
+class STPPreset:
+    """Immutable preset for STP configuration with biological documentation.
+
+    Attributes:
+        name: Human-readable name of the preset
+        U: Baseline release probability (0-1)
+        tau_u: Facilitation time constant (ms) - same as tau_f
+        tau_x: Depression recovery time constant (ms) - same as tau_d
+        description: Biological context and use case
+        references: Key papers validating these parameters
+    """
+
+    name: str
+    U: float
+    tau_u: float  # Facilitation decay (tau_f in STPConfig)
+    tau_x: float  # Depression recovery (tau_d in STPConfig)
+    description: str
+    references: str
+
+    def configure(self) -> STPConfig:
+        """Create STPConfig with this preset's parameters.
+
+        Returns:
+            Configured STPConfig instance
+        """
+        return STPConfig(
+            U=self.U,
+            tau_d=self.tau_x,  # tau_x → tau_d (depression recovery)
+            tau_f=self.tau_u,  # tau_u → tau_f (facilitation decay)
         )
+
+
+# =============================================================================
+# HIPPOCAMPAL PATHWAY PRESETS
+# =============================================================================
+
+MOSSY_FIBER_PRESET = STPPreset(
+    name="Mossy Fiber (DG→CA3)",
+    U=0.03,
+    tau_u=800.0,
+    tau_x=200.0,
+    description=(
+        "Dentate gyrus mossy fiber to CA3 pyramidal cells. "
+        "Very strong facilitation (low U, long tau_u). "
+        "Critical for pattern separation and rapid encoding. "
+        "Weak baseline, strong burst response."
+    ),
+    references="Salin et al. (1996); Nicoll & Schmitz (2005)",
+)
+
+SCHAFFER_COLLATERAL_PRESET = STPPreset(
+    name="Schaffer Collateral (CA3→CA1)",
+    U=0.5,
+    tau_u=400.0,
+    tau_x=500.0,
+    description=(
+        "CA3 Schaffer collateral to CA1 pyramidal cells. "
+        "Moderate depression (medium U). "
+        "Main output pathway from CA3 attractor to CA1 comparator. "
+        "Balances reliability with dynamic range."
+    ),
+    references="Salin et al. (1996); Dobrunz & Stevens (1997)",
+)
+
+EC_CA1_PRESET = STPPreset(
+    name="Perforant Path (EC→CA1)",
+    U=0.35,
+    tau_u=300.0,
+    tau_x=400.0,
+    description=(
+        "Entorhinal cortex direct pathway to CA1 pyramidal cells. "
+        "Mild depression. "
+        "Provides baseline input for match/mismatch comparison. "
+        "Less plastic than CA3→CA1 pathway."
+    ),
+    references="Bartesaghi & Gessi (2004)",
+)
+
+CA3_RECURRENT_PRESET = STPPreset(
+    name="CA3 Recurrent (CA3→CA3)",
+    U=0.4,
+    tau_u=200.0,
+    tau_x=300.0,
+    description=(
+        "CA3 recurrent collaterals (auto-associative connections). "
+        "Moderate depression with fast recovery. "
+        "Supports pattern completion while preventing runaway excitation. "
+        "Short time constants for rapid attractor dynamics."
+    ),
+    references="Miles & Wong (1986); Debanne et al. (1996)",
+)
+
+# =============================================================================
+# CORTICAL PATHWAY PRESETS
+# =============================================================================
+
+CORTICAL_FF_PRESET = STPPreset(
+    name="Cortical Feedforward (L4→L2/3)",
+    U=0.2,
+    tau_u=200.0,
+    tau_x=300.0,
+    description=(
+        "Thalamocortical and layer 4 to layer 2/3 connections. "
+        "Weak facilitation. "
+        "Transmits sensory information with temporal filtering. "
+        "Responds preferentially to stimulus changes."
+    ),
+    references="Tsodyks & Markram (1997); Reyes et al. (1998)",
+)
+
+CORTICAL_RECURRENT_PRESET = STPPreset(
+    name="Cortical Recurrent (L2/3→L2/3)",
+    U=0.6,
+    tau_u=100.0,
+    tau_x=200.0,
+    description=(
+        "Recurrent excitatory connections within cortical layers. "
+        "Strong depression with fast dynamics. "
+        "Provides gain control and prevents runaway activity. "
+        "Implements divisive normalization."
+    ),
+    references="Markram et al. (1998); Tsodyks et al. (2000)",
+)
+
+CORTICAL_FB_PRESET = STPPreset(
+    name="Cortical Feedback (L5→L2/3)",
+    U=0.3,
+    tau_u=250.0,
+    tau_x=350.0,
+    description=(
+        "Feedback connections from deep to superficial layers. "
+        "Mild depression with moderate recovery. "
+        "Carries top-down predictions and attentional modulation. "
+        "Balanced for sustained modulation."
+    ),
+    references="Thomson & Bannister (2003)",
+)
+
+CORTICAL_PYRAMIDAL_INTERNEURON_PRESET = STPPreset(
+    name="Pyramidal→Interneuron",
+    U=0.7,
+    tau_u=50.0,
+    tau_x=150.0,
+    description=(
+        "Pyramidal cell to inhibitory interneuron. "
+        "Strong depression with very fast dynamics. "
+        "Provides feedforward inhibition for gain control. "
+        "Quick response, rapid fatigue."
+    ),
+    references="Gupta et al. (2000); Galarreta & Hestrin (1998)",
+)
+
+# =============================================================================
+# STRIATAL PATHWAY PRESETS
+# =============================================================================
+
+CORTICOSTRIATAL_PRESET = STPPreset(
+    name="Corticostriatal (Cortex→Striatum)",
+    U=0.4,
+    tau_u=150.0,
+    tau_x=250.0,
+    description=(
+        "Cortical to medium spiny neuron connections. "
+        "Moderate depression. "
+        "Main input pathway for action selection. "
+        "Provides context for reinforcement learning."
+    ),
+    references="Charpier et al. (1999); Partridge et al. (2000)",
+)
+
+THALAMO_STRIATAL_PRESET = STPPreset(
+    name="Thalamostriatal (Thalamus→Striatum)",
+    U=0.25,
+    tau_u=300.0,
+    tau_x=400.0,
+    description=(
+        "Thalamic to striatal connections. "
+        "Weak facilitation. "
+        "Provides direct sensory and motivational input. "
+        "Complements cortical input."
+    ),
+    references="Ding et al. (2008)",
+)
+
+# =============================================================================
+# PREFRONTAL PATHWAY PRESETS
+# =============================================================================
+
+PFC_RECURRENT_PRESET = STPPreset(
+    name="PFC Recurrent",
+    U=0.15,
+    tau_u=400.0,
+    tau_x=300.0,
+    description=(
+        "Prefrontal cortex recurrent connections. "
+        "Weak facilitation for working memory. "
+        "Long time constants support persistent activity. "
+        "Critical for delay period maintenance."
+    ),
+    references="Wang et al. (2013); Compte et al. (2000)",
+)
+
+PFC_TO_STRIATUM_PRESET = STPPreset(
+    name="PFC→Striatum",
+    U=0.35,
+    tau_u=200.0,
+    tau_x=300.0,
+    description=(
+        "Prefrontal to striatal top-down modulation. "
+        "Mild depression. "
+        "Gates action selection based on goals. "
+        "Provides contextual biasing signal."
+    ),
+    references="Haber et al. (2000)",
+)
+
+# =============================================================================
+# PRESET REGISTRY
+# =============================================================================
+
+STP_PRESETS: Dict[str, STPPreset] = {
+    # Hippocampal pathways
+    "mossy_fiber": MOSSY_FIBER_PRESET,
+    "schaffer_collateral": SCHAFFER_COLLATERAL_PRESET,
+    "ec_ca1": EC_CA1_PRESET,
+    "ca3_recurrent": CA3_RECURRENT_PRESET,
+    # Cortical pathways
+    "cortical_ff": CORTICAL_FF_PRESET,
+    "cortical_recurrent": CORTICAL_RECURRENT_PRESET,
+    "cortical_fb": CORTICAL_FB_PRESET,
+    "cortical_pyr_int": CORTICAL_PYRAMIDAL_INTERNEURON_PRESET,
+    # Striatal pathways
+    "corticostriatal": CORTICOSTRIATAL_PRESET,
+    "thalamostriatal": THALAMO_STRIATAL_PRESET,
+    # Prefrontal pathways
+    "pfc_recurrent": PFC_RECURRENT_PRESET,
+    "pfc_striatum": PFC_TO_STRIATUM_PRESET,
+}
+
+
+def get_stp_config(pathway_type: str) -> STPConfig:
+    """Get STPConfig for a specific biological pathway.
+
+    Args:
+        pathway_type: Name of pathway preset (e.g., "mossy_fiber", "schaffer_collateral")
+
+    Returns:
+        Configured STPConfig instance
+
+    Raises:
+        KeyError: If pathway_type is not recognized
+    """
+    if pathway_type not in STP_PRESETS:
+        available = ", ".join(STP_PRESETS.keys())
+        raise KeyError(f"Unknown pathway_type: {pathway_type}. " f"Available presets: {available}")
+
+    return STP_PRESETS[pathway_type].configure()
+
+
+def list_presets() -> Dict[str, str]:
+    """List all available STP presets with descriptions.
+
+    Returns:
+        Dictionary mapping preset names to descriptions
+    """
+    return {name: preset.description for name, preset in STP_PRESETS.items()}
+
+
+def sample_heterogeneous_stp_params(
+    base_preset: str,
+    n_synapses: int,
+    variability: float = 0.3,
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Sample heterogeneous STP parameters from biological distributions.
+
+    Biological basis:
+        Even within a single pathway type, individual synapses show substantial
+        variability in STP parameters (Dobrunz & Stevens 1997, Markram et al. 1998).
+        Release probability U can vary 10-fold within the same connection.
+
+        This heterogeneity enables richer temporal filtering: some synapses act as
+        high-pass filters (strong depression), others as low-pass (weak depression),
+        creating a diverse population of temporal feature detectors.
+
+    Args:
+        base_preset: Name of base STP preset (e.g., "corticostriatal")
+        n_synapses: Number of synapses to sample parameters for
+        variability: Coefficient of variation (std/mean) for parameter sampling
+                     Typical biological range: 0.2-0.5
+        seed: Random seed for reproducibility
+
+    Returns:
+        Tuple of (U_array, tau_d_array, tau_f_array) each shape [n_synapses]
+        All arrays contain per-synapse parameters sampled from lognormal distributions
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Get base configuration
+    base_config = get_stp_config(base_preset)
+
+    # Sample from lognormal distributions (ensures positive values)
+    # lognormal(mu, sigma) where mean = exp(mu + sigma^2/2)
+    # For CV = sigma_y / mu_y = variability, we have:
+    # sigma = sqrt(log(1 + CV^2))
+    # mu = log(mean) - sigma^2 / 2
+
+    def sample_lognormal(mean_val: float, cv: float, size: int) -> np.ndarray:
+        """Sample from lognormal with specified mean and coefficient of variation."""
+        sigma = np.sqrt(np.log(1 + cv**2))
+        mu = np.log(mean_val) - sigma**2 / 2
+        return np.random.lognormal(mu, sigma, size=size)
+
+    # Sample U (release probability)
+    U_samples = sample_lognormal(base_config.U, variability, n_synapses)
+    U_samples = np.clip(U_samples, 0.01, 0.99)  # Biological bounds
+
+    # Sample tau_d (depression recovery time constant)
+    tau_d_samples = sample_lognormal(base_config.tau_d, variability, n_synapses)
+    tau_d_samples = np.clip(tau_d_samples, 50.0, 2000.0)  # Biological bounds
+
+    # Sample tau_f (facilitation decay time constant)
+    tau_f_samples = sample_lognormal(base_config.tau_f, variability, n_synapses)
+    tau_f_samples = np.clip(tau_f_samples, 10.0, 2000.0)  # Biological bounds
+
+    return U_samples, tau_d_samples, tau_f_samples
+
+
+def create_heterogeneous_stp_configs(
+    base_preset: str,
+    n_synapses: int,
+    variability: float = 0.3,
+    seed: Optional[int] = None,
+) -> list[STPConfig]:
+    """Create list of heterogeneous STP configs for per-synapse dynamics.
+
+    Convenience wrapper around sample_heterogeneous_stp_params() that returns
+    a list of STPConfig objects, one per synapse.
+
+    Args:
+        base_preset: Name of base STP preset
+        n_synapses: Number of synapses
+        variability: Coefficient of variation (0.2-0.5 typical)
+        seed: Random seed for reproducibility
+
+    Returns:
+        List of STPConfig objects, one per synapse
+    """
+    U_samples, tau_d_samples, tau_f_samples = sample_heterogeneous_stp_params(
+        base_preset=base_preset,
+        n_synapses=n_synapses,
+        variability=variability,
+        seed=seed,
+    )
+
+    # Create STPConfig for each synapse
+    configs = []
+    for i in range(n_synapses):
+        config = STPConfig(
+            U=float(U_samples[i]),
+            tau_d=float(tau_d_samples[i]),
+            tau_f=float(tau_f_samples[i]),
+        )
+        configs.append(config)
+
+    return configs

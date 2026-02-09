@@ -339,6 +339,6 @@ def get_precision_statistics(state: Dict[str, Any]) -> Dict[str, Any]:
             stats[key]["percent"] = 0.0
 
     total_mb_value = float(total_bytes / (1024 * 1024))
-    stats["total_mb"] = total_mb_value  # type: ignore[assignment]
+    stats["total_mb"] = total_mb_value
 
     return stats

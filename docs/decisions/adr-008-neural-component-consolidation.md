@@ -187,10 +187,6 @@ After re-evaluation, promoted additional universal parameters to `NeuralComponen
    - Removed duplicates from Striatum, PFC, Cerebellum configs
    - Cerebellum overrides with weaker ratio (0.2 vs 0.3 default)
 
-**Fixed naming**:
-- Standardized `homeostatic_enabled` → `homeostasis_enabled` in Striatum
-- Matches base class naming, improves consistency
-
 **Impact**:
 - ~26 lines of duplicate parameters eliminated
 - Pathways automatically inherit adaptation and competition

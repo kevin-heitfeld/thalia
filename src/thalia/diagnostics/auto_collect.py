@@ -3,9 +3,6 @@ Automatic Diagnostic Collection Utilities.
 
 This module provides decorators and utilities for standardizing diagnostic
 collection across the codebase, reducing boilerplate in get_diagnostics() methods.
-
-Author: Thalia Project
-Date: December 2025
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ def auto_diagnostics(
     traces: Optional[Union[str, List[str]]] = None,
     scalars: Optional[Union[str, List[str]]] = None,
     state_attrs: Optional[Union[str, List[str]]] = None,
-):
+) -> Callable:
     """Decorator to automatically collect common diagnostics.
 
     This decorator wraps get_diagnostics() methods and automatically collects
@@ -35,19 +32,6 @@ def auto_diagnostics(
         traces: Attribute name(s) containing trace tensors (eligibility, NMDA, etc.)
         scalars: Attribute name(s) for scalar values to include
         state_attrs: Attribute name(s) from self.state to include
-
-    Example:
-        >>> @auto_diagnostics(
-        >>>     weights=['d1_weights', 'd2_weights'],
-        >>>     spikes=['d1_spikes', 'd2_spikes'],
-        >>>     scalars=['dopamine', 'exploration_prob'],
-        >>> )
-        >>> def get_diagnostics(self) -> Dict[str, Any]:
-        >>>     # Auto-collected: weight stats, spike stats, scalars
-        >>>     # Only need to add custom metrics
-        >>>     return {
-        >>>         "net_weights": (self.d1_weights - self.d2_weights).mean().item(),
-        >>>     }
 
     Returns:
         Decorated function that auto-collects diagnostics
@@ -223,8 +207,3 @@ def _manual_collect(
                     )
 
     return diag
-
-
-__all__ = [
-    "auto_diagnostics",
-]

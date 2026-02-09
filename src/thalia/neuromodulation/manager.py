@@ -6,21 +6,19 @@ Centralizes management of VTA dopamine, LC norepinephrine, and NB acetylcholine 
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 
 import torch
 
-from thalia.components.coding import compute_firing_rate
-from thalia.neuromodulation.homeostasis import NeuromodulatorCoordination
-from thalia.neuromodulation.systems.locus_coeruleus import (
-    LocusCoeruleusConfig,
-    LocusCoeruleusSystem,
-)
-from thalia.neuromodulation.systems.nucleus_basalis import (
-    NucleusBasalisConfig,
-    NucleusBasalisSystem,
-)
-from thalia.neuromodulation.systems.vta import VTAConfig, VTADopamineSystem
+from thalia.utils import compute_firing_rate
+
+from .homeostasis import NeuromodulatorCoordination
+from .locus_coeruleus import LocusCoeruleusConfig, LocusCoeruleusSystem
+from .nucleus_basalis import NucleusBasalisConfig, NucleusBasalisSystem
+from .vta import VTAConfig, VTADopamineSystem
+
+if TYPE_CHECKING:
+    from thalia.brain.regions import NeuralRegion
 
 
 class NeuromodulatorManager:
@@ -51,7 +49,7 @@ class NeuromodulatorManager:
         # Implements biological interactions between systems (DA-ACh, NE-ACh, DA-NE)
         self.coordination = NeuromodulatorCoordination()
 
-    def broadcast_to_regions(self, regions: Dict[str, Any]) -> None:
+    def broadcast_to_regions(self, regions: Dict[str, NeuralRegion]) -> None:
         """Broadcast coordinated neuromodulator levels to all regions.
 
         Applies biological coordination between systems before broadcasting:
@@ -88,7 +86,6 @@ class NeuromodulatorManager:
 
         # 3. DA-NE: High uncertainty + reward enhances both
         # Note: Requires prediction error, which is computed in brain.py
-        # This coordination is handled in brain._update_neuromodulators()
 
         # Biologically accurate dopamine projection strengths
         # Based on anatomical innervation density from VTA/SNc
@@ -104,14 +101,13 @@ class NeuromodulatorManager:
 
         # Broadcast coordinated signals to all regions with region-specific DA scaling
         for region_name, region in regions.items():
-            if hasattr(region, "set_neuromodulators"):
-                # Scale dopamine based on biological projection strength
-                da_scale = dopamine_projections.get(
-                    region_name, 0.5
-                )  # Default 50% for unknown regions
-                dopamine_scaled = dopamine_raw * da_scale
+            # Scale dopamine based on biological projection strength
+            da_scale = dopamine_projections.get(
+                region_name, 0.5
+            )  # Default 50% for unknown regions
+            dopamine_scaled = dopamine_raw * da_scale
 
-                region.set_neuromodulators(dopamine_scaled, norepinephrine, acetylcholine)
+            region.set_neuromodulators(dopamine_scaled, norepinephrine, acetylcholine)
 
     def compute_uncertainty(
         self,
@@ -240,44 +236,9 @@ class NeuromodulatorManager:
         else:
             self.nucleus_basalis.enter_retrieval_mode()
 
-    def reset(self) -> None:
-        """Reset all neuromodulator systems."""
-        self.vta.reset()
-        self.locus_coeruleus.reset()
-        self.nucleus_basalis.reset()
-
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get neuromodulator system diagnostics."""
         return {
-            "dopamine": self.vta.get_global_dopamine(),
             "norepinephrine": self.locus_coeruleus.get_norepinephrine(),
             "acetylcholine": self.nucleus_basalis.get_acetylcholine(),
-            "vta": self.vta.get_state(),
-            "locus_coeruleus": self.locus_coeruleus.get_state(),
-            "nucleus_basalis": self.nucleus_basalis.get_state(),
         }
-
-    def get_state(self) -> Dict[str, Any]:
-        """Get checkpoint state for all neuromodulator systems."""
-        return {
-            "vta": self.vta.get_state() if hasattr(self.vta, "get_state") else {},
-            "locus_coeruleus": (
-                self.locus_coeruleus.get_state()
-                if hasattr(self.locus_coeruleus, "get_state")
-                else {}
-            ),
-            "nucleus_basalis": (
-                self.nucleus_basalis.get_state()
-                if hasattr(self.nucleus_basalis, "get_state")
-                else {}
-            ),
-        }
-
-    def load_state(self, state_dict: Dict[str, Any]) -> None:
-        """Load checkpoint state for all neuromodulator systems."""
-        if "vta" in state_dict and hasattr(self.vta, "load_state"):
-            self.vta.load_state(state_dict["vta"])
-        if "locus_coeruleus" in state_dict and hasattr(self.locus_coeruleus, "load_state"):
-            self.locus_coeruleus.load_state(state_dict["locus_coeruleus"])
-        if "nucleus_basalis" in state_dict and hasattr(self.nucleus_basalis, "load_state"):
-            self.nucleus_basalis.load_state(state_dict["nucleus_basalis"])
