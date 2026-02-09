@@ -75,12 +75,11 @@ Date: February 2026
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import torch
 
-from thalia.brain.configs import NeuralRegionConfig
+from thalia.brain.configs import VTAConfig
 from thalia.components.neurons.dopamine_neuron import (
     DopamineNeuron,
     DopamineNeuronConfig,
@@ -90,38 +89,6 @@ from thalia.typing import PortName, RegionLayerSizes, RegionSpikesDict
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
-
-
-@dataclass
-class VTAConfig(NeuralRegionConfig):
-    """Configuration for VTA region.
-
-    Attributes:
-        n_da_neurons: Number of dopamine neurons (~20-30k in humans)
-        n_gaba_neurons: Number of GABAergic interneurons (~5-10k)
-        rpe_gain: Scaling factor for RPE → current conversion
-        gamma: TD learning discount factor
-        rpe_normalization: Enable adaptive RPE normalization
-    """
-
-    n_da_neurons: int = 20000
-    """Number of dopamine neurons with burst/pause dynamics."""
-
-    n_gaba_neurons: int = 4000
-    """Number of GABAergic interneurons for local inhibition."""
-
-    rpe_gain: float = 15.0
-    """Gain for converting RPE to membrane current (mV per RPE unit)."""
-
-    gamma: float = 0.99
-    """TD learning discount factor (future reward weighting)."""
-
-    rpe_normalization: bool = True
-    """Enable adaptive RPE normalization to prevent saturation."""
-
-    # Dopamine neuron specific parameters (can override defaults)
-    da_neuron_config: Optional[DopamineNeuronConfig] = None
-    """Optional custom config for DA neurons (uses defaults if None)."""
 
 
 @register_region(

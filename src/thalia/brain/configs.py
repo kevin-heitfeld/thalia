@@ -10,6 +10,9 @@ from thalia.components.synapses.stp import STPType
 from thalia.constants import DEFAULT_DT_MS
 
 if TYPE_CHECKING:
+    from thalia.components.neurons.dopamine_neuron import (
+        DopamineNeuronConfig,
+    )
     from .oscillator import OscillatorCoupling
 
 
@@ -361,6 +364,11 @@ class VTAConfig(NeuralRegionConfig):
 
     rpe_normalization: bool = True
     """Enable adaptive RPE normalization to prevent saturation."""
+
+    # Dopamine neuron specific parameters (can override defaults)
+    da_neuron_config: Optional[DopamineNeuronConfig] = None
+    """Optional custom config for DA neurons (uses defaults if None)."""
+
 
 
 # ============================================================================

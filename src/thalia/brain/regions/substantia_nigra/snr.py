@@ -63,51 +63,16 @@ Date: February 2026
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict
 
 import torch
 
-from thalia.brain.configs import NeuralRegionConfig
+from thalia.brain.configs import SNrConfig
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.typing import PortName, RegionLayerSizes, RegionSpikesDict
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
-
-
-@dataclass
-class SNrConfig(NeuralRegionConfig):
-    """Configuration for SNr region.
-
-    Attributes:
-        n_neurons: Number of GABAergic output neurons (~10-15k in humans)
-        baseline_drive: Tonic drive current for spontaneous firing (mV equiv)
-        d1_inhibition_weight: Weight for D1→SNr inhibitory connections
-        d2_excitation_weight: Weight for D2→SNr excitatory connections (via GPe/STN)
-    """
-
-    n_neurons: int = 10000
-    """Number of GABAergic output neurons."""
-
-    baseline_drive: float = 25.0
-    """Tonic drive in mV equivalent to maintain ~60 Hz baseline."""
-
-    d1_inhibition_weight: float = 0.8
-    """Strength of D1 pathway inhibition (higher = stronger NoGo suppression)."""
-
-    d2_excitation_weight: float = 0.6
-    """Strength of D2 pathway excitation via GPe/STN (simplified)."""
-
-    # Neuron properties (fast GABAergic output neurons)
-    tau_mem: float = 8.0
-    """Fast membrane for rapid response."""
-
-    v_threshold: float = 0.8
-    """Low threshold enables tonic firing."""
-
-    tau_ref: float = 1.5
-    """Short refractory period for high firing rates."""
 
 
 @register_region(
