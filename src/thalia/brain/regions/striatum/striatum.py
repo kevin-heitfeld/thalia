@@ -56,6 +56,7 @@ from thalia.components import (
     get_stp_config,
     create_heterogeneous_stp_configs,
 )
+from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.typing import (
     LayerName,
@@ -398,6 +399,38 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self.d2_spikes = torch.zeros(self.d2_size, dtype=torch.bool, device=self.device)
 
         # =====================================================================
+        # DOPAMINE RECEPTORS (Spiking DA from VTA)
+        # =====================================================================
+        # Convert VTA dopamine neuron spikes to synaptic concentration.
+        # Biology:
+        # - D1 receptors: Gs-coupled → increase cAMP → facilitate LTP
+        # - D2 receptors: Gi-coupled → decrease cAMP → facilitate LTD
+        # - DA rise time: ~10-20 ms (fast release)
+        # - DA decay time: ~200 ms (slow DAT reuptake)
+        # Both pathways receive same DA spikes, but receptors have opposite effects.
+
+        # Create D1 and D2 DA receptors (both receive same VTA spikes)
+        self.da_receptor_d1 = NeuromodulatorReceptor(
+            n_receptors=self.d1_size,
+            tau_rise=10.0,  # Fast release (ms)
+            tau_decay=200.0,  # Slow reuptake via DAT (ms)
+            spike_amplitude=0.15,  # Moderate amplitude for summation
+            device=self.device,
+        )
+        self.da_receptor_d2 = NeuromodulatorReceptor(
+            n_receptors=self.d2_size,
+            tau_rise=10.0,
+            tau_decay=200.0,
+            spike_amplitude=0.15,
+            device=self.device,
+        )
+
+        # DA concentration state (updated each timestep from VTA spikes)
+        # Falls back to scalar neuromodulator_state.dopamine if VTA not connected
+        self._da_concentration_d1 = torch.zeros(self.d1_size, device=self.device)
+        self._da_concentration_d2 = torch.zeros(self.d2_size, device=self.device)
+
+        # =====================================================================
         # POST-INITIALIZATION
         # =====================================================================
         self.__post_init__()
@@ -650,6 +683,25 @@ class Striatum(NeuralRegion[StriatumConfig]):
     def _forward_internal(self, inputs: RegionSpikesDict) -> None:
         """Process input and select action using separate D1/D2 populations."""
         # =====================================================================
+        # DOPAMINE RECEPTOR UPDATE (VTA Spikes → Concentration)
+        # =====================================================================
+        # Convert spiking DA from VTA to synaptic concentration for learning.
+        # If VTA not connected, falls back to scalar neuromodulator_state.dopamine
+        vta_da_spikes = inputs.get("vta:da_output", None)
+
+        if vta_da_spikes is not None:
+            # Update D1 and D2 receptors (both receive same VTA spikes)
+            self._da_concentration_d1 = self.da_receptor_d1.update(vta_da_spikes)
+            self._da_concentration_d2 = self.da_receptor_d2.update(vta_da_spikes)
+        else:
+            # No VTA connection: decay toward tonic baseline
+            self._da_concentration_d1 = self.da_receptor_d1.update(None)
+            self._da_concentration_d2 = self.da_receptor_d2.update(None)
+            # Use scalar fallback for compatibility
+            self._da_concentration_d1.fill_(self.neuromodulator_state.dopamine)
+            self._da_concentration_d2.fill_(self.neuromodulator_state.dopamine)
+
+        # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         # Each source (cortex:l5, hippocampus, thalamus) has separate weights
@@ -798,11 +850,17 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # D1/D2 balance determined by dopamine, inputs, and circuit dynamics
         # (no explicit encoding/retrieval phase modulation)
 
-        # Tonic dopamine and NE gain modulation
-        da_gain = 1.0 + 0.3 * (self.neuromodulator_state.dopamine - 0.5)  # Centered at 0.5 baseline
+        # Dopamine gain modulation (per-neuron from receptors)
+        # D1: DA increases excitability (Gs-coupled)
+        # D2: DA decreases excitability (Gi-coupled) - inverted gain
+        d1_da_gain = 1.0 + 0.3 * (self._da_concentration_d1 - 0.5)  # Centered at 0.5 baseline
+        d2_da_gain = 1.0 - 0.2 * (self._da_concentration_d2 - 0.5)  # Inverted for Gi-coupling
+
+        # NE gain modulation (scalar, broadcast)
         ne_gain = compute_ne_gain(self.neuromodulator_state.norepinephrine)
-        d1_current = d1_current * da_gain * ne_gain
-        d2_current = d2_current * da_gain * ne_gain
+
+        d1_current = d1_current * d1_da_gain * ne_gain
+        d2_current = d2_current * d2_da_gain * ne_gain
 
         # Apply ALL inhibition sources (FSI + MSN lateral)
         # Both are negative values, so addition makes currents more negative (stronger inhibition)
@@ -993,12 +1051,17 @@ class Striatum(NeuralRegion[StriatumConfig]):
         active synapses via eligibility trace decay. Earlier actions receive weaker
         credit due to exponential trace decay (tau ~1000ms).
 
+        **Spiking DA Receptors**: Uses per-neuron DA concentration from VTA spikes
+        instead of scalar broadcast, enabling spatially-heterogeneous learning.
+
         Returns:
             Metrics dict with dopamine level and weight changes per source.
         """
-        # Use dopamine from centralized VTA broadcast
-        # VTA handles RPE computation and broadcasts globally
-        da_level = self.neuromodulator_state.dopamine
+        # Use per-neuron DA concentration from receptors (not scalar)
+        # Each MSN neuron has its own DA receptor with local concentration
+        # Falls back to scalar if VTA not connected (already handled in _forward_internal)
+        d1_da_level = self._da_concentration_d1  # [d1_size]
+        d2_da_level = self._da_concentration_d2  # [d2_size]
 
         # Apply learning per source-pathway using eligibility traces
         # Three-factor rule: Δw = eligibility × dopamine × learning_rate
@@ -1029,8 +1092,9 @@ class Striatum(NeuralRegion[StriatumConfig]):
                     combined_eligibility = eligibility
 
                 # Compute weight update: Δw = eligibility × dopamine × lr
-                # Biology: Dopamine affects all synapses with eligibility (no action mask)
-                weight_update = combined_eligibility * da_level * self.config.learning_rate
+                # Biology: Per-neuron DA concentration modulates plasticity
+                # Shape: [d1_size, n_input] × [d1_size, 1] = [d1_size, n_input]
+                weight_update = combined_eligibility * d1_da_level.unsqueeze(1) * self.config.learning_rate
 
                 # Apply update with weight bounds
                 new_weights = torch.clamp(
@@ -1040,8 +1104,9 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 )
                 self.synaptic_weights[source_key].data = new_weights
 
-                # Track LTP/LTD for diagnostics
-                if da_level > 0:
+                # Track LTP/LTD for diagnostics (per-neuron DA, use mean for reporting)
+                mean_da = d1_da_level.mean().item()
+                if mean_da > 0:
                     d1_total_ltp += weight_update.sum().item()
                 else:
                     d1_total_ltd += weight_update.sum().item()
@@ -1063,9 +1128,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
                     # Single-timescale mode: use standard eligibility
                     combined_eligibility = eligibility
 
-                # Compute weight update with INVERTED dopamine
-                # Biology: Dopamine affects all synapses with eligibility (no action mask)
-                weight_update = combined_eligibility * (-da_level) * self.config.learning_rate
+                # Compute weight update with INVERTED dopamine (D2 = Gi-coupled)
+                # Biology: Per-neuron DA concentration modulates plasticity inversely
+                # Shape: [d2_size, n_input] × [d2_size, 1] = [d2_size, n_input]
+                weight_update = combined_eligibility * (-d2_da_level.unsqueeze(1)) * self.config.learning_rate
 
                 # Apply update with weight bounds
                 new_weights = torch.clamp(
@@ -1075,19 +1141,21 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 )
                 self.synaptic_weights[source_key].data = new_weights
 
-                # Track LTP/LTD for diagnostics (note inverted dopamine)
-                if da_level > 0:
+                # Track LTP/LTD for diagnostics (note inverted dopamine, use mean for reporting)
+                mean_da = d2_da_level.mean().item()
+                if mean_da > 0:
                     d2_total_ltd += weight_update.sum().item()
                 else:
                     d2_total_ltp += weight_update.sum().item()
 
+        # Return metrics with mean DA levels for diagnostics
         return {
             "d1_ltp": d1_total_ltp,
             "d1_ltd": d1_total_ltd,
             "d2_ltp": d2_total_ltp,
             "d2_ltd": d2_total_ltd,
             "net_change": d1_total_ltp + d1_total_ltd + d2_total_ltp + d2_total_ltd,
-            "dopamine": da_level,
+            "dopamine": d1_da_level.mean().item(),  # Mean DA concentration for reporting
         }
 
     def _get_source_eligibility_tau(self, source_name: str) -> float:
@@ -1643,6 +1711,14 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 "net_weight_std": 0.0,
             }
 
+        # DA receptor diagnostics (spiking DA from VTA)
+        da_receptor_diagnostics = {
+            "d1_da_concentration_mean": float(self._da_concentration_d1.mean().item()),
+            "d1_da_concentration_std": float(self._da_concentration_d1.std().item()),
+            "d2_da_concentration_mean": float(self._da_concentration_d2.mean().item()),
+            "d2_da_concentration_std": float(self._da_concentration_d2.std().item()),
+        }
+
         return {
             "plasticity": plasticity,
             "state_tracker": self.state_tracker.get_diagnostics(),
@@ -1651,4 +1727,5 @@ class Striatum(NeuralRegion[StriatumConfig]):
             "d1_weight_means": d1_per_action,
             "d2_weight_means": d2_per_action,
             "net_weight_means": net_per_action,
+            "da_receptors": da_receptor_diagnostics,
         }
