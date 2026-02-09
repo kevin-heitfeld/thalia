@@ -464,55 +464,6 @@ class SequenceLearningExperiment:
             striatum_actions=self.config.striatum_actions,
         )
 
-        # CRITICAL FIX: Override hippocampal dopamine scaling for sequence learning
-        # ==================================================================================
-        # Biologically, hippocampus has sparse dopaminergic innervation (10% strength).
-        # However, for sequence learning tasks that REQUIRE hippocampal plasticity,
-        # this biological constraint prevents learning entirely.
-        #
-        # This task tests hippocampal sequence memory - the primary function of CA3
-        # recurrent networks. We need strong dopamine modulation to learn.
-        #
-        # Solution: Temporarily boost hippocampal dopamine to 100% for this task.
-        # This simulates strong indirect dopamine via VTA→septum→hippocampus pathway
-        # that becomes active during reward-predictive learning tasks.
-        if hasattr(self.brain, 'neuromodulator_manager'):
-            # Directly modify the dopamine_projections dict in the broadcast method
-            # This is a bit hacky but avoids needing to modify the core neuromodulation code
-            original_broadcast = self.brain.neuromodulator_manager.broadcast_to_regions
-
-            def patched_broadcast(regions):
-                """Override hippocampal dopamine scaling before broadcasting."""
-                # Temporarily modify dopamine projections
-                da = self.brain.neuromodulator_manager.vta.get_global_dopamine()
-                ne = self.brain.neuromodulator_manager.locus_coeruleus.get_norepinephrine()
-                ach = self.brain.neuromodulator_manager.nucleus_basalis.get_acetylcholine()
-
-                # Apply coordination
-                ach = self.brain.neuromodulator_manager.coordination.coordinate_ne_ach(ne, ach)
-                ach = self.brain.neuromodulator_manager.coordination.coordinate_da_ach(da, ach)
-
-                # Broadcast with BOOSTED hippocampal dopamine (100% instead of 10%)
-                for region_name, region in regions.items():
-                    # Override hippocampus to 100% (was 10%)
-                    da_scale = 1.0 if region_name == "hippocampus" else {
-                        "striatum": 1.0,
-                        "prefrontal": 0.8,
-                        "pfc": 0.8,
-                        "cortex": 0.3,
-                        "thalamus": 0.2,
-                        "cerebellum": 0.0,
-                    }.get(region_name, 0.5)
-
-                    dopamine_scaled = da * da_scale
-                    region.set_neuromodulators(dopamine_scaled, ne, ach)
-
-            # Replace method
-            self.brain.neuromodulator_manager.broadcast_to_regions = patched_broadcast
-
-            if self.config.verbose:
-                print("   ⚠ Hippocampal DA scaling: 10% → 100% (sequence learning override)")
-
         if self.config.verbose:
             print(f"   ✓ Brain created with {self._count_parameters()} parameters")
             print(f"   ✓ Regions: {list(self.brain.regions.keys())}")

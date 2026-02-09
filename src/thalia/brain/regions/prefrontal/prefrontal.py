@@ -56,6 +56,7 @@ from thalia.components import (
     STPType,
     WeightInitializer,
 )
+from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
 from thalia.constants import DEFAULT_DT_MS
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.errors import ConfigurationError
@@ -340,6 +341,27 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             device=config.device,
         )
 
+        # =====================================================================
+        # DOPAMINE RECEPTORS (Spiking DA from VTA)
+        # =====================================================================
+        # Convert VTA dopamine neuron spikes to synaptic concentration.
+        # Biology: PFC receives strong mesocortical DA projection from VTA
+        # - D1 receptors: Modulate WM maintenance and gating
+        # - DA rise: ~10-20 ms (fast release)
+        # - DA decay: ~200 ms (slow DAT reuptake)
+        # Primarily D1-type receptors in PFC (unlike striatum's D1/D2 balance)
+        self.da_receptor = NeuromodulatorReceptor(
+            n_receptors=self.executive_size,
+            tau_rise_ms=15.0,  # Moderate release
+            tau_decay_ms=200.0,  # Slow reuptake via DAT
+            spike_amplitude=0.15,  # Moderate amplitude
+            device=self.device,
+        )
+
+        # DA concentration state (updated each timestep from VTA spikes)
+        # Falls back to scalar neuromodulator_state.dopamine if VTA not connected
+        self._da_concentration = torch.zeros(self.executive_size, device=self.device)
+
         # Initialize learning strategy (STDP with dopamine gating)
         self.learning_strategy = LearningStrategyRegistry.create(
             "stdp",
@@ -530,6 +552,18 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     def _forward_internal(self, inputs: RegionSpikesDict) -> None:
         """Process input through prefrontal cortex."""
         # =====================================================================
+        # DOPAMINE RECEPTOR PROCESSING (from VTA)
+        # =====================================================================
+        # Process VTA dopamine spikes → concentration dynamics
+        # PFC receives widespread DA innervation for working memory gating
+        vta_da_spikes = inputs.get("vta:da_output")
+        if vta_da_spikes is not None:
+            self._da_concentration = self.da_receptor.update(vta_da_spikes)
+        else:
+            # Just decay if no VTA input
+            self._da_concentration = self.da_receptor.update(None)
+
+        # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         # Use base class helper for standardized multi-source integration
@@ -646,16 +680,19 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # D2-dominant neurons: DA decreases excitability (inhibitory response)
         # Biological: D1 receptors increase cAMP → enhanced firing
         #            D2 receptors decrease cAMP → reduced firing
-        if self.config.use_d1_d2_subtypes and da_level != 0.0:
+        if self.config.use_d1_d2_subtypes:
+            # Use per-neuron DA concentration from VTA spikes
+            da_levels = self._da_concentration  # [executive_size]
+
             # Create output buffer for modulated activity
             modulated_output = output_spikes.float().clone()
 
             # D1 neurons: Excitatory DA response (gain boost)
-            d1_gain = 1.0 + self.config.d1_da_gain * da_level
+            d1_gain = 1.0 + self.config.d1_da_gain * da_levels[self._d1_neurons]
             modulated_output[self._d1_neurons] *= d1_gain
 
             # D2 neurons: Inhibitory DA response (gain reduction)
-            d2_gain = 1.0 - self.config.d2_da_gain * da_level
+            d2_gain = 1.0 - self.config.d2_da_gain * da_levels[self._d2_neurons]
             modulated_output[self._d2_neurons] *= d2_gain
 
             # Convert back to spikes (probabilistic based on modulated activity)

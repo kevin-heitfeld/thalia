@@ -54,8 +54,8 @@ class NeuromodulatorReceptor:
     def __init__(
         self,
         n_receptors: int,
-        tau_rise: float,
-        tau_decay: float,
+        tau_rise_ms: float,
+        tau_decay_ms: float,
         spike_amplitude: float = 0.1,
         device: Optional[torch.device] = None,
     ):
@@ -63,17 +63,17 @@ class NeuromodulatorReceptor:
 
         Args:
             n_receptors: Number of postsynaptic receptor sites
-            tau_rise: Rise time constant in ms (fast release dynamics)
+            tau_rise_ms: Rise time constant in ms (fast release dynamics)
                       Typical: 5-20 ms
-            tau_decay: Decay time constant in ms (slow reuptake/degradation)
+            tau_decay_ms: Decay time constant in ms (slow reuptake/degradation)
                        DA: ~200 ms, NE: ~150 ms, ACh: ~50 ms
             spike_amplitude: Concentration increase per presynaptic spike
                             Typically 0.1-0.2 to allow summation
             device: PyTorch device for tensor allocation
         """
         self.n_receptors = n_receptors
-        self.tau_rise = tau_rise
-        self.tau_decay = tau_decay
+        self.tau_rise_ms = tau_rise_ms
+        self.tau_decay_ms = tau_decay_ms
         self.spike_amplitude = spike_amplitude
         self.device = device or torch.device("cpu")
 
@@ -84,15 +84,15 @@ class NeuromodulatorReceptor:
         self.rising = torch.zeros(n_receptors, device=self.device)
 
         # Decay factors (precomputed for efficiency)
-        self.alpha_rise = math.exp(-1.0 / tau_rise)
-        self.alpha_decay = math.exp(-1.0 / tau_decay)
+        self.alpha_rise = math.exp(-1.0 / tau_rise_ms)
+        self.alpha_decay = math.exp(-1.0 / tau_decay_ms)
 
     def update(self, neuromod_spikes: Optional[torch.Tensor]) -> torch.Tensor:
         """Update concentration from incoming neuromodulator spikes.
 
         Implements two-stage dynamics:
-        1. Fast rising phase (tau_rise): Spike → rapid concentration increase
-        2. Slow decay phase (tau_decay): Exponential clearance
+        1. Fast rising phase (tau_rise_ms): Spike → rapid concentration increase
+        2. Slow decay phase (tau_decay_ms): Exponential clearance
 
         Args:
             neuromod_spikes: Presynaptic neuromodulator spikes [n_source]
@@ -171,8 +171,8 @@ def create_dopamine_receptors(
     """
     return NeuromodulatorReceptor(
         n_receptors=n_receptors,
-        tau_rise=10.0,  # DA release dynamics
-        tau_decay=200.0,  # DAT reuptake (very slow)
+        tau_rise_ms=10.0,  # DA release dynamics
+        tau_decay_ms=200.0,  # DAT reuptake (very slow)
         spike_amplitude=0.15,
         device=device,
     )
@@ -199,8 +199,8 @@ def create_norepinephrine_receptors(
     """
     return NeuromodulatorReceptor(
         n_receptors=n_receptors,
-        tau_rise=8.0,
-        tau_decay=150.0,  # NET reuptake (moderate)
+        tau_rise_ms=8.0,
+        tau_decay_ms=150.0,  # NET reuptake (moderate)
         spike_amplitude=0.12,
         device=device,
     )
@@ -227,8 +227,8 @@ def create_acetylcholine_receptors(
     """
     return NeuromodulatorReceptor(
         n_receptors=n_receptors,
-        tau_rise=5.0,
-        tau_decay=50.0,  # AChE hydrolysis (very fast)
+        tau_rise_ms=5.0,
+        tau_decay_ms=50.0,  # AChE hydrolysis (very fast)
         spike_amplitude=0.2,
         device=device,
     )

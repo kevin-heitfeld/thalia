@@ -42,6 +42,7 @@ from thalia.components import (
     GapJunctionConfig,
     GapJunctionCoupling,
 )
+from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.learning.homeostasis import (
     UnifiedHomeostasis,
@@ -467,6 +468,26 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._threshold_max = config.threshold_max
 
         # =====================================================================
+        # DOPAMINE RECEPTOR (minimal 10% VTA projection)
+        # =====================================================================
+        # Hippocampus receives minimal DA innervation for novelty/salience modulation
+        # Primarily affects CA1 output and CA3 consolidation
+        # Biological: VTA DA enhances LTP in novelty-detecting neurons
+        total_neurons = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
+        self.da_receptor = NeuromodulatorReceptor(
+            n_receptors=total_neurons,
+            tau_rise_ms=10.0,  # Fast kinetics for rapid modulation
+            tau_decay_ms=50.0,  # Medium clearance for transient effects
+            spike_amplitude=0.1,  # Moderate amplitude for stable learning
+            device=self.device,
+        )
+        # Per-subregion DA concentration buffers
+        self._da_concentration_dg = torch.zeros(self.dg_size, device=self.device)
+        self._da_concentration_ca3 = torch.zeros(self.ca3_size, device=self.device)
+        self._da_concentration_ca2 = torch.zeros(self.ca2_size, device=self.device)
+        self._da_concentration_ca1 = torch.zeros(self.ca1_size, device=self.device)
+
+        # =====================================================================
         # POST-INITIALIZATION
         # =====================================================================
         self.__post_init__()
@@ -713,6 +734,29 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _forward_internal(self, inputs: RegionSpikesDict) -> None:
         """Process input spikes through DG→CA3→CA1 circuit."""
+        # =====================================================================
+        # DOPAMINE RECEPTOR PROCESSING (from VTA)
+        # =====================================================================
+        # Process VTA dopamine spikes → concentration dynamics
+        # Hippocampus receives minimal (10%) DA innervation for novelty/salience
+        vta_da_spikes = inputs.get("vta:da_output")
+        if vta_da_spikes is not None:
+            # Update full receptor array
+            da_concentration_full = self.da_receptor.update(vta_da_spikes)
+            # Split into per-subregion buffers
+            total_neurons = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
+            self._da_concentration_dg = da_concentration_full[: self.dg_size] * 0.1  # 10% projection strength
+            self._da_concentration_ca3 = da_concentration_full[self.dg_size : self.dg_size + self.ca3_size] * 0.1
+            self._da_concentration_ca2 = da_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size] * 0.1
+            self._da_concentration_ca1 = da_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :] * 0.1
+        else:
+            # Just decay if no VTA input
+            da_concentration_full = self.da_receptor.update(None)
+            self._da_concentration_dg = da_concentration_full[: self.dg_size] * 0.1
+            self._da_concentration_ca3 = da_concentration_full[self.dg_size : self.dg_size + self.ca3_size] * 0.1
+            self._da_concentration_ca2 = da_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size] * 0.1
+            self._da_concentration_ca1 = da_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :] * 0.1
+
         # =====================================================================
         # CONSOLIDATION MODE: Spontaneous CA3→CA1 Replay (Sharp-Wave Ripples)
         # =====================================================================

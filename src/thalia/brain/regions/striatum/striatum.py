@@ -412,15 +412,15 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Create D1 and D2 DA receptors (both receive same VTA spikes)
         self.da_receptor_d1 = NeuromodulatorReceptor(
             n_receptors=self.d1_size,
-            tau_rise=10.0,  # Fast release (ms)
-            tau_decay=200.0,  # Slow reuptake via DAT (ms)
+            tau_rise_ms=10.0,  # Fast release (ms)
+            tau_decay_ms=200.0,  # Slow reuptake via DAT (ms)
             spike_amplitude=0.15,  # Moderate amplitude for summation
             device=self.device,
         )
         self.da_receptor_d2 = NeuromodulatorReceptor(
             n_receptors=self.d2_size,
-            tau_rise=10.0,
-            tau_decay=200.0,
+            tau_rise_ms=10.0,
+            tau_decay_ms=200.0,
             spike_amplitude=0.15,
             device=self.device,
         )

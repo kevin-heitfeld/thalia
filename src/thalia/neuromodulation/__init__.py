@@ -1,8 +1,9 @@
-"""
-Neuromodulation systems and management.
+"""Neuromodulation systems for Thalia.
 
-This module provides neuromodulator systems (VTA, locus coeruleus, nucleus basalis)
-and management infrastructure for global neuromodulatory signals.
+Provides global neuromodulator management:
+- Locus coeruleus norepinephrine system (arousal/uncertainty)
+- Nucleus basalis acetylcholine system (attention/encoding)
+- Neuromodulator coordination (DA-NE-ACh interactions)
 """
 
 from __future__ import annotations
@@ -10,8 +11,6 @@ from __future__ import annotations
 from .homeostasis import NeuromodulatorHomeostasis, NeuromodulatorHomeostasisConfig
 from .locus_coeruleus import LocusCoeruleusConfig, LocusCoeruleusSystem
 from .nucleus_basalis import NucleusBasalisConfig, NucleusBasalisSystem
-from .vta import VTAConfig, VTADopamineSystem
-from .manager import NeuromodulatorManager
 
 __all__ = [
     # Homeostasis
@@ -23,9 +22,4 @@ __all__ = [
     # Nucleus Basalis (Acetylcholine)
     "NucleusBasalisConfig",
     "NucleusBasalisSystem",
-    # VTA (Dopamine)
-    "VTAConfig",
-    "VTADopamineSystem",
-    # Manager
-    "NeuromodulatorManager",
 ]

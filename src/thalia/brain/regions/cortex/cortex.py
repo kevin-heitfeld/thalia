@@ -64,6 +64,7 @@ from thalia.components import (
     WeightInitializer,
     NeuronFactory,
 )
+from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.learning import (
     LearningStrategy,
@@ -254,6 +255,29 @@ class Cortex(NeuralRegion[CortexConfig]):
             activity_target=config.activity_target,
             device=str(self.device),
         ))
+
+        # =====================================================================
+        # DOPAMINE RECEPTOR (sparse 30% projection, L5-specific)
+        # =====================================================================
+        # Cortex receives sparse DA innervation primarily to Layer 5 for action selection
+        # L5 pyramidal cells project to striatum and benefit from DA modulation
+        # Biological: VTA/SNc DA terminals concentrated in deep layers
+        # Note: Only L5 neurons receive DA; other layers get zero concentration
+        total_neurons = self.l23_size + self.l4_size + self.l5_size + self.l6a_size + self.l6b_size
+        self.da_receptor = NeuromodulatorReceptor(
+            n_receptors=total_neurons,
+            tau_rise_ms=15.0,  # Medium kinetics
+            tau_decay_ms=150.0,  # Longer clearance for sustained modulation
+            spike_amplitude=0.1,  # Moderate amplitude for stable learning
+            device=self.device,
+        )
+        # Per-layer DA concentration buffers
+        # Only L5 receives DA (30% projection strength), others get zero
+        self._da_concentration_l23 = torch.zeros(self.l23_size, device=self.device)
+        self._da_concentration_l4 = torch.zeros(self.l4_size, device=self.device)
+        self._da_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
+        self._da_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
+        self._da_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
 
         # =====================================================================
         # POST-INITIALIZATION
@@ -646,6 +670,40 @@ class Cortex(NeuralRegion[CortexConfig]):
     def _forward_internal(self, inputs: RegionSpikesDict) -> None:
         """Process input through layered cortical circuit."""
         cfg = self.config
+
+        # =====================================================================
+        # DOPAMINE RECEPTOR PROCESSING (from VTA)
+        # =====================================================================
+        # Process VTA dopamine spikes → concentration dynamics
+        # Cortex receives sparse (30%) DA innervation primarily to Layer 5
+        vta_da_spikes = inputs.get("vta:da_output")
+        if vta_da_spikes is not None:
+            # Update full receptor array
+            da_concentration_full = self.da_receptor.update(vta_da_spikes)
+            # Split into per-layer buffers - only L5 gets DA (30% projection)
+            offset = 0
+            self._da_concentration_l23 = da_concentration_full[offset : offset + self.l23_size] * 0.0  # No DA
+            offset += self.l23_size
+            self._da_concentration_l4 = da_concentration_full[offset : offset + self.l4_size] * 0.0  # No DA
+            offset += self.l4_size
+            self._da_concentration_l5 = da_concentration_full[offset : offset + self.l5_size] * 0.3  # 30% projection
+            offset += self.l5_size
+            self._da_concentration_l6a = da_concentration_full[offset : offset + self.l6a_size] * 0.0  # No DA
+            offset += self.l6a_size
+            self._da_concentration_l6b = da_concentration_full[offset :] * 0.0  # No DA
+        else:
+            # Just decay if no VTA input
+            da_concentration_full = self.da_receptor.update(None)
+            offset = 0
+            self._da_concentration_l23 = da_concentration_full[offset : offset + self.l23_size] * 0.0
+            offset += self.l23_size
+            self._da_concentration_l4 = da_concentration_full[offset : offset + self.l4_size] * 0.0
+            offset += self.l4_size
+            self._da_concentration_l5 = da_concentration_full[offset : offset + self.l5_size] * 0.3
+            offset += self.l5_size
+            self._da_concentration_l6a = da_concentration_full[offset : offset + self.l6a_size] * 0.0
+            offset += self.l6a_size
+            self._da_concentration_l6b = da_concentration_full[offset :] * 0.0
 
         # =====================================================================
         # SEPARATE EXTERNAL vs CORTICAL FEEDBACK INPUTS

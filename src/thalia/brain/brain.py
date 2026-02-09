@@ -26,7 +26,6 @@ from typing import Any, Dict, Optional, Tuple, cast
 import torch
 import torch.nn as nn
 
-from thalia.neuromodulation import NeuromodulatorManager
 from thalia.typing import (
     BrainSpikesDict,
     RegionSpikesDict,
@@ -175,11 +174,6 @@ class DynamicBrain(nn.Module):
             ripple_freq=self.config.ripple_frequency_hz,
             couplings=None,  # Use default couplings (theta-gamma, etc.)
         )
-
-        # =================================================================
-        # NEUROMODULATOR SYSTEMS
-        # =================================================================
-        self.neuromodulator_manager = NeuromodulatorManager()
 
         # =================================================================
         # REINFORCEMENT LEARNING STATE
@@ -393,35 +387,38 @@ class DynamicBrain(nn.Module):
         return action, confidence
 
     def deliver_reward(self, external_reward: Optional[float] = None) -> None:
-        """Deliver reward signal and update exploration statistics.
+        """Deliver reward signal via RewardEncoder region for VTA processing.
 
-        **Continuous Learning Architecture**: Learning happens automatically in striatum's
-        forward() pass using broadcast dopamine. This method broadcasts dopamine globally
-        and updates exploration statistics.
-
-        Uses striatum to select actions based on accumulated evidence.
-        The brain broadcasts reward as dopamine signal to all regions,
-        which use three-factor learning (eligibility × dopamine × lr)
-        for continuous synaptic updates.
-
-        Action values emerge from D1-D2 synaptic weight competition - no Q-values!
+        **Spiking Dopamine Architecture**: Reward is encoded as population-coded
+        spikes in RewardEncoder, which feeds into VTA to modulate DA neuron firing.
+        VTA DA spikes are then broadcast to all regions with DA receptors
+        (Striatum, PFC, Hippocampus, Cortex) where they are converted to
+        concentration dynamics via NeuromodulatorReceptor.
 
         Args:
             external_reward: Task-based reward value (typically -1 to +1),
                            or None for pure intrinsic reward
 
         Raises:
-            ValueError: If striatum not found
+            ValueError: If reward_encoder or striatum not found
 
         Note:
-            Actual learning happens continuously in striatum.forward() using
-            the broadcast dopamine level. This method only broadcasts dopamine
-            and updates exploration - no discrete learning trigger.
+            Actual learning happens continuously in region forward() passes using
+            the spiking dopamine signal. This method only delivers reward to
+            RewardEncoder - the rest happens automatically through VTA and DA receptors.
         """
         if self.striatum is None:
             raise ValueError(
                 "Striatum not found. Cannot deliver reward. "
                 "Brain must include 'striatum' region for RL tasks."
+            )
+
+        # Get RewardEncoder region
+        reward_encoder = self.regions.get("reward_encoder")
+        if reward_encoder is None:
+            raise ValueError(
+                "RewardEncoder not found. Cannot deliver reward. "
+                "Brain must include 'reward_encoder' region for spiking DA system."
             )
 
         # Compute total reward (external + intrinsic if available)
@@ -432,72 +429,13 @@ class DynamicBrain(nn.Module):
             total_reward = external_reward + intrinsic_reward
             total_reward = max(-2.0, min(2.0, total_reward))
 
-        # Deliver reward to VTA and broadcast dopamine globally
-        # This ensures all regions (hippocampus, prefrontal, striatum, etc.) receive
-        # dopamine signal for synaptic tagging and learning
-        expected_value = 0.0  # TODO: Simplified: no value prediction yet
-        self.neuromodulator_manager.vta.deliver_reward(
-            external_reward=total_reward,
-            expected_value=expected_value,
-        )
-        # Broadcast updated dopamine to all regions
-        self.neuromodulator_manager.broadcast_to_regions(self.regions)
+        # Deliver reward to RewardEncoder as population-coded spikes
+        # RewardEncoder converts scalar → spike pattern, which VTA decodes
+        reward_encoder.set_reward(total_reward)
 
         # Update exploration statistics based on reward
-        # Striatum applies continuous learning automatically in forward() using broadcast dopamine
+        # Striatum applies continuous learning automatically in forward() using spiking DA
         self.striatum.update_performance(total_reward)
-
-    # =========================================================================
-    # NEUROMODULATION
-    # =========================================================================
-
-    def _update_neuromodulators(self) -> None:
-        """Update centralized neuromodulator systems and broadcast to regions.
-
-        Updates VTA (dopamine), locus coeruleus (norepinephrine), and nucleus
-        basalis (acetylcholine) based on intrinsic reward, uncertainty, and
-        prediction error. Then broadcasts signals to all regions.
-
-        This is called automatically during forward() to maintain neuromodulator
-        dynamics every timestep.
-
-        Neuromodulator Sources:
-            - VTA: Tonic from intrinsic reward, phasic from RPE
-            - LC: Arousal from uncertainty
-            - NB: Encoding strength from prediction error
-
-        Note:
-            For now, intrinsic reward and uncertainty are simplified.
-            Full implementation with curiosity and metacognition will be
-            added in later phases.
-        """
-        # TODO: This is currently not called in forward().
-
-        # Compute signals for neuromodulator updates
-        intrinsic_reward = self._compute_intrinsic_reward()
-        uncertainty = self._compute_uncertainty()
-        prediction_error = self._compute_prediction_error()
-
-        # Update neuromodulator systems
-        self.neuromodulator_manager.vta.update(dt_ms=self.dt_ms, intrinsic_reward=intrinsic_reward)
-        self.neuromodulator_manager.locus_coeruleus.update(
-            dt_ms=self.dt_ms, uncertainty=uncertainty
-        )
-        self.neuromodulator_manager.nucleus_basalis.update(
-            dt_ms=self.dt_ms, prediction_error=prediction_error
-        )
-
-        # Get current neuromodulator levels
-        dopamine = self.neuromodulator_manager.vta.get_global_dopamine()
-        norepinephrine = self.neuromodulator_manager.locus_coeruleus.get_norepinephrine()
-
-        # Apply DA-NE coordination
-        dopamine, norepinephrine = self.neuromodulator_manager.coordination.coordinate_da_ne(
-            dopamine, norepinephrine, prediction_error
-        )
-
-        # Broadcast to all regions
-        self.neuromodulator_manager.broadcast_to_regions(self.regions)
 
     def _get_cortex_l4_activity(self) -> Optional[float]:
         """Helper to get cortex L4 activity for neuromodulator computations."""
@@ -576,75 +514,6 @@ class DynamicBrain(nn.Module):
             reward = 0.0
 
         return max(-1.0, min(1.0, reward))
-
-    def _compute_uncertainty(self) -> float:
-        """Compute current task uncertainty for arousal modulation.
-
-        Uncertainty drives norepinephrine release from locus coeruleus.
-        High uncertainty → high arousal → increased neural gain.
-
-        Sources:
-        1. Prediction error magnitude (cortex)
-        2. Value estimate variance (striatum)
-        3. Novelty detection
-
-        Returns:
-            Uncertainty estimate in [0, 1]
-        """
-        uncertainty = 0.0
-        n_sources = 0
-
-        # Cortex prediction error as uncertainty proxy
-        # L4 activity directly represents prediction error magnitude
-        l4_activity = self._get_cortex_l4_activity()
-        if l4_activity is not None:
-            # High L4 activity = high prediction error = high uncertainty
-            cortex_uncertainty = l4_activity
-            uncertainty += cortex_uncertainty
-            n_sources += 1
-
-        # Average across sources
-        if n_sources > 0:
-            uncertainty = float(uncertainty) / n_sources
-        else:
-            # No signals → assume moderate uncertainty
-            uncertainty = 0.3
-
-        return float(max(0.0, min(1.0, uncertainty)))
-
-    def _compute_prediction_error(self) -> float:
-        """Compute current prediction error for ACh modulation.
-
-        Prediction error drives ACh release from nucleus basalis.
-        High PE → novelty → ACh burst → encoding mode.
-
-        Sources:
-        1. Cortex free energy (prediction error magnitude)
-        2. Hippocampus retrieval mismatch
-
-        Returns:
-            Prediction error estimate in [0, 1]
-        """
-        prediction_error = 0.0
-        n_sources = 0
-
-        # Cortex predictive coding error
-        # L4 = input - (L5+L6 prediction), so L4 activity = prediction error magnitude
-        l4_activity = self._get_cortex_l4_activity()
-        if l4_activity is not None:
-            # L4 activity directly represents prediction error [0, 1]
-            cortex_pe = l4_activity
-            prediction_error += cortex_pe
-            n_sources += 1
-
-        # Average across sources
-        if n_sources > 0:
-            prediction_error = float(prediction_error) / n_sources
-        else:
-            # No signals → assume low PE (familiar context)
-            prediction_error = 0.2
-
-        return float(max(0.0, min(1.0, prediction_error)))
 
     # =========================================================================
     # ADAPTIVE TIMESTEP AND OSCILLATOR COORDINATION
@@ -727,8 +596,13 @@ class DynamicBrain(nn.Module):
     # =========================================================================
 
     def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostic information from all subsystems."""
-        neuromodulators = self.neuromodulator_manager.get_diagnostics()
+        """Get comprehensive diagnostic information from all subsystems.
+        
+        Note: Neuromodulator diagnostics are now part of region diagnostics:
+        - VTA (dopamine): regions["vta"].get_diagnostics()
+        - LC (norepinephrine): Still system-based (Phase 2 will convert)
+        - NB (acetylcholine): Still system-based (Phase 2 will convert)
+        """
         oscillators = self.oscillators.get_state()
 
         regions_diag: Dict[str, Any] = {}
@@ -741,7 +615,6 @@ class DynamicBrain(nn.Module):
             connections_diag[connection_name] = connection.get_diagnostics()
 
         return {
-            "neuromodulators": neuromodulators,
             "oscillators": oscillators,
             "regions": regions_diag,
             "connections": connections_diag,

@@ -77,7 +77,7 @@ from ..region_registry import register_region
 
 @register_region(
     "snr",
-    aliases=["substantia_nigra", "snr", "substantia_nigra_reticulata"],
+    aliases=["substantia_nigra", "substantia_nigra_reticulata"],
     description="Substantia nigra pars reticulata - basal ganglia output nucleus",
     version="1.0",
     author="Thalia Project",

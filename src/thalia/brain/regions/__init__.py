@@ -63,8 +63,11 @@ from .cortex import Cortex
 from .hippocampus import Hippocampus
 from .medial_septum import MedialSeptum
 from .prefrontal import Prefrontal
+from .reward_encoder import RewardEncoder
 from .striatum import Striatum, StriatumStateTracker
+from .substantia_nigra import SubstantiaNigra
 from .thalamus import Thalamus
+from .vta import VTA
 
 from .neural_region import NeuralRegion
 from .region_registry import NeuralRegionRegistry, register_region
@@ -78,9 +81,12 @@ __all__ = [
     "Hippocampus",
     "MedialSeptum",
     "Prefrontal",
+    "RewardEncoder",
     "Striatum",
     "StriatumStateTracker",
+    "SubstantiaNigra",
     "Thalamus",
+    "VTA",
     # Neural Region Registry
     "NeuralRegionRegistry",
     "register_region",

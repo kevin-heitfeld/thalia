@@ -899,6 +899,43 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         axonal_delay_ms=4.0,
     )
 
+    # VTA → PFC: Dopamine release for working memory gating
+    # DA neuron spikes converted to concentration by NeuromodulatorReceptor
+    # Modulates working memory gate: high DA → update WM, low DA → maintain WM
+    # Also modulates D1/D2 receptor subtypes for differential excitability
+    # Distance: ~2-3cm (mesocortical pathway), well-myelinated → 3-5ms delay
+    builder.connect(
+        source="vta",
+        target="pfc",
+        source_port="da_output",
+        target_layer="vta:da_output",
+        axonal_delay_ms=4.0,
+    )
+
+    # VTA → Hippocampus: Dopamine release for novelty/salience modulation
+    # DA enhances LTP for novel patterns and modulates consolidation
+    # Minimal 10% projection strength (applied at receptor processing)
+    # Distance: ~2-3cm, well-myelinated → 3-5ms delay
+    builder.connect(
+        source="vta",
+        target="hippocampus",
+        source_port="da_output",
+        target_layer="vta:da_output",
+        axonal_delay_ms=4.0,
+    )
+
+    # VTA → Cortex: Dopamine release for Layer 5 action selection
+    # DA modulates L5 pyramidal cells that project to striatum/brainstem
+    # Sparse 30% projection to deep layers (applied at receptor processing)
+    # Distance: ~2-3cm, well-myelinated → 3-5ms delay
+    builder.connect(
+        source="vta",
+        target="cortex",
+        source_port="da_output",
+        target_layer="vta:da_output",
+        axonal_delay_ms=4.0,
+    )
+
     # =============================================================================
     # RECURRENT CONNECTIONS (Externalized for Biological Accuracy)
     # =============================================================================
