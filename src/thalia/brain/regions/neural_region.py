@@ -333,7 +333,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 # Get STP efficacy modulation for this source
                 stp_efficacy = self.stp_modules[weight_key](source_spikes_float)
                 # Apply as multiplicative modulation of weights
-                effective_weights = weights * stp_efficacy
+                # STP returns [n_pre, n_post], weights are [n_post, n_pre] → transpose
+                effective_weights = weights * stp_efficacy.T
                 source_current = effective_weights @ source_spikes_float
             else:
                 # Standard weighted summation (no STP)
@@ -428,10 +429,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             dt_ms: New timestep in milliseconds
         """
         self.config.dt_ms = dt_ms
-
-        # Update neuron decay factors
-        if hasattr(self, "neurons") and self.neurons is not None:
-            self.neurons.update_temporal_parameters(dt_ms)
 
         # Update single learning strategy if present
         if hasattr(self.learning_strategy, "update_temporal_parameters"):

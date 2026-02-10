@@ -343,6 +343,11 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         self.homeostasis: Optional[UnifiedHomeostasis] = None
         self._homeostasis_config = config  # Store for lazy init
 
+        # Per-source STP modules (created in add_input_source)
+        # PFC feedforward connections show SHORT-TERM FACILITATION for
+        # temporal filtering and gain control during encoding
+        self.stp_modules: Dict[SpikesSourceKey, ShortTermPlasticity] = nn.ModuleDict()
+
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY
         # =====================================================================
@@ -426,20 +431,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             neurons.register_buffer("g_L", g_L_heterogeneous.to(self.device))
 
         # =====================================================================
-        # SHORT-TERM PLASTICITY for feedforward connections
-        # =====================================================================
-        # PFC feedforward connections show SHORT-TERM FACILITATION/DEPRESSION
-        # for temporal filtering and gain control during encoding.
-        # Created with size=0, will grow when sources are added
-        self.stp_feedforward = ShortTermPlasticity(
-            n_pre=0,  # Grow when sources added
-            n_post=self.executive_size,
-            config=STPConfig.from_type(STPType.FACILITATING),
-            per_synapse=True,
-        )
-        self.stp_feedforward.to(self.device)
-
-        # =====================================================================
         # SHORT-TERM PLASTICITY for recurrent connections
         # =====================================================================
         # PFC recurrent connections show SHORT-TERM DEPRESSION, preventing
@@ -487,9 +478,16 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Call parent to register source
         super().add_input_source(source_name, target_population, n_input, sparsity, weight_scale)
 
-        # Grow STP modules
+        # Create per-source STP module
+        # PFC feedforward synapses show facilitation (temporal integration)
         if n_input > 0:
-            self.stp_feedforward.grow(n_input, target="pre")
+            self.stp_modules[source_name] = ShortTermPlasticity(
+                n_pre=n_input,
+                n_post=self.executive_size,
+                config=STPConfig.from_type(STPType.FACILITATING),
+                per_synapse=True,
+            )
+            self.stp_modules[source_name].to(self.device)
 
         # Initialize homeostasis if this is first source
         self.homeostasis = UnifiedHomeostasis(UnifiedHomeostasisConfig(
@@ -562,13 +560,13 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         # Use base class helper for standardized multi-source integration
-        # No STP per-source (PFC only has STP on recurrent connections)
+        # Apply per-source STP for temporal filtering and gain control
         # No modulation callback needed (unlike cortex's alpha suppression)
         ff_integrated = self._integrate_multi_source_synaptic_inputs(
             inputs=region_inputs,
             n_neurons=self.executive_size,
             weight_key_suffix="",  # No suffix needed for PFC
-            apply_stp=False,  # PFC doesn't use per-source STP
+            apply_stp=True,  # PFC uses per-source facilitating STP
         )
 
         # =====================================================================
@@ -581,9 +579,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         rec_gain = 0.5  # Baseline
 
         # Feedforward input - modulated by encoding phase
-        # Use pre-integrated multi-source input
-        # NOTE: STP for multi-source is more complex - simplified here for now
-        # TODO: Could apply per-source STP if needed
+        # Per-source STP already applied in _integrate_multi_source_synaptic_inputs
         ff_input = ff_integrated * ff_gain
 
         # =====================================================================
@@ -892,14 +888,13 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         super().update_temporal_parameters(dt_ms)
 
         # Update neurons
-        if hasattr(self, "neurons") and self.neurons is not None:
-            self.neurons.update_temporal_parameters(dt_ms)
+        self.neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if hasattr(self, "stp_feedforward") and self.stp_feedforward is not None:
-            self.stp_feedforward.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_recurrent") and self.stp_recurrent is not None:
-            self.stp_recurrent.update_temporal_parameters(dt_ms)
+        for stp_module in self.stp_modules.values():
+            stp_module.update_temporal_parameters(dt_ms)
+
+        self.stp_recurrent.update_temporal_parameters(dt_ms)
 
     # =========================================================================
     # DIAGNOSTICS

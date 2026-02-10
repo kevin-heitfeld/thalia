@@ -113,6 +113,10 @@ class SubstantiaNigra(NeuralRegion[SNrConfig]):
         "thalamus_output": "n_neurons",
     }
 
+    # =========================================================================
+    # INITIALIZATION
+    # =========================================================================
+
     def __init__(self, config: SNrConfig, population_sizes: PopulationSizes):
         super().__init__(config, population_sizes)
 
@@ -161,6 +165,10 @@ class SubstantiaNigra(NeuralRegion[SNrConfig]):
         return ConductanceLIF(
             n_neurons=self.config.n_neurons, config=neuron_config, device=self.device
         )
+
+    # =========================================================================
+    # FORWARD PASS
+    # =========================================================================
 
     def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Update SNr neurons based on striatal input.
@@ -211,6 +219,19 @@ class SubstantiaNigra(NeuralRegion[SNrConfig]):
         }
 
         return self._post_forward(region_outputs)
+
+    # =========================================================================
+    # TEMPORAL PARAMETER MANAGEMENT
+    # =========================================================================
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes."""
+        super().update_temporal_parameters(dt_ms)
+        self.neurons.update_temporal_parameters(dt_ms)
+
+    # =========================================================================
+    # DIAGNOSTICS
+    # =========================================================================
 
     def get_value_estimate(self) -> float:
         """Compute state value estimate from SNr firing rate.
