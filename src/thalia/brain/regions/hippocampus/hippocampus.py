@@ -48,6 +48,7 @@ from thalia.learning.homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
 )
+from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
 from thalia.diagnostics import DiagnosticsUtils
 from thalia.typing import (
     PopulationName,
@@ -523,6 +524,20 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._ach_concentration_ca3 = torch.zeros(self.ca3_size, device=self.device)
         self._ach_concentration_ca2 = torch.zeros(self.ca2_size, device=self.device)
         self._ach_concentration_ca1 = torch.zeros(self.ca1_size, device=self.device)
+
+        # =====================================================================
+        # LEARNING STRATEGY (Three-Factor Learning with Dopamine Modulation)
+        # =====================================================================
+        # Default to dopamine-modulated learning for reward-driven memory formation
+        # Three-factor rule: ΔW = eligibility_trace × dopamine × learning_rate
+        self.learning_strategy = ThreeFactorStrategy(
+            config=ThreeFactorConfig(
+                learning_rate=0.001,  # Conservative rate for stable learning
+                eligibility_tau=100.0,  # Eligibility trace decay (ms) - matches temporal integration
+                modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
+                device=self.device,
+            )
+        )
 
         # =====================================================================
         # POST-INITIALIZATION

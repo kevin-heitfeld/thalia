@@ -75,6 +75,7 @@ from thalia.learning import (
     STDPStrategy,
     CompositeStrategy,
 )
+from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
 from thalia.typing import (
     PopulationName,
     PopulationSizes,
@@ -316,6 +317,21 @@ class Cortex(NeuralRegion[CortexConfig]):
         self._ach_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
         self._ach_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
         self._ach_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
+
+        # =====================================================================
+        # LEARNING STRATEGY (Three-Factor Learning with Dopamine Modulation)
+        # =====================================================================
+        # Default to dopamine-modulated learning for reward-based cortical plasticity
+        # Three-factor rule: ΔW = eligibility_trace × dopamine × learning_rate
+        # This complements the BCM+STDP strategies used for layer-specific learning
+        self.learning_strategy = ThreeFactorStrategy(
+            config=ThreeFactorConfig(
+                learning_rate=0.001,  # Conservative rate matching hippocampus
+                eligibility_tau=100.0,  # Eligibility trace decay (ms)
+                modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
+                device=self.device,
+            )
+        )
 
         # =====================================================================
         # POST-INITIALIZATION

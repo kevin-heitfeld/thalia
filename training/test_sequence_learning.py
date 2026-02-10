@@ -229,7 +229,7 @@ class TrainingConfig:
     plot_update_interval: int = 1  # Update plots every N trials
 
     # Device
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    device: str = "cpu"
 
     def __post_init__(self):
         if self.pattern_types is None:
@@ -486,37 +486,6 @@ class SequenceLearningExperiment:
             _print_region_info(thalamus, ["relay_size"])
             _print_region_info(cortex)
             _print_region_info(hippocampus)
-
-        if self.config.verbose:
-            print("\n[CRITICAL FIX] Attaching learning strategies...")
-
-        from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
-
-        # TODO: Update the default Hippocampus and Cortex regions to use ThreeFactorStrategy by default,
-        # instead of patching it here. This will ensure that all experiments using the default brain have
-        # dopamine-modulated learning without needing to remember to set it up manually.
-
-        # Create dopamine-modulated learning for hippocampus
-        hipp_learning_config = ThreeFactorConfig(
-            learning_rate=0.001,  # Conservative rate for stability
-            eligibility_tau=100.0,  # Eligibility trace decay (ms) - matches our symbol timing
-            modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
-            device=self.device,
-        )
-        hippocampus.learning_strategy = ThreeFactorStrategy(config=hipp_learning_config)
-
-        # Create dopamine-modulated learning for cortex
-        cortex_learning_config = ThreeFactorConfig(
-            learning_rate=0.001,
-            eligibility_tau=100.0,
-            modulator_tau=50.0,
-            device=self.device,
-        )
-        cortex.learning_strategy = ThreeFactorStrategy(config=cortex_learning_config)
-
-        if self.config.verbose:
-            print(f"   ✓ Hippocampus: ThreeFactorStrategy (lr={hipp_learning_config.learning_rate}, elig_tau={hipp_learning_config.eligibility_tau}ms)")
-            print(f"   ✓ Cortex: ThreeFactorStrategy (lr={cortex_learning_config.learning_rate}, elig_tau={cortex_learning_config.eligibility_tau}ms)")
 
         # Create dataset
         if self.config.verbose:
@@ -1443,14 +1412,6 @@ def main():
         help="Suppress verbose output",
     )
 
-    # Device
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Device (cuda/cpu)",
-    )
-
     args = parser.parse_args()
 
     # Create configuration
@@ -1461,7 +1422,6 @@ def main():
         sequence_length=args.sequence_length,
         output_dir=args.output_dir,
         verbose=not args.quiet,
-        device=args.device,
     )
 
     # Run experiment
