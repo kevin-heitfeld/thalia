@@ -57,7 +57,6 @@ from thalia.components import (
     WeightInitializer,
 )
 from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
-from thalia.constants import DEFAULT_DT_MS
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.errors import ConfigurationError
 from thalia.learning import (
@@ -173,65 +172,6 @@ def sample_heterogeneous_wm_neurons(
     }
 
 
-class DopamineGatingSystem:
-    """Dopamine-based gating for working memory updates.
-
-    Unlike striatal dopamine (which determines LTP vs LTD direction),
-    prefrontal dopamine gates what information enters working memory:
-    - High DA → gate open → update WM with new input
-    - Low DA → gate closed → maintain current WM
-    """
-
-    def __init__(
-        self,
-        n_neurons: int,
-        tau_ms: float = 100.0,
-        baseline: float = 0.2,
-        threshold: float = 0.5,
-        device: str = "cpu",
-    ):
-        self.n_neurons = n_neurons
-        self.tau_ms = tau_ms
-        self.baseline = baseline
-        self.threshold = threshold
-        self.device = torch.device(device)
-
-        self.level = baseline  # Current DA level
-
-    def update(self, signal: float, dt_ms: float = DEFAULT_DT_MS) -> float:
-        """Update dopamine level with new signal.
-
-        Args:
-            signal: External dopamine signal (-1 to 1)
-            dt_ms: Timestep in ms
-
-        Returns:
-            Current dopamine level
-        """
-        # Decay toward baseline
-        decay = torch.exp(torch.tensor(-dt_ms / self.tau_ms)).item()
-        self.level = self.baseline + (self.level - self.baseline) * decay
-
-        # Add signal
-        self.level += signal
-
-        # Clamp to valid range
-        self.level = max(0.0, min(1.0, self.level))
-
-        return self.level
-
-    def get_gate(self) -> float:
-        """Get current gating value (0-1).
-
-        Returns smooth gate value based on dopamine level.
-        """
-        # Sigmoid around threshold
-        gate_value: float = 1.0 / (
-            1.0 + torch.exp(torch.tensor(-10 * (self.level - self.threshold))).item()
-        )
-        return gate_value
-
-
 @register_region(
     "prefrontal",
     aliases=["pfc", "prefrontal_cortex"],
@@ -272,7 +212,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # =====================================================================
         # PFC-specific state fields
         self.working_memory: Optional[torch.Tensor] = None
-        self.update_gate: Optional[torch.Tensor] = None
         self.active_rule: Optional[torch.Tensor] = None
 
         # =====================================================================
@@ -331,15 +270,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         )
         self.inhib_weights.data.fill_diagonal_(0.0)
 
-        # Dopamine gating system
-        self.dopamine_system = DopamineGatingSystem(
-            n_neurons=self.executive_size,
-            tau_ms=config.dopamine_tau_ms,
-            baseline=config.dopamine_baseline,
-            threshold=config.gate_threshold,
-            device=config.device,
-        )
-
         # =====================================================================
         # DOPAMINE RECEPTORS (Spiking DA from VTA)
         # =====================================================================
@@ -358,8 +288,41 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         )
 
         # DA concentration state (updated each timestep from VTA spikes)
-        # Falls back to scalar neuromodulator_state.dopamine if VTA not connected
         self._da_concentration = torch.zeros(self.executive_size, device=self.device)
+
+        # =====================================================================
+        # NOREPINEPHRINE RECEPTORS (Spiking NE from LC)
+        # =====================================================================
+        # Convert LC norepinephrine spikes to synaptic concentration.
+        # Biology: PFC receives dense NE innervation from LC
+        # - NE modulates attention, arousal, and task engagement
+        # - High NE → increased gain, enhanced signal detection
+        # - NE rise: ~8 ms, decay: ~150 ms (NET reuptake)
+        self.ne_receptor = NeuromodulatorReceptor(
+            n_receptors=self.executive_size,
+            tau_rise_ms=8.0,
+            tau_decay_ms=150.0,
+            spike_amplitude=0.12,
+            device=self.device,
+        )
+        self._ne_concentration = torch.zeros(self.executive_size, device=self.device)
+
+        # =====================================================================
+        # ACETYLCHOLINE RECEPTORS (Spiking ACh from NB)
+        # =====================================================================
+        # Convert NB acetylcholine spikes to synaptic concentration.
+        # Biology: PFC receives ACh from nucleus basalis
+        # - ACh modulates attention and working memory encoding
+        # - High ACh → encoding mode, enhance sensory processing
+        # - ACh rise: ~5 ms, decay: ~50 ms (AChE fast degradation)
+        self.ach_receptor = NeuromodulatorReceptor(
+            n_receptors=self.executive_size,
+            tau_rise_ms=5.0,
+            tau_decay_ms=50.0,
+            spike_amplitude=0.2,
+            device=self.device,
+        )
+        self._ach_concentration = torch.zeros(self.executive_size, device=self.device)
 
         # Initialize learning strategy (STDP with dopamine gating)
         self.learning_strategy = LearningStrategyRegistry.create(
@@ -514,6 +477,13 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             sparsity: Connection sparsity (0-1, higher = more sparse)
             weight_scale: Scaling factor for weight initialization
         """
+        # Neuromodulator inputs (vta_da, lc_ne, nb_ach) don't create synaptic weights
+        # They're processed directly by receptors in forward()
+        if target_population in ("vta_da", "lc_ne", "nb_ach"):
+            # Just register the source for validation, but skip weight creation
+            self.input_sources[source_name] = n_input
+            return
+
         # Call parent to register source
         super().add_input_source(source_name, target_population, n_input, sparsity, weight_scale)
 
@@ -567,6 +537,28 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             self._da_concentration = self.da_receptor.update(None)
 
         # =====================================================================
+        # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
+        # =====================================================================
+        # Process LC norepinephrine spikes → gain modulation
+        # NE increases arousal and task engagement in PFC
+        lc_ne_spikes = region_inputs.get("lc:ne_output")
+        if lc_ne_spikes is not None:
+            self._ne_concentration = self.ne_receptor.update(lc_ne_spikes)
+        else:
+            self._ne_concentration = self.ne_receptor.update(None)
+
+        # =====================================================================
+        # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
+        # =====================================================================
+        # Process NB acetylcholine spikes → encoding/attention modulation
+        # ACh switches PFC between encoding and retrieval modes
+        nb_ach_spikes = region_inputs.get("nb:ach_output")
+        if nb_ach_spikes is not None:
+            self._ach_concentration = self.ach_receptor.update(nb_ach_spikes)
+        else:
+            self._ach_concentration = self.ach_receptor.update(None)
+
+        # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         # Use base class helper for standardized multi-source integration
@@ -578,8 +570,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             weight_key_suffix="",  # No suffix needed for PFC
             apply_stp=False,  # PFC doesn't use per-source STP
         )
-
-        gate = self.dopamine_system.get_gate()
 
         # =====================================================================
         # GAIN MODULATION
@@ -603,7 +593,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Low NE (baseline): Normal gain
         # Biological: β-adrenergic receptors modulate PFC excitability and
         # working memory flexibility (Arnsten 2009)
-        ne_level = self.neuromodulator_state.norepinephrine
+        ne_level = self._ne_concentration.mean().item()  # Average across neurons
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
         ne_gain = compute_ne_gain(ne_level)
         ff_input = ff_input * ne_gain
@@ -708,21 +698,20 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         if self.working_memory is None:
             self.working_memory = torch.zeros(self.executive_size, device=self.device, dtype=torch.float32)
 
-        gate_tensor = torch.full_like(self.working_memory, gate)
-        self.update_gate = gate_tensor
-
-        # WM decay
-        decay = torch.exp(torch.tensor(-dt_ms / self.config.wm_decay_tau_ms))
+        # Compute DA gate from receptor-based concentration (per-neuron)
+        # Sigmoid gating: gate = sigmoid(10 * (da_level - threshold))
+        # This creates smooth transition around threshold:
+        # - da_level < threshold → gate ≈ 0 (maintain)
+        # - da_level > threshold → gate ≈ 1 (update)
+        gate_tensor = torch.sigmoid(10 * (self._da_concentration - self.config.gate_threshold))
+        wm_decay = torch.exp(torch.tensor(-dt_ms / self.config.wm_decay_tau_ms))
 
         # Gated update: WM = gate * new_input + (1-gate) * decayed_old
-        new_wm = (
-            gate_tensor * output_spikes.float()
-            + (1 - gate_tensor) * self.working_memory * decay
-        )
-
+        new_wm = gate_tensor * output_spikes.float() + (1 - gate_tensor) * self.working_memory * wm_decay
         # Add noise for stochasticity
-        noise = torch.randn_like(new_wm) * self.config.wm_noise_std
-        self.working_memory = (new_wm + noise).clamp(min=0, max=1)
+        wm_noise = torch.randn_like(new_wm) * self.config.wm_noise_std
+
+        self.working_memory = (new_wm + wm_noise).clamp(min=0, max=1)
 
         # Output shape check
         assert output_spikes.shape == (self.executive_size,), (
@@ -793,7 +782,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # This simple Hebbian update for recurrent connections maintains WM patterns
         if self.working_memory is not None:
             wm = self.working_memory  # [executive_size]
-            dW_rec = cfg.rule_lr * torch.outer(wm, wm)  # [executive_size, executive_size]
+            dW_rec = cfg.learning_rate * torch.outer(wm, wm)  # [executive_size, executive_size]
             self.rec_weights.data += dW_rec
             self.rec_weights.data.fill_diagonal_(cfg.recurrent_strength)  # Maintain self-excitation
             self.rec_weights.data.clamp_(0.0, 1.0)
@@ -813,14 +802,14 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
                 self.emergent_goals.learn_transition(
                     abstract_pattern,
                     concrete_pattern,
-                    learning_rate=cfg.rule_lr,
+                    learning_rate=cfg.learning_rate,
                 )
 
             # Consolidate valuable goal patterns with dopamine
             # High dopamine → strengthen value associations for tagged goals
             self.emergent_goals.consolidate_valuable_goals(
-                dopamine=self.neuromodulator_state.dopamine,
-                learning_rate=cfg.rule_lr,
+                dopamine=self._da_concentration.mean().item(),  # Average across neurons
+                learning_rate=cfg.learning_rate,
             )
 
     # =========================================================================
@@ -932,12 +921,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
 
         return {
             "plasticity": plasticity,
-            "gate_mean": (
-                self.update_gate.mean().item() if self.update_gate is not None else 0.0
-            ),
-            "gate_std": (
-                self.update_gate.std().item() if self.update_gate is not None else 0.0
-            ),
             "wm_mean": (
                 self.working_memory.mean().item()
                 if self.working_memory is not None

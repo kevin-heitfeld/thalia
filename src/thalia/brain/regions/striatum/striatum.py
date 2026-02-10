@@ -230,24 +230,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None  # Will be initialized after weights
 
         # =====================================================================
-        # MSN→MSN LATERAL INHIBITION: Now EXTERNAL via population routing
-        # =====================================================================
-        # D1→D1 and D2→D2 lateral inhibition now use external connections.
-        # External AxonalProjection provides:
-        #   - 1.5ms axonal delays (local MSN collaterals)
-        #   - Sparse connectivity (~35%) matching biology (Moyer 2014)
-        #   - Negative weights for inhibitory connections
-        #   - Winner-take-all action selection dynamics
-        #
-        # Configure via BrainBuilder.connect():
-        #   source="striatum", source_population="d1", target_population="d1_lateral"
-        #   source="striatum", source_population="d2", target_population="d2_lateral"
-        #
-        # Lateral inhibition will arrive via "d1_lateral" and "d2_lateral" input populations
-        self.d1_lateral_weights = None  # Deprecated: use external connection
-        self.d2_lateral_weights = None  # Deprecated: use external connection
-
-        # =====================================================================
         # MSN→FSI CONNECTIONS (Excitatory Feedback, Koos & Tepper 1999)
         # =====================================================================
         # Biology: MSNs excite FSI via glutamatergic collaterals (~30% connectivity)
@@ -425,9 +407,38 @@ class Striatum(NeuralRegion[StriatumConfig]):
         )
 
         # DA concentration state (updated each timestep from VTA spikes)
-        # Falls back to scalar neuromodulator_state.dopamine if VTA not connected
         self._da_concentration_d1 = torch.zeros(self.d1_size, device=self.device)
         self._da_concentration_d2 = torch.zeros(self.d2_size, device=self.device)
+
+        # =====================================================================
+        # NOREPINEPHRINE RECEPTORS (Spiking NE from LC)
+        # =====================================================================
+        # Convert LC norepinephrine neuron spikes to synaptic concentration.
+        # Biology:
+        # - NE modulates gain: high NE → increased excitability
+        # - NE promotes exploration: high NE → more random action selection
+        # - NE rise time: ~8 ms (fast release)
+        # - NE decay time: ~150 ms (NET reuptake)
+        # Both D1 and D2 MSNs receive NE modulation.
+
+        self.ne_receptor_d1 = NeuromodulatorReceptor(
+            n_receptors=self.d1_size,
+            tau_rise_ms=8.0,  # Fast release (ms)
+            tau_decay_ms=150.0,  # NET reuptake (ms)
+            spike_amplitude=0.12,  # Moderate amplitude
+            device=self.device,
+        )
+        self.ne_receptor_d2 = NeuromodulatorReceptor(
+            n_receptors=self.d2_size,
+            tau_rise_ms=8.0,
+            tau_decay_ms=150.0,
+            spike_amplitude=0.12,
+            device=self.device,
+        )
+
+        # NE concentration state (updated from LC spikes)
+        self._ne_concentration_d1 = torch.zeros(self.d1_size, device=self.device)
+        self._ne_concentration_d2 = torch.zeros(self.d2_size, device=self.device)
 
         # =====================================================================
         # POST-INITIALIZATION
@@ -457,6 +468,13 @@ class Striatum(NeuralRegion[StriatumConfig]):
             sparsity: Connection sparsity (0.0 = fully connected)
             weight_scale: Initial weight scale multiplier
         """
+        # Neuromodulator inputs (vta_da, lc_ne) don't create synaptic weights
+        # They're processed directly by receptors in forward()
+        if target_population in ("vta_da", "lc_ne"):
+            # Just register the source for validation, but skip weight creation
+            self.input_sources[source_name] = n_input
+            return
+
         # REGISTER BASE SOURCE NAME in input_sources for validation
         # The forward() method receives base names (e.g., "cortex:l5")
         # and internally maps them to pathway-specific keys (e.g., "cortex:l5_d1")
@@ -687,7 +705,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # DOPAMINE RECEPTOR UPDATE (VTA Spikes → Concentration)
         # =====================================================================
         # Convert spiking DA from VTA to synaptic concentration for learning.
-        # If VTA not connected, falls back to scalar neuromodulator_state.dopamine
         vta_da_spikes = region_inputs.get("vta:da_output", None)
 
         if vta_da_spikes is not None:
@@ -698,9 +715,22 @@ class Striatum(NeuralRegion[StriatumConfig]):
             # No VTA connection: decay toward tonic baseline
             self._da_concentration_d1 = self.da_receptor_d1.update(None)
             self._da_concentration_d2 = self.da_receptor_d2.update(None)
-            # Use scalar fallback for compatibility
-            self._da_concentration_d1.fill_(self.neuromodulator_state.dopamine)
-            self._da_concentration_d2.fill_(self.neuromodulator_state.dopamine)
+
+        # =====================================================================
+        # NOREPINEPHRINE RECEPTOR UPDATE (LC Spikes → Concentration)
+        # =====================================================================
+        # Convert spiking NE from LC to synaptic concentration for gain modulation.
+        # NE increases excitability and promotes exploration.
+        lc_ne_spikes = region_inputs.get("lc:ne_output", None)
+
+        if lc_ne_spikes is not None:
+            # Update D1 and D2 receptors (both receive same LC spikes)
+            self._ne_concentration_d1 = self.ne_receptor_d1.update(lc_ne_spikes)
+            self._ne_concentration_d2 = self.ne_receptor_d2.update(lc_ne_spikes)
+        else:
+            # No LC connection: decay toward baseline
+            self._ne_concentration_d1 = self.ne_receptor_d1.update(None)
+            self._ne_concentration_d2 = self.ne_receptor_d2.update(None)
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
@@ -857,8 +887,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         d1_da_gain = 1.0 + 0.3 * (self._da_concentration_d1 - 0.5)  # Centered at 0.5 baseline
         d2_da_gain = 1.0 - 0.2 * (self._da_concentration_d2 - 0.5)  # Inverted for Gi-coupling
 
-        # NE gain modulation (scalar, broadcast)
-        ne_gain = compute_ne_gain(self.neuromodulator_state.norepinephrine)
+        # NE gain modulation (average across neurons)
+        ne_gain = compute_ne_gain(self._ne_concentration_d1.mean().item())
 
         d1_current = d1_current * d1_da_gain * ne_gain
         d2_current = d2_current * d2_da_gain * ne_gain
@@ -1061,7 +1091,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
         """
         # Use per-neuron DA concentration from receptors (not scalar)
         # Each MSN neuron has its own DA receptor with local concentration
-        # Falls back to scalar if VTA not connected (already handled in _forward_internal)
         d1_da_level = self._da_concentration_d1  # [d1_size]
         d2_da_level = self._da_concentration_d2  # [d2_size]
 

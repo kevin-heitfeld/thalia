@@ -487,6 +487,44 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._da_concentration_ca1 = torch.zeros(self.ca1_size, device=self.device)
 
         # =====================================================================
+        # NOREPINEPHRINE RECEPTOR (LC projection for arousal/novelty)
+        # =====================================================================
+        # Hippocampus receives dense NE innervation from LC
+        # NE modulates novelty detection and arousal-dependent memory formation
+        self.ne_receptor = NeuromodulatorReceptor(
+            n_receptors=total_neurons,
+            tau_rise_ms=8.0,
+            tau_decay_ms=150.0,
+            spike_amplitude=0.12,
+            device=self.device,
+        )
+        # Per-subregion NE concentration buffers
+        self._ne_concentration_dg = torch.zeros(self.dg_size, device=self.device)
+        self._ne_concentration_ca3 = torch.zeros(self.ca3_size, device=self.device)
+        self._ne_concentration_ca2 = torch.zeros(self.ca2_size, device=self.device)
+        self._ne_concentration_ca1 = torch.zeros(self.ca1_size, device=self.device)
+
+        # =====================================================================
+        # ACETYLCHOLINE RECEPTOR (NB projection for encoding/retrieval)
+        # =====================================================================
+        # Hippocampus receives strong ACh innervation from nucleus basalis
+        # ACh controls encoding vs retrieval modes (Hasselmo 1999):
+        # - High ACh → encoding mode (suppress recurrence, enhance feedforward)
+        # - Low ACh → retrieval mode (enable pattern completion, consolidation)
+        self.ach_receptor = NeuromodulatorReceptor(
+            n_receptors=total_neurons,
+            tau_rise_ms=5.0,
+            tau_decay_ms=50.0,
+            spike_amplitude=0.2,
+            device=self.device,
+        )
+        # Per-subregion ACh concentration buffers
+        self._ach_concentration_dg = torch.zeros(self.dg_size, device=self.device)
+        self._ach_concentration_ca3 = torch.zeros(self.ca3_size, device=self.device)
+        self._ach_concentration_ca2 = torch.zeros(self.ca2_size, device=self.device)
+        self._ach_concentration_ca1 = torch.zeros(self.ca1_size, device=self.device)
+
+        # =====================================================================
         # POST-INITIALIZATION
         # =====================================================================
         self.__post_init__()
@@ -640,6 +678,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             sparsity: Sparsity of connections (0.0 to 1.0)
             weight_scale: Scaling factor for initial weights
         """
+        # Neuromodulator inputs (vta_da, lc_ne, nb_ach) don't create synaptic weights
+        # They're processed directly by receptors in forward()
+        if target_population in ("vta_da", "lc_ne", "nb_ach"):
+            # Just register the source for validation, but skip weight creation
+            self.input_sources[source_name] = n_input
+            return
+
         # Call parent to register source
         super().add_input_source(
             source_name=source_name,
@@ -759,13 +804,52 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             self._da_concentration_ca1 = da_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :] * 0.1
 
         # =====================================================================
+        # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
+        # =====================================================================
+        # Process LC norepinephrine spikes → arousal and novelty modulation
+        lc_ne_spikes = region_inputs.get("lc:ne_output")
+        if lc_ne_spikes is not None:
+            ne_concentration_full = self.ne_receptor.update(lc_ne_spikes)
+            # Split into per-subregion buffers
+            self._ne_concentration_dg = ne_concentration_full[: self.dg_size]
+            self._ne_concentration_ca3 = ne_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
+            self._ne_concentration_ca2 = ne_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
+            self._ne_concentration_ca1 = ne_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
+        else:
+            ne_concentration_full = self.ne_receptor.update(None)
+            self._ne_concentration_dg = ne_concentration_full[: self.dg_size]
+            self._ne_concentration_ca3 = ne_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
+            self._ne_concentration_ca2 = ne_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
+            self._ne_concentration_ca1 = ne_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
+
+        # =====================================================================
+        # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
+        # =====================================================================
+        # Process NB acetylcholine spikes → encoding/retrieval mode control
+        # High ACh → encoding, Low ACh → consolidation/retrieval
+        nb_ach_spikes = region_inputs.get("nb:ach_output")
+        if nb_ach_spikes is not None:
+            ach_concentration_full = self.ach_receptor.update(nb_ach_spikes)
+            # Split into per-subregion buffers
+            self._ach_concentration_dg = ach_concentration_full[: self.dg_size]
+            self._ach_concentration_ca3 = ach_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
+            self._ach_concentration_ca2 = ach_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
+            self._ach_concentration_ca1 = ach_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
+        else:
+            ach_concentration_full = self.ach_receptor.update(None)
+            self._ach_concentration_dg = ach_concentration_full[: self.dg_size]
+            self._ach_concentration_ca3 = ach_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
+            self._ach_concentration_ca2 = ach_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
+            self._ach_concentration_ca1 = ach_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
+
+        # =====================================================================
         # CONSOLIDATION MODE: Spontaneous CA3→CA1 Replay (Sharp-Wave Ripples)
         # =====================================================================
         # During sleep consolidation, hippocampus spontaneously reactivates stored
         # patterns without external input. This simulates sharp-wave ripples where
         # CA3 recurrent activity triggers CA1 output for cortical replay.
         #
-        # Biological mechanism (Hasselmo 1999):
+        # Biological mechanism:
         # - LOW acetylcholine enables CA3 spontaneous reactivation
         # - CA3 attractor pattern propagates through Schaffer collaterals to CA1
         # - STP dynamics preserved (biological timing maintained)
@@ -777,7 +861,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Check if spontaneous replay should occur (low ACh, probabilistic trigger)
         if self.spontaneous_replay is not None:
             should_replay = self.spontaneous_replay.should_trigger_ripple(
-                acetylcholine=self.neuromodulator_state.acetylcholine,
+                acetylcholine=self._ach_concentration_ca3.mean().item(),
                 dt_ms=self.config.dt_ms,
             )
 
@@ -977,7 +1061,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # ACh modulation applied here (region-level neuromodulation):
         # High ACh (encoding mode): Suppress recurrence (0.3x)
         # Low ACh (retrieval mode): Full recurrence (1.0x)
-        ach_level = self.neuromodulator_state.acetylcholine
+        ach_level = self._ach_concentration_ca3.mean().item()
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         # Compute recurrent input from previous CA3 activity
@@ -1064,7 +1148,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # High NE (arousal/uncertainty): Increase gain → more responsive
         # Low NE (baseline): Normal gain
         # Biological: β-adrenergic receptors increase neuronal excitability
-        ne_level = self.neuromodulator_state.norepinephrine
+        ne_level = self._ne_concentration_ca3.mean().item()
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
         ne_gain = compute_ne_gain(ne_level)
         ca3_input = ca3_input * ne_gain
@@ -1237,7 +1321,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             # Apply dopamine modulation to learning rate
             # Dopamine gates consolidation strength - higher DA = stronger learning
             # Biological basis: VTA dopamine signals reward/novelty and gates LTP
-            da_level = self.neuromodulator_state.dopamine
+            da_level = self._da_concentration_ca3.mean().item()
             # Strong dopamine gating: 0.0 DA = 20% learning, 1.0 DA = 200% learning
             # This creates a 10x range between min and max dopamine
             da_gain = 0.2 + 1.8 * da_level  # Range: [0.2, 2.0]
@@ -1611,12 +1695,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Apply dopamine-gated consolidation to tagged synapses
         # High dopamine (reward) → strong consolidation of tagged synapses
         # This is the "capture" part of synaptic tagging and capture
-        if self.synaptic_tagging is not None and self.neuromodulator_state.dopamine > 0.1:
+        da_level = self._da_concentration_ca3.mean().item()
+        if self.synaptic_tagging is not None and da_level > 0.1:
             # Consolidate tagged synapses proportional to dopamine
             current_weights = self.synaptic_weights["ca3_ca3"]
             new_weights = self.synaptic_tagging.consolidate_tagged_synapses(
                 weights=current_weights,
-                dopamine=self.neuromodulator_state.dopamine,
+                dopamine=da_level,
                 learning_rate=self.config.learning_rate * 0.5,  # Half of base LR
             )
             self.synaptic_weights["ca3_ca3"].data = new_weights

@@ -193,16 +193,7 @@ class TrainingConfig:
 
     # Brain configuration
     thalamus_relay_size: int = 50  # FIX: 50 neurons = 10 per symbol (population coding)
-    cortex_size: int = 200  # Reduced from default 1000
-    pfc_executive_size: int = 150
     striatum_actions: int = 5  # One per symbol
-
-    # cerebellum_sizes = {'purkinje_size': 200, 'granule_size': 800}
-    # cortex_sizes = {'l23_size': 133, 'l4_size': 66, 'l5_size': 66, 'l6a_size': 10, 'l6b_size': 50, 'vta_da': 20000}
-    # hippocampus_sizes = {'dg_size': 796, 'ca3_size': 398, 'ca2_size': 199, 'ca1_size': 398, 'vta_da': 20000}
-    # pfc_sizes = {'executive_size': 150, 'vta_da': 20000}
-    # striatum_sizes = {'d1_size': 50, 'd2_size': 50, 'n_actions': 5, 'neurons_per_action': 10, 'vta_da': 20000}
-    # thalamus_sizes = {'relay_size': 50, 'trn_size': 15}
 
     # Dataset configuration
     n_symbols: int = 5
@@ -217,18 +208,8 @@ class TrainingConfig:
     # Timing (biological timesteps)
     timestep_ms: float = 1.0  # 1ms resolution
     timesteps_per_symbol: int = 15  # FIX: 15 timesteps = 3 theta cycles (theta ~5Hz) for reliable hippocampal spiking
-    trial_duration_ms: float = 100.0  # 100ms per trial
-    inter_trial_interval_ms: float = 50.0  # 50ms between trials
 
     # Learning parameters
-    use_dopamine_modulation: bool = True
-    dopamine_baseline: float = 0.0  # No external baseline - VTA handles tonic dopamine internally
-    dopamine_lr: float = 1.0  # Full strength reward signal
-    # With baseline=0.0 and lr=1.0:
-    # - Correct: DA = 0.0 + (1.0)*1.0 = +1.0 (strong LTP burst)
-    # - Incorrect: DA = 0.0 + (-0.5)*1.0 = -0.5 (LTD dip)
-    # - Incorrect: DA = 0.15 + (-0.5)*0.5 = -0.10 (mild LTD dip)
-    # This 4:1 ratio (0.65 vs -0.10) compensates for 80% errors during exploration!
     reward_on_correct: float = 1.0
     penalty_on_error: float = -0.5
 
@@ -241,7 +222,6 @@ class TrainingConfig:
 
     # Output
     output_dir: str = "data/results/sequence_learning"
-    save_brain: bool = False
     verbose: bool = True
 
     # Real-time plotting
@@ -475,10 +455,13 @@ class SequenceLearningExperiment:
         self.brain = BrainBuilder.preset(
             name="default",
             brain_config=brain_config,
-            thalamus_relay_size=self.config.thalamus_relay_size,
-            cortex_size=self.config.cortex_size,
-            pfc_executive_size=self.config.pfc_executive_size,
-            striatum_actions=self.config.striatum_actions,
+            # Override region sizes for smaller test brain
+            thalamus_sizes={
+                'relay_size': self.config.thalamus_relay_size,
+            },
+            striatum_sizes={
+                'n_actions': self.config.striatum_actions,
+            },
         )
 
         thalamus = self.brain.get_first_region_of_type(Thalamus)
@@ -509,6 +492,10 @@ class SequenceLearningExperiment:
 
         from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
 
+        # TODO: Update the default Hippocampus and Cortex regions to use ThreeFactorStrategy by default,
+        # instead of patching it here. This will ensure that all experiments using the default brain have
+        # dopamine-modulated learning without needing to remember to set it up manually.
+
         # Create dopamine-modulated learning for hippocampus
         hipp_learning_config = ThreeFactorConfig(
             learning_rate=0.001,  # Conservative rate for stability
@@ -516,9 +503,7 @@ class SequenceLearningExperiment:
             modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
             device=self.device,
         )
-        hippocampus.learning_strategy = ThreeFactorStrategy(
-            config=hipp_learning_config
-        )
+        hippocampus.learning_strategy = ThreeFactorStrategy(config=hipp_learning_config)
 
         # Create dopamine-modulated learning for cortex
         cortex_learning_config = ThreeFactorConfig(
@@ -527,9 +512,7 @@ class SequenceLearningExperiment:
             modulator_tau=50.0,
             device=self.device,
         )
-        cortex.learning_strategy = ThreeFactorStrategy(
-            config=cortex_learning_config
-        )
+        cortex.learning_strategy = ThreeFactorStrategy(config=cortex_learning_config)
 
         if self.config.verbose:
             print(f"   ✓ Hippocampus: ThreeFactorStrategy (lr={hipp_learning_config.learning_rate}, elig_tau={hipp_learning_config.eligibility_tau}ms)")
@@ -836,7 +819,7 @@ class SequenceLearningExperiment:
                 # Three-factor learning needs dopamine DURING neural activity to modulate eligibility traces.
                 # If we wait until after all 15 timesteps, traces decay and learning doesn't happen.
                 # Solution: Deliver dopamine from the PREVIOUS prediction before presenting the NEXT symbol.
-                if self.config.use_dopamine_modulation and t > 0:  # Skip first symbol (no previous prediction)
+                if t > 0:  # Skip first symbol (no previous prediction)
                     # Use the prediction from the PREVIOUS symbol to compute reward
                     prev_prediction = trial_predictions[-1] if trial_predictions else None
                     prev_target = trial_targets[-1] if trial_targets else None
@@ -866,7 +849,7 @@ class SequenceLearningExperiment:
 
                         # Convert reward to dopamine (scaled by learning rate)
                         # NOTE: VTA handles tonic baseline internally - don't add it here!
-                        dopamine = reward * self.config.dopamine_lr
+                        dopamine = reward
                         dopamine = np.clip(dopamine, -1.0, 1.0)
 
                         # Deliver dopamine NOW, while presenting current symbol
@@ -967,36 +950,37 @@ class SequenceLearningExperiment:
                 # CRITICAL: Trigger learning after each symbol
                 # Learning happens after dopamine delivery (at start of next symbol)
                 # Eligibility traces from previous symbol are still active (~85% after 15ms)
-                if self.config.use_dopamine_modulation:
-                    # Update hippocampus recurrent weights (CA3→CA3)
-                    if hasattr(hippocampus, 'learning_strategy') and hippocampus.learning_strategy:
-                        # Use accumulated CA3 spikes from the symbol period
-                        ca3_spikes = symbol_ca3_spikes if 'symbol_ca3_spikes' in locals() else None
+                # Update hippocampus recurrent weights (CA3→CA3)
+                if hippocampus.learning_strategy:
+                    # Use accumulated CA3 spikes from the symbol period
+                    ca3_spikes = symbol_ca3_spikes if 'symbol_ca3_spikes' in locals() else None
 
-                        if ca3_spikes is not None and "ca3_ca3" in hippocampus.synaptic_weights:
-                            # DEBUG: First trial only
-                            if trial_idx == 0 and t == 0:
-                                print("\n[LEARNING DEBUG]")
-                                print(f"  Symbol CA3 spikes: shape={ca3_spikes.shape}, sum={ca3_spikes.sum().item():.1f}")
-                                print(f"  CA3 weights shape: {hippocampus.synaptic_weights['ca3_ca3'].shape}")
-                                print(f"  Dopamine: {hippocampus.neuromodulator_state.dopamine:.3f}")
-                                print(f"  Learning strategy: {hippocampus.learning_strategy.__class__.__name__}")
+                    if ca3_spikes is not None and "ca3_ca3" in hippocampus.synaptic_weights:
+                        # DEBUG: First trial only
+                        if trial_idx == 0 and t == 0:
+                            da_level = hippocampus._da_concentration.mean().item() if hasattr(hippocampus, '_da_concentration') else 0.5
+                            print("\n[LEARNING DEBUG]")
+                            print(f"  Symbol CA3 spikes: shape={ca3_spikes.shape}, sum={ca3_spikes.sum().item():.1f}")
+                            print(f"  CA3 weights shape: {hippocampus.synaptic_weights['ca3_ca3'].shape}")
+                            print(f"  Dopamine: {da_level:.3f}")
+                            print(f"  Learning strategy: {hippocampus.learning_strategy.__class__.__name__}")
 
-                            metrics = hippocampus._apply_strategy_learning(
-                                pre_activity=ca3_spikes,
-                                post_activity=ca3_spikes,  # Recurrent connection
-                                weights=hippocampus.synaptic_weights["ca3_ca3"],
-                                modulator=hippocampus.neuromodulator_state.dopamine,
-                            )
+                        da_level = hippocampus._da_concentration.mean().item() if hasattr(hippocampus, '_da_concentration') else 0.5
+                        metrics = hippocampus._apply_strategy_learning(
+                            pre_activity=ca3_spikes,
+                            post_activity=ca3_spikes,  # Recurrent connection
+                            weights=hippocampus.synaptic_weights["ca3_ca3"],
+                            modulator=da_level,
+                        )
 
-                            # DEBUG: Print metrics
-                            if trial_idx == 0 and t == 0 and metrics:
-                                print(f"  Learning metrics: {metrics}")
-                        elif trial_idx == 0 and t == 0:
-                            print("\n[LEARNING DEBUG] Symbol CA3 spikes NOT available!")
-                            print(f"  symbol_ca3_spikes in locals: {'symbol_ca3_spikes' in locals()}")
-                            print(f"  Has _ca3_spikes attr: {hasattr(hippocampus, '_ca3_spikes')}")
-                            print(f"  Available attrs: {[a for a in dir(hippocampus) if 'ca3' in a.lower() and 'spike' in a.lower()]}")
+                        # DEBUG: Print metrics
+                        if trial_idx == 0 and t == 0 and metrics:
+                            print(f"  Learning metrics: {metrics}")
+                    elif trial_idx == 0 and t == 0:
+                        print("\n[LEARNING DEBUG] Symbol CA3 spikes NOT available!")
+                        print(f"  symbol_ca3_spikes in locals: {'symbol_ca3_spikes' in locals()}")
+                        print(f"  Has _ca3_spikes attr: {hasattr(hippocampus, '_ca3_spikes')}")
+                        print(f"  Available attrs: {[a for a in dir(hippocampus) if 'ca3' in a.lower() and 'spike' in a.lower()]}")
 
                 # Use accumulated prediction across all timesteps
                 spike_counts = self._accumulate_spikes(accumulated_prediction)
@@ -1015,19 +999,20 @@ class SequenceLearningExperiment:
                 self._last_prediction_spikes = spike_counts
 
                 # DIAGNOSTIC: Print prediction details every 10th trial, first step
-                if self.config.use_dopamine_modulation and (trial_idx < 5 or (trial_idx % 10 == 0 and t == 0)):
+                if trial_idx < 5 or (trial_idx % 10 == 0 and t == 0):
                     # Compute reward for diagnostic display
                     is_correct = (predicted_symbol == next_symbol)
                     reward = self.config.reward_on_correct if is_correct else self.config.penalty_on_error
-                    dopamine = reward * self.config.dopamine_lr  # No baseline - VTA handles it
+                    dopamine = reward
                     dopamine = np.clip(dopamine, -1.0, 1.0)
 
                     print(f"\n[Trial {trial_idx}, Step {t}] Prediction:")
                     print(f"  Current symbol: {current_symbol}, Target: {next_symbol}, Predicted: {predicted_symbol} {'✓' if is_correct else '✗'}")
                     print(f"  Spike counts: {spike_counts.cpu().numpy()}")
                     print(f"  Reward: {'+' if reward > 0 else ''}{reward:.2f} ({'correct' if is_correct else 'incorrect'})")
+
             # DELIVER FINAL DOPAMINE for last symbol in sequence
-            if self.config.use_dopamine_modulation and trial_predictions and trial_targets:
+            if trial_predictions and trial_targets:
                 # Use binary reward for last prediction
                 last_prediction = trial_predictions[-1]
                 last_target = trial_targets[-1]
@@ -1037,7 +1022,7 @@ class SequenceLearningExperiment:
                 else:
                     reward = self.config.penalty_on_error
 
-                dopamine = reward * self.config.dopamine_lr  # No baseline - VTA handles it
+                dopamine = reward
                 dopamine = np.clip(dopamine, -1.0, 1.0)
                 self.brain.deliver_reward(external_reward=dopamine)
                 trial_dopamine.append(dopamine)
@@ -1159,7 +1144,7 @@ class SequenceLearningExperiment:
             self._reset_spike_buffer()
 
             # Generate NEW sequence (not seen in training)
-            sequence, targets, pattern_type = self.dataset.generate_sequence()
+            sequence, targets, _pattern_type = self.dataset.generate_sequence()
             symbol_sequence = [torch.argmax(seq).item() for seq in sequence]
             target_sequence = [torch.argmax(tgt).item() for tgt in targets]
 
@@ -1377,20 +1362,13 @@ class SequenceLearningExperiment:
         """Save metrics and configuration."""
         # Save configuration
         config_path = self.output_dir / "config.json"
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(asdict(self.config), f, indent=2)
 
         # Save metrics
         metrics_path = self.output_dir / "metrics.json"
-        with open(metrics_path, "w") as f:
+        with open(metrics_path, "w", encoding="utf-8") as f:
             json.dump(self.metrics, f, indent=2)
-
-        # Save brain if requested
-        if self.config.save_brain:
-            brain_path = self.output_dir / "brain.pt"
-            torch.save(self.brain.state_dict(), brain_path)
-            if self.config.verbose:
-                print(f"\n✓ Brain saved to {brain_path}")
 
         if self.config.verbose:
             print(f"\n✓ Results saved to {self.output_dir}")
@@ -1407,12 +1385,12 @@ class SequenceLearningExperiment:
 
         random_baseline = 1.0 / self.config.n_symbols
 
-        print(f"\n📊 Performance:")
+        print("\n📊 Performance:")
         print(f"   Training accuracy:   {train_acc:.2%} (baseline: {random_baseline:.2%})")
         print(f"   Test accuracy:       {test_acc:.2%}")
         print(f"   Violation detection: {violation_score:.2%}")
 
-        print(f"\n🎯 Goals:")
+        print("\n🎯 Goals:")
         print(f"   Basic (>50%):        {'✓' if test_acc > 0.50 else '✗'}")
         print(f"   Intermediate (>70%): {'✓' if test_acc > 0.70 else '✗'}")
         print(f"   Advanced (>85%):     {'✓' if test_acc > 0.85 else '✗'}")
@@ -1477,25 +1455,12 @@ def main():
         help="Length of each sequence",
     )
 
-    # Architecture parameters
-    parser.add_argument(
-        "--cortex-size",
-        type=int,
-        default=200,
-        help="Cortex size",
-    )
-
     # Output
     parser.add_argument(
         "--output-dir",
         type=str,
         default="data/results/sequence_learning",
         help="Output directory",
-    )
-    parser.add_argument(
-        "--save-brain",
-        action="store_true",
-        help="Save trained brain state",
     )
     parser.add_argument(
         "--quiet",
@@ -1519,9 +1484,7 @@ def main():
         n_test_trials=args.n_test_trials,
         n_symbols=args.n_symbols,
         sequence_length=args.sequence_length,
-        cortex_size=args.cortex_size,
         output_dir=args.output_dir,
-        save_brain=args.save_brain,
         verbose=not args.quiet,
         device=args.device,
     )

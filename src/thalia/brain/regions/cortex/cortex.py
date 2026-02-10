@@ -279,6 +279,46 @@ class Cortex(NeuralRegion[CortexConfig]):
         self._da_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
 
         # =====================================================================
+        # NOREPINEPHRINE RECEPTOR (LC projection - all layers)
+        # =====================================================================
+        # Cortex receives dense NE innervation from LC across all layers
+        # NE modulates arousal, gain, and attention uniformly
+        self.ne_receptor = NeuromodulatorReceptor(
+            n_receptors=total_neurons,
+            tau_rise_ms=8.0,
+            tau_decay_ms=150.0,
+            spike_amplitude=0.12,
+            device=self.device,
+        )
+        # Per-layer NE concentration buffers (all layers receive NE)
+        self._ne_concentration_l23 = torch.zeros(self.l23_size, device=self.device)
+        self._ne_concentration_l4 = torch.zeros(self.l4_size, device=self.device)
+        self._ne_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
+        self._ne_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
+        self._ne_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
+
+        # =====================================================================
+        # ACETYLCHOLINE RECEPTOR (NB projection - layer-specific)
+        # =====================================================================
+        # Cortex receives ACh from nucleus basalis with layer-specific effects:
+        # - L4: Enhance sensory processing (feedforward)
+        # - L2/3: Enhance association processing
+        # - L5/L6: Suppress recurrence (reduce feedback, enhance encoding)
+        self.ach_receptor = NeuromodulatorReceptor(
+            n_receptors=total_neurons,
+            tau_rise_ms=5.0,
+            tau_decay_ms=50.0,
+            spike_amplitude=0.2,
+            device=self.device,
+        )
+        # Per-layer ACh concentration buffers
+        self._ach_concentration_l23 = torch.zeros(self.l23_size, device=self.device)
+        self._ach_concentration_l4 = torch.zeros(self.l4_size, device=self.device)
+        self._ach_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
+        self._ach_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
+        self._ach_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
+
+        # =====================================================================
         # POST-INITIALIZATION
         # =====================================================================
         self.__post_init__()
@@ -654,6 +694,13 @@ class Cortex(NeuralRegion[CortexConfig]):
         weight_scale: float = 3.0,  # Strong weights - ensures reliable L4 activation
     ) -> None:
         """Add synaptic weights for a new input source."""
+        # Neuromodulator inputs (vta_da, lc_ne, nb_ach) don't create synaptic weights
+        # They're processed directly by receptors in forward()
+        if target_population in ("vta_da", "lc_ne", "nb_ach"):
+            # Just register the source for validation, but skip weight creation
+            self.input_sources[source_name] = n_input
+            return
+
         super().add_input_source(
             source_name=source_name,
             target_population=target_population,
@@ -705,6 +752,70 @@ class Cortex(NeuralRegion[CortexConfig]):
             self._da_concentration_l6a = da_concentration_full[offset : offset + self.l6a_size] * 0.0
             offset += self.l6a_size
             self._da_concentration_l6b = da_concentration_full[offset :] * 0.0
+
+        # =====================================================================
+        # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
+        # =====================================================================
+        # Process LC norepinephrine spikes → gain and arousal modulation
+        # All cortical layers receive NE innervation uniformly
+        lc_ne_spikes = region_inputs.get("lc:ne_output")
+        if lc_ne_spikes is not None:
+            ne_concentration_full = self.ne_receptor.update(lc_ne_spikes)
+            # Split into per-layer buffers (all layers receive NE)
+            offset = 0
+            self._ne_concentration_l23 = ne_concentration_full[offset : offset + self.l23_size]
+            offset += self.l23_size
+            self._ne_concentration_l4 = ne_concentration_full[offset : offset + self.l4_size]
+            offset += self.l4_size
+            self._ne_concentration_l5 = ne_concentration_full[offset : offset + self.l5_size]
+            offset += self.l5_size
+            self._ne_concentration_l6a = ne_concentration_full[offset : offset + self.l6a_size]
+            offset += self.l6a_size
+            self._ne_concentration_l6b = ne_concentration_full[offset :]
+        else:
+            ne_concentration_full = self.ne_receptor.update(None)
+            offset = 0
+            self._ne_concentration_l23 = ne_concentration_full[offset : offset + self.l23_size]
+            offset += self.l23_size
+            self._ne_concentration_l4 = ne_concentration_full[offset : offset + self.l4_size]
+            offset += self.l4_size
+            self._ne_concentration_l5 = ne_concentration_full[offset : offset + self.l5_size]
+            offset += self.l5_size
+            self._ne_concentration_l6a = ne_concentration_full[offset : offset + self.l6a_size]
+            offset += self.l6a_size
+            self._ne_concentration_l6b = ne_concentration_full[offset :]
+
+        # =====================================================================
+        # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
+        # =====================================================================
+        # Process NB acetylcholine spikes → encoding/retrieval and attention
+        # ACh has layer-specific effects on feedforward vs recurrent processing
+        nb_ach_spikes = region_inputs.get("nb:ach_output")
+        if nb_ach_spikes is not None:
+            ach_concentration_full = self.ach_receptor.update(nb_ach_spikes)
+            # Split into per-layer buffers
+            offset = 0
+            self._ach_concentration_l23 = ach_concentration_full[offset : offset + self.l23_size]
+            offset += self.l23_size
+            self._ach_concentration_l4 = ach_concentration_full[offset : offset + self.l4_size]
+            offset += self.l4_size
+            self._ach_concentration_l5 = ach_concentration_full[offset : offset + self.l5_size]
+            offset += self.l5_size
+            self._ach_concentration_l6a = ach_concentration_full[offset : offset + self.l6a_size]
+            offset += self.l6a_size
+            self._ach_concentration_l6b = ach_concentration_full[offset :]
+        else:
+            ach_concentration_full = self.ach_receptor.update(None)
+            offset = 0
+            self._ach_concentration_l23 = ach_concentration_full[offset : offset + self.l23_size]
+            offset += self.l23_size
+            self._ach_concentration_l4 = ach_concentration_full[offset : offset + self.l4_size]
+            offset += self.l4_size
+            self._ach_concentration_l5 = ach_concentration_full[offset : offset + self.l5_size]
+            offset += self.l5_size
+            self._ach_concentration_l6a = ach_concentration_full[offset : offset + self.l6a_size]
+            offset += self.l6a_size
+            self._ach_concentration_l6b = ach_concentration_full[offset :]
 
         # =====================================================================
         # SEPARATE EXTERNAL vs CORTICAL FEEDBACK INPUTS
@@ -855,7 +966,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         # High NE (arousal/uncertainty): Increase gain → more responsive
         # Low NE (baseline): Normal gain
         # Biological: β-adrenergic receptors increase neuronal excitability
-        ne_level = self.neuromodulator_state.norepinephrine
+        ne_level = self._ne_concentration_l4.mean().item()  # Average across L4 neurons
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
         ne_gain = compute_ne_gain(ne_level)
         l4_g_exc = l4_g_exc * ne_gain
@@ -877,7 +988,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             pyr_spikes=l4_spikes,
             pyr_membrane=l4_membrane,
             external_excitation=l4_g_exc,  # Pass pyramidal excitation, not FSI slice
-            acetylcholine=self.neuromodulator_state.acetylcholine,
+            acetylcholine=self._ach_concentration_l4.mean().item(),
         )
 
         # Apply inhibition to pyramidal spikes
@@ -984,7 +1095,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         # ACh modulation applied here (region-level neuromodulation):
         # High ACh (encoding): Suppress recurrence to prevent interference
         # Low ACh (retrieval): Enable recurrence for pattern completion
-        ach_level = self.neuromodulator_state.acetylcholine
+        ach_level = self._ach_concentration_l23.mean().item()  # Average across L2/3 neurons
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         # Get recurrent input from external connection if present
@@ -1080,7 +1191,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             pyr_spikes=l23_spikes,
             pyr_membrane=l23_membrane,
             external_excitation=l23_input,
-            acetylcholine=self.neuromodulator_state.acetylcholine,
+            acetylcholine=self._ach_concentration_l23.mean().item(),
         )
 
         # Apply inhibition (PV for gamma, SST for feedback modulation)
@@ -1180,7 +1291,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             pyr_spikes=l5_spikes,
             pyr_membrane=l5_membrane,
             external_excitation=l5_g_exc,
-            acetylcholine=self.neuromodulator_state.acetylcholine,
+            acetylcholine=self._ach_concentration_l5.mean().item(),
         )
 
         # Apply gamma gating from PV cells
@@ -1266,7 +1377,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             pyr_spikes=l6a_spikes,
             pyr_membrane=l6a_membrane,
             external_excitation=l6a_g_exc,
-            acetylcholine=self.neuromodulator_state.acetylcholine,
+            acetylcholine=self._ach_concentration_l6a.mean().item(),
         )
 
         # Apply gamma gating from PV cells
@@ -1304,7 +1415,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             pyr_spikes=l6b_spikes,
             pyr_membrane=l6b_membrane,
             external_excitation=l6b_g_exc,
-            acetylcholine=self.neuromodulator_state.acetylcholine,
+            acetylcholine=self._ach_concentration_l6b.mean().item(),
         )
 
         # Apply gamma gating from PV cells
@@ -1330,7 +1441,10 @@ class Cortex(NeuralRegion[CortexConfig]):
         # When prediction wrong: L4 fires → strengthen inhibition (learn)
         # This is anti-Hebbian: co-activation → increase inhibition
 
-        pred_lr = self.get_effective_learning_rate(cfg.prediction_learning_rate)
+        # Dopamine modulation of prediction learning (L5 receives DA)
+        da_level = self._da_concentration_l5.mean().item()
+        da_modulation = 1.0 + da_level
+        pred_lr = cfg.prediction_learning_rate * da_modulation
 
         if pred_lr > 1e-8:  # Only learn if not suppressed
             # L5 → L4 anti-Hebbian learning
@@ -1381,7 +1495,6 @@ class Cortex(NeuralRegion[CortexConfig]):
         """Apply continuous STDP learning with BCM modulation.
 
         This is called automatically at each forward() timestep.
-        Learning rate is modulated by dopamine (via get_effective_learning_rate).
 
         In biological cortex, synaptic plasticity happens continuously based on
         pre/post spike timing. Dopamine doesn't trigger learning - it modulates
@@ -1404,7 +1517,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         # =====================================================================
         # Apply layer-specific dopamine scaling to learning rates.
         # Different layers have different DA receptor densities (relative sensitivity).
-        base_dopamine = self.neuromodulator_state.dopamine
+        base_dopamine = self._da_concentration_l5.mean().item()  # L5 receives DA
         l23_dopamine = base_dopamine * 0.3
         l4_dopamine = base_dopamine * 0.2
         l5_dopamine = base_dopamine * 0.4

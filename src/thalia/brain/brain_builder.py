@@ -32,7 +32,7 @@ class RegionSpec:
     Attributes:
         name: Instance name (e.g., "my_cortex", "visual_input")
         registry_name: Region type in registry (e.g., "cortex")
-        population_sizes: Semantic input sizes (e.g., relay_size, layer_sizes)
+        population_sizes: Population size specifications (e.g., {"l23_size": 500, "l5_size": 300})
         config: Region configuration parameters
         instance: Instantiated region (set after build())
     """
@@ -113,7 +113,7 @@ class BrainBuilder:
         Args:
             name: Instance name (e.g., "my_cortex", "thalamus")
             registry_name: Region type in registry (e.g., "cortex", "thalamus")
-            population_sizes: Layer size specifications (e.g., {"l23_size": 500, "l5_size": 300})
+            population_sizes: Population size specifications (e.g., {"l23_size": 500, "l5_size": 300})
             config: Optional region configuration parameters
 
         Returns:
@@ -260,7 +260,7 @@ class BrainBuilder:
         # Build sources list: [(region_name, population, size, delay_ms[, target_delays]), ...]
         # and register input sources with target region for size inference and routing
         sources: List[AxonalProjectionSourceSpec] = []
-        target_population = target_specs[0].target_population  # All specs in this group share the same target layer
+        target_population = target_specs[0].target_population  # All specs in this group share the same target population
         for spec in target_specs:
             source_size = self._get_pathway_source_size(regions[spec.source], spec.source_population)
 
@@ -349,15 +349,15 @@ class BrainBuilder:
 
         # Group connections by (target, target_population) to create multi-source pathways
         # Key is (target_name, target_population) so L6a and L6b are separate groups
-        connections_by_target_layer: Dict[Tuple[RegionName, PopulationName], List[ConnectionSpec]] = {}
+        connections_by_target_population: Dict[Tuple[RegionName, PopulationName], List[ConnectionSpec]] = {}
         for conn_spec in self._connection_specs:
             group_key = (conn_spec.target, conn_spec.target_population)
-            if group_key not in connections_by_target_layer:
-                connections_by_target_layer[group_key] = []
-            connections_by_target_layer[group_key].append(conn_spec)
+            if group_key not in connections_by_target_population:
+                connections_by_target_population[group_key] = []
+            connections_by_target_population[group_key].append(conn_spec)
 
         # Create one pathway per (target, target_population) group (multi-source if multiple inputs)
-        for (target_name, target_population), target_specs in connections_by_target_layer.items():
+        for (target_name, target_population), target_specs in connections_by_target_population.items():
             pathway: AxonalProjection = self._create_axonal_projection(target_specs, regions)
             conn_key: Tuple[RegionName, SpikesSourceKey] = (target_specs[0].source, f"{target_name}:{target_population}")
             connections[conn_key] = pathway
@@ -472,17 +472,35 @@ class PresetArchitecture:
 
 
 def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
-    """Default preset architecture with biologically realistic regions, layers, and connections."""
+    """Default preset architecture with biologically realistic regions, and connections.
+
+    Args:
+        builder: BrainBuilder instance to configure
+        **overrides: Override default population sizes for regions. Examples:
+            - cerebellum_sizes={'purkinje_size': 100, 'granule_size': 400}
+            - cortex_sizes={'l23_size': 100, 'l4_size': 50}
+            - hippocampus_sizes={'dg_size': 500, 'ca3_size': 200}
+            - pfc_sizes={'executive_size': 100}
+            - striatum_sizes={'d1_size': 50, 'd2_size': 50}
+            - thalamus_sizes={'relay_size': 100, 'trn_size': 30}
+            - medial_septum_sizes={'n_ach': 50, 'n_gaba': 50}
+            - reward_encoder_sizes={'n_neurons': 50}
+            - snr_sizes={'n_neurons': 500, 'd1_input': 50, 'd2_input': 50}
+            - vta_sizes={'da_neurons': 500, 'gaba_neurons': 200}
+            - lc_sizes={'n_ne_neurons': 800, 'n_gaba_neurons': 150}
+            - nb_sizes={'n_ach_neurons': 1500, 'n_gaba_neurons': 250}
+    """
     # =============================================================================
-    # Define biologically realistic layer sizes and neuron counts based on literature
-    # TODO: Default sizes (can be overridden)
+    # Define biologically realistic population sizes based on literature
+    # Can be overridden via **overrides parameter
     # =============================================================================
 
-    cerebellum_sizes = {
+    # Default sizes
+    default_cerebellum_sizes = {
         'purkinje_size': 200,
         'granule_size': 800,
     }
-    cortex_sizes = {
+    default_cortex_sizes = {
         'l23_size': 600,
         'l4_size': 300,
         'l5_size': 300,
@@ -490,25 +508,25 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         'l6b_size': 200,
         'vta_da': 1000,
     }
-    hippocampus_sizes = {
+    default_hippocampus_sizes = {
         'dg_size': 4000,
         'ca3_size': 2000,
         'ca2_size': 1000,
         'ca1_size': 2000,
         'vta_da': 1000,
     }
-    pfc_sizes = {
+    default_pfc_sizes = {
         'executive_size': 600,
         'vta_da': 1000,
     }
-    striatum_sizes = {
+    default_striatum_sizes = {
         'd1_size': 100,
         'd2_size': 100,
         'n_actions': 10,
         'neurons_per_action': 10,
         'vta_da': 1000,
     }
-    thalamus_sizes = {
+    default_thalamus_sizes = {
         'relay_size': 200,
         'trn_size': 60,
     }
@@ -516,7 +534,7 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Medial septum: Theta pacemaker for hippocampal circuits
     # Small subcortical region with cholinergic and GABAergic pacemaker neurons
     # Generates intrinsic ~8 Hz bursting that phase-locks hippocampal OLM cells
-    medial_septum_sizes = {
+    default_medial_septum_sizes = {
         "n_ach": 100,
         "n_gaba": 100,
     }
@@ -524,23 +542,50 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Spiking dopamine system: RewardEncoder, SNr, VTA
     # Implements biologically-accurate dopamine release with burst/pause dynamics
     # Replaces scalar dopamine broadcast with spike-based volume transmission
-    reward_encoder_sizes = {
+    default_reward_encoder_sizes = {
         "n_neurons": 100,
     }
-    snr_sizes = {
+    default_snr_sizes = {
         "n_neurons": 1000,
         "d1_input": 100,
         "d2_input": 100,
     }
-    vta_sizes = {
+    default_vta_sizes = {
         "da_neurons": 1000,
         "gaba_neurons": 400,
         "snr_value": 1000,
         "reward_signal": 100,
     }
 
+    default_lc_sizes = {
+        "n_ne_neurons": 1600,
+        "n_gaba_neurons": 300,
+        "pfc_input": 600,
+        "hippocampus_input": 2000,
+    }
+
+    default_nb_sizes = {
+        "n_ach_neurons": 3000,
+        "n_gaba_neurons": 500,
+        "pfc_input": 600,
+    }
+
+    # Merge with overrides (user overrides take precedence)
+    cerebellum_sizes = {**default_cerebellum_sizes, **overrides.get('cerebellum_sizes', {})}
+    cortex_sizes = {**default_cortex_sizes, **overrides.get('cortex_sizes', {})}
+    hippocampus_sizes = {**default_hippocampus_sizes, **overrides.get('hippocampus_sizes', {})}
+    pfc_sizes = {**default_pfc_sizes, **overrides.get('pfc_sizes', {})}
+    striatum_sizes = {**default_striatum_sizes, **overrides.get('striatum_sizes', {})}
+    thalamus_sizes = {**default_thalamus_sizes, **overrides.get('thalamus_sizes', {})}
+    medial_septum_sizes = {**default_medial_septum_sizes, **overrides.get('medial_septum_sizes', {})}
+    reward_encoder_sizes = {**default_reward_encoder_sizes, **overrides.get('reward_encoder_sizes', {})}
+    snr_sizes = {**default_snr_sizes, **overrides.get('snr_sizes', {})}
+    vta_sizes = {**default_vta_sizes, **overrides.get('vta_sizes', {})}
+    lc_sizes = {**default_lc_sizes, **overrides.get('lc_sizes', {})}
+    nb_sizes = {**default_nb_sizes, **overrides.get('nb_sizes', {})}
+
     # =============================================================================
-    # Define regions with biologically realistic layer sizes and neuron counts
+    # Define regions with biologically realistic population sizes
     # =============================================================================
 
     builder.add_region("thalamus", "thalamus", population_sizes=thalamus_sizes)
@@ -553,6 +598,8 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     builder.add_region("reward_encoder", "reward_encoder", population_sizes=reward_encoder_sizes)
     builder.add_region("snr", "snr", population_sizes=snr_sizes)
     builder.add_region("vta", "vta", population_sizes=vta_sizes)
+    builder.add_region("lc", "locus_coeruleus", population_sizes=lc_sizes)
+    builder.add_region("nb", "nucleus_basalis", population_sizes=nb_sizes)
 
     # =============================================================================
     # Define connections with biologically realistic axonal delays
@@ -822,7 +869,7 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     builder.connect(
         source="snr",
         target="vta",
-        source_population="value",
+        source_population="vta_feedback",
         target_population="snr_value",
         axonal_delay_ms=1.5,
     )
@@ -881,7 +928,6 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
 
     # VTA → Cortex: Dopamine release for Layer 5 action selection
     # DA modulates L5 pyramidal cells that project to striatum/brainstem
-    # Sparse 30% projection to deep layers (applied at receptor processing)
     # Distance: ~2-3cm, well-myelinated → 3-5ms delay
     builder.connect(
         source="vta",
@@ -889,6 +935,132 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         source_population="da_output",
         target_population="vta_da",
         axonal_delay_ms=4.0,
+    )
+
+    # =============================================================================
+    # SPIKING NOREPINEPHRINE SYSTEM (Locus Coeruleus)
+    # =============================================================================
+    # Implements biologically-accurate arousal/uncertainty signaling through NE volume transmission.
+    # LC computes uncertainty from PFC variance and hippocampal novelty, broadcasts NE spikes.
+    # NE neurons: 1-3 Hz baseline, synchronized bursts (500ms), gap junction coupling.
+    # Receptors: τ_rise=8ms, τ_decay=150ms (NET reuptake).
+
+    # PFC → LC: Prefrontal variance signals uncertainty
+    # High PFC activity variance → high LC firing → NE release
+    # Executive population variance indicates decision uncertainty
+    # Distance: ~3-5cm, well-myelinated → 5-8ms delay
+    builder.connect(
+        source="pfc",
+        target="lc",
+        source_population="executive",
+        target_population="pfc_input",
+        axonal_delay_ms=6.5,
+    )
+
+    # Hippocampus → LC: Novelty detection drives arousal
+    # CA1 output variance indicates contextual novelty
+    # Novel contexts → high LC firing → memory encoding enhancement
+    # Distance: ~4-6cm, moderately myelinated → 8-12ms delay
+    builder.connect(
+        source="hippocampus",
+        target="lc",
+        source_population="ca1",
+        target_population="hippocampus_input",
+        axonal_delay_ms=10.0,
+    )
+
+    # LC → Striatum: Norepinephrine release for exploration/exploitation
+    # NE spikes converted to concentration by D1/D2 NE receptors
+    # High NE → increased exploration, low NE → exploitation
+    # Distance: ~3-5cm (dorsal pons → basal ganglia), well-myelinated → 80-120ms delay
+    # Note: LC→cortex is slower than DA due to longer, more diffuse projections
+    builder.connect(
+        source="lc",
+        target="striatum",
+        source_population="ne_output",
+        target_population="lc_ne",
+        axonal_delay_ms=100.0,
+    )
+
+    # LC → PFC: Norepinephrine release for arousal and gain modulation
+    # NE enhances working memory persistence and gain control
+    # High NE → increased gain, low NE → reduced distraction
+    # Distance: ~3-5cm (dorsal pons → frontal cortex), well-myelinated → 80-120ms delay
+    builder.connect(
+        source="lc",
+        target="pfc",
+        source_population="ne_output",
+        target_population="lc_ne",
+        axonal_delay_ms=100.0,
+    )
+
+    # LC → Hippocampus: Norepinephrine release for memory encoding
+    # NE enhances LTP and memory consolidation during arousal
+    # High NE → strong encoding, low NE → reduced consolidation
+    # Distance: ~4-6cm (dorsal pons → medial temporal lobe), moderately myelinated → 80-120ms delay
+    builder.connect(
+        source="lc",
+        target="hippocampus",
+        source_population="ne_output",
+        target_population="lc_ne",
+        axonal_delay_ms=110.0,
+    )
+
+    # LC → Cortex: Norepinephrine release for sensory gain modulation
+    # NE uniformly modulates all cortical layers for arousal
+    # High NE → increased sensory gain, low NE → reduced sensitivity
+    # Distance: ~3-5cm (dorsal pons → cortex), well-myelinated → 80-120ms delay
+    builder.connect(
+        source="lc",
+        target="cortex",
+        source_population="ne_output",
+        target_population="lc_ne",
+        axonal_delay_ms=100.0,
+    )
+
+    # =============================================================================
+    # SPIKING ACETYLCHOLINE SYSTEM (Nucleus Basalis)
+    # =============================================================================
+    # Implements biologically-accurate attention/encoding signaling through ACh volume transmission.
+    # NB computes prediction error from PFC activity changes, broadcasts brief ACh bursts.
+    # ACh neurons: 2-5 Hz baseline, brief bursts (50-100ms), fast SK adaptation.
+    # Receptors: τ_rise=5ms, τ_decay=50ms (AChE degradation).
+
+    # PFC → NB: Prefrontal activity changes signal prediction errors
+    # High PFC activity rate-of-change → high NB firing → ACh release
+    # Unexpected events drive encoding mode in cortex/hippocampus
+    # Distance: ~3-5cm, well-myelinated → 5-8ms delay
+    builder.connect(
+        source="pfc",
+        target="nb",
+        source_population="executive",
+        target_population="pfc_input",
+        axonal_delay_ms=6.5,
+    )
+
+    # NB → Cortex: Acetylcholine release for attention and encoding
+    # ACh enhances sensory processing and cortical plasticity
+    # High ACh → encoding mode, low ACh → retrieval mode
+    # Distance: ~3-5cm (basal forebrain → cortex), well-myelinated → 80-100ms delay
+    # Note: Cholinergic projections are highly diffuse, slower than DA/NE
+    builder.connect(
+        source="nb",
+        target="cortex",
+        source_population="ach_output",
+        target_population="nb_ach",
+        axonal_delay_ms=90.0,
+    )
+
+    # NB → Hippocampus: Acetylcholine release for encoding/retrieval mode switching
+    # ACh controls encoding vs retrieval (Hasselmo 1999)
+    # High ACh → encoding mode (suppress CA3 recurrence), low ACh → retrieval mode
+    # Distance: ~2-4cm (basal forebrain → medial temporal lobe), well-myelinated → 80-100ms delay
+    builder.connect(
+        source="nb",
+        target="hippocampus",
+        source_population="ach_output",
+        target_population="nb_ach",
+        axonal_delay_ms=85.0,
     )
 
     # =============================================================================

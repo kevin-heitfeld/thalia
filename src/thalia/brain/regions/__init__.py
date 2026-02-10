@@ -61,7 +61,9 @@ from __future__ import annotations
 from .cerebellum import Cerebellum
 from .cortex import Cortex
 from .hippocampus import Hippocampus
+from .locus_coeruleus import LocusCoeruleus
 from .medial_septum import MedialSeptum
+from .nucleus_basalis import NucleusBasalis
 from .prefrontal import Prefrontal
 from .reward_encoder import RewardEncoder
 from .striatum import Striatum, StriatumStateTracker
@@ -79,7 +81,9 @@ __all__ = [
     "Cerebellum",
     "Cortex",
     "Hippocampus",
+    "LocusCoeruleus",
     "MedialSeptum",
+    "NucleusBasalis",
     "Prefrontal",
     "RewardEncoder",
     "Striatum",

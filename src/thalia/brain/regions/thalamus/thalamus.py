@@ -203,19 +203,6 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             requires_grad=False,
         )
 
-        # TRN → Relay: Now EXTERNAL via population routing
-        # External AxonalProjection provides:
-        #   - 1ms axonal delay (very fast local inhibition)
-        #   - Sparse connectivity (~30%) for selective gating
-        #   - Negative weights for inhibitory connections
-        #   - Searchlight attention mechanism (Guillery & Harting 2003)
-        #
-        # Configure via BrainBuilder.connect():
-        #   source="thalamus", source_population="trn", target_population="trn_inhibition"
-        #
-        # TRN inhibition will arrive via "trn_inhibition" input population
-        self.trn_to_relay = None  # Deprecated: use external connection
-
         # TRN → TRN (recurrent inhibition for oscillations)
         self.trn_recurrent = nn.Parameter(
             WeightInitializer.sparse_random(
@@ -493,7 +480,8 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         relay_excitation = gated_current * self.relay_gain  # [relay_size]
 
         # Apply norepinephrine gain modulation (arousal)
-        ne_gain = 1.0 + 0.5 * self.neuromodulator_state.norepinephrine
+        ne_level = self._ne_concentration.mean().item() if hasattr(self, '_ne_concentration') else 0.5
+        ne_gain = 1.0 + 0.5 * ne_level
         relay_excitation = relay_excitation * ne_gain
 
         # =====================================================================

@@ -188,16 +188,16 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # NEUROMODULATION OF PACEMAKER
         # =====================================================================
         # Acetylcholine: Speed up theta (7→11 Hz range)
-        ach_level = self.neuromodulator_state.acetylcholine
+        ach_level = self._ach_concentration.mean().item() if hasattr(self, '_ach_concentration') else 0.5
         frequency_mod = 1.0 + (ach_level - 0.5) * 0.5  # ±25% frequency
         current_freq = self.base_frequency_hz * frequency_mod
 
         # Norepinephrine: Increase burst amplitude (arousal)
-        ne_level = self.neuromodulator_state.norepinephrine
+        ne_level = self._ne_concentration.mean().item() if hasattr(self, '_ne_concentration') else 0.5
         amplitude_mod = 1.0 + (ne_level - 0.5) * 0.4  # ±20% amplitude
 
         # Dopamine: Subtle frequency modulation (motivation)
-        da_level = self.neuromodulator_state.dopamine
+        da_level = self._da_concentration.mean().item() if hasattr(self, '_da_concentration') else 0.5
         frequency_mod *= 1.0 + (da_level - 0.5) * 0.2  # Additional ±10%
 
         # =====================================================================

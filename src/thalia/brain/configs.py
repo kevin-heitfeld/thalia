@@ -370,6 +370,93 @@ class VTAConfig(NeuralRegionConfig):
     """Optional custom config for DA neurons (uses defaults if None)."""
 
 
+# ============================================================================
+# Locus Coeruleus (LC) Config
+# ============================================================================
+
+
+@dataclass
+class LCConfig(NeuralRegionConfig):
+    """Configuration for LC (locus coeruleus) region.
+
+    The LC is the brain's primary norepinephrine source, broadcasting arousal
+    and uncertainty signals that modulate attention, gain, and exploration.
+    LC neurons exhibit synchronized bursting due to dense gap junction coupling.
+
+    Key features:
+    - Norepinephrine neurons: Tonic (1-3 Hz) + phasic bursts (10-15 Hz for 500ms)
+    - Gap junction coupling → synchronized population bursts
+    - Uncertainty signal → exploratory behavior, network reset
+    - Global projections → all brain regions
+    """
+
+    n_ne_neurons: int = 1600
+    """Number of norepinephrine neurons (~1,600 in humans - small but influential)."""
+
+    n_gaba_neurons: int = 300
+    """Number of GABAergic interneurons for homeostatic control."""
+
+    uncertainty_gain: float = 20.0
+    """Gain for converting uncertainty to membrane current (mV per uncertainty unit).
+
+    High uncertainty → depolarization → synchronized burst (10-15 Hz)
+    Low uncertainty → hyperpolarization → pause or low tonic
+    """
+
+    gap_junction_strength: float = 0.05
+    """Strength of electrical coupling between NE neurons (enables synchronization)."""
+
+    gap_junction_radius: int = 50
+    """Radius for gap junction connectivity (neurons within this range are coupled)."""
+
+    uncertainty_normalization: bool = True
+    """Enable adaptive uncertainty normalization to prevent saturation."""
+
+    # Norepinephrine neuron specific parameters (can override defaults)
+    ne_neuron_config: Optional['NorepinephrineNeuronConfig'] = None
+    """Optional custom config for NE neurons (uses defaults if None)."""
+
+
+# ============================================================================
+# Nucleus Basalis (NB) Config
+# ============================================================================
+
+
+@dataclass
+class NBConfig(NeuralRegionConfig):
+    """Configuration for NB (nucleus basalis) region.
+
+    The NB is the brain's primary source of cortical acetylcholine, broadcasting
+    attention and encoding/retrieval mode signals. NB neurons exhibit fast,
+    brief bursts in response to prediction errors and attention shifts.
+
+    Key features:
+    - Acetylcholine neurons: Tonic (2-5 Hz) + fast bursts (10-20 Hz for 50-100ms)
+    - Brief bursts (shorter than DA/NE) due to fast SK adaptation
+    - Prediction error magnitude → encoding mode, attention enhancement
+    - Selective projections → cortex and hippocampus (not striatum)
+    """
+
+    n_ach_neurons: int = 3000
+    """Number of acetylcholine neurons (~3,000-5,000 in humans)."""
+
+    n_gaba_neurons: int = 500
+    """Number of GABAergic interneurons for homeostatic control."""
+
+    pe_gain: float = 25.0
+    """Gain for converting prediction error to membrane current (mV per PE unit).
+
+    High |PE| → depolarization → fast brief burst (10-20 Hz for 50-100ms)
+    Low |PE| → baseline tonic firing
+    """
+
+    pe_normalization: bool = True
+    """Enable adaptive prediction error normalization to prevent saturation."""
+
+    # Acetylcholine neuron specific parameters (can override defaults)
+    ach_neuron_config: Optional['AcetylcholineNeuronConfig'] = None
+    """Optional custom config for ACh neurons (uses defaults if None)."""
+
 
 # ============================================================================
 # Cerebellum Config
@@ -1019,17 +1106,6 @@ class PrefrontalConfig(NeuralRegionConfig):
     threshold_learning_rate: float = 0.02  # Slow for working memory stability
     threshold_min: float = 0.05  # Lower floor for under-firing regions
     threshold_max: float = 1.5  # Allow some increase above default
-
-    # =========================================================================
-    # LEARNING RATES
-    # =========================================================================
-    rule_lr: float = 0.001  # Learning rate for rule weights
-
-    # =========================================================================
-    # NEUROMODULATION: DOPAMINE
-    # =========================================================================
-    dopamine_tau_ms: float = 100.0  # DA decay time constant
-    dopamine_baseline: float = 0.2  # Tonic DA level
 
     # =========================================================================
     # SPIKE-FREQUENCY ADAPTATION

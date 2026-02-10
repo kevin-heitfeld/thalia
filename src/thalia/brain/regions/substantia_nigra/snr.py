@@ -111,7 +111,6 @@ class SubstantiaNigra(NeuralRegion[SNrConfig]):
     OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "vta_feedback": "n_neurons",
         "thalamus_output": "n_neurons",
-        "value": "n_neurons",  # Alias for test compatibility
     }
 
     def __init__(self, config: SNrConfig, population_sizes: PopulationSizes):

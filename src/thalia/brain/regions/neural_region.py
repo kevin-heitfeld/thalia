@@ -14,7 +14,6 @@ Biological accuracy:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, TypeVar, Generic
 
 import torch
@@ -28,7 +27,7 @@ from thalia.typing import (
     RegionSpikesDict,
     SpikesSourceKey,
 )
-from thalia.utils import validate_finite, validate_spike_tensor
+from thalia.utils import validate_spike_tensor
 from thalia.utils.spike_utils import validate_spike_tensors
 
 if TYPE_CHECKING:
@@ -36,28 +35,6 @@ if TYPE_CHECKING:
 
 
 ConfigT = TypeVar('ConfigT', bound=NeuralRegionConfig)
-
-
-@dataclass
-class NeuromodulatorState:
-    """Tracks neuromodulator levels for a region, which modulate learning and processing."""
-
-    dopamine: float = 0.2
-    """Dopamine level (reward signal, gates learning). Baseline tonic level."""
-
-    acetylcholine: float = 0.3
-    """Acetylcholine level (attention, encoding/retrieval mode)."""
-
-    norepinephrine: float = 0.3
-    """Norepinephrine level (arousal, gain modulation)."""
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize common state fields."""
-        return {
-            "dopamine": self.dopamine,
-            "acetylcholine": self.acetylcholine,
-            "norepinephrine": self.norepinephrine,
-        }
 
 
 class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
@@ -136,8 +113,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # This allows _get_target_population_size() to find them
         for key, size in population_sizes.items():
             setattr(self, f"{key}_size", size)
-
-        self.neuromodulator_state: NeuromodulatorState = NeuromodulatorState()
 
         # Synaptic weights: one weight matrix per input source
         # These are the TARGET dendrites receiving from each source
@@ -398,8 +373,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             pre_activity: Presynaptic activity (input spikes)
             post_activity: Postsynaptic activity (output spikes)
             weights: Weight matrix to update [n_post, n_pre]
-            modulator: Optional modulator (dopamine, reward, etc.)
-                      If None, uses self.neuromodulator_state.dopamine
+            modulator: Optional modulator (dopamine concentration from receptors)
             target: Optional target for supervised learning
             **kwargs: Additional strategy-specific parameters
 
@@ -410,13 +384,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         if self.learning_strategy is None:
             return {}
 
-        # Get dopamine modulation if not explicitly provided
+        # Use modulator directly (regions should pass receptor concentration)
         if modulator is None:
-            modulator = self.neuromodulator_state.dopamine
+            modulator = 0.0  # Default baseline if no modulator provided
 
-        # Get effective learning rate (dopamine modulated)
-        base_lr = self.learning_strategy.config.learning_rate
-        effective_lr = self.get_effective_learning_rate(base_lr)
+        # Get effective learning rate from strategy config
+        effective_lr = self.learning_strategy.config.learning_rate
 
         # Early exit if learning rate too small
         if effective_lr < 1e-8:
@@ -443,82 +416,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self.learning_strategy.config.learning_rate = original_lr
 
         return metrics
-
-    # =========================================================================
-    # NEUROMODULATOR MANAGEMENT
-    # =========================================================================
-
-    def set_neuromodulators(
-        self,
-        dopamine: Optional[float] = None,
-        norepinephrine: Optional[float] = None,
-        acetylcholine: Optional[float] = None,
-    ) -> None:
-        """Set neuromodulator levels atomically (efficient broadcast).
-
-        This consolidated method is more efficient than calling individual setters
-        when updating multiple neuromodulators simultaneously (3x reduction in
-        function calls and hasattr checks).
-
-        Args:
-            dopamine: DA level, typically in [-1, 1].
-                      Positive = reward, consolidate current patterns
-                      Negative = punishment, reduce current patterns
-                      Zero = baseline learning rate
-            norepinephrine: NE level, typically in [0, 1].
-                           High = arousal, increase neural gain
-                           Low = baseline gain
-            acetylcholine: ACh level, typically in [0, 1].
-                          High = encoding mode, enhance sensory processing
-                          Low = retrieval mode, suppress interference
-
-        Raises:
-            ValueError: If any neuromodulator value is NaN or Inf
-                       (when validation enabled)
-        """
-        # Validate inputs (NaN/Inf checks)
-        if dopamine is not None:
-            validate_finite(dopamine, "dopamine", valid_range=(-2.0, 2.0))
-            self.neuromodulator_state.dopamine = dopamine
-        if norepinephrine is not None:
-            validate_finite(norepinephrine, "norepinephrine", valid_range=(0.0, 2.0))
-            self.neuromodulator_state.norepinephrine = norepinephrine
-        if acetylcholine is not None:
-            validate_finite(acetylcholine, "acetylcholine", valid_range=(0.0, 2.0))
-            self.neuromodulator_state.acetylcholine = acetylcholine
-
-    def get_effective_learning_rate(
-        self,
-        base_lr: Optional[float] = None,
-        dopamine_sensitivity: float = 1.0,
-    ) -> float:
-        """Compute learning rate modulated by dopamine.
-
-        The effective learning rate is:
-            base_lr * (1 + dopamine_sensitivity * dopamine)
-
-        This means:
-            - dopamine = 0: baseline learning
-            - dopamine = 1: (1 + sensitivity)x learning rate (strong consolidation)
-            - dopamine = -0.5: (1 - 0.5*sensitivity)x learning rate (reduced learning)
-            - dopamine = -1: (1 - sensitivity)x learning rate (suppressed if sensitivity=1)
-
-        Args:
-            base_lr: Base learning rate (uses self.base_learning_rate if None)
-            dopamine_sensitivity: How much dopamine affects learning (0-1)
-                                  1.0 = full modulation, 0.0 = no modulation
-
-        Returns:
-            Modulated learning rate
-        """
-        if base_lr is None:
-            base_lr = float(getattr(self, "base_learning_rate", 0.01))
-
-        modulation = 1.0 + dopamine_sensitivity * self.neuromodulator_state.dopamine
-        # Clamp to non-negative (can't have negative learning rate)
-        modulation = max(0.0, modulation)
-
-        return base_lr * modulation
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
