@@ -19,17 +19,14 @@ import torch
 RegionName = str
 """Name of a brain region, e.g. 'cortex', 'hippocampus'."""
 
-LayerName = str
-"""Name of a layer within a region, e.g. 'relay', 'trn', 'l23', 'dg'."""
+PopulationName = str
+"""Name of a population within a region, e.g. 'excitatory', 'inhibitory'."""
 
-PortName = str
-"""Name of an output port, e.g. 'relay', 'l5', 'executive'."""
-
-RegionLayerSizes = Dict[LayerName, int]
-"""Mapping of layer names to their sizes (number of neurons)."""
+PopulationSizes = Dict[PopulationName, int]
+"""Mapping of population names to their population sizes, e.g. {'excitatory': 100, 'inhibitory': 50}."""
 
 SpikesSourceKey = str
-"""Compound key for spike sources in the format 'region:port', e.g. 'thalamus:trn'."""
+"""Compound key for spike sources in the format 'region:population', e.g. 'thalamus:inhibitory'."""
 
 RegionSpikesDict = Dict[SpikesSourceKey, torch.Tensor]
 """Mapping of spike source keys to their corresponding spike tensors."""
@@ -37,14 +34,14 @@ RegionSpikesDict = Dict[SpikesSourceKey, torch.Tensor]
 BrainSpikesDict = Dict[RegionName, RegionSpikesDict]
 """Mapping of region names to their output spikes, where each region's output is a RegionSpikesDict."""
 
-def compound_key(region_name: RegionName, port_name: PortName) -> SpikesSourceKey:
-    """Utility function to create a compound key for spike sources."""
-    return f"{region_name}:{port_name}"
+def compound_key(region_name: RegionName, population_name: PopulationName) -> SpikesSourceKey:
+    """Utility function to create a compound key from region and population names."""
+    return f"{region_name}:{population_name}"
 
-def parse_compound_key(compound_key: SpikesSourceKey) -> Tuple[RegionName, PortName]:
-    """Utility function to parse a compound key into region and port names."""
+def parse_compound_key(compound_key: SpikesSourceKey) -> Tuple[RegionName, PopulationName]:
+    """Utility function to parse a compound key into region and population names."""
     if ":" not in compound_key:
-        raise ValueError(f"Invalid compound key '{compound_key}'. Expected format 'region:port'.")
+        raise ValueError(f"Invalid compound key '{compound_key}'. Expected format 'region:population'.")
 
-    region_name, port_name = compound_key.split(":")
-    return region_name, port_name
+    region_name, population_name = compound_key.split(":")
+    return region_name, population_name

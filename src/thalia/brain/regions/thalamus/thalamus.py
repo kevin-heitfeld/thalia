@@ -81,8 +81,8 @@ from thalia.components import (
 )
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.typing import (
-    LayerName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
@@ -123,8 +123,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                      └── Recurrent inhibition
     """
 
-    # Declarative output ports (auto-registered by base class)
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "relay": "relay_size",
         "trn": "trn_size",
     }
@@ -133,15 +132,15 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: ThalamusConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: ThalamusConfig, population_sizes: PopulationSizes):
         """Initialize thalamic relay."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.relay_size = region_layer_sizes["relay_size"]
-        self.trn_size = region_layer_sizes["trn_size"]
+        self.relay_size = population_sizes["relay_size"]
+        self.trn_size = population_sizes["trn_size"]
 
         # =====================================================================
         # NEURONS
@@ -204,7 +203,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             requires_grad=False,
         )
 
-        # TRN → Relay: Now EXTERNAL via port routing
+        # TRN → Relay: Now EXTERNAL via population routing
         # External AxonalProjection provides:
         #   - 1ms axonal delay (very fast local inhibition)
         #   - Sparse connectivity (~30%) for selective gating
@@ -212,9 +211,9 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         #   - Searchlight attention mechanism (Guillery & Harting 2003)
         #
         # Configure via BrainBuilder.connect():
-        #   source="thalamus", source_port="trn", target_port="trn_inhibition"
+        #   source="thalamus", source_population="trn", target_population="trn_inhibition"
         #
-        # TRN inhibition will arrive via "trn_inhibition" input port
+        # TRN inhibition will arrive via "trn_inhibition" input population
         self.trn_to_relay = None  # Deprecated: use external connection
 
         # TRN → TRN (recurrent inhibition for oscillations)
@@ -398,7 +397,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
     def add_input_source(
         self,
         source_name: SpikesSourceKey,
-        target_layer: LayerName,
+        target_population: PopulationName,
         n_input: int,
         sparsity: float = 0.2,
         weight_scale: float = 0.3,
@@ -413,7 +412,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Call parent to register source
         super().add_input_source(
             source_name=source_name,
-            target_layer=target_layer,
+            target_population=target_population,
             n_input=n_input,
             sparsity=sparsity,
             weight_scale=weight_scale,
@@ -432,8 +431,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Process sensory input through thalamic relay."""
+        self._pre_forward(region_inputs)
+
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
@@ -445,7 +446,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         relay_current = torch.zeros(self.relay_size, device=self.device)
         trn_current = torch.zeros(self.trn_size, device=self.device)
 
-        for source_name, source_spikes in inputs.items():
+        for source_name, source_spikes in region_inputs.items():
             # Convert to float for matrix multiplication
             source_spikes_float = (
                 source_spikes.float() if source_spikes.dtype == torch.bool else source_spikes
@@ -503,13 +504,13 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         relay_excitation = relay_excitation + noise
 
         # =====================================================================
-        # TRN→RELAY INHIBITION (now EXTERNAL via port routing)
+        # TRN→RELAY INHIBITION (now EXTERNAL via population routing)
         # =====================================================================
         # TRN inhibition now arrives via external AxonalProjection
         # with proper 1ms axonal delay (fast local GABAergic connections)
-        # Input via "trn_inhibition" port
+        # Input via "trn_inhibition" population
 
-        trn_inhibition_input = inputs.get("trn_inhibition", None)
+        trn_inhibition_input = region_inputs.get("trn_inhibition", None)
         if trn_inhibition_input is not None:
             relay_inhibition = trn_inhibition_input.float()  # Already weighted and delayed
         else:
@@ -563,7 +564,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # TRN NEURONS: Synaptic currents → TRN
         # =====================================================================
-        # TRN excitation was already accumulated from inputs above:
+        # TRN excitation was already accumulated from region_inputs above:
         # - Sensory collateral (via input_to_trn)
         # - L6a feedback (via cortex:l6a routing)
         #
@@ -600,11 +601,12 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         output_rate = relay_output.float()  # [relay_size], actual output (0 or 1)
         self.relay_firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(output_rate * self._firing_rate_alpha)
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("relay", relay_output)
-        self.set_port_output("trn", trn_spikes)
+        region_outputs: RegionSpikesDict = {
+            "relay": relay_output,
+            "trn": trn_spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     def _determine_mode(self, membrane: torch.Tensor) -> torch.Tensor:
         """Determine burst vs tonic mode based on membrane potential.

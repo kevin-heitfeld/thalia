@@ -77,8 +77,8 @@ from thalia.learning import (
     CompositeStrategy,
 )
 from thalia.typing import (
-    LayerName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
@@ -130,8 +130,7 @@ class Cortex(NeuralRegion[CortexConfig]):
     10. L6b → Thalamus Relay (fast gain modulation via excitatory drive)
     """
 
-    # Declarative output ports (auto-registered by base class)
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "l23": "l23_size",
         "l4": "l4_size",
         "l5": "l5_size",
@@ -143,9 +142,9 @@ class Cortex(NeuralRegion[CortexConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: CortexConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: CortexConfig, population_sizes: PopulationSizes):
         """Initialize cortex."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
         # =====================================================================
         # EXTRACT LAYER SIZES AND CALCULATE FSI POPULATIONS
@@ -156,11 +155,11 @@ class Cortex(NeuralRegion[CortexConfig]):
         #   - Example: 400 pyr + 100 FSI = 500 total (80% pyr, 20% FSI)
 
         # Pyramidal sizes
-        self.l23_size: int = region_layer_sizes["l23_size"]
-        self.l4_size: int = region_layer_sizes["l4_size"]
-        self.l5_size: int = region_layer_sizes["l5_size"]
-        self.l6a_size: int = region_layer_sizes["l6a_size"]
-        self.l6b_size: int = region_layer_sizes["l6b_size"]
+        self.l23_size: int = population_sizes["l23_size"]
+        self.l4_size: int = population_sizes["l4_size"]
+        self.l5_size: int = population_sizes["l5_size"]
+        self.l6a_size: int = population_sizes["l6a_size"]
+        self.l6b_size: int = population_sizes["l6b_size"]
 
         # Pyramidal neuron counts (same as layer sizes for clarity)
         self.l4_pyr_size = self.l4_size
@@ -649,7 +648,7 @@ class Cortex(NeuralRegion[CortexConfig]):
     def add_input_source(
         self,
         source_name: SpikesSourceKey,
-        target_layer: LayerName,
+        target_population: PopulationName,
         n_input: int,
         sparsity: float = 0.5,  # Biological sparsity - 50% connectivity
         weight_scale: float = 3.0,  # Strong weights - ensures reliable L4 activation
@@ -657,7 +656,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         """Add synaptic weights for a new input source."""
         super().add_input_source(
             source_name=source_name,
-            target_layer=target_layer,
+            target_population=target_population,
             n_input=n_input,
             sparsity=sparsity,
             weight_scale=weight_scale,
@@ -667,8 +666,10 @@ class Cortex(NeuralRegion[CortexConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Process input through layered cortical circuit."""
+        self._pre_forward(region_inputs)
+
         cfg = self.config
 
         # =====================================================================
@@ -676,7 +677,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         # =====================================================================
         # Process VTA dopamine spikes → concentration dynamics
         # Cortex receives sparse (30%) DA innervation primarily to Layer 5
-        vta_da_spikes = inputs.get("vta:da_output")
+        vta_da_spikes = region_inputs.get("vta:da_output")
         if vta_da_spikes is not None:
             # Update full receptor array
             da_concentration_full = self.da_receptor.update(vta_da_spikes)
@@ -714,12 +715,12 @@ class Cortex(NeuralRegion[CortexConfig]):
         # Cortical recurrent connections are handled separately (not in external plasticity)
         external_inputs = {
             name: spikes
-            for name, spikes in inputs.items()
+            for name, spikes in region_inputs.items()
             if name in self.synaptic_weights and not name.startswith("cortex:")
         }
         cortical_feedback = {
             name: spikes
-            for name, spikes in inputs.items()
+            for name, spikes in region_inputs.items()
             if name.startswith("cortex:") or name not in self.synaptic_weights
         }
 
@@ -748,11 +749,11 @@ class Cortex(NeuralRegion[CortexConfig]):
         # - L2/3 receives feedback from higher cortical areas (top-down)
 
         # Filter inputs to exclude L2/3 direct inputs (those will be processed later)
-        # Use target_layer metadata (biological: thalamus→L4, PFC→L2/3)
+        # Use target_population metadata (biological: thalamus→L4, PFC→L2/3)
         l4_inputs = {
             name: spikes
             for name, spikes in external_inputs.items()
-            if self._source_target_layers.get(name) == "l4"
+            if self._source_target_populations.get(name) == "l4"
         }
 
         # Use base class helper with alpha suppression modulation
@@ -931,7 +932,7 @@ class Cortex(NeuralRegion[CortexConfig]):
                 )
 
                 # Scale ALL input weights to L4 (global, non-specific)
-                for source_name in inputs.keys():
+                for source_name in region_inputs.keys():
                     if source_name in self.synaptic_weights:
                         self.synaptic_weights[source_name].data.mul_(1.0 + scale_update)
 
@@ -964,9 +965,9 @@ class Cortex(NeuralRegion[CortexConfig]):
         # Stimulus gating (transient inhibition - always enabled)
         # Compute total input activity from all sources
         # Use l4_size as consistent representation for gating (biological: gating happens at L4)
-        if inputs:
+        if region_inputs:
             # Sum activity across all sources and distribute over l4 neurons
-            total_activity = sum(s.float().sum() for s in inputs.values())
+            total_activity = sum(s.float().sum() for s in region_inputs.values())
             # Normalize by l4_size to get average activity per neuron
             gating_input = torch.full((self.l4_size,), total_activity / self.l4_size, device=self.device)
         else:
@@ -987,11 +988,11 @@ class Cortex(NeuralRegion[CortexConfig]):
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         # Get recurrent input from external connection if present
-        if "l23_recurrent" in inputs:
+        if "l23_recurrent" in region_inputs:
             # Already integrated by parent's multi-source integration
             # Extract just this input for proper routing
             l23_rec_raw = self._integrate_multi_source_synaptic_inputs(
-                inputs={"l23_recurrent": inputs["l23_recurrent"]},
+                inputs={"l23_recurrent": region_inputs["l23_recurrent"]},
                 n_neurons=self.l23_size,
                 weight_key_suffix="_l23",
                 apply_stp=False,  # STP already applied at AxonalProjection
@@ -1014,11 +1015,11 @@ class Cortex(NeuralRegion[CortexConfig]):
         # through L4. This implements predictive coding and attentional modulation.
 
         # Filter inputs to only those targeting L2/3 (top-down modulation)
-        # Use target_layer metadata (biological: PFC→L2/3 apical dendrites)
+        # Use target_population metadata (biological: PFC→L2/3 apical dendrites)
         l23_td_inputs = {
             name: spikes
             for name, spikes in external_inputs.items()
-            if self._source_target_layers.get(name) == "l23"
+            if self._source_target_populations.get(name) == "l23"
         }
 
         # Use base class helper for top-down integration
@@ -1357,43 +1358,26 @@ class Cortex(NeuralRegion[CortexConfig]):
                 # Keep weights positive (inhibitory strength)
                 self.synaptic_weights["l6_l4_pred"].data.clamp_(min=0.0, max=2.0)
 
-        # Apply continuous plasticity (learning happens as part of forward dynamics)
-        # Pass external inputs (thalamus, hippocampus, etc.) for BCM/STDP learning
-        # Cortical feedback (l23, l4, etc.) doesn't have learnable weights
-        self._apply_plasticity(
-            inputs=external_inputs,
-            l23_spikes=l23_spikes,
-            l4_spikes=l4_spikes,
-            l5_spikes=l5_spikes,
-            l6a_spikes=l6a_spikes,
-            l6b_spikes=l6b_spikes,
-        )
-
-        # Store spikes for output ports and potential use in next timestep's processing
+        # Store spikes for output populations and potential use in next timestep's processing
         self.l23_spikes = l23_spikes
         self.l4_spikes = l4_spikes
         self.l5_spikes = l5_spikes
         self.l6a_spikes = l6a_spikes
         self.l6b_spikes = l6b_spikes
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("l23", l23_spikes)
-        self.set_port_output("l4", l4_spikes)
-        self.set_port_output("l5", l5_spikes)
-        self.set_port_output("l6a", l6a_spikes)
-        self.set_port_output("l6b", l6b_spikes)
+        region_outputs: RegionSpikesDict = {
+            "l23": l23_spikes,
+            "l4": l4_spikes,
+            "l5": l5_spikes,
+            "l6a": l6a_spikes,
+            "l6b": l6b_spikes,
+        }
 
-    def _apply_plasticity(
-        self,
-        inputs: RegionSpikesDict,
-        l23_spikes: Optional[torch.Tensor] = None,
-        l4_spikes: Optional[torch.Tensor] = None,
-        l5_spikes: Optional[torch.Tensor] = None,
-        l6a_spikes: Optional[torch.Tensor] = None,
-        l6b_spikes: Optional[torch.Tensor] = None,
-    ) -> None:
+        self._apply_plasticity(inputs=external_inputs, region_outputs=region_outputs)
+
+        return self._post_forward(region_outputs)
+
+    def _apply_plasticity(self, inputs: RegionSpikesDict, region_outputs: RegionSpikesDict) -> None:
         """Apply continuous STDP learning with BCM modulation.
 
         This is called automatically at each forward() timestep.
@@ -1403,6 +1387,12 @@ class Cortex(NeuralRegion[CortexConfig]):
         pre/post spike timing. Dopamine doesn't trigger learning - it modulates
         how much weight change occurs from the spike-timing-based plasticity.
         """
+        l23_spikes = region_outputs["l23"]
+        l4_spikes = region_outputs["l4"]
+        l5_spikes = region_outputs["l5"]
+        l6a_spikes = region_outputs["l6a"]
+        l6b_spikes = region_outputs["l6b"]
+
         # Early exit if no activity yet
         if l4_spikes is None:
             return
@@ -1425,7 +1415,7 @@ class Cortex(NeuralRegion[CortexConfig]):
 
         # Use STDP+BCM composite strategies for proper spike-timing-dependent learning
         # Per-source learning: Each input source (thalamus, hippocampus, etc.) learns independently
-        # Route to appropriate layer based on target_layer metadata (biological: synapses define pathway)
+        # Route to appropriate layer based on target_population metadata (biological: synapses define pathway)
 
         # Route external inputs to appropriate layers for plasticity
         for source_name, source_spikes in inputs.items():
@@ -1433,11 +1423,15 @@ class Cortex(NeuralRegion[CortexConfig]):
             if source_name not in self.synaptic_weights:
                 continue
 
-            # Determine target layer from stored metadata
-            target_layer = self._source_target_layers.get(source_name, None)
+            # Determine target population from stored metadata
+            target_population = self._source_target_populations.get(source_name, None)
+
+            # Skip neuromodulator inputs (processed separately via receptors)
+            if target_population == "vta_da":
+                continue
 
             # Route to appropriate learning strategy and postsynaptic spikes
-            if target_layer == "l23":
+            if target_population == "l23":
                 # Top-down inputs → L2/3 plasticity
                 if l23_spikes is not None:
                     l23_lr = base_lr * (1.0 + l23_dopamine)
@@ -1450,7 +1444,7 @@ class Cortex(NeuralRegion[CortexConfig]):
                     self.synaptic_weights[source_name].data.copy_(updated_weights)
                     clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
 
-            elif target_layer == "l4":
+            elif target_population == "l4":
                 # Feedforward inputs → L4 plasticity
                 if l4_spikes is not None:
                     l4_lr = base_lr * (1.0 + l4_dopamine)
@@ -1463,7 +1457,7 @@ class Cortex(NeuralRegion[CortexConfig]):
                     self.synaptic_weights[source_name].data.copy_(updated_weights)
                     clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
 
-            elif target_layer == "l5":
+            elif target_population == "l5":
                 # Hippocampal inputs → L5 plasticity
                 if l5_spikes is not None:
                     l5_lr = base_lr * (1.0 + l5_dopamine)
@@ -1477,7 +1471,7 @@ class Cortex(NeuralRegion[CortexConfig]):
                     clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
 
             else:
-                raise ValueError(f"Unknown target layer '{target_layer}' for source '{source_name}' in plasticity routing.")
+                raise ValueError(f"Unknown target layer '{target_population}' for source '{source_name}' in plasticity routing.")
 
         # L4 → L2/3 - L2/3-specific dopamine
         if l23_spikes is not None:

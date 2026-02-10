@@ -85,7 +85,7 @@ from thalia.components.neurons.dopamine_neuron import (
     DopamineNeuronConfig,
 )
 from thalia.components.neurons.neuron_factory import NeuronFactory, NeuronType
-from thalia.typing import PortName, RegionLayerSizes, RegionSpikesDict
+from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -106,19 +106,19 @@ class VTA(NeuralRegion[VTAConfig]):
     via burst/pause dynamics. Integrates reward signals and value estimates
     to drive reinforcement learning across the brain.
 
-    Output Ports:
-    -------------
+    Input Populations:
+    ------------------
+    - "reward_signal": Reward spikes from RewardEncoder
+    - "snr_value": Value estimate from SNr (inhibitory spikes)
+
+    Output Populations:
+    -------------------
     - "da_output": Dopamine neuron spikes (broadcast to all targets)
 
     Future (Phase 2):
     - "da_mesocortical": DA → Prefrontal cortex
     - "da_mesolimbic": DA → Striatum, hippocampus, amygdala
     - "da_nigrostriatal": DA → Dorsal striatum
-
-    Input Ports (from connections):
-    --------------------------------
-    - "reward_signal": Reward spikes from RewardEncoder
-    - "snr_value": Value estimate from SNr (inhibitory spikes)
 
     Computational Function:
     -----------------------
@@ -129,12 +129,20 @@ class VTA(NeuralRegion[VTAConfig]):
     5. Broadcast DA spikes to target regions
     """
 
-    OUTPUT_PORTS: Dict[PortName, str] = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "da_output": "n_da_neurons",
     }
 
-    def __init__(self, config: VTAConfig, region_layer_sizes: RegionLayerSizes):
-        super().__init__(config, region_layer_sizes)
+    def __init__(self, config: VTAConfig, population_sizes: PopulationSizes):
+        super().__init__(config, population_sizes)
+
+        # Store sizes for test compatibility
+        self.n_da_neurons = config.n_da_neurons
+        self.n_gaba_neurons = config.n_gaba_neurons
+
+        # Store input layer sizes as attributes for connection routing
+        self.snr_value_size = population_sizes.get("snr_value", 0)
+        self.reward_signal_size = population_sizes.get("reward_signal", 0)
 
         # Dopamine neurons (pacemakers with burst/pause)
         self.da_neurons = self._create_da_neurons()
@@ -156,6 +164,8 @@ class VTA(NeuralRegion[VTAConfig]):
             self._avg_abs_rpe = 0.5  # Running average of |RPE|
             self._rpe_count = 0
 
+        self.__post_init__()
+
     def _create_da_neurons(self) -> DopamineNeuron:
         """Create dopamine neuron population with burst/pause dynamics."""
         if self.config.da_neuron_config is not None:
@@ -171,17 +181,19 @@ class VTA(NeuralRegion[VTAConfig]):
             n_neurons=self.config.n_da_neurons, config=da_config, device=self.device
         )
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Compute RPE and drive dopamine neurons to burst/pause.
 
         Args:
-            inputs: Dictionary of input spike tensors:
+            region_inputs: Dictionary of input spike tensors:
                 - "reward_signal": Reward encoding from RewardEncoder [n_reward_neurons]
                 - "snr_value": Value estimate from SNr [n_snr_neurons]
         """
+        self._pre_forward(region_inputs)
+
         # Get inputs (via connections from BrainBuilder)
-        reward_spikes = inputs.get("reward_signal")
-        snr_spikes = inputs.get("snr_value")
+        reward_spikes = region_inputs.get("reward_signal")
+        snr_spikes = region_inputs.get("snr_value")
 
         # Decode reward from spike pattern
         reward = self._decode_reward(reward_spikes)
@@ -210,18 +222,19 @@ class VTA(NeuralRegion[VTAConfig]):
         # Update DA neurons with RPE drive
         # Positive RPE → depolarization → burst
         # Negative RPE → hyperpolarization → pause
-        self.da_neurons.forward(i_synaptic=0.0, rpe_drive=rpe)
+        da_spikes = self.da_neurons.forward(i_synaptic=0.0, rpe_drive=rpe)
+        self._current_da_spikes = da_spikes  # Store for GABA computation
 
         # Update GABA interneurons (homeostatic control)
         # Provide tonic inhibition to prevent runaway bursting
         gaba_drive = self._compute_gaba_drive()
         self.gaba_neurons.forward(gaba_drive)
 
-        # DA output (broadcast to all target regions)
-        da_spikes = self.da_neurons.spikes
+        region_outputs: RegionSpikesDict = {
+            "da_output": da_spikes,
+        }
 
-        # Set output port
-        self._set_port_output("da_output", da_spikes)
+        return self._post_forward(region_outputs)
 
     def _decode_reward(self, reward_spikes: Optional[torch.Tensor]) -> float:
         """Decode reward value from population spike pattern.
@@ -329,7 +342,10 @@ class VTA(NeuralRegion[VTAConfig]):
         baseline = 5.0
 
         # Increase during DA bursts (negative feedback)
-        da_activity = self.da_neurons.spikes.float().mean().item()
+        if hasattr(self, '_current_da_spikes'):
+            da_activity = self._current_da_spikes.float().mean().item()
+        else:
+            da_activity = 0.05  # Default tonic rate
         feedback = da_activity * 10.0  # Proportional to DA activity
 
         total_drive = baseline + feedback

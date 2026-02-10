@@ -193,6 +193,7 @@ class ConductanceLIF(nn.Module):
         # Determine device
         if device is None:
             device = torch.device("cpu")
+        self.device = device
 
         # Register constants as buffers
         self.register_buffer("C_m", torch.tensor(self.config.C_m, device=device))

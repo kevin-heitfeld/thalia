@@ -45,7 +45,7 @@ from thalia.learning import (
     EligibilityTraceManager,
 )
 from thalia.learning import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.typing import RegionLayerSizes, RegionSpikesDict
+from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
 
 from .deep_nuclei import DeepCerebellarNuclei
 from .granule_layer import GranuleCellLayer
@@ -108,8 +108,7 @@ class ClimbingFiberSystem:
 class Cerebellum(NeuralRegion[CerebellumConfig]):
     """Cerebellar region with supervised error-corrective learning."""
 
-    # Declarative output ports (auto-registered by base class)
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "prediction": "purkinje_size",
     }
 
@@ -117,15 +116,15 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: CerebellumConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: CerebellumConfig, population_sizes: PopulationSizes):
         """Initialize cerebellum."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.granule_size = region_layer_sizes["granule_size"]
-        self.purkinje_size = region_layer_sizes["purkinje_size"]
+        self.granule_size = population_sizes["granule_size"]
+        self.purkinje_size = population_sizes["purkinje_size"]
 
         # =====================================================================
         # MOSSY FIBER LAYER (Pontine Nuclei equivalent)
@@ -285,15 +284,17 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Process input through cerebellar circuit."""
+        self._pre_forward(region_inputs)
+
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         # Biology: Different sources (cortex, spinal, brainstem) project to pontine
         # nuclei, which give rise to mossy fibers. We model this as a integration stage.
         mossy_fiber_currents = self._integrate_multi_source_synaptic_inputs(
-            inputs=inputs,
+            inputs=region_inputs,
             n_neurons=self.n_mossy,
             weight_key_suffix="_mossy",  # E.g., "cortex:l5_mossy"
             apply_stp=True,  # Per-source facilitation/depression
@@ -369,10 +370,11 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Store effective input for learning (granule spikes in enhanced mode)
         self.last_effective_input = effective_input
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("prediction", output_spikes)
+        region_outputs: RegionSpikesDict = {
+            "prediction": output_spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT

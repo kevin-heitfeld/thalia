@@ -21,7 +21,7 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, Optional, Tuple, Type, TypeVar, cast
 
 import torch
 import torch.nn as nn
@@ -41,14 +41,14 @@ from .configs import BrainConfig, NeuralRegionConfig
 from .oscillator import OscillatorManager
 from .regions import (
     NeuralRegion,
-    Cerebellum,
     Cortex,
     Hippocampus,
-    MedialSeptum,
-    Prefrontal,
+    RewardEncoder,
     Striatum,
-    Thalamus,
 )
+
+
+RegionT = TypeVar('RegionT', bound=NeuralRegion[NeuralRegionConfig])
 
 
 class DynamicBrain(nn.Module):
@@ -80,40 +80,19 @@ class DynamicBrain(nn.Module):
         """Get current simulation time in milliseconds."""
         return self._current_time
 
-    @property
-    def cerebellum(self) -> Optional[Cerebellum]:
-        """Get cerebellum region if present."""
-        return cast(Optional[Cerebellum], self.regions["cerebellum"]) if "cerebellum" in self.regions else None
+    def get_region(self, region_name: RegionName, region_type: Type[RegionT]) -> Optional[RegionT]:
+        """Get region by name and type, or None if not present."""
+        region = self.regions[region_name] if region_name in self.regions else None
+        if region is not None and isinstance(region, region_type):
+            return cast(RegionT, region)
+        return None
 
-    @property
-    def cortex(self) -> Optional[Cortex]:
-        """Get cortex region if present."""
-        return cast(Optional[Cortex], self.regions["cortex"]) if "cortex" in self.regions else None
-
-    @property
-    def hippocampus(self) -> Optional[Hippocampus]:
-        """Get hippocampus region if present."""
-        return cast(Optional[Hippocampus], self.regions["hippocampus"]) if "hippocampus" in self.regions else None
-
-    @property
-    def medial_septum(self) -> Optional[MedialSeptum]:
-        """Get medial septum region if present."""
-        return cast(Optional[MedialSeptum], self.regions["medial_septum"]) if "medial_septum" in self.regions else None
-
-    @property
-    def prefrontal(self) -> Optional[Prefrontal]:
-        """Get prefrontal cortex region if present."""
-        return cast(Optional[Prefrontal], self.regions["prefrontal"]) if "prefrontal" in self.regions else None
-
-    @property
-    def striatum(self) -> Optional[Striatum]:
-        """Get striatum region if present."""
-        return cast(Optional[Striatum], self.regions["striatum"]) if "striatum" in self.regions else None
-
-    @property
-    def thalamus(self) -> Optional[Thalamus]:
-        """Get thalamus region if present."""
-        return cast(Optional[Thalamus], self.regions["thalamus"]) if "thalamus" in self.regions else None
+    def get_first_region_of_type(self, region_type: Type[RegionT]) -> Optional[RegionT]:
+        """Get the first region of a given type, or None if not present."""
+        for region in self.regions.values():
+            if isinstance(region, region_type):
+                return cast(RegionT, region)
+        return None
 
     # =========================================================================
     # INITIALIZATION
@@ -225,18 +204,18 @@ class DynamicBrain(nn.Module):
             # Read delayed outputs WITHOUT writing or advancing
             delayed_outputs: BrainSpikesDict = pathway.read_delayed_outputs()
 
-            # Parse target region from compound key "target:port" (connection tuple)
-            target_region, _target_port = parse_compound_key(_tgt)
+            # Parse target region from compound key "target:population" (connection tuple)
+            target_region, _target_population = parse_compound_key(_tgt)
 
             # Route inputs by SOURCE name (biological: synapses ARE the routing)
-            for source_region, port_dict in delayed_outputs.items():
+            for source_region, population_dict in delayed_outputs.items():
                 if target_region not in region_inputs:
                     region_inputs[target_region] = {}
 
-                for source_port, delayed_tensor in port_dict.items():
+                for source_population, delayed_tensor in population_dict.items():
                     # Construct source_name key matching synaptic_weights keys
                     # e.g., "thalamus:relay", "hippocampus:ca1"
-                    source_name = compound_key(source_region, source_port)
+                    source_name = compound_key(source_region, source_population)
 
                     # Combine if source already has input from another pathway (logical OR)
                     if source_name in region_inputs[target_region]:
@@ -247,18 +226,18 @@ class DynamicBrain(nn.Module):
                         region_inputs[target_region][source_name] = delayed_tensor
 
         # STEP 2: Combine with external sensory input_spikes
-        for region_name, port_inputs in input_spikes.items():
+        for region_name, population_inputs in input_spikes.items():
             if region_name not in region_inputs:
                 region_inputs[region_name] = {}
 
-            for port_name, port_input in port_inputs.items():
+            for population_name, population_input in population_inputs.items():
                 # Combine sensory with pathway inputs (logical OR)
-                if port_name in region_inputs[region_name]:
-                    region_inputs[region_name][port_name] = (
-                        region_inputs[region_name][port_name] | port_input
+                if population_name in region_inputs[region_name]:
+                    region_inputs[region_name][population_name] = (
+                        region_inputs[region_name][population_name] | population_input
                     )
                 else:
-                    region_inputs[region_name][port_name] = port_input
+                    region_inputs[region_name][population_name] = population_input
 
         # STEP 3: Execute all regions with combined inputs → produce outputs at T
         outputs: BrainSpikesDict = {}
@@ -310,15 +289,16 @@ class DynamicBrain(nn.Module):
             ValueError: If hippocampus not present in brain
         """
         # Check for hippocampus
-        if self.hippocampus is None:
+        hippocampus = self.get_region("hippocampus", Hippocampus)
+        if hippocampus is None:
             raise ValueError(
                 "Hippocampus required for consolidation. "
                 "Brain must include 'hippocampus' region."
             )
 
         # Enter consolidation mode (low acetylcholine)
-        self.hippocampus.enter_consolidation_mode()
-        self.hippocampus.set_neuromodulators(acetylcholine=0.1)
+        hippocampus.enter_consolidation_mode()
+        hippocampus.set_neuromodulators(acetylcholine=0.1)
 
         # Run brain forward - replay happens automatically
         n_timesteps = int(duration_ms / self.dt_ms)
@@ -326,12 +306,12 @@ class DynamicBrain(nn.Module):
 
         for _ in range(n_timesteps):
             self.forward(None)  # No sensory input during sleep
-            if self.hippocampus.ripple_detected:
+            if hippocampus.ripple_detected:
                 ripple_count += 1
 
         # Return to encoding mode (high acetylcholine)
-        self.hippocampus.set_neuromodulators(acetylcholine=0.7)
-        self.hippocampus.exit_consolidation_mode()
+        hippocampus.set_neuromodulators(acetylcholine=0.7)
+        hippocampus.exit_consolidation_mode()
 
         # Compute ripple rate
         ripple_rate_hz = ripple_count / (duration_ms / 1000.0) if duration_ms > 0 else 0.0
@@ -356,14 +336,15 @@ class DynamicBrain(nn.Module):
         Raises:
             ValueError: If striatum not found in brain
         """
-        if self.striatum is None:
+        striatum = self.get_region("striatum", Striatum)
+        if striatum is None:
             raise ValueError(
                 "Striatum not found. Cannot select action. "
                 "Brain must include 'striatum' region for RL tasks."
             )
 
         # Striatum has finalize_action method for action selection
-        result = self.striatum.finalize_action(explore=explore)
+        result = striatum.finalize_action(explore=explore)
 
         # Extract action from result dict
         action = result["selected_action"]
@@ -407,14 +388,15 @@ class DynamicBrain(nn.Module):
             the spiking dopamine signal. This method only delivers reward to
             RewardEncoder - the rest happens automatically through VTA and DA receptors.
         """
-        if self.striatum is None:
+        striatum = self.get_region("striatum", Striatum)
+        if striatum is None:
             raise ValueError(
                 "Striatum not found. Cannot deliver reward. "
                 "Brain must include 'striatum' region for RL tasks."
             )
 
         # Get RewardEncoder region
-        reward_encoder = self.regions.get("reward_encoder")
+        reward_encoder = self.get_region("reward_encoder", RewardEncoder)
         if reward_encoder is None:
             raise ValueError(
                 "RewardEncoder not found. Cannot deliver reward. "
@@ -435,18 +417,20 @@ class DynamicBrain(nn.Module):
 
         # Update exploration statistics based on reward
         # Striatum applies continuous learning automatically in forward() using spiking DA
-        self.striatum.update_performance(total_reward)
+        striatum.update_performance(total_reward)
 
     def _get_cortex_l4_activity(self) -> Optional[float]:
         """Helper to get cortex L4 activity for neuromodulator computations."""
-        if self.cortex is not None:
-            return compute_firing_rate(self.cortex.l4_spikes)
+        cortex = self.get_region("cortex", Cortex)
+        if cortex is not None:
+            return compute_firing_rate(cortex.l4_spikes)
         return None
 
     def _get_hippocampus_ca1_activity(self) -> Optional[float]:
         """Helper to get hippocampus CA1 activity for neuromodulator computations."""
-        if self.hippocampus is not None:
-            return compute_firing_rate(self.hippocampus.ca1_spikes)
+        hippocampus = self.get_region("hippocampus", Hippocampus)
+        if hippocampus is not None:
+            return compute_firing_rate(hippocampus.ca1_spikes)
         return None
 
     def _compute_intrinsic_reward(self) -> float:
@@ -597,7 +581,7 @@ class DynamicBrain(nn.Module):
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Get comprehensive diagnostic information from all subsystems.
-        
+
         Note: Neuromodulator diagnostics are now part of region diagnostics:
         - VTA (dopamine): regions["vta"].get_diagnostics()
         - LC (norepinephrine): Still system-based (Phase 2 will convert)

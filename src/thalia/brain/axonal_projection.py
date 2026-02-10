@@ -22,8 +22,10 @@ import torch.nn as nn
 from thalia.constants import DEFAULT_DT_MS
 from thalia.typing import (
     BrainSpikesDict,
-    SpikesSourceKey,
+    PopulationName,
+    RegionName,
     RegionSpikesDict,
+    SpikesSourceKey,
     compound_key,
 )
 from thalia.utils import (
@@ -37,14 +39,14 @@ from thalia.utils import (
 class AxonalProjectionSourceSpec:
     """Specification for an axonal source."""
 
-    region_name: str
-    port: str
+    region_name: RegionName
+    population: PopulationName
     size: int
     delay_ms: float
 
     def compound_key(self) -> SpikesSourceKey:
-        """Get compound key for this source (region:port)."""
-        return compound_key(self.region_name, self.port)
+        """Get compound key for this source (region:population)."""
+        return compound_key(self.region_name, self.population)
 
 
 class AxonalProjection(nn.Module):
@@ -118,8 +120,8 @@ class AxonalProjection(nn.Module):
             if source_spec.region_name not in delayed_outputs:
                 delayed_outputs[source_spec.region_name] = {}
 
-            port_key = source_spec.port if source_spec.port else source_spec.region_name
-            delayed_outputs[source_spec.region_name][port_key] = delayed_spikes
+            pop_key = source_spec.population if source_spec.population else source_spec.region_name
+            delayed_outputs[source_spec.region_name][pop_key] = delayed_spikes
 
         return delayed_outputs
 
@@ -135,15 +137,15 @@ class AxonalProjection(nn.Module):
             # Extract spikes from RegionSpikesDict
             spikes = None
             if source_spec.region_name in source_outputs:
-                region_ports: RegionSpikesDict = source_outputs[source_spec.region_name]
+                region_populations: RegionSpikesDict = source_outputs[source_spec.region_name]
 
-                if not source_spec.port:
+                if not source_spec.population:
                     raise ValueError(
-                        f"Port must be specified for source '{source_spec.region_name}' in AxonalProjection"
+                        f"Population must be specified for source '{source_spec.region_name}' in AxonalProjection"
                     )
 
-                if source_spec.port in region_ports:
-                    spikes = region_ports[source_spec.port]
+                if source_spec.population in region_populations:
+                    spikes = region_populations[source_spec.population]
 
             if spikes is None:
                 # No output from this source, write zeros
@@ -154,7 +156,7 @@ class AxonalProjection(nn.Module):
 
             if spikes.shape[0] != source_spec.size:
                 raise ValueError(
-                    f"Size mismatch for {source_spec.region_name}:{source_spec.port}: "
+                    f"Size mismatch for {source_spec.region_name}:{source_spec.population}: "
                     f"expected {source_spec.size}, got {spikes.shape[0]}"
                 )
 
@@ -204,7 +206,7 @@ class AxonalProjection(nn.Module):
             "sources": [
                 {
                     "name": spec.region_name,
-                    "port": spec.port,
+                    "population": spec.population,
                     "size": spec.size,
                     "delay_ms": spec.delay_ms,
                 }

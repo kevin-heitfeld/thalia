@@ -23,13 +23,13 @@ import torch.nn as nn
 from thalia.brain.configs import NeuralRegionConfig
 from thalia.components.synapses import WeightInitializer
 from thalia.typing import (
-    LayerName,
-    PortName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
 from thalia.utils import validate_finite, validate_spike_tensor
+from thalia.utils.spike_utils import validate_spike_tensors
 
 if TYPE_CHECKING:
     from thalia.learning import LearningStrategy
@@ -73,14 +73,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         1. Call super().__init__() to get synaptic_weights dict
         2. Define internal neurons/weights for within-region processing
         3. Override forward() to apply synaptic weights then internal processing
-        4. Set OUTPUT_PORTS class attribute for auto port registration
+        4. Set OUTPUT_POPULATIONS class attribute for auto population registration
     """
 
     # Type annotations for config
     config: ConfigT
 
-    OUTPUT_PORTS: Dict[PortName, str] = {}
-    """Port name → size attribute name mapping for auto-registration."""
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {}
+    """Population name → size attribute name mapping for auto-registration."""
 
     # =========================================================================
     # PROPERTIES
@@ -112,14 +112,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: ConfigT, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: ConfigT, population_sizes: PopulationSizes):
         """Initialize NeuralRegion with config and layer sizes."""
         super().__init__()
 
         # ====================================================================
         # VALIDATE INPUT SIZES
         # ====================================================================
-        for source_name, size in region_layer_sizes.items():
+        for source_name, size in population_sizes.items():
             if not isinstance(size, int) or size < 0:
                 raise ValueError(
                     f"NeuralRegion.__init__: Invalid input size for source '{source_name}': "
@@ -130,7 +130,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # INITIALIZE INSTANCE VARIABLES
         # ====================================================================
         self.config: ConfigT = config
-        self.region_layer_sizes: RegionLayerSizes = region_layer_sizes
+        self.population_sizes: PopulationSizes = population_sizes
+
+        # Automatically set {key}_size attributes for all layer sizes
+        # This allows _get_target_population_size() to find them
+        for key, size in population_sizes.items():
+            setattr(self, f"{key}_size", size)
 
         self.neuromodulator_state: NeuromodulatorState = NeuromodulatorState()
 
@@ -139,16 +144,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self.synaptic_weights: nn.ParameterDict = nn.ParameterDict()
 
         # Track which sources have been added
-        self.input_sources: RegionLayerSizes = {}
+        self.input_sources: PopulationSizes = {}
 
-        # Port-based routing infrastructure (ADR-015)
-        self._port_outputs: Dict[str, torch.Tensor] = {}
-        self._port_sizes: Dict[str, int] = {}
-        self._registered_ports: set[str] = set()
+        # Population-based routing infrastructure (ADR-015)
+        self._registered_populations: set[str] = set()
 
-        # Map each input source to its target layer (for runtime routing)
+        # Map each input source to its target population (for runtime routing)
         # e.g., {"thalamus:relay": "l4", "hippocampus:ca1": "l5"}
-        self._source_target_layers: Dict[str, str] = {}
+        self._source_target_populations: Dict[str, str] = {}
 
         # Initialize oscillator phase tracking (will be updated by Brain via set_oscillator_phases)
         self._oscillator_phases: Dict[str, float] = {}
@@ -160,18 +163,17 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
         # Output spikes from last forward pass
         self.output_spikes: Optional[torch.Tensor] = None
+        self._last_region_outputs: Optional[RegionSpikesDict] = None
 
     def __post_init__(self) -> None:
-        """Post-initialization to ensure parameters are on correct device and ports registered."""
+        """Post-initialization processing after dataclass __init__."""
         # =====================================================================
-        # AUTO-REGISTER OUTPUT PORTS
+        # AUTO-REGISTER OUTPUT POPULATIONS
         # =====================================================================
-        for port_name, size_attr in self.__class__.OUTPUT_PORTS.items():
-            size = getattr(self, size_attr, None)
-            assert size is not None and isinstance(size, int) and size > 0, (
-                f"Invalid size for output port '{port_name}' in {self.__class__.__name__}. "
-            )
-            self._register_output_port(port_name, size)
+        for population_name, _size_attr in self.__class__.OUTPUT_POPULATIONS.items():
+            if population_name in self._registered_populations:
+                raise ValueError(f"Population '{population_name}' already registered in {self.__class__.__name__}")
+            self._registered_populations.add(population_name)
 
         # =====================================================================
         # ENSURE PARAMETERS ON CORRECT DEVICE
@@ -185,7 +187,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     def add_input_source(
         self,
         source_name: SpikesSourceKey,
-        target_layer: LayerName,
+        target_population: PopulationName,
         n_input: int,
         sparsity: float = 0.5,
         weight_scale: float = 2.5,
@@ -195,13 +197,13 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         This creates the dendritic synapses that receive from the specified source.
         Biologically: These are synapses ON this region's neurons, not in the axons.
 
-        **Source-Based Routing with Target Layer**:
-        For multi-layer regions (Cortex, Hippocampus), inputs target specific layers.
-        The weight matrix size is determined by the target layer (e.g., "l4", "l23", "l5").
+        **Source-Based Routing with Target Population**:
+        For multi-population regions (Cortex, Hippocampus), inputs target specific populations.
+        The weight matrix size is determined by the target population (e.g., "l4", "l23", "l5").
 
         Args:
             source_name: Name of source region (e.g., "thalamus:relay", "hippocampus:ca1")
-            target_layer: Target layer name (e.g., "l4", "l23", "l5")
+            target_population: Target population name (e.g., "l4", "l23", "l5")
             n_input: Number of neurons in source region
             sparsity: Connection sparsity (0.5 = 50% connected, biological default)
             weight_scale: Initial weight scale (2.5 = strong enough to reliably drive postsynaptic firing)
@@ -212,12 +214,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         if source_name in self.input_sources:
             raise ValueError(f"Input source '{source_name}' already exists")
 
-        # Determine target layer size from layer name
-        # Different inputs go to different layers (e.g., Cortex: thalamus→L4, hippocampus→L5)
-        n_output = self._get_target_layer_size(target_layer)
+        # Determine target population size from population name
+        # Different inputs go to different populations (e.g., Cortex: thalamus→L4, hippocampus→L5)
+        n_output = self._get_target_population_size(target_population)
 
         # Create weight matrix [n_output, n_input]
-        # n_output is layer-specific (e.g., L4 for Cortex) or total neurons for simple regions
+        # n_output is population-specific (e.g., L4 for Cortex) or total neurons for simple regions
         weights = WeightInitializer.sparse_random(
             n_output=n_output,
             n_input=n_input,
@@ -232,141 +234,45 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # Track source registration
         self.input_sources[source_name] = n_input
 
-        # Store target layer for runtime routing (biological: synapses define the pathway)
-        self._source_target_layers[source_name] = target_layer
+        # Store target population for runtime routing (biological: synapses define the pathway)
+        self._source_target_populations[source_name] = target_population
 
-    def _get_target_layer_size(self, target_layer: LayerName) -> int:
-        """Get target layer size directly from layer name."""
-        size_attr = f"{target_layer}_size"
+    def _get_target_population_size(self, target_population: PopulationName) -> int:
+        """Get target population size from population name."""
+        size_attr = f"{target_population}_size"
         if not hasattr(self, size_attr):
             raise ValueError(
-                f"Target layer '{target_layer}' not found in {self.__class__.__name__}. "
+                f"Target population '{target_population}' not found in {self.__class__.__name__}. "
                 f"Expected attribute '{size_attr}'."
             )
         return getattr(self, size_attr)
 
     # =========================================================================
-    # PORT-BASED ROUTING MANAGEMENT
-    # =========================================================================
-
-    def _register_output_port(self, port_name: PortName, size: int) -> None:
-        """Register an output port for routing.
-
-        Ports enable routing specific outputs to specific targets, matching biological
-        reality where different cell types project to different targets (e.g., L6a→TRN, L6b→relay).
-
-        Args:
-            port_name: Name of the port (e.g., "l6a", "l6b")
-            size: Number of neurons in this output
-
-        Raises:
-            ValueError: If port already registered
-        """
-        if port_name in self._registered_ports:
-            raise ValueError(f"Port '{port_name}' already registered in {self.__class__.__name__}")
-
-        self._port_sizes[port_name] = size
-        self._registered_ports.add(port_name)
-
-    def set_port_output(self, port_name: PortName, spikes: torch.Tensor) -> None:
-        """Store output for a specific port.
-
-        Called during forward() to set outputs for each registered port.
-
-        Args:
-            port_name: Name of the port
-            spikes: Spike tensor for this port (shape: [size])
-
-        Raises:
-            ValueError: If port not registered or size mismatch
-        """
-        if port_name not in self._registered_ports:
-            raise ValueError(
-                f"Port '{port_name}' not registered in {self.__class__.__name__}. "
-                f"Available ports: {sorted(self._registered_ports)}"
-            )
-
-        expected_size = self._port_sizes[port_name]
-        if spikes.shape[0] != expected_size:
-            raise ValueError(
-                f"Port '{port_name}' in {self.__class__.__name__} expects {expected_size} "
-                f"neurons, got {spikes.shape[0]}"
-            )
-
-        self._port_outputs[port_name] = spikes
-
-    def get_port_output(self, port_name: PortName) -> torch.Tensor:
-        """Get output from a specific port.
-
-        Used by AxonalProjection to route from specific outputs.
-
-        Args:
-            port_name: Name of the port (required). Must specify explicit port.
-
-        Returns:
-            Spike tensor from the specified port. Returns zeros if port is
-            registered but hasn't been set yet (e.g., first timestep or
-            circular dependencies).
-
-        Raises:
-            ValueError: If port not registered
-        """
-        # Check if port is registered
-        if port_name not in self._registered_ports:
-            raise ValueError(
-                f"Port '{port_name}' not registered in {self.__class__.__name__}. "
-                f"Available ports: {sorted(self._registered_ports)}"
-            )
-
-        # If port is registered but not set yet, return zeros
-        if port_name not in self._port_outputs:
-            size = self._port_sizes[port_name]
-            return torch.zeros(size, dtype=torch.bool, device=self.device)
-
-        return self._port_outputs[port_name]
-
-    def get_all_port_outputs(self) -> RegionSpikesDict:
-        """Get outputs from all registered ports.
-
-        Returns:
-            Dict mapping port names to their output spike tensors. Ports that
-            haven't been set yet will return zero tensors.
-        """
-        outputs: RegionSpikesDict = {}
-        for port_name in self._registered_ports:
-            outputs[port_name] = self.get_port_output(port_name)
-        return outputs
-
-    # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    def forward(self, inputs: RegionSpikesDict) -> RegionSpikesDict:
-        """Forward pass with input validation and port output management."""
-        for source_name, spikes in inputs.items():
-            validate_spike_tensor(spikes, tensor_name=source_name)
+    def _pre_forward(self, region_inputs: RegionSpikesDict) -> None:
+        """Pre-forward processing (input validation, etc.)."""
+        # Validate input spike tensors
+        validate_spike_tensors(region_inputs, context=f"{self.__class__.__name__} forward inputs")
+
+        # Check that all input sources are registered
+        for source_name in region_inputs.keys():
             if source_name not in self.input_sources:
                 raise ValueError(
                     f"Input source '{source_name}' not registered in {self.__class__.__name__}. "
                     f"Registered sources: {sorted(self.input_sources.keys())}"
                 )
 
-        self._port_outputs.clear()
-        self._forward_internal(inputs)
-
-        return self.get_all_port_outputs()
+    def _post_forward(self, region_outputs: RegionSpikesDict) -> RegionSpikesDict:
+        """Post-forward processing (e.g., tracking output spikes)."""
+        # Store output spikes for potential use in learning or monitoring
+        self._last_region_outputs = region_outputs
+        return region_outputs
 
     @abstractmethod
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
-        """Internal forward method to be implemented by subclasses.
-
-        This is where the actual processing happens. The base forward() method
-        handles input validation and port output management, while this internal
-        method focuses on the specific computations for the region.
-
-        Args:
-            inputs: Dict mapping source names to spike vectors
-        """
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
+        """Process inputs through the region and produce outputs."""
 
     def _integrate_multi_source_synaptic_inputs(
         self,

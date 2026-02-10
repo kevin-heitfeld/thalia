@@ -55,7 +55,7 @@ import numpy as np
 
 from thalia.brain.configs import MedialSeptumConfig
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
-from thalia.typing import RegionLayerSizes, RegionSpikesDict
+from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -80,7 +80,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
     No external oscillator needed - theta emerges from intrinsic properties.
     """
 
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "ach": "n_ach",        # Cholinergic only
         "gaba": "n_gaba",      # GABAergic only
     }
@@ -89,11 +89,10 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: MedialSeptumConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: MedialSeptumConfig, population_sizes: PopulationSizes):
         """Initialize medial septum with pacemaker neurons."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
-        # Store neuron counts for OUTPUT_PORTS
         self.n_ach = config.n_ach
         self.n_gaba = config.n_gaba
         self.n_total = config.n_ach + config.n_gaba
@@ -181,8 +180,10 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Generate theta rhythm through intrinsic bursting."""
+        self._pre_forward(region_inputs)
+
         # =====================================================================
         # NEUROMODULATION OF PACEMAKER
         # =====================================================================
@@ -228,7 +229,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # =====================================================================
         # EXTERNAL INPUTS (minimal - mostly self-sustaining)
         # =====================================================================
-        external_input = inputs.get("default", torch.zeros(self.config.n_ach, device=self.device))
+        external_input = region_inputs.get("default", torch.zeros(self.config.n_ach, device=self.device))
         if external_input.numel() < self.config.n_ach:
             external_input = torch.zeros(self.config.n_ach, device=self.device)
         elif external_input.numel() > self.config.n_ach:
@@ -269,11 +270,12 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         self.cholinergic_spikes = ach_spikes
         self.gabaergic_spikes = gaba_spikes
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("ach", ach_spikes)
-        self.set_port_output("gaba", gaba_spikes)
+        region_outputs: RegionSpikesDict = {
+            "ach": ach_spikes,
+            "gaba": gaba_spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     # =========================================================================
     # DIAGNOSTICS

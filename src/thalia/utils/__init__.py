@@ -8,10 +8,6 @@ from __future__ import annotations
 from .delay_buffer import (
     CircularDelayBuffer,
 )
-from .layer_size_calculator import (
-    BiologicalRatios,
-    LayerSizeCalculator,
-)
 from .neuromodulation import (
     compute_ne_gain,
 )
@@ -37,9 +33,6 @@ from .weight_utils import (
 __all__ = [
     # Delay Buffer
     "CircularDelayBuffer",
-    # Layer Size Calculation
-    "LayerSizeCalculator",
-    "BiologicalRatios",
     # Neuromodulation
     "compute_ne_gain",
     # Numerical Validation

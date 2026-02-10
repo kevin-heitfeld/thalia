@@ -50,8 +50,8 @@ from thalia.learning.homeostasis import (
 )
 from thalia.diagnostics import DiagnosticsUtils
 from thalia.typing import (
-    LayerName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
@@ -124,8 +124,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     - EC direct: Current sensory input
     """
 
-    # Declarative output ports (auto-registered by base class)
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "dg": "dg_size",
         "ca3": "ca3_size",
         "ca2": "ca2_size",
@@ -136,17 +135,17 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: HippocampusConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: HippocampusConfig, population_sizes: PopulationSizes):
         """Initialize trisynaptic hippocampus."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.dg_size = region_layer_sizes["dg_size"]
-        self.ca3_size = region_layer_sizes["ca3_size"]
-        self.ca2_size = region_layer_sizes["ca2_size"]
-        self.ca1_size = region_layer_sizes["ca1_size"]
+        self.dg_size = population_sizes["dg_size"]
+        self.ca3_size = population_sizes["ca3_size"]
+        self.ca2_size = population_sizes["ca2_size"]
+        self.ca1_size = population_sizes["ca1_size"]
 
         # Calculate inhibitory size for septal input routing
         # Septal GABA targets OLM cells (30% of total inhibitory, 25% of pyramidal)
@@ -522,7 +521,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         )
 
         # CA3 → CA3 RECURRENT: Autoassociative memory weights (AT CA3 DENDRITES)
-        # Receives recurrent input via "ca3_recurrent" port with 2ms axonal delay
+        # Receives recurrent input via "ca3_recurrent" population with 2ms axonal delay
         # Learning: One-shot Hebbian with fast/slow traces and heterosynaptic LTD
         ca3_recurrent_weights = WeightInitializer.sparse_random(
             n_output=self.ca3_size,
@@ -620,7 +619,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     def add_input_source(
         self,
         source_name: SpikesSourceKey,
-        target_layer: LayerName,
+        target_population: PopulationName,
         n_input: int,
         sparsity: float = 0.8,
         weight_scale: float = 1.0,
@@ -636,15 +635,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         Args:
             source_name: Name of input source (e.g., "cortex:l5", "pfc:executive")
-            input_port: Port for routing
-            n_input: Size of input from this source
-            sparsity: Connection sparsity (0-1, higher = more sparse)
-            weight_scale: Scaling factor for weight initialization
+            target_population: Target population within hippocampus ("dg", "ca3", "ca1")
+            n_input: Number of input neurons from this source
+            sparsity: Sparsity of connections (0.0 to 1.0)
+            weight_scale: Scaling factor for initial weights
         """
-        # Call parent to register source (routes to default layer via port)
+        # Call parent to register source
         super().add_input_source(
             source_name=source_name,
-            target_layer=target_layer,
+            target_population=target_population,
             n_input=n_input,
             sparsity=sparsity,
             weight_scale=weight_scale,
@@ -732,14 +731,16 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Process input spikes through DG→CA3→CA1 circuit."""
+        self._pre_forward(region_inputs)
+
         # =====================================================================
         # DOPAMINE RECEPTOR PROCESSING (from VTA)
         # =====================================================================
         # Process VTA dopamine spikes → concentration dynamics
         # Hippocampus receives minimal (10%) DA innervation for novelty/salience
-        vta_da_spikes = inputs.get("vta:da_output")
+        vta_da_spikes = region_inputs.get("vta:da_output")
         if vta_da_spikes is not None:
             # Update full receptor array
             da_concentration_full = self.da_receptor.update(vta_da_spikes)
@@ -805,21 +806,21 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         dg_input = self._integrate_multi_source_synaptic_inputs(
-            inputs=inputs,
+            inputs=region_inputs,
             n_neurons=self.dg_size,
             weight_key_suffix="_dg",
             apply_stp=False,
         )
 
         ca3_input = self._integrate_multi_source_synaptic_inputs(
-            inputs=inputs,
+            inputs=region_inputs,
             n_neurons=self.ca3_size,
             weight_key_suffix="_ca3",
             apply_stp=False,
         )
 
         ca1_input = self._integrate_multi_source_synaptic_inputs(
-            inputs=inputs,
+            inputs=region_inputs,
             n_neurons=self.ca1_size,
             weight_key_suffix="_ca1",
             apply_stp=False,
@@ -830,7 +831,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # Septal GABAergic input drives theta rhythm by phase-locking OLM cells
         # OLM cells rebound at theta troughs → dendritic inhibition → encoding/retrieval
-        septal_gaba = inputs.get("septal_gaba", None)
+        septal_gaba = region_inputs.get("septal_gaba", None)
         if septal_gaba is not None and septal_gaba.numel() == 0:
             septal_gaba = None  # Treat empty tensor as None
 
@@ -1076,17 +1077,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # EMERGENT PHASE CODING (replaces explicit slot gating)
         # =====================================================================
-        # Phase preferences emerge naturally from:
-        # 1. Weight diversity (timing jitter in initialization)
-        # 2. STDP (strengthens connections at successful firing times)
-        # 3. Dendritic integration windows (~15ms)
-        # 4. Recurrent dynamics (neurons that fire together wire together)
-        #
-        # No explicit gating needed - temporal structure emerges from dynamics!
-        # Gamma amplitude still modulates overall excitability:
-        # - High gamma (theta trough): Enhanced responsiveness to inputs
-        # - Low gamma (theta peak): Reduced responsiveness, recurrence dominates
-
         # Gamma amplitude modulation (emergent from oscillator coupling)
         # High amplitude → neurons more responsive to current input
         # Low amplitude → neurons rely more on recurrent memory
@@ -1614,7 +1604,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self.ca3_spikes = ca3_spikes
         self.ca2_spikes = ca2_spikes
         self.ca1_spikes = ca1_spikes
-        self._apply_plasticity()
 
         # =====================================================================
         # DOPAMINE-GATED CONSOLIDATION
@@ -1632,15 +1621,18 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             )
             self.synaptic_weights["ca3_ca3"].data = new_weights
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("dg", dg_spikes)
-        self.set_port_output("ca3", ca3_spikes)
-        self.set_port_output("ca2", ca2_spikes)
-        self.set_port_output("ca1", ca1_spikes)
+        region_outputs: RegionSpikesDict = {
+            "dg": dg_spikes,
+            "ca3": ca3_spikes,
+            "ca2": ca2_spikes,
+            "ca1": ca1_spikes,
+        }
 
-    def _apply_plasticity(self) -> None:
+        self._apply_plasticity(region_outputs)
+
+        return self._post_forward(region_outputs)
+
+    def _apply_plasticity(self, region_outputs: RegionSpikesDict) -> None:
         """
         Apply homeostatic plasticity to CA3 recurrent weights.
 
@@ -1648,6 +1640,12 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         This method only applies homeostatic mechanisms (synaptic scaling,
         intrinsic plasticity) to maintain stable network dynamics.
         """
+        # TODO: Also apply plasticity to other synapses (EC→CA1, CA3→CA2, CA2→CA1) if needed
+        # dg_spikes = region_outputs["dg"]
+        ca3_spikes = region_outputs["ca3"]
+        # ca2_spikes = region_outputs["ca2"]
+        # ca1_spikes = region_outputs["ca1"]
+
         # Apply homeostatic synaptic scaling to CA3 recurrent weights
         self.synaptic_weights["ca3_ca3"].data = self.homeostasis.normalize_weights(
             self.synaptic_weights["ca3_ca3"].data, dim=1
@@ -1655,7 +1653,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # Maintain no self-connections
 
         # Apply intrinsic plasticity (threshold adaptation) using homeostasis helper
-        if self.ca3_spikes is not None:
+        if ca3_spikes is not None:
             # Initialize if needed
             if self._ca3_activity_history is None:
                 self._ca3_activity_history = torch.zeros(self.ca3_size, device=self.device)
@@ -1663,7 +1661,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.device)
 
             # Update activity history (exponential moving average)
-            self._ca3_activity_history.mul_(0.99).add_(self.ca3_spikes.float(), alpha=0.01)
+            self._ca3_activity_history.mul_(0.99).add_(ca3_spikes.float(), alpha=0.01)
 
             # Use homeostasis helper for excitability modulation
             # This computes threshold offset based on activity deviation from target

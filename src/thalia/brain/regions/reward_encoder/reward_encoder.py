@@ -51,8 +51,8 @@ import torch
 
 from thalia.brain.configs import RewardEncoderConfig
 from thalia.typing import (
-    PortName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
 )
 
@@ -75,21 +75,27 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
     suitable for delivery to VTA. Provides clean abstraction boundary
     between external environment and internal neuromodulation system.
 
-    Output Ports:
-    -------------
+    Input Populations:
+    ------------------
+    None - This is a source region driven by external signals (set_reward API).
+
+    Output Populations:
+    -------------------
     - "reward_signal": Spike pattern encoding current reward [n_neurons]
 
-    No Input Ports:
-    ---------------
-    This is a source region driven by external signals (set_reward API).
+    Computational Properties:
+    -------------------------
+    - Population coding: Different neurons respond to different reward magnitudes
+    - Positive rewards activate first half of neurons, negative rewards activate second half
+    - Spike probability proportional to reward magnitude (with noise)
     """
 
-    OUTPUT_PORTS: Dict[PortName, str] = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "reward_signal": "n_neurons",
     }
 
-    def __init__(self, config: RewardEncoderConfig, region_layer_sizes: RegionLayerSizes):
-        super().__init__(config, region_layer_sizes)
+    def __init__(self, config: RewardEncoderConfig, population_sizes: PopulationSizes):
+        super().__init__(config, population_sizes)
 
         # Number of neurons
         self.n_neurons = config.n_neurons
@@ -101,6 +107,8 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
 
         # Track reward history for monitoring
         self._reward_history: list[float] = []
+
+        super().__post_init__()
 
     def set_reward(self, reward: float):
         """Set external reward signal to be encoded on next forward() call.
@@ -132,13 +140,15 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
         if len(self._reward_history) > 1000:
             self._reward_history.pop(0)  # Keep last 1000 only
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Encode current reward as population spike pattern.
 
         Population coding:
         - First N/2 neurons: Fire proportional to positive reward magnitude
         - Last N/2 neurons: Fire proportional to negative reward magnitude
         """
+        self._pre_forward(region_inputs)
+
         # Initialize spike tensor
         spikes = torch.zeros(self.n_neurons, device=self.device, dtype=torch.bool)
 
@@ -171,8 +181,11 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
         # This ensures reward is only delivered once per set_reward() call
         self._current_reward = 0.0
 
-        # Set output port
-        self._set_port_output("reward_signal", spikes)
+        region_outputs: RegionSpikesDict = {
+            "reward_signal": spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     def get_reward_history(self) -> list[float]:
         """Get recent reward history for analysis.

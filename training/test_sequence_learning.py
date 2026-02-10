@@ -30,6 +30,12 @@ from scipy import signal as scipy_signal
 from tqdm import tqdm
 
 from thalia.brain import BrainConfig, BrainBuilder, DynamicBrain
+from thalia.brain.regions import (
+    NeuralRegion,
+    Cortex,
+    Hippocampus,
+    Thalamus,
+)
 from thalia.datasets import PatternType, SequenceConfig, TemporalSequenceDataset
 from thalia.typing import BrainSpikesDict
 
@@ -72,15 +78,19 @@ class NeuralSignalRecorder:
         # Get recent spike activity from brain regions
         # Use spike count as proxy for population activity (normalized)
 
+        thalamus = brain.get_first_region_of_type(Thalamus)
+        cortex = brain.get_first_region_of_type(Cortex)
+        hippocampus = brain.get_first_region_of_type(Hippocampus)
+
         # Hippocampus activity (CA1 output)
         hipp_lfp = 0.0
         if brain_output and "hippocampus" in brain_output:
             # Use current timestep output
             hipp_spikes = sum(s.float().sum().item() for s in brain_output["hippocampus"].values() if s is not None)
             hipp_lfp = hipp_spikes / 800.0  # Normalize by population size
-        elif hasattr(brain, 'hippocampus') and brain.hippocampus is not None:
-            if hasattr(brain.hippocampus, 'output_spikes') and brain.hippocampus.output_spikes is not None:
-                hipp_spikes = brain.hippocampus.output_spikes.float().sum().item()
+        elif hippocampus is not None:
+            if hasattr(hippocampus, 'output_spikes') and hippocampus.output_spikes is not None:
+                hipp_spikes = hippocampus.output_spikes.float().sum().item()
                 hipp_lfp = hipp_spikes / 800.0
 
         # Cortex activity (superficial layers generate most EEG)
@@ -89,9 +99,9 @@ class NeuralSignalRecorder:
             # Use current timestep output
             cortex_spikes = sum(s.float().sum().item() for s in brain_output["cortex"].values() if s is not None)
             cortex_lfp = cortex_spikes / 200.0  # Normalize by population size
-        elif hasattr(brain, 'cortex') and brain.cortex is not None:
-            if hasattr(brain.cortex, 'output_spikes') and brain.cortex.output_spikes is not None:
-                cortex_spikes = brain.cortex.output_spikes.float().sum().item()
+        elif cortex is not None:
+            if hasattr(cortex, 'output_spikes') and cortex.output_spikes is not None:
+                cortex_spikes = cortex.output_spikes.float().sum().item()
                 cortex_lfp = cortex_spikes / 200.0
 
         # Combined signal (weighted by cortical contribution to scalp EEG)
@@ -186,6 +196,13 @@ class TrainingConfig:
     cortex_size: int = 200  # Reduced from default 1000
     pfc_executive_size: int = 150
     striatum_actions: int = 5  # One per symbol
+
+    # cerebellum_sizes = {'purkinje_size': 200, 'granule_size': 800}
+    # cortex_sizes = {'l23_size': 133, 'l4_size': 66, 'l5_size': 66, 'l6a_size': 10, 'l6b_size': 50, 'vta_da': 20000}
+    # hippocampus_sizes = {'dg_size': 796, 'ca3_size': 398, 'ca2_size': 199, 'ca1_size': 398, 'vta_da': 20000}
+    # pfc_sizes = {'executive_size': 150, 'vta_da': 20000}
+    # striatum_sizes = {'d1_size': 50, 'd2_size': 50, 'n_actions': 5, 'neurons_per_action': 10, 'vta_da': 20000}
+    # thalamus_sizes = {'relay_size': 50, 'trn_size': 15}
 
     # Dataset configuration
     n_symbols: int = 5
@@ -464,31 +481,29 @@ class SequenceLearningExperiment:
             striatum_actions=self.config.striatum_actions,
         )
 
+        thalamus = self.brain.get_first_region_of_type(Thalamus)
+        cortex = self.brain.get_first_region_of_type(Cortex)
+        hippocampus = self.brain.get_first_region_of_type(Hippocampus)
+
         if self.config.verbose:
             print(f"   ✓ Brain created with {self._count_parameters()} parameters")
             print(f"   ✓ Regions: {list(self.brain.regions.keys())}")
 
+            def _print_region_info(region: Optional[NeuralRegion], additional_attrs: Optional[List[str]] = None):
+                if region is not None:
+                    print(f"  {region.__class__.__name__}:")
+                    print(f"    - Learning strategy: {region.learning_strategy.__class__.__name__ if region.learning_strategy else 'NONE'}")
+                    print(f"    - Input sources: {list(region.input_sources.keys())}")
+                    print(f"    - Synaptic weights: {list(region.synaptic_weights.keys())}")
+                    for attr in additional_attrs or []:
+                        print(f"    - {attr}: {getattr(region, attr) if hasattr(region, attr) else 'N/A'}")
+
             # DEBUG: Verify critical connectivity and learning setup
             print("\n[CONNECTIVITY & LEARNING DEBUG]")
-            if hasattr(self.brain, 'thalamus') and self.brain.thalamus:
-                print(f"  Thalamus relay size: {self.brain.thalamus.relay_size}")
+            _print_region_info(thalamus, ["relay_size"])
+            _print_region_info(cortex)
+            _print_region_info(hippocampus)
 
-            # Check hippocampus learning
-            if hasattr(self.brain, 'hippocampus') and self.brain.hippocampus:
-                hipp = self.brain.hippocampus
-                print("  Hippocampus:")
-                learning_strategy = hipp.learning_strategy.__class__.__name__ if hasattr(hipp, 'learning_strategy') and hipp.learning_strategy else 'NONE!!'
-                print(f"    - Learning strategy: {learning_strategy}")
-                print(f"    - Synaptic weights: {list(hipp.synaptic_weights.keys()) if hasattr(hipp, 'synaptic_weights') else 'NONE!!'}")
-                print(f"    - Modulation enabled: {hipp.modulation_enabled if hasattr(hipp, 'modulation_enabled') else 'UNKNOWN'}")
-                print(f"    - Has dopamine attr: {hasattr(hipp, 'dopamine')}")
-
-            # Check cortex learning
-            if hasattr(self.brain, 'cortex') and self.brain.cortex:
-                cortex = self.brain.cortex
-                print("  Cortex:")
-                learning_strategy = cortex.learning_strategy.__class__.__name__ if hasattr(cortex, 'learning_strategy') and cortex.learning_strategy else 'NONE!!'
-                print(f"    - Learning strategy: {learning_strategy}")
         if self.config.verbose:
             print("\n[CRITICAL FIX] Attaching learning strategies...")
 
@@ -501,7 +516,7 @@ class SequenceLearningExperiment:
             modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
             device=self.device,
         )
-        self.brain.hippocampus.learning_strategy = ThreeFactorStrategy(
+        hippocampus.learning_strategy = ThreeFactorStrategy(
             config=hipp_learning_config
         )
 
@@ -512,7 +527,7 @@ class SequenceLearningExperiment:
             modulator_tau=50.0,
             device=self.device,
         )
-        self.brain.cortex.learning_strategy = ThreeFactorStrategy(
+        cortex.learning_strategy = ThreeFactorStrategy(
             config=cortex_learning_config
         )
 
@@ -751,6 +766,14 @@ class SequenceLearningExperiment:
 
     def train(self):
         """Run training phase."""
+        assert self.brain is not None and self.dataset is not None, (
+            "Brain and dataset must be initialized before training."
+        )
+
+        thalamus = self.brain.get_first_region_of_type(Thalamus)
+        cortex = self.brain.get_first_region_of_type(Cortex)
+        hippocampus = self.brain.get_first_region_of_type(Hippocampus)
+
         if self.config.verbose:
             print("\n" + "=" * 80)
             print("TRAINING PHASE")
@@ -852,7 +875,7 @@ class SequenceLearningExperiment:
 
                         # DEBUG: Verify dopamine actually reaches hippocampus
                         if trial_idx < 3:  # Only first 3 trials for brevity
-                            actual_da = self.brain.hippocampus.dopamine.item() if hasattr(self.brain.hippocampus, 'dopamine') else None
+                            actual_da = hippocampus.dopamine.item() if hasattr(hippocampus, 'dopamine') else None
                             da_str = f"{actual_da:.3f}" if actual_da is not None else "N/A"
                             print(f"    [DOPAMINE DEBUG] Delivered: {dopamine:.3f}, Hippocampus received: {da_str}")
 
@@ -867,7 +890,7 @@ class SequenceLearningExperiment:
                         self.config.spike_rate_active,
                         self.config.spike_rate_baseline,
                         self.device,
-                        thalamus_size=self.brain.thalamus.relay_size,
+                        thalamus_size=thalamus.relay_size,
                         add_temporal_jitter=True,  # Randomize which neurons spike each timestep
                     )
 
@@ -879,8 +902,8 @@ class SequenceLearningExperiment:
 
                     # COLLECT CA3 SPIKES for learning (accumulate across timesteps)
                     if ts == 0:
-                        symbol_ca3_spikes = torch.zeros_like(self.brain.hippocampus.ca3_spikes, dtype=torch.float32)
-                    symbol_ca3_spikes += self.brain.hippocampus.ca3_spikes.float()
+                        symbol_ca3_spikes = torch.zeros_like(hippocampus.ca3_spikes, dtype=torch.float32)
+                    symbol_ca3_spikes += hippocampus.ca3_spikes.float()
 
                     # Record LFP for this timestep (EEG-like signal)
                     # Pass brain_output for accurate spike counts
@@ -896,8 +919,8 @@ class SequenceLearningExperiment:
 
                     # Read prediction at THIS timestep and accumulate
                     # Read hippocampus CA1 output (memory prediction)
-                    # brain_output is Dict[region_name, Dict[port_name, Tensor]]
-                    # Get first available port from preferred region
+                    # brain_output is Dict[region_name, Dict[population_name, Tensor]]
+                    # Get first available population from preferred region
                     if "hippocampus" in brain_output and brain_output["hippocampus"]:
                         prediction_spikes = list(brain_output["hippocampus"].values())[0]
                     elif "cortex" in brain_output and brain_output["cortex"]:
@@ -946,25 +969,24 @@ class SequenceLearningExperiment:
                 # Eligibility traces from previous symbol are still active (~85% after 15ms)
                 if self.config.use_dopamine_modulation:
                     # Update hippocampus recurrent weights (CA3→CA3)
-                    hipp = self.brain.hippocampus
-                    if hasattr(hipp, 'learning_strategy') and hipp.learning_strategy:
+                    if hasattr(hippocampus, 'learning_strategy') and hippocampus.learning_strategy:
                         # Use accumulated CA3 spikes from the symbol period
                         ca3_spikes = symbol_ca3_spikes if 'symbol_ca3_spikes' in locals() else None
 
-                        if ca3_spikes is not None and "ca3_ca3" in hipp.synaptic_weights:
+                        if ca3_spikes is not None and "ca3_ca3" in hippocampus.synaptic_weights:
                             # DEBUG: First trial only
                             if trial_idx == 0 and t == 0:
                                 print("\n[LEARNING DEBUG]")
                                 print(f"  Symbol CA3 spikes: shape={ca3_spikes.shape}, sum={ca3_spikes.sum().item():.1f}")
-                                print(f"  CA3 weights shape: {hipp.synaptic_weights['ca3_ca3'].shape}")
-                                print(f"  Dopamine: {hipp.neuromodulator_state.dopamine:.3f}")
-                                print(f"  Learning strategy: {hipp.learning_strategy.__class__.__name__}")
+                                print(f"  CA3 weights shape: {hippocampus.synaptic_weights['ca3_ca3'].shape}")
+                                print(f"  Dopamine: {hippocampus.neuromodulator_state.dopamine:.3f}")
+                                print(f"  Learning strategy: {hippocampus.learning_strategy.__class__.__name__}")
 
-                            metrics = hipp._apply_strategy_learning(
+                            metrics = hippocampus._apply_strategy_learning(
                                 pre_activity=ca3_spikes,
                                 post_activity=ca3_spikes,  # Recurrent connection
-                                weights=hipp.synaptic_weights["ca3_ca3"],
-                                modulator=hipp.neuromodulator_state.dopamine,
+                                weights=hippocampus.synaptic_weights["ca3_ca3"],
+                                modulator=hippocampus.neuromodulator_state.dopamine,
                             )
 
                             # DEBUG: Print metrics
@@ -973,8 +995,8 @@ class SequenceLearningExperiment:
                         elif trial_idx == 0 and t == 0:
                             print("\n[LEARNING DEBUG] Symbol CA3 spikes NOT available!")
                             print(f"  symbol_ca3_spikes in locals: {'symbol_ca3_spikes' in locals()}")
-                            print(f"  Has _ca3_spikes attr: {hasattr(hipp, '_ca3_spikes')}")
-                            print(f"  Available attrs: {[a for a in dir(hipp) if 'ca3' in a.lower() and 'spike' in a.lower()]}")
+                            print(f"  Has _ca3_spikes attr: {hasattr(hippocampus, '_ca3_spikes')}")
+                            print(f"  Available attrs: {[a for a in dir(hippocampus) if 'ca3' in a.lower() and 'spike' in a.lower()]}")
 
                 # Use accumulated prediction across all timesteps
                 spike_counts = self._accumulate_spikes(accumulated_prediction)
@@ -1051,21 +1073,20 @@ class SequenceLearningExperiment:
                 print(f"  Hippocampus spikes/symbol: {self._last_hippocampus_spikes:.1f}")
 
                 # DEBUG: Learning diagnostics
-                hipp = self.brain.hippocampus
-                hipp_has_learning = hasattr(hipp, 'learning_strategy') and hipp.learning_strategy is not None
-                hipp_learning_name = hipp.learning_strategy.__class__.__name__ if hipp_has_learning else 'NONE'
+                hipp_has_learning = hasattr(hippocampus, 'learning_strategy') and hippocampus.learning_strategy is not None
+                hipp_learning_name = hippocampus.learning_strategy.__class__.__name__ if hipp_has_learning else 'NONE'
 
                 # Check eligibility traces (stored in learning strategy)
                 elig_trace = 0.0
-                if hipp_has_learning and hasattr(hipp.learning_strategy, 'eligibility_trace'):
-                    if isinstance(hipp.learning_strategy.eligibility_trace, torch.Tensor):
-                        elig_trace = hipp.learning_strategy.eligibility_trace.mean().item()
+                if hipp_has_learning and hasattr(hippocampus.learning_strategy, 'eligibility_trace'):
+                    if isinstance(hippocampus.learning_strategy.eligibility_trace, torch.Tensor):
+                        elig_trace = hippocampus.learning_strategy.eligibility_trace.mean().item()
 
                 print(f"  [LEARNING] Strategy: {hipp_learning_name}")
                 print(f"  [LEARNING] CA3 eligibility trace: {elig_trace:.6f}")
-                if hasattr(hipp, 'dopamine'):
-                    print(f"  [LEARNING] Hippocampus DA: {hipp.dopamine.item():.3f}")
-                current_w = self.brain.hippocampus.synaptic_weights["ca3_ca3"].mean().item()
+                if hasattr(hippocampus, 'dopamine'):
+                    print(f"  [LEARNING] Hippocampus DA: {hippocampus.dopamine.item():.3f}")
+                current_w = hippocampus.synaptic_weights["ca3_ca3"].mean().item()
                 if trial_idx == 0:
                     self._initial_weight = current_w
                     print(f"  CA3 weights: {current_w:.6f} (initial)")
@@ -1075,7 +1096,7 @@ class SequenceLearningExperiment:
 
                     # Check if weights are changing at all
                     if abs(weight_change) < 1e-6:
-                        print(f"  ⚠ WARNING: Weights not changing! Learning may not be working.")
+                        print("  ⚠ WARNING: Weights not changing! Learning may not be working.")
                 print(f"{'='*60}\n")
 
             # Update plots periodically
@@ -1083,7 +1104,7 @@ class SequenceLearningExperiment:
                 # Sample CA3 weights every 10 trials
                 if not hasattr(self, 'weight_history'):
                     self.weight_history = []
-                w_mean = self.brain.hippocampus.synaptic_weights["ca3_ca3"].mean().item()
+                w_mean = hippocampus.synaptic_weights["ca3_ca3"].mean().item()
                 self.weight_history.append(w_mean)
 
                 self._update_plots()
@@ -1111,6 +1132,14 @@ class SequenceLearningExperiment:
 
     def test(self):
         """Run testing phase (novel sequences)."""
+        assert self.brain is not None and self.dataset is not None, (
+            "Brain and dataset must be initialized before testing."
+        )
+
+        thalamus = self.brain.get_first_region_of_type(Thalamus)
+        cortex = self.brain.get_first_region_of_type(Cortex)
+        hippocampus = self.brain.get_first_region_of_type(Hippocampus)
+
         if self.config.verbose:
             print("\n" + "=" * 80)
             print("TESTING PHASE")
@@ -1145,7 +1174,7 @@ class SequenceLearningExperiment:
                     self.config.spike_rate_active,
                     self.config.spike_rate_baseline,
                     self.device,
-                    thalamus_size=self.brain.thalamus.relay_size,
+                    thalamus_size=thalamus.relay_size,
                 )
 
                 # Thalamus receives external sensory input via ascending pathways
@@ -1196,6 +1225,14 @@ class SequenceLearningExperiment:
 
     def test_violation_detection(self):
         """Test if brain detects pattern violations."""
+        assert self.brain is not None and self.dataset is not None, (
+            "Brain and dataset must be initialized before testing."
+        )
+
+        thalamus = self.brain.get_first_region_of_type(Thalamus)
+        cortex = self.brain.get_first_region_of_type(Cortex)
+        hippocampus = self.brain.get_first_region_of_type(Hippocampus)
+
         if self.config.verbose:
             print("\n" + "=" * 80)
             print("VIOLATION DETECTION")
@@ -1227,7 +1264,7 @@ class SequenceLearningExperiment:
                     self.config.spike_rate_active,
                     self.config.spike_rate_baseline,
                     self.device,
-                    thalamus_size=self.brain.thalamus.relay_size,
+                    thalamus_size=thalamus.relay_size,
                 )
 
                 # Thalamus receives external sensory input via ascending pathways
@@ -1287,7 +1324,7 @@ class SequenceLearningExperiment:
                     self.config.spike_rate_active,
                     self.config.spike_rate_baseline,
                     self.device,
-                    thalamus_size=self.brain.thalamus.relay_size,
+                    thalamus_size=thalamus.relay_size,
                 )
 
                 # Thalamus receives external sensory input via ascending pathways

@@ -35,7 +35,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 
 from thalia.brain.configs import NeuralRegionConfig
 from thalia.errors import ConfigurationError
-from thalia.typing import RegionLayerSizes, RegionName
+from thalia.typing import PopulationSizes, RegionName
 
 from .neural_region import NeuralRegion
 
@@ -150,7 +150,7 @@ class NeuralRegionRegistry:
         cls,
         name: RegionName,
         config: NeuralRegionConfig,
-        region_layer_sizes: RegionLayerSizes,
+        population_sizes: PopulationSizes,
         **kwargs: Any,
     ) -> _NeuralRegion:
         """Create a region instance.
@@ -158,7 +158,7 @@ class NeuralRegionRegistry:
         Args:
             name: Region name or alias
             config: Configuration for the region
-            region_layer_sizes: Multi-input sizes dict
+            population_sizes: Multi-input sizes dict
             **kwargs: Additional arguments
 
         Returns:
@@ -175,7 +175,7 @@ class NeuralRegionRegistry:
             raise ValueError(f"Region '{name}' not registered. Available regions: {available}")
 
         try:
-            return region_class(config=config, region_layer_sizes=region_layer_sizes, **kwargs)
+            return region_class(config=config, population_sizes=population_sizes, **kwargs)
 
         except TypeError as e:
             sig = inspect.signature(region_class.__init__)

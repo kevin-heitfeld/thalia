@@ -59,8 +59,8 @@ from thalia.components import (
 from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
 from thalia.diagnostics import compute_plasticity_metrics
 from thalia.typing import (
-    LayerName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
@@ -98,8 +98,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
     - Synaptic weights stored per-source in synaptic_weights dict
     """
 
-    # Declarative output ports (auto-registered by base class)
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "d1": "d1_size",
         "d2": "d2_size",
     }
@@ -122,17 +121,17 @@ class Striatum(NeuralRegion[StriatumConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: StriatumConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: StriatumConfig, population_sizes: PopulationSizes):
         """Initialize Striatum with D1/D2 opponent pathways."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.d1_size = region_layer_sizes["d1_size"]
-        self.d2_size = region_layer_sizes["d2_size"]
-        self.n_actions = region_layer_sizes["n_actions"]
-        self.neurons_per_action = region_layer_sizes["neurons_per_action"]
+        self.d1_size = population_sizes["d1_size"]
+        self.d2_size = population_sizes["d2_size"]
+        self.n_actions = population_sizes["n_actions"]
+        self.neurons_per_action = population_sizes["neurons_per_action"]
 
         total_msn_neurons = self.d1_size + self.d2_size
 
@@ -231,7 +230,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None  # Will be initialized after weights
 
         # =====================================================================
-        # MSN→MSN LATERAL INHIBITION: Now EXTERNAL via port routing
+        # MSN→MSN LATERAL INHIBITION: Now EXTERNAL via population routing
         # =====================================================================
         # D1→D1 and D2→D2 lateral inhibition now use external connections.
         # External AxonalProjection provides:
@@ -241,10 +240,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         #   - Winner-take-all action selection dynamics
         #
         # Configure via BrainBuilder.connect():
-        #   source="striatum", source_port="d1", target_port="d1_lateral"
-        #   source="striatum", source_port="d2", target_port="d2_lateral"
+        #   source="striatum", source_population="d1", target_population="d1_lateral"
+        #   source="striatum", source_population="d2", target_population="d2_lateral"
         #
-        # Lateral inhibition will arrive via "d1_lateral" and "d2_lateral" input ports
+        # Lateral inhibition will arrive via "d1_lateral" and "d2_lateral" input populations
         self.d1_lateral_weights = None  # Deprecated: use external connection
         self.d2_lateral_weights = None  # Deprecated: use external connection
 
@@ -442,7 +441,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
     def add_input_source(
         self,
         source_name: SpikesSourceKey,
-        target_layer: LayerName,
+        target_population: PopulationName,
         n_input: int,
         sparsity: float = 0.0,
         weight_scale: float = 1.0,
@@ -680,14 +679,16 @@ class Striatum(NeuralRegion[StriatumConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Process input and select action using separate D1/D2 populations."""
+        self._pre_forward(region_inputs)
+
         # =====================================================================
         # DOPAMINE RECEPTOR UPDATE (VTA Spikes → Concentration)
         # =====================================================================
         # Convert spiking DA from VTA to synaptic concentration for learning.
         # If VTA not connected, falls back to scalar neuromodulator_state.dopamine
-        vta_da_spikes = inputs.get("vta:da_output", None)
+        vta_da_spikes = region_inputs.get("vta:da_output", None)
 
         if vta_da_spikes is not None:
             # Update D1 and D2 receptors (both receive same VTA spikes)
@@ -708,8 +709,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # for D1 and D2 pathways. Accumulate synaptic currents separately.
         # Biology: D1 and D2 MSNs are distinct neurons with independent synaptic
         # weights, so integration must remain separate per pathway.
-        d1_current = self._integrate_multi_source_inputs(inputs, "_d1", self.d1_size)
-        d2_current = self._integrate_multi_source_inputs(inputs, "_d2", self.d2_size)
+        d1_current = self._integrate_multi_source_inputs(region_inputs, "_d1", self.d1_size)
+        d2_current = self._integrate_multi_source_inputs(region_inputs, "_d2", self.d2_size)
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Feedforward Inhibition
@@ -721,7 +722,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         if self.fsi_size > 0:
             # Accumulate FSI currents from all sources
             fsi_current = torch.zeros(self.fsi_size, device=self.device)
-            for source_name, source_spikes in inputs.items():
+            for source_name, source_spikes in region_inputs.items():
                 fsi_key = f"fsi_{source_name}"
                 if fsi_key in self.synaptic_weights:
                     source_spikes_float = (
@@ -820,21 +821,21 @@ class Striatum(NeuralRegion[StriatumConfig]):
             prev_d2_spikes = torch.zeros(self.d2_size, device=self.device)
 
         # =====================================================================
-        # MSN→MSN LATERAL INHIBITION (now EXTERNAL via port routing)
+        # MSN→MSN LATERAL INHIBITION (now EXTERNAL via population routing)
         # =====================================================================
         # D1/D2 lateral inhibition now arrives via external AxonalProjection
         # with proper 1.5ms axonal delays and sparse connectivity
-        # Input via "d1_lateral" and "d2_lateral" ports
+        # Input via "d1_lateral" and "d2_lateral" populations
 
-        # D1 lateral inhibition: Receive from "d1_lateral" port
-        d1_lateral_input = inputs.get("d1_lateral", None)
+        # D1 lateral inhibition: Receive from "d1_lateral" population
+        d1_lateral_input = region_inputs.get("d1_lateral", None)
         if d1_lateral_input is not None:
             d1_lateral_inhibition = d1_lateral_input.float()  # Already weighted and delayed
         else:
             d1_lateral_inhibition = torch.zeros_like(prev_d1_spikes, dtype=torch.float32)
 
-        # D2 lateral inhibition: Receive from "d2_lateral" port
-        d2_lateral_input = inputs.get("d2_lateral", None)
+        # D2 lateral inhibition: Receive from "d2_lateral" population
+        d2_lateral_input = region_inputs.get("d2_lateral", None)
         if d2_lateral_input is not None:
             d2_lateral_inhibition = d2_lateral_input.float()  # Already weighted and delayed
         else:
@@ -1012,8 +1013,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Learning is applied continuously in _apply_dopamine_modulated_learning()
         # using these eligibility traces and the current dopamine level.
         # Pass inputs dict to eligibility update (multi-source aware)
-        self._update_pathway_eligibility(inputs, d1_spikes, "_d1", "_eligibility_d1")
-        self._update_pathway_eligibility(inputs, d2_spikes, "_d2", "_eligibility_d2")
+        self._update_pathway_eligibility(region_inputs, d1_spikes, "_d1", "_eligibility_d1")
+        self._update_pathway_eligibility(region_inputs, d2_spikes, "_d2", "_eligibility_d2")
 
         # Update recent spikes and trial activity via state_tracker
         self.state_tracker.update_recent_spikes(d1_spikes, d2_spikes, decay=0.9)
@@ -1031,11 +1032,12 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Store output spikes
         self.output_spikes = output_spikes
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("d1", d1_spikes)
-        self.set_port_output("d2", d2_spikes)
+        region_outputs: RegionSpikesDict = {
+            "d1": d1_spikes,
+            "d2": d2_spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     def _apply_dopamine_modulated_learning(self) -> Dict[str, Any]:
         """Apply three-factor learning rule using current dopamine level.

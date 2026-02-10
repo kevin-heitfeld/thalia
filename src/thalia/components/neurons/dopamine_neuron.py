@@ -201,13 +201,13 @@ class DopamineNeuron(ConductanceLIF):
 
         # Update membrane potential and check for spikes using parent class
         # This handles threshold crossing, reset, refractory period, etc.
-        super().forward(i_total)
+        spikes, new_v = super().forward(i_total)
 
         # === Update Calcium and SK Channels ===
 
         # Calcium influx on spike (spike-triggered calcium entry)
         self.ca_concentration += (
-            self.spikes.float() * self.da_config.ca_influx_per_spike
+            spikes.float() * self.da_config.ca_influx_per_spike
         )
 
         # Calcium decay (fast buffering/extrusion)
@@ -217,7 +217,10 @@ class DopamineNeuron(ConductanceLIF):
         # More calcium → more SK activation → more adaptation
         self.sk_activation = self.ca_concentration / (self.ca_concentration + 0.5)
 
-        return self.spikes
+        # Store spikes for diagnostic access
+        self.spikes = spikes
+
+        return spikes
 
     def get_firing_rate_hz(self, window_ms: int = 1000) -> float:
         """Get population firing rate in Hz.
@@ -229,8 +232,10 @@ class DopamineNeuron(ConductanceLIF):
 
         Returns:
             Mean firing rate across population in Hz
-        """
-        # Single timestep rate
+        """        # Check if spikes have been computed
+        if not hasattr(self, 'spikes') or self.spikes is None:
+            return 0.0
+                # Single timestep rate
         spike_rate = self.spikes.float().mean().item()
 
         # Convert to Hz (spikes per second)

@@ -67,8 +67,8 @@ from thalia.learning import (
     UnifiedHomeostasisConfig,
 )
 from thalia.typing import (
-    LayerName,
-    RegionLayerSizes,
+    PopulationName,
+    PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
@@ -250,8 +250,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     - Slow integration for temporal abstraction
     """
 
-    # Declarative output ports (auto-registered by base class)
-    OUTPUT_PORTS = {
+    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
         "executive": "executive_size",
     }
 
@@ -259,14 +258,14 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: PrefrontalConfig, region_layer_sizes: RegionLayerSizes):
+    def __init__(self, config: PrefrontalConfig, population_sizes: PopulationSizes):
         """Initialize prefrontal cortex."""
-        super().__init__(config=config, region_layer_sizes=region_layer_sizes)
+        super().__init__(config=config, population_sizes=population_sizes)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.executive_size = self.region_layer_sizes["executive_size"]
+        self.executive_size = self.population_sizes["executive_size"]
 
         # =====================================================================
         # INITIALIZE STATE FIELDS
@@ -499,7 +498,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     def add_input_source(
         self,
         source_name: SpikesSourceKey,
-        target_layer: LayerName,
+        target_population: PopulationName,
         n_input: int,
         sparsity: float = 0.8,
         weight_scale: float = 1.0,
@@ -516,7 +515,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             weight_scale: Scaling factor for weight initialization
         """
         # Call parent to register source
-        super().add_input_source(source_name, target_layer, n_input, sparsity, weight_scale)
+        super().add_input_source(source_name, target_population, n_input, sparsity, weight_scale)
 
         # Grow STP modules
         if n_input > 0:
@@ -549,14 +548,18 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _forward_internal(self, inputs: RegionSpikesDict) -> None:
+    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
         """Process input through prefrontal cortex."""
+        self._pre_forward(region_inputs)
+
+        dt_ms = self.config.dt_ms
+
         # =====================================================================
         # DOPAMINE RECEPTOR PROCESSING (from VTA)
         # =====================================================================
         # Process VTA dopamine spikes → concentration dynamics
         # PFC receives widespread DA innervation for working memory gating
-        vta_da_spikes = inputs.get("vta:da_output")
+        vta_da_spikes = region_inputs.get("vta:da_output")
         if vta_da_spikes is not None:
             self._da_concentration = self.da_receptor.update(vta_da_spikes)
         else:
@@ -570,14 +573,11 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # No STP per-source (PFC only has STP on recurrent connections)
         # No modulation callback needed (unlike cortex's alpha suppression)
         ff_integrated = self._integrate_multi_source_synaptic_inputs(
-            inputs=inputs,
+            inputs=region_inputs,
             n_neurons=self.executive_size,
             weight_key_suffix="",  # No suffix needed for PFC
             apply_stp=False,  # PFC doesn't use per-source STP
         )
-
-        # Get timestep from config for temporal dynamics
-        dt_ms = self.config.dt_ms
 
         gate = self.dopamine_system.get_gate()
 
@@ -750,10 +750,11 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Store output (NeuralRegion pattern)
         self.output_spikes = output_spikes
 
-        # =====================================================================
-        # SET PORT OUTPUTS
-        # =====================================================================
-        self.set_port_output("executive", output_spikes)
+        region_outputs: RegionSpikesDict = {
+            "executive": output_spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     def _apply_plasticity(
         self,
