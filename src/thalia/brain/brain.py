@@ -127,7 +127,7 @@ class DynamicBrain(nn.Module):
         self.config = config
 
         # Store regions as nn.ModuleDict for proper parameter tracking
-        self.regions = nn.ModuleDict(regions)
+        self.regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]] = nn.ModuleDict(regions)
 
         # Store connections with tuple keys for easy lookup
         # Also register in ModuleDict for parameter tracking
@@ -200,7 +200,7 @@ class DynamicBrain(nn.Module):
         # STEP 1: Read delayed outputs from all pathways (spikes from T-delay)
         region_inputs: BrainSpikesDict = {name: {} for name in self.regions.keys()}
 
-        for (_src, _tgt), pathway in cast(Dict[Tuple[RegionName, SpikesSourceKey], AxonalProjection], self.connections).items():
+        for (_src, _tgt), pathway in self.connections.items():
             # Read delayed outputs WITHOUT writing or advancing
             delayed_outputs: BrainSpikesDict = pathway.read_delayed_outputs()
 
@@ -241,7 +241,7 @@ class DynamicBrain(nn.Module):
 
         # STEP 3: Execute all regions with combined inputs → produce outputs at T
         outputs: BrainSpikesDict = {}
-        for region_name, region in cast(Dict[RegionName, NeuralRegion[NeuralRegionConfig]], self.regions).items():
+        for region_name, region in self.regions.items():
             # Get accumulated inputs for this region (empty dict if no inputs)
             region_input: RegionSpikesDict = region_inputs.get(region_name, {})
 
@@ -252,7 +252,7 @@ class DynamicBrain(nn.Module):
             outputs[region_name] = region_output
 
         # STEP 4: Write current outputs to pathways and advance buffers
-        for (src, _tgt), pathway in cast(Dict[Tuple[RegionName, RegionName], AxonalProjection], self.connections).items():
+        for (src, _tgt), pathway in self.connections.items():
             # Write source region's current output to buffer (for T+delay reads)
             if src in outputs:
                 source_output: BrainSpikesDict = {src: outputs[src]}
@@ -590,11 +590,11 @@ class DynamicBrain(nn.Module):
         oscillators = self.oscillators.get_state()
 
         regions_diag: Dict[str, Any] = {}
-        for region_name, region in cast(Dict[str, NeuralRegion[NeuralRegionConfig]], self.regions).items():
+        for region_name, region in self.regions.items():
             regions_diag[region_name] = region.get_diagnostics()
 
         connections_diag: Dict[str, Any] = {}
-        for (src, tgt), connection in cast(Dict[Tuple[str, str], AxonalProjection], self.connections).items():
+        for (src, tgt), connection in self.connections.items():
             connection_name = f"{src}_to_{tgt}"
             connections_diag[connection_name] = connection.get_diagnostics()
 

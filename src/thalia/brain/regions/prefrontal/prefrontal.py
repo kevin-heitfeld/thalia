@@ -724,73 +724,69 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             f"got {output_spikes.dtype}"
         )
 
-        # Apply continuous plasticity (learning happens as part of forward dynamics)
-        # NOTE: Multi-source plasticity needs per-source learning
-        # For now, skip plasticity until per-source learning strategies are implemented
-        # TODO: Implement per-source STDP learning like striatum
+        # =====================================================================
+        # CONTINUOUS PLASTICITY (Per-Source Learning)
+        # =====================================================================
+        # Apply STDP learning per-source with dopamine modulation
+        # Biology: Plasticity happens continuously based on spike timing,
+        # modulated by dopamine concentration from VTA
+
+        if self.config.learning_rate > 0 and self.learning_strategy is not None:
+            # Get dopamine modulation (average across neurons for learning rate scaling)
+            da_modulation = self._da_concentration.mean().item()
+            effective_lr = self.config.learning_rate * (1.0 + da_modulation)
+
+            # Apply per-source STDP learning to feedforward connections
+            for source_name, source_spikes in region_inputs.items():
+                # Skip if this source doesn't have weights
+                if source_name not in self.synaptic_weights:
+                    continue
+
+                # Skip neuromodulator inputs (processed via receptors)
+                if source_name.endswith(":da_output") or source_name.endswith(":ne_output") or source_name.endswith(":ach_output"):
+                    continue
+
+                # Apply STDP learning via strategy
+                updated_weights, _ = self.learning_strategy.compute_update(
+                    weights=self.synaptic_weights[source_name].data,
+                    pre_spikes=source_spikes,
+                    post_spikes=output_spikes,
+                    learning_rate=effective_lr,
+                    neuromodulator=da_modulation,
+                )
+                self.synaptic_weights[source_name].data.copy_(updated_weights)
+
+                # Apply weight clamping
+                self.synaptic_weights[source_name].data.clamp_(
+                    self.config.w_min,
+                    self.config.w_max,
+                )
+
+                # Apply synaptic scaling for homeostasis
+                if self.homeostasis is not None:
+                    self.synaptic_weights[source_name].data = self.homeostasis.normalize_weights(
+                        self.synaptic_weights[source_name].data, dim=1
+                    )
+
+            # ======================================================================
+            # RECURRENT WEIGHT LEARNING: Strengthen active WM patterns
+            # ======================================================================
+            # Simple Hebbian update for recurrent connections maintains WM patterns
+            # Biology: Persistent activity is stabilized by recurrent excitation
+            if self.working_memory is not None:
+                wm = self.working_memory  # [executive_size]
+                dW_rec = effective_lr * torch.outer(wm, wm)  # [executive_size, executive_size]
+                self.rec_weights.data += dW_rec
+                self.rec_weights.data.fill_diagonal_(self.config.recurrent_strength)  # Maintain self-excitation
+                self.rec_weights.data.clamp_(0.0, 1.0)
 
         # =====================================================================
-        # EMERGENT GOAL SYSTEM: Tag active WM patterns as goals
+        # EMERGENT GOAL LEARNING
         # =====================================================================
         if self.working_memory is not None:
             # Tag currently active goal patterns (similar to hippocampal synaptic tagging)
             self.emergent_goals.update_goal_tags(self.working_memory)
 
-        # Store output (NeuralRegion pattern)
-        self.output_spikes = output_spikes
-
-        region_outputs: RegionSpikesDict = {
-            "executive": output_spikes,
-        }
-
-        return self._post_forward(region_outputs)
-
-    def _apply_plasticity(
-        self,
-        input_spikes: torch.Tensor,
-        output_spikes: torch.Tensor,
-    ) -> None:
-        """Apply dopamine-gated STDP learning using strategy pattern.
-
-        Uses the learning strategy system for consistent plasticity application.
-        """
-
-        # IMPORTANT TODO: This method never gets called currently!
-        # Need to integrate with multi-source learning in forward().
-        # For now, plasticity is skipped in PFC until multi-source STDP is implemented.
-
-        cfg = self.config
-        # Input/output are already 1D bool tensors (ADR-005)
-
-        # Apply STDP learning via strategy
-        # Dopamine modulation is handled automatically by _apply_strategy_learning
-        metrics = self._apply_strategy_learning(
-            pre_activity=input_spikes,
-            post_activity=output_spikes,
-            weights=self.synaptic_weights["default"],
-        )
-
-        # Optional: Apply synaptic scaling for homeostasis
-        if metrics:
-            self.synaptic_weights["default"].data = self.homeostasis.normalize_weights(
-                self.synaptic_weights["default"].data, dim=1
-            )
-
-        # ======================================================================
-        # Update recurrent weights to strengthen WM patterns
-        # ======================================================================
-        # This simple Hebbian update for recurrent connections maintains WM patterns
-        if self.working_memory is not None:
-            wm = self.working_memory  # [executive_size]
-            dW_rec = cfg.learning_rate * torch.outer(wm, wm)  # [executive_size, executive_size]
-            self.rec_weights.data += dW_rec
-            self.rec_weights.data.fill_diagonal_(cfg.recurrent_strength)  # Maintain self-excitation
-            self.rec_weights.data.clamp_(0.0, 1.0)
-
-        # ======================================================================
-        # EMERGENT GOAL LEARNING: Learn transitions and consolidate values
-        # ======================================================================
-        if self.working_memory is not None:
             # Extract abstract and concrete patterns from WM
             abstract_pattern = self.working_memory[self.emergent_goals.abstract_neurons]
             concrete_pattern = self.working_memory[self.emergent_goals.concrete_neurons]
@@ -802,15 +798,24 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
                 self.emergent_goals.learn_transition(
                     abstract_pattern,
                     concrete_pattern,
-                    learning_rate=cfg.learning_rate,
+                    learning_rate=self.config.learning_rate,
                 )
 
             # Consolidate valuable goal patterns with dopamine
             # High dopamine → strengthen value associations for tagged goals
             self.emergent_goals.consolidate_valuable_goals(
                 dopamine=self._da_concentration.mean().item(),  # Average across neurons
-                learning_rate=cfg.learning_rate,
+                learning_rate=self.config.learning_rate,
             )
+
+        # Store output (NeuralRegion pattern)
+        self.output_spikes = output_spikes
+
+        region_outputs: RegionSpikesDict = {
+            "executive": output_spikes,
+        }
+
+        return self._post_forward(region_outputs)
 
     # =========================================================================
     # GOAL SYSTEM (EMERGENT HIERARCHICAL GOALS)

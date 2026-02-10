@@ -825,47 +825,22 @@ class SequenceLearningExperiment:
                     prev_target = trial_targets[-1] if trial_targets else None
 
                     if prev_prediction is not None and prev_target is not None:
-                        # BIOLOGICALLY-ACCURATE REWARD-BASED DOPAMINE
-                        # ============================================
-                        # Real dopamine neurons encode REWARD PREDICTION ERROR (RPE), not MSE.
-                        # RPE = (actual reward) - (expected reward)
-                        #
-                        # For supervised learning:
-                        # - Correct prediction → Positive reward → Dopamine BURST (LTP)
-                        # - Incorrect prediction → Negative reward → Dopamine DIP (LTD)
-                        #
-                        # This creates strong learning signal:
-                        # - Correct: DA ~ +0.5 (strengthen correct associations)
-                        # - Incorrect: DA ~ -0.5 (weaken incorrect associations)
-                        #
-                        # Previous approach used MSE between distributions (~0.15 always),
-                        # which produced flat DA signal and prevented learning.
-
                         # Binary reward based on task success
                         if prev_prediction == prev_target:
                             reward = self.config.reward_on_correct  # +1.0 for correct
                         else:
                             reward = self.config.penalty_on_error  # -0.5 for incorrect
 
-                        # Convert reward to dopamine (scaled by learning rate)
-                        # NOTE: VTA handles tonic baseline internally - don't add it here!
-                        dopamine = reward
-                        dopamine = np.clip(dopamine, -1.0, 1.0)
+                        reward = np.clip(reward, -1.0, 1.0)
 
-                        # Deliver dopamine NOW, while presenting current symbol
+                        # Deliver reward NOW, while presenting current symbol
                         # (eligibility traces from previous symbol are still ~85% active with tau=100ms)
-                        self.brain.deliver_reward(external_reward=dopamine)
+                        self.brain.deliver_reward(external_reward=reward)
 
-                        # DEBUG: Verify dopamine actually reaches hippocampus
-                        if trial_idx < 3:  # Only first 3 trials for brevity
-                            actual_da = hippocampus.dopamine.item() if hasattr(hippocampus, 'dopamine') else None
-                            da_str = f"{actual_da:.3f}" if actual_da is not None else "N/A"
-                            print(f"    [DOPAMINE DEBUG] Delivered: {dopamine:.3f}, Hippocampus received: {da_str}")
-
-                        trial_dopamine.append(dopamine)
+                        trial_dopamine.append(reward)
 
                 for ts in range(self.config.timesteps_per_symbol):
-                    # FIX: Regenerate spikes each timestep with temporal jitter
+                    # Regenerate spikes each timestep with temporal jitter
                     # This prevents FFI from blocking and allows sustained cortical/hippocampal activity
                     input_spikes = encode_symbol_to_spikes(
                         current_symbol,
@@ -917,7 +892,7 @@ class SequenceLearningExperiment:
                                 prediction_spikes = list(region_output.values())[0]
                                 break
 
-                    # FIX: Pool distributed hippocampal activity into symbol space
+                    # Pool distributed hippocampal activity into symbol space
                     # Hippocampus outputs 796D distributed representation, not 5D symbol space
                     # Solution: Divide neurons into chunks and sum spikes per chunk
                     if prediction_spikes.shape[0] > self.config.n_symbols:
