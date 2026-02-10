@@ -60,7 +60,6 @@ import torch.nn.functional as F
 
 from thalia.brain.configs import CortexConfig, CortexLayer
 from thalia.components import (
-    GapJunctionCoupling,
     WeightInitializer,
     NeuronFactory,
 )
@@ -468,16 +467,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         self.l6b_fsi_size = self.l6b_inhibitory.get_total_size()
 
         # =====================================================================
-        # GAP JUNCTIONS for L2/3 interneuron synchronization
-        # =====================================================================
-        # Basket cells and chandelier cells have dense gap junction networks
-        # Critical for cortical gamma oscillations (30-80 Hz) and precise timing
-        # ~70-80% of cortical gap junctions are interneuron-interneuron
-        # TODO: This is never instantiated. Need to create after inhibitory networks are initialized to determine connectivity.
-        self.gap_junctions_l23: Optional[GapJunctionCoupling] = None
-
-        # =====================================================================
-        # HOMEOSTATIC INTRINSIC PLASTICITY (Adaptive Gain Control)
+        # HOMEOSTATIC PLASTICITY (Intrinsic and Synaptic Scaling)
         # =====================================================================
         # Like thalamus, cortex adapts neuron gains to maintain target firing rate.
         # Prevents complete silencing during early learning.
@@ -882,7 +872,6 @@ class Cortex(NeuralRegion[CortexConfig]):
 
         # Split input between pyramidal and FSI neurons
         l4_g_exc = l4_g_exc_full[:self.l4_pyr_size]  # Pyramidal neurons
-        l4_fsi_g_exc_input = l4_g_exc_full[:self.l4_fsi_size]  # FSI neurons (broadcast from first part)
 
         # Apply global scaling to pyramidal (theta emerges from circuit dynamics)
         l4_g_exc = l4_g_exc * cfg.input_to_l4_strength
@@ -1147,15 +1136,6 @@ class Cortex(NeuralRegion[CortexConfig]):
 
         # Integrate all L2/3 inputs
         l23_input = l23_ff + l23_rec + l23_td
-
-        # GAP JUNCTION COUPLING (L2/3 interneuron synchronization)
-        # Ultra-fast electrical coupling for gamma synchronization
-        # Apply gap junction current based on previous timestep's membrane potentials
-        if self.gap_junctions_l23 is not None and self.l23_neurons.membrane is not None:
-            # Get coupling current from neighboring interneurons
-            gap_current = self.gap_junctions_l23(self.l23_neurons.membrane)
-            # Add gap junction depolarization to input
-            l23_input = l23_input + gap_current
 
         # Add baseline noise (spontaneous miniature EPSPs)
         if cfg.baseline_noise_current > 0:
