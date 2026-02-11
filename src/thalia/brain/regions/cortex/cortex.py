@@ -687,6 +687,27 @@ class Cortex(NeuralRegion[CortexConfig]):
         )
         self.synaptic_weights["l6_l4_pred"] = nn.Parameter(l6_l4_weights)
 
+        # =====================================================================
+        # L2/3 RECURRENT WEIGHTS (AT L2/3 DENDRITES)
+        # =====================================================================
+        # Biology: L2/3 pyramidal neurons have extensive recurrent connections
+        # critical for attractor dynamics, working memory, and pattern completion.
+        # These are the most plastic connections in cortex.
+        #
+        # Connection pattern: Sparse (~25% connectivity) with clustered structure
+        # Weight scale: Strong enough to sustain activity but not runaway
+        l23_l23_weights = WeightInitializer.sparse_random(
+            n_output=self.l23_size,
+            n_input=self.l23_size,
+            sparsity=0.25,  # Biological ~20-30% connectivity
+            weight_scale=0.5,  # Moderate strength for sustained activity
+            device=self.device,
+        )
+        # Ensure positive (excitatory) and zero diagonal (no self-connections)
+        l23_l23_weights = torch.abs(l23_l23_weights)
+        l23_l23_weights.fill_diagonal_(0.0)
+        self.synaptic_weights["l23_l23"] = nn.Parameter(l23_l23_weights, requires_grad=False)
+
     # =========================================================================
     # SYNAPTIC WEIGHT MANAGEMENT
     # =========================================================================
@@ -1103,16 +1124,21 @@ class Cortex(NeuralRegion[CortexConfig]):
         ach_level = self._ach_concentration_l23.mean().item()  # Average across L2/3 neurons
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
-        # Get recurrent input from external connection if present
-        if "l23_recurrent" in region_inputs:
-            # Already integrated by parent's multi-source integration
-            # Extract just this input for proper routing
-            l23_rec_raw = self._integrate_multi_source_synaptic_inputs(
-                inputs={"l23_recurrent": region_inputs["l23_recurrent"]},
-                n_neurons=self.l23_size,
-                weight_key_suffix="_l23",
-                apply_stp=False,  # STP already applied at AxonalProjection
-            )
+        # =====================================================================
+        # L2/3 RECURRENT INPUT (Internal Weights with Plasticity)
+        # =====================================================================
+        # Use internal recurrent weights (l23_l23) that undergo STDP+BCM learning
+        # Biology: Recurrent connections are highly plastic and critical for
+        # cortical dynamics (attractor states, working memory, prediction)
+        #
+        # Get delayed L2/3 activity from previous timestep
+        # (recurrent connections have ~1-2ms axonal delay)
+        if self.l23_spikes is not None:
+            # Use previous timestep's L2/3 spikes for recurrent input
+            prev_l23_spikes = self.l23_spikes.float()
+            # Apply recurrent weights: [l23_size, l23_size] @ [l23_size] → [l23_size]
+            l23_rec_raw = self.synaptic_weights["l23_l23"] @ prev_l23_spikes
+            # Apply modulations
             l23_rec = (
                 l23_rec_raw
                 * cfg.l23_recurrent_strength
@@ -1121,6 +1147,7 @@ class Cortex(NeuralRegion[CortexConfig]):
                 * ach_recurrent_modulation
             )
         else:
+            # First timestep: no previous activity
             l23_rec = torch.zeros_like(l23_ff)
 
         # =====================================================================
@@ -1657,6 +1684,35 @@ class Cortex(NeuralRegion[CortexConfig]):
                 self.synaptic_weights["l23_l6b"].data.copy_(updated_weights)
                 clamp_weights(self.synaptic_weights["l23_l6b"].data, cfg.w_min, cfg.w_max)
 
+        # =====================================================================
+        # L2/3 RECURRENT LEARNING (Critical for Cortical Plasticity)
+        # =====================================================================
+        # Biology: L2/3 recurrent synapses are the MOST plastic in cortex.
+        # They undergo robust STDP and BCM-style homeostasis.
+        # Critical for: attractor formation, working memory, predictive coding
+        #
+        # Use previous timestep's L2/3 activity as presynaptic input
+        # Current L2/3 activity as postsynaptic output
+        # This implements the biological delay (1-2ms axonal propagation)
+        if l23_spikes is not None and self.l23_spikes is not None:
+            # L2/3 learning rate with layer-specific dopamine
+            l23_lr = base_lr * (1.0 + l23_dopamine)
+
+            # Apply STDP+BCM to recurrent connections
+            # Pre: previous timestep's L2/3 spikes (delayed via axonal propagation)
+            # Post: current timestep's L2/3 spikes
+            updated_weights, _ = self.bcm_l23.compute_update(
+                weights=self.synaptic_weights["l23_l23"].data,
+                pre_spikes=self.l23_spikes,  # Previous timestep (presynaptic)
+                post_spikes=l23_spikes,       # Current timestep (postsynaptic)
+                learning_rate=l23_lr,
+            )
+            self.synaptic_weights["l23_l23"].data.copy_(updated_weights)
+
+            # Maintain biological constraints
+            self.synaptic_weights["l23_l23"].data.fill_diagonal_(0.0)  # No self-connections
+            clamp_weights(self.synaptic_weights["l23_l23"].data, cfg.w_min, cfg.w_max)
+
     def _apply_sparsity(self, spikes: torch.Tensor, target_sparsity: float) -> torch.Tensor:
         """Apply winner-take-all sparsity to spike tensor."""
         validate_spike_tensor(spikes)
@@ -1726,6 +1782,13 @@ class Cortex(NeuralRegion[CortexConfig]):
         plasticity["l23_l5_mean"] = float(self.synaptic_weights["l23_l5"].data.mean().item())
         plasticity["l23_l6a_mean"] = float(self.synaptic_weights["l23_l6a"].data.mean().item())
         plasticity["l23_l6b_mean"] = float(self.synaptic_weights["l23_l6b"].data.mean().item())
+
+        # L2/3 recurrent statistics (critical for cortical dynamics)
+        plasticity["l23_l23_recurrent_mean"] = float(self.synaptic_weights["l23_l23"].data.mean().item())
+        plasticity["l23_l23_recurrent_nonzero"] = float((self.synaptic_weights["l23_l23"].data > 0).sum().item())
+        plasticity["l23_l23_recurrent_sparsity"] = float(
+            (self.synaptic_weights["l23_l23"].data > 0).float().mean().item()
+        )
 
         # Recurrent activity
         recurrent_dynamics = {}

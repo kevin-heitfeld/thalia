@@ -423,6 +423,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # Initialize fast and slow eligibility traces for multi-timescale learning
         # Pattern: {pathway}_fast and {pathway}_slow for each learned connection
+
+        # DG→CA3 (mossy fiber pathway - one-shot binding)
+        # Biology: Mossy fiber synapses are "detonator" synapses with powerful LTP.
+        # They bind sparse DG codes to CA3 attractors.
+        self._dg_ca3_fast = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
+        self._dg_ca3_slow = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
+
         # CA3 recurrent (autoassociative memory)
         self._ca3_ca3_fast = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
         self._ca3_ca3_slow = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
@@ -1390,6 +1397,66 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             )
 
         # =====================================================================
+        # DG→CA3 MOSSY FIBER LEARNING (One-Shot Binding)
+        # =====================================================================
+        # Biology: Mossy fiber synapses show rapid, powerful LTP
+        # They're among the largest synapses in the brain ("detonator" synapses)
+        # that reliably drive postsynaptic firing. Critical for binding sparse DG
+        # pattern-separated representations to CA3 autoassociative attractors.
+        #
+        # Learning characteristics:
+        # - ONE-SHOT: Single co-activation creates strong LTP (rapid binding)
+        # - STRONG: Large synapses with powerful transmission
+        # - SPARSE: Only ~50 mossy fiber inputs per CA3 neuron (vs ~12,000 recurrent)
+        # - MODULATED: Enhanced by novelty (dopamine) and encoding state (ACh, theta)
+        #
+        # This learning is what allows DG to "index" memories in CA3 - each sparse
+        # DG pattern becomes associated with a dense CA3 attractor pattern.
+
+        # Get DG activity (delayed by mossy fiber transmission time)
+        dg_activity = dg_spikes_delayed.float()  # [dg_size]
+
+        # Multi-timescale trace decay (continuous, time-based)
+        fast_decay = dt_ms / self.config.fast_trace_tau_ms
+        slow_decay = dt_ms / self.config.slow_trace_tau_ms
+
+        self._dg_ca3_fast = (1.0 - fast_decay) * self._dg_ca3_fast
+        consolidation = self.config.consolidation_rate * self._dg_ca3_fast
+        self._dg_ca3_slow = (1.0 - slow_decay) * self._dg_ca3_slow + consolidation
+
+        # Learning happens only when there's co-activity (DG and CA3 both firing)
+        if dg_activity.sum() > 0 and ca3_activity.sum() > 0:
+            # ONE-SHOT learning: Use STRONG learning rate (3x normal)
+            # Biology: Mossy fiber LTP is rapid and doesn't require multiple pairings
+            mossy_base_lr = self.config.learning_rate * 3.0 * encoding_mod
+
+            # Apply gamma and dopamine modulation (same as CA3 recurrent)
+            gamma_mod = self._gamma_amplitude_effective
+            mossy_effective_lr = compute_learning_rate_modulation(mossy_base_lr, gamma_mod)
+
+            da_level = self._da_concentration_ca3.mean().item()
+            da_gain = 0.2 + 1.8 * da_level  # Strong dopamine gating
+            mossy_effective_lr = mossy_effective_lr * da_gain
+
+            # Hebbian outer product: bind DG pattern to CA3 attractor
+            # Shape: [ca3_size, dg_size] - each CA3 neuron learns from DG inputs
+            dW_mossy = mossy_effective_lr * torch.outer(ca3_activity, dg_activity)
+
+            # Add to fast trace
+            self._dg_ca3_fast = self._dg_ca3_fast + dW_mossy
+
+            # Combined weight update: Fast (episodic) + Slow (semantic)
+            combined_dW = (
+                self._dg_ca3_fast + self.config.slow_trace_contribution * self._dg_ca3_slow
+            )
+            self.synaptic_weights["dg_ca3"].data += combined_dW
+
+            # Clamp weights (mossy fibers are excitatory, positive only)
+            clamp_weights(
+                self.synaptic_weights["dg_ca3"].data, self.config.w_min, self.config.w_max
+            )
+
+        # =====================================================================
         # CA2: Social Memory and Temporal Context Layer
         # =====================================================================
         # CA2 sits between CA3 and CA1, providing:
@@ -1705,6 +1772,74 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self.ca1_spikes = ca1_spikes
 
         # =====================================================================
+        # EXTERNAL INPUT PLASTICITY (Per-Source Learning)
+        # =====================================================================
+        # Apply three-factor learning (eligibility × dopamine × learning_rate)
+        # to all external input pathways. This learns which cortical patterns
+        # are associated with hippocampal memories.
+        #
+        # Biological rationale: EC→hippocampus synapses show robust LTP/LTD
+        # modulated by dopamine, VTA novelty signals, and behavioral outcomes.
+        # This is how the hippocampus learns which sensory/contextual patterns
+        # matter for episodic memory formation.
+        #
+        # Only apply during encoding mode (theta trough) when new memories
+        # are being formed. During retrieval (theta peak), external inputs
+        # serve as retrieval cues, not learning signals.
+        if encoding_mod > 0.5 and self.learning_strategy is not None:
+            # Get dopamine modulation (average across all subregions)
+            da_modulation = (
+                self._da_concentration_dg.mean().item()
+                + self._da_concentration_ca3.mean().item()
+                + self._da_concentration_ca2.mean().item()
+                + self._da_concentration_ca1.mean().item()
+            ) / 4.0
+
+            # Modulate learning rate by dopamine
+            base_lr = self.config.learning_rate * 0.3  # 30% of internal learning rate
+            effective_lr = base_lr * (1.0 + da_modulation)
+
+            # Apply learning to each external input source
+            # Pattern: source_dg, source_ca3, source_ca1 (created in add_input_source)
+            for source_name in list(self.input_sources.keys()):
+                # Skip internal connections (already learned above)
+                if source_name.startswith("_"):
+                    continue
+
+                # Skip neuromodulator inputs (no weight matrices)
+                if source_name.endswith(":da_output") or source_name.endswith(":ne_output") or source_name.endswith(":ach_output"):
+                    continue
+
+                # Get source spikes from inputs
+                source_input = region_inputs.get(source_name, None)
+                if source_input is None or source_input.numel() == 0:
+                    continue
+
+                # Learn EC→DG (pattern separation input)
+                weight_key_dg = f"{source_name}_dg"
+                if weight_key_dg in self.synaptic_weights and dg_spikes is not None:
+                    # Hebbian learning: pre (source) × post (DG)
+                    dW_dg = effective_lr * torch.outer(dg_spikes.float(), source_input.float())
+                    self.synaptic_weights[weight_key_dg].data += dW_dg
+                    clamp_weights(self.synaptic_weights[weight_key_dg].data, self.config.w_min, self.config.w_max)
+
+                # Learn EC→CA3 (direct perforant path for retrieval cues)
+                weight_key_ca3 = f"{source_name}_ca3"
+                if weight_key_ca3 in self.synaptic_weights and ca3_spikes is not None:
+                    # Hebbian learning: pre (source) × post (CA3)
+                    dW_ca3 = effective_lr * torch.outer(ca3_spikes.float(), source_input.float())
+                    self.synaptic_weights[weight_key_ca3].data += dW_ca3
+                    clamp_weights(self.synaptic_weights[weight_key_ca3].data, self.config.w_min, self.config.w_max)
+
+                # Learn EC→CA1 (direct output pathway)
+                weight_key_ca1 = f"{source_name}_ca1"
+                if weight_key_ca1 in self.synaptic_weights and ca1_spikes is not None:
+                    # Hebbian learning: pre (source) × post (CA1)
+                    dW_ca1 = effective_lr * torch.outer(ca1_spikes.float(), source_input.float())
+                    self.synaptic_weights[weight_key_ca1].data += dW_ca1
+                    clamp_weights(self.synaptic_weights[weight_key_ca1].data, self.config.w_min, self.config.w_max)
+
+        # =====================================================================
         # DOPAMINE-GATED CONSOLIDATION
         # =====================================================================
         # Apply dopamine-gated consolidation to tagged synapses
@@ -1734,24 +1869,55 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _apply_plasticity(self, region_outputs: RegionSpikesDict) -> None:
         """
-        Apply homeostatic plasticity to CA3 recurrent weights.
+        Apply homeostatic plasticity to hippocampal synapses.
 
-        CA3 recurrent learning (one-shot Hebbian) happens in forward().
-        This method only applies homeostatic mechanisms (synaptic scaling,
-        intrinsic plasticity) to maintain stable network dynamics.
+        Biologically, ALL hippocampal synapses exhibit both Hebbian and homeostatic plasticity:
+        - Internal connections (ca3_ca3, ca3_ca2, ca2_ca1): Hebbian learning in forward()
+        - External input pathways (EC→DG, EC→CA3, EC→CA1): Hebbian learning in forward()
+        - Homeostatic mechanisms: Applied here to ALL pathways for stability
+
+        The internal pathways use one-shot Hebbian (fast episodic binding) while
+        external pathways use dopamine-gated learning (consolidates valuable patterns).
+        Homeostatic plasticity (synaptic scaling, intrinsic plasticity) prevents
+        runaway excitation and maintains stable network dynamics.
         """
-        # TODO: Also apply plasticity to other synapses (EC→CA1, CA3→CA2, CA2→CA1) if needed
-        # dg_spikes = region_outputs["dg"]
         ca3_spikes = region_outputs["ca3"]
-        # ca2_spikes = region_outputs["ca2"]
-        # ca1_spikes = region_outputs["ca1"]
 
-        # Apply homeostatic synaptic scaling to CA3 recurrent weights
+        # =====================================================================
+        # HOMEOSTATIC SYNAPTIC SCALING
+        # =====================================================================
+        # Apply homeostatic synaptic scaling to internal connections
         self.synaptic_weights["ca3_ca3"].data = self.homeostasis.normalize_weights(
             self.synaptic_weights["ca3_ca3"].data, dim=1
         )
         self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # Maintain no self-connections
 
+        # Also apply scaling to CA3→CA2 and CA2→CA1 (stability)
+        if "ca3_ca2" in self.synaptic_weights:
+            self.synaptic_weights["ca3_ca2"].data = self.homeostasis.normalize_weights(
+                self.synaptic_weights["ca3_ca2"].data, dim=1
+            )
+
+        if "ca2_ca1" in self.synaptic_weights:
+            self.synaptic_weights["ca2_ca1"].data = self.homeostasis.normalize_weights(
+                self.synaptic_weights["ca2_ca1"].data, dim=1
+            )
+
+        # Apply scaling to external input pathways
+        for source_name in list(self.input_sources.keys()):
+            if source_name.startswith("_"):
+                continue
+
+            for suffix in ["_dg", "_ca3", "_ca1"]:
+                weight_key = f"{source_name}{suffix}"
+                if weight_key in self.synaptic_weights:
+                    self.synaptic_weights[weight_key].data = self.homeostasis.normalize_weights(
+                        self.synaptic_weights[weight_key].data, dim=1
+                    )
+
+        # =====================================================================
+        # INTRINSIC PLASTICITY (Threshold Adaptation)
+        # =====================================================================
         # Apply intrinsic plasticity (threshold adaptation) using homeostasis helper
         if ca3_spikes is not None:
             # Initialize if needed

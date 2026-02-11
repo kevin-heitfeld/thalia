@@ -80,12 +80,17 @@ from thalia.components import (
     NeuronFactory,
 )
 from thalia.diagnostics import compute_plasticity_metrics
+from thalia.learning import (
+    STDPStrategy,
+    STDPConfig,
+)
 from thalia.typing import (
     PopulationName,
     PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
+from thalia.utils import clamp_weights
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -297,6 +302,24 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             device=self.device,
         )
         self.sensory_to_trn = nn.Parameter(sensory_to_trn_weights, requires_grad=False)
+
+        # =====================================================================
+        # STDP LEARNING STRATEGY
+        # =====================================================================
+        # Thalamocortical synapses show robust STDP
+        # Critical for sensory learning, attention, and routing
+        # Both ascending (sensory→relay) and descending (L6→relay) pathways learn
+        stdp_cfg = STDPConfig(
+            learning_rate=config.learning_rate,
+            a_plus=0.005,  # Moderate LTP (thalamic synapses are conservative)
+            a_minus=0.001,  # Weak LTD (5:1 LTP:LTD ratio)
+            tau_plus=20.0,  # Standard STDP window
+            tau_minus=20.0,
+            w_min=config.w_min,
+            w_max=config.w_max,
+            device=str(self.device),
+        )
+        self.learning_strategy = STDPStrategy(stdp_cfg)
 
         # =====================================================================
         # POST-INITIALIZATION
@@ -589,6 +612,70 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         output_rate = relay_output.float()  # [relay_size], actual output (0 or 1)
         self.relay_firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(output_rate * self._firing_rate_alpha)
 
+        # =====================================================================
+        # THALAMOCORTICAL SYNAPTIC PLASTICITY
+        # =====================================================================
+        # Apply STDP learning to relay synapses
+        # Thalamocortical plasticity is critical for:
+        # - Sensory learning (what stimuli are relevant)
+        # - Attentional routing (which inputs to amplify)
+        # - Adaptive filtering (noise suppression, signal enhancement)
+        #
+        # Biology: Both ascending (sensory→relay) and descending (L6→relay)
+        # pathways show robust STDP that shapes sensory representations
+
+        if self.config.learning_rate > 0 and self.learning_strategy is not None:
+            # Learn sensory→relay pathway (ascending plasticity)
+            # This allows thalamus to learn which sensory features are informative
+            sensory_input = region_inputs.get("sensory")
+            if sensory_input is not None and "sensory" in self.synaptic_weights:
+                updated_weights, _ = self.learning_strategy.compute_update(
+                    weights=self.synaptic_weights["sensory"].data,
+                    pre_spikes=sensory_input,
+                    post_spikes=relay_output,
+                    learning_rate=self.config.learning_rate,
+                )
+                self.synaptic_weights["sensory"].data.copy_(updated_weights)
+                clamp_weights(
+                    self.synaptic_weights["sensory"].data,
+                    self.config.w_min,
+                    self.config.w_max,
+                )
+
+            # Learn L6b→relay pathway (corticothalamic precision modulation)
+            # This implements top-down attention: cortex learns to modulate relay gain
+            l6b_feedback = region_inputs.get("cortex:l6b")
+            if l6b_feedback is not None and "cortex:l6b" in self.synaptic_weights:
+                updated_weights, _ = self.learning_strategy.compute_update(
+                    weights=self.synaptic_weights["cortex:l6b"].data,
+                    pre_spikes=l6b_feedback,
+                    post_spikes=relay_output,
+                    learning_rate=self.config.learning_rate * 0.5,  # Slower for feedback
+                )
+                self.synaptic_weights["cortex:l6b"].data.copy_(updated_weights)
+                clamp_weights(
+                    self.synaptic_weights["cortex:l6b"].data,
+                    self.config.w_min,
+                    self.config.w_max,
+                )
+
+            # Learn L6a→TRN pathway (corticothalamic attention control)
+            # This allows cortex to learn attentional gating patterns
+            l6a_feedback = region_inputs.get("cortex:l6a")
+            if l6a_feedback is not None and "cortex:l6a" in self.synaptic_weights:
+                updated_weights, _ = self.learning_strategy.compute_update(
+                    weights=self.synaptic_weights["cortex:l6a"].data,
+                    pre_spikes=l6a_feedback,
+                    post_spikes=trn_spikes,  # TRN is postsynaptic target
+                    learning_rate=self.config.learning_rate * 0.3,  # Even slower for TRN
+                )
+                self.synaptic_weights["cortex:l6a"].data.copy_(updated_weights)
+                clamp_weights(
+                    self.synaptic_weights["cortex:l6a"].data,
+                    self.config.w_min,
+                    self.config.w_max,
+                )
+
         region_outputs: RegionSpikesDict = {
             "relay": relay_output,
             "trn": trn_spikes,
@@ -695,6 +782,14 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             weights=self.relay_gain.data,
             learning_rate=self.config.learning_rate,
         )
+
+        # Add learned pathway statistics
+        if "sensory" in self.synaptic_weights:
+            plasticity["sensory_relay_mean"] = float(self.synaptic_weights["sensory"].data.mean().item())
+        if "cortex:l6b" in self.synaptic_weights:
+            plasticity["l6b_relay_mean"] = float(self.synaptic_weights["cortex:l6b"].data.mean().item())
+        if "cortex:l6a" in self.synaptic_weights:
+            plasticity["l6a_trn_mean"] = float(self.synaptic_weights["cortex:l6a"].data.mean().item())
 
         return {
             "plasticity": plasticity,

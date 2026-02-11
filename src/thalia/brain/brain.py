@@ -289,7 +289,7 @@ class DynamicBrain(nn.Module):
             ValueError: If hippocampus not present in brain
         """
         # Check for hippocampus
-        hippocampus = self.get_region("hippocampus", Hippocampus)
+        hippocampus = self.get_first_region_of_type(Hippocampus)
         if hippocampus is None:
             raise ValueError(
                 "Hippocampus required for consolidation. "
@@ -336,7 +336,7 @@ class DynamicBrain(nn.Module):
         Raises:
             ValueError: If striatum not found in brain
         """
-        striatum = self.get_region("striatum", Striatum)
+        striatum = self.get_first_region_of_type(Striatum)
         if striatum is None:
             raise ValueError(
                 "Striatum not found. Cannot select action. "
@@ -388,7 +388,7 @@ class DynamicBrain(nn.Module):
             the spiking dopamine signal. This method only delivers reward to
             RewardEncoder - the rest happens automatically through VTA and DA receptors.
         """
-        striatum = self.get_region("striatum", Striatum)
+        striatum = self.get_first_region_of_type(Striatum)
         if striatum is None:
             raise ValueError(
                 "Striatum not found. Cannot deliver reward. "
@@ -396,7 +396,7 @@ class DynamicBrain(nn.Module):
             )
 
         # Get RewardEncoder region
-        reward_encoder = self.get_region("reward_encoder", RewardEncoder)
+        reward_encoder = self.get_first_region_of_type(RewardEncoder)
         if reward_encoder is None:
             raise ValueError(
                 "RewardEncoder not found. Cannot deliver reward. "
@@ -421,14 +421,14 @@ class DynamicBrain(nn.Module):
 
     def _get_cortex_l4_activity(self) -> Optional[float]:
         """Helper to get cortex L4 activity for neuromodulator computations."""
-        cortex = self.get_region("cortex", Cortex)
+        cortex = self.get_first_region_of_type(Cortex)
         if cortex is not None:
             return compute_firing_rate(cortex.l4_spikes)
         return None
 
     def _get_hippocampus_ca1_activity(self) -> Optional[float]:
         """Helper to get hippocampus CA1 activity for neuromodulator computations."""
-        hippocampus = self.get_region("hippocampus", Hippocampus)
+        hippocampus = self.get_first_region_of_type(Hippocampus)
         if hippocampus is not None:
             return compute_firing_rate(hippocampus.ca1_spikes)
         return None

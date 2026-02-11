@@ -365,6 +365,53 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         if isinstance(stdp_dw, torch.Tensor):
             self._trace_manager.accumulate_eligibility(stdp_dw, dt_ms=self.dt_ms)
 
+        # ======================================================================
+        # APPLY CEREBELLAR LEARNING (Parallel Fiber → Purkinje)
+        # ======================================================================
+        # Biology: Climbing fiber error signals gate the application of parallel
+        # fiber eligibility traces. When climbing fiber fires (error detected),
+        # active parallel fibers undergo LTD. When no climbing fiber (correct),
+        # active parallel fibers undergo LTP.
+        #
+        # Implementation: We use the accumulated eligibility traces and apply them
+        # to each Purkinje cell's dendritic weights. In the full implementation,
+        # climbing fiber error would gate these updates (error × eligibility).
+        # For now, we apply the eligibility-based STDP learning.
+
+        # Get eligibility from trace manager
+        eligibility = self._trace_manager.eligibility  # [n_granule, n_purkinje]
+
+        # Apply weight updates to each Purkinje cell's dendritic weights
+        for purkinje_idx, purkinje_cell in enumerate(self.purkinje_cells):
+            # Get this Purkinje cell's eligibility trace
+            # eligibility shape: [n_granule, n_purkinje], so [:, purkinje_idx] gives [n_granule]
+            cell_eligibility = eligibility[:, purkinje_idx]  # [n_granule]
+
+            # Reshape to match dendritic_weights: [1, n_parallel_fibers]
+            weight_update = cell_eligibility.unsqueeze(0)  # [1, n_granule]
+
+            # Apply update with weight bounds
+            # Biology: Parallel fiber synapses have limited dynamic range
+            new_weights = torch.clamp(
+                purkinje_cell.dendritic_weights.data + weight_update,
+                min=self.config.w_min,
+                max=self.config.w_max,
+            )
+            purkinje_cell.dendritic_weights.data = new_weights
+
+        # ======================================================================
+        # APPLY HOMEOSTATIC SYNAPTIC SCALING (Per-Source Mossy Fiber Inputs)
+        # ======================================================================
+        # Apply homeostatic scaling to mossy fiber input weights to prevent
+        # runaway excitation or silencing. Each source (cortex, spinal, etc.)
+        # has independent weights that need homeostatic regulation.
+        for source_name in list(self.input_sources.keys()):
+            weight_key = f"{source_name}_mossy"
+            if weight_key in self.synaptic_weights:
+                self.synaptic_weights[weight_key].data = self.homeostasis.normalize_weights(
+                    self.synaptic_weights[weight_key].data, dim=1
+                )
+
         # Store output spikes
         self.output_spikes = output_spikes
         # Store effective input for learning (granule spikes in enhanced mode)
