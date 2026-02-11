@@ -67,20 +67,11 @@ Phase 3 (Future):
 - Separate NE projections by target region
 - Interaction with VTA (DA × NE coordination)
 - Stress modulation (cortisol, CRF inputs)
-
-References:
-- Aston-Jones & Cohen (2005): Adaptive gain theory
-- Sara (2009): LC function in attention and memory
-- Berridge & Waterhouse (2003): LC electrophysiology
-- Bouret & Sara (2005): Network reset function
-
-Author: Thalia Project
-Date: February 2026
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 
@@ -91,6 +82,7 @@ from thalia.components.neurons.norepinephrine_neuron import (
     NorepinephrineNeuronConfig,
 )
 from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.units import ConductanceTensor
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -211,14 +203,17 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
         # Update NE neurons with uncertainty drive
         # High uncertainty → depolarization → synchronized burst
         # Gap junctions → population synchronization
-        ne_spikes = self.ne_neurons.forward(
-            i_synaptic=0.0, uncertainty_drive=uncertainty
+        ne_spikes, _ = self.ne_neurons.forward(
+            g_exc_input=ConductanceTensor(torch.zeros(self.config.n_ne_neurons, device=self.device)),
+            g_inh_input=ConductanceTensor(torch.zeros(self.config.n_ne_neurons, device=self.device)),
+            uncertainty_drive=uncertainty,
         )
         self._current_ne_spikes = ne_spikes  # Store for GABA computation
 
         # Update GABA interneurons (homeostatic control)
         gaba_drive = self._compute_gaba_drive()
-        self.gaba_neurons.forward(gaba_drive)
+        g_gaba_exc = ConductanceTensor(gaba_drive / 10.0)  # Already a tensor
+        self.gaba_neurons.forward(g_gaba_exc, None)
 
         region_outputs: RegionSpikesDict = {
             "ne_output": ne_spikes,
@@ -366,27 +361,3 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
             Firing rate in Hz
         """
         return self.ne_neurons.get_firing_rate_hz()
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        diagnostics = {
-            "ne_firing_rate_hz": self.get_ne_firing_rate_hz(),
-            "mean_uncertainty": self.get_mean_uncertainty(window=100),
-            "ne_mean_membrane_potential": self.ne_neurons.v_mem.mean().item(),
-            "ne_mean_calcium": self.ne_neurons.ca_concentration.mean().item(),
-            "ne_mean_sk_activation": self.ne_neurons.sk_activation.mean().item(),
-        }
-
-        if self._pfc_activity_history:
-            diagnostics["mean_pfc_activity"] = sum(
-                self._pfc_activity_history[-100:]
-            ) / min(100, len(self._pfc_activity_history))
-        if self._hippocampus_activity_history:
-            diagnostics["mean_hippocampus_activity"] = sum(
-                self._hippocampus_activity_history[-100:]
-            ) / min(100, len(self._hippocampus_activity_history))
-
-        if self.config.uncertainty_normalization:
-            diagnostics["avg_uncertainty"] = self._avg_uncertainty
-
-        return diagnostics

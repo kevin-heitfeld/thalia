@@ -51,6 +51,7 @@ This ensures the correct environment is activated with all dependencies (pytest,
 - Respect biological time constants (tau_mem ~10-30ms)
 - Use neuromodulators for gating/modulation
 - Maintain causality (no future information)
+- **Use conductance inputs**: All neurons expect `g_exc`, `g_inh` (conductances, NOT currents)
 
 ### DON'T:
 - Use global error signals or backpropagation
@@ -58,3 +59,36 @@ This ensures the correct environment is activated with all dependencies (pytest,
 - Implement non-local learning rules
 - Use negative firing rates
 - Access future timesteps in current computation
+- **Pass currents as conductances**: Cannot convert I → g without knowing voltage!
+
+## Type Safety: Units and Dimensional Analysis
+
+**CRITICAL**: Thalia uses type aliases to prevent unit confusion bugs.
+
+From `thalia.units`:
+- `ConductanceTensor`: Synaptic/membrane conductances (≥ 0, normalized by g_L)
+- `VoltageTensor`: Membrane potentials (typically [-1, 4] normalized)
+- `CurrentTensor`: Membrane currents (derived: I = g × (E - V))
+
+**Common bug**: Treating currents as conductances:
+```python
+# ❌ WRONG: Computing current-like quantities
+current = weights @ spikes * gain * modulation + noise
+neurons.forward(current, None)  # Type error!
+
+# ✅ CORRECT: Use conductances directly
+g_exc = ConductanceTensor(weights @ spikes.float())
+neurons.forward(g_exc, None)
+```
+
+See [docs/type_safe_units_guide.md](../docs/type_safe_units_guide.md) for full details.
+
+When writing neuron forward methods:
+```python
+def forward(
+    self,
+    g_exc_input: ConductanceTensor,  # Explicit: expects conductance
+    g_inh_input: Optional[ConductanceTensor] = None,
+) -> tuple[torch.Tensor, VoltageTensor]:
+    ...
+```

@@ -34,7 +34,8 @@ from typing import Optional
 
 import torch
 
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.units import ConductanceTensor, VoltageTensor
+from .neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
@@ -73,7 +74,8 @@ class DopamineNeuronConfig(ConductanceLIFConfig):
 
     # I_h pacemaking current (HCN channels)
     # This provides the depolarizing drive that causes tonic firing
-    i_h_conductance: float = 0.03  # Depolarizing leak
+    # Tuned to 0.25 for ~4-5 Hz firing rate in pure conductance model
+    i_h_conductance: float = 0.25  # Depolarizing leak
     i_h_reversal: float = 0.8  # Mixed cation channel (above rest, below threshold)
 
     # SK calcium-activated K+ channels (spike-frequency adaptation)
@@ -91,8 +93,9 @@ class DopamineNeuronConfig(ConductanceLIFConfig):
     # Disable adaptation from base class (we use SK instead)
     adapt_increment: float = 0.0
 
-    # Add slight noise for biological realism
-    noise_std: float = 0.01
+    # Add noise for biological realism and stochastic pacemaking
+    # Tuned to 0.062 for ~4-5 Hz firing rate
+    noise_std: float = 0.062
 
 
 class DopamineNeuron(ConductanceLIF):
@@ -151,13 +154,16 @@ class DopamineNeuron(ConductanceLIF):
         self.v_mem = torch.rand(n_neurons, device=device) * config.v_threshold * 0.5
 
     def forward(
-        self, i_synaptic: torch.Tensor | float = 0.0, rpe_drive: float = 0.0
-    ) -> torch.Tensor:
+        self,
+        g_exc_input: Optional[ConductanceTensor] = None,
+        g_inh_input: Optional[ConductanceTensor] = None,
+        rpe_drive: float = 0.0,
+    ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update dopamine neurons with RPE modulation.
 
         Args:
-            i_synaptic: Synaptic input current [n_neurons] or scalar
-                       (Typically near zero for VTA DA neurons - mostly intrinsic)
+            g_exc_input: Excitatory conductance input [n_neurons] (typically near zero for VTA)
+            g_inh_input: Inhibitory conductance input [n_neurons] (optional)
             rpe_drive: Reward prediction error drive (normalized scalar)
                       +1.0 = strong positive RPE (burst)
                       -1.0 = strong negative RPE (pause)
@@ -166,42 +172,18 @@ class DopamineNeuron(ConductanceLIF):
         Returns:
             Spike tensor [n_neurons], dtype=bool
         """
-        # Convert scalar synaptic input to tensor if needed
-        if isinstance(i_synaptic, (int, float)):
-            i_synaptic = torch.full(
-                (self.n_neurons,), float(i_synaptic), device=self.device
-            )
+        # Handle None inputs (default to zero conductance)
+        if g_exc_input is None:
+            g_exc_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
+        if g_inh_input is None:
+            g_inh_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
 
-        # === Intrinsic Currents ===
+        # Store RPE for use in conductance calculation
+        self._current_rpe = rpe_drive
 
-        # I_h pacemaking current (depolarizing, drives tonic firing)
-        # Current flows when V < E_h (pulls membrane toward E_h)
-        i_pacemaker = self.da_config.i_h_conductance * (
-            self.da_config.i_h_reversal - self.v_mem
-        )
-
-        # SK adaptation current (hyperpolarizing, prevents runaway bursting)
-        # Activated by calcium influx during spikes
-        i_adaptation = (
-            -self.da_config.sk_conductance
-            * self.sk_activation
-            * (self.v_mem - self.da_config.sk_reversal)
-        )
-
-        # === RPE Modulation ===
-
-        # Convert RPE to current drive (scaled by gain parameter)
-        # Positive RPE → positive current → depolarization → burst
-        # Negative RPE → negative current → hyperpolarization → pause
-        i_rpe = rpe_drive * self.da_config.rpe_to_current_gain
-
-        # === Total Current ===
-
-        i_total = i_synaptic + i_pacemaker + i_adaptation + i_rpe
-
-        # Update membrane potential and check for spikes using parent class
-        # This handles threshold crossing, reset, refractory period, etc.
-        spikes, new_v = super().forward(i_total)
+        # Call parent's forward to update membrane and generate spikes
+        # Parent will call _get_additional_conductances() to get g_ih and g_sk
+        spikes, _ = super().forward(g_exc_input, g_inh_input)
 
         # === Update Calcium and SK Channels ===
 
@@ -220,7 +202,35 @@ class DopamineNeuron(ConductanceLIF):
         # Store spikes for diagnostic access
         self.spikes = spikes
 
-        return spikes
+        return spikes, self.membrane
+
+    def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
+        """Compute intrinsic conductances: I_h pacemaker and SK adaptation.
+
+        I_h provides tonic depolarization (pacemaking).
+        SK provides hyperpolarizing adaptation.
+        RPE modulates both conductances.
+
+        Returns:
+            List of (conductance, reversal) tuples
+        """
+        # I_h pacemaker conductance (constant baseline)
+        # RPE can modulate I_h strength: positive RPE → stronger I_h → burst
+        rpe_modulation = getattr(self, '_current_rpe', 0.0)
+        g_ih_base = self.da_config.i_h_conductance
+
+        # RPE increases I_h for bursting (+RPE) or decreases for pausing (-RPE)
+        # Scale RPE effect: ±1 RPE → ±50% modulation of I_h
+        g_ih_modulated = g_ih_base * (1.0 + 0.5 * rpe_modulation)
+        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
+
+        # SK adaptation conductance (activated by calcium)
+        g_sk = self.da_config.sk_conductance * self.sk_activation
+
+        return [
+            (g_ih, self.da_config.i_h_reversal),  # I_h: depolarizing
+            (g_sk, self.da_config.sk_reversal),   # SK: hyperpolarizing
+        ]
 
     def get_firing_rate_hz(self, window_ms: int = 1000) -> float:
         """Get population firing rate in Hz.

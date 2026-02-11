@@ -176,7 +176,6 @@ class NeuralSignalRecorder:
         band_powers = {}
         for band_name, (low, high) in bands.items():
             idx = np.logical_and(frequencies >= low, frequencies <= high)
-            # Use trapezoid (trapz was deprecated/removed in newer numpy)
             band_powers[band_name] = np.trapezoid(psd[idx], frequencies[idx]) if idx.any() else 0.0
 
         return band_powers

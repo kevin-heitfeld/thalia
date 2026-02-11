@@ -57,13 +57,13 @@ from thalia.components import (
     create_heterogeneous_stp_configs,
 )
 from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
-from thalia.diagnostics import compute_plasticity_metrics
 from thalia.typing import (
     PopulationName,
     PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
+from thalia.units import ConductanceTensor
 from thalia.utils import CircularDelayBuffer, compute_ne_gain
 
 from .pathway import StriatumPathway, StriatumPathwayConfig
@@ -513,7 +513,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
         # Register D1 pathway weights (internal key with suffix)
         d1_key = f"{source_name}_d1"
-        # Note: We DON'T call super().add_input_source() for pathway-specific keys
+        # NOTE: We DON'T call super().add_input_source() for pathway-specific keys
         # because we already registered the base source name above
         self.synaptic_weights[d1_key] = nn.Parameter(d1_weights, requires_grad=False)
 
@@ -674,7 +674,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
         # Register FSI source (internal key with prefix)
         fsi_key = f"fsi_{source_name}"
-        # Note: We DON'T call super().add_input_source() for FSI keys
+        # NOTE: We DON'T call super().add_input_source() for FSI keys
         # because the base source name is already registered in add_input_source()
         self.synaptic_weights[fsi_key] = nn.Parameter(fsi_weights, requires_grad=False)
 
@@ -789,8 +789,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
             fsi_spikes, fsi_membrane = self.fsi_neurons(
-                g_exc_input=fsi_current,
-                g_inh_input=torch.zeros_like(fsi_current),  # FSI receive minimal inhibition
+                g_exc_input=ConductanceTensor(fsi_current),
+                g_inh_input=ConductanceTensor(torch.zeros_like(fsi_current)),  # FSI receive minimal inhibition
             )
 
             # =====================================================================
@@ -914,12 +914,12 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
         # Execute D1 and D2 MSN populations
         d1_spikes, _ = self.d1_pathway.neurons(
-            g_exc_input=d1_current.clamp(min=0),
-            g_inh_input=torch.zeros_like(d1_current),
+            g_exc_input=ConductanceTensor(d1_current.clamp(min=0)),
+            g_inh_input=ConductanceTensor(torch.zeros_like(d1_current)),
         )
         d2_spikes, _ = self.d2_pathway.neurons(
-            g_exc_input=d2_current.clamp(min=0),
-            g_inh_input=torch.zeros_like(d2_current),
+            g_exc_input=ConductanceTensor(d2_current.clamp(min=0)),
+            g_inh_input=ConductanceTensor(torch.zeros_like(d2_current)),
         )
 
         # =====================================================================
@@ -1670,93 +1670,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
         super().update_temporal_parameters(dt_ms)
 
         # Update neurons
-        if hasattr(self, "d1_neurons") and self.d1_neurons is not None:
-            self.d1_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "d2_neurons") and self.d2_neurons is not None:
-            self.d2_neurons.update_temporal_parameters(dt_ms)
+        self.d1_neurons.update_temporal_parameters(dt_ms)
+        self.d2_neurons.update_temporal_parameters(dt_ms)
         self.fsi_neurons.update_temporal_parameters(dt_ms)
-
-        # Update STP components
-        if hasattr(self, "stp_d1") and self.stp_d1 is not None:
-            self.stp_d1.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_d2") and self.stp_d2 is not None:
-            self.stp_d2.update_temporal_parameters(dt_ms)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        # D1/D2 per-action means and NET
-        d1_per_action: list[float] = []
-        d2_per_action: list[float] = []
-        net_per_action: list[float] = []
-
-        # Check if pathways are linked (have access to weights)
-        pathways_linked = False
-        try:
-            _ = self.d1_pathway.weights
-            _ = self.d2_pathway.weights
-            pathways_linked = True
-        except RuntimeError:
-            # Pathways not linked yet - skip weight-dependent diagnostics
-            pass
-
-        if pathways_linked:
-            for action in range(self.n_actions):
-                pop_slice = self._get_action_population_indices(action)
-                d1_mean = self.d1_pathway.weights[pop_slice, :].mean().item()
-                d2_mean = self.d2_pathway.weights[pop_slice, :].mean().item()
-                d1_per_action.append(d1_mean)
-                d2_per_action.append(d2_mean)
-                net_per_action.append(d1_mean - d2_mean)
-        else:
-            # Fill with zeros if pathways not linked
-            d1_per_action = [0.0] * self.n_actions
-            d2_per_action = [0.0] * self.n_actions
-            net_per_action = [0.0] * self.n_actions
-
-        # Compute plasticity and health metrics (only if pathways linked)
-        if pathways_linked:
-            # Compute plasticity metrics for D1 pathway (representative)
-            plasticity = compute_plasticity_metrics(
-                weights=self.d1_pathway.weights,
-                learning_rate=self.config.learning_rate,
-            )
-            # Add D2 and NET statistics
-            plasticity["d2_weight_mean"] = float(self.d2_pathway.weights.mean().item())
-            plasticity["d2_weight_std"] = float(self.d2_pathway.weights.std().item())
-            net_weights = self.d1_pathway.weights - self.d2_pathway.weights
-            plasticity["net_weight_mean"] = float(net_weights.mean().item())
-            plasticity["net_weight_std"] = float(net_weights.std().item())
-        else:
-            # Minimal diagnostics if pathways not linked
-            plasticity = {
-                "weight_mean": 0.0,
-                "weight_std": 0.0,
-                "weight_range": 0.0,
-                "d2_weight_mean": 0.0,
-                "d2_weight_std": 0.0,
-                "net_weight_mean": 0.0,
-                "net_weight_std": 0.0,
-            }
-
-        # DA receptor diagnostics (spiking DA from VTA)
-        da_receptor_diagnostics = {
-            "d1_da_concentration_mean": float(self._da_concentration_d1.mean().item()),
-            "d1_da_concentration_std": float(self._da_concentration_d1.std().item()),
-            "d2_da_concentration_mean": float(self._da_concentration_d2.mean().item()),
-            "d2_da_concentration_std": float(self._da_concentration_d2.std().item()),
-        }
-
-        return {
-            "plasticity": plasticity,
-            "state_tracker": self.state_tracker.get_diagnostics(),
-            "n_actions": self.n_actions,
-            "neurons_per_action": self.neurons_per_action,
-            "d1_weight_means": d1_per_action,
-            "d2_weight_means": d2_per_action,
-            "net_weight_means": net_per_action,
-            "da_receptors": da_receptor_diagnostics,
-        }

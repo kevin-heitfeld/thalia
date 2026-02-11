@@ -66,7 +66,7 @@ messy and redundant - evolution stacked these over millions of years.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -311,49 +311,6 @@ class UnifiedHomeostasis(nn.Module):
 
         # Re-normalize to maintain budget
         return self.normalize_weights(weights)
-
-    def get_diagnostics(
-        self,
-        weights: torch.Tensor,
-        activity: Optional[torch.Tensor] = None,
-    ) -> Dict[str, float]:
-        """Get diagnostic information about current state.
-
-        Args:
-            weights: Current weight matrix
-            activity: Current activity (optional)
-
-        Returns:
-            Dict with diagnostic metrics
-        """
-        diagnostics = {
-            "weight_mean": weights.mean().item(),
-            "weight_std": weights.std().item(),
-            "weight_min": weights.min().item(),
-            "weight_max": weights.max().item(),
-            "weight_sum_mean": weights.sum(dim=1).mean().item(),
-            "weight_sum_std": weights.sum(dim=1).std().item(),
-        }
-
-        if activity is not None:
-            diagnostics["activity_mean"] = activity.mean().item()
-            diagnostics["activity_std"] = activity.std().item()
-
-        # Diversity metric: how different are the weight patterns?
-        # High diversity = good specialization
-        if weights.dim() == 2 and weights.shape[0] > 1:
-
-            # Normalize each row
-            normed = weights / weights.sum(dim=1, keepdim=True).clamp(min=1e-8)
-            # Pairwise cosine similarity using canonical implementation
-            # Compute for all pairs: similarity[i,j] = cosine(normed[i], normed[j])
-            similarity = torch.mm(normed, normed.T)
-            # Mean off-diagonal similarity (lower = more diverse)
-            mask = 1.0 - torch.eye(weights.shape[0], device=weights.device)
-            mean_similarity = (similarity * mask).sum() / mask.sum()
-            diagnostics["weight_diversity"] = 1.0 - mean_similarity.item()
-
-        return diagnostics
 
 
 class StriatumHomeostasis(UnifiedHomeostasis):

@@ -52,7 +52,7 @@ Architecture (based on canonical cortical microcircuit):
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -64,7 +64,6 @@ from thalia.components import (
     NeuronFactory,
 )
 from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
-from thalia.diagnostics import compute_plasticity_metrics
 from thalia.learning import (
     LearningStrategy,
     UnifiedHomeostasis,
@@ -82,6 +81,7 @@ from thalia.typing import (
     RegionSpikesDict,
     SpikesSourceKey,
 )
+from thalia.units import ConductanceTensor
 from thalia.utils import (
     CircularDelayBuffer,
     clamp_weights,
@@ -540,6 +540,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         self._l23_l6b_delay_steps: int = int(cfg.l23_to_l6b_delay_ms / cfg.dt_ms)
         self._l5_l4_delay_steps: int = int(cfg.l5_to_l4_delay_ms / cfg.dt_ms)
         self._l6_l4_delay_steps: int = int(cfg.l6_to_l4_delay_ms / cfg.dt_ms)
+        self._l23_recurrent_delay_steps: int = int(cfg.l23_recurrent_delay_ms / cfg.dt_ms)
 
         # Initialize CircularDelayBuffer for each pathway
         self._l4_l23_buffer = CircularDelayBuffer(
@@ -577,6 +578,14 @@ class Cortex(NeuralRegion[CortexConfig]):
         self._l6_l4_buffer = CircularDelayBuffer(
             max_delay=self._l6_l4_delay_steps,
             size=self.l6a_size + self.l6b_size,  # Combined L6
+            device=str(self.device),
+            dtype=torch.bool,
+        )
+
+        # L2/3 recurrent delay (prevents instant feedback oscillations)
+        self._l23_recurrent_buffer = CircularDelayBuffer(
+            max_delay=self._l23_recurrent_delay_steps,
+            size=self.l23_size,
             device=str(self.device),
             dtype=torch.bool,
         )
@@ -998,7 +1007,10 @@ class Cortex(NeuralRegion[CortexConfig]):
         l4_g_exc = l4_g_exc * ne_gain
 
         # ConductanceLIF automatically handles shunting inhibition
-        l4_spikes, l4_membrane = self.l4_neurons(l4_g_exc, l4_g_inh)
+        l4_spikes, l4_membrane = self.l4_neurons(
+            g_exc_input=ConductanceTensor(l4_g_exc),
+            g_inh_input=ConductanceTensor(l4_g_inh),
+        )
         l4_spikes = self._apply_sparsity(l4_spikes, cfg.l4_sparsity)
 
         # =====================================================================
@@ -1131,13 +1143,15 @@ class Cortex(NeuralRegion[CortexConfig]):
         # Biology: Recurrent connections are highly plastic and critical for
         # cortical dynamics (attractor states, working memory, prediction)
         #
-        # Get delayed L2/3 activity from previous timestep
-        # (recurrent connections have ~1-2ms axonal delay)
+        # Get delayed L2/3 activity with proper CircularDelayBuffer
+        # (recurrent connections have ~2.5ms axonal delay to prevent synchronization)
         if self.l23_spikes is not None:
-            # Use previous timestep's L2/3 spikes for recurrent input
-            prev_l23_spikes = self.l23_spikes.float()
+            # Write current L2/3 spikes into delay buffer
+            self._l23_recurrent_buffer.write(self.l23_spikes)
+            # Read delayed spikes
+            l23_delayed = self._l23_recurrent_buffer.read(self._l23_recurrent_buffer.max_delay)
             # Apply recurrent weights: [l23_size, l23_size] @ [l23_size] → [l23_size]
-            l23_rec_raw = self.synaptic_weights["l23_l23"] @ prev_l23_spikes
+            l23_rec_raw = self.synaptic_weights["l23_l23"] @ l23_delayed.float()
             # Apply modulations
             l23_rec = (
                 l23_rec_raw
@@ -1200,7 +1214,12 @@ class Cortex(NeuralRegion[CortexConfig]):
                 max_threshold=self._threshold_max,
             )
 
-        l23_spikes, l23_membrane = self.l23_neurons(F.relu(l23_input), F.relu(l23_input) * 0.25)
+        l23_spikes, l23_membrane = self.l23_neurons(
+            g_exc_input=ConductanceTensor(F.relu(l23_input)),
+            # TODO: Why do we multiply inhibition by 0.25 here?
+            # Is this a biological E/I ratio or just a scaling factor?
+            g_inh_input=ConductanceTensor(F.relu(l23_input) * 0.25),
+        )
         l23_spikes = self._apply_sparsity(l23_spikes, cfg.l23_sparsity)
 
         # =====================================================================
@@ -1301,7 +1320,10 @@ class Cortex(NeuralRegion[CortexConfig]):
         # L5 inhibition: ~25% of excitation (4:1 E/I ratio)
         l5_g_inh = l5_g_exc * 0.25
 
-        l5_spikes, l5_membrane = self.l5_neurons(l5_g_exc, l5_g_inh)
+        l5_spikes, l5_membrane = self.l5_neurons(
+            g_exc_input=ConductanceTensor(l5_g_exc),
+            g_inh_input=ConductanceTensor(l5_g_inh),
+        )
         l5_spikes = self._apply_sparsity(l5_spikes, cfg.l5_sparsity)
 
         # =====================================================================
@@ -1387,7 +1409,10 @@ class Cortex(NeuralRegion[CortexConfig]):
         )
         l6a_g_inh = l6a_g_exc * 0.8  # Strong local inhibition for sparse low-gamma firing
 
-        l6a_spikes, l6a_membrane = self.l6a_neurons(l6a_g_exc, l6a_g_inh)
+        l6a_spikes, l6a_membrane = self.l6a_neurons(
+            g_exc_input=ConductanceTensor(l6a_g_exc),
+            g_inh_input=ConductanceTensor(l6a_g_inh),
+        )
         l6a_spikes = self._apply_sparsity(l6a_spikes, cfg.l6a_sparsity)
 
         # =====================================================================
@@ -1425,7 +1450,10 @@ class Cortex(NeuralRegion[CortexConfig]):
         )
         l6b_g_inh = l6b_g_exc * 0.15  # Minimal local inhibition
 
-        l6b_spikes, l6b_membrane = self.l6b_neurons(l6b_g_exc, l6b_g_inh)
+        l6b_spikes, l6b_membrane = self.l6b_neurons(
+            g_exc_input=ConductanceTensor(l6b_g_exc),
+            g_inh_input=ConductanceTensor(l6b_g_inh),
+        )
         l6b_spikes = self._apply_sparsity(l6b_spikes, cfg.l6b_sparsity)
 
         # =====================================================================
@@ -1511,6 +1539,9 @@ class Cortex(NeuralRegion[CortexConfig]):
         }
 
         self._apply_plasticity(inputs=external_inputs, region_outputs=region_outputs)
+
+        # Advance delay buffers to next timestep
+        self._l23_recurrent_buffer.advance()
 
         return self._post_forward(region_outputs)
 
@@ -1745,77 +1776,9 @@ class Cortex(NeuralRegion[CortexConfig]):
         """
         super().update_temporal_parameters(dt_ms)
 
-        # Update neurons in all layers
-        if hasattr(self, "l23_neurons") and self.l23_neurons is not None:
-            self.l23_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "l4_neurons") and self.l4_neurons is not None:
-            self.l4_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "l5_neurons") and self.l5_neurons is not None:
-            self.l5_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "l6a_neurons") and self.l6a_neurons is not None:
-            self.l6a_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "l6b_neurons") and self.l6b_neurons is not None:
-            self.l6b_neurons.update_temporal_parameters(dt_ms)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        cfg = self.config
-
-        # Compute plasticity metrics from L4→L2/3 (most dynamic feedforward pathway)
-        # Note: L2/3 recurrent weights are now external (in AxonalProjection)
-        plasticity = compute_plasticity_metrics(
-            weights=self.synaptic_weights["l4_l23"].data,
-            learning_rate=cfg.learning_rate,
-        )
-        # Add per-source input weight statistics (multi-source architecture)
-        for source_name in self.input_sources:
-            if source_name in self.synaptic_weights:
-                key = f"{source_name}_l4_mean"
-                plasticity[key] = float(self.synaptic_weights[source_name].data.mean().item())
-
-        # Add inter-layer pathway statistics
-        plasticity["l4_l23_mean"] = float(self.synaptic_weights["l4_l23"].data.mean().item())
-        plasticity["l23_l5_mean"] = float(self.synaptic_weights["l23_l5"].data.mean().item())
-        plasticity["l23_l6a_mean"] = float(self.synaptic_weights["l23_l6a"].data.mean().item())
-        plasticity["l23_l6b_mean"] = float(self.synaptic_weights["l23_l6b"].data.mean().item())
-
-        # L2/3 recurrent statistics (critical for cortical dynamics)
-        plasticity["l23_l23_recurrent_mean"] = float(self.synaptic_weights["l23_l23"].data.mean().item())
-        plasticity["l23_l23_recurrent_nonzero"] = float((self.synaptic_weights["l23_l23"].data > 0).sum().item())
-        plasticity["l23_l23_recurrent_sparsity"] = float(
-            (self.synaptic_weights["l23_l23"].data > 0).float().mean().item()
-        )
-
-        # Recurrent activity
-        recurrent_dynamics = {}
-        if self.l23_recurrent_activity is not None:
-            recurrent_dynamics["l23_recurrent_mean"] = float(
-                self.l23_recurrent_activity.mean().item()
-            )
-
-        return {
-            "plasticity": plasticity,
-            "architecture": {
-                "l4_size": self.l4_size,
-                "l23_size": self.l23_size,
-                "l5_size": self.l5_size,
-                "l6a_size": self.l6a_size,
-                "l6b_size": self.l6b_size,
-            },
-            "recurrent_dynamics": recurrent_dynamics,
-            "homeostasis": {
-                "l4_gain": float(self.l4_gain.mean().item()),
-                "l23_gain": float(self.l23_gain.mean().item()),
-                "l5_gain": float(self.l5_gain.mean().item()),
-                "target_rate": self._target_rate,
-            },
-            "synaptic_scaling": {
-                "l4_weight_scale": float(self.l4_weight_scale.item()),
-                "l23_weight_scale": float(self.l23_weight_scale.item()),
-                "l5_weight_scale": float(self.l5_weight_scale.item()),
-            },
-        }
+        # Update neurons
+        self.l23_neurons.update_temporal_parameters(dt_ms)
+        self.l4_neurons.update_temporal_parameters(dt_ms)
+        self.l5_neurons.update_temporal_parameters(dt_ms)
+        self.l6a_neurons.update_temporal_parameters(dt_ms)
+        self.l6b_neurons.update_temporal_parameters(dt_ms)

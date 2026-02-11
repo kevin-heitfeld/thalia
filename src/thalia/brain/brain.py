@@ -574,32 +574,3 @@ class DynamicBrain(nn.Module):
         # Broadcast directly to all regions
         for region in self.regions.values():
             region.set_oscillator_phases(phases, signals, coupled_amplitudes)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get comprehensive diagnostic information from all subsystems.
-
-        Note: Neuromodulator diagnostics are now part of region diagnostics:
-        - VTA (dopamine): regions["vta"].get_diagnostics()
-        - LC (norepinephrine): Still system-based (Phase 2 will convert)
-        - NB (acetylcholine): Still system-based (Phase 2 will convert)
-        """
-        oscillators = self.oscillators.get_state()
-
-        regions_diag: Dict[str, Any] = {}
-        for region_name, region in self.regions.items():
-            regions_diag[region_name] = region.get_diagnostics()
-
-        connections_diag: Dict[str, Any] = {}
-        for (src, tgt), connection in self.connections.items():
-            connection_name = f"{src}_to_{tgt}"
-            connections_diag[connection_name] = connection.get_diagnostics()
-
-        return {
-            "oscillators": oscillators,
-            "regions": regions_diag,
-            "connections": connections_diag,
-        }

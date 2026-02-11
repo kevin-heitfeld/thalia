@@ -65,11 +65,13 @@ Architecture Pattern:
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
 
+from thalia.components.synapses.stp import STPType
+from thalia.units import ConductanceTensor
 from thalia.brain.configs import ThalamusConfig
 from thalia.components import (
     ShortTermPlasticity,
@@ -79,7 +81,6 @@ from thalia.components import (
     WeightInitializer,
     NeuronFactory,
 )
-from thalia.diagnostics import compute_plasticity_metrics
 from thalia.learning import (
     STDPStrategy,
     STDPConfig,
@@ -90,7 +91,10 @@ from thalia.typing import (
     RegionSpikesDict,
     SpikesSourceKey,
 )
-from thalia.utils import clamp_weights
+from thalia.utils import (
+    CircularDelayBuffer,
+    clamp_weights,
+)
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -172,7 +176,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Relay gain per neuron (adaptive via homeostatic plasticity)
         self.relay_gain = nn.Parameter(
             torch.ones(self.relay_size, device=self.device, requires_grad=False)
-            * config.relay_strength
+            * 0.5  # Reduced to prevent 200Hz oscillations
         )
 
         # Homeostatic plasticity: track firing rates for gain adaptation
@@ -213,11 +217,20 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             WeightInitializer.sparse_random(
                 n_output=self.trn_size,
                 n_input=self.trn_size,
-                sparsity=0.2,
-                weight_scale=config.trn_recurrent_strength,
+                sparsity=0.05,  # Reduced from 0.2 to prevent synchronization
+                weight_scale=0.15,  # Reduced from 0.4 to weaken recurrent drive
                 device=self.device,
             ),
             requires_grad=False,
+        )
+
+        # TRN recurrent delay buffer (prevents instant feedback oscillations)
+        trn_recurrent_delay_steps = int(config.trn_recurrent_delay_ms / config.dt_ms)
+        self._trn_recurrent_buffer = CircularDelayBuffer(
+            max_delay=trn_recurrent_delay_steps,
+            size=self.trn_size,
+            device=str(self.device),
+            dtype=torch.bool,
         )
 
         # =====================================================================
@@ -249,7 +262,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         self.stp_sensory_relay = ShortTermPlasticity(
             n_pre=0,  # Grow when sources added
             n_post=self.relay_size,
-            config=STPConfig.from_type(config.stp_sensory_relay_type),
+            config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
             per_synapse=True,  # Per-synapse dynamics for maximum precision
         )
 
@@ -260,7 +273,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         self.stp_l6_feedback = ShortTermPlasticity(
             n_pre=0,  # Grow when sources added
             n_post=self.relay_size,
-            config=STPConfig.from_type(config.stp_l6_feedback_type),
+            config=STPConfig.from_type(STPType.DEPRESSING_STRONG),
             per_synapse=True,
         )
 
@@ -283,11 +296,13 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Initialize sensory input weights (relay_size x relay_size identity-like)
         # This creates a topographic mapping with center-surround filtering
         # The actual filtering is dynamic in _forward_internal() based on input size
+        # CRITICAL: Weights represent per-spike CONDUCTANCES (normalized by g_L)
+        # Scale 0.05 means each spike adds 0.05 conductance units
         sensory_weights = WeightInitializer.sparse_random(
             n_output=self.relay_size,
             n_input=self.relay_size,
             sparsity=0.2,  # 20% sparsity for sparse sensory mapping
-            weight_scale=1.0,  # Strong direct input
+            weight_scale=0.05,  # Per-spike conductance (reduced from 1.0 for conductance-based model)
             device=self.device,
         )
         self.synaptic_weights["sensory"] = nn.Parameter(sensory_weights, requires_grad=False)
@@ -298,7 +313,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             n_output=self.trn_size,
             n_input=self.relay_size,
             sparsity=0.3,  # Moderate connectivity
-            weight_scale=0.4,  # Moderate strength
+            weight_scale=0.05,  # Match sensory→relay scale (reduced from 0.4)
             device=self.device,
         )
         self.sensory_to_trn = nn.Parameter(sensory_to_trn_weights, requires_grad=False)
@@ -489,29 +504,22 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                     relay_current += self.synaptic_weights["thalamus:trn"] @ source_spikes_float
 
         # =====================================================================
-        # COMPUTE ALPHA ATTENTIONAL GATE
+        # RELAY NEURONS: Conductances → Relay
         # =====================================================================
-        alpha_gate = self._compute_alpha_gate()  # [relay_size]
+        # Apply alpha gating to conductances
+        gated_conductance = relay_current * self._compute_alpha_gate()
+
+        # Weights already represent per-spike conductances (0.05)
+        # NO GAIN MODULATION - let pure conductances work first!
+        # Homeostatic adaptation and NE modulation DISABLED until base dynamics stabilize
+        relay_excitation = gated_conductance
 
         # =====================================================================
-        # RELAY NEURONS: Synaptic currents → Relay
+        # HOMEOSTATIC INTRINSIC PLASTICITY: Add Minimal Noise (Bootstrap)
         # =====================================================================
-        # Apply alpha gating to relay current
-        gated_current = relay_current * alpha_gate
-
-        # Apply learned per-neuron gain modulation
-        relay_excitation = gated_current * self.relay_gain  # [relay_size]
-
-        # Apply norepinephrine gain modulation (arousal)
-        ne_level = self._ne_concentration.mean().item() if hasattr(self, '_ne_concentration') else 0.5
-        ne_gain = 1.0 + 0.5 * ne_level
-        relay_excitation = relay_excitation * ne_gain
-
-        # =====================================================================
-        # HOMEOSTATIC INTRINSIC PLASTICITY: Add Baseline Noise (Bootstrap)
-        # =====================================================================
-        # Add baseline noise to overcome silent network problem
-        noise = torch.randn(self.relay_size, device=self.device) * self._baseline_noise
+        # Add tiny baseline noise to overcome silent network problem
+        # Reduced from 0.01 to 0.001 for conductance-based model
+        noise = torch.randn(self.relay_size, device=self.device) * 0.001
         relay_excitation = relay_excitation + noise
 
         # =====================================================================
@@ -523,13 +531,14 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
 
         trn_inhibition_input = region_inputs.get("trn_inhibition", None)
         if trn_inhibition_input is not None:
-            relay_inhibition = trn_inhibition_input.float()  # Already weighted and delayed
+            relay_inhibition = ConductanceTensor(trn_inhibition_input.float())  # Already weighted and delayed
         else:
-            relay_inhibition = torch.zeros(self.relay_size, device=self.device, dtype=torch.float32)
+            relay_inhibition = ConductanceTensor(torch.zeros(self.relay_size, device=self.device, dtype=torch.float32))
 
         # Update relay neurons (ADR-005: 1D tensors, no batch)
+        # relay_excitation and relay_inhibition are conductances (weights @ spikes)
         relay_spikes, relay_membrane = self.relay_neurons(
-            g_exc_input=relay_excitation,  # [relay_size]
+            g_exc_input=ConductanceTensor(relay_excitation),  # [relay_size]
             g_inh_input=relay_inhibition,  # [relay_size]
         )
 
@@ -583,8 +592,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         trn_excitation_relay = torch.mv(self.relay_to_trn, relay_output.float())  # [trn_size]
         trn_excitation = trn_current + trn_excitation_relay
 
-        # TRN recurrent inhibition
-        trn_inhibition = torch.mv(self.trn_recurrent, self.trn_spikes.float())  # [trn_size]
+        # TRN recurrent inhibition with delay (prevents instant feedback oscillations)
+        self._trn_recurrent_buffer.write(self.trn_spikes)
+        trn_delayed = self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)
+        trn_inhibition = torch.mv(self.trn_recurrent, trn_delayed.float())  # [trn_size]
 
         # Gap junction coupling (TRN synchronization)
         # Ultra-fast electrical coupling (<0.1ms) for coherent inhibitory volleys
@@ -681,6 +692,9 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             "trn": trn_spikes,
         }
 
+        # Advance delay buffers to next timestep
+        self._trn_recurrent_buffer.advance()
+
         return self._post_forward(region_outputs)
 
     def _determine_mode(self, membrane: torch.Tensor) -> torch.Tensor:
@@ -727,16 +741,12 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         super().update_temporal_parameters(dt_ms)
 
         # Update neurons
-        if hasattr(self, "relay_neurons") and self.relay_neurons is not None:
-            self.relay_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "trn_neurons") and self.trn_neurons is not None:
-            self.trn_neurons.update_temporal_parameters(dt_ms)
+        self.relay_neurons.update_temporal_parameters(dt_ms)
+        self.trn_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if hasattr(self, "stp_sensory_relay") and self.stp_sensory_relay is not None:
-            self.stp_sensory_relay.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_l6_feedback") and self.stp_l6_feedback is not None:
-            self.stp_l6_feedback.update_temporal_parameters(dt_ms)
+        self.stp_sensory_relay.update_temporal_parameters(dt_ms)
+        self.stp_l6_feedback.update_temporal_parameters(dt_ms)
 
         # Update homeostatic plasticity time constant
         self._firing_rate_alpha = 1.0 - torch.exp(
@@ -759,7 +769,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
 
         # Normalize (1 + cos(phase)) from [0, 2] to [0, 1]
         alpha_modulation = 0.5 * (1.0 + math.cos(self._alpha_phase))
-        gate = 1.0 - self.config.alpha_suppression_strength * alpha_modulation
+        gate = 1.0 - 0.1 * alpha_modulation
 
         # Broadcast to all neurons (ADR-005: 1D)
         gate_tensor = torch.full(
@@ -770,31 +780,3 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         )
 
         return gate_tensor
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        # Compute plasticity metrics from relay gain (primary modifiable weights)
-        plasticity = compute_plasticity_metrics(
-            weights=self.relay_gain.data,
-            learning_rate=self.config.learning_rate,
-        )
-
-        # Add learned pathway statistics
-        if "sensory" in self.synaptic_weights:
-            plasticity["sensory_relay_mean"] = float(self.synaptic_weights["sensory"].data.mean().item())
-        if "cortex:l6b" in self.synaptic_weights:
-            plasticity["l6b_relay_mean"] = float(self.synaptic_weights["cortex:l6b"].data.mean().item())
-        if "cortex:l6a" in self.synaptic_weights:
-            plasticity["l6a_trn_mean"] = float(self.synaptic_weights["cortex:l6a"].data.mean().item())
-
-        return {
-            "plasticity": plasticity,
-            "architecture": {
-                "relay_size": self.relay_size,
-                "trn_size": self.trn_size,
-            },
-        }

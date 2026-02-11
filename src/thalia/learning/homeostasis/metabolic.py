@@ -68,7 +68,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -324,22 +324,6 @@ class MetabolicConstraint(nn.Module):
             return 0.0
         return self._total_spikes / self._timesteps
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information."""
-        return {
-            "energy_avg": self._energy_avg,
-            "energy_budget": self.config.energy_budget,
-            "over_budget": self.is_over_budget(),
-            "efficiency": self.get_efficiency(),
-            "gain": self._gain,
-            "total_energy": self._total_energy,
-            "total_spikes": self._total_spikes,
-            "total_penalties": self._total_penalties,
-            "timesteps": self._timesteps,
-            "avg_spikes_per_timestep": self.get_average_spikes_per_timestep(),
-            "avg_energy_per_timestep": (self._total_energy / max(1, self._timesteps)),
-        }
-
     def forward(
         self,
         spikes: torch.Tensor,
@@ -428,15 +412,3 @@ class RegionalMetabolicBudget:
         if cost < 1e-8:
             return float("inf")
         return budget / cost
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information."""
-        return {
-            "total_cost": self.get_total_cost(),
-            "global_budget": self.global_budget,
-            "globally_over_budget": self.is_globally_over_budget(),
-            "total_penalty": self.get_total_penalty(),
-            "region_costs": self.region_costs.copy(),
-            "region_penalties": self.region_penalties.copy(),
-            "region_efficiencies": {r: self.get_region_efficiency(r) for r in self.region_budgets},
-        }

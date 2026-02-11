@@ -179,7 +179,9 @@ class NeuronFactory:
             tau_mem=20.0,
             tau_E=5.0,  # Fast excitatory (sensory input)
             tau_I=10.0,  # Slower inhibitory (from TRN)
-            tau_ref=2.0,  # Short refractory period for relay neurons (2ms vs 5ms cortical)
+            tau_ref=4.0,  # Biological refractory period (3-5ms range, prevents >250Hz firing)
+            adapt_increment=0.15,  # Add adaptation to prevent sustained high firing from dense input
+            tau_adapt=100.0,  # Moderate adaptation decay (~100ms)
             **overrides,
         )
         neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
@@ -215,7 +217,7 @@ class NeuronFactory:
             E_I=-0.5,
             g_L=0.06,  # Slightly faster dynamics
             tau_mem=16.0,  # Faster membrane
-            tau_E=4.0,  # Very fast excitatory
+            tau_E=5.0,  # Fast but biologically realistic (AMPA minimum ~2-5ms)
             tau_I=8.0,  # Fast inhibitory
             **overrides,
         )

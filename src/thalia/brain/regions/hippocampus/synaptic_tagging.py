@@ -11,8 +11,6 @@ based on synaptic tag strength.
 
 from __future__ import annotations
 
-from typing import Any
-
 import torch
 
 
@@ -181,17 +179,3 @@ class SynapticTagging:
         self.tags = new_tags
 
         self.n_neurons = new_size
-
-    def get_diagnostics(self) -> dict[str, Any]:
-        """Get diagnostic information about tag state.
-
-        Returns:
-            Dictionary with tag statistics
-        """
-        return {
-            "tag_mean": self.tags.mean().item(),
-            "tag_max": self.tags.max().item(),
-            "tag_nonzero": (self.tags > 0.01).sum().item(),
-            "tag_total": self.tags.numel(),
-            "tag_coverage": (self.tags > 0.01).sum().item() / self.tags.numel(),
-        }

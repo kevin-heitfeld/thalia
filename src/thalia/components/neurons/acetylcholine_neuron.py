@@ -36,10 +36,12 @@ Date: February 2026
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import torch
 
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.units import ConductanceTensor, VoltageTensor
+from .neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
@@ -78,8 +80,9 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
 
     # I_h pacemaking current (HCN channels) - MODERATE
     # Between NE and DA for 2-5 Hz baseline
-    i_h_conductance: float = 0.022
-    i_h_reversal: float = 0.75
+    # Must dominate g_L for pacemaking
+    i_h_conductance: float = 0.45
+    i_h_reversal: float = 0.77
 
     # SK calcium-activated K+ channels - FAST ADAPTATION
     # Strong and fast → limits burst duration to 50-100ms
@@ -96,8 +99,9 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     # Disable adaptation from base class (we use SK instead)
     adapt_increment: float = 0.0
 
-    # Noise for biological realism
-    noise_std: float = 0.02
+    # Noise for biological realism and tonic firing
+    # Tuned to 0.07 for ~2-5 Hz firing rate
+    noise_std: float = 0.07
 
 
 class AcetylcholineNeuron(ConductanceLIF):
@@ -152,60 +156,33 @@ class AcetylcholineNeuron(ConductanceLIF):
 
     def forward(
         self,
-        i_synaptic: torch.Tensor | float = 0.0,
+        g_exc_input: Optional[ConductanceTensor] = None,
+        g_inh_input: Optional[ConductanceTensor] = None,
         prediction_error_drive: float = 0.0,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update acetylcholine neurons with prediction error modulation.
 
         Args:
-            i_synaptic: Synaptic input current [n_neurons] or scalar
-                       (NB receives input from PFC, amygdala for prediction errors)
+            g_exc_input: Excitatory conductance input [n_neurons]
+            g_inh_input: Inhibitory conductance input [n_neurons]
             prediction_error_drive: Prediction error magnitude (normalized scalar)
                                   +1.0 = high prediction error (burst)
                                    0.0 = low prediction error (tonic)
-                                  (Note: ACh responds to |PE|, not signed RPE)
 
         Returns:
-            Spike tensor [n_neurons], dtype=bool
+            (spikes, membrane): Spike tensor and membrane potentials
         """
-        # Convert scalar synaptic input to tensor if needed
-        if isinstance(i_synaptic, (int, float)):
-            i_synaptic = torch.full(
-                (self.n_neurons,), float(i_synaptic), device=self.device
-            )
+        # Handle None inputs
+        if g_exc_input is None:
+            g_exc_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
+        if g_inh_input is None:
+            g_inh_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
 
-        # === Intrinsic Currents ===
+        # Store PE for conductance calculation
+        self._current_pe = prediction_error_drive
 
-        # I_h pacemaking current (moderate strength → 2-5 Hz baseline)
-        i_pacemaker = self.ach_config.i_h_conductance * (
-            self.ach_config.i_h_reversal - self.v_mem
-        )
-
-        # SK adaptation current (fast and strong → brief bursts)
-        i_adaptation = (
-            -self.ach_config.sk_conductance
-            * self.sk_activation
-            * (self.v_mem - self.ach_config.sk_reversal)
-        )
-
-        # === Prediction Error Modulation ===
-        # Convert prediction error magnitude to current drive
-        # High |PE| → positive current → depolarization → burst
-        # ACh responds to surprise magnitude, not valence
-        i_prediction_error = (
-            prediction_error_drive * self.ach_config.prediction_error_to_current_gain
-        )
-
-        # === Total Current ===
-        i_total = i_synaptic + i_pacemaker + i_adaptation + i_prediction_error
-
-        # Add noise for biological realism
-        if self.ach_config.noise_std > 0:
-            noise = torch.randn_like(i_total) * self.ach_config.noise_std
-            i_total = i_total + noise
-
-        # Call parent's forward to update membrane potential and generate spikes
-        spikes, _ = super().forward(i_total)
+        # Call parent's forward
+        spikes, _ = super().forward(g_exc_input, g_inh_input)
 
         # === Update Calcium and SK Activation ===
         # Large calcium influx on spike (fast SK activation)
@@ -221,7 +198,29 @@ class AcetylcholineNeuron(ConductanceLIF):
         # Store spikes for diagnostic access
         self.spikes = spikes
 
-        return spikes
+        return spikes, self.membrane
+
+    def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
+        """Compute I_h and SK conductances.
+
+        Prediction error modulates I_h for rapid bursting.
+
+        Returns:
+            List of (conductance, reversal) tuples
+        """
+        # I_h pacemaker (modulated by prediction error)
+        pe = getattr(self, '_current_pe', 0.0)
+        g_ih_base = self.ach_config.i_h_conductance
+        g_ih_modulated = g_ih_base * (1.0 + 0.8 * pe)  # Strong PE modulation
+        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
+
+        # SK adaptation (strong and fast for brief bursts)
+        g_sk = self.ach_config.sk_conductance * self.sk_activation
+
+        return [
+            (g_ih, self.ach_config.i_h_reversal),  # I_h pacemaker
+            (g_sk, self.ach_config.sk_reversal),   # SK adaptation
+        ]
 
     def get_firing_rate_hz(self, window_ms: int = 100) -> float:
         """Get average firing rate.

@@ -68,14 +68,11 @@ Phase 2 (Future):
 - Separate DA projections (mesocortical, mesolimbic, nigrostriatal)
 - Lateral habenula → RMTg → VTA (aversive signals)
 - PFC → VTA (contextual modulation)
-
-Author: Thalia Project
-Date: February 2026
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 
@@ -86,6 +83,7 @@ from thalia.components.neurons.dopamine_neuron import (
 )
 from thalia.components.neurons.neuron_factory import NeuronFactory, NeuronType
 from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.units import ConductanceTensor
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -222,13 +220,19 @@ class VTA(NeuralRegion[VTAConfig]):
         # Update DA neurons with RPE drive
         # Positive RPE → depolarization → burst
         # Negative RPE → hyperpolarization → pause
-        da_spikes = self.da_neurons.forward(i_synaptic=0.0, rpe_drive=rpe)
+        da_spikes, _ = self.da_neurons.forward(
+            g_exc_input=ConductanceTensor(torch.zeros(self.n_da_neurons, device=self.device)),
+            g_inh_input=ConductanceTensor(torch.zeros(self.n_da_neurons, device=self.device)),
+            rpe_drive=rpe,
+        )
         self._current_da_spikes = da_spikes  # Store for GABA computation
 
         # Update GABA interneurons (homeostatic control)
         # Provide tonic inhibition to prevent runaway bursting
         gaba_drive = self._compute_gaba_drive()
-        self.gaba_neurons.forward(gaba_drive)
+        # Convert drive to excitatory conductance (scale down from current-like values)
+        g_gaba_exc = ConductanceTensor(gaba_drive / 10.0)  # Already a tensor from _compute_gaba_drive
+        self.gaba_neurons.forward(g_gaba_exc, None)
 
         region_outputs: RegionSpikesDict = {
             "da_output": da_spikes,
@@ -375,23 +379,3 @@ class VTA(NeuralRegion[VTAConfig]):
             Firing rate in Hz
         """
         return self.da_neurons.get_firing_rate_hz()
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        diagnostics = {
-            "da_firing_rate_hz": self.get_da_firing_rate_hz(),
-            "mean_rpe": self.get_mean_rpe(window=100),
-            "da_mean_membrane_potential": self.da_neurons.v_mem.mean().item(),
-            "da_mean_calcium": self.da_neurons.ca_concentration.mean().item(),
-            "da_mean_sk_activation": self.da_neurons.sk_activation.mean().item(),
-        }
-
-        if self._reward_history:
-            diagnostics["mean_reward"] = sum(self._reward_history[-100:]) / min(100, len(self._reward_history))
-        if self._value_history:
-            diagnostics["mean_value"] = sum(self._value_history[-100:]) / min(100, len(self._value_history))
-
-        if self.config.rpe_normalization:
-            diagnostics["avg_abs_rpe"] = self._avg_abs_rpe
-
-        return diagnostics

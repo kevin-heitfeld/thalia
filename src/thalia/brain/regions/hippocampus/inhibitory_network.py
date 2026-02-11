@@ -53,6 +53,7 @@ import numpy as np
 
 from thalia.components import WeightInitializer, ConductanceLIF, ConductanceLIFConfig
 from thalia.constants import DEFAULT_DT_MS
+from thalia.units import ConductanceTensor
 
 
 @dataclass
@@ -244,14 +245,19 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # I → E CONNECTIVITY (Interneurons → Pyramidal)
         # =====================================================================
 
-        # PV → Pyramidal (strong perisomatic inhibition)
+        # PV → Pyramidal (perisomatic inhibition)
+        # CRITICAL FIX (2025-01): Reduced connectivity AND strength to prevent runaway inhibition.
+        # Problem: 404 CA1 spikes → massive PV activation → complete CA1 suppression
+        # With 2000 CA1 neurons, even sparse inhibition creates excessive feedback.
+        # Biology: PV cells provide precise timing via sparse perisomatic contacts, not blanket suppression.
+        # Solution: Reduce connectivity to 30% (from 60%) AND weight to 0.2 (from 1.0)
         self.pv_to_pyr = nn.Parameter(
             WeightInitializer.sparse_uniform(
                 n_pre=self.n_pv,
                 n_post=pyr_size,
-                prob=0.6,
+                prob=0.3,  # Reduced from 0.6 - sparse connections for timing
                 w_min=0.0,
-                w_max=1.0,  # Strong inhibition
+                w_max=0.2,  # Reduced from 1.0 - moderate inhibition per connection
                 device=self.device,
             )
         )
@@ -444,9 +450,21 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # RUN INTERNEURONS
         # =====================================================================
 
-        pv_spikes, _ = self.pv_neurons(pv_exc)
-        olm_spikes, _ = self.olm_neurons(olm_exc)
-        bistratified_spikes, _ = self.bistratified_neurons(bistratified_exc)
+        # TODO: Future enhancement - add external excitation to interneurons (e.g., from EC or CA3)
+        # for more dynamic behavior
+
+        pv_spikes, _ = self.pv_neurons(
+            g_exc_input=ConductanceTensor(pv_exc),
+            g_inh_input=None,
+        )
+        olm_spikes, _ = self.olm_neurons(
+            g_exc_input=ConductanceTensor(olm_exc),
+            g_inh_input=None,
+        )
+        bistratified_spikes, _ = self.bistratified_neurons(
+            g_exc_input=ConductanceTensor(bistratified_exc),
+            g_inh_input=None,
+        )
 
         # =====================================================================
         # I → E INHIBITION TO PYRAMIDAL
@@ -486,3 +504,13 @@ class HippocampalInhibitoryNetwork(nn.Module):
             "olm_spikes": olm_spikes,
             "bistratified_spikes": bistratified_spikes,
         }
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters for all inhibitory neuron populations.
+
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        self.pv_neurons.update_temporal_parameters(dt_ms)
+        self.olm_neurons.update_temporal_parameters(dt_ms)
+        self.bistratified_neurons.update_temporal_parameters(dt_ms)

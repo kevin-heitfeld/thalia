@@ -484,19 +484,3 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     def _beta_amplitude_effective(self) -> float:
         """Effective beta amplitude (with cross-frequency coupling)."""
         return float(self._coupled_amplitudes.get("beta", 1.0))
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    @abstractmethod
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region.
-
-        This method should return a dictionary of relevant metrics and internal states
-        that can be used for monitoring, debugging, and analysis. Subclasses should
-        override this method to include region-specific diagnostics.
-
-        Returns:
-            Dict of diagnostic metrics (e.g., firing rates, weight norms, neuromodulator levels)
-        """

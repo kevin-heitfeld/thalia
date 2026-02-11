@@ -47,7 +47,7 @@ Result: **Theta rhythm emerges from circuit dynamics, not hardcoded sinusoid**
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -56,6 +56,7 @@ import numpy as np
 from thalia.brain.configs import MedialSeptumConfig
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.units import ConductanceTensor
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -261,8 +262,18 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # =====================================================================
         # RUN NEURONS
         # =====================================================================
-        ach_spikes, _ = self.ach_neurons(ach_input)
-        gaba_spikes, _ = self.gaba_neurons(gaba_input)
+
+        # TODO: Future enhancement - add feedback inhibition from hippocampus to septum
+        # for more dynamic interactions
+
+        ach_spikes, _ = self.ach_neurons(
+            g_exc_input=ConductanceTensor(ach_input),
+            g_inh_input=None,
+        )
+        gaba_spikes, _ = self.gaba_neurons(
+            g_exc_input=ConductanceTensor(gaba_input),
+            g_inh_input=None,
+        )
 
         # =====================================================================
         # UPDATE STATE
@@ -278,16 +289,17 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         return self._post_forward(region_outputs)
 
     # =========================================================================
-    # DIAGNOSTICS
+    # TEMPORAL PARAMETER MANAGEMENT
     # =========================================================================
 
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        ach_rate = self.cholinergic_spikes.float().mean().item()
-        gaba_rate = self.gabaergic_spikes.float().mean().item()
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters when brain timestep changes.
 
-        return {
-            "pacemaker_phase": self.pacemaker_phase,
-            "ach_firing_rate": ach_rate,
-            "gaba_firing_rate": gaba_rate,
-        }
+        Args:
+            dt_ms: New simulation timestep in milliseconds
+        """
+        super().update_temporal_parameters(dt_ms)
+
+        # Update neurons
+        self.ach_neurons.update_temporal_parameters(dt_ms)
+        self.gaba_neurons.update_temporal_parameters(dt_ms)

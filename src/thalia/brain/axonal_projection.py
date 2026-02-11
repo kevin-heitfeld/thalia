@@ -14,7 +14,7 @@ Explicit separation of axons (transmission) from synapses (integration).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import torch
 import torch.nn as nn
@@ -194,22 +194,3 @@ class AxonalProjection(nn.Module):
                 delay_ms=spec.delay_ms,
                 old_dt_ms=old_dt_ms,
             )
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get routing diagnostics."""
-        return {
-            "n_sources": len(self.sources),
-            "sources": [
-                {
-                    "name": spec.region_name,
-                    "population": spec.population,
-                    "size": spec.size,
-                    "delay_ms": spec.delay_ms,
-                }
-                for spec in self.sources
-            ],
-        }

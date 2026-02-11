@@ -24,6 +24,7 @@ import torch.nn as nn
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import WeightInitializer
 from thalia.constants import DEFAULT_DT_MS
+from thalia.units import ConductanceTensor
 
 
 class GranuleCellLayer(nn.Module):
@@ -82,8 +83,8 @@ class GranuleCellLayer(nn.Module):
             v_threshold=-50.0,  # mV, more excitable than pyramidal
             v_reset=-65.0,  # mV
             tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
-            tau_E=1.0,  # ms, fast excitatory conductance decay
-            tau_I=2.0,  # ms, fast inhibitory conductance decay
+            tau_E=2.5,  # ms, fast AMPA-like (biological minimum ~2-3ms)
+            tau_I=6.0,  # ms, fast GABA_A (biological range 5-10ms)
         )
         self.granule_neurons = ConductanceLIF(
             n_neurons=self.n_granule,
@@ -127,7 +128,11 @@ class GranuleCellLayer(nn.Module):
             g_exc = torch.mv(self.mossy_to_granule, mossy_fiber_spikes.float())
 
         # Granule cell spiking (minimal inhibition - granule layer is excitatory)
-        parallel_fiber_spikes, _ = self.granule_neurons(g_exc, None)
+        # TODO: Future enhancement - add feedforward inhibition from Golgi cells for more realistic dynamics
+        parallel_fiber_spikes, _ = self.granule_neurons(
+            g_exc_input=ConductanceTensor(g_exc),
+            g_inh_input=None,
+        )
 
         # Enforce sparsity (top-k activation based on excitation)
         # Always select the k most excited neurons that spiked

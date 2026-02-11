@@ -27,6 +27,7 @@ import torch.nn as nn
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import WeightInitializer
 from thalia.constants import DEFAULT_DT_MS
+from thalia.units import ConductanceTensor
 
 
 class EnhancedPurkinjeCell(nn.Module):
@@ -70,8 +71,8 @@ class EnhancedPurkinjeCell(nn.Module):
             v_threshold=-55.0,  # mV
             v_reset=-70.0,  # mV
             tau_mem=15.0,  # ms, slower integration for complex computation
-            tau_E=2.0,  # ms, excitatory conductance decay
-            tau_I=5.0,  # ms, inhibitory conductance decay (strong inhibition)
+            tau_E=3.0,  # ms, fast but realistic AMPA kinetics
+            tau_I=8.0,  # ms, GABA_A-like (strong inhibition, biological range)
         )
         self.soma_neurons = ConductanceLIF(
             n_neurons=1,
@@ -135,7 +136,11 @@ class EnhancedPurkinjeCell(nn.Module):
         # Simple spikes (regular output)
         # Calcium modulates excitability (high calcium = more excitable)
         calcium_modulation = 1.0 + 0.2 * self.dendrite_calcium.mean()
-        simple_spikes, _ = self.soma_neurons(soma_input.unsqueeze(0) * calcium_modulation, None)
+        # TODO: Future enhancement - add feedforward inhibition from interneurons for more realistic dynamics
+        simple_spikes, _ = self.soma_neurons(
+            g_exc_input=ConductanceTensor(soma_input.unsqueeze(0) * calcium_modulation),
+            g_inh_input=None,
+        )
 
         self.timestep += 1
 

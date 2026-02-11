@@ -3,18 +3,7 @@
 Implements biologically-realistic sharp-wave ripple (SWR) generation in CA3.
 Ripples occur probabilistically during low acetylcholine (sleep/rest), replaying
 recently-tagged experiences for consolidation.
-
-References:
-    - Buzsáki (2015). Hippocampus as a cognitive map. Chapter 7: Replay
-    - Foster & Wilson (2006). Reverse replay of behavioural sequences. Nature
-    - Carr et al. (2011). Hippocampal replay in the awake state. Nat Neurosci
-    - Joo & Frank (2018). The hippocampal sharp wave-ripple. Neuron
-
-Author: Thalia Development Team
-Date: January 19, 2026
 """
-
-from typing import Dict
 
 import torch
 
@@ -202,26 +191,3 @@ class SpontaneousReplayGenerator:
         seed_pattern[seed_indices] = True
 
         return seed_pattern
-
-    def get_diagnostics(self) -> Dict[str, float]:
-        """Return diagnostic information about replay generator.
-
-        Returns:
-            Dictionary with:
-                - ripple_rate_hz: Target ripple rate
-                - ach_threshold: ACh threshold for ripple generation
-                - ripple_refractory_ms: Minimum time between ripples
-                - time_since_ripple_ms: Current time since last ripple
-                - tag_weight: Weight for tag-based selection
-                - strength_weight: Weight for connection-based selection
-                - noise_weight: Weight for random exploration
-        """
-        return {
-            "ripple_rate_hz": self.ripple_rate_hz,
-            "ach_threshold": self.ach_threshold,
-            "ripple_refractory_ms": self.ripple_refractory_ms,
-            "time_since_ripple_ms": self.time_since_ripple_ms,
-            "tag_weight": self.tag_weight,
-            "strength_weight": self.strength_weight,
-            "noise_weight": self.noise_weight,
-        }

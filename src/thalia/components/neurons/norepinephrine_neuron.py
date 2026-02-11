@@ -35,10 +35,12 @@ Date: February 2026
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import torch
 
-from thalia.components.neurons.neuron import ConductanceLIF, ConductanceLIFConfig
+from thalia.units import ConductanceTensor, VoltageTensor
+from .neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
@@ -78,12 +80,13 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
 
     # I_h pacemaking current (HCN channels) - WEAKER than DA
     # Lower conductance → lower baseline firing rate (1-3 Hz vs 4-5 Hz)
-    i_h_conductance: float = 0.015  # Half of DA neurons
-    i_h_reversal: float = 0.7
+    # Tuned to 0.12 for ~1-3 Hz (gap junctions DISABLED to prevent quenching)
+    i_h_conductance: float = 0.12  # Lower than DA neurons
+    i_h_reversal: float = 0.75
 
     # Gap junction coupling (electrical synapses)
     # LC neurons are densely coupled via gap junctions → synchronized bursts
-    gap_junction_strength: float = 0.05  # Voltage coupling coefficient
+    gap_junction_strength: float = 0.0  # DISABLED - prevents pacemaking when all neurons at low V
     gap_junction_neighbor_radius: int = 50  # Neurons within radius are coupled
 
     # SK calcium-activated K+ channels (spike-frequency adaptation)
@@ -100,8 +103,9 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # Disable adaptation from base class (we use SK instead)
     adapt_increment: float = 0.0
 
-    # Noise for biological realism
-    noise_std: float = 0.015  # Slightly higher than DA
+    # Noise for biological realism and tonic firing
+    # Tuned to 0.05 for ~1-3 Hz firing rate
+    noise_std: float = 0.05  # Lower than DA
 
 
 class NorepinephrineNeuron(ConductanceLIF):
@@ -193,72 +197,34 @@ class NorepinephrineNeuron(ConductanceLIF):
 
     def forward(
         self,
-        i_synaptic: torch.Tensor | float = 0.0,
+        g_exc_input: Optional[ConductanceTensor] = None,
+        g_inh_input: Optional[ConductanceTensor] = None,
         uncertainty_drive: float = 0.0,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update norepinephrine neurons with uncertainty modulation.
 
         Args:
-            i_synaptic: Synaptic input current [n_neurons] or scalar
-                       (LC receives input from PFC, hippocampus for uncertainty signal)
+            g_exc_input: Excitatory conductance input [n_neurons]
+            g_inh_input: Inhibitory conductance input [n_neurons]
             uncertainty_drive: Uncertainty/novelty drive (normalized scalar)
                              +1.0 = high uncertainty (burst)
                              -1.0 = low uncertainty (pause)
                               0.0 = moderate uncertainty (tonic)
 
         Returns:
-            Spike tensor [n_neurons], dtype=bool
+            (spikes, membrane): Spike tensor and membrane potentials
         """
-        # Convert scalar synaptic input to tensor if needed
-        if isinstance(i_synaptic, (int, float)):
-            i_synaptic = torch.full(
-                (self.n_neurons,), float(i_synaptic), device=self.device
-            )
+        # Handle None inputs
+        if g_exc_input is None:
+            g_exc_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
+        if g_inh_input is None:
+            g_inh_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
 
-        # === Intrinsic Currents ===
+        # Store uncertainty for conductance calculation
+        self._current_uncertainty = uncertainty_drive
 
-        # I_h pacemaking current (weaker than DA → lower baseline)
-        i_pacemaker = self.ne_config.i_h_conductance * (
-            self.ne_config.i_h_reversal - self.v_mem
-        )
-
-        # SK adaptation current (allows sustained bursting)
-        i_adaptation = (
-            -self.ne_config.sk_conductance
-            * self.sk_activation
-            * (self.v_mem - self.ne_config.sk_reversal)
-        )
-
-        # === Gap Junction Coupling ===
-        # Electrical coupling to nearby neurons (synchronized bursts)
-        # I_gap = g_gap * (V_neighbor - V_self)
-        i_gap_junction = torch.zeros(self.n_neurons, device=self.device)
-        if self.gap_junction_matrix is not None:
-            # Compute voltage difference from all coupled neighbors
-            # [n, n] @ [n, 1] → [n, 1]
-            v_neighbors = torch.matmul(
-                self.gap_junction_matrix, self.v_mem.unsqueeze(1)
-            ).squeeze(1)
-            i_gap_junction = v_neighbors - self.v_mem * self.gap_junction_matrix.sum(
-                dim=1
-            )
-
-        # === Uncertainty Modulation ===
-        # Convert uncertainty to current drive
-        # High uncertainty → positive current → depolarization → burst
-        # Low uncertainty → negative current → hyperpolarization → pause
-        i_uncertainty = uncertainty_drive * self.ne_config.uncertainty_to_current_gain
-
-        # === Total Current ===
-        i_total = i_synaptic + i_pacemaker + i_adaptation + i_gap_junction + i_uncertainty
-
-        # Add noise for biological realism
-        if self.ne_config.noise_std > 0:
-            noise = torch.randn_like(i_total) * self.ne_config.noise_std
-            i_total = i_total + noise
-
-        # Call parent's forward to update membrane potential and generate spikes
-        spikes, _ = super().forward(i_total)
+        # Call parent's forward
+        spikes, _ = super().forward(g_exc_input, g_inh_input)
 
         # === Update Calcium and SK Activation ===
         # Calcium influx on spike
@@ -274,7 +240,54 @@ class NorepinephrineNeuron(ConductanceLIF):
         # Store spikes for diagnostic access
         self.spikes = spikes
 
-        return spikes
+        return spikes, self.membrane
+
+    def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
+        """Compute I_h, SK, and gap junction conductances.
+
+        Returns:
+            List of (conductance, reversal) tuples
+        """
+        # I_h pacemaker (modulated by uncertainty)
+        uncertainty = getattr(self, '_current_uncertainty', 0.0)
+        g_ih_base = self.ne_config.i_h_conductance
+        g_ih_modulated = g_ih_base * (1.0 + 0.4 * uncertainty)  # Uncertainty boosts I_h
+        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
+
+        # SK adaptation
+        g_sk = self.ne_config.sk_conductance * self.sk_activation
+
+        # Gap junction coupling (electrical synapses)
+        # Compute voltage-dependent coupling current and convert to effective conductance
+        # I_gap = sum_j [g_gap * (V_j - V_i)]  where j are neighbors
+        # This is modeled as a conductance with dynamic reversal = weighted average of neighbor voltages
+        g_gap_total = torch.zeros(self.n_neurons, device=self.device)
+        E_gap_effective = torch.zeros(self.n_neurons, device=self.device)
+
+        if self.gap_junction_matrix is not None:
+            # Total gap conductance per neuron
+            g_gap_total = self.gap_junction_matrix.sum(dim=1)
+
+            # Effective reversal = weighted average of neighbor voltages
+            # Only compute if g_gap_total > 0 to avoid division by zero
+            mask = g_gap_total > 1e-6
+            if mask.any():
+                neighbor_weighted_v = torch.matmul(self.gap_junction_matrix, self.v_mem)
+                E_gap_effective[mask] = neighbor_weighted_v[mask] / g_gap_total[mask]
+
+        # Return conductances with reversals
+        conductances = [
+            (g_ih, self.ne_config.i_h_reversal),  # I_h pacemaker
+            (g_sk, self.ne_config.sk_reversal),   # SK adaptation
+        ]
+
+        # Add gap junctions if present
+        if g_gap_total.sum() > 1e-6:
+            # Gap junctions modeled as conductances with neighbor voltage as reversal
+            # This creates the correct current flow: I = g * (V_neighbor - V_self)
+            conductances.append((g_gap_total, E_gap_effective))
+
+        return conductances
 
     def get_firing_rate_hz(self, window_ms: int = 100) -> float:
         """Get average firing rate over recent history.

@@ -77,9 +77,6 @@ References:
 - Sarter & Parikh (2005): Cholinergic attention system
 - Hangya et al. (2015): BF cholinergic neuron properties
 - Gu & Yakel (2011): Cholinergic coordination of prefrontal cortex
-
-Author: Thalia Project
-Date: February 2026
 """
 
 from __future__ import annotations
@@ -95,6 +92,7 @@ from thalia.components.neurons.acetylcholine_neuron import (
 )
 from thalia.components.neurons.neuron_factory import NeuronFactory, NeuronType
 from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.units import ConductanceTensor
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -212,14 +210,17 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
         # Update ACh neurons with PE drive
         # High |PE| → depolarization → fast burst (10-20 Hz for 50-100ms)
         # ACh responds to magnitude, not sign (|PE|)
-        ach_spikes = self.ach_neurons.forward(
-            i_synaptic=0.0, prediction_error_drive=prediction_error
+        ach_spikes, _ = self.ach_neurons.forward(
+            g_exc_input=ConductanceTensor(torch.zeros(self.config.n_ach_neurons, device=self.device)),
+            g_inh_input=ConductanceTensor(torch.zeros(self.config.n_ach_neurons, device=self.device)),
+            prediction_error_drive=prediction_error,
         )
         self._current_ach_spikes = ach_spikes  # Store for GABA computation
 
         # Update GABA interneurons (homeostatic control)
         gaba_drive = self._compute_gaba_drive()
-        self.gaba_neurons.forward(gaba_drive)
+        g_gaba_exc = ConductanceTensor(gaba_drive / 10.0)  # Already a tensor
+        self.gaba_neurons.forward(g_gaba_exc, None)
 
         region_outputs: RegionSpikesDict = {
             "ach_output": ach_spikes,
@@ -364,24 +365,3 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
         """
         firing_rate = self.get_ach_firing_rate_hz()
         return firing_rate > threshold
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        diagnostics = {
-            "ach_firing_rate_hz": self.get_ach_firing_rate_hz(),
-            "mean_prediction_error": self.get_mean_prediction_error(window=100),
-            "is_encoding_mode": self.is_encoding_mode(),
-            "ach_mean_membrane_potential": self.ach_neurons.v_mem.mean().item(),
-            "ach_mean_calcium": self.ach_neurons.ca_concentration.mean().item(),
-            "ach_mean_sk_activation": self.ach_neurons.sk_activation.mean().item(),
-        }
-
-        if self._pfc_activity_history:
-            diagnostics["mean_pfc_activity"] = sum(
-                self._pfc_activity_history[-100:]
-            ) / min(100, len(self._pfc_activity_history))
-
-        if self.config.pe_normalization:
-            diagnostics["avg_pe"] = self._avg_pe
-
-        return diagnostics

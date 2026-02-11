@@ -45,7 +45,7 @@ Date: February 2026
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Dict
 
 import torch
 
@@ -204,11 +204,3 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
         if not self._reward_history:
             return 0.0
         return sum(self._reward_history) / len(self._reward_history)
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        return {
-            "current_reward": self._current_reward,
-            "mean_reward": self.get_mean_reward(),
-            "reward_history_length": len(self._reward_history),
-        }

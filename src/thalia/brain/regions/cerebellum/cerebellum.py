@@ -32,14 +32,13 @@ enabling fast, precise learning of input-output mappings without trial-and-error
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 import torch
 import torch.nn as nn
 
 from thalia.brain.configs import CerebellumConfig
 from thalia.components.synapses import ShortTermPlasticity, STPConfig
-from thalia.diagnostics import compute_plasticity_metrics
 from thalia.learning import (
     EligibilitySTDPConfig,
     EligibilityTraceManager,
@@ -293,28 +292,33 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # =====================================================================
         # Biology: Different sources (cortex, spinal, brainstem) project to pontine
         # nuclei, which give rise to mossy fibers. We model this as a integration stage.
+        # Note: Weights project directly to granule layer (granule_size), not to mossy
+        # fiber intermediates. The granule layer handles internal expansion/sparsification.
         mossy_fiber_currents = self._integrate_multi_source_synaptic_inputs(
             inputs=region_inputs,
-            n_neurons=self.n_mossy,
-            weight_key_suffix="_mossy",  # E.g., "cortex:l5_mossy"
+            n_neurons=self.granule_size,  # Weights target granule cells directly
+            weight_key_suffix="",  # Fixed: weights are "cortex:l5" not "cortex:l5_mossy"
             apply_stp=True,  # Per-source facilitation/depression
         )
 
-        # Convert currents to spikes (mossy fibers are spiking)
-        # Simple threshold: current > 0 produces spike
-        # TODO: Could add mossy fiber neuron dynamics here if needed
-        mossy_fiber_spikes = (mossy_fiber_currents > 0.1).bool()  # [n_mossy]
-        self._mossy_fiber_state = mossy_fiber_spikes  # Cache for state inspection
+        # Convert currents to spikes at granule cell level
+        # Since weights project directly to granule layer, skip mossy fiber intermediate
+        # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
+        if self._baseline_noise > 0:
+            noise = torch.randn(self.granule_size, device=self.device) * self._baseline_noise
+            mossy_fiber_currents = mossy_fiber_currents + noise
+
+        # Simple threshold: current > 0 produces spike (lowered from 0.1 to allow weaker inputs)
+        granule_spikes = (mossy_fiber_currents > 0.0).bool()  # [granule_size]
+
+        # For compatibility with state inspection, create mossy fiber approximation
+        # by downsampling granule spikes to mossy fiber dimensionality
+        # This is just for monitoring - not used in forward computation
+        step = self.granule_size // self.n_mossy
+        self._mossy_fiber_state = granule_spikes[::step][:self.n_mossy]  # [n_mossy]
 
         # =====================================================================
-        # STAGE 2: MOSSY FIBERS → GRANULE CELLS (Sparse Expansion)
-        # =====================================================================
-        # Biology: Mossy fibers project to granule cells (4-5x expansion)
-        # Granule layer has its own weights: [n_granule, n_mossy]
-        granule_spikes = self.granule_layer(mossy_fiber_spikes)  # [n_granule]
-
-        # =====================================================================
-        # STAGE 3: GRANULE CELLS → PURKINJE CELLS (Parallel Fibers)
+        # STAGE 2: GRANULE CELLS → PURKINJE CELLS (Parallel Fibers)
         # =====================================================================
         # Each Purkinje cell receives sparse parallel fibers
         purkinje_spikes = []
@@ -330,13 +334,14 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         purkinje_output = torch.stack(purkinje_spikes)  # [purkinje_size]
 
         # =====================================================================
-        # STAGE 4: PURKINJE + MOSSY COLLATERALS → DCN (Final Output)
+        # STAGE 3: PURKINJE + MOSSY COLLATERALS → DCN (Final Output)
         # =====================================================================
         # Biology: DCN receives both Purkinje inhibition and mossy fiber collaterals
         # The mossy collaterals provide excitatory drive that Purkinje inhibits
+        # Use mossy fiber state (downsampled from granule spikes) for DCN input
         output_spikes = self.deep_nuclei(
             purkinje_spikes=purkinje_output,
-            mossy_spikes=mossy_fiber_spikes,  # Proper collaterals!
+            mossy_spikes=self._mossy_fiber_state,  # Use cached mossy fiber approximation
         )
 
         # For learning: use granule spikes as effective input
@@ -440,30 +445,10 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         super().update_temporal_parameters(dt_ms)
 
         # Update neurons
-        if hasattr(self, "purkinje_neurons") and self.purkinje_neurons is not None:
-            self.purkinje_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "granule_neurons") and self.granule_neurons is not None:
-            self.granule_neurons.update_temporal_parameters(dt_ms)
+        self.deep_nuclei.dcn_neurons.update_temporal_parameters(dt_ms)
+        self.granule_layer.granule_neurons.update_temporal_parameters(dt_ms)
+        for purkinje_cell in self.purkinje_cells:
+            purkinje_cell.soma_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if hasattr(self, "stp_pf_purkinje") and self.stp_pf_purkinje is not None:
-            self.stp_pf_purkinje.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_mf_granule") and self.stp_mf_granule is not None:
-            self.stp_mf_granule.update_temporal_parameters(dt_ms)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        # Compute plasticity metrics from parallel fiber weights
-        plasticity = compute_plasticity_metrics(
-            weights=self.synaptic_weights["default"].data,
-            learning_rate=self.config.learning_rate_ltp,  # Use LTP rate (primary)
-        )
-
-        return {
-            "plasticity": plasticity,
-            "learning_rate_ltd": self.config.learning_rate_ltd,  # Add LTD rate as well
-        }
+        self.stp_pf_purkinje.update_temporal_parameters(dt_ms)

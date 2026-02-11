@@ -118,6 +118,16 @@ python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+# Gradual typing - we're adding types incrementally
+disallow_untyped_defs = false
+check_untyped_defs = true
+# Improve error messages
+show_error_codes = true
+show_error_context = true
+pretty = true
+# Handle torch/numpy better
+no_implicit_optional = true
+strict_optional = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -196,6 +206,7 @@ disable = [
     "missing-function-docstring",  # Helper functions often self-documenting
 
     # === Design Decisions (intentional patterns) ===
+    "f-string-without-interpolation",  # We allow f-strings without variables for formatting
     "too-few-public-methods",      # Protocols, mixins, utilities
     "too-many-arguments",          # Config classes need many params
     "too-many-branches",           # State machines need branches

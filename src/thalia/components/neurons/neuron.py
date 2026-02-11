@@ -27,6 +27,15 @@ When V ≥ V_threshold:
 - Emit spike (binary: 0 or 1, per ADR-004)
 - Reset: V → V_reset
 - Enter refractory period (τ_ref ms, no spiking)
+
+**Type Safety**:
+================
+This module uses type aliases from thalia.units for dimensional analysis:
+- ConductanceTensor: Synaptic/membrane conductances (≥ 0)
+- VoltageTensor: Membrane potentials
+- CurrentTensor: Membrane currents (derived from g × (E - V))
+
+Type checkers (mypy/pyright) will catch unit mismatches at development time.
 """
 
 from __future__ import annotations
@@ -36,6 +45,8 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+
+from thalia.units import ConductanceTensor, VoltageTensor
 
 # =============================================================================
 # CONDUCTANCE-BASED LIF NEURON
@@ -147,7 +158,7 @@ class ConductanceLIFConfig:
     E_adapt: float = -0.5  # Adaptation reversal (hyperpolarizing, like slow K+)
 
     # Noise (enable by default for biological realism)
-    noise_std: float = 0.005  # With OU noise, this gives low spontaneous rate but sufficient exploration
+    noise_std: float = 0.02  # Increased to break pathological synchronization (2% of threshold)
     noise_tau_ms: float = 5.0  # Ornstein-Uhlenbeck correlation time (5-10ms biologically)
     use_ou_noise: bool = True  # Use autocorrelated (OU) noise instead of white noise
 
@@ -206,6 +217,21 @@ class ConductanceLIF(nn.Module):
         self.register_buffer(
             "v_threshold",
             torch.full((n_neurons,), self.config.v_threshold, dtype=torch.float32, device=device),
+        )
+
+        # Per-neuron refractory period (heterogeneous to prevent synchronization)
+        # Biological neurons have variable refractory periods (3-7ms typical range)
+        # This naturally decorrelates population activity
+        tau_ref_mean = self.config.tau_ref
+        tau_ref_std = tau_ref_mean * 0.4  # 40% coefficient of variation (increased from 20% for stronger decorrelation)
+        self.register_buffer(
+            "tau_ref_per_neuron",
+            torch.normal(
+                mean=tau_ref_mean,
+                std=tau_ref_std,
+                size=(n_neurons,),
+                device=device
+            ).clamp(min=3.0, max=tau_ref_mean * 1.6)  # Clamp to minimum 3ms (biological floor) and 160% of mean
         )
         self.register_buffer("v_reset", torch.tensor(self.config.v_reset, device=device))
 
@@ -272,15 +298,41 @@ class ConductanceLIF(nn.Module):
         self.v_threshold: torch.Tensor  # Type annotation for mypy
         self.v_threshold = (self.v_threshold + delta).clamp(min_threshold, max_threshold)
 
+    def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
+        """Get additional intrinsic conductances beyond g_E, g_I, g_adapt.
+
+        Override this in specialized neurons to add intrinsic conductances
+        (e.g., I_h pacemaker, SK channels, gap junctions).
+
+        Returns:
+            List of (conductance_tensor, reversal_potential) tuples.
+            Each conductance is shape [n_neurons].
+
+        Example:
+            return [
+                (self.g_ih, 0.8),  # I_h pacemaker
+                (self.g_sk * self.sk_activation, -0.5),  # SK channels
+            ]
+        """
+        return []
+
     def forward(
-        self, g_exc_input: torch.Tensor, g_inh_input: Optional[torch.Tensor] = None
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self,
+        g_exc_input: ConductanceTensor,
+        g_inh_input: Optional[ConductanceTensor] = None,
+    ) -> tuple[torch.Tensor, VoltageTensor]:
         """Process one timestep of conductance input.
+
+        **CRITICAL**: Inputs MUST be conductances, NOT currents!
+        If you have currents, you cannot convert them to conductances without
+        knowing the driving force. Use conductance-based synaptic weights instead.
 
         Args:
             g_exc_input: Excitatory conductance input, shape [n_neurons] (1D, ADR-005)
+                Units: Conductance (normalized by g_L)
                 This is ADDED to the excitatory conductance state.
             g_inh_input: Inhibitory conductance input, shape [n_neurons] (1D, ADR-005)
+                Units: Conductance (normalized by g_L)
                 Optional. If None, no inhibitory input is applied.
 
         Returns:
@@ -299,8 +351,17 @@ class ConductanceLIF(nn.Module):
 
         # Decrement refractory counter (in-place)
         if self.refractory is None:
-            # Initialize if missing (first forward pass or after loading old checkpoints)
-            self.refractory = torch.zeros(self.n_neurons, dtype=torch.int32, device=g_exc_input.device)
+            # Initialize with HETEROGENEOUS refractory states to prevent synchronization
+            # Random initial refractory values prevent all neurons exiting refractory simultaneously
+            # This is biologically realistic - neurons are never perfectly synchronized initially
+            # Use per-neuron tau_ref for heterogeneous refractory periods
+            max_ref_steps = int(self.tau_ref_per_neuron.max().item() / 1.0)  # Assume dt=1ms for init
+            self.refractory = torch.randint(
+                0, max(1, max_ref_steps),
+                (self.n_neurons,),
+                dtype=torch.int32,
+                device=g_exc_input.device
+            )
         self.refractory = (self.refractory - 1).clamp_(min=0)
         not_refractory = self.refractory == 0
 
@@ -317,10 +378,16 @@ class ConductanceLIF(nn.Module):
             self.g_I = torch.zeros(self.n_neurons, device=g_exc_input.device)
 
         self.g_E.mul_(self._g_E_decay).add_(g_exc_input)
+        # CRITICAL FIX (2025-01): Clamp conductances to prevent numerical issues
+        # Conductances are physical quantities and cannot be negative
+        self.g_E.clamp_(min=0.0)
+
         if g_inh_input is not None:
             self.g_I.mul_(self._g_I_decay).add_(g_inh_input)
         else:
             self.g_I.mul_(self._g_I_decay)
+
+        self.g_I.clamp_(min=0.0)
 
         # Decay adaptation conductance (in-place) - handle None case
         if self.g_adapt is not None:
@@ -330,18 +397,25 @@ class ConductanceLIF(nn.Module):
             self.g_adapt = torch.zeros(self.n_neurons, device=g_exc_input.device)
 
         # Compute total conductance (for effective time constant)
-        # Pre-add g_L to avoid extra addition
+        # Start with standard conductances
         g_total = self.g_L + self.g_E + self.g_I + self.g_adapt
 
         # Compute equilibrium potential (weighted average of reversals)
-        # Fused: V_inf = (g_L*E_L + g_E*E_E + g_I*E_I + g_adapt*E_adapt) / g_total
-        # Pre-compute g_L*E_L once (it's a constant)
-        V_inf = (
+        # Start with standard conductances
+        V_inf_numerator = (
             self.g_L * self.E_L
             + self.g_E * self.E_E
             + self.g_I * self.E_I
             + self.g_adapt * self.E_adapt
-        ) / g_total
+        )
+
+        # Add intrinsic conductances from specialized neurons (e.g., I_h, SK, gap junctions)
+        additional_conductances = self._get_additional_conductances()
+        for g, E_rev in additional_conductances:
+            g_total = g_total + g
+            V_inf_numerator = V_inf_numerator + g * E_rev
+
+        V_inf = V_inf_numerator / g_total
 
         # Effective time constant: τ_eff = C_m / g_total
         # V(t+dt) = V_inf + (V(t) - V_inf) * exp(-dt * g_total / C_m)
@@ -351,8 +425,27 @@ class ConductanceLIF(nn.Module):
         # Update membrane for non-refractory neurons
         # Fused: new_V = V_inf + (V - V_inf) * decay = V_inf * (1 - decay) + V * decay
         if self.membrane is None:
-            # Initialize membrane to E_L if missing (first forward pass)
-            self.membrane = torch.full((self.n_neurons,), self.E_L.item(), device=g_exc_input.device)
+            # Initialize membrane with HETEROGENEOUS values to prevent synchronization
+            # Uniform distribution between E_L and partway to threshold prevents pathological synchrony
+            # This is critical for biological realism - neurons never start identically
+            # Handle both normalized units (threshold > E_L) and absolute mV (threshold < E_L)
+            e_l_val = self.E_L.item()
+            thresh_val = self.v_threshold[0].item()
+
+            # Initialize between E_L and 50% toward threshold
+            if thresh_val > e_l_val:
+                # Normalized units (threshold above rest)
+                v_min = e_l_val
+                v_max = e_l_val + 0.5 * (thresh_val - e_l_val)
+            else:
+                # Absolute mV scale (threshold below rest, e.g., -55mV threshold, 0mV rest)
+                # In this case, we want to start slightly depolarized from E_L
+                v_min = e_l_val + 0.5 * (thresh_val - e_l_val)  # Halfway to threshold
+                v_max = e_l_val  # Up to rest
+
+            v_init = torch.empty((self.n_neurons,), device=g_exc_input.device)
+            v_init.uniform_(v_min, v_max)
+            self.membrane = v_init
 
         V_diff = self.membrane - V_inf
         new_membrane = V_inf + V_diff * decay_factor
@@ -393,44 +486,19 @@ class ConductanceLIF(nn.Module):
         # This avoids creating intermediate tensors
         if spikes.any():
             self.membrane = torch.where(spikes, self.v_reset, self.membrane)
-            # Compute refractory steps from dt_ms
+            # Compute per-neuron refractory steps from heterogeneous tau_ref
             assert self._dt_ms is not None, "dt_ms must be set"
-            ref_steps = int(self.config.tau_ref / self._dt_ms)
+            ref_steps_per_neuron = (self.tau_ref_per_neuron / self._dt_ms).int()
             self.refractory = torch.where(
                 spikes,
-                ref_steps,
-                self.refractory,  # scalar broadcasts
+                ref_steps_per_neuron,  # Now per-neuron, not scalar!
+                self.refractory,
             )
             # Increment adaptation for spiking neurons (need float for arithmetic)
             if self.config.adapt_increment > 0:
                 self.g_adapt = self.g_adapt + spikes.float() * self.config.adapt_increment
 
         return spikes, self.membrane
-
-    def forward_current(self, input_current: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Convenience method: convert current to conductance and process.
-
-        This allows drop-in replacement of current-based LIF.
-        Positive current → excitatory conductance
-        Negative current → inhibitory conductance
-
-        Args:
-            input_current: Input current, shape (batch, n_neurons)
-                Positive values become excitatory conductance.
-                Negative values become inhibitory conductance.
-
-        Returns:
-            spikes, membrane: Same as forward()
-        """
-        # Split into excitatory and inhibitory components
-        # Scale by (E_E - E_L) to match current-based behavior at rest
-        e_e_val = torch.tensor(self.E_E) if not isinstance(self.E_E, torch.Tensor) else self.E_E
-        e_l_val = torch.tensor(self.E_L) if not isinstance(self.E_L, torch.Tensor) else self.E_L
-        e_i_val = torch.tensor(self.E_I) if not isinstance(self.E_I, torch.Tensor) else self.E_I
-        g_exc = torch.clamp(input_current, min=0) / (e_e_val - e_l_val)
-        g_inh = torch.clamp(-input_current, min=0) / (e_l_val - e_i_val)
-
-        return self.forward(g_exc, g_inh)
 
     def _apply(self, fn, recurse: bool = True):
         """Apply a function to all tensors, including state variables.

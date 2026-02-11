@@ -42,7 +42,7 @@ Biological Basis:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -57,7 +57,6 @@ from thalia.components import (
     WeightInitializer,
 )
 from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
-from thalia.diagnostics import compute_plasticity_metrics
 from thalia.errors import ConfigurationError
 from thalia.learning import (
     LearningStrategyRegistry,
@@ -71,7 +70,11 @@ from thalia.typing import (
     RegionSpikesDict,
     SpikesSourceKey,
 )
-from thalia.utils import compute_ne_gain
+from thalia.units import ConductanceTensor
+from thalia.utils import (
+    CircularDelayBuffer,
+    compute_ne_gain,
+)
 
 from .goal_emergence import EmergentGoalSystem
 
@@ -262,6 +265,15 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Scale diagonal by heterogeneous recurrent strengths
         diag_strength = torch.diag(self._recurrent_strength)
         self.rec_weights.data += diag_strength
+
+        # PFC recurrent delay buffer (prevents instant feedback oscillations)
+        recurrent_delay_steps = int(config.recurrent_delay_ms / config.dt_ms)
+        self._recurrent_buffer = CircularDelayBuffer(
+            max_delay=recurrent_delay_steps,
+            size=self.executive_size,
+            device=str(self.device),
+            dtype=torch.bool,  # Working memory is float but we delay spikes (bool)
+        )
 
         # Lateral inhibition weights
         self.inhib_weights = nn.Parameter(
@@ -600,24 +612,24 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Without STP, the same WM pattern is reinforced forever.
         # With DEPRESSING STP, frequently-used synapses get temporarily weaker,
         # allowing WM to be updated with new information.
+        # ALSO: Use CircularDelayBuffer to prevent instant feedback oscillations
         if self.working_memory is not None:
+            # Write current working memory spikes into delay buffer
+            self._recurrent_buffer.write(self.working_memory)
+            # Read delayed working memory
+            wm_delayed = self._recurrent_buffer.read(self._recurrent_buffer.max_delay)
+
             # Apply STP to recurrent connections (1D → 2D per-synapse efficacy)
             # stp_efficacy has shape [executive_size, executive_size] - per-synapse modulation
-            stp_efficacy = self.stp_recurrent(self.working_memory.float())
+            stp_efficacy = self.stp_recurrent(wm_delayed.float())
             # Effective weights: element-wise multiply rec_weights with STP efficacy
             # rec_weights is [executive_size, executive_size], stp_efficacy is [executive_size, executive_size]
             effective_rec_weights = self.rec_weights * stp_efficacy.t()
             # Recurrent: weights[executive_size, executive_size] @ wm[executive_size] → [executive_size]
-            rec_input = (effective_rec_weights @ self.working_memory.float()) * rec_gain
+            rec_input = (effective_rec_weights @ wm_delayed.float()) * rec_gain
         else:
-            # Recurrent input from working memory - modulated by retrieval phase
-            # rec_weights[executive_size, executive_size] @ wm[executive_size] → [executive_size]
-            wm = (
-                self.working_memory.float()
-                if self.working_memory is not None
-                else torch.zeros(self.executive_size, device=self.device)
-            )
-            rec_input = (self.rec_weights @ wm) * rec_gain
+            # First timestep: no working memory yet
+            rec_input = torch.zeros(self.executive_size, device=self.device) * rec_gain
 
         # Lateral inhibition: inhib_weights[executive_size, executive_size] @ wm[executive_size] → [executive_size]
         wm = (
@@ -639,7 +651,10 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         g_exc = g_exc * self.gain
 
         # Run through neurons (returns 1D bool spikes)
-        output_spikes, _ = self.neurons(g_exc, g_inh)
+        output_spikes, _ = self.neurons(
+            g_exc_input=ConductanceTensor(g_exc),
+            g_inh_input=ConductanceTensor(g_inh),
+        )
 
         # Update homeostatic gain for PFC
         # Update firing rate (exponential moving average)
@@ -811,6 +826,9 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             "executive": output_spikes,
         }
 
+        # Advance delay buffers to next timestep
+        self._recurrent_buffer.advance()
+
         return self._post_forward(region_outputs)
 
     # =========================================================================
@@ -895,47 +913,3 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             stp_module.update_temporal_parameters(dt_ms)
 
         self.stp_recurrent.update_temporal_parameters(dt_ms)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        cfg = self.config
-
-        # Plasticity metrics (if learning enabled)
-        plasticity = None
-        if self.config.learning_rate > 0:
-            # Average across all weight matrices
-            all_weights = torch.cat(
-                [
-                    self.synaptic_weights["default"].flatten(),
-                    self.rec_weights.flatten(),
-                    self.inhib_weights.flatten(),
-                ]
-            )
-            plasticity = compute_plasticity_metrics(
-                all_weights, learning_rate=self.config.learning_rate
-            )
-
-        return {
-            "plasticity": plasticity,
-            "wm_mean": (
-                self.working_memory.mean().item()
-                if self.working_memory is not None
-                else 0.0
-            ),
-            "wm_std": (
-                self.working_memory.std().item()
-                if self.working_memory is not None
-                else 0.0
-            ),
-            "wm_active": (
-                (self.working_memory > 0.1).sum().item()
-                if self.working_memory is not None
-                else 0
-            ),
-            "config_w_min": cfg.w_min,
-            "config_w_max": cfg.w_max,
-        }

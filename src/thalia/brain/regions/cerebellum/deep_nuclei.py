@@ -25,6 +25,7 @@ import torch.nn as nn
 from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.components.synapses import WeightInitializer
 from thalia.constants import DEFAULT_DT_MS
+from thalia.units import ConductanceTensor
 
 
 class DeepCerebellarNuclei(nn.Module):
@@ -91,19 +92,22 @@ class DeepCerebellarNuclei(nn.Module):
         )
 
         # DCN neurons (tonic firing, modulated by inhibition)
-        # DCN neurons are spontaneously active (tonic firing)
-        # Key: Use biologically realistic reversal potentials to prevent pathological oscillations
+        # DCN neurons are spontaneously active (tonic firing ~40-60 Hz)
+        # Use NORMALIZED units (threshold=1.0 scale) NOT absolute millivolts
         dcn_config = ConductanceLIFConfig(
-            v_threshold=-50.0,  # mV, relatively low threshold for spontaneous activity
-            v_reset=-60.0,  # mV, moderate hyperpolarization (not too deep)
-            E_L=-60.0,  # mV, leak/resting potential (match reset for stability)
-            E_E=-45.0,  # mV, excitatory reversal (just above threshold, not 0!)
-            E_I=-80.0,  # mV, inhibitory reversal (hyperpolarizing)
-            g_L=0.05,  # Leak conductance (moderate)
-            tau_mem=20.0,  # ms, longer integration for irregular firing
-            tau_E=3.0,  # ms, excitatory conductance decay
-            tau_I=8.0,  # ms, inhibitory conductance decay (slower for sustained effect)
-            noise_std=0.5,  # mV, membrane noise to break synchrony
+            v_threshold=1.0,  # Standard normalized threshold
+            v_reset=0.0,  # Reset to rest
+            v_rest=0.0,  # Resting potential (normalized)
+            E_L=0.0,  # Leak reversal (normalized)
+            E_E=3.0,  # Excitatory reversal (normalized, above threshold)
+            E_I=-0.5,  # Inhibitory reversal (normalized, hyperpolarizing)
+            g_L=0.10,  # Moderate leak conductance
+            tau_mem=20.0,  # ms, moderate integration
+            tau_E=4.0,  # ms, AMPA kinetics (biological range 2-5ms)
+            tau_I=10.0,  # ms, GABA_A kinetics (biological range 5-10ms)
+            tau_ref=12.0,  # ms, refractory period (max ~83 Hz ceiling, allows biological 40-60 Hz range)
+            noise_std=0.15,  # Higher membrane noise to break synchrony (normalized units)
+            device=device,
         )
         self.dcn_neurons = ConductanceLIF(
             n_neurons=n_output,
@@ -113,29 +117,34 @@ class DeepCerebellarNuclei(nn.Module):
 
         # HETEROGENEOUS tonic excitation to break pathological synchrony
         # Real DCN neurons have different baseline excitabilities
-        # Use Gaussian distribution with moderate drive
+        # Use Gaussian distribution for moderate spontaneous firing (~40-60 Hz)
+        # DCN neurons are tonically active, but Purkinje inhibition sculpts output
         self.tonic_excitation = torch.normal(
-            mean=0.08,  # Reduced from 0.12 for more stable dynamics
-            std=0.02,  # Reduced from 0.03 for tighter distribution
+            mean=0.005,  # Ultra-minimal baseline drive (rely more on mossy excitation + noise)
+            std=0.003,  # Small heterogeneity
             size=(n_output,),
             device=device,
         ).clamp(
-            min=0.03, max=0.15
-        )  # Narrower biological range
+            min=0.002, max=0.010
+        )  # Very low range - DCN activity primarily from mossy collaterals, not tonic
 
         # Initialize neurons with heterogeneous membrane potentials
         # Prevents synchronized oscillations from identical initial conditions
         v_init = torch.normal(
-            mean=-60.0,  # Around reset potential
-            std=5.0,  # Moderate spread
+            mean=0.0,  # Around rest (normalized units)
+            std=0.1,  # Moderate spread
             size=(n_output,),
             device=device,
         ).clamp(
-            min=-70.0, max=-50.0
-        )  # Keep subthreshold
+            min=-0.2, max=0.5
+        )  # Subthreshold range (normalized units)
 
         # Set initial membrane potentials
         self._initial_v = v_init
+
+        # Initialize DCN neuron membrane potentials with heterogeneous values
+        # This prevents all neurons starting at same potential and synchronizing
+        self.dcn_neurons.membrane = self._initial_v.clone()
 
     def forward(
         self,
@@ -163,10 +172,11 @@ class DeepCerebellarNuclei(nn.Module):
 
         # DCN spiking (excitation vs inhibition)
         # Note: g_inh_input uses conductance-based shunting inhibition
-        # With E_I = -80 mV and proper reversal potentials, inhibition now has clear effect
+        # Purkinje cells sculpt DCN output through strong inhibition
+        # With low tonic drive (0.02), Purkinje inhibition has proper control
         dcn_spikes, _ = self.dcn_neurons(
-            g_exc_input=total_exc,
-            g_inh_input=purkinje_inh * 2.0,  # Moderate scaling for biological effect
+            g_exc_input=ConductanceTensor(total_exc),
+            g_inh_input=ConductanceTensor(purkinje_inh),  # Full strength - Purkinje sculpts output
         )
 
         return dcn_spikes

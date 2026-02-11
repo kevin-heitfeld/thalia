@@ -27,7 +27,7 @@ This implements the classic hippocampal trisynaptic circuit for episodic memory:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -43,19 +43,18 @@ from thalia.components import (
     GapJunctionCoupling,
 )
 from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
-from thalia.diagnostics import compute_plasticity_metrics
 from thalia.learning.homeostasis import (
     UnifiedHomeostasis,
     UnifiedHomeostasisConfig,
 )
 from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
-from thalia.diagnostics import DiagnosticsUtils
 from thalia.typing import (
     PopulationName,
     PopulationSizes,
     RegionSpikesDict,
     SpikesSourceKey,
 )
+from thalia.units import ConductanceTensor
 from thalia.utils import (
     CircularDelayBuffer,
     clamp_weights,
@@ -242,13 +241,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # SHORT-TERM PLASTICITY (STP)
         # =====================================================================
-        self.stp_mossy: Optional[ShortTermPlasticity] = None
-        self.stp_schaffer: Optional[ShortTermPlasticity] = None
-        self.stp_ec_ca1: Optional[ShortTermPlasticity] = None
-        self.stp_ca3_ca2: Optional[ShortTermPlasticity] = None
-        self.stp_ca2_ca1: Optional[ShortTermPlasticity] = None
-        self.stp_ec_ca2: Optional[ShortTermPlasticity] = None
-
         # Mossy Fibers (DG→CA3): Strong facilitation
         self.stp_mossy = ShortTermPlasticity(
             n_pre=self.dg_size,
@@ -332,6 +324,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_ca2_delay_steps = int(config.ca3_to_ca2_delay_ms / config.dt_ms)
         ca2_ca1_delay_steps = int(config.ca2_to_ca1_delay_ms / config.dt_ms)
         ca3_ca1_delay_steps = int(config.ca3_to_ca1_delay_ms / config.dt_ms)
+        ca3_recurrent_delay_steps = int(config.ca3_recurrent_delay_ms / config.dt_ms)
 
         self._dg_ca3_buffer = CircularDelayBuffer(
             max_delay=dg_ca3_delay_steps,
@@ -357,12 +350,19 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             device=str(self.device),
             dtype=torch.bool,
         )
+        self._ca3_recurrent_buffer = CircularDelayBuffer(
+            max_delay=ca3_recurrent_delay_steps,
+            size=self.ca3_size,
+            device=str(self.device),
+            dtype=torch.bool,
+        )
 
         # Store delay steps for conditional checks
         self._dg_ca3_delay_steps = dg_ca3_delay_steps
         self._ca3_ca2_delay_steps = ca3_ca2_delay_steps
         self._ca2_ca1_delay_steps = ca2_ca1_delay_steps
         self._ca3_ca1_delay_steps = ca3_ca1_delay_steps
+        self._ca3_recurrent_delay_steps = ca3_recurrent_delay_steps
 
         # =====================================================================
         # CONSOLIDATION MODE
@@ -586,8 +586,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_recurrent_weights = WeightInitializer.sparse_random(
             n_output=self.ca3_size,
             n_input=self.ca3_size,
-            sparsity=0.25,  # ~25% connectivity
-            weight_scale=0.5,  # Strong recurrence for attractor dynamics
+            sparsity=0.05,  # ~5% connectivity (biological value, was 25%!)
+            weight_scale=0.4,  # Moderate recurrence for attractor dynamics
             normalize_rows=True,
             device=device,
         )
@@ -976,7 +976,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # DG has minimal inhibition - primarily feedforward excitation for pattern separation
         dg_g_exc = F.relu(dg_code)  # Clamp to positive conductance
 
-        dg_spikes, _ = self.dg_neurons(dg_g_exc, g_inh_input=None)
+        # TODO: Future enhancement - add feedforward inhibition to DG for more realistic dynamics
+        dg_spikes, _ = self.dg_neurons(
+            g_exc_input=ConductanceTensor(dg_g_exc),
+            g_inh_input=None,
+        )
 
         # Apply extreme winner-take-all sparsity
         # Use pre-spike membrane (not post-spike which resets to v_reset)
@@ -1076,9 +1080,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # CA3 RECURRENT INPUT (Internal Computation)
         # =====================================================================
-        # CA3 recurrent connections are computed internally using ca3_ca3 weights.
-        # Uses previous timestep's CA3 spikes (provides 1 dt delay, ~1-2ms)
-        # to compute recurrent excitation for current timestep.
+        # CA3 recurrent connections use CircularDelayBuffer with proper 3ms delay.
+        # This prevents instant feedback that causes pathological synchronization.
         #
         # ACh modulation applied here (region-level neuromodulation):
         # High ACh (encoding mode): Suppress recurrence (0.3x)
@@ -1086,15 +1089,20 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ach_level = self._ach_concentration_ca3.mean().item()
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
-        # Compute recurrent input from previous CA3 activity
+        # Compute recurrent input from DELAYED CA3 activity
         if self.ca3_spikes is not None:
-            # Use delayed CA3 spikes (from previous timestep)
+            # Write current spikes to delay buffer
+            self._ca3_recurrent_buffer.write(self.ca3_spikes)
+            # Get delayed spikes (3ms ago)
+            ca3_delayed = self._ca3_recurrent_buffer.read(self._ca3_recurrent_buffer.max_delay)
+
+            # Compute recurrent input from delayed activity
             ca3_rec_raw = torch.matmul(
                 self.synaptic_weights["ca3_ca3"],
-                self.ca3_spikes.float()
+                ca3_delayed.float()
             )
         else:
-            # No previous activity - zero recurrent input
+            # First timestep - no previous activity
             ca3_rec_raw = torch.zeros(self.ca3_size, device=self.device)
 
         # Apply region-level modulation (ACh and strength scaling)
@@ -1222,7 +1230,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_g_exc = F.relu(ca3_input)
         ca3_g_inh = F.relu(ca3_perisomatic_inhib)  # Perisomatic inhibition from PV cells
 
-        ca3_spikes, _ = self.ca3_neurons(ca3_g_exc, g_inh_input=ca3_g_inh)
+        ca3_spikes, _ = self.ca3_neurons(
+            g_exc_input=ConductanceTensor(ca3_g_exc),
+            g_inh_input=ConductanceTensor(ca3_g_inh),
+        )
 
         # CRITICAL FIX FOR OSCILLATION:
         # The LIF neuron resets membrane to v_reset after spiking, which causes
@@ -1504,7 +1515,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # Run through CA2 neurons
         ca2_g_exc = F.relu(ca2_input)
-        ca2_spikes, _ = self.ca2_neurons(ca2_g_exc, g_inh_input=None)
+        # TODO: Future enhancement - add CA2 inhibition for more realistic dynamics
+        ca2_spikes, _ = self.ca2_neurons(
+            g_exc_input=ConductanceTensor(ca2_g_exc),
+            g_inh_input=None,
+        )
 
         # Apply sparsity - use pre-spike membrane for WTA
         ca2_spikes = self._apply_wta_sparsity(
@@ -1649,6 +1664,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Total CA1 input (now includes CA2 temporal/social context)
         ca1_input = ca3_contribution + ca1_from_ca2 + ampa_current + nmda_current
 
+        # CRITICAL FIX (2025-01): Clamp to non-negative BEFORE gain multiplication
+        # Problem: Negative values get amplified by gain, creating runaway negative conductance
+        # Biological justification: Conductances are physical properties and cannot be negative
+        ca1_input = F.relu(ca1_input)
+
         # Apply homeostatic gain and baseline noise (Turrigiano 2008)
         # Add baseline noise (spontaneous miniature EPSPs)
         if self._baseline_noise > 0:
@@ -1703,7 +1723,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Inhibitory: perisomatic inhibition from PV cells + lateral CA1 inhibition
         ca1_g_inh = F.relu(ca1_perisomatic_inhib)
         # Run through CA1 neurons (ConductanceLIF with E/I separation)
-        ca1_spikes, _ca1_membrane = self.ca1_neurons(ca1_g_exc, ca1_g_inh)
+        ca1_spikes, _ca1_membrane = self.ca1_neurons(
+            g_exc_input=ConductanceTensor(ca1_g_exc),
+            g_inh_input=ConductanceTensor(ca1_g_inh),
+        )
 
         # Apply sparsity (more lenient during retrieval to allow mismatch detection)
         # Use pre-spike membrane for WTA (not post-spike which resets to v_reset)
@@ -1864,6 +1887,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         }
 
         self._apply_plasticity(region_outputs)
+
+        # Advance delay buffers to next timestep
+        self._ca3_recurrent_buffer.advance()
 
         return self._post_forward(region_outputs)
 
@@ -2033,76 +2059,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         super().update_temporal_parameters(dt_ms)
 
         # Update neurons
-        if hasattr(self, "dg_neurons") and self.dg_neurons is not None:
-            self.dg_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "ca3_neurons") and self.ca3_neurons is not None:
-            self.ca3_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "ca2_neurons") and self.ca2_neurons is not None:
-            self.ca2_neurons.update_temporal_parameters(dt_ms)
-        if hasattr(self, "ca1_neurons") and self.ca1_neurons is not None:
-            self.ca1_neurons.update_temporal_parameters(dt_ms)
+        self.dg_neurons.update_temporal_parameters(dt_ms)
+        self.ca3_neurons.update_temporal_parameters(dt_ms)
+        self.ca2_neurons.update_temporal_parameters(dt_ms)
+        self.ca1_neurons.update_temporal_parameters(dt_ms)
 
         # Update STP components
-        if hasattr(self, "stp_mossy") and self.stp_mossy is not None:
-            self.stp_mossy.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_schaffer") and self.stp_schaffer is not None:
-            self.stp_schaffer.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_ec_ca1") and self.stp_ec_ca1 is not None:
-            self.stp_ec_ca1.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_ca3_ca2") and self.stp_ca3_ca2 is not None:
-            self.stp_ca3_ca2.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_ca2_ca1") and self.stp_ca2_ca1 is not None:
-            self.stp_ca2_ca1.update_temporal_parameters(dt_ms)
-        if hasattr(self, "stp_ec_ca2") and self.stp_ec_ca2 is not None:
-            self.stp_ec_ca2.update_temporal_parameters(dt_ms)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information for this region."""
-        cfg = self.config
-
-        # Compute plasticity metrics for CA3 recurrent (most important for episodic memory)
-        plasticity = compute_plasticity_metrics(
-            weights=self.synaptic_weights["ca3_ca3"].data,
-            learning_rate=self.config.learning_rate,
-        )
-        # Add pathway-specific weight statistics
-        plasticity["ec_dg_mean"] = float(self.synaptic_weights["ec_dg"].data.mean().item())
-        plasticity["dg_ca3_mean"] = float(self.synaptic_weights["dg_ca3"].data.mean().item())
-        plasticity["ca3_ca1_mean"] = float(self.synaptic_weights["ca3_ca1"].data.mean().item())
-        plasticity["ec_ca1_mean"] = float(self.synaptic_weights["ec_ca1"].data.mean().item())
-
-        # CA3 bistable dynamics
-        ca3_persistent = {}
-        ca3_persistent.update(DiagnosticsUtils.trace_diagnostics(self.ca3_persistent, ""))
-        ca3_persistent["nonzero_count"] = (self.ca3_persistent > 0.1).sum().item()
-
-        # CA1 NMDA comparison mechanism
-        nmda_diagnostics = {"threshold": cfg.nmda_threshold}
-        if self.nmda_trace is not None:
-            nmda_diagnostics.update(DiagnosticsUtils.trace_diagnostics(self.nmda_trace, ""))
-            nmda_diagnostics["trace_std"] = self.nmda_trace.std().item()
-            nmda_diagnostics["above_threshold_count"] = (
-                (self.nmda_trace > cfg.nmda_threshold).sum().item()
-            )
-
-            # Compute Mg block removal
-            mg_removal = torch.sigmoid((self.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness)
-            nmda_diagnostics["mg_block_removal_mean"] = mg_removal.mean().item()
-            nmda_diagnostics["mg_block_removal_max"] = mg_removal.max().item()
-            nmda_diagnostics["gated_neurons"] = (mg_removal > 0.5).sum().item()
-
-        # Synaptic tagging diagnostics
-        synaptic_tagging = {}
-        if self.synaptic_tagging is not None:
-            synaptic_tagging = self.synaptic_tagging.get_diagnostics()
-
-        return {
-            "plasticity": plasticity,
-            "ca3_persistent": ca3_persistent,
-            "nmda": nmda_diagnostics,
-            "synaptic_tagging": synaptic_tagging,
-        }
+        self.stp_mossy.update_temporal_parameters(dt_ms)
+        self.stp_schaffer.update_temporal_parameters(dt_ms)
+        self.stp_ec_ca1.update_temporal_parameters(dt_ms)
+        self.stp_ca3_ca2.update_temporal_parameters(dt_ms)
+        self.stp_ca2_ca1.update_temporal_parameters(dt_ms)
+        self.stp_ec_ca2.update_temporal_parameters(dt_ms)

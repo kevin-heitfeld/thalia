@@ -18,7 +18,7 @@ and improve code organization.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import torch
 
@@ -114,21 +114,3 @@ class StriatumStateTracker:
             exploration_prob: Probability of exploration
         """
         self._last_exploration_prob = exploration_prob
-
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostics for state tracker.
-
-        Returns:
-            Dictionary of diagnostic information
-        """
-        net_votes = self.get_net_votes()
-
-        return {
-            "last_action": self.last_action,
-            "exploring": self.exploring,
-            "d1_votes_mean": self._d1_votes_accumulated.mean().item(),
-            "d2_votes_mean": self._d2_votes_accumulated.mean().item(),
-            "net_votes_mean": net_votes.mean().item(),
-            "net_votes_std": net_votes.std().item(),
-            "last_exploration_prob": self._last_exploration_prob,
-        }

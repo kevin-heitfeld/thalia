@@ -90,12 +90,11 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.diagnostics import auto_diagnostics
 from thalia.utils import compute_firing_rate
 
 
@@ -280,26 +279,6 @@ class IntrinsicPlasticity(nn.Module):
         """
         return self.rate_avg - self.config.target_rate
 
-    @auto_diagnostics(
-        scalars=["_update_count"],
-    )
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information.
-
-        Note: Auto-collects _update_count. Custom metrics added manually.
-        """
-        return {
-            "rate_avg_mean": self.rate_avg.mean().item(),
-            "rate_avg_std": self.rate_avg.std().item(),
-            "threshold_mean": self.thresholds.mean().item(),
-            "threshold_std": self.thresholds.std().item(),
-            "threshold_min": self.thresholds.min().item(),
-            "threshold_max": self.thresholds.max().item(),
-            "target_rate": self.config.target_rate,
-            "rate_error_mean": self.get_rate_errors().mean().item(),
-            "avg_adaptation": (self._total_adaptation / max(1, self._update_count)),
-        }
-
     def forward(
         self,
         spikes: torch.Tensor,
@@ -408,16 +387,3 @@ class PopulationIntrinsicPlasticity(nn.Module):
             Modulated input current
         """
         return input_current * self._excitability
-
-    @auto_diagnostics(
-        scalars=["_rate_avg", "_excitability"],
-    )
-    def get_diagnostics(self) -> Dict[str, Any]:
-        """Get diagnostic information.
-
-        Note: Auto-collects _rate_avg and _excitability. Custom metrics added manually.
-        """
-        return {
-            "target_rate": self.config.target_rate,
-            "rate_error": self.get_rate_error(),
-        }
