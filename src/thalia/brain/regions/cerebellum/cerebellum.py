@@ -384,8 +384,10 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Apply weight updates to each Purkinje cell's dendritic weights
         for purkinje_idx, purkinje_cell in enumerate(self.purkinje_cells):
             # Get this Purkinje cell's eligibility trace
-            # eligibility shape: [n_granule, n_purkinje], so [:, purkinje_idx] gives [n_granule]
-            cell_eligibility = eligibility[:, purkinje_idx]  # [n_granule]
+            # eligibility shape: [n_granule, n_purkinje]
+            # We need [n_granule] for this Purkinje cell
+            # Index the second dimension (purkinje) to get all granule inputs for this cell
+            cell_eligibility = eligibility[purkinje_idx, :]  # [n_granule]
 
             # Reshape to match dendritic_weights: [1, n_parallel_fibers]
             weight_update = cell_eligibility.unsqueeze(0)  # [1, n_granule]
