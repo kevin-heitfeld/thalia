@@ -133,6 +133,13 @@ class STDPConfig(LearningConfig):
     tau_minus: float = 20.0  # LTD time constant (ms)
     activity_threshold: float = 0.01  # Minimum postsynaptic activity (1%) to enable LTD
 
+    # Retrograde signaling (endocannabinoid-like)
+    retrograde_enabled: bool = True  # Enable retrograde signaling
+    retrograde_threshold: float = 0.05  # Minimum postsynaptic activity (5%) to trigger retrograde signal
+    retrograde_tau_ms: float = 1000.0  # Retrograde signal decay timescale (~1 second)
+    retrograde_ltp_gate: float = 0.1  # Minimum retrograde signal to allow full LTP (0-1)
+    retrograde_ltd_enhance: float = 2.0  # LTD enhancement factor when retrograde signal is weak
+
 
 @dataclass
 class ThreeFactorConfig(LearningConfig):
@@ -582,6 +589,11 @@ class STDPStrategy(LearningStrategy):
         self._firing_rate_decay: Optional[float] = None
         self.firing_rates: Optional[torch.Tensor] = None  # Per-neuron running average
 
+        # Retrograde signaling (endocannabinoid-like)
+        # Tracks strong postsynaptic depolarization to gate plasticity
+        self._retrograde_decay: Optional[float] = None
+        self.retrograde_signal: Optional[torch.Tensor] = None  # Per-neuron retrograde signal [0-1]
+
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update temporal parameters when brain timestep changes.
 
@@ -591,6 +603,8 @@ class STDPStrategy(LearningStrategy):
         self._dt_ms = dt_ms
         # Compute firing rate decay factor: alpha = 1 - dt/tau
         self._firing_rate_decay = 1.0 - dt_ms / self._firing_rate_tau_ms
+        # Compute retrograde signal decay factor
+        self._retrograde_decay = 1.0 - dt_ms / self.stdp_config.retrograde_tau_ms
         # NOTE: Trace manager computes decay factors on-the-fly in update_traces()
 
     def _ensure_trace_manager(
@@ -672,6 +686,11 @@ class STDPStrategy(LearningStrategy):
         if self.firing_rates is None or self.firing_rates.shape[0] != n_post:
             self.firing_rates = torch.zeros(n_post, device=post_spikes.device, dtype=torch.float32)
 
+        # Initialize retrograde signal if needed
+        if self.stdp_config.retrograde_enabled:
+            if self.retrograde_signal is None or self.retrograde_signal.shape[0] != n_post:
+                self.retrograde_signal = torch.zeros(n_post, device=post_spikes.device, dtype=torch.float32)
+
         # Ensure dt_ms is set
         if self._dt_ms is None:
             # Auto-initialize with default dt_ms if not set (for testing/standalone use)
@@ -687,6 +706,27 @@ class STDPStrategy(LearningStrategy):
         assert self.firing_rates is not None, "Firing rates not initialized"
         self.firing_rates = self._firing_rate_decay * self.firing_rates + (1 - self._firing_rate_decay) * post_spikes.float()
 
+        # Update retrograde signal (endocannabinoid-like)
+        # Released when postsynaptic neuron strongly depolarizes
+        # Acts as a "this was important" signal that gates plasticity
+        # Strong spiking activity triggers retrograde messenger release
+        if self.stdp_config.retrograde_enabled and self.retrograde_signal is not None:
+            assert self._retrograde_decay is not None, "Retrograde decay not initialized"
+            # Retrograde release is triggered by spiking activity
+            # The signal accumulates and decays slowly (1s timescale)
+            spike_contribution = post_spikes.float()  # 1.0 when neuron fires
+
+            # Scale by recent firing rate: frequent firing = stronger retrograde release
+            # This captures "how important is this neuron's activity?"
+            rate_scaling = (self.firing_rates / self.stdp_config.retrograde_threshold).clamp(0, 2.0)
+            weighted_contribution = spike_contribution * (0.5 + 0.5 * rate_scaling)
+
+            # Update retrograde signal with slow decay
+            self.retrograde_signal = (
+                self._retrograde_decay * self.retrograde_signal +
+                (1 - self._retrograde_decay) * weighted_contribution
+            )
+
         # Extract modulation kwargs
         dopamine = kwargs.get("dopamine", 0.0)
         acetylcholine = kwargs.get("acetylcholine", 0.0)
@@ -694,6 +734,29 @@ class STDPStrategy(LearningStrategy):
         bcm_modulation = kwargs.get("bcm_modulation", 1.0)
         oscillation_phase = kwargs.get("oscillation_phase", 0.0)
         learning_strategy = kwargs.get("learning_strategy", None)
+
+        # Apply retrograde signaling (endocannabinoid-like gating)
+        # LTP is gated: only strong postsynaptic responses drive potentiation
+        # LTD is enhanced: weak responses lead to depotentiation (extinction-like)
+        if self.stdp_config.retrograde_enabled and self.retrograde_signal is not None:
+            # Retrograde signal represents "postsynaptic neuron cares about this"
+            # Range [0, 1]: 0 = no recent strong activity, 1 = strong recent activity
+            retro_gate = self.retrograde_signal.clamp(0, 1)  # [n_post]
+
+            # LTP gating: require minimum retrograde signal
+            # This prevents spurious correlations from driving potentiation
+            # Only synapses that contribute to strong postsynaptic firing get strengthened
+            ltp_gate = ((retro_gate - self.stdp_config.retrograde_ltp_gate) /
+                       (1.0 - self.stdp_config.retrograde_ltp_gate)).clamp(0, 1)
+            if isinstance(ltp, torch.Tensor):
+                ltp = ltp * ltp_gate.unsqueeze(1)  # [n_post, n_pre]
+
+            # LTD enhancement: low retrograde signal enhances depression
+            # This implements extinction learning - connections that don't contribute
+            # to strong responses get depressed
+            ltd_enhance = 1.0 + (1.0 - retro_gate) * (self.stdp_config.retrograde_ltd_enhance - 1.0)
+            if isinstance(ltd, torch.Tensor):
+                ltd = ltd * ltd_enhance.unsqueeze(1)  # [n_post, n_pre]
 
         # Apply neuromodulator modulations to LTP
         if isinstance(ltp, torch.Tensor):
