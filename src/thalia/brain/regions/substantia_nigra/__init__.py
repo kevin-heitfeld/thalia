@@ -1,5 +1,5 @@
 """Substantia Nigra pars Reticulata region."""
 
-from .snr import SubstantiaNigra, SNrConfig
+from .substantia_nigra import SubstantiaNigra
 
-__all__ = ["SubstantiaNigra", "SNrConfig"]
+__all__ = ["SubstantiaNigra"]

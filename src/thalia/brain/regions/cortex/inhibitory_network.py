@@ -58,48 +58,23 @@ Inhibitory → Inhibitory:
 Gap Junctions:
 - PV ↔ PV: Dense (P=0.5)
 - Others: Absent
-
-References:
-===========
-- Pfeffer et al. (2013) "Inhibition of inhibition in visual cortex"
-- Pi et al. (2013) "Cortical interneurons that specialize in disinhibitory control"
-- Tremblay et al. (2016) "GABAergic Interneurons in the Neocortex"
-- Kepecs & Fishell (2014) "Interneuron cell types are fit to function"
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
 
-from thalia.components import WeightInitializer, NeuronFactory
+from thalia.components import NeuronFactory, WeightInitializer
 from thalia.constants import DEFAULT_DT_MS
+from thalia.typing import PopulationName, RegionName
+from thalia.units import ConductanceTensor
+from thalia.utils import CircularDelayBuffer
 
 
-@dataclass
-class InhibitoryPopulation:
-    """Population of inhibitory neurons with specific properties.
-
-    Attributes:
-        name: Population identifier (e.g., "pv", "sst", "vip")
-        size: Number of neurons
-        neurons: ConductanceLIF neuron model
-        cell_type: Biological cell type name
-        tau_mem: Membrane time constant (ms)
-        has_gap_junctions: Whether this population has electrical coupling
-    """
-    name: str
-    size: int
-    neurons: nn.Module
-    cell_type: str
-    tau_mem: float
-    has_gap_junctions: bool
-
-
-class InhibitoryNetwork(nn.Module):
+class CorticalInhibitoryNetwork(nn.Module):
     """Explicit inhibitory network with multiple cell types.
 
     This module manages inhibitory interneurons and their connectivity for
@@ -111,26 +86,31 @@ class InhibitoryNetwork(nn.Module):
     - Gap junction coupling (PV cells only)
     """
 
+    # =========================================================================
+    # INITIALIZATION
+    # =========================================================================
+
     def __init__(
         self,
-        layer_name: str,
+        region_name: RegionName,
+        population_name: PopulationName,
         pyr_size: int,
-        total_inhib_fraction: float = 0.25,
-        device: str = "cpu",
+        total_inhib_fraction: float,
         dt_ms: float = DEFAULT_DT_MS,
+        device: str = "cpu",
     ):
         """Initialize inhibitory network for one cortical layer.
 
         Args:
-            layer_name: Layer identifier (e.g., "l23", "l4", "l5")
+            region_name: Region name (e.g., 'cortex') for RNG seeding
+            population_name: Layer name (e.g., 'L23', 'L4') for RNG seeding
             pyr_size: Number of pyramidal neurons in this layer
-            total_inhib_fraction: Fraction of pyramidal count (0.25 = 20% of total)
+            total_inhib_fraction: Fraction of pyramidal count (e.g. 0.25 = 20% of total)
             device: Torch device
             dt_ms: Simulation timestep in milliseconds
         """
         super().__init__()
 
-        self.layer_name = layer_name
         self.pyr_size = pyr_size
         self.device = torch.device(device)
         self.dt_ms = dt_ms
@@ -144,271 +124,193 @@ class InhibitoryNetwork(nn.Module):
         self.vip_size = max(int(total_inhib * 0.20), 2)  # 20% - disinhibitory
         self.other_size = total_inhib - (self.pv_size + self.sst_size + self.vip_size)
 
-        # Create inhibitory populations
-        self._create_populations()
-
-        # Create connectivity matrices
-        self._create_connectivity()
-
-    def _create_populations(self) -> None:
-        """Create inhibitory neuron populations with cell-type-specific properties."""
-
         # PV+ Basket Cells (fast-spiking)
-        pv_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.pv_size,
-            self.layer_name,
-            self.device,
-            tau_mem=5.0,  # Very fast
-            v_threshold=0.8,  # Lower threshold (more excitable)
-            adapt_increment=0.0,  # No adaptation (sustain high rates)
-        )
-        self.pv_population = InhibitoryPopulation(
-            name="pv",
-            size=self.pv_size,
-            neurons=pv_neurons,
-            cell_type="PV+ Basket Cell",
+        # Use fast_spiking factory (already has tau_mem=8ms, heterogeneous)
+        # Override for slightly faster dynamics (5ms mean) and no adaptation
+        self.pv_neurons = NeuronFactory.create_fast_spiking_neurons(
+            region_name=region_name,
+            population_name=f"{population_name}_pv",
+            n_neurons=self.pv_size,
+            device=self.device,
             tau_mem=5.0,
-            has_gap_junctions=True,
+            v_threshold=0.9,
+            adapt_increment=0.0,
         )
 
         # SST+ Martinotti Cells (regular-spiking)
-        sst_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.sst_size,
-            self.layer_name,
-            self.device,
-            tau_mem=15.0,  # Slower
-            v_threshold=1.0,  # Normal threshold
-            adapt_increment=0.05,  # Moderate adaptation
-        )
-        self.sst_population = InhibitoryPopulation(
-            name="sst",
-            size=self.sst_size,
-            neurons=sst_neurons,
-            cell_type="SST+ Martinotti Cell",
+        # Use pyramidal factory as base (regular-spiking, similar dynamics)
+        self.sst_neurons = NeuronFactory.create_pyramidal_neurons(
+            region_name=region_name,
+            population_name=f"{population_name}_sst",
+            n_neurons=self.sst_size,
+            device=self.device,
             tau_mem=15.0,
-            has_gap_junctions=False,
+            v_threshold=1.0,
+            adapt_increment=0.05,
+            tau_adapt=90.0,
         )
 
         # VIP+ Interneurons (disinhibitory)
-        vip_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.vip_size,
-            self.layer_name,
-            self.device,
-            tau_mem=10.0,  # Medium
-            v_threshold=0.9,  # Slightly lower
-            adapt_increment=0.02,  # Little adaptation
-        )
-        self.vip_population = InhibitoryPopulation(
-            name="vip",
-            size=self.vip_size,
-            neurons=vip_neurons,
-            cell_type="VIP+ Interneuron",
+        # Use pyramidal factory as base (regular-spiking)
+        self.vip_neurons = NeuronFactory.create_pyramidal_neurons(
+            region_name=region_name,
+            population_name=f"{population_name}_vip",
+            n_neurons=self.vip_size,
+            device=self.device,
             tau_mem=10.0,
-            has_gap_junctions=False,
+            v_threshold=0.9,
+            adapt_increment=0.02,
+            tau_adapt=70.0,
         )
-
-    def _create_connectivity(self) -> None:
-        """Create E→I, I→E, and I→I connectivity matrices.
-
-        Implements biologically-realistic connection probabilities and strengths
-        based on anatomical and physiological data.
-        """
-        device = self.device
 
         # =====================================================================
         # EXCITATORY → INHIBITORY (E→I)
         # =====================================================================
-        # Pyramidal neurons drive inhibitory neurons
-
-        # Pyr → PV (strong, reliable - drives fast inhibition)
-        pyr_pv_prob = 0.5
-        pyr_pv_strength = 1.2
-        self.w_pyr_pv = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.pv_size,
-                n_input=self.pyr_size,
-                sparsity=1.0 - pyr_pv_prob,
-                mean=pyr_pv_strength,
-                std=0.3,
-                device=device,
-            ))
+        # Pyr → PV (moderate - drives fast inhibition without over-suppression)
+        self.w_pyr_pv = WeightInitializer.sparse_gaussian(
+            n_input=self.pyr_size,
+            n_output=self.pv_size,
+            connectivity=0.5,
+            mean=0.008,
+            std=0.003,
+            device=device,
         )
 
-        # Pyr → SST (moderate - drives dendritic inhibition)
-        pyr_sst_prob = 0.3
-        pyr_sst_strength = 0.8
-        self.w_pyr_sst = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.sst_size,
-                n_input=self.pyr_size,
-                sparsity=1.0 - pyr_sst_prob,
-                mean=pyr_sst_strength,
-                std=0.3,
-                device=device,
-            ))
+        # Pyr → SST (weak to moderate - drives dendritic inhibition)
+        self.w_pyr_sst = WeightInitializer.sparse_gaussian(
+            n_input=self.pyr_size,
+            n_output=self.sst_size,
+            connectivity=0.3,
+            mean=0.005,
+            std=0.003,
+            device=device,
         )
 
         # Pyr → VIP (strong, specific - drives disinhibition)
-        pyr_vip_prob = 0.4
-        pyr_vip_strength = 1.0
-        self.w_pyr_vip = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.vip_size,
-                n_input=self.pyr_size,
-                sparsity=1.0 - pyr_vip_prob,
-                mean=pyr_vip_strength,
-                std=0.3,
-                device=device,
-            ))
+        self.w_pyr_vip = WeightInitializer.sparse_gaussian(
+            n_input=self.pyr_size,
+            n_output=self.vip_size,
+            connectivity=0.4,
+            mean=0.015,
+            std=0.003,
+            device=device,
         )
 
         # =====================================================================
         # INHIBITORY → EXCITATORY (I→E)
         # =====================================================================
-        # Inhibitory neurons suppress pyramidal neurons
-
         # PV → Pyr (perisomatic inhibition - gamma gating)
-        # Reduced 10x to prevent suppression of activity
-        pv_pyr_prob = 0.6
-        pv_pyr_strength = 0.15  # Was 1.5 - reduced 10x
-        self.w_pv_pyr = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.pyr_size,
-                n_input=self.pv_size,
-                sparsity=1.0 - pv_pyr_prob,
-                mean=pv_pyr_strength,
-                std=0.04,  # Proportionally reduced std
-                device=device,
-            ))
+        self.w_pv_pyr = WeightInitializer.sparse_gaussian(
+            n_input=self.pv_size,
+            n_output=self.pyr_size,
+            connectivity=0.6,
+            mean=0.003,
+            std=0.001,
+            device=device,
         )
 
         # SST → Pyr (dendritic inhibition - feedback modulation)
-        # Reduced 10x to prevent suppression of activity
-        sst_pyr_prob = 0.4
-        sst_pyr_strength = 0.10  # Was 1.0 - reduced 10x
-        self.w_sst_pyr = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.pyr_size,
-                n_input=self.sst_size,
-                sparsity=1.0 - sst_pyr_prob,
-                mean=sst_pyr_strength,
-                std=0.03,  # Proportionally reduced std
-                device=device,
-            ))
+        self.w_sst_pyr = WeightInitializer.sparse_gaussian(
+            n_input=self.sst_size,
+            n_output=self.pyr_size,
+            connectivity=0.4,
+            mean=0.001,
+            std=0.004,
+            device=device,
         )
 
         # VIP → Pyr (very weak/absent)
-        vip_pyr_prob = 0.05
-        vip_pyr_strength = 0.2
-        self.w_vip_pyr = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.pyr_size,
-                n_input=self.vip_size,
-                sparsity=1.0 - vip_pyr_prob,
-                mean=vip_pyr_strength,
-                std=0.1,
-                device=device,
-            ))
+        self.w_vip_pyr = WeightInitializer.sparse_gaussian(
+            n_input=self.vip_size,
+            n_output=self.pyr_size,
+            connectivity=0.05,
+            mean=0.002,
+            std=0.001,
+            device=device,
         )
 
         # =====================================================================
         # INHIBITORY → INHIBITORY (I→I)
         # =====================================================================
-        # Competition and disinhibition
-
         # PV → PV (weak lateral inhibition)
-        pv_pv_prob = 0.3
-        pv_pv_strength = 0.5
-        w_pv_pv = torch.abs(WeightInitializer.sparse_gaussian(
-            n_output=self.pv_size,
+        self.w_pv_pv = WeightInitializer.sparse_gaussian(
             n_input=self.pv_size,
-            sparsity=1.0 - pv_pv_prob,
-            mean=pv_pv_strength,
-            std=0.2,
+            n_output=self.pv_size,
+            connectivity=0.3,
+            mean=0.005,
+            std=0.002,
             device=device,
-        ))
-        w_pv_pv.fill_diagonal_(0.0)  # No self-connections
-        self.w_pv_pv = nn.Parameter(w_pv_pv)
+        )
+        self.w_pv_pv.fill_diagonal_(0.0)  # No self-connections
 
         # PV → SST (moderate inhibition)
-        pv_sst_prob = 0.3
-        pv_sst_strength = 0.6
-        self.w_pv_sst = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.sst_size,
-                n_input=self.pv_size,
-                sparsity=1.0 - pv_sst_prob,
-                mean=pv_sst_strength,
-                std=0.2,
-                device=device,
-            ))
+        self.w_pv_sst = WeightInitializer.sparse_gaussian(
+            n_input=self.pv_size,
+            n_output=self.sst_size,
+            connectivity=0.3,
+            mean=0.006,
+            std=0.002,
+            device=device,
         )
 
         # SST → PV (weak inhibition)
-        sst_pv_prob = 0.2
-        sst_pv_strength = 0.4
-        self.w_sst_pv = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.pv_size,
-                n_input=self.sst_size,
-                sparsity=1.0 - sst_pv_prob,
-                mean=sst_pv_strength,
-                std=0.2,
-                device=device,
-            ))
+        self.w_sst_pv = WeightInitializer.sparse_gaussian(
+            n_input=self.sst_size,
+            n_output=self.pv_size,
+            connectivity=0.2,
+            mean=0.004,
+            std=0.002,
+            device=device,
         )
 
-        # VIP → PV (strong disinhibition)
-        vip_pv_prob = 0.6
-        vip_pv_strength = 1.2
-        self.w_vip_pv = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.pv_size,
-                n_input=self.vip_size,
-                sparsity=1.0 - vip_pv_prob,
-                mean=vip_pv_strength,
-                std=0.3,
-                device=device,
-            ))
+        # VIP → PV (strong disinhibition - critical for preventing runaway inhibition)
+        self.w_vip_pv = WeightInitializer.sparse_gaussian(
+            n_input=self.vip_size,
+            n_output=self.pv_size,
+            connectivity=0.6,
+            mean=0.0030,
+            std=0.003,
+            device=device,
         )
 
         # VIP → SST (strong disinhibition - primary VIP target)
-        vip_sst_prob = 0.7
-        vip_sst_strength = 1.5
-        self.w_vip_sst = nn.Parameter(
-            torch.abs(WeightInitializer.sparse_gaussian(
-                n_output=self.sst_size,
-                n_input=self.vip_size,
-                sparsity=1.0 - vip_sst_prob,
-                mean=vip_sst_strength,
-                std=0.3,
-                device=device,
-            ))
+        self.w_vip_sst = WeightInitializer.sparse_gaussian(
+            n_input=self.vip_size,
+            n_output=self.sst_size,
+            connectivity=0.7,
+            mean=0.0015,
+            std=0.003,
+            device=device,
         )
 
         # =====================================================================
         # GAP JUNCTIONS (PV cells only)
         # =====================================================================
-        # Electrical coupling for synchronization
-        gap_prob = 0.5
-        gap_strength = 0.4
-        w_pv_gap = torch.abs(WeightInitializer.sparse_gaussian(
-            n_output=self.pv_size,
+        self.w_pv_gap = WeightInitializer.sparse_gaussian(
             n_input=self.pv_size,
-            sparsity=1.0 - gap_prob,
-            mean=gap_strength,
-            std=0.15,
+            n_output=self.pv_size,
+            connectivity=0.5,
+            mean=0.004,
+            std=0.001,
             device=device,
-        ))
-        w_pv_gap.fill_diagonal_(0.0)  # No self-coupling
-        self.w_pv_gap = nn.Parameter(w_pv_gap)
+        )
+        self.w_pv_gap.fill_diagonal_(0.0)  # No self-coupling
+
+    # =========================================================================
+    # FORWARD PASS
+    # =========================================================================
+
+    def __call__(self, *args, **kwds):
+        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
+        return super().__call__(*args, **kwds)
 
     def forward(
         self,
         pyr_spikes: torch.Tensor,
         pyr_membrane: torch.Tensor,
         external_excitation: torch.Tensor,
-        acetylcholine: float = 0.5,
+        acetylcholine: float,
+        feedforward_excitation: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Run inhibitory network for one timestep.
 
@@ -417,6 +319,7 @@ class InhibitoryNetwork(nn.Module):
             pyr_membrane: Pyramidal membrane potentials [pyr_size], float
             external_excitation: External excitation to layer [pyr_size], float
             acetylcholine: ACh level (0-1), modulates VIP activation
+            feedforward_excitation: Direct excitation to PV cells [pv_size] for feedforward inhibition
 
         Returns:
             Dictionary with:
@@ -434,13 +337,23 @@ class InhibitoryNetwork(nn.Module):
         # COMPUTE EXCITATION TO INHIBITORY POPULATIONS
         # =====================================================================
 
-        # PV cells: Driven by pyramidal activity + external input
+        # PV cells: Driven by pyramidal activity + external input + feedforward
         pv_exc_from_pyr = torch.matmul(self.w_pyr_pv, pyr_spikes_float)
-        pv_exc_external = torch.matmul(
-            self.w_pyr_pv,
-            external_excitation / (1.0 + external_excitation.sum() * 0.01)
-        )
-        pv_exc = pv_exc_from_pyr + pv_exc_external * 0.3  # Partial external drive
+
+        # Add feedforward excitation directly to PV cells (bypasses pyramidal)
+        # Biology: Thalamic afferents drive PV cells directly for fast feedforward inhibition
+        if feedforward_excitation is not None:
+            assert feedforward_excitation.size(0) == self.pv_size, "Feedforward excitation size must match PV population size"
+            # Use ONLY feedforward drive (thalamic), not external_excitation
+            # external_excitation already contains thalamic input, so we'd double-count
+            pv_exc = pv_exc_from_pyr + feedforward_excitation  # Direct thalamic drive only
+        else:
+            # Fallback: use external excitation if no feedforward provided (old behavior)
+            pv_exc_external = torch.matmul(
+                self.w_pyr_pv,
+                external_excitation / (1.0 + external_excitation.sum() * 0.01)
+            )
+            pv_exc = pv_exc_from_pyr + pv_exc_external
 
         # SST cells: Driven by pyramidal activity
         sst_exc_from_pyr = torch.matmul(self.w_pyr_sst, pyr_spikes_float)
@@ -456,26 +369,27 @@ class InhibitoryNetwork(nn.Module):
         # COMPUTE INHIBITION TO INHIBITORY POPULATIONS (I→I)
         # =====================================================================
 
-        # Get previous spikes (for I→I connections)
-        # Initialize if first timestep
-        if not hasattr(self, '_prev_pv_spikes'):
-            self._prev_pv_spikes = torch.zeros(self.pv_size, device=device, dtype=torch.bool)
-            self._prev_sst_spikes = torch.zeros(self.sst_size, device=device, dtype=torch.bool)
-            self._prev_vip_spikes = torch.zeros(self.vip_size, device=device, dtype=torch.bool)
+        # Get previous spikes (for I→I connections) using CircularDelayBuffer
+        # Initialize buffers if first timestep
+        if not hasattr(self, '_pv_spike_buffer'):
+            self._pv_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.bool, device=device)
+            self._sst_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.sst_size, dtype=torch.bool, device=device)
+            self._vip_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.vip_size, dtype=torch.bool, device=device)
+            self._pv_membrane_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.float32, device=device)
 
-        prev_pv = self._prev_pv_spikes.float()
-        prev_sst = self._prev_sst_spikes.float()
-        prev_vip = self._prev_vip_spikes.float()
+        prev_pv = self._pv_spike_buffer.read(delay=1).float()
+        prev_sst = self._sst_spike_buffer.read(delay=1).float()
+        prev_vip = self._vip_spike_buffer.read(delay=1).float()
 
         # PV inhibition: from PV, SST, and VIP (disinhibition)
         pv_inh_from_pv = torch.matmul(self.w_pv_pv, prev_pv)
         pv_inh_from_sst = torch.matmul(self.w_sst_pv, prev_sst)
-        pv_inh_from_vip = torch.matmul(self.w_vip_pv, prev_vip)  # Disinhibition
+        pv_inh_from_vip = torch.matmul(self.w_vip_pv, prev_vip)
         pv_inh = pv_inh_from_pv + pv_inh_from_sst + pv_inh_from_vip
 
         # SST inhibition: from PV and VIP (disinhibition)
         sst_inh_from_pv = torch.matmul(self.w_pv_sst, prev_pv)
-        sst_inh_from_vip = torch.matmul(self.w_vip_sst, prev_vip)  # Disinhibition
+        sst_inh_from_vip = torch.matmul(self.w_vip_sst, prev_vip)
         sst_inh = sst_inh_from_pv + sst_inh_from_vip
 
         # VIP inhibition: minimal (VIP cells are not strongly targeted)
@@ -486,34 +400,50 @@ class InhibitoryNetwork(nn.Module):
         # =====================================================================
         # Electrical coupling based on membrane potential similarity
         # Gap junctions conduct when neighbors are at similar potentials
-        if hasattr(self, '_prev_pv_membrane'):
-            # Compute coupling current proportional to voltage difference
-            pv_gap_coupling = torch.matmul(
-                self.w_pv_gap,
-                self._prev_pv_membrane
-            ) - self._prev_pv_membrane * self.w_pv_gap.sum(dim=1)
+        prev_pv_membrane = self._pv_membrane_buffer.read(delay=1)
+        # Compute coupling current proportional to voltage difference
+        pv_gap_coupling = torch.matmul(
+            self.w_pv_gap,
+            prev_pv_membrane
+        ) - prev_pv_membrane * self.w_pv_gap.sum(dim=1)
 
-            # Add to excitation (gap junctions are bidirectional)
-            pv_exc = pv_exc + pv_gap_coupling * 0.3  # Scale coupling effect
+        # Add to excitation (gap junctions are bidirectional)
+        pv_exc = pv_exc + pv_gap_coupling * 0.3  # Scale coupling effect
 
         # =====================================================================
         # RUN INHIBITORY NEURONS
         # =====================================================================
+        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
 
         # PV cells (fast-spiking)
-        pv_spikes, pv_membrane = self.pv_population.neurons(pv_exc, pv_inh)
+        pv_g_ampa, pv_g_nmda = pv_exc * 0.7, pv_exc * 0.3
+        pv_spikes, pv_membrane = self.pv_neurons.forward(
+            g_ampa_input=ConductanceTensor(pv_g_ampa),
+            g_gaba_a_input=ConductanceTensor(pv_inh),
+            g_nmda_input=ConductanceTensor(pv_g_nmda),
+        )
 
         # SST cells (regular-spiking)
-        sst_spikes, sst_membrane = self.sst_population.neurons(sst_exc, sst_inh)
+        sst_g_ampa, sst_g_nmda = sst_exc * 0.7, sst_exc * 0.3
+        sst_spikes, sst_membrane = self.sst_neurons.forward(
+            g_ampa_input=ConductanceTensor(sst_g_ampa),
+            g_gaba_a_input=ConductanceTensor(sst_inh),
+            g_nmda_input=ConductanceTensor(sst_g_nmda),
+        )
 
         # VIP cells (disinhibitory)
-        vip_spikes, vip_membrane = self.vip_population.neurons(vip_exc, vip_inh)
+        vip_g_ampa, vip_g_nmda = vip_exc * 0.7, vip_exc * 0.3
+        vip_spikes, vip_membrane = self.vip_neurons.forward(
+            g_ampa_input=ConductanceTensor(vip_g_ampa),
+            g_gaba_a_input=ConductanceTensor(vip_inh),
+            g_nmda_input=ConductanceTensor(vip_g_nmda),
+        )
 
-        # Store for next timestep
-        self._prev_pv_spikes = pv_spikes
-        self._prev_sst_spikes = sst_spikes
-        self._prev_vip_spikes = vip_spikes
-        self._prev_pv_membrane = pv_membrane
+        # Store for next timestep using CircularDelayBuffer
+        self._pv_spike_buffer.write(pv_spikes)
+        self._sst_spike_buffer.write(sst_spikes)
+        self._vip_spike_buffer.write(vip_spikes)
+        self._pv_membrane_buffer.write(pv_membrane)
 
         # =====================================================================
         # COMPUTE INHIBITION TO PYRAMIDAL NEURONS
@@ -531,10 +461,12 @@ class InhibitoryNetwork(nn.Module):
         # Total inhibition (weighted combination)
         # PV provides strongest, fastest inhibition (gamma gating)
         # SST provides slower, dendritic modulation
+        # NOTE: These are ADDITIONAL to baseline inhibition (50% in cortex.py L4)
+        # With threshold 2.0, PV needs to be strong to counteract drive
         total_inhibition = (
-            perisomatic_inhibition * 1.5 +  # Strong, fast
-            dendritic_inhibition * 0.8 +    # Moderate, slow
-            vip_to_pyr * 0.2                # Weak
+            perisomatic_inhibition * 1.0 +  # Strong PV inhibition (threshold 2.0 compensates)
+            dendritic_inhibition * 0.3 +    # SST provides modulatory inhibition
+            vip_to_pyr * 0.05               # VIP has minimal direct effect
         )
 
         return {
@@ -549,26 +481,13 @@ class InhibitoryNetwork(nn.Module):
             "vip_membrane": vip_membrane,
         }
 
-    def get_total_size(self) -> int:
-        """Get total number of inhibitory neurons."""
-        return self.pv_size + self.sst_size + self.vip_size
+    # =========================================================================
+    # TEMPORAL PARAMETER MANAGEMENT
+    # =========================================================================
 
-    def get_all_spikes(self) -> torch.Tensor:
-        """Get concatenated spikes from all inhibitory populations.
-
-        Returns:
-            Tensor [total_inhib_size] with spikes from PV, SST, VIP
-        """
-        if not hasattr(self, '_prev_pv_spikes'):
-            # Not yet initialized
-            return torch.zeros(
-                self.get_total_size(),
-                device=self.device,
-                dtype=torch.bool
-            )
-
-        return torch.cat([
-            self._prev_pv_spikes,
-            self._prev_sst_spikes,
-            self._prev_vip_spikes,
-        ])
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Update temporal parameters for all inhibitory neuron populations."""
+        self.dt_ms = dt_ms
+        self.pv_neurons.update_temporal_parameters(dt_ms)
+        self.sst_neurons.update_temporal_parameters(dt_ms)
+        self.vip_neurons.update_temporal_parameters(dt_ms)

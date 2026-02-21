@@ -73,7 +73,7 @@ def compute_firing_rate(spikes: torch.Tensor) -> float:
         - Works with any shape tensor (flattens internally)
         - Result is always a Python float for easy logging/comparison
     """
-    if spikes.numel() == 0:
+    if spikes is None or spikes.numel() == 0:
         return 0.0
     return float(spikes.float().mean().item())
 

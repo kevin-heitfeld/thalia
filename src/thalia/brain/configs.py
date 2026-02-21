@@ -4,32 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import Dict, Optional
 
-from thalia.components.synapses.stp import STPType
 from thalia.constants import DEFAULT_DT_MS
-
-if TYPE_CHECKING:
-    from thalia.components.neurons.dopamine_neuron import (
-        DopamineNeuronConfig,
-    )
-    from .oscillator import OscillatorCoupling
 
 
 # ============================================================================
 # Enums
 # ============================================================================
-
-
-class RegionType(Enum):
-    """Types of brain regions."""
-
-    CEREBELLUM = "cerebellum"
-    CORTEX = "cortex"
-    HIPPOCAMPUS = "hippocampus"
-    PFC = "pfc"
-    STRIATUM = "striatum"
-    THALAMUS = "thalamus"
 
 
 class CortexLayer(Enum):
@@ -78,10 +60,15 @@ class NeuralRegionConfig:
     # =========================================================================
     # Adaptive gain control to maintain target firing rates (Turrigiano 2008)
     # Biological basis: Intrinsic plasticity (ion channel remodeling)
-    gain_learning_rate: float = 0.005  # Learning rate for gain adaptation
+    gain_learning_rate: float = 0.02  # INCREASED from 0.005 to respond faster to activity collapse
     target_firing_rate: float = 0.05  # Target firing rate for homeostatic plasticity
     gain_tau_ms: float = 2000.0  # Time constant for firing rate averaging
-    baseline_noise_current: float = 0.15  # Baseline noise current for bootstrap
+    baseline_noise_conductance: float = 0.0  # DISABLED - stochastic synaptic background (miniature EPSPs)
+
+    # =========================================================================
+    # NEUROMODULATION
+    # =========================================================================
+    enable_neuromodulation: bool = False  # Enable/disable neuromodulator receptor updates (DA/NE/ACh)
 
     # =========================================================================
     # ADAPTIVE THRESHOLD PLASTICITY (complementary to gain adaptation)
@@ -96,7 +83,6 @@ class NeuralRegionConfig:
     # Biology: Chronically underactive neurons scale up ALL input synapses globally
     # This is distinct from gain adaptation (intrinsic excitability) and works together
     # with it to maintain network stability.
-    synaptic_scaling_enabled: bool = True  # Enable global synaptic scaling
     synaptic_scaling_lr: float = 0.001  # Learning rate for weight scaling (slow)
     synaptic_scaling_min_activity: float = 0.005  # Minimum activity (0.5%) to trigger scaling
     synaptic_scaling_max_factor: float = 2.0  # Maximum scaling factor (prevent explosion)
@@ -132,20 +118,8 @@ class NeuralRegionConfig:
     # =========================================================================
     # HOMEOSTATIC PLASTICITY
     # =========================================================================
-    weight_budget: float = 1.0
-    """Target sum of weights per neuron (row normalization constraint)."""
-
     activity_target: float = 0.1
     """Target fraction of neurons active per timestep."""
-
-    soft_normalization: bool = True
-    """Use soft (multiplicative) normalization instead of hard constraint."""
-
-    normalization_rate: float = 0.1
-    """Rate of convergence toward target (soft normalization only)."""
-
-    activity_tau_ms: float = 1000.0
-    """Time constant for activity rate estimation."""
 
     # =========================================================================
     # SPIKE-FREQUENCY ADAPTATION (SFA)
@@ -159,9 +133,6 @@ class NeuralRegionConfig:
     # =========================================================================
     # SPIKE-TIMING DEPENDENT PLASTICITY (STDP)
     # =========================================================================
-    learning_strategy: str = "STDP"
-    """Which plasticity rule to use (STDP, PHASE_STDP, TRIPLET_STDP, etc.)."""
-
     tau_plus_ms: float = 20.0
     """LTP time constant in milliseconds."""
 
@@ -196,74 +167,100 @@ class MedialSeptumConfig(NeuralRegionConfig):
     """
 
     # =========================================================================
-    # NEURON POPULATIONS
-    # =========================================================================
-    n_ach: int = 100
-    """Number of cholinergic neurons (excite hippocampal pyramidal)."""
-
-    n_gaba: int = 100
-    """Number of GABAergic neurons (inhibit hippocampal interneurons)."""
-
-    # =========================================================================
     # PACEMAKER DYNAMICS
     # =========================================================================
     base_frequency_hz: float = 8.0
     """Base theta frequency in Hz. Modulated by ACh, NE, DA (range: 4-10 Hz)."""
 
-    burst_duty_cycle: float = 0.3
-    """Fraction of cycle spent in burst phase (vs inter-burst silence)."""
+    burst_duty_cycle: float = 0.08
+    """Fraction of cycle spent in burst phase (vs inter-burst silence).
 
-    burst_amplitude: float = 0.08
-    """Peak drive conductance during burst (normalized by g_L).
-
-    This is a CONDUCTANCE, not a current! Must be carefully calibrated:
-    - Too high: Continuous firing at 80-200 Hz instead of 8 Hz bursts
-    - Too low: No spikes during burst phase
-    - Target: 0.06-0.10 for sparse 8 Hz theta bursting
+    CRITICAL: Set to 0.08 for NARROW burst windows.
+    - At 8 Hz (125ms period), burst phase = 125 * 0.08 = 10ms
+    - Inter-burst silence = 125 * 0.92 = 115ms
+    - 10ms burst window allows 2 spikes with 5ms refractory
+    - Narrow window prevents early/late firings outside pacemaker rhythm
     """
 
-    inter_burst_amplitude: float = 0.01
+    burst_amplitude: float = 0.025
+    """Peak drive conductance during burst (normalized by g_L).
+
+    CRITICAL: Minimal supra-threshold value to trigger brief bursts.
+    - Must overcome threshold (~1.2-1.3) but not create sustained firing
+    - Value 0.025 creates just enough drive for 2-3 spikes
+    - Adaptation accumulates quickly to terminate burst
+    - Results in clean 8 Hz rhythm with short intra-burst intervals
+    """
+
+    inter_burst_amplitude: float = 0.001
     """Baseline drive conductance between bursts (subthreshold).
 
-    Should be below threshold to maintain silence between bursts.
-    Neurons only fire during burst phase when drive increases.
+    CRITICAL: Reduced to 0.001 (near zero) to ensure complete silence.
+    During inter-burst phase:
+    - Membrane potential decays back to rest
+    - Adaptation variables decay to baseline
+    - Neurons are prepared for next burst
+    Should be well below threshold (< 0.1) to prevent spontaneous firing.
     """
 
     # =========================================================================
     # CHOLINERGIC NEURON PROPERTIES
     # =========================================================================
-    ach_tau_mem: float = 30.0
-    """ACh neuron membrane time constant (ms). Slow for bursting dynamics."""
+    ach_tau_mem: float = 35.0
+    """ACh neuron membrane time constant (ms). Moderate for responsive bursting.
 
-    ach_threshold: float = 1.5
-    """ACh neuron threshold (high - requires strong burst drive to fire)."""
+    REDUCED to 35ms for faster integration during short (10ms) burst windows:
+    - Quick enough to respond within burst window
+    - Still slower than typical neurons (20ms) for pacemaker-like behavior
+    - Matches burst window duration for clean firing
+    """
+
+    ach_threshold: float = 1.3
+    """ACh neuron threshold (slightly elevated to require stronger drive)."""
 
     ach_reset: float = 0.0
     """ACh neuron reset potential after spike."""
 
-    ach_adaptation_tau: float = 100.0
-    """ACh adaptation time constant (ms). Strong to create burst termination."""
+    ach_adaptation_tau: float = 80.0
+    """ACh adaptation time constant (ms). INCREASED for burst termination.
 
-    ach_adaptation_increment: float = 0.25
-    """ACh adaptation increment per spike (strong to quickly terminate burst)."""
+    Critical: Must balance two requirements:
+    1. Persist through 25ms burst duration to accumulate and terminate firing
+    2. Decay during 100ms inter-burst interval to allow next burst
+
+    With tau=80ms:
+    - During burst (25ms): ~27% decay → adaptation accumulates strongly
+    - Between bursts (100ms): ~71% decay → mostly resets for next burst
+    - Ensures burst self-terminates after 2-4 spikes
+    """
+
+    ach_adaptation_increment: float = 0.40
+    """ACh adaptation increment per spike.
+
+    INCREASED to 0.40 for rapid burst termination.
+    - Each spike adds 0.40 to adaptation current
+    - After 2-3 spikes: adaptation ~ 0.80-1.20, strongly suppressing firing
+    - Burst self-terminates quickly, then adaptation decays during inter-burst
+    - Creates clean 8 Hz rhythm with brief (~10-15ms) bursts
+    """
 
     # =========================================================================
     # GABAERGIC NEURON PROPERTIES
     # =========================================================================
-    gaba_tau_mem: float = 20.0
-    """GABA neuron membrane time constant (ms). Faster than ACh."""
+    gaba_tau_mem: float = 30.0
+    """GABA neuron membrane time constant (ms). Moderate for responsive theta bursting."""
 
-    gaba_threshold: float = 1.3
-    """GABA neuron threshold (higher than standard to prevent continuous firing)."""
+    gaba_threshold: float = 1.2
+    """GABA neuron threshold."""
 
     gaba_reset: float = 0.0
     """GABA neuron reset potential after spike."""
 
-    gaba_adaptation_tau: float = 80.0
-    """GABA adaptation time constant (ms). Creates burst termination."""
+    gaba_adaptation_tau: float = 75.0
+    """GABA adaptation time constant (ms). Similar to ACh for matched burst dynamics."""
 
-    gaba_adaptation_increment: float = 0.20
-    """GABA adaptation increment per spike (terminates burst quickly)."""
+    gaba_adaptation_increment: float = 0.40
+    """GABA adaptation increment per spike. INCREASED for rapid burst termination."""
 
 
 # ============================================================================
@@ -287,9 +284,6 @@ class RewardEncoderConfig(NeuralRegionConfig):
     - Can be expanded to full limbic system in future versions
     """
 
-    n_neurons: int = 100
-    """Number of neurons (split 50/50 for positive/negative rewards)."""
-
     reward_noise: float = 0.1
     """Variability in spike encoding for biological realism (10% noise)."""
 
@@ -300,7 +294,7 @@ class RewardEncoderConfig(NeuralRegionConfig):
 
 
 @dataclass
-class SNrConfig(NeuralRegionConfig):
+class SubstantiaNigraConfig(NeuralRegionConfig):
     """Configuration for SNr (substantia nigra pars reticulata) region.
 
     The SNr is the primary output nucleus of the basal ganglia, consisting of
@@ -314,34 +308,44 @@ class SNrConfig(NeuralRegionConfig):
     - Closed-loop TD learning: Striatum → SNr → VTA → Striatum
     """
 
-    n_neurons: int = 2000
-    """Number of GABAergic output neurons (~2-5k rodent, ~10-15k humans)."""
-
-    baseline_drive: float = 0.008
-    """Tonic drive conductance to maintain ~50-70 Hz spontaneous firing.
+    baseline_drive: float = 0.0
+    """Tonic drive conductance
 
     Biological SNr neurons fire tonically at 50-70 Hz baseline due to intrinsic
-    currents and recurrent excitation. In conductance-based model, this represents
-    a small tonic excitatory conductance (normalized by g_L).
+    currents (persistent Na+, T-type Ca2+) and recurrent excitation. In
+    conductance-based model, this represents a tonic excitatory conductance
+    (normalized by g_L).
 
     This value (0.008) is calibrated with:
     - Moderate noise (std=0.05)
     - Realistic membrane tau (15ms)
     - Standard leak (g_L=0.10)
-    - Threshold of 1.0
-    To produce biologically plausible 50-70 Hz tonic baseline.
+    - High threshold (1.25) to reduce excitability
+    - Strong striatal inhibition (D1: 0.08 weight, ~0.69 g_inh at 8.65% firing)
+    - Weak D2 excitation (D2: 0.01 weight, ~0.09 g_exc at 8.65% firing)
+    To produce biologically plausible 50-70 Hz (5-7% in 1ms bins) tonic baseline.
+
+    BIOLOGY: With conductance-based neurons, shunting inhibition is
+    EXTREMELY powerful (diverts current proportional to g_inh × V_drive). The
+    large D1 inhibition (~0.69) creates massive shunting that requires very
+    low baseline drive to achieve target firing rate.
+
+    Calculation: With D1 inhibition ~0.69 g_inh and D2 excitation ~0.09 g_exc,
+    baseline drive 0.008 provides total excitation 0.008 + 0.09 = 0.098.
+    With massive shunting from 0.69 g_inh and high threshold (1.25), this
+    produces ~5-7% baseline.
+
+    Calibration history:
+    - 0.110 → 46.26% (HYPERACTIVE)
+    - 0.025 → 23.46% (still too high - 4x target)
+    - 0.008 → targeting 5-7% with threshold 1.25
     """
 
     tau_mem: float = 15.0
     """Membrane time constant for realistic integration (10-20ms typical for SNr)."""
 
-    v_threshold: float = 1.0
-    """Standard firing threshold for spike generation.
-
-    Standard threshold (1.0) combined with appropriate baseline drive (0.02)
-    and moderate noise (0.05) enables biologically realistic tonic firing
-    at 50-70 Hz.
-    """
+    v_threshold: float = 1.25
+    """Firing threshold. Set to 1.25 to maintain 5-7% target with very low baseline drive (0.008) and strong D1 inhibition (~0.69)."""
 
     tau_ref: float = 2.0
     """Refractory period for realistic max frequency (~500 Hz ceiling, actual 50-70 Hz)."""
@@ -365,13 +369,8 @@ class VTAConfig(NeuralRegionConfig):
     - RPE computation: δ = r - V(s)
     - Closed-loop TD learning with SNr feedback
     - Adaptive normalization to prevent saturation
+    - Strong baseline inhibition to maintain biological firing rates
     """
-
-    n_da_neurons: int = 20000
-    """Number of dopamine neurons with burst/pause dynamics (~20-30k in humans)."""
-
-    n_gaba_neurons: int = 4000
-    """Number of GABAergic interneurons for homeostatic control."""
 
     rpe_gain: float = 15.0
     """Gain for converting RPE to membrane current (mV per RPE unit).
@@ -385,10 +384,6 @@ class VTAConfig(NeuralRegionConfig):
 
     rpe_normalization: bool = True
     """Enable adaptive RPE normalization to prevent saturation."""
-
-    # Dopamine neuron specific parameters (can override defaults)
-    da_neuron_config: Optional[DopamineNeuronConfig] = None
-    """Optional custom config for DA neurons (uses defaults if None)."""
 
 
 # ============================================================================
@@ -411,12 +406,6 @@ class LCConfig(NeuralRegionConfig):
     - Global projections → all brain regions
     """
 
-    n_ne_neurons: int = 1600
-    """Number of norepinephrine neurons (~1,600 in humans - small but influential)."""
-
-    n_gaba_neurons: int = 300
-    """Number of GABAergic interneurons for homeostatic control."""
-
     uncertainty_gain: float = 20.0
     """Gain for converting uncertainty to membrane current (mV per uncertainty unit).
 
@@ -424,19 +413,14 @@ class LCConfig(NeuralRegionConfig):
     Low uncertainty → hyperpolarization → pause or low tonic
     """
 
-    gap_junction_strength: float = 0.0
-    """DISABLED - Gap junctions quench pacemaking by pulling voltage down when population is silent.
-    TODO: Re-enable once gap junction implementation supports depolarizing coupling."""
+    gap_junction_strength: float = 0.05
+    """Gap junction coupling strength (voltage-gated to prevent pacemaker quenching)."""
 
     gap_junction_radius: int = 50
     """Radius for gap junction connectivity (neurons within this range are coupled)."""
 
     uncertainty_normalization: bool = True
     """Enable adaptive uncertainty normalization to prevent saturation."""
-
-    # Norepinephrine neuron specific parameters (can override defaults)
-    ne_neuron_config: Optional['NorepinephrineNeuronConfig'] = None
-    """Optional custom config for NE neurons (uses defaults if None)."""
 
 
 # ============================================================================
@@ -459,12 +443,6 @@ class NBConfig(NeuralRegionConfig):
     - Selective projections → cortex and hippocampus (not striatum)
     """
 
-    n_ach_neurons: int = 3000
-    """Number of acetylcholine neurons (~3,000-5,000 in humans)."""
-
-    n_gaba_neurons: int = 500
-    """Number of GABAergic interneurons for homeostatic control."""
-
     pe_gain: float = 25.0
     """Gain for converting prediction error to membrane current (mV per PE unit).
 
@@ -474,10 +452,6 @@ class NBConfig(NeuralRegionConfig):
 
     pe_normalization: bool = True
     """Enable adaptive prediction error normalization to prevent saturation."""
-
-    # Acetylcholine neuron specific parameters (can override defaults)
-    ach_neuron_config: Optional['AcetylcholineNeuronConfig'] = None
-    """Optional custom config for ACh neurons (uses defaults if None)."""
 
 
 # ============================================================================
@@ -508,7 +482,6 @@ class CerebellumConfig(NeuralRegionConfig):
     target_firing_rate: float = 0.045  # 4.5% target = 45 Hz (biological Purkinje baseline)
     gain_learning_rate: float = 0.005  # Reduced 10x to prevent runaway (was 0.05, tried 0.0005 - too slow)
     gain_tau_ms: float = 2000.0  # 2s averaging window (slow for motor stability)
-    baseline_noise_current: float = 0.05  # Moderate spontaneous activity (was 0.30, causing 200 Hz hyperactivity)
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
@@ -526,30 +499,8 @@ class CerebellumConfig(NeuralRegionConfig):
     # - Dendritic computation in Purkinje cells (complex/simple spikes)
     # - DCN integration (Purkinje sculpts tonic output)
 
-    granule_sparsity: float = 0.03  # Fraction of granule cells active (3%)
+    granule_connectivity: float = 0.03  # Fraction of granule cells active (3%)
     purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
-
-    # =========================================================================
-    # COMPLEX SPIKE DYNAMICS
-    # =========================================================================
-    # Climbing fibers trigger complex spikes in Purkinje cells - bursts of 2-7
-    # spikes with very short inter-spike intervals (1-2ms). These bursts encode
-    # ERROR MAGNITUDE: larger errors → longer bursts → more calcium influx.
-    #
-    # This provides GRADED ERROR SIGNALING instead of binary (error/no-error),
-    # enabling more nuanced learning: small errors trigger small corrections,
-    # large errors trigger large corrections.
-    #
-    # Mechanism:
-    # 1. Climbing fiber error → complex spike burst (not single spike)
-    # 2. Each spikelet triggers dendritic calcium influx (~0.2 units)
-    # 3. Total calcium = n_spikes × ca2_per_spike
-    # 4. LTD magnitude ∝ total calcium (graded learning)
-    use_complex_spike_bursts: bool = True
-    min_complex_spike_count: int = 2  # Minimum spikes in complex spike burst
-    max_complex_spike_count: int = 7  # Maximum spikes in complex spike burst
-    complex_spike_isi_ms: float = 1.5  # Inter-spike interval within complex spike (ms)
-    ca2_per_spikelet: float = 0.2  # Calcium influx per complex spikelet
 
     # =========================================================================
     # ELIGIBILITY TRACES
@@ -578,41 +529,6 @@ class CerebellumConfig(NeuralRegionConfig):
     # Cerebellum uses weaker heterosynaptic competition for faster convergence:
     heterosynaptic_ratio: float = 0.2  # Override base (0.3) - weaker competition
 
-    # =========================================================================
-    # LEARNING RATES
-    # =========================================================================
-    learning_rate_ltp: float = 0.01  # LTP rate for parallel fiber→Purkinje
-    learning_rate_ltd: float = 0.01  # LTD rate for parallel fiber→Purkinje
-    error_threshold: float = 0.01  # Minimum error to trigger learning
-
-    # =========================================================================
-    # SHORT-TERM PLASTICITY (STP)
-    # =========================================================================
-    # Biologically, cerebellar synapses show distinct STP properties that are
-    # CRITICAL for temporal processing and motor timing:
-    #
-    # 1. PARALLEL FIBERS→PURKINJE: DEPRESSING (U=0.5-0.7)
-    #    - Implements temporal high-pass filter
-    #    - Fresh inputs signal new patterns
-    #    - Sustained inputs fade → cerebellum detects CHANGES, not steady-state
-    #    - Enables sub-millisecond timing discrimination
-    #    - WITHOUT THIS: Cerebellar timing precision COLLAPSES
-    #
-    # 2. MOSSY FIBERS→GRANULE CELLS: FACILITATING (U=0.15-0.25)
-    #    - Burst detection for sparse coding
-    #    - Amplifies repeated mossy fiber activity
-    #    - Enhances pattern separation in granule layer
-    #
-    # 3. CLIMBING FIBERS→PURKINJE: RELIABLE (U≈0.9, minimal STP)
-    #    - Error signal must be unambiguous
-    #    - No adaptation - every climbing fiber spike matters
-    #
-    # BIOLOGICAL IMPORTANCE: This is perhaps the MOST important STP in the brain
-    # for motor learning and timing. The cerebellar cortex is the brain's master
-    # clock, and STP is essential for its temporal precision.
-    stp_pf_purkinje_type: STPType = STPType.DEPRESSING  # Parallel fiber depression
-    stp_mf_granule_type: STPType = STPType.FACILITATING  # Mossy fiber facilitation
-
 
 # ============================================================================
 # Cortex Config
@@ -626,14 +542,9 @@ class CortexConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    # EXPERIMENT: Raising from 0.015 to 0.03 to match burst-firing regime
-    # Previous: 0.015 (1.5%) - observed to cause burst-only regime (3% burst > 1.5% target)
-    # Hypothesis: Post-burst adaptation reduces excitability, preventing sustained activity
-    # New: 0.03 (3%) to match observed burst average and enable sustained firing
-    target_firing_rate: float = 0.03  # Adjusted to match ~3% burst activity (was 0.015)
-    gain_learning_rate: float = 0.005  # Reduced 10x to prevent runaway (was 0.05, tried 0.0005 - too slow)
-    gain_tau_ms: float = 1000.0
-    baseline_noise_current: float = 0.35  # Increased from 0.05 → 0.15 → 0.25 → 0.35 to bootstrap L23/PFC
+    target_firing_rate: float = 0.03
+    gain_learning_rate: float = 0.004
+    gain_tau_ms: float = 2000.0
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
@@ -643,51 +554,14 @@ class CortexConfig(NeuralRegionConfig):
     threshold_max: float = 1.5
 
     # =========================================================================
-    # CORTEX-SPECIFIC DYNAMICS
-    # =========================================================================
-    # These parameters control cortical circuit mechanisms that are specific
-    # to layered cortex architecture (not universal like homeostasis).
-
-    # Recurrence in L2/3
-    l23_recurrent_strength: float = 0.1  # Lateral connection strength (reduced from 0.3 to prevent synchronization)
-    l23_recurrent_decay: float = 0.9  # Recurrent activity decay
-
-    # Weight bounds for L2/3 recurrent connections (signed, compact E/I approximation)
-    # Unlike feedforward connections, recurrent lateral connections use signed weights
-    # to approximate the mixed excitatory/inhibitory microcircuit within a cortical layer.
-    # Positive weights = local excitation, negative weights = lateral inhibition.
-    l23_recurrent_w_min: float = -1.5  # Allows inhibitory-like connections
-    l23_recurrent_w_max: float = 1.0
-
-    # Feedforward connection strengths
-    # These need to be strong enough that sparse activity can drive next layer above threshold.
-    # Weight initialization uses abs(randn) * scale, where scale = 1/expected_active.
-    # abs(randn) has mean ~0.8, so we need ~1.5-2.0x strength to compensate.
-    # With ~10-15% sparsity and random weights, we need ~2.0x strength for input layer
-    # and ~1.5x for subsequent layers to reliably activate postsynaptic neurons.
-    input_to_l4_strength: float = 2.0  # External input → L4
-    l4_to_l23_strength: float = 2.5  # L4 → L2/3 (increased from 1.5 to bootstrap L23/PFC)
-    l23_to_l5_strength: float = 1.5  # L2/3 → L5 (was 0.4, too weak)
-    l23_to_l6a_strength: float = 0.8  # L2/3 → L6a (reduced for low gamma 25-35Hz)
-    l23_to_l6b_strength: float = 2.0  # L2/3 → L6b (higher for high gamma 60-80Hz)
-
-    # Top-down modulation (for attention pathway)
-    l23_top_down_strength: float = 0.2  # Feedback to L2/3
-
-    # Gamma-based attention (spike-native phase gating for L2/3)
-    # Always enabled for spike-native attention
-    gamma_attention_width: float = 0.3  # Phase window width
-
-    # =========================================================================
     # FEEDFORWARD INHIBITION (FFI)
     # =========================================================================
     # FFI detects stimulus changes and transiently suppresses recurrent activity
     # This is how the cortex naturally "clears" old representations when new input arrives
     # Always enabled (fundamental cortical mechanism)
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
-    ffi_strength: float = 0.05  # REDUCED for sustained symbol presentation (was 0.8)
-    # When presenting same symbol for multiple timesteps (sequence learning),
-    # strong FFI blocks cortex after first spike, preventing hippocampus from receiving input.
+    ffi_strength: float = 0.18  # INCREASED from 0.12 to break 1 Hz cortical synchrony
+    # Stronger FFI makes cortex more stimulus-driven and less self-sustaining
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
     # =========================================================================
@@ -696,8 +570,9 @@ class CortexConfig(NeuralRegionConfig):
     # Basket cells and chandelier cells in L2/3 have dense gap junction networks
     # Critical for cortical gamma oscillations (30-80 Hz) and precise spike timing
     # ~70-80% of cortical gap junctions are interneuron-interneuron
-    gap_junction_strength: float = 0.12  # Moderate coupling for L2/3 interneurons
-    gap_junction_threshold: float = 0.25
+    # INCREASED: Gap junctions are the PRIMARY mechanism for emergent gamma (PING)
+    gap_junction_strength: float = 0.25  # INCREASED from 0.12 for stronger gamma synchronization
+    gap_junction_threshold: float = 0.20  # REDUCED from 0.25 for easier activation
     gap_junction_max_neighbors: int = 8
 
     # =========================================================================
@@ -716,76 +591,82 @@ class CortexConfig(NeuralRegionConfig):
     # - L5: Decision-making and sustained output generation
     # - L6: Feedback control with tuned dynamics
 
-    # Layer-specific membrane time constants (ms)
-    # These control integration timescales for each layer
-    layer_tau_mem: Dict[CortexLayer, float] = field(
+    # Layer-specific neuron parameters
+    # Each layer gets a complete parameter set for neuron creation
+    layer_overrides: Dict[CortexLayer, Dict[str, float]] = field(
         default_factory=lambda: {
-            CortexLayer.L23: 20.0,  # Moderate integration for association
-            CortexLayer.L4:  10.0,  # Fast integration for sensory input
-            CortexLayer.L5:  30.0,  # Slow integration for output generation
-            CortexLayer.L6A: 15.0,  # Fast for TRN feedback (low gamma)
-            CortexLayer.L6B: 25.0,  # Moderate for relay feedback (high gamma)
+            CortexLayer.L23: {
+                "tau_mem": 20.0,          # Moderate integration for association
+                "v_threshold": 1.8,       # INCREASED from 1.5 to reduce hyperactivity (25.3% → 5-10%)
+                "adapt_increment": 0.45,  # VERY STRONG adaptation (prevents runaway recurrence)
+                "tau_adapt": 150.0,       # Medium-slow decay (100-200ms biological)
+            },
+            CortexLayer.L4: {
+                "tau_mem": 10.0,          # Fast integration for sensory input
+                "v_threshold": 2.5,       # INCREASED to 2.5 to achieve target 1-3% FR (was 5.04%)
+                "adapt_increment": 0.35,  # INCREASED to 0.35 for stronger spike frequency adaptation
+                "tau_adapt": 80.0,        # Fast decay (50-100ms biological)
+            },
+            CortexLayer.L5: {
+                "tau_mem": 30.0,          # Slow integration for output generation
+                "v_threshold": 1.2,       # INCREASED from 0.9 to reduce hyperactivity (19% → 5-10%)
+                "adapt_increment": 0.20,  # INCREASED from 0.10 for stronger adaptation
+                "tau_adapt": 120.0,       # Medium decay (80-150ms biological)
+            },
+            CortexLayer.L6A: {
+                "tau_mem": 15.0,          # Fast for TRN feedback (low gamma)
+                "v_threshold": 1.0,       # Standard for attention gating
+                "adapt_increment": 0.08,  # Light adaptation for feedback
+                "tau_adapt": 100.0,       # Medium-fast decay (80-120ms biological)
+            },
+            CortexLayer.L6B: {
+                "tau_mem": 25.0,          # Moderate for relay feedback (high gamma)
+                "v_threshold": 0.9,       # Lower for fast gain modulation
+                "adapt_increment": 0.12,  # Moderate adaptation for gain control
+                "tau_adapt": 100.0,       # Medium-fast decay (80-120ms biological)
+            },
         }
     )
-    """Membrane time constants per layer.
+    """Layer-specific neuron parameters.
 
-    Biological ranges:
-    - L4 spiny stellate: 8-12ms (fast sensory processing)
-    - L2/3 pyramidal: 18-25ms (integration)
-    - L5 pyramidal: 25-35ms (sustained output)
-    - L6 pyramidal: 12-20ms (feedback control)
+    Each layer has distinct electrophysiological properties:
+
+    **L2/3 (Integration & Association)**:
+    - tau_mem: 20ms (moderate, ~10 Hz resonance)
+    - v_threshold: 1.8 (high, selective integration)
+    - adapt_increment: 0.45 (very strong, prevents runaway)
+    - tau_adapt: 150ms (slow, sustained decorrelation)
+
+    **L4 (Fast Sensory Processing)**:
+    - tau_mem: 10ms (fast, ~20 Hz resonance)
+    - v_threshold: 0.9 (low, sensitive detection)
+    - adapt_increment: 0.05 (minimal, faithful relay)
+    - tau_adapt: 80ms (fast, rapid reset)
+
+    **L5 (Output Generation)**:
+    - tau_mem: 30ms (slow, ~6 Hz resonance)
+    - v_threshold: 1.2 (moderate-high, reliable output)
+    - adapt_increment: 0.20 (moderate, burst patterns)
+    - tau_adapt: 120ms (medium, stable output)
+
+    **L6A (TRN Feedback, Low Gamma)**:
+    - tau_mem: 15ms (fast feedback control)
+    - v_threshold: 1.0 (standard)
+    - adapt_increment: 0.08 (light, feedback dynamics)
+    - tau_adapt: 100ms (medium-fast)
+
+    **L6B (Relay Feedback, High Gamma)**:
+    - tau_mem: 25ms (moderate feedback)
+    - v_threshold: 0.9 (lower, fast modulation)
+    - adapt_increment: 0.12 (moderate, gain control)
+    - tau_adapt: 100ms (medium-fast)
+
+    Biological ranges from intracellular recordings:
+    - tau_mem: L4 spiny stellate 8-12ms, L2/3 pyramidal 18-25ms, L5 pyramidal 25-35ms
+    - v_threshold: -50 to -58mV biological (normalized 0.9-1.8 in our model)
+    - adapt_increment: Layer-specific Ca2+-dependent K+ conductances
+    - tau_adapt: 50-200ms depending on cell type and recording conditions
     """
-
-    # Layer-specific voltage thresholds (mV)
-    # Higher threshold = more selective, requires more input
-    # NOTE: Cortex uses current-based LIF (E_L=0, E_E=3.0, E_I=-0.5)
-    # so thresholds must be around 0-1 mV, not -50 mV like voltage-based neurons
-    layer_v_threshold: Dict[CortexLayer, float] = field(
-        default_factory=lambda: {
-            CortexLayer.L23: 1.0,  # Standard threshold for balanced processing
-            CortexLayer.L4:  0.9,  # Slightly lower for sensitive input detection
-            CortexLayer.L5:  0.9,  # Lower threshold for reliable output
-            CortexLayer.L6A: 1.0,  # Standard for attention gating
-            CortexLayer.L6B: 0.9,  # Lower for fast gain modulation
-        }
-    )
-    """Voltage thresholds per layer.
-
-    Biological values:
-    - L4: -50 to -55mV (sensitive to input)
-    - L2/3: -53 to -58mV (selective integration)
-    - L5: -48 to -52mV (reliable output despite high tau)
-    - L6: -50 to -55mV (varied for feedback roles)
-    """
-
-    # Layer-specific adaptation strengths
-    # Controls spike-frequency adaptation per layer
-    layer_adaptation: Dict[CortexLayer, float] = field(
-        default_factory=lambda: {
-            CortexLayer.L23: 0.05,  # Reduced from 0.15 to allow L23/PFC bootstrap
-            CortexLayer.L4:  0.05,  # Minimal adaptation for faithful sensory relay
-            CortexLayer.L5:  0.10,  # Moderate adaptation for sustained output
-            CortexLayer.L6A: 0.08,  # Light adaptation for feedback
-            CortexLayer.L6B: 0.12,  # Moderate adaptation for gain control
-        }
-    )
-    """Adaptation increments per layer.
-
-    Biological justification:
-    - L4: Minimal (faithful relay of sensory input)
-    - L2/3: Strong (prevents runaway recurrence, decorrelates features)
-    - L5: Moderate (allows burst patterns while preventing runaway)
-    - L6: Light-moderate (supports feedback dynamics)
-    """
-
-    # =========================================================================
-    # SPARSITY
-    # =========================================================================
-    l4_sparsity: float = 0.15  # Moderate sparsity
-    l23_sparsity: float = 0.10  # Sparser (more selective)
-    l5_sparsity: float = 0.20  # Less sparse (motor commands)
-    l6a_sparsity: float = 0.12  # L6a → TRN (slightly more sparse than L2/3)
-    l6b_sparsity: float = 0.15  # L6b → relay (moderate sparsity)
 
     # =========================================================================
     # SPIKE-FREQUENCY ADAPTATION (SFA)
@@ -817,16 +698,13 @@ class CortexConfig(NeuralRegionConfig):
     # - L6b with 3ms internal + 5ms feedback = 8ms loop → ~125 Hz (very high gamma)
     # - With neural refractory periods and integration, actual frequencies settle to
     #   low gamma (25-35 Hz) for L6a and high gamma (60-80 Hz) for L6b
+    l5_to_l4_delay_ms: float = 1.0  # L5→L4 feedback delay (short, local)
+    l6_to_l4_delay_ms: float = 1.5  # L6→L4 feedback delay (slightly longer)
     l4_to_l23_delay_ms: float = 2.0  # L4→L2/3 axonal delay (short vertical)
+    l23_to_l23_delay_ms: float = 9.0  # L2/3→L2/3 recurrent delay (longer horizontal)
     l23_to_l5_delay_ms: float = 2.0  # L2/3→L5 axonal delay (longer vertical)
     l23_to_l6a_delay_ms: float = 2.0  # L2/3→L6a axonal delay (type I pathway, slow)
     l23_to_l6b_delay_ms: float = 3.0  # L2/3→L6b axonal delay (type II pathway, fast)
-    l23_recurrent_delay_ms: float = 9.0  # L2/3→L2/3 recurrent (CRITICAL for preventing synchronization)
-    # Biological: 2-3ms local recurrent, increased to 9ms to break synchronization (> refractory 5ms)
-
-    # L6 feedback delays (key for gamma frequency tuning)
-    l6a_to_trn_delay_ms: float = 10.0  # L6a→TRN feedback delay (~10ms biological, slow pathway)
-    l6b_to_relay_delay_ms: float = 5.0  # L6b→relay feedback delay (~5ms biological, fast pathway)
 
     # =========================================================================
     # PREDICTIVE CODING: L5/L6 → L4 FEEDBACK (NATURAL EMERGENCE)
@@ -840,11 +718,7 @@ class CortexConfig(NeuralRegionConfig):
     # - L5 deep pyramidal neurons project back to L4
     # - L6 corticothalamic neurons modulate L4 via local collaterals
     # - These connections are primarily inhibitory (via interneurons)
-    l5_to_l4_pred_strength: float = 0.5  # L5→L4 prediction inhibition strength
-    l6_to_l4_pred_strength: float = 0.3  # L6→L4 prediction inhibition strength
     prediction_learning_rate: float = 0.005  # Anti-Hebbian learning for predictions
-    l5_to_l4_delay_ms: float = 1.0  # L5→L4 feedback delay (short, local)
-    l6_to_l4_delay_ms: float = 1.5  # L6→L4 feedback delay (slightly longer)
 
     # Precision weighting: Scale predictions by confidence (population activity)
     # Higher activity in deep layers = stronger/more confident predictions
@@ -863,18 +737,11 @@ class HippocampusConfig(NeuralRegionConfig):
     """Configuration for hippocampus (trisynaptic circuit).
 
     The hippocampus has ~5x expansion from EC to DG, then compression back.
-
-    **Size Specification**:
-    Pure behavioral configuration. Sizes (input_size, dg_size, ca3_size, ca2_size, ca1_size)
-    are passed separately via the `sizes` dict parameter to __init__().
     """
 
     # =========================================================================
-    # CA3 RECURRENT STRENGTH AND BISTABILITY
+    # CA3 RECURRENT BISTABILITY
     # =========================================================================
-    ca3_recurrent_strength: float = 0.05  # Strength of recurrent connections (heavily reduced to prevent synchronization)
-    # Was 0.4 → 0.15 → 0.05 (progressive reduction to break pathological oscillations)
-
     # CA3 Bistable Neuron Parameters
     # Real CA3 pyramidal neurons have intrinsic bistability via I_NaP (persistent
     # sodium) and I_CAN (calcium-activated nonspecific cation) currents. These
@@ -888,7 +755,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # This creates bistability: once a neuron starts firing, the persistent
     # activity helps keep it firing, stabilizing attractor states.
     ca3_persistent_tau: float = 300.0  # Decay time constant (ms) - very slow decay
-    ca3_persistent_gain: float = 3.0  # Strong persistent contribution
+    ca3_persistent_gain: float = 0.0
 
     # =========================================================================
     # CONSOLIDATION
@@ -908,21 +775,19 @@ class HippocampusConfig(NeuralRegionConfig):
     slow_trace_contribution: float = 0.1  # Weight of slow trace in learning (10%)
 
     # =========================================================================
-    # FEEDBACK INHIBITION
-    # =========================================================================
-    # Feedback inhibition from interneurons scales with total CA3 activity.
-    # When many CA3 neurons fire, inhibition increases, making it harder
-    # for the same neurons to fire again.
-    ca3_feedback_inhibition: float = 0.3  # Feedback inhibition strength (normalized per neuron)
-
-    # =========================================================================
     # FEEDFORWARD INHIBITION (FFI)
     # =========================================================================
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
-    ffi_strength: float = 0.05  # REDUCED for sustained symbol presentation (was 0.3)
-    # When presenting same symbol for multiple timesteps (sequence learning),
-    # strong FFI blocks activity after first spike. Reduce to allow learning.
+    ffi_strength: float = 0.1  # Moderate strength to control CA3 hyperactivity
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
+
+    # =========================================================================
+    # TONIC INHIBITION (Ambient GABA)
+    # =========================================================================
+    # Real hippocampus has extrasynaptic GABA_A receptors (α5 subunit) that
+    # provide continuous background inhibition from GABA spillover.
+    # This prevents runaway excitation even when phasic inhibition fails.
+    tonic_inhibition: float = 0.01  # Constant background GABA conductance (normalized)
 
     # =========================================================================
     # GAP JUNCTIONS (Electrical Synapses)
@@ -933,7 +798,7 @@ class HippocampusConfig(NeuralRegionConfig):
     #
     # CA1 interneurons (~10-15% of CA1 population) have dense gap junction
     # networks that synchronize inhibition during theta-gamma nested oscillations.
-    gap_junction_strength: float = 0.01  # Coupling strength (biological: 0.05-0.2) - strongly reduced to prevent spontaneous oscillations from overwhelming task-driven input during early learning
+    gap_junction_strength: float = 0.01  # Coupling strength (biological: 0.05-0.2)
     gap_junction_threshold: float = 0.25  # Neighborhood connectivity threshold
     gap_junction_max_neighbors: int = 8  # Max neighbors per interneuron (biological: 4-12)
 
@@ -947,12 +812,10 @@ class HippocampusConfig(NeuralRegionConfig):
     # =========================================================================
     # HOMEOSTATIC INTRINSIC PLASTICITY
     # =========================================================================
-    # Adaptive gain control to maintain target firing rates (Turrigiano 2008)
-    # Prevents bootstrap problem and maintains stable activity during learning
+    # Adaptive gain control to maintain target firing rates
     target_firing_rate: float = 0.15  # 15% target for hippocampal neurons (increased for learning)
-    gain_learning_rate: float = 0.003  # Reduced 10x to prevent runaway (was 0.03, tried 0.0003 - too slow)
+    gain_learning_rate: float = 0.0001
     gain_tau_ms: float = 1500.0  # 1.5s averaging window (slower than cortex)
-    baseline_noise_current: float = 0.30  # Strong spontaneous activity to bootstrap silent network (increased from 0.15)
 
     # Adaptive threshold plasticity (complementary to gain adaptation)
     threshold_learning_rate: float = 0.02  # Moderate threshold adaptation
@@ -963,10 +826,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # LEARNING RATES
     # =========================================================================
     learning_rate: float = 0.1  # Fast one-shot learning for CA3 recurrent
-    ca3_ca2_learning_rate: float = 0.001  # Very weak CA3→CA2 (stability mechanism)
-    ec_ca2_learning_rate: float = 0.01  # Strong EC→CA2 direct (temporal encoding)
     ca2_ca1_learning_rate: float = 0.005  # Moderate CA2→CA1 (social context to output)
-    ec_ca1_learning_rate: float = 0.5  # Strong learning for EC→CA1 alignment
 
     # =========================================================================
     # NMDA RECEPTOR COINCIDENCE DETECTION
@@ -983,69 +843,13 @@ class HippocampusConfig(NeuralRegionConfig):
     ampa_ratio: float = 0.05  # Minimal ungated response (discrimination comes from NMDA)
 
     # =========================================================================
-    # OSCILLATIONS
-    # =========================================================================
-    # PHASE PRECESSION
-    # Phase diversity initialization: adds timing jitter to initial weights
-    # This seeds the emergence of phase preferences (otherwise all neurons identical)
-    phase_diversity_init: bool = True  # Initialize weights with timing diversity
-    phase_jitter_std_ms: float = 5.0  # Std dev of timing jitter (0-10ms)
-
-    # THETA-PHASE RESETS
-    # Reset persistent activity at the start of each theta cycle to prevent
-    # stale attractors from dominating. In real brains, theta troughs
-    # (encoding phase) partially reset the network.
-    theta_reset_persistent: bool = True  # Reset ca3_persistent at theta trough
-    theta_reset_fraction: float = 0.5  # How much to decay (0=none, 1=full)
-
-    # =========================================================================
-    # SHORT-TERM PLASTICITY (STP)
-    # =========================================================================
-    # Biologically, different hippocampal pathways have distinct STP properties:
-    # - Mossy Fibers (DG→CA3): STRONGLY FACILITATING - repeated DG activity
-    #   causes progressively stronger CA3 activation (U~0.03, τ_f~500ms)
-    # - CA3→CA2: DEPRESSING - stability mechanism, prevents runaway activity
-    # - CA2→CA1: FACILITATING - temporal sequences benefit from facilitation
-    # - Schaffer Collaterals (CA3→CA1): MIXED/DEPRESSING - high-frequency
-    #   activity causes depression, enabling novelty detection
-    # - EC→CA1 direct: DEPRESSING - initial stimulus is strongest
-    # - EC→CA2 direct: DEPRESSING - similar to EC→CA1
-    stp_mossy_type: STPType = STPType.FACILITATING_STRONG  # DG→CA3 (MF)
-    stp_ca3_ca2_type: STPType = STPType.DEPRESSING  # CA3→CA2 (stability)
-    stp_ca2_ca1_type: STPType = STPType.FACILITATING  # CA2→CA1 (sequences)
-    stp_ec_ca2_type: STPType = STPType.DEPRESSING  # EC→CA2 direct
-    stp_schaffer_type: STPType = STPType.DEPRESSING  # CA3→CA1 (SC)
-    stp_ec_ca1_type: STPType = STPType.DEPRESSING  # EC→CA1 direct
-    # CA3→CA3 recurrent: DEPRESSING - prevents frozen attractors
-    # Without STD, the same neurons fire every timestep because recurrent
-    # connections reinforce active neurons. With STD, frequently-firing
-    # synapses get temporarily weaker, allowing pattern transitions.
-    stp_ca3_recurrent_type: STPType = STPType.DEPRESSING_FAST
-
-    # =========================================================================
-    # SIZES
-    # =========================================================================
-    # EC Layer III input size (for direct EC→CA1 pathway)
-    # If 0, uses the same input as EC layer II
-    # If >0, expects separate raw sensory input for the temporoammonic path
-    ec_l3_input_size: int = 0
-
-    # =========================================================================
-    # SPARSITY
-    # =========================================================================
-    dg_sparsity: float = 0.10  # 10% active neurons (increased to prevent bottleneck while maintaining separation)
-    ca3_sparsity: float = 0.10  # 10% active
-    ca2_sparsity: float = 0.12  # 12% active (slightly higher than CA3)
-    ca1_sparsity: float = 0.15  # 15% active
-
-    # =========================================================================
     # SPIKE-FREQUENCY ADAPTATION (SFA)
     # =========================================================================
     # Real CA3 pyramidal neurons show strong adaptation: Ca²⁺ influx during
     # spikes activates K⁺ channels (I_AHP) that hyperpolarize the neuron.
     # This prevents the same neurons from dominating activity.
     # Inherited from base with hippocampus-specific override:
-    adapt_increment: float = 0.5  # Very strong (prevents CA3 seizure-like activity)
+    adapt_increment: float = 0.75  # DRASTICALLY increased from 0.5 to 0.75 (50% stronger) to suppress hyperactivity
     # adapt_tau: 100.0 (use base default)
 
     # =========================================================================
@@ -1066,13 +870,11 @@ class HippocampusConfig(NeuralRegionConfig):
     #
     # Set to 0.0 for instant processing (current behavior, backward compatible)
     # Set to biological values for realistic temporal dynamics and STDP timing
-    dg_to_ca3_delay_ms: float = 3.0  # DG→CA3 axonal delay (mossy fibers)
-    ca3_to_ca2_delay_ms: float = 2.0  # CA3→CA2 axonal delay
-    ca2_to_ca1_delay_ms: float = 2.0  # CA2→CA1 axonal delay
-    ca3_to_ca1_delay_ms: float = 3.0  # CA3→CA1 axonal delay (Schaffer collaterals)
-    ca3_recurrent_delay_ms: float = 10.0  # CA3→CA3 recurrent delay (CRITICAL for preventing synchronization)
-    # Biological: 3-5ms local recurrent
-    # Increased to 10ms to break synchronization (must be > refractory period of 5ms)
+    dg_to_ca3_delay_ms: float = 3.0    # DG→CA3 axonal delay (mossy fibers)
+    ca3_to_ca3_delay_ms: float = 10.0  # CA3→CA3 recurrent delay (CRITICAL for preventing synchronization)
+    ca3_to_ca2_delay_ms: float = 2.0   # CA3→CA2 axonal delay
+    ca2_to_ca1_delay_ms: float = 2.0   # CA2→CA1 axonal delay
+    ca3_to_ca1_delay_ms: float = 3.0   # CA3→CA1 axonal delay (Schaffer collaterals)
 
 
 # ============================================================================
@@ -1089,10 +891,6 @@ class PrefrontalConfig(NeuralRegionConfig):
     - Dopamine gates what enters working memory and what gets learned
     - High DA → update WM and learn new associations
     - Low DA → maintain WM and protect existing patterns
-
-    **Size Specification** (Semantic-First):
-    - Sizes passed via sizes dict: input_size, n_neurons
-    - Config contains only behavioral parameters (learning rates, time constants, etc.)
     """
 
     # =========================================================================
@@ -1106,28 +904,27 @@ class PrefrontalConfig(NeuralRegionConfig):
     # - D1: Update WM when DA high (new information is important)
     # - D2: Maintain WM when DA low (protect current state)
     # - Opponent modulation: D1 and D2 have opposite DA responses
-    use_d1_d2_subtypes: bool = False  # Enable D1/D2 receptor subtypes
     d1_fraction: float = 0.6  # Fraction of neurons that are D1-dominant (60%)
-    d1_da_gain: float = 0.5  # DA gain for D1 neurons (excitatory, 1.0 + gain*DA)
+    d1_da_gain: float = 0.3  # REDUCED from 0.5: DA gain for D1 neurons (excitatory)
     d2_da_gain: float = 0.3  # DA suppression for D2 neurons (inhibitory, 1.0 - gain*DA)
-    d2_output_weight: float = 0.5  # Weight of D2 output in competition (D1 - weight*D2)
 
     # =========================================================================
     # GAP JUNCTIONS
     # =========================================================================
-    gap_junction_strength: float = 0.02  # Very weak coupling to prevent synchronization (was 0.1, disabled for testing)
+    gap_junction_strength: float = 0.1  # Moderate coupling for TRN synchronization (enables 8-13 Hz alpha from Relay↔TRN loops)
     gap_junction_threshold: float = 0.3  # Neighborhood connectivity threshold
     gap_junction_max_neighbors: int = 8  # Max neighbors per interneuron (biological: 4-12)
 
     # =========================================================================
     # HOMEOSTATIC INTRINSIC PLASTICITY
     # =========================================================================
-    # Adaptive gain control to maintain target firing rates (Turrigiano 2008)
-    # Essential for PFC to overcome bootstrap problem and maintain working memory
-    target_firing_rate: float = 0.05  # 5% target (sparse working memory representations)
-    gain_learning_rate: float = 0.004  # Reduced 10x to prevent runaway (was 0.04, tried 0.0004 - too slow)
-    gain_tau_ms: float = 2000.0  # 2s averaging window (slow for working memory stability)
-    baseline_noise_current: float = 0.20  # Moderate spontaneous activity (increased from 0.05 for cold-start)
+    # Adaptive gain control to maintain target firing rates
+    # CRITICAL FIX: PFC needs HIGHER baseline firing (7-10%) for working memory maintenance.
+    # Setting target too low (5%) caused homeostatic collapse: activity 7% → gain reduced
+    # → activity drops → gain reduced further → -84% collapse in 100ms.
+    target_firing_rate: float = 0.10  # 10% target (working memory needs sustained activity)
+    gain_learning_rate: float = 0.001  # Very slow adaptation (was 0.004, caused collapse)
+    gain_tau_ms: float = 5000.0  # 5s averaging window (very slow for WM stability)
 
     # Adaptive threshold plasticity (complementary to gain adaptation)
     threshold_learning_rate: float = 0.02  # Slow for working memory stability
@@ -1139,8 +936,7 @@ class PrefrontalConfig(NeuralRegionConfig):
     # =========================================================================
     # PFC pyramidal neurons show adaptation. This helps prevent runaway
     # activity during sustained working memory maintenance.
-    # Inherited from base, with PFC-specific overrides:
-    adapt_increment: float = 0.2  # Moderate (maintains WM while adapting)
+    adapt_increment: float = 0.05  # Very weak (allows sustained WM activity)
     adapt_tau: float = 150.0  # Slower decay (longer timescale for WM)
 
     # =========================================================================
@@ -1161,19 +957,10 @@ class PrefrontalConfig(NeuralRegionConfig):
     # Working memory parameters
     wm_decay_tau_ms: float = 500.0  # How fast WM decays (slow!)
     wm_noise_std: float = 0.01  # Noise in WM maintenance
-    recurrent_delay_ms: float = 10.0
-    """PFC recurrent delay (prevents instant feedback oscillations).
-
-    Biological: 3-5ms local recurrent
-    Increased to 10ms to break synchronization (must be > refractory period of 5ms)
-    """  # PFC recurrent delay (prevents instant feedback oscillations)
+    recurrent_delay_ms: float = 10.0  # PFC recurrent delay (prevents instant feedback oscillations)
 
     # Gating parameters
     gate_threshold: float = 0.5  # DA level to open update gate
-
-    # Recurrent connections for WM maintenance
-    recurrent_strength: float = 0.15  # Self-excitation for persistence (reduced from 0.3 to prevent synchronization)
-    recurrent_inhibition: float = 0.02  # Lateral inhibition (reduced 10x to prevent over-suppression)
 
 
 # ============================================================================
@@ -1183,15 +970,12 @@ class PrefrontalConfig(NeuralRegionConfig):
 
 @dataclass
 class StriatumConfig(NeuralRegionConfig):
-    """Configuration specific to striatal regions (behavior only, no sizes).
+    """Configuration specific to striatal regions.
 
     Behavioral parameters:
     - Learning rates
-    - Action selection (lateral_inhibition, softmax_temperature)
-    - Exploration (ucb_coefficient, adaptive_exploration)
+    - Exploration
     - Neuromodulation (tonic_dopamine, d1/d2 sensitivity)
-    - Homeostatic plasticity (normalization_rate)
-    - Baseline pressure (baseline_pressure_rate, baseline_target_net)
     - Others as needed
 
     Key Features:
@@ -1208,10 +992,12 @@ class StriatumConfig(NeuralRegionConfig):
     # =========================================================================
     # For striatum: Maintain COMBINED D1+D2 rate, not independent rates
     # Biology: D1 and D2 naturally balance via competition and FSI inhibition
+    # BIOLOGY: Homeostatic plasticity operates on minutes-to-hours timescale
+    # Increased tau from 1.5s to 30s (should be hours, but 30s for testing)
+    # Reduced learning rate 10x to prevent rapid changes
     target_firing_rate: float = 0.08  # 8% target per pathway (16% combined for D1+D2)
-    gain_learning_rate: float = 0.004  # Reduced 10x to prevent runaway (was 0.04, tried 0.0004 - too slow)
-    gain_tau_ms: float = 1500.0  # 1.5s averaging window
-    baseline_noise_current: float = 0.15  # Moderate spontaneous activity (increased from 0.06 for cold-start)
+    gain_learning_rate: float = 0.0004  # REDUCED 10x: slow homeostatic adaptation
+    gain_tau_ms: float = 30000.0  # INCREASED 20x: 30s averaging window (biological: minutes to hours)
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (for MSN neurons)
@@ -1221,18 +1007,6 @@ class StriatumConfig(NeuralRegionConfig):
     threshold_max: float = 1.5  # Allow some increase above default
 
     # =========================================================================
-    # ARCHITECTURE: D1/D2 PATHWAY RATIO
-    # =========================================================================
-    d1_d2_ratio: float = 0.5  # 50/50 split between D1 and D2 MSNs
-
-    # =========================================================================
-    # BASELINE PRESSURE (drift towards balanced D1/D2)
-    # =========================================================================
-    baseline_pressure_enabled: bool = True
-    baseline_pressure_rate: float = 0.015
-    baseline_target_net: float = 0.0
-
-    # =========================================================================
     # ELIGIBILITY TRACES: MULTISCALE
     # =========================================================================
     # Biological: Synaptic tags (eligibility traces) have multiple timescales:
@@ -1240,45 +1014,18 @@ class StriatumConfig(NeuralRegionConfig):
     # - Slow traces (~60s): Consolidated tags from fast traces, enables credit
     #   assignment over multiple seconds (e.g., delayed rewards in RL tasks)
     # Combined eligibility: fast_trace + α × slow_trace enables both rapid and
-    # delayed credit assignment. Biology: Yagishita et al. (2014), Shindou et al. (2019)
-    use_multiscale_eligibility: bool = False  # Enable fast + slow eligibility traces
+    # delayed credit assignment.
     fast_eligibility_tau_ms: float = 500.0  # Fast trace decay (~500ms)
     slow_eligibility_tau_ms: float = 60000.0  # Slow trace decay (~60s)
-    eligibility_consolidation_rate: float = (
-        0.01  # Transfer rate from fast to slow (1% per timestep)
-    )
+    eligibility_consolidation_rate: float = 0.01  # Transfer rate from fast to slow (1% per timestep)
     slow_trace_weight: float = 0.3  # Weight of slow trace in combined eligibility
 
     # =========================================================================
     # EXPLORATION STRATEGIES
     # =========================================================================
-    # Softmax action selection with temperature scaling
-    softmax_action_selection: bool = True
-    softmax_temperature: float = 2.0
-
-    # Upper Confidence Bound (UCB) exploration
-    # Encourages exploration of less-visited actions
-    ucb_exploration: bool = True
-    ucb_coefficient: float = 2.0
-
     # Adaptive exploration based on recent performance
     # Increases exploration when performance drops
-    adaptive_exploration: bool = True
     performance_window: int = 10
-
-    # Uncertainty-driven exploration
-    uncertainty_temperature: float = 0.05
-    min_exploration_boost: float = 0.05
-
-    # =========================================================================
-    # FEEDFORWARD INHIBITION (FFI): FAST-SPIKING INTERNEURONS (FSI)
-    # =========================================================================
-    # FSI are ~2% of striatal neurons (vs 95% MSNs) but critical for timing:
-    # - Feedforward inhibition sharpens action selection
-    # - Gap junction networks enable ultra-fast synchronization (<0.1ms)
-    # - Synchronize MSN activity during beta oscillations (13-30 Hz)
-    # - Critical for action initiation timing and motor control
-    fsi_ratio: float = 0.02  # FSI as fraction of total striatal neurons (2%)
 
     # =========================================================================
     # GAP JUNCTIONS
@@ -1287,24 +1034,6 @@ class StriatumConfig(NeuralRegionConfig):
     gap_junction_strength: float = 0.15  # Biological: 0.05-0.3
     gap_junction_threshold: float = 0.25  # Neighborhood inference threshold
     gap_junction_max_neighbors: int = 10  # Biological: 4-12 neighbors
-
-    # =========================================================================
-    # GOAL-CONDITIONED VALUES
-    # =========================================================================
-    # Enable PFC goal context to modulate striatal action values
-    # Biology: PFC → Striatum projections gate action selection by goal context
-    use_goal_conditioning: bool = True  # Enable goal-conditioned value learning
-
-    # =========================================================================
-    # HOMEOSTATIC PLASTICITY
-    # =========================================================================
-    normalization_rate: float = 0.01  # Reduced 10x to prevent runaway (was 0.1, tried 0.001 - too slow)
-
-    # =========================================================================
-    # LATERAL INHIBITION (ACTION SELECTION)
-    # =========================================================================
-    lateral_inhibition: bool = True
-    inhibition_strength: float = 2.0
 
     # =========================================================================
     # LEARNING RATES
@@ -1318,37 +1047,8 @@ class StriatumConfig(NeuralRegionConfig):
     # NEUROMODULATION: TONIC DOPAMINE
     # =========================================================================
     tonic_dopamine: float = 0.3
-    tonic_modulates_d1_gain: bool = True
-    tonic_d1_gain_scale: float = 0.5
-    tonic_modulates_exploration: bool = True
-    tonic_exploration_scale: float = 0.1
-
     min_tonic_dopamine: float = 0.1
     max_tonic_dopamine: float = 0.5
-
-    # =========================================================================
-    # OSCILLATIONS: BETA MODULATION OF D1/D2 BALANCE
-    # =========================================================================
-    # Beta amplitude modulates D1/D2 balance for action maintenance vs switching
-    # High beta → action persistence (D1 dominant, D2 suppressed)
-    # Low beta → action flexibility (D2 effective, D1 reduced)
-    beta_modulation_strength: float = 0.3  # [0, 1] - strength of beta influence
-
-    # =========================================================================
-    # SHORT-TERM PLASTICITY (STP)
-    # =========================================================================
-    # Biologically, different striatal input pathways have distinct STP properties:
-    # - Cortex→MSNs: DEPRESSING (U=0.4) - prevents sustained cortical input from
-    #   saturating striatum, enables novelty detection (fresh inputs get stronger)
-    # - Thalamus→MSNs: WEAK FACILITATION (U=0.25) - phasic input amplification,
-    #   balances phasic (thalamus) and tonic (cortex) command signals
-
-    # Heterogeneous STP
-    # Biological: Within same pathway, U varies 10-fold across synapses (Dobrunz & Stevens 1997)
-    # Enables more realistic synaptic diversity and temporal dynamics
-    heterogeneous_stp: bool = False  # Enable per-synapse STP parameter sampling
-    stp_variability: float = 0.3  # Coefficient of variation (0.2-0.5 typical)
-    stp_seed: Optional[int] = None  # Random seed for reproducibility
 
     # =========================================================================
     # TEMPORAL DYNAMICS & DELAYS
@@ -1379,19 +1079,14 @@ class ThalamusConfig(NeuralRegionConfig):
     - Mode switching (burst vs tonic)
     - Gain modulation (norepinephrine)
     - Spatial filtering
-
-    **Pure Behavioral Configuration**:
-    Contains ONLY behavioral parameters (learning rates, gains, thresholds).
-    Sizes (relay_size, trn_size, input_size) are passed separately at instantiation.
     """
 
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    target_firing_rate: float = 0.08  # Target firing rate for homeostatic plasticity (8% sparsity)
-    gain_learning_rate: float = 0.0001  # DRASTICALLY reduced from 0.003 - let conductance scales work first
-    gain_tau_ms: float = 10000.0  # Increased from 1000ms to 10s - very slow adaptation
-    baseline_noise_current: float = 0.01  # Reduced from 0.05 to prevent 400Hz oscillations
+    target_firing_rate: float = 0.08  # Target firing rate for homeostatic plasticity
+    gain_learning_rate: float = 0.0001  # Let conductance scales work first
+    gain_tau_ms: float = 10000.0  # Very slow adaptation
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
@@ -1415,7 +1110,7 @@ class ThalamusConfig(NeuralRegionConfig):
     # =========================================================================
     # GAP JUNCTIONS: TRN INTERNEURONS
     # =========================================================================
-    gap_junction_strength: float = 0.03  # Very weak coupling to prevent synchronization (was 0.15, disabled for testing)
+    gap_junction_strength: float = 0.10  # Moderate coupling for alpha synchronization (8-13 Hz)
     gap_junction_threshold: float = 0.3  # Neighborhood connectivity threshold
     gap_junction_max_neighbors: int = 8  # Max neighbors per interneuron (biological: 4-12)
 
@@ -1435,10 +1130,17 @@ class ThalamusConfig(NeuralRegionConfig):
     # TEMPORAL DYNAMICS & DELAYS
     # =========================================================================
     trn_recurrent_delay_ms: float = 8.0
-    """TRN→TRN recurrent inhibition delay (prevents instant feedback oscillations).
+    """TRN→TRN recurrent inhibition delay (prevents instant feedback).
 
     Biological: 2-3ms local inhibition
-    Increased to 8ms to break synchronization (must be > refractory period of 5ms)
+    Set to 8ms to stabilize dynamics (must be > refractory period of 5ms)
+
+    Note: For alpha oscillations (8-12 Hz), the relay→TRN→relay loop needs ~80-120ms total.
+    This delay contributes to the overall loop timing. Additional delays come from:
+    - Relay → TRN: ~2-5ms (synaptic)
+    - TRN → Relay: ~3-5ms (inhibitory synaptic)
+    - Gap junction synchronization: <1ms (electrical)
+    - Total loop: Gap junctions + recurrent inhibition create alpha rhythm
     """
 
 
@@ -1470,51 +1172,13 @@ class BrainConfig:
     """Simulation timestep in milliseconds. Smaller = more precise but slower.
 
     **CRITICAL**: This is the single source of truth for temporal resolution.
-    All decay factors, delays, and oscillators derive from this value.
+    All decay factors, and delays derive from this value.
 
     Can be changed adaptively during simulation via brain.set_timestep(new_dt).
     Typical values:
     - 1.0ms: Standard biological timescale (Brian2, most research)
     - 0.1ms: High-resolution for detailed temporal dynamics
     - 10ms: Fast replay for memory consolidation
-    """
-
-    # =========================================================================
-    # OSCILLATOR FREQUENCIES
-    # =========================================================================
-    delta_frequency_hz: float = 2.0
-    """Delta oscillation frequency. Range: 0.5-4 Hz (biological).
-    Deep sleep, slow-wave sleep, memory consolidation."""
-
-    theta_frequency_hz: float = 8.0
-    """Theta oscillation frequency. Range: 4-10 Hz (biological).
-    Memory encoding/retrieval rhythm, spatial navigation, phase coding."""
-
-    alpha_frequency_hz: float = 10.0
-    """Alpha oscillation frequency. Range: 8-13 Hz (biological).
-    Attention gating, inhibitory control, sensory suppression."""
-
-    beta_frequency_hz: float = 20.0
-    """Beta oscillation frequency. Range: 13-30 Hz (biological).
-    Motor control, active cognitive processing, decision-making."""
-
-    gamma_frequency_hz: float = 40.0
-    """Gamma oscillation frequency. Range: 30-100 Hz (biological).
-    Feature binding, local processing, attention, consciousness."""
-
-    ripple_frequency_hz: float = 150.0
-    """Sharp-wave ripple frequency. Range: 100-200 Hz (biological).
-    Memory replay during rest/sleep, hippocampal consolidation."""
-
-    # Oscillator configuration
-    oscillator_couplings: Optional[List[OscillatorCoupling]] = None
-    """Custom cross-frequency couplings (e.g., delta-theta, alpha-gamma).
-
-    If None, uses default theta-gamma coupling (coupling_strength=0.8).
-    If empty list [], disables all coupling.
-    If provided, replaces defaults with custom couplings.
-
-    See thalia.brain.oscillator.OscillatorCoupling for full parameters.
     """
 
     # =========================================================================
@@ -1529,14 +1193,6 @@ class BrainConfig:
             f"  Data type: {self.dtype}",
             f"  Timestep: {self.dt_ms} ms",
             "",
-            "  Oscillator Frequencies:",
-            f"    Delta:  {self.delta_frequency_hz:>5.1f} Hz",
-            f"    Theta:  {self.theta_frequency_hz:>5.1f} Hz",
-            f"    Alpha:  {self.alpha_frequency_hz:>5.1f} Hz",
-            f"    Beta:   {self.beta_frequency_hz:>5.1f} Hz",
-            f"    Gamma:  {self.gamma_frequency_hz:>5.1f} Hz",
-            f"    Ripple: {self.ripple_frequency_hz:>5.1f} Hz",
-            "",
         ]
         return "\n".join(lines)
 
@@ -1549,23 +1205,3 @@ class BrainConfig:
         # Timing validation
         if self.dt_ms <= 0:
             raise ValueError(f"dt_ms must be positive, got {self.dt_ms}")
-
-        # Oscillator frequency validation (biological ranges)
-        if not (0.5 <= self.delta_frequency_hz <= 4.0):
-            raise ValueError(
-                f"delta_frequency_hz should be 0.5-4 Hz, got {self.delta_frequency_hz}"
-            )
-        if not (4.0 <= self.theta_frequency_hz <= 10.0):
-            raise ValueError(f"theta_frequency_hz should be 4-10 Hz, got {self.theta_frequency_hz}")
-        if not (8.0 <= self.alpha_frequency_hz <= 13.0):
-            raise ValueError(f"alpha_frequency_hz should be 8-13 Hz, got {self.alpha_frequency_hz}")
-        if not (13.0 <= self.beta_frequency_hz <= 30.0):
-            raise ValueError(f"beta_frequency_hz should be 13-30 Hz, got {self.beta_frequency_hz}")
-        if not (30.0 <= self.gamma_frequency_hz <= 100.0):
-            raise ValueError(
-                f"gamma_frequency_hz should be 30-100 Hz, got {self.gamma_frequency_hz}"
-            )
-        if not (100.0 <= self.ripple_frequency_hz <= 200.0):
-            raise ValueError(
-                f"ripple_frequency_hz should be 100-200 Hz, got {self.ripple_frequency_hz}"
-            )

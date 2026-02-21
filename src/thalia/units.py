@@ -65,6 +65,28 @@ CurrentTensor = NewType("CurrentTensor", torch.Tensor)
 """Tensor of currents [n_neurons] or [batch, n_neurons]."""
 
 # =============================================================================
+# GAP JUNCTION TYPES
+# =============================================================================
+
+GapJunctionConductance = NewType("GapJunctionConductance", torch.Tensor)
+"""Gap junction conductance tensor [n_neurons].
+
+Gap junctions are electrical synapses with bidirectional current flow.
+Unlike chemical synapses with fixed reversals, gap junctions couple to
+neighbor voltages dynamically.
+"""
+
+GapJunctionReversal = NewType("GapJunctionReversal", torch.Tensor)
+"""Dynamic reversal potential for gap junctions [n_neurons].
+
+For gap junctions, the "reversal" is the weighted average of neighbor
+voltages, making it time-varying and neuron-specific.
+
+Physics: I_gap[i] = g_gap × (E_eff[i] - V[i])
+    where E_eff[i] = Σ_j [g_gap[i,j] × V[j]] / Σ_j g_gap[i,j]
+"""
+
+# =============================================================================
 # TEMPORAL UNITS
 # =============================================================================
 
@@ -169,6 +191,9 @@ __all__ = [
     "VoltageTensor",
     "ConductanceTensor",
     "CurrentTensor",
+    # Gap junction types
+    "GapJunctionConductance",
+    "GapJunctionReversal",
     # Conversions
     "conductance_to_current",
     "current_to_conductance_invalid",

@@ -151,7 +151,7 @@ class NeuralRegionRegistry:
         name: RegionName,
         config: NeuralRegionConfig,
         population_sizes: PopulationSizes,
-        **kwargs: Any,
+        region_name: RegionName,
     ) -> _NeuralRegion:
         """Create a region instance.
 
@@ -159,7 +159,7 @@ class NeuralRegionRegistry:
             name: Region name or alias
             config: Configuration for the region
             population_sizes: Multi-input sizes dict
-            **kwargs: Additional arguments
+            region_name: Name to assign to the region instance
 
         Returns:
             Instantiated region
@@ -175,7 +175,7 @@ class NeuralRegionRegistry:
             raise ValueError(f"Region '{name}' not registered. Available regions: {available}")
 
         try:
-            return region_class(config=config, population_sizes=population_sizes, **kwargs)
+            return region_class(config=config, population_sizes=population_sizes, region_name=region_name)
 
         except TypeError as e:
             sig = inspect.signature(region_class.__init__)

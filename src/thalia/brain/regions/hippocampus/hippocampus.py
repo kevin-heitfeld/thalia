@@ -27,32 +27,36 @@ This implements the classic hippocampal trisynaptic circuit for episodic memory:
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.brain.configs import HippocampusConfig
+from thalia.brain.regions.population_names import HippocampusPopulation
 from thalia.components import (
     NeuronFactory,
-    ShortTermPlasticity,
+    NeuromodulatorReceptor,
     WeightInitializer,
-    get_stp_config,
     GapJunctionConfig,
     GapJunctionCoupling,
 )
-from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
-from thalia.learning.homeostasis import (
-    UnifiedHomeostasis,
-    UnifiedHomeostasisConfig,
+from thalia.components.synapses.stp import (
+    MOSSY_FIBER_PRESET,
+    SCHAFFER_COLLATERAL_PRESET,
 )
-from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
+from thalia.learning import (
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
+    UnifiedHomeostasis,
+)
 from thalia.typing import (
-    PopulationName,
+    NeuromodulatorInput,
     PopulationSizes,
-    RegionSpikesDict,
-    SpikesSourceKey,
+    RegionName,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
 )
 from thalia.units import ConductanceTensor
 from thalia.utils import (
@@ -60,7 +64,6 @@ from thalia.utils import (
     clamp_weights,
     compute_ach_recurrent_suppression,
     compute_ne_gain,
-    compute_learning_rate_modulation,
 )
 
 from .inhibitory_network import HippocampalInhibitoryNetwork
@@ -124,44 +127,29 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     - EC direct: Current sensory input
     """
 
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "dg": "dg_size",
-        "ca3": "ca3_size",
-        "ca2": "ca2_size",
-        "ca1": "ca1_size",
-    }
-
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: HippocampusConfig, population_sizes: PopulationSizes):
+    def __init__(self, config: HippocampusConfig, population_sizes: PopulationSizes, region_name: RegionName):
         """Initialize trisynaptic hippocampus."""
-        super().__init__(config=config, population_sizes=population_sizes)
+        super().__init__(config, population_sizes, region_name)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.dg_size = population_sizes["dg_size"]
-        self.ca3_size = population_sizes["ca3_size"]
-        self.ca2_size = population_sizes["ca2_size"]
-        self.ca1_size = population_sizes["ca1_size"]
-
-        # Calculate inhibitory size for septal input routing
-        # Septal GABA targets OLM cells (30% of total inhibitory, 25% of pyramidal)
-        # Total OLM = CA1_OLM + CA3_OLM
-        olm_fraction = 0.30  # OLM cells are 30% of inhibitory population
-        inhibitory_fraction = 0.25  # Total inhibitory is 25% of pyramidal count
-        self.inhibitory_size = int((self.ca1_size + self.ca3_size) * inhibitory_fraction * olm_fraction)
+        self.dg_size = population_sizes[HippocampusPopulation.DG.value]
+        self.ca3_size = population_sizes[HippocampusPopulation.CA3.value]
+        self.ca2_size = population_sizes[HippocampusPopulation.CA2.value]
+        self.ca1_size = population_sizes[HippocampusPopulation.CA1.value]
 
         # =====================================================================
-        # INITIALIZE STATE FIELDS
+        # INTERNAL STATE VARIABLES (for dynamics and plasticity)
         # =====================================================================
-        # Layer activities (current spikes)
-        self.dg_spikes: Optional[torch.Tensor] = None
-        self.ca3_spikes: Optional[torch.Tensor] = None
-        self.ca2_spikes: Optional[torch.Tensor] = None
-        self.ca1_spikes: Optional[torch.Tensor] = None
+        # Previous encoding/retrieval modulation (from OLM dynamics)
+        # Used to maintain causal flow: t-1 OLM activity determines t encoding/retrieval
+        # These are simple scalar state variables (not tensors), no buffers needed
+        self._prev_encoding_mod: float = 0.5  # Default: balanced state
 
         # CA3 bistable persistent activity trace
         # Models I_NaP/I_CAN currents that allow neurons to maintain firing
@@ -181,33 +169,102 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # GAP JUNCTIONS (Electrical Synapses) - Config Setup
         # =====================================================================
-        # Store gap junction config BEFORE weight initialization so it can be
-        # used during _init_circuit_weights() to create gap junction module.
-        self._gap_config_ca1 = GapJunctionConfig(
-            coupling_strength=config.gap_junction_strength,
-            connectivity_threshold=config.gap_junction_threshold,
-            max_neighbors=config.gap_junction_max_neighbors,
-            interneuron_only=True,
-        )
+        # Gap junction module will be initialized in _init_circuit_weights() after synaptic weights are set up
         self.gap_junctions_ca1: Optional[GapJunctionCoupling] = None
 
         # Override weights with trisynaptic circuit weights
         self._init_circuit_weights()
 
+        # =====================================================================
+        # HIPPOCAMPAL EXCITATORY NEURONS (LIF with adaptation for sparse coding)
+        # =====================================================================
         # Create LIF neurons for each layer using factory functions
-        # DG and CA1: Standard pyramidal neurons
-        self.dg_neurons = NeuronFactory.create_pyramidal_neurons(self.dg_size, self.device)
+        # DG: Sparse coding requires high threshold
+        self.dg_neurons = NeuronFactory.create_pyramidal_neurons(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.DG.value,
+            n_neurons=self.dg_size,
+            device=self.device,
+            v_threshold=0.9,
+            adapt_increment=0.30,  # Strong adaptation to enforce sparsity
+            tau_adapt=120.0,  # Slow decay to persist across pattern presentations
+        )
         # CA3 gets spike-frequency adaptation to prevent frozen attractors
         self.ca3_neurons = NeuronFactory.create_pyramidal_neurons(
-            self.ca3_size,
-            self.device,
-            adapt_increment=config.adapt_increment,  # SFA enabled!
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.CA3.value,
+            n_neurons=self.ca3_size,
+            device=self.device,
+            adapt_increment=config.adapt_increment,
             tau_adapt=config.adapt_tau,
+            v_threshold=1.25,
         )
-        # CA2: Social memory and temporal context (standard pyramidal)
-        self.ca2_neurons = NeuronFactory.create_pyramidal_neurons(self.ca2_size, self.device)
+        # CA2: Social memory and temporal context - higher threshold for selectivity
+        self.ca2_neurons = NeuronFactory.create_pyramidal_neurons(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.CA2.value,
+            n_neurons=self.ca2_size,
+            device=self.device,
+            v_threshold=1.6,
+            adapt_increment=0.25,  # Moderate adaptation for selectivity
+            tau_adapt=100.0,  # Medium decay for temporal integration
+        )
         # CA1: Output layer
-        self.ca1_neurons = NeuronFactory.create_pyramidal_neurons(self.ca1_size, self.device)
+        self.ca1_neurons = NeuronFactory.create_pyramidal_neurons(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.CA1.value,
+            n_neurons=self.ca1_size,
+            device=self.device,
+            v_threshold=1.0,
+            adapt_increment=0.20,  # Moderate adaptation to prevent runaway activity
+            tau_adapt=80.0,  # Faster decay for responsive output layer
+        )
+
+        # =====================================================================
+        # HIPPOCAMPAL INHIBITORY NETWORKS (with OLM cells for emergent theta)
+        # =====================================================================
+        # DG inhibitory network: Minimal inhibition for pattern separation
+        # Moderate at 0.20 to prevent avalanches while maintaining sparse coding
+        self.dg_inhibitory = HippocampalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.DG_INHIBITORY.value,
+            pyr_size=self.dg_size,
+            total_inhib_fraction=0.20,
+            dt_ms=config.dt_ms,
+            device=str(self.device),
+        )
+
+        # CA3 inhibitory network: Strong inhibition for pattern completion stability
+        # INHIBITION INCREASED: 0.50 → 0.65 to control runaway recurrent activity (+563% growth)
+        self.ca3_inhibitory = HippocampalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.CA3_INHIBITORY.value,
+            pyr_size=self.ca3_size,
+            total_inhib_fraction=0.65,
+            dt_ms=config.dt_ms,
+            device=str(self.device),
+        )
+
+        # CA2 inhibitory network: Social/temporal context processing
+        self.ca2_inhibitory = HippocampalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.CA2_INHIBITORY.value,
+            pyr_size=self.ca2_size,
+            total_inhib_fraction=0.15,
+            dt_ms=config.dt_ms,
+            device=str(self.device),
+        )
+
+        # CA1 inhibitory network: PV, OLM, Bistratified cells
+        # OLM cells phase-lock to septal GABA → emergent encoding/retrieval
+        self.ca1_inhibitory = HippocampalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=HippocampusPopulation.CA1_INHIBITORY.value,
+            pyr_size=self.ca1_size,
+            total_inhib_fraction=0.30,
+            dt_ms=config.dt_ms,
+            device=str(self.device),
+        )
 
         # Stimulus gating module (transient inhibition at stimulus changes)
         self.stimulus_gating = StimulusGating(
@@ -217,98 +274,19 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         )
 
         # =====================================================================
-        # HIPPOCAMPAL INHIBITORY NETWORKS (with OLM cells for emergent theta)
+        # TEMPORAL STATE BUFFERS (Delay Buffers for All State)
         # =====================================================================
-        # CA1 inhibitory network: PV, OLM, Bistratified cells
-        # OLM cells phase-lock to septal GABA → emergent encoding/retrieval
-        self.ca1_inhibitory = HippocampalInhibitoryNetwork(
-            region_name="ca1",
-            pyr_size=self.ca1_size,
-            total_inhib_fraction=0.25,  # 25% inhibitory (20% of total neurons)
-            device=str(self.device),
-            dt_ms=config.dt_ms,
-        )
+        # Spike state buffers for all subregions
+        self._dg_spike_buffer = CircularDelayBuffer(1, self.dg_size, self.device, torch.bool)
+        self._ca3_spike_buffer = CircularDelayBuffer(1, self.ca3_size, self.device, torch.bool)
+        self._ca2_spike_buffer = CircularDelayBuffer(1, self.ca2_size, self.device, torch.bool)
+        self._ca1_spike_buffer = CircularDelayBuffer(1, self.ca1_size, self.device, torch.bool)
 
-        # CA3 inhibitory network
-        self.ca3_inhibitory = HippocampalInhibitoryNetwork(
-            region_name="ca3",
-            pyr_size=self.ca3_size,
-            total_inhib_fraction=0.25,
-            device=str(self.device),
-            dt_ms=config.dt_ms,
-        )
-
-        # =====================================================================
-        # SHORT-TERM PLASTICITY (STP)
-        # =====================================================================
-        # Mossy Fibers (DG→CA3): Strong facilitation
-        self.stp_mossy = ShortTermPlasticity(
-            n_pre=self.dg_size,
-            n_post=self.ca3_size,
-            config=get_stp_config("mossy_fiber"),
-            per_synapse=True,
-        )
-        self.stp_mossy.to(self.device)
-
-        # Schaffer Collaterals (CA3→CA1): Depression
-        # High-frequency CA3 activity depresses CA1 input - allows novelty
-        # detection (novel patterns don't suffer from adaptation)
-        self.stp_schaffer = ShortTermPlasticity(
-            n_pre=self.ca3_size,
-            n_post=self.ca1_size,
-            config=get_stp_config("schaffer_collateral"),
-            per_synapse=True,
-        )
-        self.stp_schaffer.to(self.device)
-
-        # EC→CA1 Direct (Temporoammonic): Depression
-        # Initial input is strongest - matched comparison happens on first
-        # presentation before adaptation kicks in
-        # Use ec_l3_input_size if set (for separate raw sensory input),
-        # otherwise fall back to input_size
-        self.stp_ec_ca1 = ShortTermPlasticity(
-            n_pre=config.ec_l3_input_size,
-            n_post=self.ca1_size,
-            config=get_stp_config("ec_ca1"),
-            per_synapse=True,
-        )
-        self.stp_ec_ca1.to(self.device)
-
-        # =========================================================================
-        # CA2 PATHWAYS: Social memory and temporal context
-        # =========================================================================
-        # CA3→CA2: DEPRESSION - stability mechanism
-        # Weak plasticity (10x lower than typical) prevents runaway activity
-        # and makes CA2 resistant to CA3 pattern completion interference
-        self.stp_ca3_ca2 = ShortTermPlasticity(
-            n_pre=self.ca3_size,
-            n_post=self.ca2_size,
-            config=get_stp_config("schaffer_collateral"),  # Use Schaffer preset (depressing)
-            per_synapse=True,
-        )
-        self.stp_ca3_ca2.to(self.device)
-
-        # CA2→CA1: FACILITATING - temporal sequences
-        # Repeated CA2 activity facilitates transmission to CA1,
-        # supporting temporal context and sequence encoding
-        self.stp_ca2_ca1 = ShortTermPlasticity(
-            n_pre=self.ca2_size,
-            n_post=self.ca1_size,
-            config=get_stp_config("mossy_fiber"),  # Use mossy fiber preset (facilitating)
-            per_synapse=True,
-        )
-        self.stp_ca2_ca1.to(self.device)
-
-        # EC→CA2 Direct: DEPRESSION - similar to EC→CA1
-        # Direct cortical input to CA2 for temporal encoding
-        # Created with size=0, will grow when sources added
-        self.stp_ec_ca2 = ShortTermPlasticity(
-            n_pre=0,  # Grow when sources added
-            n_post=self.ca2_size,
-            config=get_stp_config("ec_ca1"),  # Use EC→CA1 preset (depressing)
-            per_synapse=True,
-        )
-        self.stp_ec_ca2.to(self.device)
+        # Membrane state buffers for all subregions
+        self._dg_membrane_buffer = CircularDelayBuffer(1, self.dg_size, self.device, torch.float32)
+        self._ca3_membrane_buffer = CircularDelayBuffer(1, self.ca3_size, self.device, torch.float32)
+        self._ca2_membrane_buffer = CircularDelayBuffer(1, self.ca2_size, self.device, torch.float32)
+        self._ca1_membrane_buffer = CircularDelayBuffer(1, self.ca1_size, self.device, torch.float32)
 
         # =====================================================================
         # INTER-LAYER AXONAL DELAYS (using CircularDelayBuffer utility)
@@ -321,10 +299,17 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # Initialize CircularDelayBuffer for each pathway
         dg_ca3_delay_steps = int(config.dg_to_ca3_delay_ms / config.dt_ms)
+        ca3_ca3_delay_steps = int(config.ca3_to_ca3_delay_ms / config.dt_ms)
         ca3_ca2_delay_steps = int(config.ca3_to_ca2_delay_ms / config.dt_ms)
         ca2_ca1_delay_steps = int(config.ca2_to_ca1_delay_ms / config.dt_ms)
         ca3_ca1_delay_steps = int(config.ca3_to_ca1_delay_ms / config.dt_ms)
-        ca3_recurrent_delay_steps = int(config.ca3_recurrent_delay_ms / config.dt_ms)
+
+        # Store delay steps for conditional checks
+        self._dg_ca3_delay_steps = dg_ca3_delay_steps
+        self._ca3_ca3_delay_steps = ca3_ca3_delay_steps
+        self._ca3_ca2_delay_steps = ca3_ca2_delay_steps
+        self._ca2_ca1_delay_steps = ca2_ca1_delay_steps
+        self._ca3_ca1_delay_steps = ca3_ca1_delay_steps
 
         self._dg_ca3_buffer = CircularDelayBuffer(
             max_delay=dg_ca3_delay_steps,
@@ -332,8 +317,20 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             device=str(self.device),
             dtype=torch.bool,
         )
+        self._ca3_ca3_buffer = CircularDelayBuffer(
+            max_delay=ca3_ca3_delay_steps,
+            size=self.ca3_size,
+            device=str(self.device),
+            dtype=torch.bool,
+        )
         self._ca3_ca2_buffer = CircularDelayBuffer(
             max_delay=ca3_ca2_delay_steps,
+            size=self.ca3_size,
+            device=str(self.device),
+            dtype=torch.bool,
+        )
+        self._ca3_ca1_buffer = CircularDelayBuffer(
+            max_delay=ca3_ca1_delay_steps,
             size=self.ca3_size,
             device=str(self.device),
             dtype=torch.bool,
@@ -344,25 +341,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             device=str(self.device),
             dtype=torch.bool,
         )
-        self._ca3_ca1_buffer = CircularDelayBuffer(
-            max_delay=ca3_ca1_delay_steps,
-            size=self.ca3_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
-        self._ca3_recurrent_buffer = CircularDelayBuffer(
-            max_delay=ca3_recurrent_delay_steps,
-            size=self.ca3_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
-
-        # Store delay steps for conditional checks
-        self._dg_ca3_delay_steps = dg_ca3_delay_steps
-        self._ca3_ca2_delay_steps = ca3_ca2_delay_steps
-        self._ca2_ca1_delay_steps = ca2_ca1_delay_steps
-        self._ca3_ca1_delay_steps = ca3_ca1_delay_steps
-        self._ca3_recurrent_delay_steps = ca3_recurrent_delay_steps
 
         # =====================================================================
         # CONSOLIDATION MODE
@@ -376,19 +354,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # PLASTICITY AND HOMEOSTASIS
         # =====================================================================
-        # Homeostasis for CA3 recurrent synaptic scaling
-        self.homeostasis = UnifiedHomeostasis(UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * self.ca3_size,
-            w_min=config.w_min,
-            w_max=config.w_max,
-            soft_normalization=config.soft_normalization,
-            normalization_rate=config.normalization_rate,
-            device=str(self.device),
-        ))
-
         # Intrinsic plasticity state (threshold adaptation)
-        self._ca3_activity_history: Optional[torch.Tensor] = None
-        self._ca3_threshold_offset: Optional[torch.Tensor] = None
+        self._ca3_activity_history: torch.Tensor = torch.zeros(self.ca3_size, device=self.device)
+        self._ca3_threshold_offset: torch.Tensor = torch.zeros(self.ca3_size, device=self.device)
 
         # Synaptic tagging for emergent priority
         # Tags mark recently-active synapses for consolidation
@@ -396,7 +364,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self.synaptic_tagging = SynapticTagging(
             n_neurons=self.ca3_size,
             device=self.device,
-            tag_decay=0.95,  # ~20 timestep lifetime
+            tag_decay=0.95,
             tag_threshold=0.1,
         )
 
@@ -410,69 +378,48 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         )
 
         # =========================================================================
+        # ADAPTIVE HOMEOSTATIC SCALING (Biologically-Inspired)
+        # =========================================================================
+        # Based on Turrigiano & Nelson (2004): Homeostatic synaptic scaling
+        # - Timescale: Hours to days in biology, 10-30 seconds here (practical speedup)
+        # - Mechanism: Multiplicative scaling based on average firing rate
+        # - Key property: Preserves selectivity (relative weight ratios maintained)
+
+        # Track average firing rate over sliding window
+        self._homeostasis_counter: int = 0
+        self._homeostasis_interval: int = 1000  # Check every 1 second (1000ms)
+        self._homeostasis_window_size: int = 30  # Average over 30 checks = 30 seconds
+        self._homeostasis_firing_history: list = []  # Sliding window of avg firing rates
+
+        # =========================================================================
         # MULTI-TIMESCALE CONSOLIDATION
         # =========================================================================
-        self._ca3_ca3_fast: Optional[torch.Tensor] = None
-        self._ca3_ca3_slow: Optional[torch.Tensor] = None
-        self._ca3_ca2_fast: Optional[torch.Tensor] = None
-        self._ca3_ca2_slow: Optional[torch.Tensor] = None
-        # NOTE: EC→CA1 and EC→CA2 learning handled by per-source plasticity rules
-        # No separate consolidation traces needed in multi-source architecture
-        self._ca2_ca1_fast: Optional[torch.Tensor] = None
-        self._ca2_ca1_slow: Optional[torch.Tensor] = None
-
-        # Initialize fast and slow eligibility traces for multi-timescale learning
-        # Pattern: {pathway}_fast and {pathway}_slow for each learned connection
-
         # DG→CA3 (mossy fiber pathway - one-shot binding)
         # Biology: Mossy fiber synapses are "detonator" synapses with powerful LTP.
         # They bind sparse DG codes to CA3 attractors.
-        self._dg_ca3_fast = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
-        self._dg_ca3_slow = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
+        self._dg_ca3_fast: torch.Tensor = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
+        self._dg_ca3_slow: torch.Tensor = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
 
         # CA3 recurrent (autoassociative memory)
-        self._ca3_ca3_fast = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
-        self._ca3_ca3_slow = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
+        self._ca3_ca3_fast: torch.Tensor = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
+        self._ca3_ca3_slow: torch.Tensor = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
 
         # CA3→CA2 (temporal context)
-        self._ca3_ca2_fast = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
-        self._ca3_ca2_slow = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
-
-        # NOTE: EC→CA1 and EC→CA2 learning handled by per-source weights (cortex_ca1,
-        # thalamus_ca1, etc.) with their own plasticity rules. Multi-source architecture
-        # eliminates need for single EC pathway consolidation.
+        self._ca3_ca2_fast: torch.Tensor = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
+        self._ca3_ca2_slow: torch.Tensor = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
 
         # CA2→CA1 (context to output)
-        self._ca2_ca1_fast = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
-        self._ca2_ca1_slow = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
+        self._ca2_ca1_fast: torch.Tensor = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
+        self._ca2_ca1_slow: torch.Tensor = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
 
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY
         # =====================================================================
-        # Track per-subregion firing rates and adaptive gains (Turrigiano 2008)
-        self._target_rate = config.target_firing_rate
-        self._gain_lr = config.gain_learning_rate
-        self._firing_rate_alpha = config.dt_ms / config.gain_tau_ms
-
         # Per-subregion firing rate trackers (exponential moving average)
         self.register_buffer("dg_firing_rate", torch.zeros(self.dg_size, device=self.device))
         self.register_buffer("ca3_firing_rate", torch.zeros(self.ca3_size, device=self.device))
         self.register_buffer("ca2_firing_rate", torch.zeros(self.ca2_size, device=self.device))
         self.register_buffer("ca1_firing_rate", torch.zeros(self.ca1_size, device=self.device))
-
-        # Per-subregion adaptive gains (learnable parameters)
-        self.dg_gain = nn.Parameter(torch.ones(self.dg_size, device=self.device, requires_grad=False))
-        self.ca3_gain = nn.Parameter(torch.ones(self.ca3_size, device=self.device, requires_grad=False))
-        self.ca2_gain = nn.Parameter(torch.ones(self.ca2_size, device=self.device, requires_grad=False))
-        self.ca1_gain = nn.Parameter(torch.ones(self.ca1_size, device=self.device, requires_grad=False))
-
-        # Store gain bounds
-        self._baseline_noise = config.baseline_noise_current
-
-        # Adaptive threshold plasticity (complementary to gain)
-        self._threshold_lr = config.threshold_learning_rate
-        self._threshold_min = config.threshold_min
-        self._threshold_max = config.threshold_max
 
         # =====================================================================
         # DOPAMINE RECEPTOR (minimal 10% VTA projection)
@@ -485,14 +432,14 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             n_receptors=total_neurons,
             tau_rise_ms=10.0,  # Fast kinetics for rapid modulation
             tau_decay_ms=50.0,  # Medium clearance for transient effects
-            spike_amplitude=0.1,  # Moderate amplitude for stable learning
+            spike_amplitude=0.5,  # Strong amplitude for clear reward signal
             device=self.device,
         )
-        # Per-subregion DA concentration buffers
-        self._da_concentration_dg = torch.zeros(self.dg_size, device=self.device)
-        self._da_concentration_ca3 = torch.zeros(self.ca3_size, device=self.device)
-        self._da_concentration_ca2 = torch.zeros(self.ca2_size, device=self.device)
-        self._da_concentration_ca1 = torch.zeros(self.ca1_size, device=self.device)
+        # Per-subregion DA concentration buffers (0.5 = tonic baseline)
+        self._da_concentration_dg = torch.full((self.dg_size,), 0.5, device=self.device)
+        self._da_concentration_ca3 = torch.full((self.ca3_size,), 0.5, device=self.device)
+        self._da_concentration_ca2 = torch.full((self.ca2_size,), 0.5, device=self.device)
+        self._da_concentration_ca1 = torch.full((self.ca1_size,), 0.5, device=self.device)
 
         # =====================================================================
         # NOREPINEPHRINE RECEPTOR (LC projection for arousal/novelty)
@@ -537,14 +484,36 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # Default to dopamine-modulated learning for reward-driven memory formation
         # Three-factor rule: ΔW = eligibility_trace × dopamine × learning_rate
-        self.learning_strategy = ThreeFactorStrategy(
-            config=ThreeFactorConfig(
-                learning_rate=0.001,  # Conservative rate for stable learning
-                eligibility_tau=100.0,  # Eligibility trace decay (ms) - matches temporal integration
-                modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
-                device=self.device,
-            )
-        )
+        self.learning_strategy = ThreeFactorStrategy(ThreeFactorConfig(
+            learning_rate=0.001,  # Conservative rate for stable learning
+            eligibility_tau=100.0,  # Eligibility trace decay (ms) - matches temporal integration
+            modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
+            device=self.device,
+        ))
+
+        # =====================================================================
+        # REGISTER NEURON POPULATIONS
+        # =====================================================================
+        self._register_neuron_population(HippocampusPopulation.DG.value, self.dg_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA3.value, self.ca3_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA2.value, self.ca2_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA1.value, self.ca1_neurons)
+
+        self._register_neuron_population(HippocampusPopulation.DG_INHIBITORY_PV.value, self.dg_inhibitory.pv_neurons)
+        self._register_neuron_population(HippocampusPopulation.DG_INHIBITORY_OLM.value, self.dg_inhibitory.olm_neurons)
+        self._register_neuron_population(HippocampusPopulation.DG_INHIBITORY_BISTRATIFIED.value, self.dg_inhibitory.bistratified_neurons)
+
+        self._register_neuron_population(HippocampusPopulation.CA3_INHIBITORY_PV.value, self.ca3_inhibitory.pv_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA3_INHIBITORY_OLM.value, self.ca3_inhibitory.olm_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA3_INHIBITORY_BISTRATIFIED.value, self.ca3_inhibitory.bistratified_neurons)
+
+        self._register_neuron_population(HippocampusPopulation.CA2_INHIBITORY_PV.value, self.ca2_inhibitory.pv_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA2_INHIBITORY_OLM.value, self.ca2_inhibitory.olm_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA2_INHIBITORY_BISTRATIFIED.value, self.ca2_inhibitory.bistratified_neurons)
+
+        self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_PV.value, self.ca1_inhibitory.pv_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_OLM.value, self.ca1_inhibitory.olm_neurons)
+        self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_BISTRATIFIED.value, self.ca1_inhibitory.bistratified_neurons)
 
         # =====================================================================
         # POST-INITIALIZATION
@@ -559,224 +528,163 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         device = self.device
 
         # =====================================================================
-        # INTERNAL WEIGHTS: Migrated to synaptic_weights dict
+        # INTERNAL WEIGHTS
         # =====================================================================
-        # All weights at target dendrites for consistency
-        # Pattern: {source}_{target} naming, e.g., "dg_ca3" = DG→CA3 at CA3 dendrites
-
-        # DG → CA3: Random but less sparse (mossy fibers) - AT CA3 DENDRITES
-        # Enhancement: Increased weight_scale from 0.5 to 2.0 to enable CA3 attractor bootstrap
-        # Biological rationale: Mossy fiber synapses are among the largest in the brain
-        # and provide powerful "detonator" synapses that can reliably drive CA3 pyramidal cells
-        self.synaptic_weights["dg_ca3"] = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.ca3_size,
+        # DG → CA3: Random but less sparse (mossy fibers)
+        # Biology: "Detonator synapses" with powerful transmission.
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.DG.value,
+            target_population=HippocampusPopulation.CA3.value,
+            weights=WeightInitializer.sparse_random(
                 n_input=self.dg_size,
-                sparsity=0.5,
-                weight_scale=2.0,  # Strengthened to bootstrap CA3 attractor (was 0.5)
-                normalize_rows=True,  # Normalize for reliable propagation
+                n_output=self.ca3_size,
+                connectivity=0.15,
+                weight_scale=0.001,
                 device=device,
             ),
-            requires_grad=False,
+            # Mossy Fibers (DG→CA3): Strong facilitation
+            stp_config=MOSSY_FIBER_PRESET.configure(),
+            is_inhibitory=False,
         )
 
-        # CA3 → CA3 RECURRENT: Autoassociative memory weights (AT CA3 DENDRITES)
-        # Receives recurrent input via "ca3_recurrent" population with 2ms axonal delay
+        # CA3 → CA3 RECURRENT: Autoassociative memory weights
         # Learning: One-shot Hebbian with fast/slow traces and heterosynaptic LTD
-        ca3_recurrent_weights = WeightInitializer.sparse_random(
-            n_output=self.ca3_size,
+        ca3_ca3_weights = WeightInitializer.sparse_random(
             n_input=self.ca3_size,
-            sparsity=0.05,  # ~5% connectivity (biological value, was 25%!)
-            weight_scale=0.4,  # Moderate recurrence for attractor dynamics
-            normalize_rows=True,
+            n_output=self.ca3_size,
+            connectivity=0.05,
+            weight_scale=0.002,
             device=device,
         )
-
         # Apply phase diversity: ±15% weight variation for temporal coding
         # Phase leads/lags enable different neurons to fire at different theta phases
-        phase_diversity = torch.randn_like(ca3_recurrent_weights) * 0.15
-        ca3_recurrent_weights = ca3_recurrent_weights * (1.0 + phase_diversity)
-        ca3_recurrent_weights = torch.clamp(ca3_recurrent_weights, min=0.0)  # Keep positive
-        ca3_recurrent_weights.requires_grad_(False)
+        ca3_ca3_weights = WeightInitializer.add_phase_diversity(ca3_ca3_weights, phase_diversity=0.15)
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.CA3.value,
+            target_population=HippocampusPopulation.CA3.value,
+            weights=ca3_ca3_weights,
+            stp_config=None,
+            is_inhibitory=False,
+        )
 
-        self.synaptic_weights["ca3_ca3"] = nn.Parameter(ca3_recurrent_weights, requires_grad=False)
+        # Create sparse local inhibition: each neuron inhibits nearby neurons
+        # Biologically: basket cells have local axonal arbors (~200-300μm radius)
+        # We approximate this with random sparse connectivity
+        ca3_ca3_inhib_weights = WeightInitializer.sparse_random(
+            n_input=self.ca3_size,
+            n_output=self.ca3_size,
+            connectivity=0.2,
+            weight_scale=0.001,
+            device=self.device,
+        )
+        ca3_ca3_inhib_weights.fill_diagonal_(0.0)  # Zero out self-connections
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.CA3.value,
+            target_population=HippocampusPopulation.CA3.value,
+            weights=ca3_ca3_inhib_weights,
+            stp_config=None,
+            is_inhibitory=True,
+        )
+
+        # Initialize CA2 lateral inhibition weights
+        ca2_ca2_inhib_weights = WeightInitializer.sparse_random(
+            n_input=self.ca2_size,
+            n_output=self.ca2_size,
+            connectivity=0.2,
+            weight_scale=0.0005,
+            device=device,
+        )
+        ca2_ca2_inhib_weights.fill_diagonal_(0.0)  # Zero out self-connections
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.CA2.value,
+            target_population=HippocampusPopulation.CA2.value,
+            weights=ca2_ca2_inhib_weights,
+            stp_config=None,
+            is_inhibitory=True,
+        )
 
         # =====================================================================
         # CA2 PATHWAYS: Social memory and temporal context
         # =====================================================================
-        # CA3 → CA2: Weak plasticity (stability mechanism) - AT CA2 DENDRITES
+        # CA3 → CA2: Weak plasticity (stability mechanism)
         # CA2 is resistant to CA3 pattern completion interference
-        self.synaptic_weights["ca3_ca2"] = nn.Parameter(
-            WeightInitializer.sparse_random(
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.CA3.value,
+            target_population=HippocampusPopulation.CA2.value,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.ca3_size,
                 n_output=self.ca2_size,
-                n_input=self.ca3_size,
-                sparsity=0.3,  # Moderate connectivity
-                weight_scale=0.2,  # Weaker than typical (stability)
-                normalize_rows=True,
+                connectivity=0.3,
+                weight_scale=0.0006,
                 device=device,
             ),
-            requires_grad=False,
+            stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+            is_inhibitory=False,
         )
 
-        # CA2 → CA1: Output to decision layer - AT CA1 DENDRITES
+        # CA2 → CA1: Output to decision layer
         # Provides temporal/social context to CA1 processing
-        self.synaptic_weights["ca2_ca1"] = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.ca1_size,
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.CA2.value,
+            target_population=HippocampusPopulation.CA1.value,
+            weights=WeightInitializer.sparse_random(
                 n_input=self.ca2_size,
-                sparsity=0.2,  # Selective projection
-                weight_scale=0.3,  # Moderate weights
-                normalize_rows=False,  # Pattern-specific
-                device=device,
-            ),
-            requires_grad=False,
-        )
-
-        # CA3 → CA1: Feedforward (retrieved memory) - SPARSE! - AT CA1 DENDRITES
-        # This is the DIRECT bypass pathway (Schaffer collaterals)
-        self.synaptic_weights["ca3_ca1"] = nn.Parameter(
-            WeightInitializer.sparse_random(
                 n_output=self.ca1_size,
-                n_input=self.ca3_size,
-                sparsity=0.15,  # Each CA1 sees only 15% of CA3
-                weight_scale=0.3,  # Strong individual weights
-                normalize_rows=False,  # NO normalization - pattern-specific!
+                connectivity=0.2,
+                weight_scale=0.0005,
                 device=device,
             ),
-            requires_grad=False,
+            stp_config=MOSSY_FIBER_PRESET.configure(),
+            is_inhibitory=False,
         )
 
-        # CA1 lateral inhibition for competition - AT CA1 DENDRITES
+        # CA3 → CA1: Feedforward (retrieved memory)
+        # This is the DIRECT bypass pathway (Schaffer collaterals)
+        self._add_internal_connection(
+            source_population=HippocampusPopulation.CA3.value,
+            target_population=HippocampusPopulation.CA1.value,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.ca3_size,
+                n_output=self.ca1_size,
+                connectivity=0.15,
+                weight_scale=0.0008,
+                device=device,
+            ),
+            stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+            is_inhibitory=False,
+        )
+
+        # CA1 lateral inhibition for competition
         # Use sparse lateral inhibition (similar to CA3 basket cells)
         # Biologically: CA1 interneurons have local connectivity, not all-to-all
-        ca1_inhib_weights = torch.rand(self.ca1_size, self.ca1_size, device=device)
-        # Make it sparse (20% connectivity)
-        mask = torch.rand(self.ca1_size, self.ca1_size, device=device) < 0.2
-        ca1_inhib_weights *= mask.float()
-        # Zero diagonal (no self-inhibition)
-        ca1_inhib_weights.fill_diagonal_(0.0)
-        # Normalize rows so inhibition strength is bounded
-        row_sums = ca1_inhib_weights.sum(dim=1, keepdim=True)
-        row_sums = torch.clamp(row_sums, min=1.0)
-        ca1_inhib_weights /= row_sums
-        # Scale to reasonable strength (not 0.5!)
-        ca1_inhib_weights *= 0.05  # Much weaker than excitation
-
-        self.synaptic_weights["ca1_inhib"] = nn.Parameter(ca1_inhib_weights, requires_grad=False)
-
-        # Create gap junction network for CA1 interneurons
-        self.gap_junctions_ca1 = GapJunctionCoupling(
-            n_neurons=self.ca1_size,
-            afferent_weights=self.synaptic_weights["ca1_inhib"],
-            config=self._gap_config_ca1,
+        ca1_inhib_weights = WeightInitializer.sparse_random(
+            n_input=self.ca1_size,
+            n_output=self.ca1_size,
+            connectivity=0.2,
+            weight_scale=0.0005,
             device=device,
         )
-
-    # =========================================================================
-    # SYNAPTIC WEIGHT MANAGEMENT
-    # =========================================================================
-
-    def add_input_source(
-        self,
-        source_name: SpikesSourceKey,
-        target_population: PopulationName,
-        n_input: int,
-        sparsity: float = 0.8,
-        weight_scale: float = 1.0,
-    ) -> None:
-        """Override to create per-layer weights to DG, CA3, and CA1.
-
-        Hippocampus has multiple entry points for inputs:
-        - DG: Pattern separation (sparse encoding)
-        - CA3: Direct perforant path (retrieval cues)
-        - CA1: Temporoammonic path (cortical bypass)
-
-        This method creates separate weight matrices for each layer.
-
-        Args:
-            source_name: Name of input source (e.g., "cortex:l5", "pfc:executive")
-            target_population: Target population within hippocampus ("dg", "ca3", "ca1")
-            n_input: Number of input neurons from this source
-            sparsity: Sparsity of connections (0.0 to 1.0)
-            weight_scale: Scaling factor for initial weights
-        """
-        # Neuromodulator inputs (vta_da, lc_ne, nb_ach) don't create synaptic weights
-        # They're processed directly by receptors in forward()
-        if target_population in ("vta_da", "lc_ne", "nb_ach"):
-            # Just register the source for validation, but skip weight creation
-            self.input_sources[source_name] = n_input
-            return
-
-        # Call parent to register source
-        super().add_input_source(
-            source_name=source_name,
-            target_population=target_population,
-            n_input=n_input,
-            sparsity=sparsity,
-            weight_scale=weight_scale,
+        ca1_inhib_weights.fill_diagonal_(0.0)  # Zero diagonal (no self-inhibition)
+        ca1_ca1_inhib_synapse = self._add_internal_connection(
+            source_population=HippocampusPopulation.CA1.value,
+            target_population=HippocampusPopulation.CA1.value,
+            weights=ca1_inhib_weights,
+            stp_config=None,
+            is_inhibitory=True,
         )
 
-        # Grow STP modules for new input sources
-        if n_input > 0:
-            self.stp_ec_ca2.grow(n_input, target="pre")
-
-        # Initialize EC weights if this is first source (excluding internal)
-        if not source_name.startswith("_"):
-            # Ensure EC→CA1 weights exist (for direct cortical input to CA1)
-            if self.n_input > 0 and "ec_ca2" not in self.synaptic_weights:
-                # EC → CA2 weights
-                self.synaptic_weights["ec_ca2"] = nn.Parameter(
-                    WeightInitializer.sparse_random(
-                        n_output=self.ca2_size,
-                        n_input=self.n_input,
-                        sparsity=0.3,  # Similar to EC→CA3
-                        weight_scale=0.4,  # Strong direct encoding
-                        normalize_rows=True,
-                        device=self.device,
-                    ),
-                    requires_grad=False,
-                )
-
-        # Create additional per-layer weights for hippocampal multi-entry architecture
-        # Pattern: {source}_dg, {source}_ca3, {source}_ca1
-
-        # Source → DG: Sparse projections for pattern separation
-        self.synaptic_weights[f"{source_name}_dg"] = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.dg_size,
-                n_input=n_input,
-                sparsity=0.3,  # 30% connectivity for strong pattern separation
-                weight_scale=0.5,  # Increased from 0.1 for stronger drive
-                normalize_rows=False,  # NO normalization - prevents massive row sums in sparse matrices
-                device=self.device,
-            ),
-            requires_grad=False,
+        # Create gap junction network for CA1 interneurons
+        gap_config_ca1=GapJunctionConfig(
+            coupling_strength=self.config.gap_junction_strength,
+            connectivity_threshold=self.config.gap_junction_threshold,
+            max_neighbors=self.config.gap_junction_max_neighbors,
+            interneuron_only=True,
         )
-
-        # Source → CA3: Direct perforant path (layer II) for retrieval cues
-        self.synaptic_weights[f"{source_name}_ca3"] = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.ca3_size,
-                n_input=n_input,
-                sparsity=0.4,  # Less sparse than DG
-                weight_scale=0.5,  # Increased from 0.1 for stronger drive
-                normalize_rows=False,  # NO normalization - prevents massive row sums in sparse matrices
-                device=self.device,
-            ),
-            requires_grad=False,
-        )
-
-        # Source → CA1: Direct pathway for immediate output
-        self.synaptic_weights[f"{source_name}_ca1"] = nn.Parameter(
-            WeightInitializer.sparse_random(
-                n_output=self.ca1_size,
-                n_input=n_input,
-                sparsity=0.20,  # Relatively dense for rich integration
-                weight_scale=2.0,  # INCREASED: Need sufficient drive for CA1 output
-                normalize_rows=False,  # Allow pattern-specific weights
-                device=self.device,
-            ),
-            requires_grad=False,
+        self.gap_junctions_ca1 = GapJunctionCoupling(
+            n_neurons=self.ca1_size,
+            afferent_weights=self.get_synaptic_weights(ca1_ca1_inhib_synapse),
+            config=gap_config_ca1,
+            device=device,
         )
 
     # =========================================================================
@@ -785,12 +693,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def enter_consolidation_mode(self) -> None:
         """Enter consolidation mode (sleep/offline replay)."""
-        # Enable consolidation mode flag for replay logic in forward()
         self._consolidation_mode = True
 
     def exit_consolidation_mode(self) -> None:
         """Exit consolidation mode and return to encoding."""
-        # Disable consolidation mode
         self._consolidation_mode = False
         self._replay_cue = None
 
@@ -798,59 +704,51 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
-        """Process input spikes through DG→CA3→CA1 circuit."""
-        self._pre_forward(region_inputs)
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Process input spikes through DG→CA3→CA1 circuit.
 
-        # =====================================================================
-        # DOPAMINE RECEPTOR PROCESSING (from VTA)
-        # =====================================================================
-        # Process VTA dopamine spikes → concentration dynamics
-        # Hippocampus receives minimal (10%) DA innervation for novelty/salience
-        vta_da_spikes = region_inputs.get("vta:da_output")
-        if vta_da_spikes is not None:
+        Args:
+            synaptic_inputs: Point-to-point synaptic connections from cortex, thalamus, etc.
+            neuromodulator_inputs: Broadcast neuromodulatory signals (DA, NE, ACh)
+        """
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
+
+        cfg = self.config
+        dt_ms = cfg.dt_ms
+
+        if cfg.enable_neuromodulation:
+            # =====================================================================
+            # DOPAMINE RECEPTOR PROCESSING (from VTA)
+            # =====================================================================
+            # Process VTA dopamine spikes → concentration dynamics
+            # Hippocampus receives minimal (10%) DA innervation for novelty/salience
+            vta_da_spikes = neuromodulator_inputs.get('da', None)
             # Update full receptor array
             da_concentration_full = self.da_receptor.update(vta_da_spikes)
-            # Split into per-subregion buffers
-            total_neurons = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
-            self._da_concentration_dg = da_concentration_full[: self.dg_size] * 0.1  # 10% projection strength
-            self._da_concentration_ca3 = da_concentration_full[self.dg_size : self.dg_size + self.ca3_size] * 0.1
-            self._da_concentration_ca2 = da_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size] * 0.1
-            self._da_concentration_ca1 = da_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :] * 0.1
-        else:
-            # Just decay if no VTA input
-            da_concentration_full = self.da_receptor.update(None)
-            self._da_concentration_dg = da_concentration_full[: self.dg_size] * 0.1
-            self._da_concentration_ca3 = da_concentration_full[self.dg_size : self.dg_size + self.ca3_size] * 0.1
-            self._da_concentration_ca2 = da_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size] * 0.1
-            self._da_concentration_ca1 = da_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :] * 0.1
+            # Phasic DA (spikes) adds to tonic baseline (0.5)
+            self._da_concentration_dg = 0.5 + da_concentration_full[: self.dg_size] * 1.0
+            self._da_concentration_ca3 = 0.5 + da_concentration_full[self.dg_size : self.dg_size + self.ca3_size] * 1.0
+            self._da_concentration_ca2 = 0.5 + da_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size] * 1.0
+            self._da_concentration_ca1 = 0.5 + da_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :] * 1.0
 
-        # =====================================================================
-        # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
-        # =====================================================================
-        # Process LC norepinephrine spikes → arousal and novelty modulation
-        lc_ne_spikes = region_inputs.get("lc:ne_output")
-        if lc_ne_spikes is not None:
+            # =====================================================================
+            # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
+            # =====================================================================
+            # Process LC norepinephrine spikes → arousal and novelty modulation
+            lc_ne_spikes = neuromodulator_inputs.get('ne', None)
             ne_concentration_full = self.ne_receptor.update(lc_ne_spikes)
             # Split into per-subregion buffers
             self._ne_concentration_dg = ne_concentration_full[: self.dg_size]
             self._ne_concentration_ca3 = ne_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
             self._ne_concentration_ca2 = ne_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
             self._ne_concentration_ca1 = ne_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
-        else:
-            ne_concentration_full = self.ne_receptor.update(None)
-            self._ne_concentration_dg = ne_concentration_full[: self.dg_size]
-            self._ne_concentration_ca3 = ne_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
-            self._ne_concentration_ca2 = ne_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
-            self._ne_concentration_ca1 = ne_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
 
-        # =====================================================================
-        # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
-        # =====================================================================
-        # Process NB acetylcholine spikes → encoding/retrieval mode control
-        # High ACh → encoding, Low ACh → consolidation/retrieval
-        nb_ach_spikes = region_inputs.get("nb:ach_output")
-        if nb_ach_spikes is not None:
+            # =====================================================================
+            # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
+            # =====================================================================
+            # Process NB acetylcholine spikes → encoding/retrieval mode control
+            # High ACh → encoding, Low ACh → consolidation/retrieval
+            nb_ach_spikes = neuromodulator_inputs.get('ach', None)
             ach_concentration_full = self.ach_receptor.update(nb_ach_spikes)
             # Split into per-subregion buffers
             self._ach_concentration_dg = ach_concentration_full[: self.dg_size]
@@ -858,11 +756,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             self._ach_concentration_ca2 = ach_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
             self._ach_concentration_ca1 = ach_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
         else:
-            ach_concentration_full = self.ach_receptor.update(None)
-            self._ach_concentration_dg = ach_concentration_full[: self.dg_size]
-            self._ach_concentration_ca3 = ach_concentration_full[self.dg_size : self.dg_size + self.ca3_size]
-            self._ach_concentration_ca2 = ach_concentration_full[self.dg_size + self.ca3_size : self.dg_size + self.ca3_size + self.ca2_size]
-            self._ach_concentration_ca1 = ach_concentration_full[self.dg_size + self.ca3_size + self.ca2_size :]
+            # Neuromodulation disabled: keep baseline concentrations
+            pass
+
+        dg_da_level = self._da_concentration_dg.mean().item()
+        ca3_da_level = self._da_concentration_ca3.mean().item()
+        ca2_da_level = self._da_concentration_ca2.mean().item()
+        ca1_da_level = self._da_concentration_ca1.mean().item()
 
         # =====================================================================
         # CONSOLIDATION MODE: Spontaneous CA3→CA1 Replay (Sharp-Wave Ripples)
@@ -877,6 +777,18 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # - STP dynamics preserved (biological timing maintained)
         # - CA1 output drives cortical consolidation via back-projections
 
+        dg_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.DG.value, self.region_name, HippocampusPopulation.CA3.value, is_inhibitory=False)
+        ca3_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3.value, self.region_name, HippocampusPopulation.CA3.value, is_inhibitory=False)
+        ca3_ca2_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3.value, self.region_name, HippocampusPopulation.CA2.value, is_inhibitory=False)
+        ca3_ca1_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3.value, self.region_name, HippocampusPopulation.CA1.value, is_inhibitory=False)
+        ca2_ca1_synapse = SynapseId(self.region_name, HippocampusPopulation.CA2.value, self.region_name, HippocampusPopulation.CA1.value, is_inhibitory=False)
+
+        dg_ca3_weights = self.get_synaptic_weights(dg_ca3_synapse)
+        ca3_ca3_weights = self.get_synaptic_weights(ca3_ca3_synapse)
+        ca3_ca2_weights = self.get_synaptic_weights(ca3_ca2_synapse)
+        ca3_ca1_weights = self.get_synaptic_weights(ca3_ca1_synapse)
+        ca2_ca1_weights = self.get_synaptic_weights(ca2_ca1_synapse)
+
         # Reset ripple detection flag
         self.ripple_detected = False
 
@@ -884,25 +796,20 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         if self.spontaneous_replay is not None:
             should_replay = self.spontaneous_replay.should_trigger_ripple(
                 acetylcholine=self._ach_concentration_ca3.mean().item(),
-                dt_ms=self.config.dt_ms,
+                dt_ms=dt_ms,
             )
 
             if should_replay:
                 # Select pattern to replay based on tags and weight strength
-                # Only trigger ripple if we can actually select a pattern
-                if self.synaptic_tagging is not None and "ca3_ca3" in self.synaptic_weights:
-                    # Mark ripple detected
-                    self.ripple_detected = True
+                seed_pattern = self.spontaneous_replay.select_pattern_to_replay(
+                    synaptic_tags=self.synaptic_tagging.tags,
+                    ca3_weights=ca3_ca3_weights,
+                    seed_fraction=0.15,
+                )
 
-                    seed_pattern = self.spontaneous_replay.select_pattern_to_replay(
-                        synaptic_tags=self.synaptic_tagging.tags,
-                        ca3_weights=self.synaptic_weights["ca3_ca3"],
-                        seed_fraction=0.15,  # ~15% of CA3 neurons
-                    )
-
-                    # Inject seed pattern into CA3 persistent activity
-                    # This triggers attractor dynamics for pattern completion
-                    self.ca3_persistent = self.ca3_persistent * 0.5 + seed_pattern.float() * 2.0
+                # Inject seed pattern into CA3 persistent activity
+                self.ca3_persistent = self.ca3_persistent * 0.5 + seed_pattern.float() * 0.5
+                self.ripple_detected = True
 
         if self._consolidation_mode and self._replay_cue is not None:
             self._replay_cue = None
@@ -911,25 +818,21 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
-        dg_input = self._integrate_multi_source_synaptic_inputs(
-            inputs=region_inputs,
+        dg_input = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
             n_neurons=self.dg_size,
-            weight_key_suffix="_dg",
-            apply_stp=False,
+            filter_by_target_population=HippocampusPopulation.DG.value
         )
-
-        ca3_input = self._integrate_multi_source_synaptic_inputs(
-            inputs=region_inputs,
+        ca3_input = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
             n_neurons=self.ca3_size,
-            weight_key_suffix="_ca3",
-            apply_stp=False,
+            filter_by_target_population=HippocampusPopulation.CA3.value
         )
-
-        ca1_input = self._integrate_multi_source_synaptic_inputs(
-            inputs=region_inputs,
+        # TODO: Integrate CA2 input here as well (currently only from CA3, but could add EC→CA2)
+        ca1_input = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
             n_neurons=self.ca1_size,
-            weight_key_suffix="_ca1",
-            apply_stp=False,
+            filter_by_target_population=HippocampusPopulation.CA1.value
         )
 
         # =====================================================================
@@ -937,14 +840,14 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # Septal GABAergic input drives theta rhythm by phase-locking OLM cells
         # OLM cells rebound at theta troughs → dendritic inhibition → encoding/retrieval
-        septal_gaba = region_inputs.get("septal_gaba", None)
+        septal_gaba = synaptic_inputs.get("septal_gaba", None)
         if septal_gaba is not None and septal_gaba.numel() == 0:
             septal_gaba = None  # Treat empty tensor as None
 
-        # Initialize encoding/retrieval modulation (will be updated from OLM dynamics)
-        # Default to balanced state if no septal input yet
-        encoding_mod = 0.5
-        retrieval_mod = 0.5
+        # Initialize encoding/retrieval modulation from previous timestep's OLM state
+        # This ensures causal flow: previous OLM activity determines current encoding/retrieval
+        encoding_mod = self._prev_encoding_mod
+        retrieval_mod = 1.0 - self._prev_encoding_mod
 
         # =====================================================================
         # STIMULUS GATING (TRANSIENT INHIBITION)
@@ -955,80 +858,43 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
         # Normalize to [0, 1] by dividing by max_inhibition
         ffi_strength = min(1.0, raw_ffi / self.stimulus_gating.max_inhibition)
-        # ffi_strength is now normalized to [0, 1], config.ffi_strength controls max suppression
-        ffi_factor = 1.0 - ffi_strength * self.config.ffi_strength
+        ffi_factor = 1.0 - ffi_strength * cfg.ffi_strength
 
         # =====================================================================
-        # 1. DENTATE GYRUS: Pattern Separation
+        # DENTATE GYRUS: Pattern Separation
         # =====================================================================
         # DG input already integrated from all sources above
         # Apply FFI: reduce DG drive when input changes significantly
-        dg_code = dg_input * ffi_factor
-
-        # Apply homeostatic gain and baseline noise (Turrigiano 2008)
-        # Add baseline noise (spontaneous miniature EPSPs)
-        if self._baseline_noise > 0:
-            dg_code = dg_code + self._baseline_noise
-        # Apply adaptive gain
-        dg_code = dg_code * self.dg_gain
-
-        # Run through DG neurons (ConductanceLIF expects g_exc, g_inh)
-        # DG has minimal inhibition - primarily feedforward excitation for pattern separation
-        dg_g_exc = F.relu(dg_code)  # Clamp to positive conductance
-
-        # TODO: Future enhancement - add feedforward inhibition to DG for more realistic dynamics
-        dg_spikes, _ = self.dg_neurons(
-            g_exc_input=ConductanceTensor(dg_g_exc),
-            g_inh_input=None,
-        )
-
-        # Apply extreme winner-take-all sparsity
-        # Use pre-spike membrane (not post-spike which resets to v_reset)
-        dg_spikes = self._apply_wta_sparsity(
-            dg_spikes,
-            self.config.dg_sparsity,
-            membrane=self.dg_neurons.membrane_pre_spike,
-        )
-
-        # Update homeostatic gain for DG
-        # Update firing rate (exponential moving average)
-        self.dg_firing_rate = (
-            1 - self._firing_rate_alpha
-        ) * self.dg_firing_rate + self._firing_rate_alpha * dg_spikes.float()
-        # Compute rate error
-        rate_error = self._target_rate - self.dg_firing_rate
-        # Update gain (increase gain if firing too low, decrease if too high)
-        # Clamp to prevent negative gains
-        self.dg_gain.data = (self.dg_gain + self._gain_lr * rate_error).clamp(min=0.001)
-        # Adaptive threshold: lower threshold when underactive, raise when overactive
-        self.dg_neurons.v_threshold.data = torch.clamp(
-            self.dg_neurons.v_threshold - self._threshold_lr * rate_error,
-            min=self._threshold_min,
-            max=self._threshold_max,
-        )
+        # Clamp to positive conductance
+        dg_g_exc = F.relu(cfg.baseline_noise_conductance + dg_input * ffi_factor)
 
         # =====================================================================
-        # APPLY DG→CA3 AXONAL DELAY
+        # DG INHIBITORY NETWORK
         # =====================================================================
-        # Apply biological transmission delay for DG→CA3 mossy fiber pathway
-        # If delay is 0, dg_spikes_delayed = dg_spikes (instant, backward compatible)
-        if self._dg_ca3_delay_steps > 0:
-            # Write current spikes and read delayed spikes
-            self._dg_ca3_buffer.write(dg_spikes)
-            dg_spikes_delayed = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps)
-            self._dg_ca3_buffer.advance()
-        else:
-            dg_spikes_delayed = dg_spikes
+        dg_inhib_output = self.dg_inhibitory.forward(
+            pyr_spikes=self._dg_spike_buffer.read(1),
+            septal_gaba=septal_gaba,
+            external_exc=None,
+        )
+        dg_perisomatic_inhib = dg_inhib_output["perisomatic"]
 
-        # Inter-stage shape check: DG output → CA3 input
-        assert dg_spikes.shape == (self.dg_size,), (
-            f"Hippocampus: DG spikes have shape {dg_spikes.shape} "
-            f"but expected ({self.dg_size},). "
-            f"Check DG sparsity or EC→DG weights shape."
+        dg_g_ampa, dg_g_nmda = self._split_excitatory_conductance(dg_g_exc)
+
+        dg_spikes, _ = self.dg_neurons.forward(
+            g_ampa_input=ConductanceTensor(dg_g_ampa),
+            g_gaba_a_input=ConductanceTensor(dg_perisomatic_inhib),
+            g_nmda_input=ConductanceTensor(dg_g_nmda),
         )
 
+        self._update_homeostasis(spikes=dg_spikes, firing_rate=self.dg_firing_rate, neurons=self.dg_neurons)
+
+        dg_spikes_delayed = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps)
+
+        dg_spikes_float = dg_spikes.float()
+        dg_spikes_delayed_float = dg_spikes_delayed.float()
+
         # =====================================================================
-        # 2. CA3: Pattern Completion via Recurrence + Bistable Dynamics
+        # CA3: Pattern Completion via Recurrence + Bistable Dynamics
         # =====================================================================
         # EMERGENT THETA MODULATION via OLM cells:
         # Instead of hardcoded arithmetic, encoding/retrieval separation emerges from:
@@ -1038,8 +904,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # 4. When OLM fires (theta trough), dendritic inhibition blocks EC→CA1
         # 5. When OLM silent (theta peak), EC→CA1 flows freely (retrieval)
         #
-        # Result: EMERGENT encoding (trough) / retrieval (peak) without hardcoding!
-        #
         # BISTABLE NEURONS: Real CA3 pyramidal neurons have intrinsic bistability
         # via I_NaP (persistent sodium) and I_CAN (Ca²⁺-activated cation) currents.
         # We model this with a persistent activity trace that:
@@ -1048,34 +912,16 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         #   3. Provides positive feedback (self-sustaining activity)
         # This enables stable attractor states during delay periods.
 
-        # Feedforward from DG (mossy fibers, theta-gated) with optional STP
-        # NOTE: Use delayed DG spikes for biological accuracy
-        if self.stp_mossy is not None:
-            # Get STP efficacy for mossy fiber synapses
-            # Mossy fibers are FACILITATING - repeated DG spikes progressively
-            # enhance transmission to CA3
-            stp_efficacy = self.stp_mossy(dg_spikes_delayed.float())
-            # Apply STP to weights: (n_post, n_pre) * (n_pre, n_post).T
-            effective_w_dg_ca3 = self.synaptic_weights["dg_ca3"] * stp_efficacy.T
-            ca3_from_dg = (
-                torch.matmul(effective_w_dg_ca3, dg_spikes_delayed.float())
-            )  # [ca3_size]
-        else:
-            # Standard matmul without STP
-            ca3_from_dg = (
-                torch.matmul(self.synaptic_weights["dg_ca3"], dg_spikes_delayed.float())
-            )  # [ca3_size]
+        # Feedforward from DG (mossy fibers, theta-gated)
+        # Mossy fibers are FACILITATING - repeated DG spikes progressively enhance transmission to CA3
+        stp_efficacy = self.stp_modules[dg_ca3_synapse].forward(dg_spikes_delayed_float)
+        effective_w_dg_ca3 = dg_ca3_weights * stp_efficacy.T
+        ca3_from_dg = torch.matmul(effective_w_dg_ca3, dg_spikes_delayed_float)  # [ca3_size]
 
-        # Direct perforant path from EC (provides retrieval cues)
-        # Strong during retrieval to seed the CA3 attractor from partial cues
-        # NOTE: ca3_input from _integrate_multi_source_synaptic_inputs includes
+        # NOTE: ca3_input from _integrate_synaptic_inputs_at_dendrites includes
         # ALL external sources (EC, cortex, PFC, thalamus, etc.) but NOT DG
         # (DG→CA3 is computed separately above to apply STP)
-        ca3_from_external = ca3_input  # [ca3_size]
-
-        # Total feedforward input to CA3
-        # Combine DG mossy fibers (with STP) + external sources (EC, etc.)
-        ca3_ff = ca3_from_dg + ca3_from_external
+        ca3_ff = ca3_input + ca3_from_dg
 
         # =====================================================================
         # CA3 RECURRENT INPUT (Internal Computation)
@@ -1090,27 +936,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
         # Compute recurrent input from DELAYED CA3 activity
-        if self.ca3_spikes is not None:
-            # Write current spikes to delay buffer
-            self._ca3_recurrent_buffer.write(self.ca3_spikes)
-            # Get delayed spikes (3ms ago)
-            ca3_delayed = self._ca3_recurrent_buffer.read(self._ca3_recurrent_buffer.max_delay)
+        # CRITICAL: Recurrent buffer stores current spikes with N-timestep delay
+        # Read delayed spikes (3ms ago, written after previous spike generation)
+        ca3_delayed = self._ca3_ca3_buffer.read(self._ca3_ca3_buffer.max_delay)
 
-            # Compute recurrent input from delayed activity
-            ca3_rec_raw = torch.matmul(
-                self.synaptic_weights["ca3_ca3"],
-                ca3_delayed.float()
-            )
-        else:
-            # First timestep - no previous activity
-            ca3_rec_raw = torch.zeros(self.ca3_size, device=self.device)
+        # Compute recurrent input from delayed activity
+        ca3_rec_raw = torch.matmul(ca3_ca3_weights, ca3_delayed.float())
 
         # Apply region-level modulation (ACh and strength scaling)
-        ca3_rec = (
-            ca3_rec_raw
-            * self.config.ca3_recurrent_strength
-            * ach_recurrent_modulation
-        )  # [ca3_size]
+        ca3_rec = ca3_rec_raw * ach_recurrent_modulation  # [ca3_size]
 
         # =====================================================================
         # ACTIVITY-DEPENDENT FEEDBACK INHIBITION (Biologically Accurate)
@@ -1118,40 +952,19 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # In real CA3, pyramidal cells recruit basket cell interneurons which
         # provide lateral inhibition back to the pyramidal population.
         # This creates local competition and prevents runaway activity.
-        #
-        # Implementation: Each neuron's inhibition is proportional to the
-        # activity of ALL other neurons (lateral inhibition), weighted by
-        # a local connectivity pattern.
 
-        # Initialize lateral inhibition weight matrix if needed (sparse local connectivity)
-        if not hasattr(self, "_ca3_lateral_inhib_weights"):
-            # Create sparse local inhibition: each neuron inhibits nearby neurons
-            # Biologically: basket cells have local axonal arbors (~200-300μm radius)
-            # We approximate this with random sparse connectivity
-            self._ca3_lateral_inhib_weights = torch.rand(
-                self.ca3_size, self.ca3_size, device=self.device
-            )
-            # Make it sparse (20% connectivity for basket cell → pyramidal)
-            mask = torch.rand(self.ca3_size, self.ca3_size, device=self.device) < 0.2
-            self._ca3_lateral_inhib_weights *= mask.float()
-            # Zero out self-connections (neurons don't inhibit themselves)
-            self._ca3_lateral_inhib_weights.fill_diagonal_(0.0)
-            # Normalize rows so total inhibition per neuron is bounded
-            row_sums = self._ca3_lateral_inhib_weights.sum(dim=1, keepdim=True)
-            row_sums = torch.clamp(row_sums, min=1.0)  # Avoid division by zero
-            self._ca3_lateral_inhib_weights /= row_sums
+        prev_ca3_spikes = self._ca3_spike_buffer.read(1)
 
-        # Compute per-neuron feedback inhibition based on population activity
-        # Each neuron receives inhibition proportional to others' activity
-        if self.ca3_spikes is not None:
-            # Lateral inhibition: weight matrix @ spike vector
-            # Result: each neuron's inhibition is weighted sum of other neurons' spikes
-            feedback_inhibition = torch.matmul(
-                self._ca3_lateral_inhib_weights,
-                self.ca3_spikes.float()
-            ) * self.config.ca3_feedback_inhibition
-        else:
-            feedback_inhibition = torch.zeros(self.ca3_size, device=self.device)
+        # Local lateral inhibition: sparse connectivity pattern
+        ca3_ca3_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=HippocampusPopulation.CA3.value,
+            target_region=self.region_name,
+            target_population=HippocampusPopulation.CA3.value,
+            is_inhibitory=True,
+        )
+        ca3_ca3_inhib_weights = self.get_synaptic_weights(ca3_ca3_inhib_synapse)
+        ca3_feedback_inhibition = torch.matmul(ca3_ca3_inhib_weights, prev_ca3_spikes.float())
 
         # =====================================================================
         # BISTABLE PERSISTENT ACTIVITY (models I_NaP / I_CAN currents)
@@ -1167,10 +980,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # This is the key mechanism for bistability: once a neuron starts firing,
         # its persistent activity helps keep it firing
 
-        ca3_persistent_input = self.ca3_persistent * self.config.ca3_persistent_gain  # [ca3_size]
+        ca3_persistent_input = self.ca3_persistent * cfg.ca3_persistent_gain  # [ca3_size]
 
-        # Total CA3 input = feedforward + recurrent + persistent - inhibition
-        ca3_input = ca3_ff + ca3_rec + ca3_persistent_input - feedback_inhibition
+        # Total CA3 excitatory input = feedforward + recurrent + persistent
+        ca3_excitatory_input = ca3_ff + ca3_rec + ca3_persistent_input
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -1181,110 +994,90 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ne_level = self._ne_concentration_ca3.mean().item()
         # NE gain: 1.0 (baseline) to 1.5 (high arousal)
         ne_gain = compute_ne_gain(ne_level)
-        ca3_input = ca3_input * ne_gain
+        ca3_excitatory_input = ca3_excitatory_input * ne_gain
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold offset
         # Neurons that fire too much have higher thresholds (less excitable)
-        if self._ca3_threshold_offset is not None:
-            ca3_input = ca3_input - self._ca3_threshold_offset
-
-        # =====================================================================
-        # EMERGENT PHASE CODING (replaces explicit slot gating)
-        # =====================================================================
-        # Gamma amplitude modulation (emergent from oscillator coupling)
-        # High amplitude → neurons more responsive to current input
-        # Low amplitude → neurons rely more on recurrent memory
-        gamma_amplitude = self._gamma_amplitude_effective  # [0, 1]
-
-        # Scale input by gamma (but NO slot-based gating)
-        # This creates temporal windows where input is more/less effective
-        # Combined with weight diversity, this leads to phase preferences
-        scale = 0.5
-        gamma_modulation = scale + scale * gamma_amplitude  # [0.5, 1.0]
-        ca3_input = ca3_input * gamma_modulation
+        ca3_excitatory_input = ca3_excitatory_input - self._ca3_threshold_offset
 
         # Apply homeostatic gain and baseline noise (Turrigiano 2008)
-        # Add baseline noise (spontaneous miniature EPSPs)
-        if self._baseline_noise > 0:
-            ca3_input = ca3_input + self._baseline_noise
-        # Apply adaptive gain
-        ca3_input = ca3_input * self.ca3_gain
+        # Add baseline noise (spontaneous miniature EPSPs) with stochastic component
+        if cfg.baseline_noise_conductance > 0:
+            baseline = cfg.baseline_noise_conductance * 0.7
+            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.ca3_size, device=self.device)
+            ca3_excitatory_input = ca3_excitatory_input + baseline + stochastic.abs()
 
         # =====================================================================
         # CA3 INHIBITORY NETWORK (PV, OLM, Bistratified)
         # =====================================================================
         # Run CA3 inhibitory network with septal input
         # OLM cells phase-lock to septal GABA for theta modulation
-        if hasattr(self, 'ca3_inhibitory'):
-            ca3_inhib_output = self.ca3_inhibitory(
-                pyr_spikes=self.ca3_spikes if self.ca3_spikes is not None else torch.zeros(self.ca3_size, device=self.device, dtype=torch.bool),
-                septal_gaba=septal_gaba,
-                external_exc=None,  # Optional external drive
-            )
-            ca3_perisomatic_inhib = ca3_inhib_output["perisomatic"]
-        else:
-            ca3_perisomatic_inhib = torch.zeros(self.ca3_size, device=self.device)
+        # CRITICAL: Use PREVIOUS timestep's activity (causal inhibition)
+        ca3_inhib_output = self.ca3_inhibitory.forward(
+            pyr_spikes=prev_ca3_spikes,
+            septal_gaba=septal_gaba,
+            external_exc=None,  # Optional external drive
+        )
+        ca3_perisomatic_inhib = ca3_inhib_output["perisomatic"]
 
-        # Run through CA3 neurons (ConductanceLIF expects g_exc, g_inh)
-        # Inhibition is handled by inhibitory network
-        ca3_g_exc = F.relu(ca3_input)
-        ca3_g_inh = F.relu(ca3_perisomatic_inhib)  # Perisomatic inhibition from PV cells
+        # Run through CA3 neurons (ConductanceLIF expects g_ampa, g_gaba_a, g_nmda)
+        # Excitatory conductance from excitatory inputs
+        ca3_g_exc = F.relu(ca3_excitatory_input)
 
-        ca3_spikes, _ = self.ca3_neurons(
-            g_exc_input=ConductanceTensor(ca3_g_exc),
-            g_inh_input=ConductanceTensor(ca3_g_inh),
+        # =====================================================================
+        # CONDUCTANCE VALIDATION (Type Safety Check)
+        # =====================================================================
+        # Ensure we're passing true conductances, not currents
+        # Biological conductance range: [0, 5] relative to leak (g_L = 1)
+        # If this assertion fails, it indicates current/conductance confusion
+        if ca3_g_exc.max() > 10.0:
+            # Emergency warning (not assertion to avoid training crashes)
+            print(f"\u26a0\ufe0f  WARNING: CA3 g_exc={ca3_g_exc.max():.2f} exceeds biological range [0, 5]!")
+            print(f"  This indicates current/conductance confusion in synaptic weights.")
+            print(f"  ca3_from_dg={ca3_from_dg.mean():.4f}, ca3_rec={ca3_rec.mean():.4f}")
+            # Clamp to prevent immediate crash, but this needs fixing
+            ca3_g_exc = torch.clamp(ca3_g_exc, 0.0, 5.0)
+
+        # Apply inhibition: Feedback (population) + Phasic (from interneurons) + Tonic (ambient GABA)
+        # Feedback inhibition scales with population activity to prevent runaway synchrony
+        # Phasic inhibition from fast-spiking PV interneurons
+        # Tonic inhibition from extrasynaptic GABA_A receptors provides constant baseline
+        ca3_g_inh = F.relu(ca3_feedback_inhibition) + F.relu(ca3_perisomatic_inhib) + cfg.tonic_inhibition
+
+        # Add instantaneous self-inhibition to prevent burst escalation
+        # This uses membrane potential as a proxy for imminent spiking
+        # (spikes haven't happened yet, but high V_mem indicates burst risk)
+        # REDUCED from 0.4 to 0.1: Strong self-inhibition was blocking normal firing
+        # Only apply when V_mem is VERY close to threshold (prevents premature inhibition)
+        if self.ca3_neurons.membrane is not None:
+            # Normalize membrane potential to [0, 1] range (assume v_rest=-1, v_threshold=1.2)
+            v_rest = -1.0
+            v_threshold = 1.2  # Updated threshold
+            v_normalized = (self.ca3_neurons.membrane - v_rest) / (v_threshold - v_rest)
+            v_normalized = torch.clamp(v_normalized, 0.0, 1.0)
+            # Only apply strong inhibition when > 80% of way to threshold
+            # This allows normal firing while preventing bursts
+            burst_risk = torch.clamp((v_normalized - 0.8) / 0.2, 0.0, 1.0)
+            ca3_g_inh = ca3_g_inh + burst_risk * 0.1
+
+        # Split excitatory conductance into AMPA (fast) and NMDA (slow)
+        ca3_g_ampa, ca3_g_nmda = self._split_excitatory_conductance(ca3_g_exc)
+
+        ca3_spikes, _ = self.ca3_neurons.forward(
+            g_ampa_input=ConductanceTensor(ca3_g_ampa),
+            g_gaba_a_input=ConductanceTensor(ca3_g_inh),
+            g_nmda_input=ConductanceTensor(ca3_g_nmda),
         )
 
-        # CRITICAL FIX FOR OSCILLATION:
-        # The LIF neuron resets membrane to v_reset after spiking, which causes
-        # neurons that just spiked to have LOW membrane on the next timestep.
-        # This makes WTA select DIFFERENT neurons, causing oscillation.
-        #
-        # Solution: After LIF processing, restore membrane potential for neurons
-        # with high persistent activity. This models how I_NaP keeps neurons
-        # near threshold even after spiking.
-        # Boost membrane for neurons with high persistent activity
-        assert self.ca3_neurons.membrane is not None, "CA3 membrane should exist after forward()"
-        persistent_boost = self.ca3_persistent * 1.5
-        self.ca3_neurons.membrane = self.ca3_neurons.membrane + persistent_boost
+        ca3_spikes_float = ca3_spikes.float()
 
-        # Apply sparsity - use pre-spike membrane for WTA
-        # Persistent boost is applied to membrane before spike check, so pre-spike membrane reflects it
-        ca3_spikes = self._apply_wta_sparsity(
-            ca3_spikes,
-            self.config.ca3_sparsity,
-            membrane=self.ca3_neurons.membrane_pre_spike,
-        )
-
-        # Update homeostatic gain for CA3
-        # Update firing rate (exponential moving average)
-        self.ca3_firing_rate = (
-            1 - self._firing_rate_alpha
-        ) * self.ca3_firing_rate + self._firing_rate_alpha * ca3_spikes.float()
-        # Compute rate error
-        rate_error = self._target_rate - self.ca3_firing_rate
-        # Update gain (increase gain if firing too low, decrease if too high)
-        self.ca3_gain.data = (self.ca3_gain + self._gain_lr * rate_error).clamp(min=0.001)
-        # Adaptive threshold
-        self.ca3_neurons.v_threshold.data = torch.clamp(
-            self.ca3_neurons.v_threshold - self._threshold_lr * rate_error,
-            min=self._threshold_min,
-            max=self._threshold_max,
-        )
-
-        # Inter-stage shape check: CA3 output → CA1 input
-        assert ca3_spikes.shape == (self.ca3_size,), (
-            f"Hippocampus: CA3 spikes have shape {ca3_spikes.shape} "
-            f"but expected ({self.ca3_size},). "
-            f"Check CA3 sparsity or DG→CA3 weights shape."
-        )
+        self._update_homeostasis(spikes=ca3_spikes, firing_rate=self.ca3_firing_rate, neurons=self.ca3_neurons)
 
         # Update persistent activity AFTER computing new spikes
         # The trace accumulates spike activity with slow decay
         # Using a direct accumulation: trace += spike - decay*trace
         # This ensures spikes have strong immediate effect but decay slowly
-        dt_ms = self.config.dt_ms
-        decay_rate = dt_ms / self.config.ca3_persistent_tau
+        ca3_persistent_decay_rate = dt_ms / cfg.ca3_persistent_tau
 
         # Update persistent activity: stronger during encoding, decay otherwise
         # Encoding_mod determines how much new spikes contribute vs decay
@@ -1292,87 +1085,34 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # active encoding, then decay during maintenance/retrieval
         # Continuous modulation: contribution naturally weak when encoding_mod is low
         self.ca3_persistent = (
-            self.ca3_persistent * (1.0 - decay_rate * (0.5 + 0.5 * retrieval_mod))
-            + ca3_spikes.float()
-            * 0.5
+            self.ca3_persistent * (1.0 - ca3_persistent_decay_rate * (0.5 + 0.5 * retrieval_mod))
+            + ca3_spikes_float
             * encoding_mod  # Contribution scaled by encoding strength
         )
+        clamp_weights(self.ca3_persistent, cfg.w_min, cfg.w_max)  # Clamp to prevent runaway
 
-        # Clamp to prevent runaway
-        self.ca3_persistent = torch.clamp(self.ca3_persistent, 0.0, 3.0)
-
-        # =====================================================================
-        # HEBBIAN LEARNING: Apply to CA3 recurrent weights
-        # This is how the hippocampus "stores" the pattern - in the weights!
-        # Also store the DG pattern for later match/mismatch detection.
-        # Modulated by theta encoding strength!
-        # =====================================================================
         # Store the DG pattern (accumulate over timesteps, scaled by encoding strength)
         # Continuous modulation: storage naturally weak when encoding_mod is low
-        if encoding_mod > 0.01:  # Only accumulate if encoding has minimal presence
-            self.stored_dg_pattern = (
-                self.stored_dg_pattern + dg_spikes.float() * encoding_mod
-            )
+        self.stored_dg_pattern = self.stored_dg_pattern + dg_spikes_float * encoding_mod
 
-        # One-shot Hebbian: strengthen connections between co-active neurons
-        # Learning rate modulated by theta phase AND gamma amplitude
-        # Continuous: learning automatically weak when encoding_mod is low
-        ca3_activity = ca3_spikes.float()  # Already 1D, no squeeze needed
+        # Compute decay factors for multi-timescale traces
+        fast_decay = dt_ms / cfg.fast_trace_tau_ms
+        slow_decay = dt_ms / cfg.slow_trace_tau_ms
 
         # =========================================================
         # MULTI-TIMESCALE CONSOLIDATION
         # =========================================================
-        # Trace decay happens CONTINUOUSLY based on time, not conditionally
-        # on activity. This is biologically accurate - molecular traces
-        # decay with their own time constants regardless of neural activity.
-        # Compute decay factors
-        fast_decay = dt_ms / self.config.fast_trace_tau_ms
-        slow_decay = dt_ms / self.config.slow_trace_tau_ms
-
         # Apply decay to fast trace
         self._ca3_ca3_fast = (1.0 - fast_decay) * self._ca3_ca3_fast
-
-        # Apply decay to slow trace + consolidation transfer
-        consolidation = self.config.consolidation_rate * self._ca3_ca3_fast
-        self._ca3_ca3_slow = (1.0 - slow_decay) * self._ca3_ca3_slow + consolidation
+        self._ca3_ca3_slow = (1.0 - slow_decay) * self._ca3_ca3_slow + cfg.consolidation_rate * self._ca3_ca3_fast
 
         # Learning happens only when there's CA3 activity
-        if ca3_activity.sum() > 0:
-            # Hebbian outer product: neurons that fire together wire together
-            #
-            # Gamma amplitude modulation: Learning is stronger when gamma
-            # is strong (theta trough, encoding phase). This implements
-            # the biological finding that synaptic plasticity is enhanced
-            # during periods of strong gamma oscillations.
-            base_lr = self.config.learning_rate * encoding_mod
-
-            # Apply automatic gamma amplitude modulation
-            # Gamma is modulated by ALL slower oscillators (emergent multi-order coupling)
-            gamma_mod = self._gamma_amplitude_effective
-            effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
-
-            # Apply dopamine modulation to learning rate
-            # Dopamine gates consolidation strength - higher DA = stronger learning
-            # Biological basis: VTA dopamine signals reward/novelty and gates LTP
-            da_level = self._da_concentration_ca3.mean().item()
+        if ca3_spikes.any():
             # Strong dopamine gating: 0.0 DA = 20% learning, 1.0 DA = 200% learning
-            # This creates a 10x range between min and max dopamine
-            da_gain = 0.2 + 1.8 * da_level  # Range: [0.2, 2.0]
-            effective_lr = effective_lr * da_gain
+            ca3_da_gain = 0.2 + 1.8 * ca3_da_level  # Range: [0.2, 2.0]
+            effective_lr = cfg.learning_rate * encoding_mod * ca3_da_gain
 
-            dW = effective_lr * torch.outer(ca3_activity, ca3_activity)
-
-            # =========================================================
-            # SYNAPTIC TAGGING
-            # =========================================================
-            # Update synaptic tags based on spike coincidence
-            # Tags mark recently-active synapses for potential consolidation
-            # Replaces explicit Episode.priority with emergent biological mechanism
-            if self.synaptic_tagging is not None:
-                self.synaptic_tagging.update_tags(
-                    pre_spikes=ca3_activity,
-                    post_spikes=ca3_activity,
-                )
+            dW = torch.outer(ca3_spikes_float, ca3_spikes_float)
 
             # =========================================================
             # HETEROSYNAPTIC PLASTICITY: Weaken inactive synapses
@@ -1380,32 +1120,30 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             # Synapses to inactive postsynaptic neurons get weakened when
             # nearby neurons fire strongly. This prevents winner-take-all
             # dynamics from permanently dominating.
-            #
-            # Implementation: For each active presynaptic neuron, weaken
-            # its connections to inactive postsynaptic neurons.
-            if self.config.heterosynaptic_ratio > 0:
-                inactive_post = (ca3_activity < 0.5).float()  # Inactive neurons
-                active_pre = ca3_activity  # Active neurons
-                # Weaken: pre active but post inactive
-                hetero_ltd = self.config.heterosynaptic_ratio * effective_lr
-                hetero_dW = -hetero_ltd * torch.outer(active_pre, inactive_post)
+            if cfg.heterosynaptic_ratio > 0:
+                inactive_ca3_post = torch.logical_not(ca3_spikes).float()
+                active_ca3_pre = ca3_spikes_float
+                hetero_dW = -cfg.heterosynaptic_ratio * torch.outer(active_ca3_pre, inactive_ca3_post)
                 dW = dW + hetero_dW
 
             # Add learning to traces
             # Accumulate new learning into fast trace
-            self._ca3_ca3_fast = self._ca3_ca3_fast + dW
+            self._ca3_ca3_fast = self._ca3_ca3_fast + dW * effective_lr
 
             # Combined weight update: Fast (episodic) + Slow (semantic)
             # Fast trace dominates initially, slow trace provides stability
-            combined_dW = (
-                self._ca3_ca3_fast + self.config.slow_trace_contribution * self._ca3_ca3_slow
-            )
-            self.synaptic_weights["ca3_ca3"].data += combined_dW
+            combined_dW = self._ca3_ca3_fast + cfg.slow_trace_contribution * self._ca3_ca3_slow
+            ca3_ca3_weights.data += combined_dW
+            ca3_ca3_weights.data.fill_diagonal_(0.0)  # No self-connections
+            clamp_weights(ca3_ca3_weights.data, cfg.w_min, cfg.w_max)
 
-            self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # No self-connections
-            clamp_weights(
-                self.synaptic_weights["ca3_ca3"].data, self.config.w_min, self.config.w_max
-            )
+            # =========================================================
+            # SYNAPTIC TAGGING
+            # =========================================================
+            # Update synaptic tags based on spike coincidence
+            # Tags mark recently-active synapses for potential consolidation
+            # Replaces explicit Episode.priority with emergent biological mechanism
+            self.synaptic_tagging.update_tags(pre_spikes=ca3_spikes_float, post_spikes=ca3_spikes_float)
 
         # =====================================================================
         # DG→CA3 MOSSY FIBER LEARNING (One-Shot Binding)
@@ -1424,48 +1162,27 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # This learning is what allows DG to "index" memories in CA3 - each sparse
         # DG pattern becomes associated with a dense CA3 attractor pattern.
 
-        # Get DG activity (delayed by mossy fiber transmission time)
-        dg_activity = dg_spikes_delayed.float()  # [dg_size]
-
-        # Multi-timescale trace decay (continuous, time-based)
-        fast_decay = dt_ms / self.config.fast_trace_tau_ms
-        slow_decay = dt_ms / self.config.slow_trace_tau_ms
-
         self._dg_ca3_fast = (1.0 - fast_decay) * self._dg_ca3_fast
-        consolidation = self.config.consolidation_rate * self._dg_ca3_fast
-        self._dg_ca3_slow = (1.0 - slow_decay) * self._dg_ca3_slow + consolidation
+        self._dg_ca3_slow = (1.0 - slow_decay) * self._dg_ca3_slow + cfg.consolidation_rate * self._dg_ca3_fast
 
         # Learning happens only when there's co-activity (DG and CA3 both firing)
-        if dg_activity.sum() > 0 and ca3_activity.sum() > 0:
-            # ONE-SHOT learning: Use STRONG learning rate (3x normal)
-            # Biology: Mossy fiber LTP is rapid and doesn't require multiple pairings
-            mossy_base_lr = self.config.learning_rate * 3.0 * encoding_mod
-
-            # Apply gamma and dopamine modulation (same as CA3 recurrent)
-            gamma_mod = self._gamma_amplitude_effective
-            mossy_effective_lr = compute_learning_rate_modulation(mossy_base_lr, gamma_mod)
-
-            da_level = self._da_concentration_ca3.mean().item()
-            da_gain = 0.2 + 1.8 * da_level  # Strong dopamine gating
-            mossy_effective_lr = mossy_effective_lr * da_gain
-
+        if dg_spikes_delayed_float.sum() > 0 and ca3_spikes_float.sum() > 0:
             # Hebbian outer product: bind DG pattern to CA3 attractor
             # Shape: [ca3_size, dg_size] - each CA3 neuron learns from DG inputs
-            dW_mossy = mossy_effective_lr * torch.outer(ca3_activity, dg_activity)
+            dW_mossy = torch.outer(ca3_spikes_float, dg_spikes_delayed_float)
+
+            # ONE-SHOT learning: Use STRONG learning rate (3x normal)
+            # Biology: Mossy fiber LTP is rapid and doesn't require multiple pairings
+            ca3_da_gain = 0.2 + 1.8 * ca3_da_level  # Strong dopamine gating
+            mossy_effective_lr = cfg.learning_rate * 3.0 * encoding_mod * ca3_da_gain
 
             # Add to fast trace
-            self._dg_ca3_fast = self._dg_ca3_fast + dW_mossy
+            self._dg_ca3_fast = self._dg_ca3_fast + dW_mossy * mossy_effective_lr
 
             # Combined weight update: Fast (episodic) + Slow (semantic)
-            combined_dW = (
-                self._dg_ca3_fast + self.config.slow_trace_contribution * self._dg_ca3_slow
-            )
-            self.synaptic_weights["dg_ca3"].data += combined_dW
-
-            # Clamp weights (mossy fibers are excitatory, positive only)
-            clamp_weights(
-                self.synaptic_weights["dg_ca3"].data, self.config.w_min, self.config.w_max
-            )
+            combined_dW = self._dg_ca3_fast + cfg.slow_trace_contribution * self._dg_ca3_slow
+            dg_ca3_weights.data += combined_dW
+            clamp_weights(dg_ca3_weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # CA2: Social Memory and Temporal Context Layer
@@ -1481,219 +1198,162 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # - Projects to CA1 (providing context to decision layer)
 
         # APPLY CA3→CA2 AXONAL DELAY
-        if self._ca3_ca2_delay_steps > 0:
-            self._ca3_ca2_buffer.write(ca3_spikes)
-            ca3_spikes_for_ca2 = self._ca3_ca2_buffer.read(self._ca3_ca2_delay_steps)
-            self._ca3_ca2_buffer.advance()
-        else:
-            ca3_spikes_for_ca2 = ca3_spikes
+        ca3_spikes_for_ca2 = self._ca3_ca2_buffer.read(self._ca3_ca2_delay_steps)
+        ca3_spikes_for_ca2_float = ca3_spikes_for_ca2.float()
 
         # CA3→CA2 input with STP (depressing - stability mechanism)
-        if self.stp_ca3_ca2 is not None:
-            stp_efficacy = self.stp_ca3_ca2(ca3_spikes_for_ca2.float())
-            effective_w_ca3_ca2 = self.synaptic_weights["ca3_ca2"] * stp_efficacy.T
-            ca2_from_ca3 = torch.matmul(effective_w_ca3_ca2, ca3_spikes_for_ca2.float())
-        else:
-            ca2_from_ca3 = torch.matmul(
-                self.synaptic_weights["ca3_ca2"], ca3_spikes_for_ca2.float()
-            )
+        stp_efficacy = self.stp_modules[ca3_ca2_synapse].forward(ca3_spikes_for_ca2_float)
+        effective_w_ca3_ca2 = ca3_ca2_weights * stp_efficacy.T
+        ca2_from_ca3 = torch.matmul(effective_w_ca3_ca2, ca3_spikes_for_ca2_float)
 
-        # CA2 external input: Currently CA2 doesn't have per-source external weights
-        # It receives primarily from CA3. For now, use zero external input.
-        # Future: Add per-source CA2 weights if needed for social/contextual processing
-        ca2_from_ec = torch.zeros(self.ca2_size, device=self.device)
+        # =====================================================================
+        # CA2 FEEDBACK INHIBITION (Prevent Hyperactivity)
+        # =====================================================================
+        # Similar to CA3, CA2 pyramidal cells recruit interneurons for
+        # population-level feedback inhibition to prevent runaway activity.
+        # CA2 is particularly prone to amplification due to strong CA3 input.
 
-        # Combine CA2 inputs (both CA3 pattern and direct EC encoding)
-        ca2_input = ca2_from_ca3 + ca2_from_ec
+        # Compute CA2 feedback inhibition with both global and local components
+        # BIOLOGICAL FIX: Feedback inhibition is applied as CONDUCTANCE, not subtracted!
+        # CA2 lateral inhibition (for spatial selectivity)
+        prev_ca2_spikes = self._ca2_spike_buffer.read(1)
+        ca2_population_rate = prev_ca2_spikes.float().mean()
 
-        # Apply homeostatic gain and baseline noise (Turrigiano 2008)
+        ca2_ca2_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=HippocampusPopulation.CA2.value,
+            target_region=self.region_name,
+            target_population=HippocampusPopulation.CA2.value,
+            is_inhibitory=True,
+        )
+        ca2_ca2_inhib_weights = self.get_synaptic_weights(ca2_ca2_inhib_synapse)
+        local_lateral_ca2 = torch.matmul(ca2_ca2_inhib_weights, prev_ca2_spikes.float())
+        ca2_feedback_inhibition = ca2_population_rate * 0.2 + local_lateral_ca2 * 0.1
+
+        # Apply homeostatic gain and baseline noise
         # Add baseline noise (spontaneous miniature EPSPs)
-        if self._baseline_noise > 0:
-            ca2_input = ca2_input + self._baseline_noise
-        # Apply adaptive gain
-        ca2_input = ca2_input * self.ca2_gain
+        ca2_g_exc = F.relu(cfg.baseline_noise_conductance + ca2_from_ca3)
 
-        # Run through CA2 neurons
-        ca2_g_exc = F.relu(ca2_input)
-        # TODO: Future enhancement - add CA2 inhibition for more realistic dynamics
-        ca2_spikes, _ = self.ca2_neurons(
-            g_exc_input=ConductanceTensor(ca2_g_exc),
-            g_inh_input=None,
+        # =====================================================================
+        # CA2 INHIBITORY NETWORK
+        # =====================================================================
+        # Apply moderate inhibition for temporal/social context processing
+        # CRITICAL: Use PREVIOUS timestep's activity (causal inhibition)
+        ca2_inhib_output = self.ca2_inhibitory.forward(
+            pyr_spikes=self._ca2_spike_buffer.read(1),
+            septal_gaba=septal_gaba,
+            external_exc=ca2_g_exc,
         )
+        ca2_perisomatic_inhib = ca2_inhib_output["perisomatic"]
+        # Apply inhibition: Tonic + Feedback + Phasic (conductance-based)
+        ca2_g_inh = F.relu(cfg.tonic_inhibition + ca2_feedback_inhibition + ca2_perisomatic_inhib)
 
-        # Apply sparsity - use pre-spike membrane for WTA
-        ca2_spikes = self._apply_wta_sparsity(
-            ca2_spikes,
-            self.config.ca2_sparsity,
-            membrane=self.ca2_neurons.membrane_pre_spike,
-        )
+        # Add instantaneous self-inhibition to prevent burst escalation
+        # Uses membrane potential as proxy for imminent spiking
+        # REDUCED from 0.4 to 0.1: Strong self-inhibition was blocking normal firing
+        # Only apply when V_mem is VERY close to threshold (prevents premature inhibition)
+        if self.ca2_neurons.membrane is not None:
+            # Normalize membrane potential to [0, 1] range (assume v_rest=-1, v_threshold=1.0)
+            v_rest = -1.0
+            v_threshold = 1.0  # CA2 threshold
+            v_normalized = (self.ca2_neurons.membrane - v_rest) / (v_threshold - v_rest)
+            v_normalized = torch.clamp(v_normalized, 0.0, 1.0)
+            # Only apply strong inhibition when > 80% of way to threshold
+            burst_risk = torch.clamp((v_normalized - 0.8) / 0.2, 0.0, 1.0)
+            ca2_g_inh = ca2_g_inh + burst_risk * 0.1
 
-        # Update homeostatic gain for CA2
-        # Update firing rate (exponential moving average)
-        self.ca2_firing_rate = (
-            1 - self._firing_rate_alpha
-        ) * self.ca2_firing_rate + self._firing_rate_alpha * ca2_spikes.float()
-        # Compute rate error
-        rate_error = self._target_rate - self.ca2_firing_rate
-        # Update gain (increase gain if firing too low, decrease if too high)
-        self.ca2_gain.data = (self.ca2_gain + self._gain_lr * rate_error).clamp(min=0.001)
-        # Adaptive threshold
-        self.ca2_neurons.v_threshold.data = torch.clamp(
-            self.ca2_neurons.v_threshold - self._threshold_lr * rate_error,
-            min=self._threshold_min,
-            max=self._threshold_max,
+        # Split excitatory conductance into AMPA (fast) and NMDA (slow)
+        ca2_g_ampa, ca2_g_nmda = self._split_excitatory_conductance(ca2_g_exc)
+
+        ca2_spikes, _ = self.ca2_neurons.forward(
+            g_ampa_input=ConductanceTensor(ca2_g_ampa),
+            g_gaba_a_input=ConductanceTensor(ca2_perisomatic_inhib),
+            g_nmda_input=ConductanceTensor(ca2_g_nmda),
         )
+        ca2_spikes_float = ca2_spikes.float()
+
+        self._update_homeostasis(spikes=ca2_spikes, firing_rate=self.ca2_firing_rate, neurons=self.ca2_neurons)
 
         # CA3→CA2 WEAK PLASTICITY (stability mechanism)
-        # 10x weaker learning than typical - prevents CA2 from being dominated by CA3
-        ca3_activity_for_ca2 = ca3_spikes_for_ca2.float()
-        ca2_activity = ca2_spikes.float()
-
-        # Multi-timescale trace decay (continuous, time-based)
-        fast_decay = dt_ms / self.config.fast_trace_tau_ms
-        slow_decay = dt_ms / self.config.slow_trace_tau_ms
-
         self._ca3_ca2_fast = (1.0 - fast_decay) * self._ca3_ca2_fast
-        consolidation = self.config.consolidation_rate * self._ca3_ca2_fast
-        self._ca3_ca2_slow = (1.0 - slow_decay) * self._ca3_ca2_slow + consolidation
+        self._ca3_ca2_slow = (1.0 - slow_decay) * self._ca3_ca2_slow + cfg.consolidation_rate * self._ca3_ca2_fast
 
         # Learning only when there's activity
-        if ca3_activity_for_ca2.sum() > 0 and ca2_activity.sum() > 0:
+        if ca3_spikes_for_ca2.any() and ca2_spikes.any():
             # Very weak learning rate (stability hub)
-            base_lr = self.config.ca3_ca2_learning_rate * encoding_mod
+            effective_lr = cfg.learning_rate * encoding_mod
 
-            gamma_mod = self._gamma_amplitude_effective
-            effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
+            dW = torch.outer(ca2_spikes_float, ca3_spikes_for_ca2_float)
 
-            dW = effective_lr * torch.outer(ca2_activity, ca3_activity_for_ca2)
-
-            self._ca3_ca2_fast = self._ca3_ca2_fast + dW
-            combined_dW = (
-                self._ca3_ca2_fast + self.config.slow_trace_contribution * self._ca3_ca2_slow
-            )
-            self.synaptic_weights["ca3_ca2"].data += combined_dW
-
-            clamp_weights(
-                self.synaptic_weights["ca3_ca2"].data, self.config.w_min, self.config.w_max
-            )
-
-        cfg = self.config
+            self._ca3_ca2_fast = self._ca3_ca2_fast + dW * effective_lr
+            combined_dW = self._ca3_ca2_fast + cfg.slow_trace_contribution * self._ca3_ca2_slow
+            ca3_ca2_weights.data += combined_dW
+            clamp_weights(ca3_ca2_weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # APPLY CA3→CA1 AXONAL DELAY
         # =====================================================================
         # Apply biological transmission delay for CA3→CA1 Schaffer collateral pathway
-        # If delay is 0, ca3_spikes_delayed = ca3_spikes (instant, backward compatible)
-        if self._ca3_ca1_delay_steps > 0:
-            self._ca3_ca1_buffer.write(ca3_spikes)
-            ca3_spikes_delayed = self._ca3_ca1_buffer.read(self._ca3_ca1_delay_steps)
-            self._ca3_ca1_buffer.advance()
-        else:
-            ca3_spikes_delayed = ca3_spikes
+        # If delay is 0, ca3_spikes_delayed = ca3_spikes (instant)
+        ca3_spikes_delayed = self._ca3_ca1_buffer.read(self._ca3_ca1_delay_steps)
 
         # Feedforward from CA3 (retrieved/encoded memory) with optional STP
         # Schaffer collaterals are DEPRESSING - high-frequency CA3 activity
         # causes progressively weaker transmission to CA1
         # NOTE: Use delayed CA3 spikes for biological accuracy
-        if self.stp_schaffer is not None:
-            stp_efficacy = self.stp_schaffer(ca3_spikes_delayed.float())
-            effective_w_ca3_ca1 = self.synaptic_weights["ca3_ca1"] * stp_efficacy.T
-            ca1_from_ca3 = torch.matmul(
-                effective_w_ca3_ca1, ca3_spikes_delayed.float()
-            )  # [ca1_size]
-        else:
-            # Standard matmul without STP
-            ca1_from_ca3 = torch.matmul(
-                self.synaptic_weights["ca3_ca1"], ca3_spikes_delayed.float()
-            )  # [ca1_size]
-
-        # Multi-source architecture: ca1_input already integrates all external sources
-        # Each source (cortex, thalamus, etc.) has separate weights to CA1 with their own learning
-        ca1_from_ec = ca1_input  # [ca1_size]
+        stp_efficacy = self.stp_modules[ca3_ca1_synapse].forward(ca3_spikes_delayed.float())
+        effective_w_ca3_ca1 = ca3_ca1_weights * stp_efficacy.T
+        ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes_delayed.float())  # [ca1_size]
 
         # Apply feedforward inhibition: strong input change reduces CA1 drive
         # This clears residual activity naturally
-        ca1_from_ec = ca1_from_ec * ffi_factor
+        ca1_from_ec = ca1_input * ffi_factor
         ca1_from_ca3 = ca1_from_ca3 * ffi_factor
 
         # NMDA trace update (for retrieval gating)
         # Tracks CA3-induced depolarization for Mg²⁺ block removal
         if self.nmda_trace is not None:
             nmda_decay = torch.exp(torch.tensor(-dt_ms / cfg.nmda_tau))
-            self.nmda_trace = self.nmda_trace * nmda_decay + ca1_from_ca3 * (
-                1.0 - nmda_decay
-            )
+            self.nmda_trace = self.nmda_trace * nmda_decay + ca1_from_ca3 * (1.0 - nmda_decay)
         else:
-            self.nmda_trace = ca1_from_ca3.clone()
+            self.nmda_trace = ca1_from_ca3
 
         # NMDA gating: Mg²⁺ block removal based on CA3 depolarization
         # Stronger during retrieval (theta peak)
-        mg_block_removal = (
-            torch.sigmoid((self.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness)
-            * retrieval_mod
-        )
-        nmda_current = ca1_from_ec * mg_block_removal
+        mg_block_removal = torch.sigmoid((self.nmda_trace - cfg.nmda_threshold) * cfg.nmda_steepness) * retrieval_mod
+        nmda_conductance = ca1_from_ec * mg_block_removal
 
-        # AMPA current: fast baseline transmission
-        ampa_current = ca1_from_ec * cfg.ampa_ratio
+        # AMPA conductance: fast baseline transmission
+        ampa_conductance = ca1_from_ec * cfg.ampa_ratio
 
         # CA3 contribution: stronger during encoding
         ca3_contribution = ca1_from_ca3 * (0.5 + 0.5 * encoding_mod)
 
         # APPLY CA2→CA1 AXONAL DELAY
-        if self._ca2_ca1_delay_steps > 0:
-            self._ca2_ca1_buffer.write(ca2_spikes)
-            ca2_spikes_delayed = self._ca2_ca1_buffer.read(self._ca2_ca1_delay_steps)
-            self._ca2_ca1_buffer.advance()
-        else:
-            ca2_spikes_delayed = ca2_spikes
+        ca2_spikes_delayed = self._ca2_ca1_buffer.read(self._ca2_ca1_delay_steps)
+        ca2_spikes_delayed_float = ca2_spikes_delayed.float()
 
         # CA2→CA1 contribution with STP (facilitating - temporal sequences)
-        if self.stp_ca2_ca1 is not None:
-            stp_efficacy = self.stp_ca2_ca1(ca2_spikes_delayed.float())
-            effective_w_ca2_ca1 = self.synaptic_weights["ca2_ca1"] * stp_efficacy.T
-            ca1_from_ca2 = torch.matmul(effective_w_ca2_ca1, ca2_spikes_delayed.float())
-        else:
-            ca1_from_ca2 = torch.matmul(
-                self.synaptic_weights["ca2_ca1"], ca2_spikes_delayed.float()
-            )
+        stp_efficacy = self.stp_modules[ca2_ca1_synapse].forward(ca2_spikes_delayed_float)
+        effective_w_ca2_ca1 = ca2_ca1_weights * stp_efficacy.T
+        ca1_from_ca2 = torch.matmul(effective_w_ca2_ca1, ca2_spikes_delayed_float)
 
         # Apply FFI to CA2 contribution as well
         ca1_from_ca2 = ca1_from_ca2 * ffi_factor
-
-        # Total CA1 input (now includes CA2 temporal/social context)
-        ca1_input = ca3_contribution + ca1_from_ca2 + ampa_current + nmda_current
-
-        # CRITICAL FIX (2025-01): Clamp to non-negative BEFORE gain multiplication
-        # Problem: Negative values get amplified by gain, creating runaway negative conductance
-        # Biological justification: Conductances are physical properties and cannot be negative
-        ca1_input = F.relu(ca1_input)
-
-        # Apply homeostatic gain and baseline noise (Turrigiano 2008)
-        # Add baseline noise (spontaneous miniature EPSPs)
-        if self._baseline_noise > 0:
-            ca1_input = ca1_input + self._baseline_noise
-        # Apply adaptive gain
-        ca1_input = ca1_input * self.ca1_gain
 
         # =====================================================================
         # CA1 INHIBITORY NETWORK (PV, OLM, Bistratified)
         # =====================================================================
         # Run CA1 inhibitory network with septal input
         # OLM cells create EMERGENT encoding/retrieval separation!
-        if hasattr(self, 'ca1_inhibitory'):
-            ca1_inhib_output = self.ca1_inhibitory(
-                pyr_spikes=self.ca1_spikes if self.ca1_spikes is not None else torch.zeros(self.ca1_size, device=self.device, dtype=torch.bool),
-                septal_gaba=septal_gaba,
-                external_exc=ca3_contribution,  # CA3→CA1 drives inhibitory network
-            )
-            ca1_perisomatic_inhib = ca1_inhib_output["perisomatic"]  # PV cells
-            ca1_dendritic_inhib = ca1_inhib_output["dendritic"]       # OLM + bistratified
-            ca1_olm_inhib = ca1_inhib_output["olm_dendritic"]         # OLM only
-        else:
-            ca1_perisomatic_inhib = torch.zeros(self.ca1_size, device=self.device)
-            ca1_dendritic_inhib = torch.zeros(self.ca1_size, device=self.device)
-            ca1_olm_inhib = torch.zeros(self.ca1_size, device=self.device)
+        ca1_inhib_output = self.ca1_inhibitory.forward(
+            pyr_spikes=self._ca1_spike_buffer.read(1),
+            septal_gaba=septal_gaba,
+            external_exc=ca3_contribution,
+        )
+        ca1_perisomatic_inhib = ca1_inhib_output["perisomatic"]  # PV cells
+        ca1_dendritic_inhib = ca1_inhib_output["dendritic"]      # OLM + bistratified
+        ca1_olm_inhib = ca1_inhib_output["olm_dendritic"]        # OLM only
 
         # =====================================================================
         # EMERGENT ENCODING/RETRIEVAL from OLM dynamics
@@ -1703,197 +1363,208 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # - Low OLM activity → weak dendritic inhibition → retrieval phase
         #
         # Compute modulation from OLM firing rate (inverted for retrieval)
+        # Store for NEXT timestep (current timestep already used previous values)
         olm_firing_rate = ca1_olm_inhib.mean().item()  # [0, ~1]
         # Encoding high when OLM fires (suppresses retrieval pathway)
-        # Add baseline encoding (0.3) so learning isn't completely blocked
+        # Add baseline encoding so learning isn't completely blocked
         # when OLM cells are silent during early training. Real hippocampus has tonic
         # acetylcholine that provides baseline encoding drive even without septal input.
-        encoding_mod = torch.clamp(torch.tensor(0.3 + olm_firing_rate * 2.0), 0.0, 1.0).item()
-        # Retrieval high when OLM silent (allows EC→CA1 flow)
-        retrieval_mod = 1.0 - encoding_mod
+        self._prev_encoding_mod = torch.clamp(torch.tensor(0.3 + olm_firing_rate * 2.0), 0.0, 1.0).item()
 
         # Split excitation and inhibition for ConductanceLIF
-        # Excitatory: CA3 + EC pathways
-        ca1_g_exc = F.relu(ca1_input)
+        ca1_g_exc = cfg.baseline_noise_conductance + ca3_contribution + ca1_from_ca2 + ampa_conductance + nmda_conductance
 
         # Apply dendritic inhibition to excitatory input (models apical dendrite suppression)
         # OLM cells target apical dendrites where EC input arrives
-        ca1_g_exc = ca1_g_exc * (1.0 - ca1_dendritic_inhib.mean() * 0.5)  # Moderate suppression
+        # Normalize dendritic inhibition to biological range [0, 1]
+        ca1_dendritic_inhib_normalized = torch.sigmoid((ca1_dendritic_inhib - 1.5) * 2.0)
+        suppression_factor = torch.clamp(ca1_dendritic_inhib_normalized.mean() * 0.8, 0.0, 0.8)
+        ca1_g_exc = ca1_g_exc * (1.0 - suppression_factor)
 
-        # Inhibitory: perisomatic inhibition from PV cells + lateral CA1 inhibition
-        ca1_g_inh = F.relu(ca1_perisomatic_inhib)
+        # Add CA1 feedback inhibition (like CA3) to prevent hyperactivity
+        # CA1 pyramidal cells recruit basket cells for lateral inhibition
+        # Simple implementation: population activity suppresses all neurons equally
+        prev_ca1_spikes = self._ca1_spike_buffer.read(1)
+        ca1_feedback_inhib = prev_ca1_spikes.float().mean() * 0.1  # Light feedback strength
+
+        # Inhibitory: perisomatic inhibition from PV cells + lateral CA1 inhibition + tonic
+        # Tonic inhibition from extrasynaptic GABA_A receptors provides constant baseline
+        ca1_g_inh = F.relu(cfg.tonic_inhibition + ca1_perisomatic_inhib + ca1_feedback_inhib)
+
+        # Add instantaneous self-inhibition to prevent burst escalation
+        # Uses membrane potential as proxy for imminent spiking
+        # Only apply when V_mem is VERY close to threshold (prevents premature inhibition)
+        if self.ca1_neurons.membrane is not None:
+            # Normalize membrane potential to [0, 1] range (assume v_rest=-1, v_threshold=1.0)
+            v_rest = -1.0
+            v_threshold = 1.0  # CA1 threshold
+            v_normalized = (self.ca1_neurons.membrane - v_rest) / (v_threshold - v_rest)
+            v_normalized = torch.clamp(v_normalized, 0.0, 1.0)
+            burst_risk = torch.clamp((v_normalized - 0.8) / 0.2, 0.0, 1.0)
+            ca1_g_inh = ca1_g_inh + burst_risk * 0.1
+
+        # Split excitatory conductance into AMPA (fast) and NMDA (slow)
+        ca1_g_ampa, ca1_g_nmda = self._split_excitatory_conductance(ca1_g_exc)
+
         # Run through CA1 neurons (ConductanceLIF with E/I separation)
-        ca1_spikes, _ca1_membrane = self.ca1_neurons(
-            g_exc_input=ConductanceTensor(ca1_g_exc),
-            g_inh_input=ConductanceTensor(ca1_g_inh),
+        ca1_spikes, _ca1_membrane = self.ca1_neurons.forward(
+            g_ampa_input=ConductanceTensor(ca1_g_ampa),
+            g_gaba_a_input=ConductanceTensor(ca1_g_inh),
+            g_nmda_input=ConductanceTensor(ca1_g_nmda),
         )
+        ca1_spikes_float = ca1_spikes.float()
 
-        # Apply sparsity (more lenient during retrieval to allow mismatch detection)
-        # Use pre-spike membrane for WTA (not post-spike which resets to v_reset)
-        sparsity_factor = (
-            1.0 + 0.5 * retrieval_mod
-        )  # Higher threshold during retrieval
-        ca1_spikes = self._apply_wta_sparsity(
-            ca1_spikes,
-            cfg.ca1_sparsity * sparsity_factor,
-            membrane=self.ca1_neurons.membrane_pre_spike,
-        )
-
-        # Update homeostatic gain for CA1
-        # Update firing rate (exponential moving average)
-        self.ca1_firing_rate = (
-            1 - self._firing_rate_alpha
-        ) * self.ca1_firing_rate + self._firing_rate_alpha * ca1_spikes.float()
-        # Compute rate error
-        rate_error = self._target_rate - self.ca1_firing_rate
-        # Update gain (increase gain if firing too low, decrease if too high)
-        self.ca1_gain.data = (self.ca1_gain + self._gain_lr * rate_error).clamp(min=0.001)
-        # Adaptive threshold
-        self.ca1_neurons.v_threshold.data = torch.clamp(
-            self.ca1_neurons.v_threshold - self._threshold_lr * rate_error,
-            min=self._threshold_min,
-            max=self._threshold_max,
-        )
+        self._update_homeostasis(spikes=ca1_spikes, firing_rate=self.ca1_firing_rate, neurons=self.ca1_neurons)
 
         # ---------------------------------------------------------
         # HEBBIAN LEARNING: CA2→CA1 plasticity (during encoding)
         # ---------------------------------------------------------
         # CA2 provides temporal/social context to CA1
-        # Moderate learning rate (between CA3→CA2 weak and EC→CA1 strong)
-        ca2_activity_delayed = ca2_spikes_delayed.float()
-        ca1_activity = ca1_spikes.float()
+        if ca2_spikes_delayed.any() and ca1_spikes.any():
+            effective_lr = cfg.learning_rate * encoding_mod
 
-        if ca2_activity_delayed.sum() > 0 and ca1_activity.sum() > 0:
-            base_lr = cfg.ca2_ca1_learning_rate * encoding_mod
+            dW = torch.outer(ca1_spikes_float, ca2_spikes_delayed_float)
 
-            gamma_mod = self._gamma_amplitude_effective
-            effective_lr = compute_learning_rate_modulation(base_lr, gamma_mod)
+            self._ca2_ca1_fast = (1.0 - fast_decay) * self._ca2_ca1_fast + dW * effective_lr
+            self._ca2_ca1_slow = (1.0 - slow_decay) * self._ca2_ca1_slow + cfg.consolidation_rate * self._ca2_ca1_fast
 
-            dW = effective_lr * torch.outer(ca1_activity, ca2_activity_delayed)
+            combined_dW = self._ca2_ca1_fast + cfg.slow_trace_contribution * self._ca2_ca1_slow
+            ca2_ca1_weights.data += combined_dW
+            clamp_weights(ca2_ca1_weights.data, cfg.w_min, cfg.w_max)
 
-            # Multi-timescale consolidation for CA2→CA1
-            fast_decay = dt_ms / self.config.fast_trace_tau_ms
-            self._ca2_ca1_fast = (1.0 - fast_decay) * self._ca2_ca1_fast + dW
+        if WeightInitializer.GLOBAL_LEARNING_ENABLED:
+            # =====================================================================
+            # EXTERNAL INPUT PLASTICITY (Per-Source Learning)
+            # =====================================================================
+            # Apply three-factor learning (eligibility × dopamine × learning_rate)
+            # to all external input pathways. This learns which cortical patterns
+            # are associated with hippocampal memories.
+            #
+            # Biological rationale: EC→hippocampus synapses show robust LTP/LTD
+            # modulated by dopamine, VTA novelty signals, and behavioral outcomes.
+            # This is how the hippocampus learns which sensory/contextual patterns
+            # matter for episodic memory formation.
+            #
+            # Only apply during encoding mode (theta trough) when new memories
+            # are being formed. During retrieval (theta peak), external inputs
+            # serve as retrieval cues, not learning signals.
+            if encoding_mod > 0.5:
+                # Get dopamine modulation (average across all subregions)
+                da_modulation = (dg_da_level + ca3_da_level + ca2_da_level + ca1_da_level) / 4.0
 
-            slow_decay = dt_ms / self.config.slow_trace_tau_ms
-            consolidation = self.config.consolidation_rate * self._ca2_ca1_fast
-            self._ca2_ca1_slow = (1.0 - slow_decay) * self._ca2_ca1_slow + consolidation
+                # Modulate learning rate by dopamine
+                effective_lr = cfg.learning_rate * 0.3 * (1.0 + da_modulation)
 
-            combined_dW = self._ca2_ca1_fast + self.config.slow_trace_contribution * self._ca2_ca1_slow
-            self.synaptic_weights["ca2_ca1"].data += combined_dW
+                # Apply learning to each external input source
+                for synapse_id in self.input_sources.keys():
+                    # Get source spikes from inputs
+                    source_input = synaptic_inputs.get(synapse_id, None)
+                    if source_input is None or source_input.numel() == 0:
+                        continue
 
-            clamp_weights(self.synaptic_weights["ca2_ca1"].data, cfg.w_min, cfg.w_max)
+                    weights = self.get_synaptic_weights(synapse_id)
 
-        # =====================================================================
-        # Update STDP Traces (for learning, not comparison)
-        # =====================================================================
+                    if synapse_id.target_population == HippocampusPopulation.DG.value:
+                        # Learn EC→DG (pattern separation input)
+                        # Hebbian learning: pre (source) × post (DG)
+                        dW_dg = effective_lr * torch.outer(dg_spikes_float, source_input.float())
+                        weights.data += dW_dg
 
-        # Apply continuous plasticity (learning happens as part of forward dynamics)
-        self.dg_spikes = dg_spikes
-        self.ca3_spikes = ca3_spikes
-        self.ca2_spikes = ca2_spikes
-        self.ca1_spikes = ca1_spikes
+                    elif synapse_id.target_population == HippocampusPopulation.CA3.value:
+                        # Learn EC→CA3 (direct perforant path for retrieval cues)
+                        # Hebbian learning: pre (source) × post (CA3)
+                        dW_ca3 = effective_lr * torch.outer(ca3_spikes_float, source_input.float())
+                        weights.data += dW_ca3
 
-        # =====================================================================
-        # EXTERNAL INPUT PLASTICITY (Per-Source Learning)
-        # =====================================================================
-        # Apply three-factor learning (eligibility × dopamine × learning_rate)
-        # to all external input pathways. This learns which cortical patterns
-        # are associated with hippocampal memories.
-        #
-        # Biological rationale: EC→hippocampus synapses show robust LTP/LTD
-        # modulated by dopamine, VTA novelty signals, and behavioral outcomes.
-        # This is how the hippocampus learns which sensory/contextual patterns
-        # matter for episodic memory formation.
-        #
-        # Only apply during encoding mode (theta trough) when new memories
-        # are being formed. During retrieval (theta peak), external inputs
-        # serve as retrieval cues, not learning signals.
-        if encoding_mod > 0.5 and self.learning_strategy is not None:
-            # Get dopamine modulation (average across all subregions)
-            da_modulation = (
-                self._da_concentration_dg.mean().item()
-                + self._da_concentration_ca3.mean().item()
-                + self._da_concentration_ca2.mean().item()
-                + self._da_concentration_ca1.mean().item()
-            ) / 4.0
+                    elif synapse_id.target_population == HippocampusPopulation.CA1.value:
+                        # Learn EC→CA1 (direct output pathway)
+                        # Hebbian learning: pre (source) × post (CA1)
+                        dW_ca1 = effective_lr * torch.outer(ca1_spikes_float, source_input.float())
+                        weights.data += dW_ca1
 
-            # Modulate learning rate by dopamine
-            base_lr = self.config.learning_rate * 0.3  # 30% of internal learning rate
-            effective_lr = base_lr * (1.0 + da_modulation)
+                    clamp_weights(weights.data, cfg.w_min, cfg.w_max)
 
-            # Apply learning to each external input source
-            # Pattern: source_dg, source_ca3, source_ca1 (created in add_input_source)
-            for source_name in list(self.input_sources.keys()):
-                # Skip internal connections (already learned above)
-                if source_name.startswith("_"):
-                    continue
+            # =====================================================================
+            # CA3 RECURRENT PLASTICITY (Three-Factor Learning)
+            # =====================================================================
+            # Apply dopamine-modulated three-factor learning to CA3→CA3 recurrent weights.
+            # This is CRITICAL for sequence learning - the recurrent connections store
+            # temporal associations between patterns.
+            #
+            # Three-factor rule: ΔW = eligibility_trace × dopamine × learning_rate
+            # - Eligibility: accumulated Hebbian correlations (STDP-like)
+            # - Dopamine: reward/novelty signal from VTA
+            # - Learning rate: modulated by encoding phase (theta)
+            #
+            # Biological rationale: CA3 recurrent synapses exhibit dopamine-gated LTP/LTD
+            # that consolidates rewarded sequences into stable attractors.
 
-                # Skip neuromodulator inputs (no weight matrices)
-                if source_name.endswith(":da_output") or source_name.endswith(":ne_output") or source_name.endswith(":ach_output"):
-                    continue
+            if encoding_mod > 0.5:
+                # Get delayed CA3 activity (what was just active before current spikes)
+                ca3_delayed = self._ca3_ca3_buffer.read(self._ca3_ca3_delay_steps)
 
-                # Get source spikes from inputs
-                source_input = region_inputs.get(source_name, None)
-                if source_input is None or source_input.numel() == 0:
-                    continue
+                # Three-factor rule needs DEVIATION from baseline (not absolute concentration)
+                # Baseline ~0.5 → modulator = 0 (no learning)
+                # Reward burst → modulator > 0 (strengthen synapses)
+                # Punishment dip → modulator < 0 (weaken synapses)
+                da_ca3_deviation = ca3_da_level - 0.5
+                ca3_ca3_weights.data = self.learning_strategy.compute_update(
+                    weights=ca3_ca3_weights,
+                    pre_spikes=ca3_delayed,
+                    post_spikes=ca3_spikes,
+                    modulator=da_ca3_deviation,
+                )
+                ca3_ca3_weights.data.fill_diagonal_(0.0)  # Maintain no self-connections (biological constraint)
+                clamp_weights(ca3_ca3_weights.data, cfg.w_min, cfg.w_max)
 
-                # Learn EC→DG (pattern separation input)
-                weight_key_dg = f"{source_name}_dg"
-                if weight_key_dg in self.synaptic_weights and dg_spikes is not None:
-                    # Hebbian learning: pre (source) × post (DG)
-                    dW_dg = effective_lr * torch.outer(dg_spikes.float(), source_input.float())
-                    self.synaptic_weights[weight_key_dg].data += dW_dg
-                    clamp_weights(self.synaptic_weights[weight_key_dg].data, self.config.w_min, self.config.w_max)
+            # =====================================================================
+            # DOPAMINE-GATED CONSOLIDATION
+            # =====================================================================
+            # Apply dopamine-gated consolidation to tagged synapses
+            # High dopamine (reward) → strong consolidation of tagged synapses
+            # This is the "capture" part of synaptic tagging and capture
+            if self.synaptic_tagging is not None and ca3_da_level > 0.1:
+                # Consolidate tagged synapses proportional to dopamine
+                ca3_ca3_weights.data = self.synaptic_tagging.consolidate_tagged_synapses(
+                    weights=ca3_ca3_weights,
+                    dopamine=ca3_da_level,
+                    learning_rate=cfg.learning_rate * 0.5,  # Half of base LR
+                )
+                clamp_weights(ca3_ca3_weights.data, cfg.w_min, cfg.w_max)
 
-                # Learn EC→CA3 (direct perforant path for retrieval cues)
-                weight_key_ca3 = f"{source_name}_ca3"
-                if weight_key_ca3 in self.synaptic_weights and ca3_spikes is not None:
-                    # Hebbian learning: pre (source) × post (CA3)
-                    dW_ca3 = effective_lr * torch.outer(ca3_spikes.float(), source_input.float())
-                    self.synaptic_weights[weight_key_ca3].data += dW_ca3
-                    clamp_weights(self.synaptic_weights[weight_key_ca3].data, self.config.w_min, self.config.w_max)
-
-                # Learn EC→CA1 (direct output pathway)
-                weight_key_ca1 = f"{source_name}_ca1"
-                if weight_key_ca1 in self.synaptic_weights and ca1_spikes is not None:
-                    # Hebbian learning: pre (source) × post (CA1)
-                    dW_ca1 = effective_lr * torch.outer(ca1_spikes.float(), source_input.float())
-                    self.synaptic_weights[weight_key_ca1].data += dW_ca1
-                    clamp_weights(self.synaptic_weights[weight_key_ca1].data, self.config.w_min, self.config.w_max)
-
-        # =====================================================================
-        # DOPAMINE-GATED CONSOLIDATION
-        # =====================================================================
-        # Apply dopamine-gated consolidation to tagged synapses
-        # High dopamine (reward) → strong consolidation of tagged synapses
-        # This is the "capture" part of synaptic tagging and capture
-        da_level = self._da_concentration_ca3.mean().item()
-        if self.synaptic_tagging is not None and da_level > 0.1:
-            # Consolidate tagged synapses proportional to dopamine
-            current_weights = self.synaptic_weights["ca3_ca3"]
-            new_weights = self.synaptic_tagging.consolidate_tagged_synapses(
-                weights=current_weights,
-                dopamine=da_level,
-                learning_rate=self.config.learning_rate * 0.5,  # Half of base LR
-            )
-            self.synaptic_weights["ca3_ca3"].data = new_weights
-
-        region_outputs: RegionSpikesDict = {
-            "dg": dg_spikes,
-            "ca3": ca3_spikes,
-            "ca2": ca2_spikes,
-            "ca1": ca1_spikes,
+        region_outputs: RegionOutput = {
+            HippocampusPopulation.DG.value: dg_spikes,
+            HippocampusPopulation.CA3.value: ca3_spikes,
+            HippocampusPopulation.CA2.value: ca2_spikes,
+            HippocampusPopulation.CA1.value: ca1_spikes,
         }
 
         self._apply_plasticity(region_outputs)
 
-        # Advance delay buffers to next timestep
-        self._ca3_recurrent_buffer.advance()
+        # =====================================================================
+        # UPDATE STATE BUFFERS FOR NEXT TIMESTEP
+        # =====================================================================
+        # Write spikes to state buffers
+        self._dg_spike_buffer.write_and_advance(dg_spikes)
+        self._ca3_spike_buffer.write_and_advance(ca3_spikes)
+        self._ca2_spike_buffer.write_and_advance(ca2_spikes)
+        self._ca1_spike_buffer.write_and_advance(ca1_spikes)
+
+        # Write membrane potentials to state buffers
+        self._dg_membrane_buffer.write_and_advance(self.dg_neurons.membrane)
+        self._ca3_membrane_buffer.write_and_advance(self.ca3_neurons.membrane)
+        self._ca2_membrane_buffer.write_and_advance(self.ca2_neurons.membrane)
+        self._ca1_membrane_buffer.write_and_advance(self.ca1_neurons.membrane)
+
+        self._dg_ca3_buffer.write_and_advance(dg_spikes)
+        self._ca3_ca3_buffer.write_and_advance(ca3_spikes)
+        self._ca3_ca2_buffer.write_and_advance(ca3_spikes)
+        self._ca3_ca1_buffer.write_and_advance(ca3_spikes)
+        self._ca2_ca1_buffer.write_and_advance(ca2_spikes)
 
         return self._post_forward(region_outputs)
 
-    def _apply_plasticity(self, region_outputs: RegionSpikesDict) -> None:
+    def _apply_plasticity(self, region_outputs: RegionOutput) -> None:
         """
         Apply homeostatic plasticity to hippocampal synapses.
 
@@ -1906,143 +1577,104 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         external pathways use dopamine-gated learning (consolidates valuable patterns).
         Homeostatic plasticity (synaptic scaling, intrinsic plasticity) prevents
         runaway excitation and maintains stable network dynamics.
+
+        NOTE: During active learning (three-factor rule), homeostatic scaling is
+        TEMPORARILY DISABLED to allow learned patterns to consolidate. Otherwise
+        the normalization washes out selectivity immediately after learning updates.
         """
-        ca3_spikes = region_outputs["ca3"]
+        if not WeightInitializer.GLOBAL_LEARNING_ENABLED:
+            return  # Skip plasticity if globally disabled (e.g., for testing)
+
+        ca3_spikes = region_outputs[HippocampusPopulation.CA3.value]
+        ca3_spikes_float = ca3_spikes.float()
 
         # =====================================================================
-        # HOMEOSTATIC SYNAPTIC SCALING
+        # ADAPTIVE HOMEOSTATIC SYNAPTIC SCALING (Firing Rate-Based)
         # =====================================================================
-        # Apply homeostatic synaptic scaling to internal connections
-        self.synaptic_weights["ca3_ca3"].data = self.homeostasis.normalize_weights(
-            self.synaptic_weights["ca3_ca3"].data, dim=1
-        )
-        self.synaptic_weights["ca3_ca3"].data.fill_diagonal_(0.0)  # Maintain no self-connections
+        # Biological mechanism: Homeostatic synaptic scaling (Turrigiano et al.)
+        # - Neurons measure average firing rate over hours
+        # - If chronically too high/low, scale ALL synapses multiplicatively
+        # - Preserves selectivity: strong synapses remain relatively stronger
+        #
+        # Implementation:
+        # - Track CA3 population firing rate over 30-second sliding window
+        # - Only scale if CHRONICALLY outside tolerance (>50% deviation)
+        # - Multiplicative scaling (weights *= scale_factor)
+        # - Very slow (5% adjustment) to not interfere with fast learning
 
-        # Also apply scaling to CA3→CA2 and CA2→CA1 (stability)
-        if "ca3_ca2" in self.synaptic_weights:
-            self.synaptic_weights["ca3_ca2"].data = self.homeostasis.normalize_weights(
-                self.synaptic_weights["ca3_ca2"].data, dim=1
-            )
+        self._homeostasis_counter += 1
 
-        if "ca2_ca1" in self.synaptic_weights:
-            self.synaptic_weights["ca2_ca1"].data = self.homeostasis.normalize_weights(
-                self.synaptic_weights["ca2_ca1"].data, dim=1
-            )
+        # Track current firing rate every timestep
+        if ca3_spikes is not None:
+            current_rate = ca3_spikes_float.mean().item()
+            self._homeostasis_firing_history.append(current_rate)
 
-        # Apply scaling to external input pathways
-        for source_name in list(self.input_sources.keys()):
-            if source_name.startswith("_"):
-                continue
+            # Keep only last N measurements (sliding window)
+            if len(self._homeostasis_firing_history) > self._homeostasis_interval * self._homeostasis_window_size:
+                self._homeostasis_firing_history.pop(0)
 
-            for suffix in ["_dg", "_ca3", "_ca1"]:
-                weight_key = f"{source_name}{suffix}"
-                if weight_key in self.synaptic_weights:
-                    self.synaptic_weights[weight_key].data = self.homeostasis.normalize_weights(
-                        self.synaptic_weights[weight_key].data, dim=1
-                    )
+        # Check for chronic hyperactivity/hypoactivity every interval
+        if self._homeostasis_counter >= self._homeostasis_interval:
+            self._homeostasis_counter = 0
+
+            # Need enough history to make decision
+            if len(self._homeostasis_firing_history) >= self._homeostasis_interval * 5:  # At least 5 seconds
+                # Compute average firing rate over window
+                avg_firing_rate = sum(self._homeostasis_firing_history) / len(self._homeostasis_firing_history)
+
+                # Compute deviation from target
+                deviation = (avg_firing_rate - self.config.target_firing_rate) / (self.config.target_firing_rate + 1e-8)
+
+                # Only act if chronically outside tolerance
+                if abs(deviation) > 0.5:
+                    ca3_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3.value, self.region_name, HippocampusPopulation.CA3.value, is_inhibitory=False)
+                    ca3_ca2_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3.value, self.region_name, HippocampusPopulation.CA2.value, is_inhibitory=False)
+                    ca2_ca1_synapse = SynapseId(self.region_name, HippocampusPopulation.CA2.value, self.region_name, HippocampusPopulation.CA1.value, is_inhibitory=False)
+
+                    # Compute multiplicative scale factor
+                    target_scale = self.config.target_firing_rate / (avg_firing_rate + 1e-8)
+                    scale_factor = 1.0 + 0.05 * (target_scale - 1.0)
+                    scale_factor = torch.clamp(torch.tensor(scale_factor), 0.9, 1.1).item()
+
+                    # Apply MULTIPLICATIVE scaling to CA3 recurrent weights
+                    # This preserves selectivity: if A=2*B before, A=2*B after
+                    ca3_ca3_weights = self.get_synaptic_weights(ca3_ca3_synapse)
+                    ca3_ca3_weights.data *= scale_factor
+                    ca3_ca3_weights.data.fill_diagonal_(0.0)
+
+                    # Also scale CA3→CA2 and CA2→CA1 (prevent downstream runaway)
+                    self.get_synaptic_weights(ca3_ca2_synapse).data *= scale_factor
+                    self.get_synaptic_weights(ca2_ca1_synapse).data *= scale_factor
+
+                    # Apply same scaling to external inputs into CA3
+                    for synapse_id in self._synaptic_weights.keys():
+                        if synapse_id.target_population == HippocampusPopulation.CA3.value:
+                            self.get_synaptic_weights(synapse_id).data *= scale_factor
+
+                    # Enforce hard bounds after scaling
+                    for synapse_id in [ca3_ca3_synapse, ca3_ca2_synapse, ca2_ca1_synapse]:
+                        if self.has_synaptic_weights(synapse_id):
+                            self.get_synaptic_weights(synapse_id).data.clamp_(self.config.w_min, self.config.w_max)
 
         # =====================================================================
         # INTRINSIC PLASTICITY (Threshold Adaptation)
         # =====================================================================
-        # Apply intrinsic plasticity (threshold adaptation) using homeostasis helper
+        # Apply intrinsic plasticity (threshold adaptation)
         if ca3_spikes is not None:
-            # Initialize if needed
-            if self._ca3_activity_history is None:
-                self._ca3_activity_history = torch.zeros(self.ca3_size, device=self.device)
-            if self._ca3_threshold_offset is None:
-                self._ca3_threshold_offset = torch.zeros(self.ca3_size, device=self.device)
-
             # Update activity history (exponential moving average)
-            self._ca3_activity_history.mul_(0.99).add_(ca3_spikes.float(), alpha=0.01)
+            self._ca3_activity_history.mul_(0.99).add_(ca3_spikes_float, alpha=0.01)
 
             # Use homeostasis helper for excitability modulation
             # This computes threshold offset based on activity deviation from target
-            excitability_mod = self.homeostasis.compute_excitability_modulation(
+            excitability_mod = UnifiedHomeostasis.compute_excitability_modulation(
                 self._ca3_activity_history,
-                tau=100.0
+                activity_target=self.config.target_firing_rate,
+                tau=100.0,
             )
             # Convert excitability modulation (>1 = easier, <1 = harder) to threshold offset
             # Higher excitability → lower threshold (subtract positive offset)
             # Lower excitability → higher threshold (subtract negative offset)
             self._ca3_threshold_offset = (1.0 - excitability_mod).clamp(-0.5, 0.5)
-
-    def _apply_wta_sparsity(
-        self,
-        spikes: torch.Tensor,
-        target_sparsity: float,
-        membrane: Optional[torch.Tensor] = None,
-        conductance: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """Apply soft winner-take-all with membrane noise (biologically realistic).
-
-        Instead of hard ranking by exact membrane potential, uses:
-        1. Membrane noise (1-2mV typical biological fluctuation)
-        2. Probabilistic selection via softmax over noisy potentials
-        3. Target sparsity as soft constraint, not hard cutoff
-
-        This makes the selection robust to tiny floating point differences
-        (<1e-7) while maintaining biological realism. Real hippocampal neurons
-        have ~2-5mV membrane fluctuations that dominate selection dynamics.
-
-        **IMPORTANT**: Must use pre-spike membrane (before reset) for WTA selection.
-        Neurons now store `membrane_pre_spike` which is captured before spike check.
-        Post-spike membrane is reset to v_reset and is useless for selection.
-
-        Args:
-            spikes: Spike tensor [n_neurons] (1D)
-            target_sparsity: Fraction of neurons to keep active
-            membrane: Pre-spike membrane potentials [n_neurons] for selection
-                Should be neuron.membrane_pre_spike (captured before spike reset)
-            conductance: Optional conductance fallback [n_neurons] for selection
-                Used if membrane unavailable (shouldn't happen with new API)
-                Higher conductance = stronger drive = should be selected
-
-        Returns:
-            Sparse spike tensor [n_neurons] (1D bool)
-        """
-        n_neurons = spikes.shape[0]
-        k = max(1, int(n_neurons * target_sparsity))
-
-        # Create bool tensor (memory efficient)
-        sparse_spikes = torch.zeros_like(spikes, dtype=torch.bool)
-
-        # Single sample processing (no batch)
-        active = spikes.nonzero(as_tuple=True)[0]
-
-        if len(active) <= k:
-            # All spikes pass through
-            sparse_spikes = spikes if spikes.dtype == torch.bool else spikes.bool()
-        elif membrane is not None:
-            # Use pre-spike membrane potential (primary method)
-            # Add biological membrane noise (1-2mV ~ 0.001-0.002 normalized units)
-            active_v = membrane[active]
-            noise = torch.randn_like(active_v) * 0.002  # 2mV std deviation
-            noisy_v = active_v + noise
-
-            # Soft WTA: probabilistic selection via softmax (temperature=10mV ~ 0.01)
-            probs = torch.softmax(noisy_v / 0.01, dim=0)
-            selected = torch.multinomial(probs, k, replacement=False)
-            sparse_spikes[active[selected]] = True
-        elif conductance is not None:
-            # Fallback: Use conductance as proxy for drive
-            # Higher conductance = stronger input = should be selected
-            active_g = conductance[active]
-            noise = torch.randn_like(active_g) * 0.002  # Biological noise
-            noisy_g = active_g + noise
-
-            # Softmax selection weighted by conductance
-            probs = torch.softmax(noisy_g / 0.01, dim=0)
-            selected = torch.multinomial(probs, k, replacement=False)
-            sparse_spikes[active[selected]] = True
-        else:
-            # Need either membrane or conductance for selection
-            raise RuntimeError(
-                f"_apply_wta_sparsity called without pre-spike membrane or conductance. "
-                f"WTA requires pre-spike membrane (neuron.membrane_pre_spike). "
-                f"Got {len(active)} active neurons needing selection to {k}."
-            )
-
-        return sparse_spikes
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
@@ -2064,10 +1696,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self.ca2_neurons.update_temporal_parameters(dt_ms)
         self.ca1_neurons.update_temporal_parameters(dt_ms)
 
-        # Update STP components
-        self.stp_mossy.update_temporal_parameters(dt_ms)
-        self.stp_schaffer.update_temporal_parameters(dt_ms)
-        self.stp_ec_ca1.update_temporal_parameters(dt_ms)
-        self.stp_ca3_ca2.update_temporal_parameters(dt_ms)
-        self.stp_ca2_ca1.update_temporal_parameters(dt_ms)
-        self.stp_ec_ca2.update_temporal_parameters(dt_ms)
+        # Update inhibitory network
+        self.dg_inhibitory.update_temporal_parameters(dt_ms)
+        self.ca3_inhibitory.update_temporal_parameters(dt_ms)
+        self.ca2_inhibitory.update_temporal_parameters(dt_ms)
+        self.ca1_inhibitory.update_temporal_parameters(dt_ms)

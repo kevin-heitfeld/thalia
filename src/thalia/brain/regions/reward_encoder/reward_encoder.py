@@ -45,15 +45,16 @@ Date: February 2026
 
 from __future__ import annotations
 
-from typing import Dict
-
 import torch
 
 from thalia.brain.configs import RewardEncoderConfig
+from thalia.brain.regions.population_names import RewardEncoderPopulation
 from thalia.typing import (
-    PopulationName,
+    NeuromodulatorInput,
     PopulationSizes,
-    RegionSpikesDict,
+    RegionName,
+    RegionOutput,
+    SynapticInput,
 )
 
 from ..neural_region import NeuralRegion
@@ -81,7 +82,7 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
 
     Output Populations:
     -------------------
-    - "reward_signal": Spike pattern encoding current reward [n_neurons]
+    - "reward_signal": Spike pattern encoding current reward [reward_signal_size]
 
     Computational Properties:
     -------------------------
@@ -90,43 +91,44 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
     - Spike probability proportional to reward magnitude (with noise)
     """
 
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "reward_signal": "n_neurons",
-    }
-
-    def __init__(self, config: RewardEncoderConfig, population_sizes: PopulationSizes):
-        super().__init__(config, population_sizes)
+    def __init__(self, config: RewardEncoderConfig, population_sizes: PopulationSizes, region_name: RegionName):
+        super().__init__(config, population_sizes, region_name)
 
         # Number of neurons
-        self.n_neurons = config.n_neurons
-        self.n_positive = config.n_neurons // 2  # Positive reward neurons
-        self.n_negative = config.n_neurons - self.n_positive  # Negative reward neurons
+        self.reward_signal_size: int = population_sizes[RewardEncoderPopulation.REWARD_SIGNAL.value]
+        self.n_positive = self.reward_signal_size // 2  # Positive reward neurons
+        self.n_negative = self.reward_signal_size - self.n_positive  # Negative reward neurons
 
         # Current reward value (set externally, consumed by forward())
         self._current_reward = 0.0
 
-        # Track reward history for monitoring
-        self._reward_history: list[float] = []
+        # Store population sizes for get_population_size() queries
+        self._population_sizes = population_sizes
 
         super().__post_init__()
 
+    def get_population_size(self, population: str) -> int:
+        """Override to provide population sizes without neuron objects.
+
+        RewardEncoder generates spikes directly without simulating neurons,
+        so it doesn't register neuron populations. We override this method
+        to return sizes from the stored population_sizes dict.
+        """
+        if population not in self._population_sizes:
+            raise ValueError(
+                f"Population '{population}' not found in {self.__class__.__name__}. "
+                f"Available populations: {list(self._population_sizes.keys())}"
+            )
+        return self._population_sizes[population]
+
     def set_reward(self, reward: float):
         """Set external reward signal to be encoded on next forward() call.
-
-        This is the public API for delivering reward from the environment
-        or training loop into the brain.
 
         Args:
             reward: Reward value in range [-1, +1]
                    +1.0 = maximum positive reward
                     0.0 = neutral (no reward/punishment)
                    -1.0 = maximum punishment
-
-        Example:
-            ```python
-            # After agent receives environment reward
-            brain.regions["reward_encoder"].set_reward(env_reward)
-            brain.step()  # Encode and deliver to VTA
             ```
         """
         # Clip to valid range
@@ -135,29 +137,26 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
         # Store for next forward() call
         self._current_reward = reward
 
-        # Track history (useful for analysis)
-        self._reward_history.append(reward)
-        if len(self._reward_history) > 1000:
-            self._reward_history.pop(0)  # Keep last 1000 only
-
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Encode current reward as population spike pattern.
 
         Population coding:
         - First N/2 neurons: Fire proportional to positive reward magnitude
         - Last N/2 neurons: Fire proportional to negative reward magnitude
+
+        Args:
+            synaptic_inputs: Not used (reward is externally set via set_reward())
+            neuromodulator_inputs: Not used (source region, doesn't consume neuromodulators)
         """
-        self._pre_forward(region_inputs)
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
         # Initialize spike tensor
-        spikes = torch.zeros(self.n_neurons, device=self.device, dtype=torch.bool)
+        spikes = torch.zeros(self.reward_signal_size, device=self.device, dtype=torch.bool)
 
         reward = self._current_reward
 
         # Add slight noise for biological realism
-        noise = (
-            torch.randn(self.n_neurons, device=self.device) * self.config.reward_noise
-        )
+        noise = torch.randn(self.reward_signal_size, device=self.device) * self.config.reward_noise
 
         if reward > 0:
             # Positive reward: Activate first N/2 neurons
@@ -181,26 +180,8 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
         # This ensures reward is only delivered once per set_reward() call
         self._current_reward = 0.0
 
-        region_outputs: RegionSpikesDict = {
-            "reward_signal": spikes,
+        region_outputs: RegionOutput = {
+            RewardEncoderPopulation.REWARD_SIGNAL.value: spikes,
         }
 
         return self._post_forward(region_outputs)
-
-    def get_reward_history(self) -> list[float]:
-        """Get recent reward history for analysis.
-
-        Returns:
-            List of recent reward values (up to last 1000)
-        """
-        return self._reward_history.copy()
-
-    def get_mean_reward(self) -> float:
-        """Get mean reward over recent history.
-
-        Returns:
-            Mean reward value, or 0.0 if no history
-        """
-        if not self._reward_history:
-            return 0.0
-        return sum(self._reward_history) / len(self._reward_history)

@@ -31,6 +31,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from thalia.units import GapJunctionConductance, GapJunctionReversal, VoltageTensor
+
 
 @dataclass
 class GapJunctionConfig:
@@ -124,11 +126,11 @@ class GapJunctionCoupling(nn.Module):
             Coupling matrix [n_neurons, n_neurons] where entry (i,j) is the
             coupling conductance from neuron j to neuron i
         """
-        # Ensure weights are on the correct device
-        weights = weights.to(self.device)
+        # Ensure weights are positive conductances for biological realism
+        weights = weights.abs().to(self.device)
 
         # Binarize weights to find active connections
-        W_binary = (weights.abs() > 1e-6).float()
+        W_binary = (weights > 1e-6).float()
 
         # Compute shared input matrix: how many inputs do neurons i and j share?
         # shared[i,j] = number of common presynaptic partners
@@ -136,9 +138,7 @@ class GapJunctionCoupling(nn.Module):
 
         # Normalize to [0, 1]: shared[i,j] / max_possible_shared
         max_inputs = W_binary.sum(dim=1)  # [n_neurons]
-        normalizer = torch.minimum(
-            max_inputs.unsqueeze(1), max_inputs.unsqueeze(0)
-        )  # [n_neurons, n_neurons]
+        normalizer = torch.minimum(max_inputs.unsqueeze(1), max_inputs.unsqueeze(0))  # [n_neurons, n_neurons]
         normalizer = torch.clamp(normalizer, min=1.0)  # Avoid divide-by-zero
 
         similarity = shared_inputs / normalizer  # [n_neurons, n_neurons]
@@ -190,125 +190,52 @@ class GapJunctionCoupling(nn.Module):
 
         return coupling_matrix
 
-    def forward(self, voltages: torch.Tensor) -> torch.Tensor:
+    def __call__(self, *args, **kwds):
+        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
+        return super().__call__(*args, **kwds)
+
+    def forward(self, voltages: VoltageTensor) -> tuple[GapJunctionConductance, GapJunctionReversal]:
         """
-        Compute gap junction coupling current.
+        Compute gap junction coupling as (conductance, effective_reversal).
 
-        Implements bidirectional electrical coupling:
+        Implements bidirectional electrical coupling using dynamic reversal:
             I_gap[i] = Σ_j g_gap[i,j] * (V[j] - V[i])
+                     = g_total[i] * (E_eff[i] - V[i])
 
-        This current is added to the total input current in neuron dynamics,
-        creating attractive voltage dynamics that synchronize coupled neurons.
+        Where:
+            g_total[i] = Σ_j g_gap[i,j]  (total gap conductance)
+            E_eff[i] = Σ_j [g_gap[i,j] * V[j]] / g_total[i]  (weighted avg of neighbor voltages)
+
+        This formulation allows gap junctions to integrate cleanly into
+        conductance-based neuron dynamics without mixing currents and conductances.
+
+        **Physics**: The effective reversal potential equals the weighted average
+        of neighbor voltages, making gap junctions behave like a conductance
+        with a dynamic (time-varying) reversal potential.
 
         Args:
             voltages: Membrane voltages [n_neurons]
 
         Returns:
-            Coupling current [n_neurons] to add to neuron input
+            g_gap_total: Total gap junction conductance per neuron [n_neurons]
+            E_gap_effective: Effective reversal potential per neuron [n_neurons]
+                (weighted average of neighbor voltages)
         """
-        # Compute voltage differences: V[j] - V[i] for all coupled pairs
-        # coupling_matrix[i,j] * voltages[j] gives contribution from j to i
         coupling_matrix_tensor: torch.Tensor = self.coupling_matrix
-        neighbor_contribution = coupling_matrix_tensor @ voltages  # [n_neurons]
 
-        # Subtract own voltage scaled by total coupling
-        # This ensures I_gap = Σ g[i,j] * (V[j] - V[i])
-        total_coupling_per_neuron: torch.Tensor = coupling_matrix_tensor.sum(dim=1)
-        self_contribution = total_coupling_per_neuron * voltages
+        # Total gap junction conductance per neuron
+        g_gap_total = coupling_matrix_tensor.sum(dim=1)  # [n_neurons]
 
-        coupling_current = neighbor_contribution - self_contribution
+        # Weighted sum of neighbor voltages
+        neighbor_weighted_v = coupling_matrix_tensor @ voltages  # [n_neurons]
 
-        return coupling_current
+        # Effective reversal potential = weighted average of neighbor voltages
+        # Initialize with zeros for neurons with no gap junctions
+        E_gap_effective = torch.zeros_like(g_gap_total)
 
-    def get_coupling_stats(self) -> dict:
-        """
-        Get statistics about gap junction network structure.
+        # Only compute where g_gap_total > 0 (avoid division by zero)
+        mask = g_gap_total > 1e-6
+        if mask.any():
+            E_gap_effective[mask] = neighbor_weighted_v[mask] / g_gap_total[mask]
 
-        Returns:
-            Dictionary with network statistics:
-                - n_coupled_neurons: Number of neurons with gap junctions
-                - n_connections: Total number of gap junction pairs
-                - avg_neighbors: Average number of neighbors per coupled neuron
-                - coupling_density: Fraction of possible connections present
-        """
-        # Count neurons with at least one gap junction
-        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix
-        has_coupling = (coupling_matrix_tensor.sum(dim=1) > 0) | (
-            coupling_matrix_tensor.sum(dim=0) > 0
-        )
-        n_coupled = int(has_coupling.sum().item())
-
-        # Count total connections (undirected, so divide by 2)
-        n_connections = int((coupling_matrix_tensor > 0).sum().item()) // 2
-
-        # Average neighbors per coupled neuron
-        neighbors_per_neuron = (coupling_matrix_tensor > 0).sum(dim=1).float()
-        avg_neighbors = neighbors_per_neuron[has_coupling].mean().item() if n_coupled > 0 else 0.0
-
-        # Coupling density among interneurons
-        n_interneurons = self.interneuron_mask.sum().item()
-        max_connections = n_interneurons * (n_interneurons - 1) / 2
-        coupling_density = n_connections / max_connections if max_connections > 0 else 0.0
-
-        return {
-            "n_coupled_neurons": n_coupled,
-            "n_connections": n_connections,
-            "avg_neighbors": avg_neighbors,
-            "coupling_density": coupling_density,
-        }
-
-
-def create_gap_junction_coupling(
-    n_neurons: int,
-    afferent_weights: torch.Tensor,
-    coupling_strength: float = 0.1,
-    connectivity_threshold: float = 0.3,
-    max_neighbors: int = 8,
-    interneuron_only: bool = True,
-    interneuron_mask: Optional[torch.Tensor] = None,
-    device: Optional[torch.device] = None,
-) -> GapJunctionCoupling:
-    """
-    Factory function for creating gap junction coupling.
-
-    Convenience function that creates a GapJunctionCoupling module with
-    sensible defaults for common use cases.
-
-    Args:
-        n_neurons: Number of neurons in population
-        afferent_weights: Input weights [n_neurons, n_input]
-        coupling_strength: Gap junction conductance (0.05-0.3 biological)
-        connectivity_threshold: Minimum shared input for coupling (0-1)
-        max_neighbors: Maximum coupled neighbors per neuron
-        interneuron_only: Only couple inhibitory neurons
-        interneuron_mask: Boolean mask for inhibitory neurons
-        device: Device for computation
-
-    Returns:
-        Configured GapJunctionCoupling module
-
-    Example:
-        >>> # For TRN interneurons
-        >>> gap_junctions = create_gap_junction_coupling(
-        ...     n_neurons=100,
-        ...     afferent_weights=relay_to_trn_weights,
-        ...     coupling_strength=0.15,  # Strong coupling for TRN
-        ...     connectivity_threshold=0.2,  # Liberal coupling
-        ...     max_neighbors=10,
-        ...     interneuron_only=True,
-        ... )
-    """
-    config = GapJunctionConfig(
-        coupling_strength=coupling_strength,
-        connectivity_threshold=connectivity_threshold,
-        max_neighbors=max_neighbors,
-        interneuron_only=interneuron_only,
-    )
-
-    return GapJunctionCoupling(
-        n_neurons=n_neurons,
-        afferent_weights=afferent_weights,
-        config=config,
-        interneuron_mask=interneuron_mask,
-        device=device,
-    )
+        return GapJunctionConductance(g_gap_total), GapJunctionReversal(E_gap_effective)

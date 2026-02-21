@@ -1,5 +1,5 @@
 """Locus Coeruleus (LC) - Norepinephrine arousal and uncertainty system."""
 
-from .lc_region import LocusCoeruleus
+from .locus_coeruleus import LocusCoeruleus
 
 __all__ = ["LocusCoeruleus"]

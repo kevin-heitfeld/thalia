@@ -71,18 +71,27 @@ Phase 3 (Future):
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 
 from thalia.brain.configs import LCConfig
+from thalia.brain.regions.population_names import HippocampusPopulation, LocusCoeruleusPopulation, PrefrontalPopulation
 from thalia.components.neurons.neuron_factory import NeuronFactory, NeuronType
 from thalia.components.neurons.norepinephrine_neuron import (
     NorepinephrineNeuron,
     NorepinephrineNeuronConfig,
 )
-from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.typing import (
+    NeuromodulatorInput,
+    PopulationSizes,
+    RegionName,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
+)
 from thalia.units import ConductanceTensor
+from thalia.utils import CircularDelayBuffer
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -97,96 +106,92 @@ from ..region_registry import register_region
     config_class=LCConfig,
 )
 class LocusCoeruleus(NeuralRegion[LCConfig]):
-    """Locus Coeruleus - Norepinephrine Arousal and Uncertainty System.
+    """Locus Coeruleus - Norepinephrine Arousal and Uncertainty System."""
 
-    Computes uncertainty signals and broadcasts norepinephrine via long,
-    synchronized bursts. Modulates attention, gain, and exploratory behavior
-    across the brain.
+    def __init__(self, config: LCConfig, population_sizes: PopulationSizes, region_name: RegionName):
+        super().__init__(config, population_sizes, region_name)
 
-    Input Populations:
-    ------------------
-    - "pfc_input": Prefrontal cortex activity (task difficulty, conflict)
-    - "hippocampus_input": Hippocampus activity (novelty detection)
-
-    Output Populations:
-    -------------------
-    - "ne_output": Norepinephrine neuron spikes (broadcast to all targets)
-
-    Computational Function:
-    -----------------------
-    1. Compute uncertainty from PFC/hippocampus activity
-    2. Drive NE neurons: high uncertainty → synchronized burst
-    3. Gap junction coupling → population synchronization
-    4. Broadcast NE spikes to all target regions
-    """
-
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "ne_output": "n_ne_neurons",
-    }
-
-    def __init__(self, config: LCConfig, population_sizes: PopulationSizes):
-        super().__init__(config, population_sizes)
-
-        # Store sizes for test compatibility
-        self.n_ne_neurons = config.n_ne_neurons
-        self.n_gaba_neurons = config.n_gaba_neurons
-
-        # Store input layer sizes
-        self.pfc_input_size = population_sizes.get("pfc_input", 0)
-        self.hippocampus_input_size = population_sizes.get("hippocampus_input", 0)
+        self.ne_neurons_size = population_sizes[LocusCoeruleusPopulation.NE.value]
+        self.gaba_neurons_size = population_sizes[LocusCoeruleusPopulation.GABA.value]
 
         # Norepinephrine neurons (gap junction coupled, synchronized bursts)
-        self.ne_neurons = self._create_ne_neurons()
+        ne_config = NorepinephrineNeuronConfig(
+            region_name=self.region_name,
+            population_name=LocusCoeruleusPopulation.NE.value,
+            device=self.device,
+            uncertainty_to_current_gain=self.config.uncertainty_gain,
+            gap_junction_strength=self.config.gap_junction_strength,
+            gap_junction_neighbor_radius=self.config.gap_junction_radius,
+        )
+        self.ne_neurons = NorepinephrineNeuron(
+            n_neurons=self.ne_neurons_size,
+            config=ne_config,
+        )
 
         # GABAergic interneurons (local inhibition, homeostasis)
         self.gaba_neurons = NeuronFactory.create(
-            NeuronType.FAST_SPIKING,
-            n_neurons=config.n_gaba_neurons,
+            region_name=self.region_name,
+            population_name=LocusCoeruleusPopulation.GABA.value,
+            neuron_type=NeuronType.FAST_SPIKING,
+            n_neurons=self.gaba_neurons_size,
             device=self.device,
         )
 
-        # Uncertainty computation state
-        self._pfc_activity_history: list[float] = []
-        self._hippocampus_activity_history: list[float] = []
-        self._uncertainty_history: list[float] = []
+        # Uncertainty computation state - use CircularDelayBuffer for history
+        self._pfc_activity_buffer = CircularDelayBuffer(
+            max_delay=10,  # Track last 10 timesteps for variance computation
+            size=1,  # Single scalar value per timestep
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self._hippocampus_activity_buffer = CircularDelayBuffer(
+            max_delay=10,  # Track last 10 timesteps for novelty detection
+            size=1,  # Single scalar value per timestep
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self._uncertainty_buffer = CircularDelayBuffer(
+            max_delay=1000,  # Track last 1000 timesteps for analysis
+            size=1,  # Single scalar value per timestep
+            dtype=torch.float32,
+            device=self.device,
+        )
 
         # Adaptive normalization
         if config.uncertainty_normalization:
             self._avg_uncertainty = 0.5
             self._uncertainty_count = 0
 
+        # =====================================================================
+        # REGISTER NEURON POPULATIONS
+        # =====================================================================
+        self._register_neuron_population(LocusCoeruleusPopulation.NE.value, self.ne_neurons)
+        self._register_neuron_population(LocusCoeruleusPopulation.GABA.value, self.gaba_neurons)
+
         self.__post_init__()
 
-    def _create_ne_neurons(self) -> NorepinephrineNeuron:
-        """Create norepinephrine neuron population with gap junction coupling."""
-        if self.config.ne_neuron_config is not None:
-            ne_config = self.config.ne_neuron_config
-        else:
-            # Use default configuration
-            ne_config = NorepinephrineNeuronConfig(
-                device=self.config.device,
-                uncertainty_to_current_gain=self.config.uncertainty_gain,
-                gap_junction_strength=self.config.gap_junction_strength,
-                gap_junction_neighbor_radius=self.config.gap_junction_radius,
-            )
-
-        return NorepinephrineNeuron(
-            n_neurons=self.config.n_ne_neurons, config=ne_config, device=self.device
-        )
-
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute uncertainty and drive norepinephrine neurons to burst.
 
-        Args:
-            region_inputs: Dictionary of input spike tensors:
-                - "pfc_input": PFC activity (task difficulty) [n_pfc_neurons]
-                - "hippocampus_input": Hippocampus activity (novelty) [n_hpc_neurons]
+        Note: neuromodulator_inputs is not used - LC is a neuromodulator source region.
         """
-        self._pre_forward(region_inputs)
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
-        # Get inputs (via connections from BrainBuilder)
-        pfc_spikes = region_inputs.get("pfc_input")
-        hippocampus_spikes = region_inputs.get("hippocampus_input")
+        pfc_ne_synapse = SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE.value,
+            target_region=self.region_name,
+            target_population=LocusCoeruleusPopulation.NE.value,
+        )
+        ca1_ne_synapse = SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1.value,  # For simplicity, use overall CA1 activity as novelty signal
+            target_region=self.region_name,
+            target_population=LocusCoeruleusPopulation.NE.value,
+        )
+
+        pfc_spikes = synaptic_inputs.get(pfc_ne_synapse, None)
+        hippocampus_spikes = synaptic_inputs.get(ca1_ne_synapse, None)
 
         # Compute uncertainty signal from inputs
         uncertainty = self._compute_uncertainty(pfc_spikes, hippocampus_spikes)
@@ -195,28 +200,34 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
         if self.config.uncertainty_normalization:
             uncertainty = self._normalize_uncertainty(uncertainty)
 
-        # Track history for analysis
-        self._uncertainty_history.append(uncertainty)
-        if len(self._uncertainty_history) > 1000:
-            self._uncertainty_history.pop(0)
+        # Track history for analysis using CircularDelayBuffer
+        self._uncertainty_buffer.write(torch.tensor([uncertainty], device=self.device))
 
         # Update NE neurons with uncertainty drive
         # High uncertainty → depolarization → synchronized burst
         # Gap junctions → population synchronization
         ne_spikes, _ = self.ne_neurons.forward(
-            g_exc_input=ConductanceTensor(torch.zeros(self.config.n_ne_neurons, device=self.device)),
-            g_inh_input=ConductanceTensor(torch.zeros(self.config.n_ne_neurons, device=self.device)),
+            g_ampa_input=None,  # No direct AMPA input to NE neurons (modulated by uncertainty drive instead)
+            g_gaba_a_input=None,  # No direct GABA input to NE neurons (inhibition via gap junctions and interneurons)
+            g_nmda_input=None,  # NE neurons do not receive NMDA input
             uncertainty_drive=uncertainty,
         )
         self._current_ne_spikes = ne_spikes  # Store for GABA computation
 
         # Update GABA interneurons (homeostatic control)
         gaba_drive = self._compute_gaba_drive()
-        g_gaba_exc = ConductanceTensor(gaba_drive / 10.0)  # Already a tensor
-        self.gaba_neurons.forward(g_gaba_exc, None)
+        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
+        gaba_g_ampa = ConductanceTensor(gaba_drive * 0.7)
+        gaba_g_nmda = ConductanceTensor(gaba_drive * 0.3)
 
-        region_outputs: RegionSpikesDict = {
-            "ne_output": ne_spikes,
+        self.gaba_neurons.forward(
+            g_ampa_input=gaba_g_ampa,
+            g_gaba_a_input=None,
+            g_nmda_input=gaba_g_nmda,
+        )
+
+        region_outputs: RegionOutput = {
+            LocusCoeruleusPopulation.NE.value: ne_spikes,
         }
 
         return self._post_forward(region_outputs)
@@ -245,20 +256,21 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
         # PFC uncertainty: variance of activity (conflict detection)
         if pfc_spikes is not None and pfc_spikes.sum() > 0:
             pfc_rate = pfc_spikes.float().mean().item()
-            self._pfc_activity_history.append(pfc_rate)
-            if len(self._pfc_activity_history) > 10:
-                self._pfc_activity_history.pop(0)
+            self._pfc_activity_buffer.write(torch.tensor([pfc_rate], device=self.device))
+
+            # Read history for variance computation (last 10 timesteps)
+            history_values = []
+            for i in range(1, 11):  # Read delays 1-10
+                val = self._pfc_activity_buffer.read(delay=i)
+                if val.abs().sum() > 1e-8:  # Only include if buffer has data
+                    history_values.append(val.item())
 
             # High variance → high uncertainty
-            if len(self._pfc_activity_history) >= 3:
+            if len(history_values) >= 3:
                 import math
 
-                mean = sum(self._pfc_activity_history) / len(
-                    self._pfc_activity_history
-                )
-                variance = sum(
-                    (x - mean) ** 2 for x in self._pfc_activity_history
-                ) / len(self._pfc_activity_history)
+                mean = sum(history_values) / len(history_values)
+                variance = sum((x - mean) ** 2 for x in history_values) / len(history_values)
                 std = math.sqrt(variance)
                 pfc_uncertainty = min(1.0, std * 5.0)  # Scale to [0, 1]
                 uncertainty_components.append(pfc_uncertainty)
@@ -266,15 +278,18 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
         # Hippocampus uncertainty: high activity → novelty
         if hippocampus_spikes is not None and hippocampus_spikes.sum() > 0:
             hpc_rate = hippocampus_spikes.float().mean().item()
-            self._hippocampus_activity_history.append(hpc_rate)
-            if len(self._hippocampus_activity_history) > 10:
-                self._hippocampus_activity_history.pop(0)
+            self._hippocampus_activity_buffer.write(torch.tensor([hpc_rate], device=self.device))
+
+            # Read history for baseline computation (last 10 timesteps)
+            history_values = []
+            for i in range(1, 11):  # Read delays 1-10
+                val = self._hippocampus_activity_buffer.read(delay=i)
+                if val.abs().sum() > 1e-8:  # Only include if buffer has data
+                    history_values.append(val.item())
 
             # Deviation from baseline → novelty
-            if len(self._hippocampus_activity_history) >= 3:
-                baseline = sum(self._hippocampus_activity_history) / len(
-                    self._hippocampus_activity_history
-                )
+            if len(history_values) >= 3:
+                baseline = sum(history_values) / len(history_values)
                 deviation = abs(hpc_rate - baseline)
                 hpc_uncertainty = min(1.0, deviation * 10.0)  # Scale to [0, 1]
                 uncertainty_components.append(hpc_uncertainty)
@@ -322,42 +337,17 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
         runaway NE bursting through local inhibition.
 
         Returns:
-            Drive current for GABA neurons [n_gaba_neurons]
+            Drive conductance for GABA neurons [gaba_neurons_size]
         """
-        # Tonic baseline drive
-        baseline = 3.0
+        assert self._current_ne_spikes is not None, "NE spikes must be computed before GABA drive"
+
+        # Tonic baseline conductance
+        baseline = 0.3  # CONDUCTANCE: tonic drive
 
         # Increase during NE bursts (negative feedback)
-        if hasattr(self, "_current_ne_spikes"):
-            ne_activity = self._current_ne_spikes.float().mean().item()
-        else:
-            ne_activity = 0.02  # Default tonic rate (1-3 Hz)
-        feedback = ne_activity * 8.0  # Proportional to NE activity
+        ne_activity = self._current_ne_spikes.float().mean().item()
+        feedback = ne_activity * 0.8  # CONDUCTANCE: proportional
 
         total_drive = baseline + feedback
 
-        return torch.full(
-            (self.config.n_gaba_neurons,), total_drive, device=self.device
-        )
-
-    def get_mean_uncertainty(self, window: int = 100) -> float:
-        """Get mean uncertainty over recent history.
-
-        Args:
-            window: Number of timesteps to average over
-
-        Returns:
-            Mean uncertainty, or 0.0 if no history
-        """
-        if not self._uncertainty_history:
-            return 0.0
-        recent = self._uncertainty_history[-window:]
-        return sum(recent) / len(recent)
-
-    def get_ne_firing_rate_hz(self) -> float:
-        """Get current NE neuron population firing rate in Hz.
-
-        Returns:
-            Firing rate in Hz
-        """
-        return self.ne_neurons.get_firing_rate_hz()
+        return torch.full((self.gaba_neurons_size,), total_drive, device=self.device)

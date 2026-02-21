@@ -21,6 +21,8 @@ from typing import Optional
 
 import torch
 
+from thalia.utils import CircularDelayBuffer
+
 
 class StimulusGating:
     """
@@ -62,8 +64,10 @@ class StimulusGating:
         self.decay_rate = decay_rate
         self.steepness = steepness
 
-        # Track previous input for change detection
-        self._prev_input: Optional[torch.Tensor] = None
+        # Track previous input for change detection using CircularDelayBuffer
+        # Note: Buffer will be initialized on first call with proper shape/device
+        self._input_buffer: Optional[CircularDelayBuffer] = None
+        self._smoothed_input: Optional[torch.Tensor] = None  # Exponentially-smoothed input
         self._current_inhibition: float = 0.0
 
     def compute(
@@ -81,19 +85,24 @@ class StimulusGating:
         Returns:
             Inhibition strength (scalar or tensor matching input shape)
         """
-        if self._prev_input is None:
-            # First input - no inhibition
-            self._prev_input = current_input.detach().clone().float()
+        # Initialize buffer on first call
+        if self._input_buffer is None:
+            self._input_buffer = CircularDelayBuffer(
+                max_delay=1,
+                size=current_input.shape[0],
+                dtype=torch.float32,
+                device=current_input.device,
+            )
+            self._smoothed_input = current_input.detach().clone().float()
             if return_tensor:
                 return torch.zeros_like(current_input, dtype=torch.float32)
             return torch.tensor(0.0)
 
         # Convert bool spikes to float for arithmetic (ADR-004)
         current_float = current_input.float()
-        prev_float = self._prev_input.float()
 
         # Compute input change magnitude (normalized by input size)
-        input_diff = (current_float - prev_float).abs()
+        input_diff = (current_float - self._smoothed_input).abs()
         change_magnitude = input_diff.sum() / (current_input.numel() + 1e-6)
 
         # Sigmoid activation based on change magnitude
@@ -103,11 +112,14 @@ class StimulusGating:
             * self.max_inhibition
         )
 
-        # Update previous input (with decay for smooth tracking)
-        self._prev_input = (
-            self.decay_rate * self._prev_input
+        # Update smoothed input (exponential moving average for smooth tracking)
+        self._smoothed_input = (
+            self.decay_rate * self._smoothed_input
             + (1 - self.decay_rate) * current_float.detach().clone()
         )
+
+        # Write current smoothed input to buffer for next timestep
+        self._input_buffer.write(self._smoothed_input)
 
         self._current_inhibition = inhibition.item()
 

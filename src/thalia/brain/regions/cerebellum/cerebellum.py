@@ -3,98 +3,43 @@ Cerebellum - Supervised Error-Corrective Learning for Precise Motor Control.
 
 The cerebellum learns through supervised error signals from climbing fibers,
 enabling fast, precise learning of input-output mappings without trial-and-error.
-
-**Key Features**:
-=================
-1. **ERROR-CORRECTIVE LEARNING** (Delta Rule):
-   - Δw ∝ pre × (target - actual)
-   - Direct teaching signal (not reward/punishment like RL)
-   - Can learn arbitrary mappings in 1-10 trials (vs hundreds for RL)
-
-2. **CLIMBING FIBER ERROR SIGNAL**:
-   - Inferior olive computes mismatch between intended and actual movement
-   - Climbing fiber activates Purkinje cell → LTD on active parallel fibers
-   - Absence of climbing fiber → LTP (strengthen correct associations)
-   - Binary teacher: "correct" or "incorrect"
-
-3. **PRECISE TIMING AND COORDINATION**:
-   - Cerebellum is master of temporal precision
-   - Can learn sub-millisecond timing patterns
-   - Critical for smooth, coordinated movements
-   - Predictive timing (anticipates sensory consequences)
-
-4. **FAST SUPERVISED LEARNING**:
-   - Unlike RL (needs many trials with delayed rewards)
-   - Cerebellum learns in 1-10 trials with immediate feedback
-   - Supervised signal provides direct gradient information
-   - No exploration needed - direct instruction
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import Optional
 
 import torch
-import torch.nn as nn
 
 from thalia.brain.configs import CerebellumConfig
-from thalia.components.synapses import ShortTermPlasticity, STPConfig
-from thalia.learning import (
-    EligibilitySTDPConfig,
-    EligibilityTraceManager,
+from thalia.brain.regions.population_names import CerebellumPopulation
+from thalia.components import (
+    ConductanceLIFConfig,
+    ConductanceLIF,
+    GapJunctionConfig,
+    GapJunctionCoupling,
+    NeuronFactory,
+    NeuronType,
+    STPConfig,
+    STPType,
+    WeightInitializer,
 )
-from thalia.learning import UnifiedHomeostasis, UnifiedHomeostasisConfig
-from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.learning import EligibilityTraceManager, STDPConfig
+from thalia.typing import (
+    NeuromodulatorInput,
+    PopulationSizes,
+    RegionName,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
+)
+from thalia.units import ConductanceTensor
+from thalia.utils import clamp_weights
 
-from .deep_nuclei import DeepCerebellarNuclei
-from .granule_layer import GranuleCellLayer
-from .purkinje_cell import EnhancedPurkinjeCell
+from .purkinje_layer import VectorizedPurkinjeLayer
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
-
-if TYPE_CHECKING:
-    from thalia.components.gap_junctions import GapJunctionCoupling
-
-
-class ClimbingFiberSystem:
-    """Climbing fiber error signaling system.
-
-    Climbing fiber activity means: "You got it WRONG"
-    Absence means: "You got it RIGHT (or no feedback)"
-
-    The error signal: target - actual
-    - Positive: Should have fired but didn't → strengthen inputs
-    - Negative: Fired but shouldn't have → weaken inputs
-    """
-
-    def __init__(self, purkinje_size: int, device: str = "cpu"):
-        self.purkinje_size = purkinje_size
-        self.device = torch.device(device)
-        self.error = torch.zeros(purkinje_size, device=self.device)
-
-    def compute_error(
-        self,
-        actual: torch.Tensor,
-        target: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute error signal (climbing fiber activity).
-
-        Args:
-            actual: Actual output [purkinje_size] (1D)
-            target: Target output [purkinje_size] (1D)
-
-        Returns:
-            Error signal [purkinje_size] (1D)
-        """
-        # Ensure 1D
-        if actual.dim() != 1:
-            actual = actual.squeeze()
-        if target.dim() != 1:
-            target = target.squeeze()
-
-        self.error = target - actual
-        return self.error
 
 
 @register_region(
@@ -105,25 +50,28 @@ class ClimbingFiberSystem:
     config_class=CerebellumConfig,
 )
 class Cerebellum(NeuralRegion[CerebellumConfig]):
-    """Cerebellar region with supervised error-corrective learning."""
+    """Cerebellar region with supervised error-corrective learning.
 
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "prediction": "purkinje_size",
-    }
+    Architecture:
+    - Granule cells: Internal only (parallel fibers → Purkinje dendrites)
+    - Purkinje cells: Internal only (axons → DCN, inhibitory GABAergic)
+    - DCN (deep cerebellar nuclei): Output neurons (axons → thalamus/motor)
+    """
 
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: CerebellumConfig, population_sizes: PopulationSizes):
+    def __init__(self, config: CerebellumConfig, population_sizes: PopulationSizes, region_name: RegionName):
         """Initialize cerebellum."""
-        super().__init__(config=config, population_sizes=population_sizes)
+        super().__init__(config, population_sizes, region_name)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
-        self.granule_size = population_sizes["granule_size"]
-        self.purkinje_size = population_sizes["purkinje_size"]
+        self.granule_size = population_sizes[CerebellumPopulation.GRANULE.value]
+        self.purkinje_size = population_sizes[CerebellumPopulation.PURKINJE.value]
+        self.dcn_size = population_sizes[CerebellumPopulation.DCN.value]
 
         # =====================================================================
         # MOSSY FIBER LAYER (Pontine Nuclei equivalent)
@@ -133,133 +81,171 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Size: Typically ~10% of granule cells (biological ratio)
         self.n_mossy = max(int(self.granule_size * 0.1), 50)  # At least 50 mossy fibers
 
-        # Mossy fiber neurons (simple pass-through for now, could add dynamics later)
-        # Store as buffer for potential future mossy fiber dynamics
-        self.register_buffer(
-            "_mossy_fiber_state",
-            torch.zeros(self.n_mossy, dtype=torch.bool, device=self.device)
-        )
-
-        # =====================================================================
-        # CLIMBING FIBER SYSTEM
-        # =====================================================================
-        self.climbing_fiber = ClimbingFiberSystem(
-            purkinje_size=self.purkinje_size,
-            device=self.device,
-        )
-
         # =====================================================================
         # ENHANCED MICROCIRCUIT (granule-Purkinje-DCN)
         # =====================================================================
+        # --------------------------------------------------------------------
         # Granule cell layer (sparse expansion from mossy fibers)
-        self.granule_layer = GranuleCellLayer(
-            n_mossy_fibers=self.n_mossy,
-            expansion_factor=self.granule_size / self.n_mossy,
-            sparsity=self.config.granule_sparsity,
+        # --------------------------------------------------------------------
+        # Granule cells are small, fast-spiking neurons
+        granule_config = ConductanceLIFConfig(
+            region_name=self.region_name,
+            population_name=CerebellumPopulation.GRANULE.value,
             device=self.device,
+            v_threshold=-50.0,  # mV, more excitable than pyramidal
+            v_reset=-65.0,  # mV
+            tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
+            tau_E=2.5,  # ms, fast AMPA-like (biological minimum ~2-3ms)
+            tau_I=6.0,  # ms, fast GABA_A (biological range 5-10ms)
+        )
+        self.granule_neurons = ConductanceLIF(
+            n_neurons=self.granule_size,
+            config=granule_config,
         )
 
-        # Purkinje cells (one per output neuron)
-        # Pass granule layer size as n_parallel_fibers for eager initialization
-        self.purkinje_cells = torch.nn.ModuleList(
-            [
-                EnhancedPurkinjeCell(
-                    n_parallel_fibers=self.granule_layer.n_granule,
-                    n_dendrites=self.config.purkinje_n_dendrites,
-                    device=self.device,
-                )
-                for _ in range(self.purkinje_size)
-            ]
-        )
-
-        # Deep cerebellar nuclei (final output)
-        # Receives both Purkinje inhibition and mossy fiber collaterals
-        self.deep_nuclei = DeepCerebellarNuclei(
-            n_output=self.purkinje_size,
+        # --------------------------------------------------------------------
+        # Purkinje cells (vectorized layer for efficiency)
+        # --------------------------------------------------------------------
+        # PERFORMANCE: Vectorized implementation ~50x faster than ModuleList
+        self.purkinje_layer = VectorizedPurkinjeLayer(
             n_purkinje=self.purkinje_size,
-            n_mossy=self.n_mossy,  # Mossy fiber collaterals
+            n_parallel_fibers=self.granule_size,
+            n_dendrites=self.config.purkinje_n_dendrites,
+            dt_ms=self.config.dt_ms,
             device=self.device,
         )
+
+        # --------------------------------------------------------------------
+        # Deep cerebellar nuclei (final output)
+        # --------------------------------------------------------------------
+        # Receives both Purkinje inhibition and mossy fiber collaterals
+
+        # Purkinje → DCN (inhibitory, convergent)
+        # Many Purkinje cells converge onto each DCN neuron
+        # CONDUCTANCE-BASED: Strong inhibition to sculpt DCN output
+        self._add_internal_connection(
+            source_population=CerebellumPopulation.PURKINJE.value,
+            target_population=CerebellumPopulation.DCN.value,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.purkinje_size,
+                n_output=self.dcn_size,
+                connectivity=0.2,
+                weight_scale=0.0015,
+                device=self.device,
+            ),
+            # Biology: Strong Purkinje inhibition shows depression, preventing runaway inhibition
+            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            is_inhibitory=True,
+        )
+
+        # Mossy fiber → DCN (excitatory collaterals)
+        # Mossy fibers send collaterals to DCN before reaching granule cells
+        # CONDUCTANCE-BASED: Moderate excitation (Purkinje sculpts final output)
+        # Routing key: dcn:cerebellum:mossy (target:region:internal_source)
+        self._add_internal_connection(
+            source_population=CerebellumPopulation.MOSSY.value,
+            target_population=CerebellumPopulation.DCN.value,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.n_mossy,
+                n_output=self.dcn_size,
+                connectivity=0.1,
+                weight_scale=0.0005,
+                device=self.device,
+            ),
+            # Biology: Mossy fiber collaterals show facilitation, reinforcing sustained input
+            stp_config=STPConfig.from_type(STPType.FACILITATING),
+            is_inhibitory=False,
+        )
+
+        # DCN neurons (tonic firing, modulated by inhibition)
+        # DCN neurons are spontaneously active (tonic firing ~40-60 Hz)
+        # Use NORMALIZED units (threshold=1.0 scale) NOT absolute millivolts
+        dcn_config = ConductanceLIFConfig(
+            region_name=self.region_name,
+            population_name=CerebellumPopulation.DCN.value,
+            device=self.device,
+            v_threshold=1.0,  # Standard normalized threshold
+            v_reset=0.0,  # Reset to rest
+            v_rest=0.0,  # Resting potential (normalized)
+            E_L=0.0,  # Leak reversal (normalized)
+            E_E=3.0,  # Excitatory reversal (normalized, above threshold)
+            E_I=-0.5,  # Inhibitory reversal (normalized, hyperpolarizing)
+            g_L=0.10,  # Moderate leak conductance
+            tau_mem=20.0,  # ms, moderate integration
+            tau_E=4.0,  # ms, AMPA kinetics (biological range 2-5ms)
+            tau_I=10.0,  # ms, GABA_A kinetics (biological range 5-10ms)
+            tau_ref=12.0,  # ms, refractory period (max ~83 Hz ceiling, allows biological 40-60 Hz range)
+            noise_std=0.05,  # Membrane noise (reduced from 0.15 to achieve 2-4% spontaneous baseline)
+        )
+        self.dcn_neurons = ConductanceLIF(n_neurons=self.dcn_size, config=dcn_config)
+
+        # HETEROGENEOUS tonic excitation to break pathological synchrony
+        # Real DCN neurons have different baseline excitabilities
+        # Use Gaussian distribution for moderate spontaneous firing (~40-60 Hz)
+        # DCN neurons are tonically active, but Purkinje inhibition sculpts output
+        self.tonic_excitation = torch.normal(
+            mean=0.001,  # Minimal baseline drive for heterogeneity (reduced from 0.005)
+            std=0.001,  # Small heterogeneity
+            size=(self.dcn_size,),
+            device=self.device,
+        ).clamp(min=0.0, max=0.003)  # Very low range - DCN activity primarily from mossy collaterals + noise
+
+        # Initialize DCN neuron membrane potentials with heterogeneous values
+        # This prevents all neurons starting at same potential and synchronizing
+        dcn_v_init = torch.normal(
+            mean=0.0,  # Around rest (normalized units)
+            std=0.1,  # Moderate spread
+            size=(self.dcn_size,),
+            device=self.device,
+        ).clamp(min=-0.2, max=0.5)  # Subthreshold range (normalized units)
+        self.dcn_neurons.membrane = dcn_v_init.clone()
 
         # =====================================================================
         # ELIGIBILITY TRACE MANAGER for STDP
         # =====================================================================
-        stdp_config = EligibilitySTDPConfig(
-            stdp_tau_ms=self.config.tau_plus_ms,  # Use tau_plus_ms as STDP tau
-            eligibility_tau_ms=self.config.eligibility_tau_ms,
-            stdp_lr=self.config.learning_rate,
-            a_plus=1.0,
-            a_minus=self.config.heterosynaptic_ratio,
-            w_min=config.w_min,
-            w_max=config.w_max,
-            heterosynaptic_ratio=self.config.heterosynaptic_ratio,
-        )
         self._trace_manager = EligibilityTraceManager(
-            n_input=self.granule_layer.n_granule,
+            n_input=self.granule_size,
             n_output=self.purkinje_size,
-            config=stdp_config,
+            config=STDPConfig(
+                learning_rate=self.config.learning_rate,
+                w_min=config.w_min,
+                w_max=config.w_max,
+                a_plus=1.0,
+                a_minus=self.config.heterosynaptic_ratio,
+                tau_plus=self.config.tau_plus_ms,
+                tau_minus=self.config.tau_plus_ms,  # Use same tau for simplicity
+                eligibility_tau_ms=self.config.eligibility_tau_ms,
+                heterosynaptic_ratio=self.config.heterosynaptic_ratio,
+            ),
             device=self.device,
         )
 
         # IO membrane potential for gap junction coupling
         self._io_membrane: Optional[torch.Tensor] = None
 
-        # Homeostasis for synaptic scaling
-        self.homeostasis = UnifiedHomeostasis(UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget,  # Total budget per neuron
-            w_min=config.w_min,
-            w_max=config.w_max,
-            soft_normalization=config.soft_normalization,
-            normalization_rate=config.normalization_rate,
-            device=self.device,
-        ))
-
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY (Adaptive Gain)
         # =====================================================================
-        # Purkinje cells have high spontaneous firing rates (~40-50 Hz in biology)
-        # Bootstrap solution for silent network problem
         # EMA tracking of firing rates
         self.register_buffer("firing_rate", torch.zeros(self.purkinje_size, device=self.device))
 
         # Adaptive gains (per neuron)
-        self.gain = nn.Parameter(torch.ones(self.purkinje_size, device=self.device), requires_grad=False)
-
-        # Configuration
-        self._target_rate = config.target_firing_rate
-        self._gain_lr = config.gain_learning_rate
-        self._baseline_noise = config.baseline_noise_current
-
-        # EMA alpha for firing rate tracking
-        self._firing_rate_alpha = self.dt_ms / config.gain_tau_ms
-
-        # Adaptive threshold plasticity
-        self._threshold_lr = config.threshold_learning_rate
-        self._threshold_min = config.threshold_min
-        self._threshold_max = config.threshold_max
+        self.gain = torch.ones(self.purkinje_size, device=self.device)
 
         # =====================================================================
-        # SHORT-TERM PLASTICITY (STP)
+        # INFERIOR OLIVE NEURONS (Error Signal Generation)
         # =====================================================================
-        # Per-source STP modules for mossy fiber→granule synapses
-        # Created dynamically as sources are added (see _create_source_stp)
-        # Biology: Different mossy fiber types have different facilitation/depression
-        self.stp_modules: Dict[str, ShortTermPlasticity] = {}
-
-        # Parallel Fibers→Purkinje: DEPRESSING (CRITICAL for timing)
-        # This implements the temporal high-pass filter that makes the
-        # cerebellum respond to CHANGES rather than sustained input.
-        # Without this, cerebellar timing precision is severely impaired.
-        self.stp_pf_purkinje = ShortTermPlasticity(
-            n_pre=self.granule_layer.n_granule,
-            n_post=self.purkinje_size,
-            config=STPConfig.from_type(self.config.stp_pf_purkinje_type),
-            per_synapse=True,  # Per-synapse dynamics for maximum precision
+        # One IO neuron per Purkinje cell (1:1 mapping)
+        # IO neurons generate climbing fiber signals (complex spikes) that teach
+        # Purkinje cells. Dense gap junction coupling synchronizes IO activity
+        # across related cerebellar modules.
+        self.io_neurons = NeuronFactory.create(
+            region_name=self.region_name,
+            population_name=CerebellumPopulation.INFERIOR_OLIVE.value,
+            neuron_type=NeuronType.RELAY,  # Relay neurons have tonic firing suitable for IO baseline activity
+            n_neurons=self.purkinje_size,
+            device=self.device,
         )
-        self.stp_pf_purkinje.to(self.device)
-
-        # Initialize for forward() storage (fixes attribute outside __init__)
-        self.last_effective_input: Optional[torch.Tensor] = None
 
         # =====================================================================
         # GAP JUNCTIONS (Inferior Olive Synchronization)
@@ -268,11 +254,36 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # complex spikes across multiple Purkinje cells. This is critical for
         # coordinated motor learning across cerebellar modules.
         #
-        # Gap junctions will be initialized after first source is added,
-        # using the granule→Purkinje connectivity pattern to infer IO neighborhoods.
-        # Purkinje cells with similar parallel fiber inputs receive error signals
-        # from neighboring (gap junction-coupled) IO neurons.
-        self.gap_junctions_io: Optional[GapJunctionCoupling] = None
+        # Biology: IO forms one of the densest gap junction networks in the brain
+        # - Strong coupling (0.18) for population synchronization
+        # - Dense connectivity (~80% of nearby neurons)
+        # - Synchronization time: <1ms
+
+        gap_junctions_config = GapJunctionConfig(
+            coupling_strength=config.gap_junction_strength,
+            connectivity_threshold=config.gap_junction_threshold,
+            max_neighbors=config.gap_junction_max_neighbors,
+            interneuron_only=False,  # IO neurons are projection neurons, not interneurons
+        )
+
+        # Initialize gap junctions using Purkinje dendritic weights as connectivity pattern
+        # IO neurons corresponding to Purkinje cells with similar parallel fiber inputs
+        # are anatomically close and should be electrically coupled
+        self.gap_junctions_io = GapJunctionCoupling(
+            n_neurons=self.purkinje_size,
+            afferent_weights=self.purkinje_layer.synaptic_weights,  # Use parallel fiber connectivity
+            config=gap_junctions_config,
+            interneuron_mask=None,  # All IO neurons can be coupled
+            device=self.device,
+        )
+
+        # =====================================================================
+        # REGISTER NEURON POPULATIONS
+        # =====================================================================
+        self._register_neuron_population(CerebellumPopulation.INFERIOR_OLIVE.value, self.io_neurons)
+        self._register_neuron_population(CerebellumPopulation.GRANULE.value, self.granule_neurons)
+        self._register_neuron_population(CerebellumPopulation.PURKINJE.value, self.purkinje_layer.soma_neurons)
+        self._register_neuron_population(CerebellumPopulation.DCN.value, self.dcn_neurons)
 
         # =====================================================================
         # POST-INITIALIZATION
@@ -283,88 +294,164 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
-        """Process input through cerebellar circuit."""
-        self._pre_forward(region_inputs)
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Process input through cerebellar circuit.
+
+        Note: neuromodulator_inputs is not used - cerebellum is a neuromodulator source region.
+        """
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
+
+        cfg = self.config
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
         # Biology: Different sources (cortex, spinal, brainstem) project to pontine
         # nuclei, which give rise to mossy fibers. We model this as a integration stage.
-        # Note: Weights project directly to granule layer (granule_size), not to mossy
+        # NOTE: Weights project directly to granule layer (granule_size), not to mossy
         # fiber intermediates. The granule layer handles internal expansion/sparsification.
-        mossy_fiber_currents = self._integrate_multi_source_synaptic_inputs(
-            inputs=region_inputs,
-            n_neurons=self.granule_size,  # Weights target granule cells directly
-            weight_key_suffix="",  # Fixed: weights are "cortex:l5" not "cortex:l5_mossy"
-            apply_stp=True,  # Per-source facilitation/depression
+        mossy_fiber_conductances = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.granule_size)
+
+        # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
+        # Noise represents stochastic miniature EPSPs from spontaneous vesicle release (conductance, not current)
+        if cfg.baseline_noise_conductance > 0:
+            noise = torch.randn(self.granule_size, device=self.device) * cfg.baseline_noise_conductance
+            mossy_fiber_conductances = mossy_fiber_conductances + noise
+
+        # Pass conductances directly to granule cell neurons
+        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
+        g_ampa = mossy_fiber_conductances * 0.7
+        g_nmda = mossy_fiber_conductances * 0.3
+
+        granule_spikes, _ = self.granule_neurons.forward(
+            g_ampa_input=ConductanceTensor(g_ampa),
+            g_gaba_a_input=None,  # TODO: No inhibition for now (future: Golgi cells)
+            g_nmda_input=ConductanceTensor(g_nmda),
         )
 
-        # Convert currents to spikes at granule cell level
-        # Since weights project directly to granule layer, skip mossy fiber intermediate
-        # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
-        if self._baseline_noise > 0:
-            noise = torch.randn(self.granule_size, device=self.device) * self._baseline_noise
-            mossy_fiber_currents = mossy_fiber_currents + noise
+        # Enforce sparsity (top-k activation) - cerebellar granule cells are VERY sparse (~3%)
+        k = int(self.granule_size * cfg.granule_connectivity)  # Target number of active neurons
+        n_spiking = granule_spikes.sum().item()
+        if n_spiking > k:
+            # More neurons spiked than target, select top-k by excitation
+            # Only consider neurons that actually spiked
+            spiking_mask = granule_spikes.bool()
+            g_exc_spiking = mossy_fiber_conductances.clone()
+            g_exc_spiking[~spiking_mask] = -float("inf")  # Exclude non-spiking
+            _, top_k_idx = torch.topk(g_exc_spiking, k)
+            sparse_spikes = torch.zeros_like(granule_spikes, dtype=torch.bool)
+            sparse_spikes[top_k_idx] = True
+            granule_spikes = sparse_spikes
 
-        # Simple threshold: current > 0 produces spike (lowered from 0.1 to allow weaker inputs)
-        granule_spikes = (mossy_fiber_currents > 0.0).bool()  # [granule_size]
-
-        # For compatibility with state inspection, create mossy fiber approximation
-        # by downsampling granule spikes to mossy fiber dimensionality
-        # This is just for monitoring - not used in forward computation
+        # Create mossy fiber approximation by downsampling granule spikes to mossy fiber dimensionality
+        # TODO: In the full implementation, mossy fiber collaterals would provide direct input to DCN,
+        # separate from granule layer. For now, we use a downsampled version of granule spikes as a proxy
+        # for mossy fiber state.
         step = self.granule_size // self.n_mossy
-        self._mossy_fiber_state = granule_spikes[::step][:self.n_mossy]  # [n_mossy]
+        mossy_spikes = granule_spikes[::step][:self.n_mossy]  # [n_mossy]
 
         # =====================================================================
-        # STAGE 2: GRANULE CELLS → PURKINJE CELLS (Parallel Fibers)
+        # STAGE 2: INFERIOR OLIVE → CLIMBING FIBERS (Error Signal)
         # =====================================================================
-        # Each Purkinje cell receives sparse parallel fibers
-        purkinje_spikes = []
-        for purkinje in self.purkinje_cells:
-            # Get climbing fiber error if available (passed through DCN)
-            climbing_fiber = torch.tensor(0.0, device=self.device)
+        # IO neurons generate climbing fiber spikes, synchronized via gap junctions
+        # Error signal drives IO activity (high error → depolarization → spike)
+        # For now, use spontaneous activity (~1 Hz baseline)
+        # TODO: Add error-driven input based on motor prediction errors
 
-            # Process parallel fibers + climbing fiber
-            # EnhancedPurkinjeCell returns (simple_spikes, complex_spike_occurred)
-            simple_spikes, _complex_spike = purkinje(granule_spikes, climbing_fiber)
-            purkinje_spikes.append(simple_spikes)
+        # Apply gap junction coupling to IO neurons (if they have been initialized)
+        if self.io_neurons.membrane is not None:
+            g_gap_io, E_gap_io = self.gap_junctions_io.forward(self.io_neurons.membrane)
 
-        purkinje_output = torch.stack(purkinje_spikes)  # [purkinje_size]
+            # Define additional conductances hook for IO neurons
+            def io_get_additional_conductances():
+                return [(g_gap_io, E_gap_io)]
+
+            self.io_neurons._get_additional_conductances = io_get_additional_conductances
+
+        # Update IO neurons (spontaneous activity + gap junction synchronization)
+        # Add baseline depolarizing conductance to maintain ~1 Hz spontaneous firing
+        baseline_conductance = ConductanceTensor(torch.full(
+            (self.purkinje_size,), 0.004, device=self.device  # Small baseline conductance for ~1 Hz
+        ))
+        climbing_fiber_spikes, _ = self.io_neurons.forward(
+            g_ampa_input=baseline_conductance,  # Baseline depolarization for spontaneous activity
+            g_gaba_a_input=None,
+            g_nmda_input=None,
+        )
 
         # =====================================================================
-        # STAGE 3: PURKINJE + MOSSY COLLATERALS → DCN (Final Output)
+        # STAGE 3: GRANULE CELLS → PURKINJE CELLS (Parallel Fibers)
+        # =====================================================================
+        # Process all Purkinje cells in parallel (vectorized)
+        # Climbing fiber spikes from IO neurons trigger complex spikes
+        purkinje_simple_spikes, _purkinje_complex_spikes = self.purkinje_layer.forward(
+            parallel_fiber_input=granule_spikes,
+            climbing_fiber_active=climbing_fiber_spikes,
+        )  # [purkinje_size]
+
+        # =====================================================================
+        # STAGE 4: PURKINJE + MOSSY COLLATERALS → DCN (Final Output)
         # =====================================================================
         # Biology: DCN receives both Purkinje inhibition and mossy fiber collaterals
-        # The mossy collaterals provide excitatory drive that Purkinje inhibits
-        # Use mossy fiber state (downsampled from granule spikes) for DCN input
-        output_spikes = self.deep_nuclei(
-            purkinje_spikes=purkinje_output,
-            mossy_spikes=self._mossy_fiber_state,  # Use cached mossy fiber approximation
-        )
+        # Apply STP and compute conductances for internal connections
 
-        # For learning: use granule spikes as effective input
-        effective_input = granule_spikes
+        # Apply STP to Purkinje → DCN (depressing)
+        # Pattern: efficacy = stp.forward(spikes), effective_weights = weights * efficacy.T
+        purkinje_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CerebellumPopulation.PURKINJE.value,
+            target_region=self.region_name,
+            target_population=CerebellumPopulation.DCN.value,
+            is_inhibitory=True,  # Purkinje cells are GABAergic (inhibitory)
+        )
+        purkinje_conductance = self._integrate_synaptic_inputs_at_dendrites({purkinje_synapse: purkinje_simple_spikes}, n_neurons=self.dcn_size)
+
+        # Apply STP to Mossy → DCN (facilitating)
+        mossy_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CerebellumPopulation.MOSSY.value,
+            target_region=self.region_name,
+            target_population=CerebellumPopulation.DCN.value,
+        )
+        mossy_conductance = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size)
+
+        # Add heterogeneous tonic excitation (DCN neurons are intrinsically active)
+        # Mossy excitation + tonic background
+        dcn_total_excitation = self.tonic_excitation + mossy_conductance  # Total excitatory drive to DCN neurons
+
+        # DCN spiking: Excitation (mossy + tonic) vs Inhibition (Purkinje)
+        # Purkinje provides GABAergic shunting inhibition
+        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
+        dcn_total_g_ampa = dcn_total_excitation * 0.7
+        dcn_total_g_nmda = dcn_total_excitation * 0.3
+
+        dcn_spikes, _ = self.dcn_neurons.forward(
+            g_ampa_input=ConductanceTensor(dcn_total_g_ampa),
+            g_gaba_a_input=ConductanceTensor(purkinje_conductance),  # Purkinje inhibition
+            g_nmda_input=ConductanceTensor(dcn_total_g_nmda),
+        )
 
         # ======================================================================
         # Update STDP eligibility using trace manager
         # ======================================================================
+        # For learning: use granule spikes as effective input
+        effective_input = granule_spikes
+
         # Use trace manager for consolidated STDP computation
         self._trace_manager.update_traces(
             input_spikes=effective_input,  # Use granule spikes if enhanced
-            output_spikes=output_spikes,
+            output_spikes=dcn_spikes,
             dt_ms=self.dt_ms,
         )
 
         # Compute STDP weight change direction (raw LTP/LTD without combining)
         ltp, ltd = self._trace_manager.compute_ltp_ltd_separate(
             input_spikes=effective_input,
-            output_spikes=output_spikes,
+            output_spikes=dcn_spikes,
         )
 
         # Combine LTP and LTD with learning rate and heterosynaptic ratio
-        stdp_dw = self.config.learning_rate * (ltp - self.config.heterosynaptic_ratio * ltd)
+        stdp_dw = cfg.learning_rate * (ltp - cfg.heterosynaptic_ratio * ltd)
 
         # Accumulate into eligibility trace (with decay)
         if isinstance(stdp_dw, torch.Tensor):
@@ -379,53 +466,30 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # active parallel fibers undergo LTP.
         #
         # Implementation: We use the accumulated eligibility traces and apply them
-        # to each Purkinje cell's dendritic weights. In the full implementation,
-        # climbing fiber error would gate these updates (error × eligibility).
+        # to the Purkinje layer's dendritic weights (vectorized).
+        # TODO: In the full implementation, climbing fiber error would gate
+        # these updates (error × eligibility).
         # For now, we apply the eligibility-based STDP learning.
 
         # Get eligibility from trace manager
-        eligibility = self._trace_manager.eligibility  # [n_granule, n_purkinje]
+        eligibility = self._trace_manager.eligibility  # [n_purkinje, n_granule]
 
-        # Apply weight updates to each Purkinje cell's dendritic weights
-        for purkinje_idx, purkinje_cell in enumerate(self.purkinje_cells):
-            # Get this Purkinje cell's eligibility trace
-            # eligibility shape: [n_granule, n_purkinje]
-            # We need [n_granule] for this Purkinje cell
-            # Index the second dimension (purkinje) to get all granule inputs for this cell
-            cell_eligibility = eligibility[purkinje_idx, :]  # [n_granule]
+        # Apply weight updates to vectorized Purkinje layer
+        # eligibility shape: [n_purkinje, n_granule]
+        # synaptic_weights shape: [n_purkinje, n_parallel_fibers]
+        # Since n_parallel_fibers == n_granule, they should match directly
 
-            # Reshape to match dendritic_weights: [1, n_parallel_fibers]
-            weight_update = cell_eligibility.unsqueeze(0)  # [1, n_granule]
+        # Apply update with weight bounds
+        # Biology: Parallel fiber synapses have limited dynamic range
+        self.purkinje_layer.synaptic_weights.data = clamp_weights(
+            weights=self.purkinje_layer.synaptic_weights.data + eligibility,
+            w_min=cfg.w_min,
+            w_max=cfg.w_max,
+            inplace=False,
+        )
 
-            # Apply update with weight bounds
-            # Biology: Parallel fiber synapses have limited dynamic range
-            new_weights = torch.clamp(
-                purkinje_cell.dendritic_weights.data + weight_update,
-                min=self.config.w_min,
-                max=self.config.w_max,
-            )
-            purkinje_cell.dendritic_weights.data = new_weights
-
-        # ======================================================================
-        # APPLY HOMEOSTATIC SYNAPTIC SCALING (Per-Source Mossy Fiber Inputs)
-        # ======================================================================
-        # Apply homeostatic scaling to mossy fiber input weights to prevent
-        # runaway excitation or silencing. Each source (cortex, spinal, etc.)
-        # has independent weights that need homeostatic regulation.
-        for source_name in list(self.input_sources.keys()):
-            weight_key = f"{source_name}_mossy"
-            if weight_key in self.synaptic_weights:
-                self.synaptic_weights[weight_key].data = self.homeostasis.normalize_weights(
-                    self.synaptic_weights[weight_key].data, dim=1
-                )
-
-        # Store output spikes
-        self.output_spikes = output_spikes
-        # Store effective input for learning (granule spikes in enhanced mode)
-        self.last_effective_input = effective_input
-
-        region_outputs: RegionSpikesDict = {
-            "prediction": output_spikes,
+        region_outputs: RegionOutput = {
+            CerebellumPopulation.DCN.value: dcn_spikes,
         }
 
         return self._post_forward(region_outputs)
@@ -443,12 +507,6 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             dt_ms: New simulation timestep in milliseconds
         """
         super().update_temporal_parameters(dt_ms)
-
-        # Update neurons
-        self.deep_nuclei.dcn_neurons.update_temporal_parameters(dt_ms)
-        self.granule_layer.granule_neurons.update_temporal_parameters(dt_ms)
-        for purkinje_cell in self.purkinje_cells:
-            purkinje_cell.soma_neurons.update_temporal_parameters(dt_ms)
-
-        # Update STP components
-        self.stp_pf_purkinje.update_temporal_parameters(dt_ms)
+        self.granule_neurons.update_temporal_parameters(dt_ms)
+        self.purkinje_layer.update_temporal_parameters(dt_ms)
+        self.dcn_neurons.update_temporal_parameters(dt_ms)

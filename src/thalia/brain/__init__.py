@@ -1,8 +1,8 @@
 """Neural Regions for Dynamic Brain Modeling."""
 
-from .axonal_projection import (
-    AxonalProjection,
-    AxonalProjectionSourceSpec,
+from .axonal_tract import (
+    AxonalTract,
+    AxonalTractSourceSpec,
 )
 from .brain_builder import (
     BrainBuilder,
@@ -12,7 +12,6 @@ from .brain import (
 )
 from .configs import (
     BrainConfig,
-    RegionType,
     CortexLayer,
     NeuralRegionConfig,
     MedialSeptumConfig,
@@ -30,7 +29,6 @@ from .regions import (
     Hippocampus,
     Prefrontal,
     Striatum,
-    StriatumStateTracker,
     Thalamus,
     StimulusGating,
     NeuralRegionRegistry,
@@ -38,12 +36,11 @@ from .regions import (
 )
 
 __all__ = [
-    # Axonal Projections
-    "AxonalProjection",
-    "AxonalProjectionSourceSpec",
+    # Axonal Tracts
+    "AxonalTract",
+    "AxonalTractSourceSpec",
     # Configurations
     "BrainConfig",
-    "RegionType",
     "CortexLayer",
     "NeuralRegionConfig",
     "MedialSeptumConfig",
@@ -60,7 +57,6 @@ __all__ = [
     "Hippocampus",
     "Prefrontal",
     "Striatum",
-    "StriatumStateTracker",
     "Thalamus",
     "StimulusGating",
     "NeuralRegionRegistry",

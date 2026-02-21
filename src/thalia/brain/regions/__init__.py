@@ -66,7 +66,7 @@ from .medial_septum import MedialSeptum
 from .nucleus_basalis import NucleusBasalis
 from .prefrontal import Prefrontal
 from .reward_encoder import RewardEncoder
-from .striatum import Striatum, StriatumStateTracker
+from .striatum import Striatum
 from .substantia_nigra import SubstantiaNigra
 from .thalamus import Thalamus
 from .vta import VTA
@@ -87,7 +87,6 @@ __all__ = [
     "Prefrontal",
     "RewardEncoder",
     "Striatum",
-    "StriatumStateTracker",
     "SubstantiaNigra",
     "Thalamus",
     "VTA",

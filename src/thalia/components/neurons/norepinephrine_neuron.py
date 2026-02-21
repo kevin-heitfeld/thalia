@@ -22,14 +22,6 @@ Biophysical Mechanisms:
 
 This specialized neuron type is used exclusively by the LC region to encode
 uncertainty and arousal through long, synchronized bursts.
-
-References:
-- Aston-Jones & Cohen (2005): LC-NE system and adaptive gain theory
-- Berridge & Waterhouse (2003): LC system function and dysfunction
-- Sara (2009): LC function in attention and memory
-
-Author: Thalia Project
-Date: February 2026
 """
 
 from __future__ import annotations
@@ -80,14 +72,20 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
 
     # I_h pacemaking current (HCN channels) - WEAKER than DA
     # Lower conductance → lower baseline firing rate (1-3 Hz vs 4-5 Hz)
-    # Tuned to 0.12 for ~1-3 Hz (gap junctions DISABLED to prevent quenching)
-    i_h_conductance: float = 0.12  # Lower than DA neurons
+    # Increased from 0.12 to 0.20 for reliable 1-3 Hz baseline (was causing silence)
+    i_h_conductance: float = 0.20  # Boosted for reliable tonic firing
     i_h_reversal: float = 0.75
 
     # Gap junction coupling (electrical synapses)
     # LC neurons are densely coupled via gap junctions → synchronized bursts
-    gap_junction_strength: float = 0.0  # DISABLED - prevents pacemaking when all neurons at low V
+    gap_junction_strength: float = 0.05  # Coupling strength
     gap_junction_neighbor_radius: int = 50  # Neurons within radius are coupled
+
+    # Voltage-dependent gap junction gating
+    # Only couple when neurons are depolarized (near threshold)
+    # This prevents hyperpolarization spread while allowing burst synchronization
+    gap_junction_v_activation: float = 0.7  # Activation threshold (70% of spike threshold)
+    gap_junction_v_slope: float = 0.1  # Sigmoid slope (sharpness of gating)
 
     # SK calcium-activated K+ channels (spike-frequency adaptation)
     sk_conductance: float = 0.025  # Slightly stronger than DA (longer bursts)
@@ -104,8 +102,8 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     adapt_increment: float = 0.0
 
     # Noise for biological realism and tonic firing
-    # Tuned to 0.05 for ~1-3 Hz firing rate
-    noise_std: float = 0.05  # Lower than DA
+    # Increased from 0.05 to 0.08 to ensure reliable 1-3 Hz baseline
+    noise_std: float = 0.08  # Boosted for reliable stochastic firing
 
 
 class NorepinephrineNeuron(ConductanceLIF):
@@ -117,29 +115,9 @@ class NorepinephrineNeuron(ConductanceLIF):
     3. Gap junction coupling → population synchronization
     4. SK adaptation allows sustained bursting
     5. Return to baseline after burst
-
-    Usage:
-        ```python
-        ne_neurons = NorepinephrineNeuron(
-            n_neurons=1600,
-            config=NorepinephrineNeuronConfig(),
-            device=torch.device("cpu")
-        )
-
-        # Tonic firing (low arousal)
-        ne_neurons.forward(i_synaptic=0.0, uncertainty_drive=0.0)
-
-        # Burst on high uncertainty
-        ne_neurons.forward(i_synaptic=0.0, uncertainty_drive=1.0)
-        ```
     """
 
-    def __init__(
-        self,
-        n_neurons: int,
-        config: NorepinephrineNeuronConfig,
-        device: torch.device,
-    ):
+    def __init__(self, n_neurons: int, config: NorepinephrineNeuronConfig):
         """Initialize norepinephrine neuron population.
 
         Args:
@@ -147,21 +125,21 @@ class NorepinephrineNeuron(ConductanceLIF):
             config: Configuration with pacemaking and gap junction parameters
             device: PyTorch device for tensor allocation
         """
-        super().__init__(n_neurons, config, device)
+        super().__init__(n_neurons, config)
 
         # Store specialized config
         self.ne_config = config
 
         # SK channel state (calcium-activated K+ for adaptation)
-        self.ca_concentration = torch.zeros(n_neurons, device=device)
-        self.sk_activation = torch.zeros(n_neurons, device=device)
+        self.ca_concentration = torch.zeros(n_neurons, device=self.device)
+        self.sk_activation = torch.zeros(n_neurons, device=self.device)
 
         # Gap junction coupling matrix (electrical synapses)
         # LC neurons within proximity are electrically coupled
         self.gap_junction_matrix = self._create_gap_junction_matrix(n_neurons, config)
 
         # Initialize with varied phases (prevent artificial synchronization at start)
-        self.v_mem = torch.rand(n_neurons, device=device) * config.v_threshold * 0.3
+        self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.3
 
     def _create_gap_junction_matrix(
         self, n_neurons: int, config: NorepinephrineNeuronConfig
@@ -197,15 +175,17 @@ class NorepinephrineNeuron(ConductanceLIF):
 
     def forward(
         self,
-        g_exc_input: Optional[ConductanceTensor] = None,
-        g_inh_input: Optional[ConductanceTensor] = None,
-        uncertainty_drive: float = 0.0,
+        g_ampa_input: Optional[ConductanceTensor],
+        g_gaba_a_input: Optional[ConductanceTensor],
+        g_nmda_input: Optional[ConductanceTensor],
+        uncertainty_drive: float,
     ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update norepinephrine neurons with uncertainty modulation.
 
         Args:
-            g_exc_input: Excitatory conductance input [n_neurons]
-            g_inh_input: Inhibitory conductance input [n_neurons]
+            g_ampa_input: AMPA (fast excitatory) conductance input [n_neurons]
+            g_gaba_a_input: GABA_A (fast inhibitory) conductance input [n_neurons]
+            g_nmda_input: NMDA (slow excitatory) conductance input [n_neurons] (not used for NE neurons)
             uncertainty_drive: Uncertainty/novelty drive (normalized scalar)
                              +1.0 = high uncertainty (burst)
                              -1.0 = low uncertainty (pause)
@@ -214,17 +194,66 @@ class NorepinephrineNeuron(ConductanceLIF):
         Returns:
             (spikes, membrane): Spike tensor and membrane potentials
         """
-        # Handle None inputs
-        if g_exc_input is None:
-            g_exc_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
-        if g_inh_input is None:
-            g_inh_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
-
         # Store uncertainty for conductance calculation
         self._current_uncertainty = uncertainty_drive
 
-        # Call parent's forward
-        spikes, _ = super().forward(g_exc_input, g_inh_input)
+        # === Compute Gap Junction Conductances ===
+        # FIX: Voltage-gated coupling prevents pacemaker quenching
+        #
+        # Problem: When all neurons are hyperpolarized (below threshold), gap junctions
+        # pull them DOWN further, preventing I_h from driving pacemaking.
+        #
+        # Solution: Voltage-dependent gating - only couple when neurons are depolarized.
+        # This allows:
+        # - Burst synchronization (when neurons are near threshold)
+        # - Independent pacemaking (when neurons are subthreshold)
+        #
+        # Biology: Some gap junctions show rectification (voltage-dependent conductance)
+        g_gap_total: Optional[ConductanceTensor] = None
+        E_gap_effective: Optional[torch.Tensor] = None
+
+        if self.gap_junction_matrix is not None and self.gap_junction_matrix.sum() > 1e-6:
+            # Voltage-dependent activation: sigmoid function of membrane potential
+            # Activation increases as neurons approach threshold
+            # - Below 0.7 × threshold: weak/no coupling (independent pacemaking)
+            # - Above 0.7 × threshold: strong coupling (burst synchronization)
+            v_activation = self.ne_config.gap_junction_v_activation
+            v_slope = self.ne_config.gap_junction_v_slope
+            gap_activation = torch.sigmoid((self.v_mem - v_activation) / v_slope)
+
+            # Apply voltage-dependent gating to gap junction matrix
+            # Both pre and post neurons must be depolarized for strong coupling
+            # Use geometric mean of activations: sqrt(act_i × act_j)
+            gap_activation_matrix = torch.sqrt(
+                gap_activation.unsqueeze(1) * gap_activation.unsqueeze(0)
+            )
+
+            # Modulate gap junction strength by voltage activation
+            g_gap_matrix = self.gap_junction_matrix * gap_activation_matrix
+
+            # Total gap conductance per neuron (voltage-gated)
+            g_gap_total_raw = g_gap_matrix.sum(dim=1)
+
+            # Effective reversal = weighted average of neighbor voltages
+            # Only compute if g_gap_total > 0 to avoid division by zero
+            mask = g_gap_total_raw > 1e-6
+            if mask.any():
+                E_gap_effective_raw = torch.zeros(self.n_neurons, device=self.device)
+                neighbor_weighted_v = torch.matmul(g_gap_matrix, self.v_mem)
+                E_gap_effective_raw[mask] = neighbor_weighted_v[mask] / g_gap_total_raw[mask]
+
+                # Only pass gap junctions if non-zero
+                g_gap_total = ConductanceTensor(g_gap_total_raw)
+                E_gap_effective = E_gap_effective_raw
+
+        # Call parent's forward with gap junction conductances
+        spikes, _ = super().forward(
+            g_ampa_input=g_ampa_input,
+            g_gaba_a_input=g_gaba_a_input,
+            g_nmda_input=g_nmda_input,
+            g_gap_input=g_gap_total,
+            E_gap_reversal=E_gap_effective,
+        )
 
         # === Update Calcium and SK Activation ===
         # Calcium influx on spike
@@ -243,7 +272,9 @@ class NorepinephrineNeuron(ConductanceLIF):
         return spikes, self.membrane
 
     def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
-        """Compute I_h, SK, and gap junction conductances.
+        """Compute I_h and SK conductances.
+
+        Gap junctions are now handled directly in forward() as explicit parameters.
 
         Returns:
             List of (conductance, reversal) tuples
@@ -257,67 +288,8 @@ class NorepinephrineNeuron(ConductanceLIF):
         # SK adaptation
         g_sk = self.ne_config.sk_conductance * self.sk_activation
 
-        # Gap junction coupling (electrical synapses)
-        # Compute voltage-dependent coupling current and convert to effective conductance
-        # I_gap = sum_j [g_gap * (V_j - V_i)]  where j are neighbors
-        # This is modeled as a conductance with dynamic reversal = weighted average of neighbor voltages
-        g_gap_total = torch.zeros(self.n_neurons, device=self.device)
-        E_gap_effective = torch.zeros(self.n_neurons, device=self.device)
-
-        if self.gap_junction_matrix is not None:
-            # Total gap conductance per neuron
-            g_gap_total = self.gap_junction_matrix.sum(dim=1)
-
-            # Effective reversal = weighted average of neighbor voltages
-            # Only compute if g_gap_total > 0 to avoid division by zero
-            mask = g_gap_total > 1e-6
-            if mask.any():
-                neighbor_weighted_v = torch.matmul(self.gap_junction_matrix, self.v_mem)
-                E_gap_effective[mask] = neighbor_weighted_v[mask] / g_gap_total[mask]
-
         # Return conductances with reversals
-        conductances = [
+        return [
             (g_ih, self.ne_config.i_h_reversal),  # I_h pacemaker
             (g_sk, self.ne_config.sk_reversal),   # SK adaptation
         ]
-
-        # Add gap junctions if present
-        if g_gap_total.sum() > 1e-6:
-            # Gap junctions modeled as conductances with neighbor voltage as reversal
-            # This creates the correct current flow: I = g * (V_neighbor - V_self)
-            conductances.append((g_gap_total, E_gap_effective))
-
-        return conductances
-
-    def get_firing_rate_hz(self, window_ms: int = 100) -> float:
-        """Get average firing rate over recent history.
-
-        Args:
-            window_ms: Time window for rate estimation (ms, not used in single timestep)
-
-        Returns:
-            Average firing rate in Hz
-        """
-        # Check if spikes have been computed
-        if not hasattr(self, "spikes") or self.spikes is None:
-            return 0.0
-
-        # Single timestep rate
-        spike_rate = self.spikes.float().mean().item()
-
-        # Convert to Hz (spikes per second)
-        firing_rate_hz = spike_rate * (1000.0 / self.ne_config.dt_ms)
-
-        return firing_rate_hz
-
-    def reset_state(self):
-        """Reset neuron state to baseline."""
-        super().reset_state()
-        self.ca_concentration.zero_()
-        self.sk_activation.zero_()
-        # Re-randomize phases
-        self.v_mem = (
-            torch.rand(self.n_neurons, device=self.device)
-            * self.ne_config.v_threshold
-            * 0.3
-        )

@@ -1,36 +1,49 @@
-"""NeuralRegion: Biologically accurate region with synaptic inputs at dendrites.
+"""NeuralRegion base class for brain regions with biologically accurate synaptic inputs.
 
-This is the base class for brain regions where:
-- Weights live at TARGET dendrites (not in pathways/axons)
-- Learning rules are region-specific (per-source customization)
-- Multi-source integration is natural (Dict[str, Tensor] input)
+This class implements the core functionality for neural regions, including:
+1. Managing synaptic weights for multiple input sources (dendrites)
+2. Integrating synaptic inputs at dendrites (multi-source summation)
+3. Providing utilities for homeostatic plasticity and temporal parameter management
 
-Biological accuracy:
-- Axons = pure routing (delay only, no weights)
-- Dendrites = synaptic weights (at target)
-- Soma = integration + spiking
+Regions with internal structure (like Cortex) should subclass NeuralRegion and:
+1. Call super().__init__() to initialize synaptic weight management
+2. Define internal neuron populations and connections for within-region processing
+3. Override forward() to apply synaptic weights and internal processing
+
+Biological Inspiration:
+- Neurons receive inputs from multiple sources via dendrites, each with its own synaptic weights
+- Dendrites integrate these inputs through linear summation of conductances
+- Homeostatic plasticity maintains stable activity levels through intrinsic excitability and synaptic scaling
+- Temporal parameters (e.g., STP time constants) can be updated dynamically for biological realism
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, TypeVar, Generic
+from typing import TYPE_CHECKING, Dict, Optional, TypeVar, Generic
 
 import torch
 import torch.nn as nn
 
 from thalia.brain.configs import NeuralRegionConfig
-from thalia.components.synapses import WeightInitializer
+from thalia.components.synapses import (
+    STPConfig,
+    ShortTermPlasticity,
+    WeightInitializer,
+)
 from thalia.typing import (
+    NeuromodulatorInput,
     PopulationName,
     PopulationSizes,
-    RegionSpikesDict,
-    SpikesSourceKey,
+    RegionName,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
 )
-from thalia.utils import validate_spike_tensor
-from thalia.utils.spike_utils import validate_spike_tensors
+from thalia.utils import validate_spike_tensor, validate_spike_tensors
 
 if TYPE_CHECKING:
+    from thalia.components.neurons import ConductanceLIF, IzhikevichNeuron
     from thalia.learning import LearningStrategy
 
 
@@ -47,20 +60,15 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
     Subclassing:
         Regions with internal structure (like Cortex) should:
-        1. Call super().__init__() to get synaptic_weights dict
+        1. Call super().__init__() to get _synaptic_weights dict
         2. Define internal neurons/weights for within-region processing
         3. Override forward() to apply synaptic weights then internal processing
-        4. Set OUTPUT_POPULATIONS class attribute for auto population registration
     """
 
-    # Type annotations for config
-    config: ConfigT
-
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {}
-    """Population name → size attribute name mapping for auto-registration."""
+    config: ConfigT  # Type annotation for config
 
     # =========================================================================
-    # PROPERTIES
+    # PROPERTIES AND UTILS
     # =========================================================================
 
     @property
@@ -78,18 +86,11 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         """Data type for floating point tensors."""
         return torch.float32
 
-    @property
-    def n_input(self) -> int:
-        """Total number of input neurons across all sources."""
-        import warnings
-        warnings.warn("NeuralRegion.n_input is deprecated and will be removed in future versions.")
-        return sum(self.input_sources.values())
-
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: ConfigT, population_sizes: PopulationSizes):
+    def __init__(self, config: ConfigT, population_sizes: PopulationSizes, region_name: RegionName):
         """Initialize NeuralRegion with config and layer sizes."""
         super().__init__()
 
@@ -107,316 +108,409 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # INITIALIZE INSTANCE VARIABLES
         # ====================================================================
         self.config: ConfigT = config
-        self.population_sizes: PopulationSizes = population_sizes
-
-        # Automatically set {key}_size attributes for all layer sizes
-        # This allows _get_target_population_size() to find them
-        for key, size in population_sizes.items():
-            setattr(self, f"{key}_size", size)
+        self.region_name: RegionName = region_name
 
         # Synaptic weights: one weight matrix per input source
-        # These are the TARGET dendrites receiving from each source
-        self.synaptic_weights: nn.ParameterDict = nn.ParameterDict()
+        self._synaptic_weights: Dict[SynapseId, nn.Parameter] = {}  #nn.ParameterDict()
+
+        # Optional per-source STP modules for short-term plasticity (facilitation/depression)
+        self.stp_modules: Dict[SynapseId, ShortTermPlasticity] = {}  #nn.ModuleDict()
 
         # Track which sources have been added
-        self.input_sources: PopulationSizes = {}
+        self.input_sources: Dict[SynapseId, int] = {}
 
-        # Population-based routing infrastructure (ADR-015)
-        self._registered_populations: set[str] = set()
-
-        # Map each input source to its target population (for runtime routing)
-        # e.g., {"thalamus:relay": "l4", "hippocampus:ca1": "l5"}
-        self._source_target_populations: Dict[str, str] = {}
-
-        # Initialize oscillator phase tracking (will be updated by Brain via set_oscillator_phases)
-        self._oscillator_phases: Dict[str, float] = {}
-        self._oscillator_signals: Dict[str, float] = {}
-        self._coupled_amplitudes: Dict[str, float] = {}
+        # Neuron populations within this region (e.g., L4, L2/3, L5 for Cortex)
+        self.neuron_populations: Dict[PopulationName, ConductanceLIF | IzhikevichNeuron] = {}
 
         # Strategy instance (set by subclass)
         self.learning_strategy: Optional[LearningStrategy] = None
 
-        # Output spikes from last forward pass
-        self.output_spikes: Optional[torch.Tensor] = None
-        self._last_region_outputs: Optional[RegionSpikesDict] = None
+        # EMA alpha for firing rate tracking
+        self._firing_rate_alpha = self.dt_ms / self.config.gain_tau_ms
 
     def __post_init__(self) -> None:
         """Post-initialization processing after dataclass __init__."""
-        # =====================================================================
-        # AUTO-REGISTER OUTPUT POPULATIONS
-        # =====================================================================
-        for population_name, _size_attr in self.__class__.OUTPUT_POPULATIONS.items():
-            if population_name in self._registered_populations:
-                raise ValueError(f"Population '{population_name}' already registered in {self.__class__.__name__}")
-            self._registered_populations.add(population_name)
-
-        # =====================================================================
-        # ENSURE PARAMETERS ON CORRECT DEVICE
-        # =====================================================================
+        # Ensure all tensors are on the correct device
         self.to(self.device)
+
+    def _register_neuron_population(
+        self,
+        population_name: PopulationName,
+        population: ConductanceLIF | IzhikevichNeuron,
+    ) -> None:
+        """Register a neuron population within this region."""
+        if population_name in self.neuron_populations:
+            raise ValueError(f"Population '{population_name}' already registered in {self.__class__.__name__}")
+        self.neuron_populations[population_name] = population
+
+    def get_population_size(self, population: PopulationName) -> int:
+        """Get population size from population name."""
+        if population not in self.neuron_populations:
+            raise ValueError(
+                f"Population '{population}' not found in {self.__class__.__name__}. "
+                f"Registered populations: {self.neuron_populations.keys()}"
+            )
+        return self.neuron_populations[population].n_neurons
 
     # =========================================================================
     # SYNAPTIC WEIGHT MANAGEMENT
     # =========================================================================
 
+    def has_synaptic_weights(self, synapse_id: SynapseId) -> bool:
+        """Check if synaptic weights exist for a given input source."""
+        return synapse_id in self._synaptic_weights
+
+    def get_synaptic_weights(self, synapse_id: SynapseId) -> nn.Parameter:
+        """Get synaptic weights for a given input source, with validation."""
+        if not self.has_synaptic_weights(synapse_id):
+            raise ValueError(
+                f"Synaptic weights for '{synapse_id}' not found in {self.__class__.__name__}. "
+                f"Registered sources: {list(self._synaptic_weights.keys())}"
+            )
+        return self._synaptic_weights[synapse_id]
+
+    def add_synaptic_weights(self, synapse_id: SynapseId, weights: torch.Tensor) -> None:
+        """Add synaptic weights for a given input source, with validation."""
+        if synapse_id in self._synaptic_weights:
+            raise ValueError(f"Synaptic weights for '{synapse_id}' already exist in {self.__class__.__name__}")
+        self._synaptic_weights[synapse_id] = nn.Parameter(weights, requires_grad=False)
+
+    def add_stp_module(
+        self,
+        synapse_id: SynapseId,
+        n_pre: int,
+        n_post: int,
+        config: STPConfig,
+    ) -> None:
+        """Add a Short-Term Plasticity (STP) module for a specific input source."""
+        if synapse_id in self.stp_modules:
+            raise ValueError(f"STP module for '{synapse_id}' already exists in {self.__class__.__name__}")
+        if not self.has_synaptic_weights(synapse_id):
+            raise ValueError(
+                f"Cannot add STP module for '{synapse_id}' because synaptic weights do not exist. "
+                f"Please add synaptic weights first using add_synaptic_weights()."
+            )
+        self.stp_modules[synapse_id] = ShortTermPlasticity(n_pre, n_post, config).to(self.device)
+
     def add_input_source(
         self,
-        source_name: SpikesSourceKey,
-        target_population: PopulationName,
+        synapse_id: SynapseId,
         n_input: int,
-        sparsity: float = 0.5,
-        weight_scale: float = 2.5,
+        connectivity: float,
+        weight_scale: float,
+        *,
+        stp_config: Optional[STPConfig] = None,
     ) -> None:
-        """Add synaptic weights for a new input source.
+        """Add synaptic weights for a new input source."""
 
-        This creates the dendritic synapses that receive from the specified source.
-        Biologically: These are synapses ON this region's neurons, not in the axons.
-
-        **Source-Based Routing with Target Population**:
-        For multi-population regions (Cortex, Hippocampus), inputs target specific populations.
-        The weight matrix size is determined by the target population (e.g., "l4", "l23", "l5").
-
-        Args:
-            source_name: Name of source region (e.g., "thalamus:relay", "hippocampus:ca1")
-            target_population: Target population name (e.g., "l4", "l23", "l5")
-            n_input: Number of neurons in source region
-            sparsity: Connection sparsity (0.5 = 50% connected, biological default)
-            weight_scale: Initial weight scale (2.5 = strong enough to reliably drive postsynaptic firing)
-
-        Raises:
-            ValueError: If source_name already exists
-        """
-        if source_name in self.input_sources:
-            raise ValueError(f"Input source '{source_name}' already exists")
-
-        # Determine target population size from population name
-        # Different inputs go to different populations (e.g., Cortex: thalamus→L4, hippocampus→L5)
-        n_output = self._get_target_population_size(target_population)
-
-        # Create weight matrix [n_output, n_input]
-        # n_output is population-specific (e.g., L4 for Cortex) or total neurons for simple regions
-        weights = WeightInitializer.sparse_random(
-            n_output=n_output,
-            n_input=n_input,
-            sparsity=sparsity,
-            weight_scale=weight_scale,
-            device=self.device,
-        )
-
-        # Use ParameterDict to ensure proper device movement
-        self.synaptic_weights[source_name] = nn.Parameter(weights, requires_grad=False)
+        if synapse_id in self.input_sources:
+            raise ValueError(f"Input source '{synapse_id}' already exists")
+        if n_input < 0:
+            raise ValueError("Number of input neurons must be non-negative")
+        if not (0.0 <= connectivity <= 1.0):
+            raise ValueError("Connectivity must be between 0 and 1")
+        if weight_scale < 0:
+            raise ValueError("Weight scale must be non-negative")
 
         # Track source registration
-        self.input_sources[source_name] = n_input
+        self.input_sources[synapse_id] = n_input
 
-        # Store target population for runtime routing (biological: synapses define the pathway)
-        self._source_target_populations[source_name] = target_population
+        # All registered inputs are synaptic (neuromodulators use separate broadcast system)
+        n_output = self.get_population_size(synapse_id.target_population)
 
-    def _get_target_population_size(self, target_population: PopulationName) -> int:
-        """Get target population size from population name."""
-        size_attr = f"{target_population}_size"
-        if not hasattr(self, size_attr):
-            raise ValueError(
-                f"Target population '{target_population}' not found in {self.__class__.__name__}. "
-                f"Expected attribute '{size_attr}'."
+        self.add_synaptic_weights(
+            synapse_id,
+            WeightInitializer.sparse_random(
+                n_input=n_input,
+                n_output=n_output,
+                connectivity=connectivity,
+                weight_scale=weight_scale,
+                device=self.device,
+            ),
+        )
+
+        if stp_config is not None:
+            self.add_stp_module(
+                synapse_id=synapse_id,
+                n_pre=n_input,
+                n_post=n_output,
+                config=stp_config,
             )
-        return getattr(self, size_attr)
+
+    def _add_internal_connection(
+        self,
+        source_population: PopulationName,
+        target_population: PopulationName,
+        weights: torch.Tensor,
+        *,
+        stp_config: STPConfig,
+        is_inhibitory: bool = False,
+    ) -> SynapseId:
+        """Add internal synaptic weights between neuron populations within this region."""
+        synapse_id = SynapseId(
+            source_region=self.region_name,
+            source_population=source_population,
+            target_region=self.region_name,
+            target_population=target_population,
+            is_inhibitory=is_inhibitory,
+        )
+
+        if synapse_id in self.input_sources:
+            raise ValueError(f"Input source '{synapse_id}' already exists")
+
+        self.add_synaptic_weights(synapse_id, weights)
+
+        if stp_config is not None:
+            n_output, n_input = weights.shape
+            self.add_stp_module(
+                synapse_id=synapse_id,
+                n_pre=n_input,
+                n_post=n_output,
+                config=stp_config,
+            )
+
+        return synapse_id
+
+    def _split_excitatory_conductance(
+        self,
+        g_exc_total: torch.Tensor,
+        nmda_ratio: float = 0.0,  # CRITICAL: Default 0.0 to prevent NMDA accumulation
+        # TODO: Consider making nmda_ratio a per-source parameter for more biological realism
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split excitatory conductance into AMPA (fast) and NMDA (slow) components.
+
+        Biology: Excitatory synapses contain both AMPA and NMDA receptors.
+        AMPA provides fast transmission (tau~5ms), NMDA provides slow temporal
+        integration (tau~100ms).
+
+        CRITICAL: Due to tau_nmda=100ms vs tau_ampa=5ms (20x difference),
+        NMDA accumulates much more than AMPA in steady state. With 30% NMDA input,
+        steady-state conductance becomes 7-10x more NMDA than AMPA, causing
+        pathological over-excitation. Reduced to 5% NMDA to prevent over-integration
+        while still providing slow timescale dynamics.
+
+        Args:
+            g_exc_total: Total excitatory conductance to split
+            nmda_ratio: Fraction of total conductance that is NMDA (default 0.05 = 5%)
+
+        Returns:
+            g_ampa: Fast AMPA conductance (95% of total)
+            g_nmda: Slow NMDA conductance (5% of total)
+        """
+        ampa_ratio = 1.0 - nmda_ratio
+        g_ampa = g_exc_total * ampa_ratio
+        g_nmda = g_exc_total * nmda_ratio
+        return g_ampa, g_nmda
+
+    def _apply_synaptic_scaling(
+        self,
+        firing_rate: torch.Tensor,
+        weight_scale: torch.Tensor,
+        target_population: PopulationName,
+    ) -> None:
+        """Apply multiplicative synaptic scaling if layer is chronically underactive.
+
+        All cortical layers should scale up input weights when firing rates
+        are chronically below threshold. This is a slow, global homeostatic
+        mechanism distinct from per-neuron gain/threshold adaptation.
+
+        Args:
+            firing_rate: Layer's firing rate EMA
+            weight_scale: Layer's weight scaling factor
+            population_name: Name of the target population (e.g., "l23") for scaling input weights
+        """
+        # Compute layer-wide average activity (not per-neuron)
+        layer_avg_rate = firing_rate.mean()
+
+        # Scale up weights when chronically below threshold
+        if layer_avg_rate < self.config.synaptic_scaling_min_activity:
+            # Compute scaling update (slow, multiplicative)
+            rate_deficit = self.config.synaptic_scaling_min_activity - layer_avg_rate
+            scale_update = self.config.synaptic_scaling_lr * rate_deficit
+
+            # Apply multiplicative scaling (1.0 -> 1.001 -> 1.002, etc.)
+            weight_scale.data.mul_(1.0 + scale_update).clamp_(
+                min=1.0, max=self.config.synaptic_scaling_max_factor
+            )
+
+            # Scale ALL input weights to this layer
+            for synapse_id, weights in self._synaptic_weights.items():
+                if synapse_id.target_population == target_population:
+                    weights.data.mul_(1.0 + scale_update)
+
+    def _update_homeostasis(
+        self,
+        spikes: torch.Tensor,
+        firing_rate: torch.Tensor,
+        neurons: ConductanceLIF,
+    ) -> None:
+        """Update homeostatic intrinsic excitability and threshold adaptation.
+
+        Biologically-accurate homeostasis through TWO mechanisms:
+        1. INTRINSIC EXCITABILITY: Modulate leak conductance (g_L_scale)
+           - Lower g_L → higher input resistance → more excitable
+           - Implemented as neurons.g_L_scale (Turrigiano & Nelson 2004)
+        2. THRESHOLD ADAPTATION: Lower threshold when underactive
+           - Complementary to intrinsic excitability
+           - Faster time constant than g_L modulation
+
+        CRITICAL: We do NOT multiply synaptic conductances by gain!
+        That's biologically incorrect - synapses don't know about homeostasis.
+
+        Args:
+            spikes: Current timestep's spikes [layer_size]
+            firing_rate: Exponential moving average of firing rate [layer_size]
+            neurons: Layer's neuron population (has g_L_scale, v_threshold)
+        """
+        # Update firing rate EMA with current spikes
+        current_rate = spikes.float()
+        firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(current_rate * self._firing_rate_alpha)
+
+        # Compute rate error: positive when underactive
+        rate_error = self.config.target_firing_rate - firing_rate  # [layer_size]
+
+        # INTRINSIC EXCITABILITY: Modulate leak conductance
+        # When underactive (rate_error > 0): decrease g_L_scale → lower leak → more excitable
+        # When overactive (rate_error < 0): increase g_L_scale → higher leak → less excitable
+        # Inverse relationship: g_L ∝ 1/excitability
+        g_L_update = -self.config.gain_learning_rate * rate_error  # Negative: underactive → lower g_L
+        neurons.g_L_scale.data.add_(g_L_update).clamp_(min=0.1, max=2.0)  # Biological range
+
+        # THRESHOLD ADAPTATION: Lower threshold when underactive (faster than g_L)
+        threshold_update = -self.config.threshold_learning_rate * rate_error
+        neurons.adjust_thresholds(threshold_update, self.config.threshold_min, self.config.threshold_max)
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    def _pre_forward(self, region_inputs: RegionSpikesDict) -> None:
+    def _pre_forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> None:
         """Pre-forward processing (input validation, etc.)."""
-        # Validate input spike tensors
-        validate_spike_tensors(region_inputs, context=f"{self.__class__.__name__} forward inputs")
+        # Validate synaptic input spike tensors
+        validate_spike_tensors(synaptic_inputs, context=f"{self.__class__.__name__} forward synaptic inputs")
 
-        # Check that all input sources are registered
-        for source_name in region_inputs.keys():
-            if source_name not in self.input_sources:
+        # Check that all synaptic input sources are registered
+        for synapse_id in synaptic_inputs.keys():
+            if synapse_id not in self.input_sources:
                 raise ValueError(
-                    f"Input source '{source_name}' not registered in {self.__class__.__name__}. "
-                    f"Registered sources: {sorted(self.input_sources.keys())}"
+                    f"Input source '{synapse_id}' not registered in {self.__class__.__name__}. "
+                    f"Registered sources: {list(self.input_sources.keys())}"
+                )
+            # All registered inputs must have weights (neuromodulators use separate system)
+            if synapse_id not in self._synaptic_weights:
+                raise ValueError(
+                    f"Synaptic weights for input source '{synapse_id}' not found in {self.__class__.__name__}. "
+                    f"Registered sources: {list(self._synaptic_weights.keys())}"
                 )
 
-    def _post_forward(self, region_outputs: RegionSpikesDict) -> RegionSpikesDict:
+        # Validate neuromodulator inputs (if any)
+        for neuromod_type, spikes in neuromodulator_inputs.items():
+            if spikes is not None:
+                validate_spike_tensor(spikes, tensor_name=f"neuromodulator_{neuromod_type}")
+
+    def _post_forward(self, region_outputs: RegionOutput) -> RegionOutput:
         """Post-forward processing (e.g., tracking output spikes)."""
-        # Store output spikes for potential use in learning or monitoring
-        self._last_region_outputs = region_outputs
         return region_outputs
 
+    def __call__(self, *args, **kwds):
+        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
+        return super().__call__(*args, **kwds)
+
     @abstractmethod
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
-        """Process inputs through the region and produce outputs."""
-
-    def _integrate_multi_source_synaptic_inputs(
-        self,
-        inputs: RegionSpikesDict,
-        n_neurons: int,
-        *,
-        weight_key_suffix: str = "",
-        apply_stp: bool = False,
-        modulation_fn: Optional[Callable] = None,
-    ) -> torch.Tensor:
-        """Integrate synaptic currents from multiple input sources.
-
-        This is the standard pattern for multi-source integration in biological neurons:
-        1. Loop over each presynaptic source in inputs dict
-        2. Apply source-specific synaptic weights (independent plasticity)
-        3. Optionally apply per-source STP (short-term facilitation/depression)
-        4. Optionally apply per-source modulation (attention, gating, etc.)
-        5. Accumulate all synaptic currents for somatic integration
-
-        Biological Rationale:
-            Real neurons integrate currents from multiple dendritic branches, each receiving
-            input from different sources with independent synaptic weights. This method
-            models that dendritic integration, where each source creates a conductance
-            change that sums at the soma.
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Process synaptic and neuromodulatory inputs through the region and produce outputs.
 
         Args:
-            inputs: Dict mapping source names to spike tensors [n_source]
-            n_neurons: Number of post-synaptic neurons (target population size)
-            weight_key_suffix: Suffix for weight keys (e.g., "_d1" for striatum D1 pathway,
-                              "_l23" for cortex L2/3 direct input)
-            apply_stp: Whether to apply per-source STP if stp_modules exist
-            modulation_fn: Optional function to modulate spikes from each source
-                          Signature: (spikes: Tensor, source_name: str) -> Tensor
-                          Example: lambda s, name: s * alpha_suppression
+            synaptic_inputs: Point-to-point synaptic connections (Dict[SynapseId, torch.Tensor])
+            neuromodulator_inputs: Broadcast neuromodulatory signals (Dict[NeuromodulatorType, Optional[torch.Tensor]])
 
         Returns:
-            Total synaptic current [n_neurons] (float tensor, ready for neuronal integration)
+            RegionOutput: Dict mapping population names to their output spike tensors
+        """
+
+    def _integrate_synaptic_inputs_at_dendrites(
+        self,
+        synaptic_inputs: SynapticInput,
+        n_neurons: int,
+        *,
+        filter_by_source_region: Optional[RegionName] = None,
+        filter_by_source_population: Optional[PopulationName] = None,
+        filter_by_target_population: Optional[PopulationName] = None,
+    ) -> torch.Tensor:
+        """Integrate synaptic inputs at dendrites (multi-source summation).
+
+        Biological Process:
+        1. Spikes arrive via axons (already delayed in AxonalTract)
+        2. Synapses convert spikes to conductances: g = weights @ spikes
+        3. Dendrites sum conductances from all sources: g_total = Σ g_i
+        4. Soma integrates total conductance: neurons.forward(g_total)
+
+        Args:
+            synaptic_inputs: Dict mapping synapse IDs to spike tensors [n_source]
+            n_neurons: Number of post-synaptic neurons (target population size)
+            filter_by_source_region: If provided, only integrate inputs from this source region (e.g., "thalamus")
+            filter_by_source_population: If provided, only integrate inputs from this source population (e.g., "l4")
+            filter_by_target_population: If provided, only integrate inputs targeting this population (e.g., "l4")
+
+        Returns:
+            Total synaptic conductance [n_neurons] (float tensor, normalized by g_L)
 
         Raises:
             AssertionError: If input tensors violate ADR-005 (not 1D)
+
+        Note:
+            Routing keys are used directly as synaptic weight keys.
+            Region subclasses should initialize _synaptic_weights with routing keys.
         """
-        current = torch.zeros(n_neurons, device=self.device)
+        g_total = torch.zeros(n_neurons, device=self.device)
 
-        for source_name, source_spikes in inputs.items():
-            # ================================================================
-            # INPUT VALIDATION (ADR-005: 1D spike tensors)
-            # ================================================================
-            validate_spike_tensor(source_spikes, tensor_name=source_name)
+        for synapse_id, source_spikes in synaptic_inputs.items():
+            validate_spike_tensor(source_spikes, tensor_name=synapse_id)
 
-            # ================================================================
-            # TYPE CONVERSION (ADR-004: bool spikes → float for computation)
-            # ================================================================
-            source_spikes_float = (
-                source_spikes.float()
-                if source_spikes.dtype == torch.bool
-                else source_spikes
-            )
-
-            # ================================================================
-            # OPTIONAL PER-SOURCE MODULATION
-            # ================================================================
-            # Examples: alpha attention gating, neuromodulator scaling, etc.
-            if modulation_fn is not None:
-                source_spikes_float = modulation_fn(source_spikes_float, source_name)
-
-            # ================================================================
-            # GET SOURCE-SPECIFIC SYNAPTIC WEIGHTS
-            # ================================================================
-            weight_key = f"{source_name}{weight_key_suffix}"
-            if weight_key not in self.synaptic_weights:
-                # Source not connected to this target (graceful skip)
-                # This is normal: not all sources connect to all targets
+            # Apply filters to select which inputs to integrate
+            if filter_by_source_region and synapse_id.source_region != filter_by_source_region:
+                continue
+            if filter_by_source_population and synapse_id.source_population != filter_by_source_population:
+                continue
+            if filter_by_target_population and synapse_id.target_population != filter_by_target_population:
                 continue
 
-            weights = self.synaptic_weights[weight_key]
+            # Validate that synaptic weights exist for this source
+            if not self.has_synaptic_weights(synapse_id):
+                raise ValueError(
+                    f"Synaptic weights for input source '{synapse_id}' not found in {self.__class__.__name__}. "
+                    f"Registered sources: {list(self._synaptic_weights.keys())}"
+                )
 
-            # ================================================================
-            # OPTIONAL PER-SOURCE STP (SHORT-TERM PLASTICITY)
-            # ================================================================
-            # Models synaptic facilitation/depression (millisecond timescale)
-            # Different sources can have different STP dynamics
-            if apply_stp and hasattr(self, 'stp_modules') and weight_key in self.stp_modules:
-                # Get STP efficacy modulation for this source
-                stp_efficacy = self.stp_modules[weight_key](source_spikes_float)
-                # Apply as multiplicative modulation of weights
-                # STP returns [n_pre, n_post], weights are [n_post, n_pre] → transpose
-                effective_weights = weights * stp_efficacy.T
-                source_current = effective_weights @ source_spikes_float
+            weights = self._synaptic_weights[synapse_id]
+            source_spikes_float = source_spikes.float()
+
+            if synapse_id.is_inhibitory:
+                # TODO: Also integrate inhibitory conductance here?
+                pass
             else:
-                # Standard weighted summation (no STP)
-                source_current = weights @ source_spikes_float
+                # OPTIONAL PER-SOURCE STP (SHORT-TERM PLASTICITY)
+                # Models synaptic facilitation/depression (millisecond timescale)
+                # Different sources can have different STP dynamics
+                if synapse_id in self.stp_modules:
+                    # Get STP efficacy modulation for this source
+                    stp_efficacy = self.stp_modules[synapse_id].forward(source_spikes_float)
+                    # Apply as multiplicative modulation of weights
+                    # STP returns [n_pre, n_post], weights are [n_post, n_pre] → transpose
+                    weights = weights * stp_efficacy.T
 
-            # ================================================================
-            # ACCUMULATE SYNAPTIC CURRENT
-            # ================================================================
-            # Biology: Dendritic currents sum at soma (linear superposition)
-            current += source_current
+                # SYNAPTIC CONDUCTANCE CALCULATION
+                # Convert incoming spikes to conductance: g = W @ s
+                source_conductance = weights @ source_spikes_float
 
-        return current
+                # ACCUMULATE SYNAPTIC CONDUCTANCE
+                # Biology: Dendritic conductances sum at soma (linear superposition)
+                g_total += source_conductance
 
-    # =========================================================================
-    # LEARNING MANAGEMENT
-    # =========================================================================
+        # Clamp to non-negative (conductances cannot be negative!)
+        g_total = torch.clamp(g_total, min=0.0)
 
-    def _apply_strategy_learning(
-        self,
-        pre_activity: torch.Tensor,
-        post_activity: torch.Tensor,
-        weights: torch.Tensor,
-        modulator: Optional[float] = None,
-        target: Optional[torch.Tensor] = None,
-        **kwargs: Any,
-    ) -> Dict[str, float]:
-        """Apply learning strategy to update weights.
-
-        This is the main interface for region learning. It:
-        1. Checks plasticity enabled flag
-        2. Gets dopamine-modulated learning rate
-        3. Applies strategy compute_update()
-        4. Updates weights in-place
-        5. Returns learning metrics
-
-        Args:
-            pre_activity: Presynaptic activity (input spikes)
-            post_activity: Postsynaptic activity (output spikes)
-            weights: Weight matrix to update [n_post, n_pre]
-            modulator: Optional modulator (dopamine concentration from receptors)
-            target: Optional target for supervised learning
-            **kwargs: Additional strategy-specific parameters
-
-        Returns:
-            Dict of learning metrics (ltp, ltd, net_change, etc.)
-        """
-        # Check if strategy is configured
-        if self.learning_strategy is None:
-            return {}
-
-        # Use modulator directly (regions should pass receptor concentration)
-        if modulator is None:
-            modulator = 0.0  # Default baseline if no modulator provided
-
-        # Get effective learning rate from strategy config
-        effective_lr = self.learning_strategy.config.learning_rate
-
-        # Early exit if learning rate too small
-        if effective_lr < 1e-8:
-            return {}
-
-        # Temporarily adjust strategy learning rate
-        original_lr = self.learning_strategy.config.learning_rate
-        self.learning_strategy.config.learning_rate = effective_lr
-
-        # Apply strategy
-        new_weights, metrics = self.learning_strategy.compute_update(
-            weights=weights,
-            pre_spikes=pre_activity,
-            post_spikes=post_activity,
-            modulator=modulator if modulator is not None else 0.0,
-            target=target,
-            **kwargs,
-        )
-
-        # Update weights in-place
-        weights.data.copy_(new_weights)
-
-        # Restore original learning rate
-        self.learning_strategy.config.learning_rate = original_lr
-
-        return metrics
+        return g_total
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
@@ -430,57 +524,10 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         """
         self.config.dt_ms = dt_ms
 
-        # Update single learning strategy if present
-        if hasattr(self.learning_strategy, "update_temporal_parameters"):
+        for stp_module in self.stp_modules.values():
+            stp_module.update_temporal_parameters(dt_ms)
+
+        if self.learning_strategy is not None:
             self.learning_strategy.update_temporal_parameters(dt_ms)
 
-    def set_oscillator_phases(
-        self,
-        phases: Dict[str, float],
-        signals: Dict[str, float],
-        coupled_amplitudes: Dict[str, float],
-    ) -> None:
-        """Default: store oscillator info but don't require usage."""
-        self._oscillator_phases = phases
-        self._oscillator_signals = signals or {}
-        self._coupled_amplitudes = coupled_amplitudes or {}
-
-    @property
-    def _theta_phase(self) -> float:
-        """Current theta phase in radians [0, 2π)."""
-        return float(self._oscillator_phases.get("theta", 0.0))
-
-    @property
-    def _gamma_phase(self) -> float:
-        """Current gamma phase in radians [0, 2π)."""
-        return float(self._oscillator_phases.get("gamma", 0.0))
-
-    @property
-    def _alpha_phase(self) -> float:
-        """Current alpha phase in radians [0, 2π)."""
-        return float(self._oscillator_phases.get("alpha", 0.0))
-
-    @property
-    def _beta_phase(self) -> float:
-        """Current beta phase in radians [0, 2π)."""
-        return float(self._oscillator_phases.get("beta", 0.0))
-
-    @property
-    def _delta_phase(self) -> float:
-        """Current delta phase in radians [0, 2π)."""
-        return float(self._oscillator_phases.get("delta", 0.0))
-
-    @property
-    def _alpha_signal(self) -> float:
-        """Current alpha signal strength."""
-        return float(self._oscillator_signals.get("alpha", 0.0))
-
-    @property
-    def _gamma_amplitude_effective(self) -> float:
-        """Effective gamma amplitude (with cross-frequency coupling)."""
-        return float(self._coupled_amplitudes.get("gamma", 1.0))
-
-    @property
-    def _beta_amplitude_effective(self) -> float:
-        """Effective beta amplitude (with cross-frequency coupling)."""
-        return float(self._coupled_amplitudes.get("beta", 1.0))
+        self._firing_rate_alpha = self.dt_ms / self.config.gain_tau_ms

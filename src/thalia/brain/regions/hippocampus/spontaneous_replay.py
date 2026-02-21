@@ -63,11 +63,7 @@ class SpontaneousReplayGenerator:
             f"Pattern selection weights must sum to 1.0, got {total_weight}"
         )
 
-    def should_trigger_ripple(
-        self,
-        acetylcholine: float,
-        dt_ms: float,
-    ) -> bool:
+    def should_trigger_ripple(self, acetylcholine: float, dt_ms: float) -> bool:
         """Determine if a ripple should occur this timestep.
 
         Ripples are biologically gated by acetylcholine:
@@ -110,7 +106,7 @@ class SpontaneousReplayGenerator:
         self,
         synaptic_tags: torch.Tensor,
         ca3_weights: torch.Tensor,
-        seed_fraction: float = 0.15,
+        seed_fraction: float,
     ) -> torch.Tensor:
         """Select which pattern to spontaneously reactivate.
 

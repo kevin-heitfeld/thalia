@@ -22,15 +22,6 @@ Biophysical Mechanisms:
 
 This specialized neuron type is used exclusively by the NB region to encode
 attention shifts and prediction errors through fast, brief bursts.
-
-References:
-- Hasselmo & McGaughy (2004): ACh and cortical function
-- Sarter & Parikh (2005): Cholinergic systems and attention
-- Hangya et al. (2015): Central cholinergic neurons
-- Gu & Yakel (2011): Cholinergic coordination of prefrontal cortex
-
-Author: Thalia Project
-Date: February 2026
 """
 
 from __future__ import annotations
@@ -112,59 +103,40 @@ class AcetylcholineNeuron(ConductanceLIF):
     2. Fast brief bursts (10-20 Hz for 50-100ms) on prediction errors
     3. Fast SK adaptation limits burst duration
     4. Rapid return to baseline after burst
-
-    Usage:
-        ```python
-        ach_neurons = AcetylcholineNeuron(
-            n_neurons=3000,
-            config=AcetylcholineNeuronConfig(),
-            device=torch.device("cpu")
-        )
-
-        # Tonic firing (retrieval mode)
-        ach_neurons.forward(i_synaptic=0.0, prediction_error_drive=0.0)
-
-        # Fast burst on prediction error
-        ach_neurons.forward(i_synaptic=0.0, prediction_error_drive=1.0)
-        ```
     """
 
-    def __init__(
-        self,
-        n_neurons: int,
-        config: AcetylcholineNeuronConfig,
-        device: torch.device,
-    ):
+    def __init__(self, n_neurons: int, config: AcetylcholineNeuronConfig):
         """Initialize acetylcholine neuron population.
 
         Args:
             n_neurons: Number of ACh neurons (~3,000-5,000 in human NB)
             config: Configuration with pacemaking and fast burst parameters
-            device: PyTorch device for tensor allocation
         """
-        super().__init__(n_neurons, config, device)
+        super().__init__(n_neurons, config)
 
         # Store specialized config
         self.ach_config = config
 
         # SK channel state (calcium-activated K+ for fast adaptation)
-        self.ca_concentration = torch.zeros(n_neurons, device=device)
-        self.sk_activation = torch.zeros(n_neurons, device=device)
+        self.ca_concentration = torch.zeros(n_neurons, device=self.device)
+        self.sk_activation = torch.zeros(n_neurons, device=self.device)
 
         # Initialize with varied phases (prevent artificial synchronization)
-        self.v_mem = torch.rand(n_neurons, device=device) * config.v_threshold * 0.4
+        self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.4
 
     def forward(
         self,
-        g_exc_input: Optional[ConductanceTensor] = None,
-        g_inh_input: Optional[ConductanceTensor] = None,
-        prediction_error_drive: float = 0.0,
+        g_ampa_input: Optional[ConductanceTensor],
+        g_gaba_a_input: Optional[ConductanceTensor],
+        g_nmda_input: Optional[ConductanceTensor],
+        prediction_error_drive: float,
     ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update acetylcholine neurons with prediction error modulation.
 
         Args:
-            g_exc_input: Excitatory conductance input [n_neurons]
-            g_inh_input: Inhibitory conductance input [n_neurons]
+            g_ampa_input: AMPA (fast excitatory) conductance input [n_neurons]
+            g_gaba_a_input: GABA_A (fast inhibitory) conductance input [n_neurons]
+            g_nmda_input: NMDA (slow excitatory) conductance input [n_neurons] (not used for ACh neurons)
             prediction_error_drive: Prediction error magnitude (normalized scalar)
                                   +1.0 = high prediction error (burst)
                                    0.0 = low prediction error (tonic)
@@ -172,17 +144,15 @@ class AcetylcholineNeuron(ConductanceLIF):
         Returns:
             (spikes, membrane): Spike tensor and membrane potentials
         """
-        # Handle None inputs
-        if g_exc_input is None:
-            g_exc_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
-        if g_inh_input is None:
-            g_inh_input = ConductanceTensor(torch.zeros(self.n_neurons, device=self.device))
-
         # Store PE for conductance calculation
         self._current_pe = prediction_error_drive
 
         # Call parent's forward
-        spikes, _ = super().forward(g_exc_input, g_inh_input)
+        spikes, _membrane = super().forward(
+            g_ampa_input=g_ampa_input,
+            g_gaba_a_input=g_gaba_a_input,
+            g_nmda_input=g_nmda_input,
+        )
 
         # === Update Calcium and SK Activation ===
         # Large calcium influx on spike (fast SK activation)
@@ -221,77 +191,3 @@ class AcetylcholineNeuron(ConductanceLIF):
             (g_ih, self.ach_config.i_h_reversal),  # I_h pacemaker
             (g_sk, self.ach_config.sk_reversal),   # SK adaptation
         ]
-
-    def get_firing_rate_hz(self, window_ms: int = 100) -> float:
-        """Get average firing rate.
-
-        Args:
-            window_ms: Time window for rate estimation (ms, not used in single timestep)
-
-        Returns:
-            Average firing rate in Hz
-        """
-        # Check if spikes have been computed
-        if not hasattr(self, "spikes") or self.spikes is None:
-            return 0.0
-
-        # Single timestep rate
-        spike_rate = self.spikes.float().mean().item()
-
-        # Convert to Hz (spikes per second)
-        firing_rate_hz = spike_rate * (1000.0 / self.ach_config.dt_ms)
-
-        return firing_rate_hz
-
-    def reset_state(self):
-        """Reset neuron state to baseline."""
-        super().reset_state()
-        self.ca_concentration.zero_()
-        self.sk_activation.zero_()
-        # Re-randomize phases
-        self.v_mem = (
-            torch.rand(self.n_neurons, device=self.device)
-            * self.ach_config.v_threshold
-            * 0.4
-        )
-
-
-# =============================================================================
-# FACTORY FUNCTION
-# =============================================================================
-
-
-def create_acetylcholine_neurons(
-    n_neurons: int,
-    device: torch.device | None = None,
-    **config_overrides,
-) -> AcetylcholineNeuron:
-    """Factory function for creating acetylcholine neuron populations.
-
-    Args:
-        n_neurons: Number of neurons to create
-        device: PyTorch device (defaults to CPU)
-        **config_overrides: Override default config parameters
-
-    Returns:
-        AcetylcholineNeuron instance
-
-    Example:
-        ```python
-        # Default configuration
-        ach_neurons = create_acetylcholine_neurons(n_neurons=3000)
-
-        # Custom configuration
-        ach_neurons = create_acetylcholine_neurons(
-            n_neurons=5000,
-            device=torch.device("cuda"),
-            i_h_conductance=0.025,  # Slightly higher baseline
-            sk_conductance=0.04,  # Even faster adaptation
-        )
-        ```
-    """
-    config = AcetylcholineNeuronConfig(device=str(device or "cpu"), **config_overrides)
-
-    return AcetylcholineNeuron(
-        n_neurons=n_neurons, config=config, device=device or torch.device("cpu")
-    )

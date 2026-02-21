@@ -1,6 +1,5 @@
 """Generate a list of GitHub raw URLs for all files in the repository."""
 
-import os
 from pathlib import Path
 
 # Configuration

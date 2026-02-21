@@ -10,10 +10,8 @@ This package provides the Striatum region with:
 
 from __future__ import annotations
 
-from .state_tracker import StriatumStateTracker
 from .striatum import Striatum
 
 __all__ = [
     "Striatum",
-    "StriatumStateTracker",
 ]

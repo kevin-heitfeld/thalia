@@ -14,9 +14,9 @@ Usage:
     client = ArxivClient()
     db = LiteratureDatabase()
 
-    results = client.search("conformal bootstrap")
+    results = client.search("short term synaptic plasticity AND computational model")
     for paper in results:
-        db.add_paper(paper, collection="bootstrap_methods")
+        db.add_paper(paper, collection="STSP Models")
 """
 
 __version__ = "2.0.0"

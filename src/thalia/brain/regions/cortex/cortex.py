@@ -52,34 +52,35 @@ Architecture (based on canonical cortical microcircuit):
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia.brain.configs import CortexConfig, CortexLayer
+from thalia.brain.regions.population_names import CortexPopulation
 from thalia.components import (
     WeightInitializer,
     NeuronFactory,
 )
-from thalia.components.synapses.neuromodulator_receptor import NeuromodulatorReceptor
+from thalia.components.synapses import NeuromodulatorReceptor
 from thalia.learning import (
-    LearningStrategy,
     UnifiedHomeostasis,
-    UnifiedHomeostasisConfig,
     BCMConfig,
     BCMStrategy,
     STDPConfig,
     STDPStrategy,
+    LearningStrategy,
     CompositeStrategy,
 )
-from thalia.learning.strategies import ThreeFactorStrategy, ThreeFactorConfig
 from thalia.typing import (
-    PopulationName,
+    NeuromodulatorInput,
     PopulationSizes,
-    RegionSpikesDict,
-    SpikesSourceKey,
+    RegionName,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
 )
 from thalia.units import ConductanceTensor
 from thalia.utils import (
@@ -87,14 +88,16 @@ from thalia.utils import (
     clamp_weights,
     compute_ach_recurrent_suppression,
     compute_ne_gain,
-    validate_spike_tensor,
 )
 
-from .inhibitory_network import InhibitoryNetwork
+from .inhibitory_network import CorticalInhibitoryNetwork
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
 from ..stimulus_gating import StimulusGating
+
+if TYPE_CHECKING:
+    from thalia.components.neurons import ConductanceLIF
 
 
 @register_region(
@@ -130,21 +133,13 @@ class Cortex(NeuralRegion[CortexConfig]):
     10. L6b → Thalamus Relay (fast gain modulation via excitatory drive)
     """
 
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "l23": "l23_size",
-        "l4": "l4_size",
-        "l5": "l5_size",
-        "l6a": "l6a_size",
-        "l6b": "l6b_size",
-    }
-
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: CortexConfig, population_sizes: PopulationSizes):
+    def __init__(self, config: CortexConfig, population_sizes: PopulationSizes, region_name: RegionName):
         """Initialize cortex."""
-        super().__init__(config=config, population_sizes=population_sizes)
+        super().__init__(config, population_sizes, region_name)
 
         # =====================================================================
         # EXTRACT LAYER SIZES AND CALCULATE FSI POPULATIONS
@@ -155,55 +150,20 @@ class Cortex(NeuralRegion[CortexConfig]):
         #   - Example: 400 pyr + 100 FSI = 500 total (80% pyr, 20% FSI)
 
         # Pyramidal sizes
-        self.l23_size: int = population_sizes["l23_size"]
-        self.l4_size: int = population_sizes["l4_size"]
-        self.l5_size: int = population_sizes["l5_size"]
-        self.l6a_size: int = population_sizes["l6a_size"]
-        self.l6b_size: int = population_sizes["l6b_size"]
-
-        # Pyramidal neuron counts (same as layer sizes for clarity)
-        self.l4_pyr_size = self.l4_size
-        self.l23_pyr_size = self.l23_size
-        self.l5_pyr_size = self.l5_size
-        self.l6a_pyr_size = self.l6a_size
-        self.l6b_pyr_size = self.l6b_size
-
-        # FSI counts (25% of pyramidal = 20% of total)
-        # FSIs generate gamma through fast rhythmic inhibition
-        self.l4_fsi_size = max(int(self.l4_size * 0.25), 10)  # Minimum 10 FSI
-        self.l23_fsi_size = max(int(self.l23_size * 0.25), 10)
-        self.l5_fsi_size = max(int(self.l5_size * 0.25), 10)
-        self.l6a_fsi_size = max(int(self.l6a_size * 0.25), 10)
-        self.l6b_fsi_size = max(int(self.l6b_size * 0.25), 10)
-
-        # =====================================================================
-        # INITIALIZE STATE FIELDS
-        # =====================================================================
-        # Spikes per layer (initialized in _init_layers)
-        self.l23_spikes: Optional[torch.Tensor] = None  # L2/3 processing layer
-        self.l4_spikes: Optional[torch.Tensor] = None  # L4 input layer
-        self.l5_spikes: Optional[torch.Tensor] = None  # L5 output layer
-        self.l6a_spikes: Optional[torch.Tensor] = None  # L6a → TRN pathway
-        self.l6b_spikes: Optional[torch.Tensor] = None  # L6b → relay pathway
-
-        # L2/3 recurrent activity (accumulated over time)
-        self.l23_recurrent_activity: Optional[torch.Tensor] = None
+        self.l23_pyr_size: int = population_sizes[CortexPopulation.L23_PYR.value]
+        self.l4_pyr_size: int = population_sizes[CortexPopulation.L4_PYR.value]
+        self.l5_pyr_size: int = population_sizes[CortexPopulation.L5_PYR.value]
+        self.l6a_pyr_size: int = population_sizes[CortexPopulation.L6A_PYR.value]
+        self.l6b_pyr_size: int = population_sizes[CortexPopulation.L6B_PYR.value]
 
         # =====================================================================
         # INITIALIZE SUBCOMPONENTS
         # =====================================================================
-        # Initialize layers
+        device = self.device
+
+        # Initialize layers and synaptic weights
         self._init_layers()
-
-        # Initialize inter-layer weights
-        self._init_weights()
-
-        # Initialize stimulus gating (transient inhibition) - always enabled
-        self.stimulus_gating = StimulusGating(
-            threshold=config.ffi_threshold,
-            max_inhibition=config.ffi_strength * 10.0,
-            decay_rate=1.0 - (1.0 / config.ffi_tau),
-        )
+        self._init_synaptic_weights()
 
         # STDP+BCM learning strategies for each layer
         # Custom STDP config using biologically appropriate amplitudes from config
@@ -229,31 +189,26 @@ class Cortex(NeuralRegion[CortexConfig]):
             theta_init=0.01,  # Higher initial threshold
             theta_max=0.5,  # Prevent saturation
             weight_decay=0.0002,  # L2 toward zero (proper weight decay)
-            activity_threshold=0.001,  # 0.1% - allows LTD in sparse networks
+            activity_threshold=0.01,  # 1% - allows LTD in sparse networks
         )
 
         # Create BCM+STDP strategies for each layer
-        self.bcm_l23: LearningStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
-        self.bcm_l4: LearningStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
-        self.bcm_l5: LearningStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
-        self.bcm_l6a: LearningStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
-        self.bcm_l6b: LearningStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
+        self.strategies_l23: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
+        self.strategies_l4: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
+        self.strategies_l5: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
+        self.strategies_l6a: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
+        self.strategies_l6b: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
 
-        # Intrinsic plasticity tracking (initialized in _init_layers)
-        self._l23_threshold_offset: Optional[torch.Tensor] = None
-        self._l23_activity_history: Optional[torch.Tensor] = None
+        # Intrinsic plasticity tracking
+        self._l23_activity_history: torch.Tensor = torch.zeros(self.l23_pyr_size, device=device)
+        self._l23_threshold_offset: torch.Tensor = torch.zeros(self.l23_pyr_size, device=device)
 
-        # Homeostasis for synaptic scaling and intrinsic plasticity
-        # Weight budget computed from total L4 synaptic connections (across all sources)
-        self.homeostasis = UnifiedHomeostasis(UnifiedHomeostasisConfig(
-            weight_budget=config.weight_budget * self.l4_size,  # Based on L4 capacity
-            w_min=config.w_min,
-            w_max=config.w_max,
-            soft_normalization=config.soft_normalization,
-            normalization_rate=config.normalization_rate,
-            activity_target=config.activity_target,
-            device=str(self.device),
-        ))
+        # Initialize stimulus gating (transient inhibition)
+        self.stimulus_gating: StimulusGating = StimulusGating(
+            threshold=config.ffi_threshold,
+            max_inhibition=config.ffi_strength * 10.0,
+            decay_rate=1.0 - (1.0 / config.ffi_tau),
+        )
 
         # =====================================================================
         # DOPAMINE RECEPTOR (sparse 30% projection, L5-specific)
@@ -262,21 +217,21 @@ class Cortex(NeuralRegion[CortexConfig]):
         # L5 pyramidal cells project to striatum and benefit from DA modulation
         # Biological: VTA/SNc DA terminals concentrated in deep layers
         # Note: Only L5 neurons receive DA; other layers get zero concentration
-        total_neurons = self.l23_size + self.l4_size + self.l5_size + self.l6a_size + self.l6b_size
+        total_neurons = self.l23_pyr_size + self.l4_pyr_size + self.l5_pyr_size + self.l6a_pyr_size + self.l6b_pyr_size
         self.da_receptor = NeuromodulatorReceptor(
             n_receptors=total_neurons,
             tau_rise_ms=15.0,  # Medium kinetics
             tau_decay_ms=150.0,  # Longer clearance for sustained modulation
             spike_amplitude=0.1,  # Moderate amplitude for stable learning
-            device=self.device,
+            device=device,
         )
         # Per-layer DA concentration buffers
         # Only L5 receives DA (30% projection strength), others get zero
-        self._da_concentration_l23 = torch.zeros(self.l23_size, device=self.device)
-        self._da_concentration_l4 = torch.zeros(self.l4_size, device=self.device)
-        self._da_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
-        self._da_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
-        self._da_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
+        self._da_concentration_l23: torch.Tensor = torch.zeros(self.l23_pyr_size, device=device)
+        self._da_concentration_l4: torch.Tensor = torch.zeros(self.l4_pyr_size, device=device)
+        self._da_concentration_l5: torch.Tensor = torch.zeros(self.l5_pyr_size, device=device)
+        self._da_concentration_l6a: torch.Tensor = torch.zeros(self.l6a_pyr_size, device=device)
+        self._da_concentration_l6b: torch.Tensor = torch.zeros(self.l6b_pyr_size, device=device)
 
         # =====================================================================
         # NOREPINEPHRINE RECEPTOR (LC projection - all layers)
@@ -288,14 +243,14 @@ class Cortex(NeuralRegion[CortexConfig]):
             tau_rise_ms=8.0,
             tau_decay_ms=150.0,
             spike_amplitude=0.12,
-            device=self.device,
+            device=device,
         )
         # Per-layer NE concentration buffers (all layers receive NE)
-        self._ne_concentration_l23 = torch.zeros(self.l23_size, device=self.device)
-        self._ne_concentration_l4 = torch.zeros(self.l4_size, device=self.device)
-        self._ne_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
-        self._ne_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
-        self._ne_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
+        self._ne_concentration_l23 = torch.zeros(self.l23_pyr_size, device=device)
+        self._ne_concentration_l4 = torch.zeros(self.l4_pyr_size, device=device)
+        self._ne_concentration_l5 = torch.zeros(self.l5_pyr_size, device=device)
+        self._ne_concentration_l6a = torch.zeros(self.l6a_pyr_size, device=device)
+        self._ne_concentration_l6b = torch.zeros(self.l6b_pyr_size, device=device)
 
         # =====================================================================
         # ACETYLCHOLINE RECEPTOR (NB projection - layer-specific)
@@ -309,29 +264,43 @@ class Cortex(NeuralRegion[CortexConfig]):
             tau_rise_ms=5.0,
             tau_decay_ms=50.0,
             spike_amplitude=0.2,
-            device=self.device,
+            device=device,
         )
         # Per-layer ACh concentration buffers
-        self._ach_concentration_l23 = torch.zeros(self.l23_size, device=self.device)
-        self._ach_concentration_l4 = torch.zeros(self.l4_size, device=self.device)
-        self._ach_concentration_l5 = torch.zeros(self.l5_size, device=self.device)
-        self._ach_concentration_l6a = torch.zeros(self.l6a_size, device=self.device)
-        self._ach_concentration_l6b = torch.zeros(self.l6b_size, device=self.device)
+        self._ach_concentration_l23 = torch.zeros(self.l23_pyr_size, device=device)
+        self._ach_concentration_l4 = torch.zeros(self.l4_pyr_size, device=device)
+        self._ach_concentration_l5 = torch.zeros(self.l5_pyr_size, device=device)
+        self._ach_concentration_l6a = torch.zeros(self.l6a_pyr_size, device=device)
+        self._ach_concentration_l6b = torch.zeros(self.l6b_pyr_size, device=device)
 
         # =====================================================================
-        # LEARNING STRATEGY (Three-Factor Learning with Dopamine Modulation)
+        # REGISTER NEURON POPULATIONS
         # =====================================================================
-        # Default to dopamine-modulated learning for reward-based cortical plasticity
-        # Three-factor rule: ΔW = eligibility_trace × dopamine × learning_rate
-        # This complements the BCM+STDP strategies used for layer-specific learning
-        self.learning_strategy = ThreeFactorStrategy(
-            config=ThreeFactorConfig(
-                learning_rate=0.001,  # Conservative rate matching hippocampus
-                eligibility_tau=100.0,  # Eligibility trace decay (ms)
-                modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
-                device=self.device,
-            )
-        )
+        self._register_neuron_population(CortexPopulation.L23_PYR.value, self.l23_neurons)
+        self._register_neuron_population(CortexPopulation.L4_PYR.value, self.l4_neurons)
+        self._register_neuron_population(CortexPopulation.L5_PYR.value, self.l5_neurons)
+        self._register_neuron_population(CortexPopulation.L6A_PYR.value, self.l6a_neurons)
+        self._register_neuron_population(CortexPopulation.L6B_PYR.value, self.l6b_neurons)
+
+        self._register_neuron_population(CortexPopulation.L23_INHIBITORY_PV.value, self.l23_inhibitory.pv_neurons)
+        self._register_neuron_population(CortexPopulation.L23_INHIBITORY_SST.value, self.l23_inhibitory.sst_neurons)
+        self._register_neuron_population(CortexPopulation.L23_INHIBITORY_VIP.value, self.l23_inhibitory.vip_neurons)
+
+        self._register_neuron_population(CortexPopulation.L4_INHIBITORY_PV.value, self.l4_inhibitory.pv_neurons)
+        self._register_neuron_population(CortexPopulation.L4_INHIBITORY_SST.value, self.l4_inhibitory.sst_neurons)
+        self._register_neuron_population(CortexPopulation.L4_INHIBITORY_VIP.value, self.l4_inhibitory.vip_neurons)
+
+        self._register_neuron_population(CortexPopulation.L5_INHIBITORY_PV.value, self.l5_inhibitory.pv_neurons)
+        self._register_neuron_population(CortexPopulation.L5_INHIBITORY_SST.value, self.l5_inhibitory.sst_neurons)
+        self._register_neuron_population(CortexPopulation.L5_INHIBITORY_VIP.value, self.l5_inhibitory.vip_neurons)
+
+        self._register_neuron_population(CortexPopulation.L6A_INHIBITORY_PV.value, self.l6a_inhibitory.pv_neurons)
+        self._register_neuron_population(CortexPopulation.L6A_INHIBITORY_SST.value, self.l6a_inhibitory.sst_neurons)
+        self._register_neuron_population(CortexPopulation.L6A_INHIBITORY_VIP.value, self.l6a_inhibitory.vip_neurons)
+
+        self._register_neuron_population(CortexPopulation.L6B_INHIBITORY_PV.value, self.l6b_inhibitory.pv_neurons)
+        self._register_neuron_population(CortexPopulation.L6B_INHIBITORY_SST.value, self.l6b_inhibitory.sst_neurons)
+        self._register_neuron_population(CortexPopulation.L6B_INHIBITORY_VIP.value, self.l6b_inhibitory.vip_neurons)
 
         # =====================================================================
         # POST-INITIALIZATION
@@ -353,76 +322,45 @@ class Cortex(NeuralRegion[CortexConfig]):
         diversity of cortical cell types.
         """
         cfg = self.config
+        device = self.device
 
         # =====================================================================
         # LAYER-SPECIFIC HETEROGENEITY
         # =====================================================================
-        # Prepare layer-specific overrides if heterogeneity enabled
-        l23_overrides = {}
-        l4_overrides = {}
-        l5_overrides = {}
-        l6a_overrides = {}
-        l6b_overrides = {}
-
-        # L2/3: Integration and association
-        l23_overrides = {
-            "tau_mem": cfg.layer_tau_mem[CortexLayer.L23],
-            "v_threshold": cfg.layer_v_threshold[CortexLayer.L23],
-            "adapt_increment": cfg.layer_adaptation[CortexLayer.L23],
-        }
-
-        # L4: Fast sensory processing
-        l4_overrides = {
-            "tau_mem": cfg.layer_tau_mem[CortexLayer.L4],
-            "v_threshold": cfg.layer_v_threshold[CortexLayer.L4],
-            "adapt_increment": cfg.layer_adaptation[CortexLayer.L4],
-        }
-
-        # L5: Output generation
-        l5_overrides = {
-            "tau_mem": cfg.layer_tau_mem[CortexLayer.L5],
-            "v_threshold": cfg.layer_v_threshold[CortexLayer.L5],
-            "adapt_increment": cfg.layer_adaptation[CortexLayer.L5],
-        }
-
-        # L6a: TRN feedback (low gamma)
-        l6a_overrides = {
-            "tau_mem": cfg.layer_tau_mem[CortexLayer.L6A],
-            "v_threshold": cfg.layer_v_threshold[CortexLayer.L6A],
-            "adapt_increment": cfg.layer_adaptation[CortexLayer.L6A],
-        }
-
-        # L6b: Relay feedback (high gamma)
-        l6b_overrides = {
-            "tau_mem": cfg.layer_tau_mem[CortexLayer.L6B],
-            "v_threshold": cfg.layer_v_threshold[CortexLayer.L6B],
-            "adapt_increment": cfg.layer_adaptation[CortexLayer.L6B],
-        }
-
-        # Create pyramidal neurons using factory functions with heterogeneous properties
-        self.l4_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.l4_pyr_size, "L4", self.device, **l4_overrides
-        )
         self.l23_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.l23_pyr_size,
-            "L2/3",
-            self.device,
-            adapt_increment=l23_overrides["adapt_increment"],
-            tau_adapt=cfg.adapt_tau,
-            **({k: v for k, v in l23_overrides.items() if k != "adapt_increment"}),
+            region_name=self.region_name,
+            population_name=CortexPopulation.L23_PYR.value,
+            n_neurons=self.l23_pyr_size,
+            device=device,
+            **cfg.layer_overrides[CortexLayer.L23]
+        )
+        self.l4_neurons = NeuronFactory.create_cortical_layer_neurons(
+            region_name=self.region_name,
+            population_name=CortexPopulation.L4_PYR.value,
+            n_neurons=self.l4_pyr_size,
+            device=device,
+            **cfg.layer_overrides[CortexLayer.L4]
         )
         self.l5_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.l5_pyr_size, "L5", self.device, **l5_overrides
+            region_name=self.region_name,
+            population_name=CortexPopulation.L5_PYR.value,
+            n_neurons=self.l5_pyr_size,
+            device=device,
+            **cfg.layer_overrides[CortexLayer.L5]
         )
-
-        # L6 split into two subtypes:
-        # - L6a (corticothalamic type I): Projects to TRN (inhibitory modulation)
-        # - L6b (corticothalamic type II): Projects to relay (excitatory modulation)
         self.l6a_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.l6a_pyr_size, "L6a", self.device, **l6a_overrides
+            region_name=self.region_name,
+            population_name=CortexPopulation.L6A_PYR.value,
+            n_neurons=self.l6a_pyr_size,
+            device=device,
+            **cfg.layer_overrides[CortexLayer.L6A]
         )
         self.l6b_neurons = NeuronFactory.create_cortical_layer_neurons(
-            self.l6b_pyr_size, "L6b", self.device, **l6b_overrides
+            region_name=self.region_name,
+            population_name=CortexPopulation.L6B_PYR.value,
+            n_neurons=self.l6b_pyr_size,
+            device=device,
+            **cfg.layer_overrides[CortexLayer.L6B]
         )
 
         # =====================================================================
@@ -432,101 +370,72 @@ class Cortex(NeuralRegion[CortexConfig]):
         # multiple cell types: PV (basket), SST (Martinotti), and VIP (disinhibitory)
         # Each layer gets its own inhibitory network with E→I, I→E, and I→I connectivity
 
-        # L4 inhibitory network
-        self.l4_inhibitory = InhibitoryNetwork(
-            layer_name="L4",
-            pyr_size=self.l4_pyr_size,
-            total_inhib_fraction=0.25,  # 25% of pyr = 20% of total
-            device=str(self.device),
-            dt_ms=cfg.dt_ms,
-        )
-        self.l4_fsi_size = self.l4_inhibitory.get_total_size()  # For backward compat
-
         # L2/3 inhibitory network
-        self.l23_inhibitory = InhibitoryNetwork(
-            layer_name="L2/3",
+        self.l23_inhibitory = CorticalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=CortexPopulation.L23_INHIBITORY.value,
             pyr_size=self.l23_pyr_size,
             total_inhib_fraction=0.25,
-            device=str(self.device),
             dt_ms=cfg.dt_ms,
+            device=device,
         )
-        self.l23_fsi_size = self.l23_inhibitory.get_total_size()
+
+        # L4 inhibitory network
+        self.l4_inhibitory = CorticalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=CortexPopulation.L4_INHIBITORY.value,
+            pyr_size=self.l4_pyr_size,
+            total_inhib_fraction=0.25,
+            dt_ms=cfg.dt_ms,
+            device=device,
+        )
 
         # L5 inhibitory network
-        self.l5_inhibitory = InhibitoryNetwork(
-            layer_name="L5",
+        self.l5_inhibitory = CorticalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=CortexPopulation.L5_INHIBITORY.value,
             pyr_size=self.l5_pyr_size,
             total_inhib_fraction=0.25,
-            device=str(self.device),
             dt_ms=cfg.dt_ms,
+            device=device,
         )
-        self.l5_fsi_size = self.l5_inhibitory.get_total_size()
 
         # L6a inhibitory network
-        self.l6a_inhibitory = InhibitoryNetwork(
-            layer_name="L6a",
+        self.l6a_inhibitory = CorticalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=CortexPopulation.L6A_INHIBITORY.value,
             pyr_size=self.l6a_pyr_size,
             total_inhib_fraction=0.25,
-            device=str(self.device),
             dt_ms=cfg.dt_ms,
+            device=device,
         )
-        self.l6a_fsi_size = self.l6a_inhibitory.get_total_size()
 
         # L6b inhibitory network
-        self.l6b_inhibitory = InhibitoryNetwork(
-            layer_name="L6b",
+        self.l6b_inhibitory = CorticalInhibitoryNetwork(
+            region_name=self.region_name,
+            population_name=CortexPopulation.L6B_INHIBITORY.value,
             pyr_size=self.l6b_pyr_size,
             total_inhib_fraction=0.25,
-            device=str(self.device),
             dt_ms=cfg.dt_ms,
+            device=device,
         )
-        self.l6b_fsi_size = self.l6b_inhibitory.get_total_size()
-
-        # =====================================================================
-        # HOMEOSTATIC PLASTICITY (Intrinsic and Synaptic Scaling)
-        # =====================================================================
-        # Like thalamus, cortex adapts neuron gains to maintain target firing rate.
-        # Prevents complete silencing during early learning.
-        self._target_rate = cfg.target_firing_rate
-        self._gain_lr = cfg.gain_learning_rate
-
-        # Compute decay factor for firing rate averaging
-        self._firing_rate_alpha = cfg.dt_ms / cfg.gain_tau_ms
-
-        # Adaptive threshold plasticity (complementary to gain adaptation)
-        self._threshold_lr = cfg.threshold_learning_rate
-        self._threshold_min = cfg.threshold_min
-        self._threshold_max = cfg.threshold_max
-
-        # Per-layer firing rate trackers (EMA) - pyramidal neurons only
-        self.register_buffer("l4_firing_rate", torch.zeros(self.l4_size, device=self.device))
-        self.register_buffer("l23_firing_rate", torch.zeros(self.l23_size, device=self.device))
-        self.register_buffer("l5_firing_rate", torch.zeros(self.l5_size, device=self.device))
-
-        # Per-layer adaptive gains (start at 1.0, will adapt based on activity)
-        # Pyramidal neurons only (FSIs have fixed fast dynamics)
-        self.l4_gain = nn.Parameter(torch.ones(self.l4_size, device=self.device, requires_grad=False))
-        self.l23_gain = nn.Parameter(torch.ones(self.l23_size, device=self.device, requires_grad=False))
-        self.l5_gain = nn.Parameter(torch.ones(self.l5_size, device=self.device, requires_grad=False))
 
         # =====================================================================
         # SYNAPTIC SCALING (Global Multiplicative Scaling)
         # =====================================================================
         # Biology: Chronically underactive neurons scale up ALL input synapses
         # This is distinct from Hebbian learning (input-specific) and works with
-        # gain adaptation. Turrigiano & Nelson 2004. Critical for bootstrap.
-        self._synaptic_scaling_enabled = cfg.synaptic_scaling_enabled
-        self._synaptic_scaling_lr = cfg.synaptic_scaling_lr
-        self._synaptic_scaling_min_activity = cfg.synaptic_scaling_min_activity
-        self._synaptic_scaling_max_factor = cfg.synaptic_scaling_max_factor
+        # gain adaptation.
 
         # Per-layer synaptic scaling factors (multiplicative, start at 1.0)
-        self.l4_weight_scale = nn.Parameter(torch.ones(1, device=self.device, requires_grad=False))
-        self.l23_weight_scale = nn.Parameter(torch.ones(1, device=self.device, requires_grad=False))
-        self.l5_weight_scale = nn.Parameter(torch.ones(1, device=self.device, requires_grad=False))
+        self.l23_weight_scale = nn.Parameter(torch.ones(1, device=device, requires_grad=False))
+        self.l4_weight_scale = nn.Parameter(torch.ones(1, device=device, requires_grad=False))
+        self.l5_weight_scale = nn.Parameter(torch.ones(1, device=device, requires_grad=False))
+        self.l6a_weight_scale = nn.Parameter(torch.ones(1, device=device, requires_grad=False))
+        self.l6b_weight_scale = nn.Parameter(torch.ones(1, device=device, requires_grad=False))
 
         # =====================================================================
-        # INTER-LAYER AXONAL DELAYS (using CircularDelayBuffer utility)
+        # INTER-LAYER AXONAL DELAYS
         # =====================================================================
         # Create delay buffers for biological signal propagation within layers
         # L4→L2/3 delay: Short vertical projection (~2ms biologically)
@@ -534,133 +443,122 @@ class Cortex(NeuralRegion[CortexConfig]):
         # L2/3→L6a/L6b: Within column (~2ms biologically)
 
         # Calculate delay steps
+        self._l5_l4_delay_steps: int = int(cfg.l5_to_l4_delay_ms / cfg.dt_ms)
+        self._l6_l4_delay_steps: int = int(cfg.l6_to_l4_delay_ms / cfg.dt_ms)
         self._l4_l23_delay_steps: int = int(cfg.l4_to_l23_delay_ms / cfg.dt_ms)
+        self._l23_l23_delay_steps: int = int(cfg.l23_to_l23_delay_ms / cfg.dt_ms)
         self._l23_l5_delay_steps: int = int(cfg.l23_to_l5_delay_ms / cfg.dt_ms)
         self._l23_l6a_delay_steps: int = int(cfg.l23_to_l6a_delay_ms / cfg.dt_ms)
         self._l23_l6b_delay_steps: int = int(cfg.l23_to_l6b_delay_ms / cfg.dt_ms)
-        self._l5_l4_delay_steps: int = int(cfg.l5_to_l4_delay_ms / cfg.dt_ms)
-        self._l6_l4_delay_steps: int = int(cfg.l6_to_l4_delay_ms / cfg.dt_ms)
-        self._l23_recurrent_delay_steps: int = int(cfg.l23_recurrent_delay_ms / cfg.dt_ms)
 
-        # Initialize CircularDelayBuffer for each pathway
-        self._l4_l23_buffer = CircularDelayBuffer(
-            max_delay=self._l4_l23_delay_steps,
-            size=self.l4_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
-        self._l23_l5_buffer = CircularDelayBuffer(
-            max_delay=self._l23_l5_delay_steps,
-            size=self.l23_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
-        self._l23_l6a_buffer = CircularDelayBuffer(
-            max_delay=self._l23_l6a_delay_steps,
-            size=self.l23_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
-        self._l23_l6b_buffer = CircularDelayBuffer(
-            max_delay=self._l23_l6b_delay_steps,
-            size=self.l23_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
+        max_l23_delay = max(self._l23_l23_delay_steps, self._l23_l5_delay_steps, self._l23_l6a_delay_steps, self._l23_l6b_delay_steps)
+        max_l4_delay = self._l4_l23_delay_steps
+        max_l5_delay = self._l5_l4_delay_steps
+        max_l6a_delay = self._l6_l4_delay_steps
+        max_l6b_delay = self._l6_l4_delay_steps
 
-        # Predictive coding feedback delays (L5/L6 → L4)
-        self._l5_l4_buffer = CircularDelayBuffer(
-            max_delay=self._l5_l4_delay_steps,
-            size=self.l5_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
-        self._l6_l4_buffer = CircularDelayBuffer(
-            max_delay=self._l6_l4_delay_steps,
-            size=self.l6a_size + self.l6b_size,  # Combined L6
-            device=str(self.device),
-            dtype=torch.bool,
-        )
+        # Spike state buffers (for plasticity + inhibition)
+        self._l23_spike_buffer = CircularDelayBuffer(max_delay=max_l23_delay, size=self.l23_pyr_size, device=device, dtype=torch.bool)
+        self._l4_spike_buffer = CircularDelayBuffer(max_delay=max_l4_delay, size=self.l4_pyr_size, device=device, dtype=torch.bool)
+        self._l5_spike_buffer = CircularDelayBuffer(max_delay=max_l5_delay, size=self.l5_pyr_size, device=device, dtype=torch.bool)
+        self._l6a_spike_buffer = CircularDelayBuffer(max_delay=max_l6a_delay, size=self.l6a_pyr_size, device=device, dtype=torch.bool)
+        self._l6b_spike_buffer = CircularDelayBuffer(max_delay=max_l6b_delay, size=self.l6b_pyr_size, device=device, dtype=torch.bool)
 
-        # L2/3 recurrent delay (prevents instant feedback oscillations)
-        self._l23_recurrent_buffer = CircularDelayBuffer(
-            max_delay=self._l23_recurrent_delay_steps,
-            size=self.l23_size,
-            device=str(self.device),
-            dtype=torch.bool,
-        )
+        # Membrane delay buffers (for inhibitory networks)
+        self._l23_membrane_buffer = CircularDelayBuffer(max_delay=max_l23_delay, size=self.l23_pyr_size, device=device, dtype=torch.float32)
+        self._l4_membrane_buffer = CircularDelayBuffer(max_delay=max_l4_delay, size=self.l4_pyr_size, device=device, dtype=torch.float32)
+        self._l5_membrane_buffer = CircularDelayBuffer(max_delay=max_l5_delay, size=self.l5_pyr_size, device=device, dtype=torch.float32)
+        self._l6a_membrane_buffer = CircularDelayBuffer(max_delay=max_l6a_delay, size=self.l6a_pyr_size, device=device, dtype=torch.float32)
+        self._l6b_membrane_buffer = CircularDelayBuffer(max_delay=max_l6b_delay, size=self.l6b_pyr_size, device=device, dtype=torch.float32)
 
-    def _init_weights(self) -> None:
+        # =====================================================================
+        # HOMEOSTATIC PLASTICITY (Intrinsic and Synaptic Scaling)
+        # =====================================================================
+        # Per-layer firing rate trackers (EMA) - pyramidal neurons only
+        self.register_buffer("l23_firing_rate", torch.zeros(self.l23_pyr_size, device=device))
+        self.register_buffer("l4_firing_rate", torch.zeros(self.l4_pyr_size, device=device))
+        self.register_buffer("l5_firing_rate", torch.zeros(self.l5_pyr_size, device=device))
+        self.register_buffer("l6a_firing_rate", torch.zeros(self.l6a_pyr_size, device=device))
+        self.register_buffer("l6b_firing_rate", torch.zeros(self.l6b_pyr_size, device=device))
+
+    def _init_synaptic_weights(self) -> None:
         """Initialize inter-layer weight matrices.
 
         Feedforward weights need to be strong enough to propagate sparse activity.
         With low initial activity, we use generous weight initialization to ensure
         signal propagation through the cortical layers.
         """
-        # Expected number of active inputs given sparsity
-        expected_active_l4 = max(1, int(self.l4_size * self.config.l4_sparsity))
-        expected_active_l23 = max(1, int(self.l23_size * self.config.l23_sparsity))
+        # Expected number of active inputs based on sparse activity assumptions
+        expected_active_l23 = max(1, int(self.l23_pyr_size * 0.10))
+        expected_active_l4 = max(1, int(self.l4_pyr_size * 0.15))
 
         # Feedforward weights: Strong initialization for reliable propagation
-        # Scale factor multiplier to ensure signal gets through even with sparse activity
-        boost_factor = 10.0  # Multiply standard scaling by 10x for initial reliability
+        l23_std = 10.0 / expected_active_l23  # Stronger to ensure L2/3 activation from sparse L4 input
+        l4_std = 15.0 / expected_active_l4  # Even stronger to ensure L4 can drive L2/3 with sparse input
 
-        # L4 → L2/3 needs extra boost to overcome dead layer problem
-        # Diagnostic showed L2/3 firing 0% with default boost_factor
-        # Increasing to 50x enables reliable L2/3 activation and BCM learning
-        l4_l23_boost = 50.0  # 5x stronger than other inter-layer connections
-
-        # L4 → L2/3: positive excitatory weights (AT L2/3 DENDRITES)
-        w_scale_l4_l23 = l4_l23_boost / expected_active_l4
-        l4_l23_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l23_size,
-                n_input=self.l4_size,
+        # L4 → L2/3: positive excitatory weights
+        self._add_internal_connection(
+            source_population=CortexPopulation.L4_PYR.value,
+            target_population=CortexPopulation.L23_PYR.value,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.l4_pyr_size,
+                n_output=self.l23_pyr_size,
+                connectivity=1.0,
                 mean=0.0,
-                std=w_scale_l4_l23,
+                std=l4_std,
                 device=self.device,
-            )
+            ),
+            stp_config=None,
+            is_inhibitory=False,
         )
-        self.synaptic_weights["l4_l23"] = nn.Parameter(l4_l23_weights)
 
-        # L2/3 → L5: positive excitatory weights (AT L5 DENDRITES)
-        w_scale_l23_l5 = boost_factor / expected_active_l23
-        l23_l5_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l5_size,
-                n_input=self.l23_size,
+        # L2/3 → L5: positive excitatory weights
+        self._add_internal_connection(
+            source_population=CortexPopulation.L23_PYR.value,
+            target_population=CortexPopulation.L5_PYR.value,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.l23_pyr_size,
+                n_output=self.l5_pyr_size,
+                connectivity=1.0,
                 mean=0.0,
-                std=w_scale_l23_l5,
+                std=l23_std,
                 device=self.device,
-            )
+            ),
+            stp_config=None,
+            is_inhibitory=False,
         )
-        self.synaptic_weights["l23_l5"] = nn.Parameter(l23_l5_weights)
 
-        # L2/3 → L6a: positive excitatory weights (corticothalamic type I → TRN) (AT L6a DENDRITES)
-        w_scale_l23_l6a = boost_factor / expected_active_l23
-        l23_l6a_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l6a_size,
-                n_input=self.l23_size,
+        # L2/3 → L6a: positive excitatory weights (corticothalamic type I → TRN)
+        self._add_internal_connection(
+            source_population=CortexPopulation.L23_PYR.value,
+            target_population=CortexPopulation.L6A_PYR.value,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.l23_pyr_size,
+                n_output=self.l6a_pyr_size,
+                connectivity=1.0,
                 mean=0.0,
-                std=w_scale_l23_l6a,
+                std=l23_std,
                 device=self.device,
-            )
+            ),
+            stp_config=None,
+            is_inhibitory=False,
         )
-        self.synaptic_weights["l23_l6a"] = nn.Parameter(l23_l6a_weights)
 
-        # L2/3 → L6b: positive excitatory weights (corticothalamic type II → relay) (AT L6b DENDRITES)
-        w_scale_l23_l6b = boost_factor / expected_active_l23
-        l23_l6b_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l6b_size,
-                n_input=self.l23_size,
+        # L2/3 → L6b: positive excitatory weights (corticothalamic type II → relay)
+        self._add_internal_connection(
+            source_population=CortexPopulation.L23_PYR.value,
+            target_population=CortexPopulation.L6B_PYR.value,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.l23_pyr_size,
+                n_output=self.l6b_pyr_size,
+                connectivity=1.0,
                 mean=0.0,
-                std=w_scale_l23_l6b,
+                std=l23_std,
                 device=self.device,
-            )
+            ),
+            stp_config=None,
+            is_inhibitory=False,
         )
-        self.synaptic_weights["l23_l6b"] = nn.Parameter(l23_l6b_weights)
 
         # =====================================================================
         # PREDICTIVE CODING: L5/L6 → L4 FEEDBACK
@@ -669,35 +567,42 @@ class Cortex(NeuralRegion[CortexConfig]):
         # This makes L4 naturally compute prediction errors (input - prediction)
         # L2/3 then propagates these errors up the hierarchy
 
-        # L5 → L4 inhibitory prediction (AT L4 DENDRITES)
+        # L5 → L4 inhibitory prediction
         # Anti-Hebbian: When both fire, prediction was wrong, strengthen inhibition
         # Start with weak inhibition to allow initial activity to develop
-        l5_l4_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l4_size,
-                n_input=self.l5_size,
+        self._add_internal_connection(
+            source_population=CortexPopulation.L5_PYR.value,
+            target_population=CortexPopulation.L4_PYR.value,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.l5_pyr_size,
+                n_output=self.l4_pyr_size,
+                connectivity=1.0,
                 mean=0.0,
                 std=0.01,  # Very weak initially to avoid suppressing L4
                 device=self.device,
-            )
+            ),
+            stp_config=None,
+            is_inhibitory=True,
         )
-        self.synaptic_weights["l5_l4_pred"] = nn.Parameter(l5_l4_weights)
 
-        # L6 (combined) → L4 inhibitory prediction (AT L4 DENDRITES)
-        l6_combined_size = self.l6a_size + self.l6b_size
-        l6_l4_weights = torch.abs(
-            WeightInitializer.gaussian(
-                n_output=self.l4_size,
-                n_input=l6_combined_size,
+        # L6 (combined) → L4 inhibitory prediction
+        self._add_internal_connection(
+            source_population=CortexPopulation.L6_PYR.value,
+            target_population=CortexPopulation.L4_PYR.value,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.l6a_pyr_size + self.l6b_pyr_size,
+                n_output=self.l4_pyr_size,
+                connectivity=1.0,
                 mean=0.0,
                 std=0.01,  # Very weak initially to avoid suppressing L4
                 device=self.device,
-            )
+            ),
+            stp_config=None,
+            is_inhibitory=True,
         )
-        self.synaptic_weights["l6_l4_pred"] = nn.Parameter(l6_l4_weights)
 
         # =====================================================================
-        # L2/3 RECURRENT WEIGHTS (AT L2/3 DENDRITES)
+        # L2/3 RECURRENT WEIGHTS
         # =====================================================================
         # Biology: L2/3 pyramidal neurons have extensive recurrent connections
         # critical for attractor dynamics, working memory, and pattern completion.
@@ -706,187 +611,206 @@ class Cortex(NeuralRegion[CortexConfig]):
         # Connection pattern: Sparse (~25% connectivity) with clustered structure
         # Weight scale: Strong enough to sustain activity but not runaway
         l23_l23_weights = WeightInitializer.sparse_random(
-            n_output=self.l23_size,
-            n_input=self.l23_size,
-            sparsity=0.25,  # Biological ~20-30% connectivity
-            weight_scale=0.5,  # Moderate strength for sustained activity
+            n_input=self.l23_pyr_size,
+            n_output=self.l23_pyr_size,
+            connectivity=0.25,
+            weight_scale=0.0008,
             device=self.device,
         )
-        # Ensure positive (excitatory) and zero diagonal (no self-connections)
-        l23_l23_weights = torch.abs(l23_l23_weights)
-        l23_l23_weights.fill_diagonal_(0.0)
-        self.synaptic_weights["l23_l23"] = nn.Parameter(l23_l23_weights, requires_grad=False)
-
-    # =========================================================================
-    # SYNAPTIC WEIGHT MANAGEMENT
-    # =========================================================================
-
-    def add_input_source(
-        self,
-        source_name: SpikesSourceKey,
-        target_population: PopulationName,
-        n_input: int,
-        sparsity: float = 0.5,  # Biological sparsity - 50% connectivity
-        weight_scale: float = 3.0,  # Strong weights - ensures reliable L4 activation
-    ) -> None:
-        """Add synaptic weights for a new input source."""
-        # Neuromodulator inputs (vta_da, lc_ne, nb_ach) don't create synaptic weights
-        # They're processed directly by receptors in forward()
-        if target_population in ("vta_da", "lc_ne", "nb_ach"):
-            # Just register the source for validation, but skip weight creation
-            self.input_sources[source_name] = n_input
-            return
-
-        super().add_input_source(
-            source_name=source_name,
-            target_population=target_population,
-            n_input=n_input,
-            sparsity=sparsity,
-            weight_scale=weight_scale,
+        l23_l23_weights.fill_diagonal_(0.0)  # Ensure zero diagonal (no self-connections)
+        self._add_internal_connection(
+            source_population=CortexPopulation.L23_PYR.value,
+            target_population=CortexPopulation.L23_PYR.value,
+            weights=l23_l23_weights,
+            stp_config=None,
+            is_inhibitory=False,
         )
+
+    # =========================================================================
+    # CORTICAL LAYER PROCESSING HELPERS
+    # =========================================================================
+    # These methods consolidate common operations across all cortical layers
+    # to ensure biological consistency and reduce code duplication.
+
+    def _compute_layer_inhibition(
+        self,
+        g_exc: torch.Tensor,
+        baseline_ratio: float,
+        prev_spikes: Optional[torch.Tensor],
+        prev_membrane: Optional[torch.Tensor],
+        inhibitory_network: CorticalInhibitoryNetwork,
+        ach_concentration: torch.Tensor,
+        additional_inhibition: Optional[torch.Tensor] = None,
+        feedforward_fsi_excitation: Optional[torch.Tensor] = None,
+        return_full_output: bool = False,
+    ) -> torch.Tensor | Tuple[torch.Tensor, Optional[Dict[str, torch.Tensor]]]:
+        """Compute total inhibition for a cortical layer.
+
+        All cortical layers follow the same pattern:
+        1. Baseline inhibition (ratio of excitation for E-I balance)
+        2. Network inhibition (PV/SST/VIP interneurons, causal from t-1)
+        3. Optional feedforward inhibition (FSI driven by external input)
+        4. Optional additional inhibition (e.g., predictive coding for L4)
+
+        Args:
+            g_exc: Excitatory conductance to the layer
+            baseline_ratio: E-I balance ratio (typically 0.30, but varies by layer)
+            prev_spikes: Previous timestep's spikes (for causal inhibition)
+            prev_membrane: Previous timestep's membrane potentials
+            inhibitory_network: Layer's inhibitory network (PV/SST/VIP)
+            ach_concentration: Acetylcholine concentration for the layer
+            additional_inhibition: Extra inhibition (e.g., predictions)
+            feedforward_fsi_excitation: Direct excitation to FSI for feedforward inhibition
+            return_full_output: If True, return (g_inh_total, inhib_output_dict) for diagnostics
+
+        Returns:
+            Total inhibitory conductance, or (g_inh_total, inhib_output_dict) if return_full_output=True
+        """
+        # Baseline inhibition: constant E-I ratio
+        g_inh_baseline = g_exc * baseline_ratio
+
+        # Network inhibition: causal (from previous timestep)
+        if prev_spikes is not None:
+            inhib_output = inhibitory_network.forward(
+                pyr_spikes=prev_spikes,
+                pyr_membrane=prev_membrane,
+                external_excitation=g_exc,
+                acetylcholine=ach_concentration.mean().item(),
+                feedforward_excitation=feedforward_fsi_excitation,  # Direct FSI drive
+            )
+            g_inh_total = g_inh_baseline + inhib_output["total_inhibition"]
+        else:
+            # First timestep: baseline only
+            g_inh_total = g_inh_baseline
+            inhib_output = None
+
+        # Add any additional inhibition (e.g., predictive coding)
+        if additional_inhibition is not None:
+            g_inh_total = g_inh_total + additional_inhibition
+
+        # Return full output for diagnostics if requested
+        if return_full_output:
+            return g_inh_total, inhib_output
+        else:
+            return g_inh_total
+
+    def _integrate_and_spike(
+        self,
+        g_exc: torch.Tensor,
+        g_inh: torch.Tensor,
+        neurons: ConductanceLIF,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split conductances and run neuron forward pass.
+
+        All cortical layers use the same conductance-based integration:
+        - Split excitation into AMPA (fast) and NMDA (slow)
+        - Integrate with GABA_A inhibition
+        - Return spikes and membrane potentials
+
+        Args:
+            g_exc: Total excitatory conductance
+            g_inh: Total inhibitory conductance
+            neurons: Layer's neuron population
+
+        Returns:
+            (spikes, membrane_potentials)
+        """
+        # Split excitatory conductance into AMPA (fast) and NMDA (slow)
+        g_ampa, g_nmda = self._split_excitatory_conductance(g_exc)
+
+        # Conductance-based LIF integration
+        spikes, membrane = neurons.forward(
+            g_ampa_input=ConductanceTensor(g_ampa),
+            g_gaba_a_input=ConductanceTensor(g_inh),
+            g_nmda_input=ConductanceTensor(g_nmda),
+        )
+
+        return spikes, membrane
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
-        """Process input through layered cortical circuit."""
-        self._pre_forward(region_inputs)
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Process input through layered cortical circuit.
+
+        Args:
+            synaptic_inputs: Point-to-point synaptic connections from thalamus, other cortical areas
+            neuromodulator_inputs: Broadcast neuromodulatory signals (DA, NE, ACh)
+        """
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
         cfg = self.config
 
-        # =====================================================================
-        # DOPAMINE RECEPTOR PROCESSING (from VTA)
-        # =====================================================================
-        # Process VTA dopamine spikes → concentration dynamics
-        # Cortex receives sparse (30%) DA innervation primarily to Layer 5
-        vta_da_spikes = region_inputs.get("vta:da_output")
-        if vta_da_spikes is not None:
+        if cfg.enable_neuromodulation:
+            # =====================================================================
+            # DOPAMINE RECEPTOR PROCESSING (from VTA)
+            # =====================================================================
+            # Process VTA dopamine spikes → concentration dynamics
+            # Cortex receives layer-specific DA innervation with gradient:
+            # - L5: Densest (30% of VTA output) - motor learning, prediction errors
+            # - L6: Moderate (13.5%) - corticothalamic feedback modulation
+            # - L2/3: Sparse (7.5%) - working memory, attentional modulation
+            # - L4: Minimal (3%) - subtle sensory gain modulation
+            #
+            # Biology: While L5 is the primary target, other layers receive diffuse
+            # DA innervation that modulates learning and plasticity. This gradient
+            # reflects measured anatomical innervation density.
+            vta_da_spikes = neuromodulator_inputs.get('da', None)
             # Update full receptor array
             da_concentration_full = self.da_receptor.update(vta_da_spikes)
-            # Split into per-layer buffers - only L5 gets DA (30% projection)
+            # Split into per-layer buffers with biological gradient
             offset = 0
-            self._da_concentration_l23 = da_concentration_full[offset : offset + self.l23_size] * 0.0  # No DA
-            offset += self.l23_size
-            self._da_concentration_l4 = da_concentration_full[offset : offset + self.l4_size] * 0.0  # No DA
-            offset += self.l4_size
-            self._da_concentration_l5 = da_concentration_full[offset : offset + self.l5_size] * 0.3  # 30% projection
-            offset += self.l5_size
-            self._da_concentration_l6a = da_concentration_full[offset : offset + self.l6a_size] * 0.0  # No DA
-            offset += self.l6a_size
-            self._da_concentration_l6b = da_concentration_full[offset :] * 0.0  # No DA
-        else:
-            # Just decay if no VTA input
-            da_concentration_full = self.da_receptor.update(None)
-            offset = 0
-            self._da_concentration_l23 = da_concentration_full[offset : offset + self.l23_size] * 0.0
-            offset += self.l23_size
-            self._da_concentration_l4 = da_concentration_full[offset : offset + self.l4_size] * 0.0
-            offset += self.l4_size
-            self._da_concentration_l5 = da_concentration_full[offset : offset + self.l5_size] * 0.3
-            offset += self.l5_size
-            self._da_concentration_l6a = da_concentration_full[offset : offset + self.l6a_size] * 0.0
-            offset += self.l6a_size
-            self._da_concentration_l6b = da_concentration_full[offset :] * 0.0
+            self._da_concentration_l23 = da_concentration_full[offset : offset + self.l23_pyr_size] * 0.075  # 7.5% (25% of L5)
+            offset += self.l23_pyr_size
+            self._da_concentration_l4 = da_concentration_full[offset : offset + self.l4_pyr_size] * 0.03  # 3% (10% of L5)
+            offset += self.l4_pyr_size
+            self._da_concentration_l5 = da_concentration_full[offset : offset + self.l5_pyr_size] * 0.30  # 30% (primary)
+            offset += self.l5_pyr_size
+            self._da_concentration_l6a = da_concentration_full[offset : offset + self.l6a_pyr_size] * 0.135  # 13.5% (45% of L5)
+            offset += self.l6a_pyr_size
+            self._da_concentration_l6b = da_concentration_full[offset :] * 0.135  # 13.5% (45% of L5)
 
-        # =====================================================================
-        # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
-        # =====================================================================
-        # Process LC norepinephrine spikes → gain and arousal modulation
-        # All cortical layers receive NE innervation uniformly
-        lc_ne_spikes = region_inputs.get("lc:ne_output")
-        if lc_ne_spikes is not None:
+            # =====================================================================
+            # NOREPINEPHRINE RECEPTOR PROCESSING (from LC)
+            # =====================================================================
+            # Process LC norepinephrine spikes → gain and arousal modulation
+            # All cortical layers receive NE innervation uniformly
+            lc_ne_spikes = neuromodulator_inputs.get('ne', None)
             ne_concentration_full = self.ne_receptor.update(lc_ne_spikes)
             # Split into per-layer buffers (all layers receive NE)
             offset = 0
-            self._ne_concentration_l23 = ne_concentration_full[offset : offset + self.l23_size]
-            offset += self.l23_size
-            self._ne_concentration_l4 = ne_concentration_full[offset : offset + self.l4_size]
-            offset += self.l4_size
-            self._ne_concentration_l5 = ne_concentration_full[offset : offset + self.l5_size]
-            offset += self.l5_size
-            self._ne_concentration_l6a = ne_concentration_full[offset : offset + self.l6a_size]
-            offset += self.l6a_size
-            self._ne_concentration_l6b = ne_concentration_full[offset :]
-        else:
-            ne_concentration_full = self.ne_receptor.update(None)
-            offset = 0
-            self._ne_concentration_l23 = ne_concentration_full[offset : offset + self.l23_size]
-            offset += self.l23_size
-            self._ne_concentration_l4 = ne_concentration_full[offset : offset + self.l4_size]
-            offset += self.l4_size
-            self._ne_concentration_l5 = ne_concentration_full[offset : offset + self.l5_size]
-            offset += self.l5_size
-            self._ne_concentration_l6a = ne_concentration_full[offset : offset + self.l6a_size]
-            offset += self.l6a_size
+            self._ne_concentration_l23 = ne_concentration_full[offset : offset + self.l23_pyr_size]
+            offset += self.l23_pyr_size
+            self._ne_concentration_l4 = ne_concentration_full[offset : offset + self.l4_pyr_size]
+            offset += self.l4_pyr_size
+            self._ne_concentration_l5 = ne_concentration_full[offset : offset + self.l5_pyr_size]
+            offset += self.l5_pyr_size
+            self._ne_concentration_l6a = ne_concentration_full[offset : offset + self.l6a_pyr_size]
+            offset += self.l6a_pyr_size
             self._ne_concentration_l6b = ne_concentration_full[offset :]
 
-        # =====================================================================
-        # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
-        # =====================================================================
-        # Process NB acetylcholine spikes → encoding/retrieval and attention
-        # ACh has layer-specific effects on feedforward vs recurrent processing
-        nb_ach_spikes = region_inputs.get("nb:ach_output")
-        if nb_ach_spikes is not None:
+            # =====================================================================
+            # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
+            # =====================================================================
+            # Process NB acetylcholine spikes → encoding/retrieval and attention
+            # ACh has layer-specific effects on feedforward vs recurrent processing
+            nb_ach_spikes = neuromodulator_inputs.get('ach', None)
             ach_concentration_full = self.ach_receptor.update(nb_ach_spikes)
             # Split into per-layer buffers
             offset = 0
-            self._ach_concentration_l23 = ach_concentration_full[offset : offset + self.l23_size]
-            offset += self.l23_size
-            self._ach_concentration_l4 = ach_concentration_full[offset : offset + self.l4_size]
-            offset += self.l4_size
-            self._ach_concentration_l5 = ach_concentration_full[offset : offset + self.l5_size]
-            offset += self.l5_size
-            self._ach_concentration_l6a = ach_concentration_full[offset : offset + self.l6a_size]
-            offset += self.l6a_size
+            self._ach_concentration_l23 = ach_concentration_full[offset : offset + self.l23_pyr_size]
+            offset += self.l23_pyr_size
+            self._ach_concentration_l4 = ach_concentration_full[offset : offset + self.l4_pyr_size]
+            offset += self.l4_pyr_size
+            self._ach_concentration_l5 = ach_concentration_full[offset : offset + self.l5_pyr_size]
+            offset += self.l5_pyr_size
+            self._ach_concentration_l6a = ach_concentration_full[offset : offset + self.l6a_pyr_size]
+            offset += self.l6a_pyr_size
             self._ach_concentration_l6b = ach_concentration_full[offset :]
         else:
-            ach_concentration_full = self.ach_receptor.update(None)
-            offset = 0
-            self._ach_concentration_l23 = ach_concentration_full[offset : offset + self.l23_size]
-            offset += self.l23_size
-            self._ach_concentration_l4 = ach_concentration_full[offset : offset + self.l4_size]
-            offset += self.l4_size
-            self._ach_concentration_l5 = ach_concentration_full[offset : offset + self.l5_size]
-            offset += self.l5_size
-            self._ach_concentration_l6a = ach_concentration_full[offset : offset + self.l6a_size]
-            offset += self.l6a_size
-            self._ach_concentration_l6b = ach_concentration_full[offset :]
-
-        # =====================================================================
-        # SEPARATE EXTERNAL vs CORTICAL FEEDBACK INPUTS
-        # =====================================================================
-        # External inputs have source names ("thalamus:relay", "hippocampus:ca1")
-        # Cortical recurrent uses this region's name ("cortex:l23", "cortex:l5", etc.)
-        # External inputs have learnable synaptic weights that need plasticity updates
-        # Cortical recurrent connections are handled separately (not in external plasticity)
-        external_inputs = {
-            name: spikes
-            for name, spikes in region_inputs.items()
-            if name in self.synaptic_weights and not name.startswith("cortex:")
-        }
-        cortical_feedback = {
-            name: spikes
-            for name, spikes in region_inputs.items()
-            if name.startswith("cortex:") or name not in self.synaptic_weights
-        }
-
-        # =====================================================================
-        # ALPHA-BASED ATTENTION GATING
-        # =====================================================================
-        # Alpha oscillations (8-13 Hz) suppress processing in cortical areas.
-        # High alpha = attention directed elsewhere (suppress this region)
-        # Low alpha = attention focused here (normal processing)
-        #
-        # Biological basis: Alpha power is inversely related to cortical
-        # excitability. Regions with high alpha are "idling" or suppressed
-        # to prevent interference with attended regions.
-
-        # Alpha signal ranges [-1, 1], convert to suppression [0, 0.5]
-        # High positive alpha (near 1.0) → max suppression (50%)
-        # Low/negative alpha → minimal suppression
-        alpha_magnitude = max(0.0, self._alpha_signal)  # Only positive values
-        alpha_suppression = 1.0 - (alpha_magnitude * 0.5)  # Scale to 50-100%
+            # Neuromodulation disabled: keep baseline concentrations
+            pass
 
         # =====================================================================
         # MULTI-SOURCE ROUTING: L4 (bottom-up) vs L2/3 (top-down)
@@ -894,106 +818,87 @@ class Cortex(NeuralRegion[CortexConfig]):
         # Biology: Different cortical layers receive inputs from different sources
         # - L4 receives thalamic/sensory inputs (bottom-up)
         # - L2/3 receives feedback from higher cortical areas (top-down)
+        #
+        # L4 has TWO explicit populations:
+        # - l4_pyr: Pyramidal neurons (excitatory, main processing)
+        # - l4_pv: PV interneurons (inhibitory, feedforward inhibition)
+        #
+        # Use routing key filtering:
+        # - Keys starting with "l4_pyr:" target L4 pyramidal (e.g., "l4_pyr:thalamus:relay")
+        # - Keys starting with "l4_pv:" target L4 PV interneurons
+        # - Keys starting with "l23:" target L2/3 (e.g., "l23:hippocampus:ca1")
 
-        # Filter inputs to exclude L2/3 direct inputs (those will be processed later)
-        # Use target_population metadata (biological: thalamus→L4, PFC→L2/3)
-        l4_inputs = {
-            name: spikes
-            for name, spikes in external_inputs.items()
-            if self._source_target_populations.get(name) == "l4"
-        }
-
-        # Use base class helper with alpha suppression modulation
-        def alpha_gate(spikes: torch.Tensor, source_name: str) -> torch.Tensor:
-            """Apply alpha attention gating to each source."""
-            return spikes * alpha_suppression
-
-        l4_g_exc_full = self._integrate_multi_source_synaptic_inputs(
-            inputs=l4_inputs,
-            n_neurons=self.l4_size,  # Full layer size (pyramidal + FSI)
-            weight_key_suffix="",
-            apply_stp=False,  # Cortex doesn't use per-source STP (only recurrent)
-            modulation_fn=alpha_gate,  # Apply alpha suppression per source
+        # Integrate L4 pyramidal inputs
+        l4_g_exc = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
+            n_neurons=self.l4_pyr_size,
+            filter_by_target_population=CortexPopulation.L4_PYR.value,
         )
 
-        # Split input between pyramidal and FSI neurons
-        l4_g_exc = l4_g_exc_full[:self.l4_pyr_size]  # Pyramidal neurons
-
-        # Apply global scaling to pyramidal (theta emerges from circuit dynamics)
-        l4_g_exc = l4_g_exc * cfg.input_to_l4_strength
+        # Integrate L4 PV inputs (feedforward inhibition drive)
+        # Biology: Thalamic afferents synapse directly onto PV cells for fast inhibition
+        l4_g_exc_pv = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
+            n_neurons=self.l4_inhibitory.pv_size,
+            filter_by_target_population=CortexPopulation.L4_INHIBITORY_PV.value,
+        )
 
         # Add baseline noise (spontaneous miniature EPSPs)
-        if cfg.baseline_noise_current > 0:
-            l4_g_exc = l4_g_exc + cfg.baseline_noise_current
-
-        # Apply homeostatic gain adaptation (like thalamus)
-        l4_g_exc = l4_g_exc * self.l4_gain
-
-        # Inhibitory conductance: ~25% of excitatory (4:1 E/I ratio)
-        # This provides feedback inhibition for gain control
-        l4_g_inh = l4_g_exc * 0.25
+        # Use stochastic noise to prevent inhibition-driven silence
+        if cfg.baseline_noise_conductance > 0:
+            # 70% constant, 30% random
+            baseline = cfg.baseline_noise_conductance * 0.7
+            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.l4_pyr_size, device=self.device)
+            l4_g_exc = l4_g_exc + baseline + stochastic.abs()
 
         # =====================================================================
         # PREDICTIVE CODING: L5/L6 → L4 INHIBITORY PREDICTIONS
         # =====================================================================
-        # Deep layers predict what L4 should receive (from previous timestep)
+        # Deep layers predict what L4 should receive
         # Good prediction → strong inhibition → L4 silent (no error)
         # Bad prediction → weak inhibition → L4 fires (error signal)
         # This makes L4 naturally compute: error = input - prediction
-        #
-        # PRECISION WEIGHTING:
-        # Predictions are weighted by confidence (population activity level):
-        # - High activity in deep layers → strong, confident prediction
-        # - Low activity in deep layers → weak, uncertain prediction
-        # This allows attention-like modulation of prediction strength.
 
-        # L5 → L4 prediction (with delay)
-        if self.l5_spikes is not None:
-            if self._l5_l4_delay_steps > 0:
-                self._l5_l4_buffer.write(self.l5_spikes)
-                l5_delayed = self._l5_l4_buffer.read(self._l5_l4_delay_steps)
-                self._l5_l4_buffer.advance()
-            else:
-                l5_delayed = self.l5_spikes
+        # L5 → L4 prediction
+        l5_delayed = self._l5_spike_buffer.read(self._l5_l4_delay_steps)
 
-            # Apply L5 prediction as inhibition
-            pred_from_l5 = torch.matmul(
-                self.synaptic_weights["l5_l4_pred"],
-                l5_delayed.float()
-            )
+        # Apply L5 prediction as inhibition
+        l5_l4_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L5_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L4_PYR.value,
+            is_inhibitory=True,
+        )
+        l5_l4_inhibition = torch.matmul(self.get_synaptic_weights(l5_l4_synapse), l5_delayed.float())
 
-            # Precision weighting: Scale by L5 activity (confidence)
-            l5_activity = torch.mean(l5_delayed.float()).item()  # Population activity [0, 1]
-            # Map activity to precision weight [precision_min, precision_max]
-            l5_precision = cfg.precision_min + (cfg.precision_max - cfg.precision_min) * l5_activity
-            pred_from_l5 = pred_from_l5 * l5_precision
+        # Precision weighting: Scale by L5 activity (confidence)
+        l5_activity = torch.mean(l5_delayed.float()).item()  # Population activity [0, 1]
+        l5_precision = cfg.precision_min + (cfg.precision_max - cfg.precision_min) * l5_activity
+        l5_l4_inhibition = l5_l4_inhibition * l5_precision
 
-            l4_g_inh = l4_g_inh + pred_from_l5 * cfg.l5_to_l4_pred_strength
+        # L6 (combined) → L4 prediction (uses delayed L6 activity from buffer)
+        l6a_delayed = self._l6a_spike_buffer.read(self._l6_l4_delay_steps)
+        l6b_delayed = self._l6b_spike_buffer.read(self._l6_l4_delay_steps)
+        l6_delayed = torch.cat([l6a_delayed, l6b_delayed], dim=-1)
 
-        # L6 (combined) → L4 prediction (with delay)
-        if self.l6a_spikes is not None and self.l6b_spikes is not None:
-            l6_combined = torch.cat([self.l6a_spikes, self.l6b_spikes], dim=-1)
+        # Apply L6 prediction as inhibition
+        l6_l4_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L6_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L4_PYR.value,
+            is_inhibitory=True,
+        )
+        l6_l4_inhibition = torch.matmul(self.get_synaptic_weights(l6_l4_synapse), l6_delayed.float())
 
-            if self._l6_l4_delay_steps > 0:
-                self._l6_l4_buffer.write(l6_combined)
-                l6_delayed = self._l6_l4_buffer.read(self._l6_l4_delay_steps)
-                self._l6_l4_buffer.advance()
-            else:
-                l6_delayed = l6_combined
+        # Precision weighting: Scale by L6 activity (confidence)
+        l6_activity = torch.mean(l6_delayed.float()).item()  # Population activity [0, 1]
+        l6_precision = cfg.precision_min + (cfg.precision_max - cfg.precision_min) * l6_activity
+        l6_l4_inhibition = l6_l4_inhibition * l6_precision
 
-            # Apply L6 prediction as inhibition
-            pred_from_l6 = torch.matmul(
-                self.synaptic_weights["l6_l4_pred"],
-                l6_delayed.float()
-            )
-
-            # Precision weighting: Scale by L6 activity (confidence)
-            l6_activity = torch.mean(l6_delayed.float()).item()  # Population activity [0, 1]
-            # Map activity to precision weight [precision_min, precision_max]
-            l6_precision = cfg.precision_min + (cfg.precision_max - cfg.precision_min) * l6_activity
-            pred_from_l6 = pred_from_l6 * l6_precision
-
-            l4_g_inh = l4_g_inh + pred_from_l6 * cfg.l6_to_l4_pred_strength
+        # Combine L5 and L6 predictions for total predictive inhibition to L4
+        l4_pred_inhibition = l5_l4_inhibition + l6_l4_inhibition
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -1006,121 +911,97 @@ class Cortex(NeuralRegion[CortexConfig]):
         ne_gain = compute_ne_gain(ne_level)
         l4_g_exc = l4_g_exc * ne_gain
 
-        # ConductanceLIF automatically handles shunting inhibition
-        l4_spikes, l4_membrane = self.l4_neurons(
-            g_exc_input=ConductanceTensor(l4_g_exc),
-            g_inh_input=ConductanceTensor(l4_g_inh),
-        )
-        l4_spikes = self._apply_sparsity(l4_spikes, cfg.l4_sparsity)
-
         # =====================================================================
         # L4 INHIBITORY NETWORK (PV, SST, VIP INTERNEURONS)
         # =====================================================================
-        # Explicit inhibitory network with multiple cell types:
-        # - PV (basket cells): Fast perisomatic inhibition → gamma oscillations
-        # - SST (Martinotti): Slower dendritic inhibition → feedback modulation
-        # - VIP: Disinhibitory neurons → attention/ACh-gated disinhibition
+        # CRITICAL: Compute inhibition from PREVIOUS timestep's activity (causal)
+        # Inhibition prevents spikes from occurring, not post-hoc filtering
+        #
+        # Biology: PV cells fire in response to pyramidal activity at t-1,
+        # then inhibit pyramidal neurons at t (1-2ms delay).
+        # This creates competitive dynamics where winners suppress losers.
+        #
+        # FEEDFORWARD INHIBITION: FSI neurons also receive direct thalamic input
+        # for rapid feedforward inhibition (1ms faster than feedback inhibition).
 
-        # Run inhibitory network (E→I, I→E, I→I connectivity)
-        l4_inhib_output = self.l4_inhibitory(
-            pyr_spikes=l4_spikes,
-            pyr_membrane=l4_membrane,
-            external_excitation=l4_g_exc,  # Pass pyramidal excitation, not FSI slice
-            acetylcholine=self._ach_concentration_l4.mean().item(),
+        # Compute total inhibition using helper (baseline + network + predictions)
+        # Request full output to capture PV spikes for diagnostics
+        # L4 uses stronger baseline inhibition (0.50) due to dense thalamic input
+        l4_g_inh, l4_inhib_output = self._compute_layer_inhibition(
+            g_exc=l4_g_exc,
+            baseline_ratio=0.50,  # Higher than standard (0.30) to control strong thalamic drive
+            prev_spikes=self._l4_spike_buffer.read(1),
+            prev_membrane=self._l4_membrane_buffer.read(1),
+            inhibitory_network=self.l4_inhibitory,
+            ach_concentration=self._ach_concentration_l4,
+            additional_inhibition=l4_pred_inhibition,  # Predictive coding
+            feedforward_fsi_excitation=l4_g_exc_pv,  # Direct thalamic input to PV cells
+            return_full_output=True,  # Get full output for diagnostics
         )
 
-        # Apply inhibition to pyramidal spikes
-        # PV cells create gamma modulation through fast rhythmic inhibition
-        perisomatic_inh = l4_inhib_output["perisomatic_inhibition"]  # From PV cells
-        _dendritic_inh = l4_inhib_output["dendritic_inhibition"]  # From SST cells
+        # Store PV spikes for diagnostics (None on first timestep)
+        if l4_inhib_output is not None:
+            self._l4_pv_spikes = l4_inhib_output["pv_spikes"]
+        else:
+            self._l4_pv_spikes = torch.zeros(self.l4_inhibitory.pv_size, dtype=torch.bool, device=self.device)
 
-        # Gamma gating: PV inhibition creates rhythmic suppression
-        l4_gamma_modulation = 1.0 / (1.0 + perisomatic_inh * 0.5)
-        l4_spikes = (l4_spikes.float() * l4_gamma_modulation > 0.5).bool()
-
-        # Homeostatic gain adaptation: Update L4 firing rate and adjust gains
-        # Update exponential moving average of firing rate
-        current_rate = l4_spikes.float()  # [l4_size], instantaneous rate (0 or 1)
-        self.l4_firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(
-            current_rate * self._firing_rate_alpha
+        # Integrate conductances and generate spikes using helper
+        l4_spikes, l4_membrane = self._integrate_and_spike(
+            g_exc=l4_g_exc,
+            g_inh=l4_g_inh,
+            neurons=self.l4_neurons,
         )
 
-        # Compute gain update: increase gain when underactive, decrease when overactive
-        rate_error = self._target_rate - self.l4_firing_rate  # [l4_size]
-        gain_update = self._gain_lr * rate_error  # [l4_size]
-
-        # Apply update with minimum floor to prevent negative gains
-        self.l4_gain.data.add_(gain_update).clamp_(min=0.001)
-
-        # Adaptive threshold update (using same rate_error)
-        # Lower threshold when underactive, raise when overactive
-        threshold_update = -self._threshold_lr * rate_error  # [l4_size]
-        self.l4_neurons.v_threshold.data.add_(threshold_update).clamp_(
-            min=self._threshold_min, max=self._threshold_max
-        )
-
-        # =====================================================================
-        # SYNAPTIC SCALING (Multiplicative Homeostasis)
-        # =====================================================================
-        # Biology: Chronically underactive layers scale UP all input weights
-        # This complements gain adaptation and helps bootstrap from silence
-        # Turrigiano & Nelson 2004: "Homeostatic Plasticity in the Developing NS"
-        if self._synaptic_scaling_enabled:
-            # Compute layer-wide average activity (not per-neuron)
-            layer_avg_rate = self.l4_firing_rate.mean()
-
-            # Scale up weights when chronically below threshold
-            if layer_avg_rate < self._synaptic_scaling_min_activity:
-                # Compute scaling update (slow, multiplicative)
-                rate_deficit = self._synaptic_scaling_min_activity - layer_avg_rate
-                scale_update = self._synaptic_scaling_lr * rate_deficit
-
-                # Apply multiplicative scaling (1.0 -> 1.001 -> 1.002, etc.)
-                self.l4_weight_scale.data.mul_(1.0 + scale_update).clamp_(
-                    min=1.0, max=self._synaptic_scaling_max_factor
-                )
-
-                # Scale ALL input weights to L4 (global, non-specific)
-                for source_name in region_inputs.keys():
-                    if source_name in self.synaptic_weights:
-                        self.synaptic_weights[source_name].data.mul_(1.0 + scale_update)
-
-        # Inter-layer shape check: L4 output (pyramidal only)
         assert l4_spikes.shape == (self.l4_pyr_size,), (
             f"Cortex: L4 spikes have shape {l4_spikes.shape} "
             f"but expected ({self.l4_pyr_size},). "
-            f"Check L4 sparsity or input→L4 weights shape."
+            f"Check input→L4 weights shape."
+        )
+
+        # Homeostatic adaptation: intrinsic excitability + threshold
+        self._update_homeostasis(
+            spikes=l4_spikes,
+            firing_rate=self.l4_firing_rate,
+            neurons=self.l4_neurons,
+        )
+
+        # Synaptic scaling
+        self._apply_synaptic_scaling(
+            firing_rate=self.l4_firing_rate,
+            weight_scale=self.l4_weight_scale,
+            target_population=CortexPopulation.L4_PYR.value,
         )
 
         # =====================================================================
         # APPLY L4→L2/3 AXONAL DELAY
         # =====================================================================
         # Apply biological transmission delay for L4→L2/3 vertical projection
-        # If delay is 0, l4_spikes_delayed = l4_spikes
-        if self._l4_l23_delay_steps > 0:
-            self._l4_l23_buffer.write(l4_spikes)
-            l4_spikes_delayed = self._l4_l23_buffer.read(self._l4_l23_delay_steps)
-            self._l4_l23_buffer.advance()
-        else:
-            l4_spikes_delayed = l4_spikes
+        l4_spikes_delayed = self._l4_spike_buffer.read(self._l4_l23_delay_steps)
 
         # L2/3: Processing with recurrence
-        # NOTE: Use delayed L4 spikes for biological accuracy
-        l23_ff = (
-            torch.matmul(l4_spikes_delayed.float(), self.synaptic_weights["l4_l23"].t())
-            * cfg.l4_to_l23_strength
+        l4_l23_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L4_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L23_PYR.value,
         )
+        l23_ff = torch.matmul(self.get_synaptic_weights(l4_l23_synapse), l4_spikes_delayed.float())
 
         # Stimulus gating (transient inhibition - always enabled)
-        # Compute total input activity from all sources
-        # Use l4_size as consistent representation for gating (biological: gating happens at L4)
-        if region_inputs:
-            # Sum activity across all sources and distribute over l4 neurons
-            total_activity = sum(s.float().sum() for s in region_inputs.values())
-            # Normalize by l4_size to get average activity per neuron
-            gating_input = torch.full((self.l4_size,), total_activity / self.l4_size, device=self.device)
+        # Compute total input activity from L4-targeted sources only
+        # Biology: FFI is driven by thalamic inputs to L4, not all cortical inputs
+        l4_source_activity = 0.0
+        for synapse_id, source_spikes in synaptic_inputs.items():
+            # Check if this input targets L4 (any L4 sub-population)
+            if synapse_id.target_population.startswith(CortexPopulation.L4.value):
+                l4_source_activity += source_spikes.float().sum()
+
+        if l4_source_activity > 0:
+            # Normalize by l4_pyr_size to get average activity per neuron
+            # TODO: Why are we adding all sup-populations but normalizing by l4_pyr_size only? Should we consider inhibitory populations too?
+            gating_input = torch.full((self.l4_pyr_size,), l4_source_activity / self.l4_pyr_size, device=self.device)
         else:
-            gating_input = torch.zeros(self.l4_size, device=self.device)
+            gating_input = torch.zeros(self.l4_pyr_size, device=self.device)
 
         ffi = self.stimulus_gating.compute(gating_input, return_tensor=False)
         raw_ffi = ffi.item() if hasattr(ffi, "item") else float(ffi)
@@ -1142,24 +1023,19 @@ class Cortex(NeuralRegion[CortexConfig]):
         # Use internal recurrent weights (l23_l23) that undergo STDP+BCM learning
         # Biology: Recurrent connections are highly plastic and critical for
         # cortical dynamics (attractor states, working memory, prediction)
-        #
-        # Get delayed L2/3 activity with proper CircularDelayBuffer
-        # (recurrent connections have ~2.5ms axonal delay to prevent synchronization)
-        if self.l23_spikes is not None:
-            # Write current L2/3 spikes into delay buffer
-            self._l23_recurrent_buffer.write(self.l23_spikes)
-            # Read delayed spikes
-            l23_delayed = self._l23_recurrent_buffer.read(self._l23_recurrent_buffer.max_delay)
-            # Apply recurrent weights: [l23_size, l23_size] @ [l23_size] → [l23_size]
-            l23_rec_raw = self.synaptic_weights["l23_l23"] @ l23_delayed.float()
-            # Apply modulations
-            l23_rec = (
-                l23_rec_raw
-                * cfg.l23_recurrent_strength
-                * 0.5  # recurrent_scale
-                * ffi_suppression
-                * ach_recurrent_modulation
+        l23_delayed = self._l23_spike_buffer.read(self._l23_l23_delay_steps)
+
+        if l23_delayed is not None:
+            # Apply recurrent weights: [l23_pyr_size, l23_pyr_size] @ [l23_pyr_size] → [l23_pyr_size]
+            l23_l23_synapse = SynapseId(
+                source_region=self.region_name,
+                source_population=CortexPopulation.L23_PYR.value,
+                target_region=self.region_name,
+                target_population=CortexPopulation.L23_PYR.value,
             )
+            l23_rec_raw = self.get_synaptic_weights(l23_l23_synapse) @ l23_delayed.float()
+            # Apply modulations
+            l23_rec = l23_rec_raw * ffi_suppression * ach_recurrent_modulation
         else:
             # First timestep: no previous activity
             l23_rec = torch.zeros_like(l23_ff)
@@ -1171,217 +1047,145 @@ class Cortex(NeuralRegion[CortexConfig]):
         # (e.g., prefrontal, parietal) that modulates processing without going
         # through L4. This implements predictive coding and attentional modulation.
 
-        # Filter inputs to only those targeting L2/3 (top-down modulation)
-        # Use target_population metadata (biological: PFC→L2/3 apical dendrites)
-        l23_td_inputs = {
-            name: spikes
-            for name, spikes in external_inputs.items()
-            if self._source_target_populations.get(name) == "l23"
-        }
-
         # Use base class helper for top-down integration
         # Note: No alpha suppression on top-down (already processed by PFC)
-        l23_td = self._integrate_multi_source_synaptic_inputs(
-            inputs=l23_td_inputs,
-            n_neurons=self.l23_size,
-            weight_key_suffix="",  # No suffix - weights keyed by source_name directly
-            apply_stp=False,
+        l23_td = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
+            n_neurons=self.l23_pyr_size,
+            filter_by_target_population=CortexPopulation.L23_PYR.value,
         )
-
-        # Apply global scaling
-        l23_td = l23_td * cfg.l23_top_down_strength
 
         # Integrate all L2/3 inputs
         l23_input = l23_ff + l23_rec + l23_td
 
         # Add baseline noise (spontaneous miniature EPSPs)
-        if cfg.baseline_noise_current > 0:
-            l23_input = l23_input + cfg.baseline_noise_current
+        # Use stochastic noise to prevent inhibition-driven silence
+        if cfg.baseline_noise_conductance > 0:
+            baseline = cfg.baseline_noise_conductance * 0.7
+            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.l23_pyr_size, device=self.device)
+            l23_input = l23_input + baseline + stochastic.abs()
 
-        # Apply homeostatic gain adaptation
-        l23_input = l23_input * self.l23_gain
+        # Norepinephrine gain modulation (arousal/uncertainty)
+        ne_level_l23 = self._ne_concentration_l23.mean().item()
+        ne_gain_l23 = compute_ne_gain(ne_level_l23)
+        l23_input = l23_input * ne_gain_l23
 
-        # INTRINSIC PLASTICITY: Apply per-neuron threshold adjustment (UnifiedHomeostasis)
+        # INTRINSIC PLASTICITY: Apply per-neuron threshold adjustment
         # Under-firing neurons get lower thresholds (more excitable)
         # Over-firing neurons get higher thresholds (less excitable)
         # This is applied temporarily for this timestep only - doesn't modify stored thresholds
-        cfg = self.config
-        if self._l23_threshold_offset is not None:
-            # Temporarily adjust thresholds for this forward pass
-            self.l23_neurons.adjust_thresholds(
-                self._l23_threshold_offset,
-                min_threshold=self._threshold_min,
-                max_threshold=self._threshold_max,
-            )
 
-        l23_spikes, l23_membrane = self.l23_neurons(
-            g_exc_input=ConductanceTensor(F.relu(l23_input)),
-            # TODO: Why do we multiply inhibition by 0.25 here?
-            # Is this a biological E/I ratio or just a scaling factor?
-            g_inh_input=ConductanceTensor(F.relu(l23_input) * 0.25),
-        )
-        l23_spikes = self._apply_sparsity(l23_spikes, cfg.l23_sparsity)
+        # Temporarily adjust thresholds for this forward pass
+        self.l23_neurons.adjust_thresholds(self._l23_threshold_offset, cfg.threshold_min, cfg.threshold_max)
 
         # =====================================================================
-        # L2/3 INHIBITORY NETWORK (PV, SST, VIP INTERNEURONS)
+        # L2/3 INHIBITORY NETWORK (CAUSAL)
         # =====================================================================
-        # Primary site of gamma oscillations and attentional modulation
-        # VIP cells provide ACh-gated disinhibition for selective attention
+        # Compute inhibition from PREVIOUS timestep, then integrate with excitation
 
-        # Run inhibitory network
-        l23_inhib_output = self.l23_inhibitory(
-            pyr_spikes=l23_spikes,
-            pyr_membrane=l23_membrane,
-            external_excitation=l23_input,
-            acetylcholine=self._ach_concentration_l23.mean().item(),
+        # Compute excitatory conductance from all L2/3 inputs
+        l23_g_exc = F.relu(l23_input)
+
+        # Compute inhibition using helper (baseline + network)
+        l23_g_inh = self._compute_layer_inhibition(
+            g_exc=l23_g_exc,
+            baseline_ratio=0.30,
+            prev_spikes=self._l23_spike_buffer.read(1),
+            prev_membrane=self._l23_membrane_buffer.read(1),
+            inhibitory_network=self.l23_inhibitory,
+            ach_concentration=self._ach_concentration_l23,
         )
 
-        # Apply inhibition (PV for gamma, SST for feedback modulation)
-        perisomatic_inh = l23_inhib_output["perisomatic_inhibition"]
-
-        # Gamma gating from PV cells
-        l23_gamma_modulation = 1.0 / (1.0 + perisomatic_inh * 0.5)
-        l23_spikes = (l23_spikes.float() * l23_gamma_modulation) > 0.5
-
-        # Homeostatic gain adaptation: Update L23 firing rate and adjust gains
-        # Update exponential moving average of firing rate
-        current_rate = l23_spikes.float()  # [l23_size], instantaneous rate (0 or 1)
-        self.l23_firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(
-            current_rate * self._firing_rate_alpha
+        # Integrate conductances and generate spikes using helper
+        l23_spikes, l23_membrane = self._integrate_and_spike(
+            g_exc=l23_g_exc,
+            g_inh=l23_g_inh,
+            neurons=self.l23_neurons,
         )
 
-        # Compute gain update: increase gain when underactive, decrease when overactive
-        rate_error = self._target_rate - self.l23_firing_rate  # [l23_size]
-        gain_update = self._gain_lr * rate_error  # [l23_size]
-
-        # Apply update (no artificial bounds)
-        self.l23_gain.data.add_(gain_update)
-
-        # Adaptive threshold update (using same rate_error)
-        # Lower threshold when underactive, raise when overactive
-        threshold_update = -self._threshold_lr * rate_error  # [l23_size]
-        self.l23_neurons.v_threshold.data.add_(threshold_update).clamp_(
-            min=self._threshold_min, max=self._threshold_max
-        )
-
-        # Synaptic scaling for L2/3 (scale L4→L2/3 weights only)
-        if self._synaptic_scaling_enabled:
-            layer_avg_rate = self.l23_firing_rate.mean()
-            if layer_avg_rate < self._synaptic_scaling_min_activity:
-                rate_deficit = self._synaptic_scaling_min_activity - layer_avg_rate
-                scale_update = self._synaptic_scaling_lr * rate_deficit
-                self.l23_weight_scale.data.mul_(1.0 + scale_update).clamp_(
-                    min=1.0, max=self._synaptic_scaling_max_factor
-                )
-                # Scale L4→L2/3 weights (recurrent weights are external now)
-                self.synaptic_weights["l4_l23"].data.mul_(1.0 + scale_update)
-
-        # Inter-layer shape check: L2/3 → L5
-        assert l23_spikes.shape == (self.l23_size,), (
+        assert l23_spikes.shape == (self.l23_pyr_size,), (
             f"Cortex: L2/3 spikes have shape {l23_spikes.shape} "
-            f"but expected ({self.l23_size},). "
-            f"Check L2/3 sparsity or L4→L2/3 weights shape."
+            f"but expected ({self.l23_pyr_size},). "
+            f"Check L4→L2/3 weights shape."
         )
 
-        # Update recurrent activity trace
-        if self.l23_recurrent_activity is not None:
-            self.l23_recurrent_activity = (
-                self.l23_recurrent_activity * cfg.l23_recurrent_decay + l23_spikes.float()
-            )
-        else:
-            self.l23_recurrent_activity = l23_spikes.float()
+        # Homeostatic adaptation: intrinsic excitability + threshold
+        self._update_homeostasis(
+            spikes=l23_spikes,
+            firing_rate=self.l23_firing_rate,
+            neurons=self.l23_neurons,
+        )
+
+        # Synaptic scaling
+        self._apply_synaptic_scaling(
+            firing_rate=self.l23_firing_rate,
+            weight_scale=self.l23_weight_scale,
+            target_population=CortexPopulation.L23_PYR.value,
+        )
 
         # =====================================================================
         # APPLY L2/3→L5 AXONAL DELAY
         # =====================================================================
         # Apply biological transmission delay for L2/3→L5 vertical projection
-        # If delay is 0, l23_spikes_delayed = l23_spikes (instant, backward compatible)
-        if self._l23_l5_delay_steps > 0:
-            self._l23_l5_buffer.write(l23_spikes)
-            l23_spikes_delayed = self._l23_l5_buffer.read(self._l23_l5_delay_steps)
-            self._l23_l5_buffer.advance()
-        else:
-            l23_spikes_delayed = l23_spikes
+        l23_spikes_delayed = self._l23_spike_buffer.read(self._l23_l5_delay_steps)
 
         # L5: Subcortical output (conductance-based)
         # NOTE: Use delayed L2/3 spikes for biological accuracy
-        l5_g_exc = (
-            torch.matmul(self.synaptic_weights["l23_l5"], l23_spikes_delayed.float())
-            * cfg.l23_to_l5_strength
+        l23_l5_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L5_PYR.value,
         )
+        l5_g_exc = torch.matmul(self.get_synaptic_weights(l23_l5_synapse), l23_spikes_delayed.float())
 
         # Add baseline noise (spontaneous miniature EPSPs)
-        if cfg.baseline_noise_current > 0:
-            l5_g_exc = l5_g_exc + cfg.baseline_noise_current
+        # Use stochastic noise to prevent inhibition-driven silence
+        if cfg.baseline_noise_conductance > 0:
+            baseline = cfg.baseline_noise_conductance * 0.7
+            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.l5_pyr_size, device=self.device)
+            l5_g_exc = l5_g_exc + baseline + stochastic.abs()
 
-        # Apply homeostatic gain adaptation
-        l5_g_exc = l5_g_exc * self.l5_gain
+        # Norepinephrine gain modulation (arousal/uncertainty)
+        ne_level_l5 = self._ne_concentration_l5.mean().item()
+        ne_gain_l5 = compute_ne_gain(ne_level_l5)
+        l5_g_exc = l5_g_exc * ne_gain_l5
 
-        # L5 inhibition: ~25% of excitation (4:1 E/I ratio)
-        l5_g_inh = l5_g_exc * 0.25
-
-        l5_spikes, l5_membrane = self.l5_neurons(
-            g_exc_input=ConductanceTensor(l5_g_exc),
-            g_inh_input=ConductanceTensor(l5_g_inh),
-        )
-        l5_spikes = self._apply_sparsity(l5_spikes, cfg.l5_sparsity)
-
-        # =====================================================================
-        # L5 INHIBITORY NETWORK (PV, SST, VIP INTERNEURONS)
-        # =====================================================================
-        # L5 inhibitory network for subcortical output pathway
-
-        # Run inhibitory network
-        l5_inhib_output = self.l5_inhibitory(
-            pyr_spikes=l5_spikes,
-            pyr_membrane=l5_membrane,
-            external_excitation=l5_g_exc,
-            acetylcholine=self._ach_concentration_l5.mean().item(),
+        # Compute inhibition using helper (baseline + network)
+        l5_g_inh = self._compute_layer_inhibition(
+            g_exc=l5_g_exc,
+            baseline_ratio=0.30,
+            prev_spikes=self._l5_spike_buffer.read(1),
+            prev_membrane=self._l5_membrane_buffer.read(1),
+            inhibitory_network=self.l5_inhibitory,
+            ach_concentration=self._ach_concentration_l5,
         )
 
-        # Apply gamma gating from PV cells
-        perisomatic_inh = l5_inhib_output["perisomatic_inhibition"]
-        l5_gamma_modulation = 1.0 / (1.0 + perisomatic_inh * 0.5)
-        l5_spikes = (l5_spikes.float() * l5_gamma_modulation > 0.5).bool()
-
-        # Homeostatic gain adaptation: Update L5 firing rate and adjust gains
-        # Update exponential moving average of firing rate
-        current_rate = l5_spikes.float()  # [l5_size], instantaneous rate (0 or 1)
-        self.l5_firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(
-            current_rate * self._firing_rate_alpha
+        # Integrate conductances and generate spikes using helper
+        l5_spikes, l5_membrane = self._integrate_and_spike(
+            g_exc=l5_g_exc,
+            g_inh=l5_g_inh,
+            neurons=self.l5_neurons,
         )
 
-        # Compute gain update: increase gain when underactive, decrease when overactive
-        rate_error = self._target_rate - self.l5_firing_rate  # [l5_size]
-        gain_update = self._gain_lr * rate_error  # [l5_size]
-
-        # Apply update (no artificial bounds)
-        self.l5_gain.data.add_(gain_update)
-
-        # Adaptive threshold update (using same rate_error)
-        # Lower threshold when underactive, raise when overactive
-        threshold_update = -self._threshold_lr * rate_error  # [l5_size]
-        self.l5_neurons.v_threshold.data.add_(threshold_update).clamp_(
-            min=self._threshold_min, max=self._threshold_max
-        )
-
-        # Synaptic scaling for L5 (scale L2/3→L5 weights)
-        if self._synaptic_scaling_enabled:
-            layer_avg_rate = self.l5_firing_rate.mean()
-            if layer_avg_rate < self._synaptic_scaling_min_activity:
-                rate_deficit = self._synaptic_scaling_min_activity - layer_avg_rate
-                scale_update = self._synaptic_scaling_lr * rate_deficit
-                self.l5_weight_scale.data.mul_(1.0 + scale_update).clamp_(
-                    min=1.0, max=self._synaptic_scaling_max_factor
-                )
-                # Scale L2/3→L5 weights
-                self.synaptic_weights["l23_l5"].data.mul_(1.0 + scale_update)
-
-        # Inter-layer shape check: L5 output
-        assert l5_spikes.shape == (self.l5_size,), (
+        assert l5_spikes.shape == (self.l5_pyr_size,), (
             f"Cortex: L5 spikes have shape {l5_spikes.shape} "
-            f"but expected ({self.l5_size},). "
-            f"Check L5 sparsity or L2/3→L5 weights shape."
+            f"but expected ({self.l5_pyr_size},). "
+            f"Check L2/3→L5 weights shape."
+        )
+
+        # Homeostatic adaptation: intrinsic excitability + threshold
+        self._update_homeostasis(
+            spikes=l5_spikes,
+            firing_rate=self.l5_firing_rate,
+            neurons=self.l5_neurons,
+        )
+
+        # Synaptic scaling
+        self._apply_synaptic_scaling(
+            firing_rate=self.l5_firing_rate,
+            weight_scale=self.l5_weight_scale,
+            target_population=CortexPopulation.L5_PYR.value,
         )
 
         # =====================================================================
@@ -1395,94 +1199,347 @@ class Cortex(NeuralRegion[CortexConfig]):
         # =====================================================================
         # L6a: Apply L2/3→L6a axonal delay
         # =====================================================================
-        if self._l23_l6a_delay_steps > 0:
-            self._l23_l6a_buffer.write(l23_spikes)
-            l23_spikes_for_l6a = self._l23_l6a_buffer.read(self._l23_l6a_delay_steps)
-            self._l23_l6a_buffer.advance()
-        else:
-            l23_spikes_for_l6a = l23_spikes
+        l23_spikes_for_l6a = self._l23_spike_buffer.read(self._l23_l6a_delay_steps)
 
         # L6a forward pass (corticothalamic type I → TRN)
-        l6a_g_exc = (
-            torch.matmul(self.synaptic_weights["l23_l6a"], l23_spikes_for_l6a.float())
-            * cfg.l23_to_l6a_strength
+        l23_l6a_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L6A_PYR.value,
         )
-        l6a_g_inh = l6a_g_exc * 0.8  # Strong local inhibition for sparse low-gamma firing
+        l6a_g_exc = torch.matmul(self.get_synaptic_weights(l23_l6a_synapse), l23_spikes_for_l6a.float())
 
-        l6a_spikes, l6a_membrane = self.l6a_neurons(
-            g_exc_input=ConductanceTensor(l6a_g_exc),
-            g_inh_input=ConductanceTensor(l6a_g_inh),
-        )
-        l6a_spikes = self._apply_sparsity(l6a_spikes, cfg.l6a_sparsity)
+        # Norepinephrine gain modulation (arousal/uncertainty)
+        ne_level_l6a = self._ne_concentration_l6a.mean().item()
+        ne_gain_l6a = compute_ne_gain(ne_level_l6a)
+        l6a_g_exc = l6a_g_exc * ne_gain_l6a
 
-        # =====================================================================
-        # L6a INHIBITORY NETWORK (PV, SST, VIP INTERNEURONS)
-        # =====================================================================
-        # L6a inhibitory network for TRN pathway (low gamma)
-
-        # Run inhibitory network
-        l6a_inhib_output = self.l6a_inhibitory(
-            pyr_spikes=l6a_spikes,
-            pyr_membrane=l6a_membrane,
-            external_excitation=l6a_g_exc,
-            acetylcholine=self._ach_concentration_l6a.mean().item(),
+        # Compute inhibition using helper (baseline + network)
+        # L6a: Strong inhibition (0.8) for sparse, low-gamma firing
+        l6a_g_inh = self._compute_layer_inhibition(
+            g_exc=l6a_g_exc,
+            baseline_ratio=0.80,  # Strong inhibition → sparse firing
+            prev_spikes=self._l6a_spike_buffer.read(1),
+            prev_membrane=self._l6a_membrane_buffer.read(1),
+            inhibitory_network=self.l6a_inhibitory,
+            ach_concentration=self._ach_concentration_l6a,
         )
 
-        # Apply gamma gating from PV cells
-        perisomatic_inh = l6a_inhib_output["perisomatic_inhibition"]
-        l6a_gamma_modulation = 1.0 / (1.0 + perisomatic_inh * 0.5)
-        l6a_spikes = (l6a_spikes.float() * l6a_gamma_modulation > 0.5).bool()
+        # Integrate conductances and generate spikes using helper
+        l6a_spikes, l6a_membrane = self._integrate_and_spike(
+            g_exc=l6a_g_exc,
+            g_inh=l6a_g_inh,
+            neurons=self.l6a_neurons,
+        )
+
+        assert l6a_spikes.shape == (self.l6a_pyr_size,), (
+            f"Cortex: L6a spikes have shape {l6a_spikes.shape} "
+            f"but expected ({self.l6a_pyr_size},)."
+        )
+
+        # Homeostatic adaptation: intrinsic excitability + threshold
+        self._update_homeostasis(
+            spikes=l6a_spikes,
+            firing_rate=self.l6a_firing_rate,
+            neurons=self.l6a_neurons,
+        )
+
+        # Synaptic scaling
+        self._apply_synaptic_scaling(
+            firing_rate=self.l6a_firing_rate,
+            weight_scale=self.l6a_weight_scale,
+            target_population=CortexPopulation.L6A_PYR.value,
+        )
 
         # =====================================================================
         # L6b: Apply L2/3→L6b axonal delay
         # =====================================================================
-        if self._l23_l6b_delay_steps > 0:
-            self._l23_l6b_buffer.write(l23_spikes)
-            l23_spikes_for_l6b = self._l23_l6b_buffer.read(self._l23_l6b_delay_steps)
-            self._l23_l6b_buffer.advance()
-        else:
-            l23_spikes_for_l6b = l23_spikes
+        l23_spikes_for_l6b = self._l23_spike_buffer.read(self._l23_l6b_delay_steps)
 
         # L6b forward pass (corticothalamic type II → relay)
-        l6b_g_exc = (
-            torch.matmul(self.synaptic_weights["l23_l6b"], l23_spikes_for_l6b.float())
-            * cfg.l23_to_l6b_strength
+        l23_l6b_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L6B_PYR.value,
         )
-        l6b_g_inh = l6b_g_exc * 0.15  # Minimal local inhibition
+        l6b_g_exc = torch.matmul(self.get_synaptic_weights(l23_l6b_synapse), l23_spikes_for_l6b.float())
 
-        l6b_spikes, l6b_membrane = self.l6b_neurons(
-            g_exc_input=ConductanceTensor(l6b_g_exc),
-            g_inh_input=ConductanceTensor(l6b_g_inh),
-        )
-        l6b_spikes = self._apply_sparsity(l6b_spikes, cfg.l6b_sparsity)
+        # Norepinephrine gain modulation (arousal/uncertainty)
+        ne_level_l6b = self._ne_concentration_l6b.mean().item()
+        ne_gain_l6b = compute_ne_gain(ne_level_l6b)
+        l6b_g_exc = l6b_g_exc * ne_gain_l6b
 
-        # =====================================================================
-        # L6b INHIBITORY NETWORK (PV, SST, VIP INTERNEURONS)
-        # =====================================================================
-        # L6b inhibitory network for relay pathway (high gamma)
-
-        # Run inhibitory network
-        l6b_inhib_output = self.l6b_inhibitory(
-            pyr_spikes=l6b_spikes,
-            pyr_membrane=l6b_membrane,
-            external_excitation=l6b_g_exc,
-            acetylcholine=self._ach_concentration_l6b.mean().item(),
+        # Compute inhibition using helper (baseline + network)
+        # L6b: Minimal inhibition (0.15) for dense, high-gamma firing
+        l6b_g_inh = self._compute_layer_inhibition(
+            g_exc=l6b_g_exc,
+            baseline_ratio=0.15,  # Minimal inhibition → dense firing
+            prev_spikes=self._l6b_spike_buffer.read(1),
+            prev_membrane=self._l6b_membrane_buffer.read(1),
+            inhibitory_network=self.l6b_inhibitory,
+            ach_concentration=self._ach_concentration_l6b,
         )
 
-        # Apply gamma gating from PV cells
-        perisomatic_inh = l6b_inhib_output["perisomatic_inhibition"]
-        l6b_gamma_modulation = 1.0 / (1.0 + perisomatic_inh * 0.5)
-        l6b_spikes = (l6b_spikes.float() * l6b_gamma_modulation) > 0.5
-
-        # Inter-layer shape checks
-        assert l6a_spikes.shape == (self.l6a_size,), (
-            f"Cortex: L6a spikes have shape {l6a_spikes.shape} "
-            f"but expected ({self.l6a_size},)."
+        # Integrate conductances and generate spikes using helper
+        l6b_spikes, l6b_membrane = self._integrate_and_spike(
+            g_exc=l6b_g_exc,
+            g_inh=l6b_g_inh,
+            neurons=self.l6b_neurons,
         )
-        assert l6b_spikes.shape == (self.l6b_size,), (
+
+        assert l6b_spikes.shape == (self.l6b_pyr_size,), (
             f"Cortex: L6b spikes have shape {l6b_spikes.shape} "
-            f"but expected ({self.l6b_size},)."
+            f"but expected ({self.l6b_pyr_size},)."
         )
+
+        # Homeostatic adaptation: intrinsic excitability + threshold
+        self._update_homeostasis(
+            spikes=l6b_spikes,
+            firing_rate=self.l6b_firing_rate,
+            neurons=self.l6b_neurons,
+        )
+
+        # Synaptic scaling
+        self._apply_synaptic_scaling(
+            firing_rate=self.l6b_firing_rate,
+            weight_scale=self.l6b_weight_scale,
+            target_population=CortexPopulation.L6B_PYR.value,
+        )
+
+        # =====================================================================
+        # COLLECT OUTPUTS FOR PLASTICITY
+        # =====================================================================
+        region_outputs: RegionOutput = {
+            CortexPopulation.L23_PYR.value: l23_spikes,
+            CortexPopulation.L4_PYR.value: l4_spikes,
+            CortexPopulation.L5_PYR.value: l5_spikes,
+            CortexPopulation.L6A_PYR.value: l6a_spikes,
+            CortexPopulation.L6B_PYR.value: l6b_spikes,
+        }
+
+        # =====================================================================
+        # APPLY STDP + BCM PLASTICITY
+        # =====================================================================
+        self._apply_plasticity(synaptic_inputs=synaptic_inputs, region_outputs=region_outputs)
+
+        # =====================================================================
+        # UPDATE STATE BUFFERS FOR NEXT TIMESTEP
+        # =====================================================================
+        # Write spikes to state buffers
+        self._l23_spike_buffer.write_and_advance(l23_spikes)
+        self._l4_spike_buffer.write_and_advance(l4_spikes)
+        self._l5_spike_buffer.write_and_advance(l5_spikes)
+        self._l6a_spike_buffer.write_and_advance(l6a_spikes)
+        self._l6b_spike_buffer.write_and_advance(l6b_spikes)
+
+        # Write membrane potentials to state buffers
+        self._l23_membrane_buffer.write_and_advance(l23_membrane)
+        self._l4_membrane_buffer.write_and_advance(l4_membrane)
+        self._l5_membrane_buffer.write_and_advance(l5_membrane)
+        self._l6a_membrane_buffer.write_and_advance(l6a_membrane)
+        self._l6b_membrane_buffer.write_and_advance(l6b_membrane)
+
+        return self._post_forward(region_outputs)
+
+    def _apply_plasticity(self, synaptic_inputs: SynapticInput, region_outputs: RegionOutput) -> None:
+        """Apply continuous STDP learning with BCM modulation.
+
+        This is called automatically at each forward() timestep.
+
+        In biological cortex, synaptic plasticity happens continuously based on
+        pre/post spike timing. Dopamine doesn't trigger learning - it modulates
+        how much weight change occurs from the spike-timing-based plasticity.
+        """
+        if not WeightInitializer.GLOBAL_LEARNING_ENABLED:
+            return  # Skip plasticity if globally disabled (e.g., for testing)
+
+        cfg = self.config
+
+        l23_spikes = region_outputs[CortexPopulation.L23_PYR.value]
+        l4_spikes = region_outputs[CortexPopulation.L4_PYR.value]
+        l5_spikes = region_outputs[CortexPopulation.L5_PYR.value]
+        l6a_spikes = region_outputs[CortexPopulation.L6A_PYR.value]
+        l6b_spikes = region_outputs[CortexPopulation.L6B_PYR.value]
+
+        # =====================================================================
+        # LAYER-SPECIFIC DOPAMINE MODULATION
+        # =====================================================================
+        l23_dopamine = self._da_concentration_l23.mean().item()
+        l4_dopamine = self._da_concentration_l4.mean().item()
+        l5_dopamine = self._da_concentration_l5.mean().item()
+        l6a_dopamine = self._da_concentration_l6a.mean().item()
+        l6b_dopamine = self._da_concentration_l6b.mean().item()
+
+        # Route input spikes to appropriate layers for plasticity
+        for synapse_id, source_spikes in synaptic_inputs.items():
+            weights = self.get_synaptic_weights(synapse_id)
+
+            # NOTE: Only pyramidal neurons undergo BCM learning (PV weights are fixed)
+
+            if synapse_id.target_population == CortexPopulation.L23_PYR.value:
+                weights.data = CompositeStrategy.compute_update(
+                    strategies=self.strategies_l23,
+                    weights=weights.data,
+                    pre_spikes=source_spikes,
+                    post_spikes=l23_spikes,
+                    dopamine=l23_dopamine,
+                    acetylcholine=self._ach_concentration_l23.mean().item(),
+                    norepinephrine=self._ne_concentration_l23.mean().item(),
+                )
+
+            elif synapse_id.target_population == CortexPopulation.L4_PYR.value:
+                weights.data = CompositeStrategy.compute_update(
+                    strategies=self.strategies_l4,
+                    weights=weights.data,
+                    pre_spikes=source_spikes,
+                    post_spikes=l4_spikes,
+                    dopamine=l4_dopamine,
+                    acetylcholine=self._ach_concentration_l4.mean().item(),
+                    norepinephrine=self._ne_concentration_l4.mean().item(),
+                )
+
+            elif synapse_id.target_population == CortexPopulation.L5_PYR.value:
+                weights.data = CompositeStrategy.compute_update(
+                    strategies=self.strategies_l5,
+                    weights=weights.data,
+                    pre_spikes=source_spikes,
+                    post_spikes=l5_spikes,
+                    dopamine=l5_dopamine,
+                    acetylcholine=self._ach_concentration_l5.mean().item(),
+                    norepinephrine=self._ne_concentration_l5.mean().item(),
+                )
+
+            clamp_weights(weights.data, cfg.w_min, cfg.w_max)
+
+        # =====================================================================
+        # L4 → L2/3 - L2/3-specific dopamine
+        # =====================================================================
+        l4_l23_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L4_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L23_PYR.value,
+        )
+        l4_l23_weights = self.get_synaptic_weights(l4_l23_synapse)
+        l4_l23_weights.data = CompositeStrategy.compute_update(
+            strategies=self.strategies_l23,
+            weights=l4_l23_weights.data,
+            pre_spikes=l4_spikes,
+            post_spikes=l23_spikes,
+            dopamine=l23_dopamine,
+            acetylcholine=self._ach_concentration_l23.mean().item(),
+            norepinephrine=self._ne_concentration_l23.mean().item(),
+        )
+        clamp_weights(l4_l23_weights.data, cfg.w_min, cfg.w_max)
+
+        # =====================================================================
+        # L2/3 → L5 - L5-specific dopamine (highest modulation)
+        # =====================================================================
+        l23_l5_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L5_PYR.value,
+        )
+        l23_l5_weights = self.get_synaptic_weights(l23_l5_synapse)
+        l23_l5_weights.data = CompositeStrategy.compute_update(
+            strategies=self.strategies_l5,
+            weights=l23_l5_weights.data,
+            pre_spikes=l23_spikes,
+            post_spikes=l5_spikes,
+            dopamine=l5_dopamine,
+            acetylcholine=self._ach_concentration_l5.mean().item(),
+            norepinephrine=self._ne_concentration_l5.mean().item(),
+        )
+        clamp_weights(l23_l5_weights.data, cfg.w_min, cfg.w_max)
+
+        # =====================================================================
+        # L2/3 → L6a (corticothalamic type I → TRN) - L6-specific dopamine
+        # =====================================================================
+        l23_l6a_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L6A_PYR.value,
+        )
+        l23_l6a_weights = self.get_synaptic_weights(l23_l6a_synapse)
+        l23_l6a_weights.data = CompositeStrategy.compute_update(
+            strategies=self.strategies_l6a,
+            weights=l23_l6a_weights.data,
+            pre_spikes=l23_spikes,
+            post_spikes=l6a_spikes,
+            dopamine=l6a_dopamine,
+            acetylcholine=self._ach_concentration_l6a.mean().item(),
+            norepinephrine=self._ne_concentration_l6a.mean().item(),
+        )
+        clamp_weights(l23_l6a_weights.data, cfg.w_min, cfg.w_max)
+
+        # =====================================================================
+        # L2/3 → L6b (corticothalamic type II → relay) - L6-specific dopamine
+        # =====================================================================
+        l23_l6b_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L6B_PYR.value,
+        )
+        l23_l6b_weights = self.get_synaptic_weights(l23_l6b_synapse)
+        l23_l6b_weights.data = CompositeStrategy.compute_update(
+            strategies=self.strategies_l6b,
+            weights=l23_l6b_weights.data,
+            pre_spikes=l23_spikes,
+            post_spikes=l6b_spikes,
+            dopamine=l6b_dopamine,
+            acetylcholine=self._ach_concentration_l6b.mean().item(),
+            norepinephrine=self._ne_concentration_l6b.mean().item(),
+        )
+        clamp_weights(l23_l6b_weights.data, cfg.w_min, cfg.w_max)
+
+        # =====================================================================
+        # L2/3 RECURRENT LEARNING (Critical for Cortical Plasticity)
+        # =====================================================================
+        # Biology: L2/3 recurrent synapses are the MOST plastic in cortex.
+        # They undergo robust STDP and BCM-style homeostasis.
+        # Critical for: attractor formation, working memory, predictive coding
+        prev_l23_spikes = self._l23_spike_buffer.read(1)
+        l23_l23_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L23_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L23_PYR.value,
+        )
+        l23_l23_weights = self.get_synaptic_weights(l23_l23_synapse)
+        l23_l23_weights.data = CompositeStrategy.compute_update(
+            strategies=self.strategies_l23,
+            weights=l23_l23_weights.data,
+            pre_spikes=prev_l23_spikes,
+            post_spikes=l23_spikes,
+            dopamine=l23_dopamine,
+            acetylcholine=self._ach_concentration_l23.mean().item(),
+            norepinephrine=self._ne_concentration_l23.mean().item(),
+        )
+        l23_l23_weights.data.fill_diagonal_(0.0)  # Maintain biological constraints (No self-connections)
+        clamp_weights(l23_l23_weights.data, cfg.w_min, cfg.w_max)
+
+        # =================================================================
+        # INTRINSIC PLASTICITY: Update per-neuron threshold offsets
+        # =================================================================
+        # Update activity history (exponential moving average)
+        self._l23_activity_history = 0.99 * self._l23_activity_history + (1.0 - 0.99) * l23_spikes.float()
+
+        # Compute threshold modulation
+        threshold_mod = UnifiedHomeostasis.compute_excitability_modulation(
+            activity_history=self._l23_activity_history,
+            activity_target=cfg.activity_target,
+            tau=100.0,
+        )
+        # Convert gain modulation to threshold offset:
+        # Under-firing → mod > 1.0 → negative offset → lower threshold → easier to spike
+        # Over-firing → mod < 1.0 → positive offset → higher threshold → harder to spike
+        # Formula: offset = (1.0 - modulation) inverts the sign correctly
+        self._l23_threshold_offset = (1.0 - threshold_mod).clamp(-0.5, 0.5)
 
         # =====================================================================
         # PREDICTIVE CODING: ANTI-HEBBIAN LEARNING
@@ -1492,275 +1549,44 @@ class Cortex(NeuralRegion[CortexConfig]):
         # When prediction wrong: L4 fires → strengthen inhibition (learn)
         # This is anti-Hebbian: co-activation → increase inhibition
 
-        # Dopamine modulation of prediction learning (L5 receives DA)
-        da_level = self._da_concentration_l5.mean().item()
-        da_modulation = 1.0 + da_level
-        pred_lr = cfg.prediction_learning_rate * da_modulation
+        # Dopamine modulation of prediction learning
+        pred_lr = cfg.prediction_learning_rate * (1.0 + l5_dopamine)
 
-        if pred_lr > 1e-8:  # Only learn if not suppressed
-            # L5 → L4 anti-Hebbian learning
-            if (l5_spikes is not None and
-                l4_spikes is not None and
-                "l5_l4_pred" in self.synaptic_weights):
-                # Positive correlation → strengthen inhibitory weight
-                # This makes L5 better at predicting and suppressing L4
-                dW_l5 = torch.outer(l4_spikes.float(), l5_spikes.float())
-                self.synaptic_weights["l5_l4_pred"].data.add_(pred_lr * dW_l5)
+        l4_spikes_float = l4_spikes.float()
 
-                # Keep weights positive (inhibitory strength)
-                self.synaptic_weights["l5_l4_pred"].data.clamp_(min=0.0, max=2.0)
+        # L5 → L4 anti-Hebbian learning
+        # Learn temporal prediction: previous L5 activity predicts current L4 response
+        # Positive correlation → strengthen inhibitory weight
+        # This makes L5 better at predicting and suppressing L4
+        prev_l5_spikes = self._l5_spike_buffer.read(1)
+        dW_l5 = torch.outer(l4_spikes_float, prev_l5_spikes.float())
+        l5_l4_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L5_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L4_PYR.value,
+            is_inhibitory=True,
+        )
+        l5_l4_weights = self.get_synaptic_weights(l5_l4_synapse)
+        l5_l4_weights.data.add_(pred_lr * dW_l5)
+        clamp_weights(l5_l4_weights.data, cfg.w_min, cfg.w_max)
 
-            # L6 → L4 anti-Hebbian learning
-            if (l6a_spikes is not None and
-                l6b_spikes is not None and
-                l4_spikes is not None and
-                "l6_l4_pred" in self.synaptic_weights
-            ):
-                l6_combined = torch.cat([l6a_spikes, l6b_spikes], dim=-1)
-                dW_l6 = torch.outer(l4_spikes.float(), l6_combined.float())
-                self.synaptic_weights["l6_l4_pred"].data.add_(pred_lr * dW_l6)
-
-                # Keep weights positive (inhibitory strength)
-                self.synaptic_weights["l6_l4_pred"].data.clamp_(min=0.0, max=2.0)
-
-        # Store spikes for output populations and potential use in next timestep's processing
-        self.l23_spikes = l23_spikes
-        self.l4_spikes = l4_spikes
-        self.l5_spikes = l5_spikes
-        self.l6a_spikes = l6a_spikes
-        self.l6b_spikes = l6b_spikes
-
-        region_outputs: RegionSpikesDict = {
-            "l23": l23_spikes,
-            "l4": l4_spikes,
-            "l5": l5_spikes,
-            "l6a": l6a_spikes,
-            "l6b": l6b_spikes,
-        }
-
-        self._apply_plasticity(inputs=external_inputs, region_outputs=region_outputs)
-
-        # Advance delay buffers to next timestep
-        self._l23_recurrent_buffer.advance()
-
-        return self._post_forward(region_outputs)
-
-    def _apply_plasticity(self, inputs: RegionSpikesDict, region_outputs: RegionSpikesDict) -> None:
-        """Apply continuous STDP learning with BCM modulation.
-
-        This is called automatically at each forward() timestep.
-
-        In biological cortex, synaptic plasticity happens continuously based on
-        pre/post spike timing. Dopamine doesn't trigger learning - it modulates
-        how much weight change occurs from the spike-timing-based plasticity.
-        """
-        l23_spikes = region_outputs["l23"]
-        l4_spikes = region_outputs["l4"]
-        l5_spikes = region_outputs["l5"]
-        l6a_spikes = region_outputs["l6a"]
-        l6b_spikes = region_outputs["l6b"]
-
-        # Early exit if no activity yet
-        if l4_spikes is None:
-            return
-
-        cfg = self.config
-
-        # =====================================================================
-        # LAYER-SPECIFIC DOPAMINE MODULATION
-        # =====================================================================
-        # Apply layer-specific dopamine scaling to learning rates.
-        # Different layers have different DA receptor densities (relative sensitivity).
-        base_dopamine = self._da_concentration_l5.mean().item()  # L5 receives DA
-        l23_dopamine = base_dopamine * 0.3
-        l4_dopamine = base_dopamine * 0.2
-        l5_dopamine = base_dopamine * 0.4
-        l6_dopamine = base_dopamine * 0.1
-
-        # Get base learning rate
-        base_lr = cfg.learning_rate
-
-        # Use STDP+BCM composite strategies for proper spike-timing-dependent learning
-        # Per-source learning: Each input source (thalamus, hippocampus, etc.) learns independently
-        # Route to appropriate layer based on target_population metadata (biological: synapses define pathway)
-
-        # Route external inputs to appropriate layers for plasticity
-        for source_name, source_spikes in inputs.items():
-            # Skip if this source doesn't have weights
-            if source_name not in self.synaptic_weights:
-                continue
-
-            # Determine target population from stored metadata
-            target_population = self._source_target_populations.get(source_name, None)
-
-            # Skip neuromodulator inputs (processed separately via receptors)
-            if target_population == "vta_da":
-                continue
-
-            # Route to appropriate learning strategy and postsynaptic spikes
-            if target_population == "l23":
-                # Top-down inputs → L2/3 plasticity
-                if l23_spikes is not None:
-                    l23_lr = base_lr * (1.0 + l23_dopamine)
-                    updated_weights, _ = self.bcm_l23.compute_update(
-                        weights=self.synaptic_weights[source_name].data,
-                        pre_spikes=source_spikes,
-                        post_spikes=l23_spikes,
-                        learning_rate=l23_lr,
-                    )
-                    self.synaptic_weights[source_name].data.copy_(updated_weights)
-                    clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
-
-            elif target_population == "l4":
-                # Feedforward inputs → L4 plasticity
-                if l4_spikes is not None:
-                    l4_lr = base_lr * (1.0 + l4_dopamine)
-                    updated_weights, _ = self.bcm_l4.compute_update(
-                        weights=self.synaptic_weights[source_name].data,
-                        pre_spikes=source_spikes,
-                        post_spikes=l4_spikes,
-                        learning_rate=l4_lr,
-                    )
-                    self.synaptic_weights[source_name].data.copy_(updated_weights)
-                    clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
-
-            elif target_population == "l5":
-                # Hippocampal inputs → L5 plasticity
-                if l5_spikes is not None:
-                    l5_lr = base_lr * (1.0 + l5_dopamine)
-                    updated_weights, _ = self.bcm_l23.compute_update(  # Use L2/3 BCM for L5 (same supragranular strategy)
-                        weights=self.synaptic_weights[source_name].data,
-                        pre_spikes=source_spikes,
-                        post_spikes=l5_spikes,
-                        learning_rate=l5_lr,
-                    )
-                    self.synaptic_weights[source_name].data.copy_(updated_weights)
-                    clamp_weights(self.synaptic_weights[source_name].data, cfg.w_min, cfg.w_max)
-
-            else:
-                raise ValueError(f"Unknown target layer '{target_population}' for source '{source_name}' in plasticity routing.")
-
-        # L4 → L2/3 - L2/3-specific dopamine
-        if l23_spikes is not None:
-            # L2/3 learning rate with layer-specific dopamine
-            l23_lr = base_lr * (1.0 + l23_dopamine)
-            updated_weights, _ = self.bcm_l23.compute_update(
-                weights=self.synaptic_weights["l4_l23"].data,
-                pre_spikes=l4_spikes,
-                post_spikes=l23_spikes,
-                learning_rate=l23_lr,
-            )
-            self.synaptic_weights["l4_l23"].data.copy_(updated_weights)
-            clamp_weights(self.synaptic_weights["l4_l23"].data, cfg.w_min, cfg.w_max)
-
-            # =================================================================
-            # INTRINSIC PLASTICITY: Update per-neuron threshold offsets
-            # =================================================================
-            # Initialize if needed
-            if self._l23_activity_history is None:
-                self._l23_activity_history = torch.zeros(self.l23_size, device=self.device)
-            if self._l23_threshold_offset is None:
-                self._l23_threshold_offset = torch.zeros(self.l23_size, device=self.device)
-
-            # Update activity history (exponential moving average)
-            self._l23_activity_history = 0.99 * self._l23_activity_history + (1.0 - 0.99) * l23_spikes.float()
-
-            # Compute threshold modulation using UnifiedHomeostasis
-            threshold_mod = self.homeostasis.compute_excitability_modulation(
-                activity_history=self._l23_activity_history,
-                tau=100.0
-            )
-            # Convert gain modulation to threshold offset:
-            # Under-firing → mod > 1.0 → negative offset → lower threshold → easier to spike
-            # Over-firing → mod < 1.0 → positive offset → higher threshold → harder to spike
-            # Formula: offset = (1.0 - modulation) inverts the sign correctly
-            self._l23_threshold_offset = (1.0 - threshold_mod).clamp(-0.5, 0.5)
-
-            # L2/3 → L5 - L5-specific dopamine (highest modulation)
-            if l5_spikes is not None:
-                # L5 learning rate with layer-specific dopamine (100% modulation)
-                l5_lr = base_lr * (1.0 + l5_dopamine)
-                updated_weights, _ = self.bcm_l5.compute_update(
-                    weights=self.synaptic_weights["l23_l5"].data,
-                    pre_spikes=l23_spikes,
-                    post_spikes=l5_spikes,
-                    learning_rate=l5_lr,
-                )
-                self.synaptic_weights["l23_l5"].data.copy_(updated_weights)
-                clamp_weights(self.synaptic_weights["l23_l5"].data, cfg.w_min, cfg.w_max)
-
-            # L2/3 → L6a (corticothalamic type I → TRN) - L6-specific dopamine
-            if l6a_spikes is not None:
-                # L6 learning rate with layer-specific dopamine (20% modulation - stable feedback)
-                l6_lr = base_lr * (1.0 + l6_dopamine)
-                updated_weights, _ = self.bcm_l6a.compute_update(
-                    weights=self.synaptic_weights["l23_l6a"].data,
-                    pre_spikes=l23_spikes,
-                    post_spikes=l6a_spikes,
-                    learning_rate=l6_lr,
-                )
-                self.synaptic_weights["l23_l6a"].data.copy_(updated_weights)
-                clamp_weights(self.synaptic_weights["l23_l6a"].data, cfg.w_min, cfg.w_max)
-
-            # L2/3 → L6b (corticothalamic type II → relay) - L6-specific dopamine
-            if l6b_spikes is not None:
-                # L6 learning rate with layer-specific dopamine (20% modulation - stable feedback)
-                l6_lr = base_lr * (1.0 + l6_dopamine)
-                updated_weights, _ = self.bcm_l6b.compute_update(
-                    weights=self.synaptic_weights["l23_l6b"].data,
-                    pre_spikes=l23_spikes,
-                    post_spikes=l6b_spikes,
-                    learning_rate=l6_lr,
-                )
-                self.synaptic_weights["l23_l6b"].data.copy_(updated_weights)
-                clamp_weights(self.synaptic_weights["l23_l6b"].data, cfg.w_min, cfg.w_max)
-
-        # =====================================================================
-        # L2/3 RECURRENT LEARNING (Critical for Cortical Plasticity)
-        # =====================================================================
-        # Biology: L2/3 recurrent synapses are the MOST plastic in cortex.
-        # They undergo robust STDP and BCM-style homeostasis.
-        # Critical for: attractor formation, working memory, predictive coding
-        #
-        # Use previous timestep's L2/3 activity as presynaptic input
-        # Current L2/3 activity as postsynaptic output
-        # This implements the biological delay (1-2ms axonal propagation)
-        if l23_spikes is not None and self.l23_spikes is not None:
-            # L2/3 learning rate with layer-specific dopamine
-            l23_lr = base_lr * (1.0 + l23_dopamine)
-
-            # Apply STDP+BCM to recurrent connections
-            # Pre: previous timestep's L2/3 spikes (delayed via axonal propagation)
-            # Post: current timestep's L2/3 spikes
-            updated_weights, _ = self.bcm_l23.compute_update(
-                weights=self.synaptic_weights["l23_l23"].data,
-                pre_spikes=self.l23_spikes,  # Previous timestep (presynaptic)
-                post_spikes=l23_spikes,       # Current timestep (postsynaptic)
-                learning_rate=l23_lr,
-            )
-            self.synaptic_weights["l23_l23"].data.copy_(updated_weights)
-
-            # Maintain biological constraints
-            self.synaptic_weights["l23_l23"].data.fill_diagonal_(0.0)  # No self-connections
-            clamp_weights(self.synaptic_weights["l23_l23"].data, cfg.w_min, cfg.w_max)
-
-    def _apply_sparsity(self, spikes: torch.Tensor, target_sparsity: float) -> torch.Tensor:
-        """Apply winner-take-all sparsity to spike tensor."""
-        validate_spike_tensor(spikes)
-
-        n_neurons = spikes.shape[0]
-        k = max(1, int(n_neurons * target_sparsity))
-
-        sparse_spikes = torch.zeros_like(spikes)
-        active = spikes.nonzero(as_tuple=True)[0]
-
-        if len(active) > k:
-            keep_indices = active[torch.randperm(len(active))[:k]]
-            sparse_spikes[keep_indices] = spikes[keep_indices]
-        else:
-            sparse_spikes = spikes
-
-        return sparse_spikes
+        # L6 → L4 anti-Hebbian learning
+        # Learn temporal prediction: previous L6 activity predicts current L4 response
+        prev_l6a_spikes = self._l6a_spike_buffer.read(1)
+        prev_l6b_spikes = self._l6b_spike_buffer.read(1)
+        l6_combined_prev = torch.cat([prev_l6a_spikes, prev_l6b_spikes], dim=-1)
+        dW_l6 = torch.outer(l4_spikes_float, l6_combined_prev.float())
+        l6_l4_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L6_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L4_PYR.value,
+            is_inhibitory=True,
+        )
+        l6_l4_weights = self.get_synaptic_weights(l6_l4_synapse)
+        l6_l4_weights.data.add_(pred_lr * dW_l6)
+        clamp_weights(l6_l4_weights.data, cfg.w_min, cfg.w_max)
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
@@ -1782,3 +1608,17 @@ class Cortex(NeuralRegion[CortexConfig]):
         self.l5_neurons.update_temporal_parameters(dt_ms)
         self.l6a_neurons.update_temporal_parameters(dt_ms)
         self.l6b_neurons.update_temporal_parameters(dt_ms)
+
+        # Update inhibitory networks
+        self.l23_inhibitory.update_temporal_parameters(dt_ms)
+        self.l4_inhibitory.update_temporal_parameters(dt_ms)
+        self.l5_inhibitory.update_temporal_parameters(dt_ms)
+        self.l6a_inhibitory.update_temporal_parameters(dt_ms)
+        self.l6b_inhibitory.update_temporal_parameters(dt_ms)
+
+        # Update STP components
+        CompositeStrategy.update_temporal_parameters(self.strategies_l23, dt_ms)
+        CompositeStrategy.update_temporal_parameters(self.strategies_l4, dt_ms)
+        CompositeStrategy.update_temporal_parameters(self.strategies_l5, dt_ms)
+        CompositeStrategy.update_temporal_parameters(self.strategies_l6a, dt_ms)
+        CompositeStrategy.update_temporal_parameters(self.strategies_l6b, dt_ms)

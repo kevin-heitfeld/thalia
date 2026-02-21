@@ -81,18 +81,26 @@ References:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import torch
 
 from thalia.brain.configs import NBConfig
+from thalia.brain.regions.population_names import NucleusBasalisPopulation
 from thalia.components.neurons.acetylcholine_neuron import (
     AcetylcholineNeuron,
     AcetylcholineNeuronConfig,
 )
 from thalia.components.neurons.neuron_factory import NeuronFactory, NeuronType
-from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
+from thalia.typing import (
+    NeuromodulatorInput,
+    PopulationSizes,
+    RegionName,
+    RegionOutput,
+    SynapticInput,
+)
 from thalia.units import ConductanceTensor
+from thalia.utils import CircularDelayBuffer
 
 from ..neural_region import NeuralRegion
 from ..region_registry import register_region
@@ -120,7 +128,7 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
 
     Output Populations:
     -------------------
-    - "ach_output": Acetylcholine neuron spikes (to cortex/hippocampus)
+    - "ach_neurons": Acetylcholine neuron spikes (to cortex/hippocampus)
 
     Computational Function:
     -----------------------
@@ -130,70 +138,71 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
     4. Broadcast ACh spikes to cortex and hippocampus
     """
 
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "ach_output": "n_ach_neurons",
-    }
+    def __init__(self, config: NBConfig, population_sizes: PopulationSizes, region_name: RegionName):
+        super().__init__(config, population_sizes, region_name)
 
-    def __init__(self, config: NBConfig, population_sizes: PopulationSizes):
-        super().__init__(config, population_sizes)
-
-        # Store sizes for test compatibility
-        self.n_ach_neurons = config.n_ach_neurons
-        self.n_gaba_neurons = config.n_gaba_neurons
-
-        # Store input layer sizes
-        self.pfc_input_size = population_sizes.get("pfc_input", 0)
-        self.amygdala_input_size = population_sizes.get("amygdala_input", 0)
+        # Store sizes
+        self.ach_neurons_size = population_sizes[NucleusBasalisPopulation.ACH.value]
+        self.gaba_neurons_size = population_sizes[NucleusBasalisPopulation.GABA.value]
 
         # Acetylcholine neurons (fast bursts, brief duration)
-        self.ach_neurons = self._create_ach_neurons()
+        ach_config = AcetylcholineNeuronConfig(
+            region_name=self.region_name,
+            population_name=NucleusBasalisPopulation.ACH.value,
+            device=self.device,
+            prediction_error_to_current_gain=self.config.pe_gain,
+        )
+        self.ach_neurons = AcetylcholineNeuron(
+            n_neurons=self.ach_neurons_size,
+            config=ach_config,
+        )
 
         # GABAergic interneurons (local inhibition, homeostasis)
         self.gaba_neurons = NeuronFactory.create(
-            NeuronType.FAST_SPIKING,
-            n_neurons=config.n_gaba_neurons,
+            region_name=self.region_name,
+            population_name=NucleusBasalisPopulation.GABA.value,
+            neuron_type=NeuronType.FAST_SPIKING,
+            n_neurons=self.gaba_neurons_size,
             device=self.device,
         )
 
-        # Prediction error computation state
-        self._pfc_activity_history: list[float] = []
-        self._prediction_error_history: list[float] = []
+        # Prediction error computation state - use CircularDelayBuffer for history
+        self._pfc_activity_buffer = CircularDelayBuffer(
+            max_delay=10,  # Track last 10 timesteps for variance computation
+            size=1,  # Single scalar value per timestep
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self._prediction_error_buffer = CircularDelayBuffer(
+            max_delay=1000,  # Track last 1000 timesteps for analysis
+            size=1,  # Single scalar value per timestep
+            dtype=torch.float32,
+            device=self.device,
+        )
 
         # Adaptive normalization
         if config.pe_normalization:
             self._avg_pe = 0.5
             self._pe_count = 0
 
+        # =====================================================================
+        # REGISTER NEURON POPULATIONS
+        # =====================================================================
+        self._register_neuron_population(NucleusBasalisPopulation.ACH.value, self.ach_neurons)
+        self._register_neuron_population(NucleusBasalisPopulation.GABA.value, self.gaba_neurons)
+
         self.__post_init__()
 
-    def _create_ach_neurons(self) -> AcetylcholineNeuron:
-        """Create acetylcholine neuron population with fast burst dynamics."""
-        if self.config.ach_neuron_config is not None:
-            ach_config = self.config.ach_neuron_config
-        else:
-            # Use default configuration
-            ach_config = AcetylcholineNeuronConfig(
-                device=self.config.device,
-                prediction_error_to_current_gain=self.config.pe_gain,
-            )
-
-        return AcetylcholineNeuron(
-            n_neurons=self.config.n_ach_neurons, config=ach_config, device=self.device
-        )
-
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute prediction error and drive acetylcholine neurons to burst.
 
-        Args:
-            region_inputs: Dictionary of input spike tensors:
-                - "pfc_input": PFC activity (prediction errors) [n_pfc_neurons]
-                - "amygdala_input": Amygdala activity (salience) [n_amygdala_neurons]
+        Note: neuromodulator_inputs is not used - NB is a neuromodulator source region.
         """
-        self._pre_forward(region_inputs)
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
-        # Get inputs (via connections from BrainBuilder)
-        pfc_spikes = region_inputs.get("pfc_input")
-        amygdala_spikes = region_inputs.get("amygdala_input")
+        # Get inputs using routing keys (target_pop:source_region:source_pop)
+        pfc_spikes = synaptic_inputs.get("ach_neurons:pfc:executive")
+        amygdala_spikes = synaptic_inputs.get("ach_neurons:amygdala:...")  # Not connected yet
 
         # Compute prediction error signal from inputs
         prediction_error = self._compute_prediction_error(pfc_spikes, amygdala_spikes)
@@ -202,28 +211,34 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
         if self.config.pe_normalization:
             prediction_error = self._normalize_pe(prediction_error)
 
-        # Track history for analysis
-        self._prediction_error_history.append(prediction_error)
-        if len(self._prediction_error_history) > 1000:
-            self._prediction_error_history.pop(0)
+        # Track history for analysis using CircularDelayBuffer
+        self._prediction_error_buffer.write(torch.tensor([prediction_error], device=self.device))
 
         # Update ACh neurons with PE drive
         # High |PE| → depolarization → fast burst (10-20 Hz for 50-100ms)
         # ACh responds to magnitude, not sign (|PE|)
         ach_spikes, _ = self.ach_neurons.forward(
-            g_exc_input=ConductanceTensor(torch.zeros(self.config.n_ach_neurons, device=self.device)),
-            g_inh_input=ConductanceTensor(torch.zeros(self.config.n_ach_neurons, device=self.device)),
+            g_ampa_input=None,  # No direct excitatory input; drive is via prediction error modulation
+            g_gaba_a_input=None,  # No direct inhibitory input; homeostasis via interneurons
+            g_nmda_input=None,  # NMDA not used for ACh neurons
             prediction_error_drive=prediction_error,
         )
         self._current_ach_spikes = ach_spikes  # Store for GABA computation
 
         # Update GABA interneurons (homeostatic control)
         gaba_drive = self._compute_gaba_drive()
-        g_gaba_exc = ConductanceTensor(gaba_drive / 10.0)  # Already a tensor
-        self.gaba_neurons.forward(g_gaba_exc, None)
+        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
+        gaba_g_ampa = ConductanceTensor(gaba_drive * 0.7)
+        gaba_g_nmda = ConductanceTensor(gaba_drive * 0.3)
 
-        region_outputs: RegionSpikesDict = {
-            "ach_output": ach_spikes,
+        self.gaba_neurons.forward(
+            g_ampa_input=gaba_g_ampa,
+            g_gaba_a_input=None,
+            g_nmda_input=gaba_g_nmda,
+        )
+
+        region_outputs: RegionOutput = {
+            NucleusBasalisPopulation.ACH.value: ach_spikes,
         }
 
         return self._post_forward(region_outputs)
@@ -252,16 +267,20 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
         # PFC prediction error: sudden activity change
         if pfc_spikes is not None and pfc_spikes.sum() > 0:
             pfc_rate = pfc_spikes.float().mean().item()
-            self._pfc_activity_history.append(pfc_rate)
-            if len(self._pfc_activity_history) > 10:
-                self._pfc_activity_history.pop(0)
+            self._pfc_activity_buffer.write(torch.tensor([pfc_rate], device=self.device))
+
+            # Read history for variance computation (last 10 timesteps)
+            # Note: read returns zeros for uninitialized timesteps
+            history_values = []
+            for i in range(1, 11):  # Read delays 1-10
+                val = self._pfc_activity_buffer.read(delay=i)
+                if val.abs().sum() > 1e-8:  # Only include if buffer has data
+                    history_values.append(val.item())
 
             # Sudden change → high PE
-            if len(self._pfc_activity_history) >= 2:
-                recent = self._pfc_activity_history[-1]
-                previous = sum(self._pfc_activity_history[:-1]) / (
-                    len(self._pfc_activity_history) - 1
-                )
+            if len(history_values) >= 2:
+                recent = history_values[0]  # Most recent (delay=1)
+                previous = sum(history_values[1:]) / len(history_values[1:])  # Average of older values
                 change = abs(recent - previous)
                 pfc_pe = min(1.0, change * 10.0)  # Scale to [0, 1]
                 pe_components.append(pfc_pe)
@@ -314,54 +333,19 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
         runaway ACh bursting through local inhibition.
 
         Returns:
-            Drive current for GABA neurons [n_gaba_neurons]
+            Drive conductance for GABA neurons [gaba_neurons_size]
         """
-        # Tonic baseline drive
-        baseline = 4.0
+        assert self._current_ach_spikes is not None, "ACh spikes must be computed before GABA drive"
+
+        # Tonic baseline conductance
+        baseline = 0.4  # CONDUCTANCE: tonic drive
 
         # Increase during ACh bursts (negative feedback)
-        if hasattr(self, "_current_ach_spikes"):
-            ach_activity = self._current_ach_spikes.float().mean().item()
-        else:
-            ach_activity = 0.03  # Default tonic rate (2-5 Hz)
-        feedback = ach_activity * 12.0  # Strong feedback (fast adaptation)
+        ach_activity = self._current_ach_spikes.float().mean().item()
+        feedback = ach_activity * 1.2  # CONDUCTANCE: strong feedback
 
         total_drive = baseline + feedback
 
         return torch.full(
-            (self.config.n_gaba_neurons,), total_drive, device=self.device
+            (self.gaba_neurons_size,), total_drive, device=self.device
         )
-
-    def get_mean_prediction_error(self, window: int = 100) -> float:
-        """Get mean prediction error over recent history.
-
-        Args:
-            window: Number of timesteps to average over
-
-        Returns:
-            Mean PE, or 0.0 if no history
-        """
-        if not self._prediction_error_history:
-            return 0.0
-        recent = self._prediction_error_history[-window:]
-        return sum(recent) / len(recent)
-
-    def get_ach_firing_rate_hz(self) -> float:
-        """Get current ACh neuron population firing rate in Hz.
-
-        Returns:
-            Firing rate in Hz
-        """
-        return self.ach_neurons.get_firing_rate_hz()
-
-    def is_encoding_mode(self, threshold: float = 0.5) -> bool:
-        """Determine if brain is in encoding mode (high ACh) or retrieval mode (low ACh).
-
-        Args:
-            threshold: ACh threshold for encoding vs retrieval
-
-        Returns:
-            True if encoding mode (ACh > threshold), False if retrieval mode
-        """
-        firing_rate = self.get_ach_firing_rate_hz()
-        return firing_rate > threshold

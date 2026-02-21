@@ -72,17 +72,21 @@ Phase 2 (Future):
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 
 from thalia.brain.configs import VTAConfig
-from thalia.components.neurons.dopamine_neuron import (
-    DopamineNeuron,
-    DopamineNeuronConfig,
+from thalia.brain.regions.population_names import RewardEncoderPopulation, SubstantiaNigraPopulation, VTAPopulation
+from thalia.components.neurons import TonicDopamineNeuron, NeuronFactory, NeuronType
+from thalia.typing import (
+    NeuromodulatorInput,
+    PopulationSizes,
+    RegionName,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
 )
-from thalia.components.neurons.neuron_factory import NeuronFactory, NeuronType
-from thalia.typing import PopulationName, PopulationSizes, RegionSpikesDict
 from thalia.units import ConductanceTensor
 
 from ..neural_region import NeuralRegion
@@ -111,9 +115,9 @@ class VTA(NeuralRegion[VTAConfig]):
 
     Output Populations:
     -------------------
-    - "da_output": Dopamine neuron spikes (broadcast to all targets)
+    - "da_neurons": Dopamine neuron spikes (broadcast to all targets)
 
-    Future (Phase 2):
+    Future:
     - "da_mesocortical": DA → Prefrontal cortex
     - "da_mesolimbic": DA → Striatum, hippocampus, amygdala
     - "da_nigrostriatal": DA → Dorsal striatum
@@ -127,71 +131,65 @@ class VTA(NeuralRegion[VTAConfig]):
     5. Broadcast DA spikes to target regions
     """
 
-    OUTPUT_POPULATIONS: Dict[PopulationName, str] = {
-        "da_output": "n_da_neurons",
-    }
+    def __init__(self, config: VTAConfig, population_sizes: PopulationSizes, region_name: RegionName):
+        super().__init__(config, population_sizes, region_name)
 
-    def __init__(self, config: VTAConfig, population_sizes: PopulationSizes):
-        super().__init__(config, population_sizes)
-
-        # Store sizes for test compatibility
-        self.n_da_neurons = config.n_da_neurons
-        self.n_gaba_neurons = config.n_gaba_neurons
-
-        # Store input layer sizes as attributes for connection routing
-        self.snr_value_size = population_sizes.get("snr_value", 0)
-        self.reward_signal_size = population_sizes.get("reward_signal", 0)
+        self.da_neurons_size = population_sizes[VTAPopulation.DA.value]
+        self.gaba_neurons_size = population_sizes[VTAPopulation.GABA.value]
 
         # Dopamine neurons (pacemakers with burst/pause)
-        self.da_neurons = self._create_da_neurons()
+        self.da_neurons = TonicDopamineNeuron(n_neurons=self.da_neurons_size, device=self.device)
 
         # GABAergic interneurons (local inhibition, homeostasis)
         self.gaba_neurons = NeuronFactory.create(
-            NeuronType.FAST_SPIKING,
-            n_neurons=config.n_gaba_neurons,
+            region_name=self.region_name,
+            population_name=VTAPopulation.GABA.value,
+            neuron_type=NeuronType.FAST_SPIKING,
+            n_neurons=self.gaba_neurons_size,
             device=self.device,
         )
-
-        # RPE computation state
-        self._reward_history: list[float] = []
-        self._value_history: list[float] = []
-        self._rpe_history: list[float] = []
 
         # Adaptive normalization state
         if config.rpe_normalization:
             self._avg_abs_rpe = 0.5  # Running average of |RPE|
             self._rpe_count = 0
 
+        # GABA → DA inhibition state (delayed by 1 timestep for causality)
+        self._gaba_to_da_inhibition = 0.0
+
+        # =====================================================================
+        # REGISTER NEURON POPULATIONS
+        # =====================================================================
+        self._register_neuron_population(VTAPopulation.DA.value, self.da_neurons)
+        self._register_neuron_population(VTAPopulation.GABA.value, self.gaba_neurons)
+
         self.__post_init__()
 
-    def _create_da_neurons(self) -> DopamineNeuron:
-        """Create dopamine neuron population with burst/pause dynamics."""
-        if self.config.da_neuron_config is not None:
-            da_config = self.config.da_neuron_config
-        else:
-            # Use default configuration
-            da_config = DopamineNeuronConfig(
-                device=self.config.device,
-                rpe_to_current_gain=self.config.rpe_gain,
-            )
-
-        return DopamineNeuron(
-            n_neurons=self.config.n_da_neurons, config=da_config, device=self.device
-        )
-
-    def forward(self, region_inputs: RegionSpikesDict) -> RegionSpikesDict:
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute RPE and drive dopamine neurons to burst/pause.
 
         Args:
-            region_inputs: Dictionary of input spike tensors:
-                - "reward_signal": Reward encoding from RewardEncoder [n_reward_neurons]
-                - "snr_value": Value estimate from SNr [n_snr_neurons]
+            synaptic_inputs: Reward signal from RewardEncoder, value from SNr
+            neuromodulator_inputs: Not used (source region, doesn't consume neuromodulators)
         """
-        self._pre_forward(region_inputs)
+        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
-        # Get inputs (via connections from BrainBuilder)
-        reward_spikes = region_inputs.get("reward_signal")
-        snr_spikes = region_inputs.get("snr_value")
+        reward_synapse = SynapseId(
+            source_region="reward_encoder",
+            source_population=RewardEncoderPopulation.REWARD_SIGNAL.value,
+            target_region=self.region_name,
+            target_population=VTAPopulation.DA.value,
+        )
+
+        snr_synapse = SynapseId(
+            source_region="substantia_nigra",
+            source_population=SubstantiaNigraPopulation.VTA_FEEDBACK.value,
+            target_region=self.region_name,
+            target_population=VTAPopulation.DA.value,
+        )
+
+        reward_spikes = synaptic_inputs.get(reward_synapse, None)
+        snr_spikes = synaptic_inputs.get(snr_synapse, None)
 
         # Decode reward from spike pattern
         reward = self._decode_reward(reward_spikes)
@@ -206,36 +204,106 @@ class VTA(NeuralRegion[VTAConfig]):
 
         # Normalize RPE to prevent saturation
         if self.config.rpe_normalization:
-            rpe = self._normalize_rpe(rpe)
+            # Update running average of |RPE|
+            self._rpe_count += 1
+            alpha = 1.0 / min(self._rpe_count, 100)  # Converge over 100 samples
+            self._avg_abs_rpe = (1 - alpha) * self._avg_abs_rpe + alpha * abs(rpe)
 
-        # Track history for analysis
-        self._reward_history.append(reward)
-        self._value_history.append(value)
-        self._rpe_history.append(rpe)
-        if len(self._rpe_history) > 1000:
-            self._reward_history.pop(0)
-            self._value_history.pop(0)
-            self._rpe_history.pop(0)
+            # Normalize by average magnitude
+            epsilon = 1e-6  # Prevent division by zero
+            normalized_rpe = rpe / (self._avg_abs_rpe + epsilon)
 
-        # Update DA neurons with RPE drive
-        # Positive RPE → depolarization → burst
-        # Negative RPE → hyperpolarization → pause
-        da_spikes, _ = self.da_neurons.forward(
-            g_exc_input=ConductanceTensor(torch.zeros(self.n_da_neurons, device=self.device)),
-            g_inh_input=ConductanceTensor(torch.zeros(self.n_da_neurons, device=self.device)),
-            rpe_drive=rpe,
+            rpe = normalized_rpe
+
+        # Moderate excitatory noise for stochastic pacemaker firing
+        # This noise just adds variability, not the main drive.
+        noise_conductance = torch.randn(self.da_neurons_size, device=self.device) * 0.0025
+        noise_conductance = torch.clamp(noise_conductance, min=0.0)
+
+        # Tonic inhibition from SNr (can now use it with voltage-dependent HCN!)
+        # With voltage-dependent HCN channels, tonic inhibition is SAFE.
+        # When inhibition hyperpolarizes DA neurons → HCN activates MORE → compensates!
+        # This creates natural negative feedback for homeostasis.
+        #
+        # SNr encodes action suppression via tonic firing:
+        # - Low SNr activity → low inhibition → DA bursts easily
+        # - High SNr activity → moderate inhibition → DA stabilizes
+        #
+        # Biology: SNr → VTA GABAergic projection provides tonic inhibition
+        # that's modulated by striatal activity (direct/indirect pathways)
+
+        snr_firing_rate = 0.0
+        if snr_spikes is not None and snr_spikes.sum() > 0:
+            snr_firing_rate = snr_spikes.float().mean().item()
+
+        # Map SNr rate (0-1) to light tonic inhibition
+        inhibition_strength = snr_firing_rate * 0.15
+        inhibition_strength = min(inhibition_strength, 0.02)  # Cap max inhibition to prevent complete silencing
+
+        baseline_inhibition = torch.full(
+            (self.da_neurons_size,),
+            inhibition_strength + self._gaba_to_da_inhibition,  # Add GABA inhibition from previous timestep
+            device=self.device
         )
-        self._current_da_spikes = da_spikes  # Store for GABA computation
+
+        # Add small heterogeneity to prevent synchronization
+        inhibition_jitter = 1.0 + torch.randn(self.da_neurons_size, device=self.device) * 0.2
+        inhibition_jitter = torch.clamp(inhibition_jitter, min=0.8, max=1.2)
+        baseline_inhibition = baseline_inhibition * inhibition_jitter
+
+        # Moderate RPE jitter per-neuron (±20% heterogeneity)
+        # Clip RPE to prevent complete silencing during negative RPE
+        # Biology: DA neurons maintain 4-5 Hz tonic baseline even with mild negative RPE
+        rpe_clipped = max(-1.0, min(1.0, rpe))  # Prevent mild negative RPE from silencing
+
+        if rpe_clipped != 0:
+            rpe_jitter = 1.0 + torch.randn(self.da_neurons_size, device=self.device) * 0.2
+            rpe_jitter = torch.clamp(rpe_jitter, min=0.5, max=1.5)
+            # Convert scalar RPE to per-neuron tensor with jitter
+            rpe_per_neuron = torch.full((self.da_neurons_size,), rpe_clipped, device=self.device) * rpe_jitter
+        else:
+            rpe_per_neuron = torch.zeros(self.da_neurons_size, device=self.device)
+
+        # Update DA neurons with balanced E/I
+        # Positive RPE → reduces inhibition → pacemaker increases → burst
+        # Negative RPE → increases inhibition → pacemaker decreases → pause
+        da_spikes, _ = self.da_neurons.forward(
+            g_exc_input=ConductanceTensor(noise_conductance),  # Weak noise for variability
+            g_inh_input=ConductanceTensor(baseline_inhibition),  # Tonic inhibition
+            rpe_drive=rpe_per_neuron,  # Per-neuron jittered RPE modulation
+        )
 
         # Update GABA interneurons (homeostatic control)
         # Provide tonic inhibition to prevent runaway bursting
-        gaba_drive = self._compute_gaba_drive()
-        # Convert drive to excitatory conductance (scale down from current-like values)
-        g_gaba_exc = ConductanceTensor(gaba_drive / 10.0)  # Already a tensor from _compute_gaba_drive
-        self.gaba_neurons.forward(g_gaba_exc, None)
+        baseline_gaba_drive = 0.5  # Tonic baseline conductance
+        # Increase during DA bursts (negative feedback)
+        da_activity = da_spikes.float().mean().item()
+        gaba_drive = torch.full((self.gaba_neurons_size,), baseline_gaba_drive + da_activity, device=self.device)
 
-        region_outputs: RegionSpikesDict = {
-            "da_output": da_spikes,
+        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
+        gaba_g_ampa = ConductanceTensor(gaba_drive * 0.7)
+        gaba_g_nmda = ConductanceTensor(gaba_drive * 0.3)
+
+        gaba_spikes, _gaba_membrane = self.gaba_neurons.forward(
+            g_ampa_input=gaba_g_ampa,
+            g_gaba_a_input=None,
+            g_nmda_input=gaba_g_nmda,
+        )
+
+        # GABA → DA inhibition (tonic control)
+        # VTA GABA interneurons provide tonic inhibition to DA neurons
+        # Prevents runaway bursting and maintains homeostasis
+        if gaba_spikes.any():
+            # GABA spikes → inhibitory conductance for DA neurons
+            gaba_to_da_strength = 0.0015
+            gaba_inh_contrib = gaba_spikes.float().sum() * gaba_to_da_strength / self.da_neurons_size
+            # Store for next timestep (causal: t GABA activity → t+1 DA suppression)
+            self._gaba_to_da_inhibition = float(gaba_inh_contrib)
+        else:
+            self._gaba_to_da_inhibition = 0.0
+
+        region_outputs: RegionOutput = {
+            VTAPopulation.DA.value: da_spikes,
         }
 
         return self._post_forward(region_outputs)
@@ -287,10 +355,7 @@ class VTA(NeuralRegion[VTAConfig]):
             State value estimate in range [0, 1]
         """
         if snr_spikes is None:
-            # No value estimate → use reward history as proxy
-            if len(self._reward_history) > 0:
-                return max(0.0, sum(self._reward_history[-10:]) / 10.0)
-            return 0.5  # Neutral default
+            return 0.0  # Neutral default
 
         # Convert spikes to firing rate
         snr_spike_rate = snr_spikes.float().mean().item()
@@ -305,77 +370,3 @@ class VTA(NeuralRegion[VTAConfig]):
         value = max(0.0, min(1.0, value))
 
         return value
-
-    def _normalize_rpe(self, rpe: float) -> float:
-        """Adaptive RPE normalization to prevent saturation.
-
-        Tracks running average of |RPE| and normalizes current RPE
-        to maintain stable learning dynamics.
-
-        Args:
-            rpe: Raw RPE value
-
-        Returns:
-            Normalized RPE in approximate range [-2, +2]
-        """
-        # Update running average of |RPE|
-        abs_rpe = abs(rpe)
-        self._rpe_count += 1
-        alpha = 1.0 / min(self._rpe_count, 100)  # Converge over 100 samples
-        self._avg_abs_rpe = (1 - alpha) * self._avg_abs_rpe + alpha * abs_rpe
-
-        # Normalize by average magnitude
-        epsilon = 0.1  # Prevent division by zero
-        normalized_rpe = rpe / (self._avg_abs_rpe + epsilon)
-
-        # Clip to reasonable range
-        normalized_rpe = max(-2.0, min(2.0, normalized_rpe))
-
-        return normalized_rpe
-
-    def _compute_gaba_drive(self) -> torch.Tensor:
-        """Compute drive for GABAergic interneurons.
-
-        GABA interneurons provide homeostatic control, preventing
-        runaway DA bursting through local inhibition.
-
-        Returns:
-            Drive current for GABA neurons [n_gaba_neurons]
-        """
-        # Tonic baseline drive
-        baseline = 5.0
-
-        # Increase during DA bursts (negative feedback)
-        if hasattr(self, '_current_da_spikes'):
-            da_activity = self._current_da_spikes.float().mean().item()
-        else:
-            da_activity = 0.05  # Default tonic rate
-        feedback = da_activity * 10.0  # Proportional to DA activity
-
-        total_drive = baseline + feedback
-
-        return torch.full(
-            (self.config.n_gaba_neurons,), total_drive, device=self.device
-        )
-
-    def get_mean_rpe(self, window: int = 100) -> float:
-        """Get mean RPE over recent history.
-
-        Args:
-            window: Number of timesteps to average over
-
-        Returns:
-            Mean RPE, or 0.0 if no history
-        """
-        if not self._rpe_history:
-            return 0.0
-        recent = self._rpe_history[-window:]
-        return sum(recent) / len(recent)
-
-    def get_da_firing_rate_hz(self) -> float:
-        """Get current DA neuron population firing rate in Hz.
-
-        Returns:
-            Firing rate in Hz
-        """
-        return self.da_neurons.get_firing_rate_hz()

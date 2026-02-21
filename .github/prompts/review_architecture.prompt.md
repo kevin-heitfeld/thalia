@@ -5,13 +5,13 @@ You are an expert software architect specializing in neuroscience-inspired AI sy
 
 **Scope:**
 - Focus on `src/thalia/` directory (core, regions, learning, integration, sensory)
-- Analyze module organization, learning rules, neuron models, and axonal projection implementations
+- Analyze module organization, learning rules, neuron models, and axonal tract implementations
 - Review adherence to biological plausibility constraints (local learning, spike-based processing)
 
 **Analysis Criteria:**
 1. **File/Module Organization**: Are files logically grouped? Do directory names reflect their contents?
 2. **Naming Consistency**: Do file names, class names, and region names accurately describe their purpose?
-3. **Separation of Concerns**: Is learning logic properly separated from neuron dynamics, state management, and axonal projection routing?
+3. **Separation of Concerns**: Is learning logic properly separated from neuron dynamics, state management, and axonal tract routing?
 4. **Pattern Adherence**: Does the code follow documented patterns (e.g., use of WeightInitializer, learning strategy patterns)?
 5. **Discoverability**: Can developers easily locate functionality based on naming and structure?
 6. **Code Duplication**: Are there repeated code blocks, similar functions, or duplicated logic that should be consolidated into shared utilities or base classes?

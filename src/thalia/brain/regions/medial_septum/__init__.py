@@ -2,6 +2,4 @@
 
 from .medial_septum import MedialSeptum
 
-__all__ = [
-    "MedialSeptum",
-]
+__all__ = ["MedialSeptum"]

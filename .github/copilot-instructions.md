@@ -39,9 +39,9 @@ This ensures the correct environment is activated with all dependencies (pytest,
 
 **Key Components**:
 - **NeuralRegion**: Base class (nn.Module + mixins) for brain regions
-- **Learning Strategies**: Pluggable learning rules (STDP, BCM, Hebbian, Three-factor, etc.)
-- **AxonalProjection**: Pure spike routing with delays (NO weights)
-- **Synaptic Weights**: Stored at target dendrites in `region.synaptic_weights` dict
+    - **Learning Strategies**: Pluggable learning rules (STDP, BCM, Hebbian, Three-factor, etc.)
+    - **Synaptic Weights**: Stored at target dendrites in `region._synaptic_weights` dict
+- **AxonalTract**: Pure spike routing with delays (NO weights)
 
 ## Biological Accuracy Constraints
 
@@ -82,13 +82,3 @@ neurons.forward(g_exc, None)
 ```
 
 See [docs/type_safe_units_guide.md](../docs/type_safe_units_guide.md) for full details.
-
-When writing neuron forward methods:
-```python
-def forward(
-    self,
-    g_exc_input: ConductanceTensor,  # Explicit: expects conductance
-    g_inh_input: Optional[ConductanceTensor] = None,
-) -> tuple[torch.Tensor, VoltageTensor]:
-    ...
-```

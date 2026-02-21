@@ -1,23 +1,4 @@
-"""
-Dynamic Brain - Component Graph Executor
-
-This module implements a flexible brain architecture where the brain is
-treated as a directed graph of neural components (regions and axons).
-
-DynamicBrain supports:
-- Arbitrary number of regions and axons
-- Flexible topologies (not limited to fixed connectivity)
-- User-defined custom regions via NeuralRegionRegistry
-- Dynamic region addition/removal
-- Plugin architecture for external regions
-- Clock-driven execution with axonal delays
-
-Architecture:
-    DynamicBrain = Graph of components
-    - nodes: regions (NeuralRegion)
-    - edges: axons (AxonalProjection)
-    - execution: clock-driven sequential
-"""
+"""DynamicBrain: Flexible, graph-based brain architecture with modular regions."""
 
 from __future__ import annotations
 
@@ -27,18 +8,19 @@ import torch
 import torch.nn as nn
 
 from thalia.typing import (
-    BrainSpikesDict,
-    RegionSpikesDict,
+    BrainInput,
+    BrainOutput,
+    NeuromodulatorInput,
+    PopulationName,
     RegionName,
-    SpikesSourceKey,
-    compound_key,
-    parse_compound_key,
+    RegionOutput,
+    SynapseId,
+    SynapticInput,
 )
-from thalia.utils import compute_firing_rate, validate_spike_tensors
+from thalia.utils import compute_firing_rate, validate_spike_tensor
 
-from .axonal_projection import AxonalProjection
+from .axonal_tract import AxonalTract
 from .configs import BrainConfig, NeuralRegionConfig
-from .oscillator import OscillatorManager
 from .regions import (
     NeuralRegion,
     Cortex,
@@ -52,14 +34,7 @@ RegionT = TypeVar('RegionT', bound=NeuralRegion[NeuralRegionConfig])
 
 
 class DynamicBrain(nn.Module):
-    """Dynamic brain constructed from graph.
-
-    DynamicBrain builds arbitrary topologies from registered regions:
-    - Flexible graph vs. hardcoded regions
-    - User-extensible via NeuralRegionRegistry
-    - Arbitrary connectivity patterns
-    - Plugin support for external regions
-    """
+    """Dynamic brain constructed from graph."""
 
     # =========================================================================
     # PROPERTIES
@@ -102,18 +77,18 @@ class DynamicBrain(nn.Module):
         self,
         config: BrainConfig,
         regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]],
-        connections: Dict[Tuple[RegionName, SpikesSourceKey], AxonalProjection],
+        axonal_tracts: Dict[Tuple[RegionName, PopulationName], AxonalTract],
     ):
         """Initialize DynamicBrain from graph.
 
         Args:
-            config: Brain configuration (device, dt_ms, oscillators, etc.)
+            config: Brain configuration (device, dt_ms, etc.)
             regions: Dict mapping region names to instances
-            connections: Dict mapping (source, target) tuples to pathways
+            axonal_tracts: Dict mapping (target_region, target_population) to AxonalTract instances
         """
-        super().__init__()
-
+        # =================================================================
         # DISABLE GRADIENTS
+        # =================================================================
         # Thalia uses local learning rules (STDP, BCM, Hebbian, three-factor)
         # that do NOT require backpropagation. Disabling gradients provides:
         # - Performance boost (no autograd overhead)
@@ -122,42 +97,23 @@ class DynamicBrain(nn.Module):
         torch.set_grad_enabled(False)
 
         # =================================================================
-        # BRAIN CONFIG & COMPONENTS
+        # INITIALIZE BRAIN STATE
         # =================================================================
+        super().__init__()
+
         self.config = config
 
         # Store regions as nn.ModuleDict for proper parameter tracking
         self.regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]] = nn.ModuleDict(regions)
 
-        # Store connections with tuple keys for easy lookup
-        # Also register in ModuleDict for parameter tracking
-        self.connections: Dict[Tuple[RegionName, SpikesSourceKey], AxonalProjection] = connections
-        self._connection_modules = nn.ModuleDict(
-            {f"{src}_to_{tgt}": pathway for (src, tgt), pathway in connections.items()}
-        )
+        # Store axonal tracts in a dict keyed by (target_region, target_population) for routing
+        self.axonal_tracts: Dict[Tuple[RegionName, PopulationName], AxonalTract] = axonal_tracts
 
         # Current simulation time
         self._current_time: float = 0.0
 
-        # =================================================================
-        # OSCILLATOR MANAGER
-        # =================================================================
-        self.oscillators = OscillatorManager(
-            dt_ms=self.dt_ms,
-            device=self.device,
-            delta_freq=self.config.delta_frequency_hz,
-            theta_freq=self.config.theta_frequency_hz,
-            alpha_freq=self.config.alpha_frequency_hz,
-            beta_freq=self.config.beta_frequency_hz,
-            gamma_freq=self.config.gamma_frequency_hz,
-            ripple_freq=self.config.ripple_frequency_hz,
-            couplings=None,  # Use default couplings (theta-gamma, etc.)
-        )
-
-        # =================================================================
-        # REINFORCEMENT LEARNING STATE
-        # =================================================================
-        self._last_action: Optional[int] = None
+        # Last timestep's output for neuromodulator broadcast (initialized to None)
+        self._last_brain_output: Optional[BrainOutput] = None
 
         # =================================================================
         # INITIALIZE TEMPORAL PARAMETERS
@@ -170,26 +126,24 @@ class DynamicBrain(nn.Module):
     # FORWARD PASS
     # =========================================================================
 
-    def forward(self, input_spikes: Optional[BrainSpikesDict] = None) -> BrainSpikesDict:
-        """Run one timestep of the brain."""
-        if input_spikes is None:
-            input_spikes = {}
-        else:
-            for region_name, spikes in input_spikes.items():
-                validate_spike_tensors(spikes, context=f"{self.__class__.__name__}.forward")
+    def __call__(self, *args, **kwds):
+        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
+        return super().__call__(*args, **kwds)
 
+    def forward(self, input_spikes: Optional[BrainInput] = None) -> BrainOutput:
+        """Run one timestep of the brain."""
         # === CLOCK-DRIVEN EXECUTION (ADR-003) ===
         # All regions execute every timestep.
-        # Axonal delays are handled by pathway CircularDelayBuffers.
+        # Axonal delays are handled by axonal tract CircularDelayBuffers.
         # This ensures continuous dynamics: membrane decay, recurrent connections,
-        # oscillators, and short-term plasticity all evolve every timestep.
+        # and short-term plasticity all evolve every timestep.
 
         # =====================================================================
         # SPIKE PROPAGATION
         # =====================================================================
         # At timestep T:
         # 1. Read delayed outputs from buffers (spikes sent at T-delay)
-        # 2. Combine with external input_spikes
+        # 2. Inject external input spikes (e.g., sensory)
         # 3. Execute regions → produce outputs at T
         # 4. Write outputs to buffers → will be read at T+delay
         #
@@ -197,71 +151,103 @@ class DynamicBrain(nn.Module):
         # At T>=delay: buffers have data, delayed_outputs have actual spikes
         # =====================================================================
 
-        # STEP 1: Read delayed outputs from all pathways (spikes from T-delay)
-        region_inputs: BrainSpikesDict = {name: {} for name in self.regions.keys()}
+        # STEP 1: Read delayed outputs from all axonal tracts (spikes from T-delay)
+        region_inputs: BrainInput = {name: {} for name in self.regions.keys()}
 
-        for (_src, _tgt), pathway in self.connections.items():
+        for (target_region, target_population), axonal_tract in self.axonal_tracts.items():
             # Read delayed outputs WITHOUT writing or advancing
-            delayed_outputs: BrainSpikesDict = pathway.read_delayed_outputs()
+            delayed_outputs: BrainOutput = axonal_tract.read_delayed_outputs()
 
-            # Parse target region from compound key "target:population" (connection tuple)
-            target_region, _target_population = parse_compound_key(_tgt)
-
-            # Route inputs by SOURCE name (biological: synapses ARE the routing)
             for source_region, population_dict in delayed_outputs.items():
                 if target_region not in region_inputs:
                     region_inputs[target_region] = {}
 
-                for source_population, delayed_tensor in population_dict.items():
-                    # Construct source_name key matching synaptic_weights keys
-                    # e.g., "thalamus:relay", "hippocampus:ca1"
-                    source_name = compound_key(source_region, source_population)
+                for source_population, delayed_source_spikes in population_dict.items():
+                    synapse_id = SynapseId(
+                        source_region=source_region,
+                        source_population=source_population,
+                        target_region=target_region,
+                        target_population=target_population,
+                        is_inhibitory=False,  # TODO: Support inhibitory tracts in the future by adding is_inhibitory to AxonalTract and SynapseId
+                    )
 
-                    # Combine if source already has input from another pathway (logical OR)
-                    if source_name in region_inputs[target_region]:
-                        region_inputs[target_region][source_name] = (
-                            region_inputs[target_region][source_name] | delayed_tensor
+                    if synapse_id in region_inputs[target_region]:
+                        raise ValueError(
+                            f"Routing collision: '{synapse_id}' already exists in region '{target_region}'. "
+                            f"This indicates duplicate axonal tract connections with different delays. "
+                            f"Each (target_population, source_region, source_population) tuple should map to "
+                            f"exactly one axonal tract. Check brain architecture configuration."
+                        )
+
+                    region_inputs[target_region][synapse_id] = delayed_source_spikes
+
+        # STEP 2: Inject external input spikes (e.g., sensory) - these have FULL routing keys already
+        # External inputs are added on top of delayed spikes (logical OR) since both contribute to activation
+        if input_spikes is not None:
+            for target_region, external_region_input in input_spikes.items():
+                if target_region not in region_inputs:
+                    region_inputs[target_region] = {}
+
+                for synapse_id, synapse_input in external_region_input.items():
+                    validate_spike_tensor(synapse_input, tensor_name=str(synapse_id))
+
+                    # Logical OR if key already exists
+                    # (e.g., external sensory input + delayed thalamic input to same target)
+                    if synapse_id in region_inputs[target_region]:
+                        region_inputs[target_region][synapse_id] = (
+                            region_inputs[target_region][synapse_id] | synapse_input
                         )
                     else:
-                        region_inputs[target_region][source_name] = delayed_tensor
+                        region_inputs[target_region][synapse_id] = synapse_input
 
-        # STEP 2: Combine with external sensory input_spikes
-        for region_name, population_inputs in input_spikes.items():
-            if region_name not in region_inputs:
-                region_inputs[region_name] = {}
+        # STEP 3: Collect neuromodulator signals for broadcast
+        # Neuromodulators use volume transmission - broadcast to ALL regions
+        neuromodulator_signals: NeuromodulatorInput = {}
 
-            for population_name, population_input in population_inputs.items():
-                # Combine sensory with pathway inputs (logical OR)
-                if population_name in region_inputs[region_name]:
-                    region_inputs[region_name][population_name] = (
-                        region_inputs[region_name][population_name] | population_input
-                    )
-                else:
-                    region_inputs[region_name][population_name] = population_input
+        # Collect from last timestep's outputs (neuromodulators have slow dynamics)
+        if self._last_brain_output is not None:
+            # Dopamine from VTA
+            if 'vta' in self._last_brain_output and 'da' in self._last_brain_output['vta']:
+                neuromodulator_signals['da'] = self._last_brain_output['vta']['da']
+            else:
+                neuromodulator_signals['da'] = None
 
-        # STEP 3: Execute all regions with combined inputs → produce outputs at T
-        outputs: BrainSpikesDict = {}
+            # Norepinephrine from Locus Coeruleus
+            if 'locus_coeruleus' in self._last_brain_output and 'ne' in self._last_brain_output['locus_coeruleus']:
+                neuromodulator_signals['ne'] = self._last_brain_output['locus_coeruleus']['ne']
+            else:
+                neuromodulator_signals['ne'] = None
+
+            # Acetylcholine from Nucleus Basalis
+            if 'nucleus_basalis' in self._last_brain_output and 'ach' in self._last_brain_output['nucleus_basalis']:
+                neuromodulator_signals['ach'] = self._last_brain_output['nucleus_basalis']['ach']
+            else:
+                neuromodulator_signals['ach'] = None
+        else:
+            # First timestep - no neuromodulator signals yet
+            neuromodulator_signals = {'da': None, 'ne': None, 'ach': None}
+
+        # STEP 4: Execute all regions with synaptic inputs AND neuromodulator broadcast → produce outputs at T
+        brain_output: BrainOutput = {}
         for region_name, region in self.regions.items():
-            # Get accumulated inputs for this region (empty dict if no inputs)
-            region_input: RegionSpikesDict = region_inputs.get(region_name, {})
+            synaptic_inputs: SynapticInput = region_inputs.get(region_name, {})
+            region_output: RegionOutput = region.forward(synaptic_inputs, neuromodulator_signals)
+            brain_output[region_name] = region_output
 
-            # Execute region (empty dict is valid for recurrent/spontaneous activity)
-            region_output: RegionSpikesDict = region.forward(region_input)
+        # Store for next timestep's neuromodulator broadcast
+        self._last_brain_output = brain_output
 
-            # Store output
-            outputs[region_name] = region_output
-
-        # STEP 4: Write current outputs to pathways and advance buffers
-        for (src, _tgt), pathway in self.connections.items():
-            # Write source region's current output to buffer (for T+delay reads)
-            if src in outputs:
-                source_output: BrainSpikesDict = {src: outputs[src]}
-                pathway.write_and_advance(source_output)
+        # STEP 5: Write current outputs to axonal tracts and advance buffers
+        # CRITICAL: Each axonal tract may have MULTIPLE sources, so we iterate over axonal_tract.source_specs
+        for _, axonal_tract in self.axonal_tracts.items():
+            # Write ALL source regions' current outputs to buffer (for T+delay reads)
+            # This handles multiple sources per tract correctly, as each source's spikes are extracted from brain_output
+            axonal_tract.write_and_advance(brain_output)
 
         # Advance simulation time
         self._current_time += self.dt_ms
 
-        return outputs
+        return brain_output
 
     def consolidate(self, duration_ms: float) -> Dict[str, Any]:
         """Trigger memory consolidation via spontaneous replay.
@@ -322,51 +308,6 @@ class DynamicBrain(nn.Module):
             "ripple_rate_hz": ripple_rate_hz,
         }
 
-    def select_action(self, explore: bool = True) -> tuple[int, float]:
-        """Select action based on current striatum state.
-
-        Uses striatum to select actions based on accumulated evidence.
-
-        Args:
-            explore: Whether to allow exploration (epsilon-greedy)
-
-        Returns:
-            (action, confidence): Selected action index and confidence [0, 1]
-
-        Raises:
-            ValueError: If striatum not found in brain
-        """
-        striatum = self.get_first_region_of_type(Striatum)
-        if striatum is None:
-            raise ValueError(
-                "Striatum not found. Cannot select action. "
-                "Brain must include 'striatum' region for RL tasks."
-            )
-
-        # Striatum has finalize_action method for action selection
-        result = striatum.finalize_action(explore=explore)
-
-        # Extract action from result dict
-        action = result["selected_action"]
-
-        # Compute confidence from probabilities or net votes
-        probs = result.get("probs")
-        if probs is not None:
-            # Softmax case: use max probability as confidence
-            confidence = float(probs.max().item())
-        else:
-            # Argmax case: use normalized net votes as confidence
-            net_votes = result["net_votes"]
-            if net_votes.sum() > 0:
-                confidence = float(net_votes[action].item() / net_votes.sum().item())
-            else:
-                confidence = 1.0 / len(net_votes)  # Uniform if no votes
-
-        # Store for deliver_reward
-        self._last_action = action
-
-        return action, confidence
-
     def deliver_reward(self, external_reward: Optional[float] = None) -> None:
         """Deliver reward signal via RewardEncoder region for VTA processing.
 
@@ -409,7 +350,6 @@ class DynamicBrain(nn.Module):
             total_reward = intrinsic_reward
         else:
             total_reward = external_reward + intrinsic_reward
-            total_reward = max(-2.0, min(2.0, total_reward))
 
         # Deliver reward to RewardEncoder as population-coded spikes
         # RewardEncoder converts scalar → spike pattern, which VTA decodes
@@ -508,13 +448,7 @@ class DynamicBrain(nn.Module):
 
         Updates dt_ms and propagates temporal parameter updates to:
         - All regions (neurons, STP, learning strategies)
-        - Oscillator manager (phase increments)
-        - Pathway manager (delay buffers)
-
-        Use cases:
-        - Memory replay: 10x speedup (dt=10ms) during consolidation
-        - Critical learning: Slow down to 0.1ms for precise timing
-        - Energy efficiency: Larger dt when dynamics are stable
+        - All axonal tracts (axonal delay buffers)
 
         Args:
             new_dt_ms: New timestep in milliseconds (must be positive)
@@ -532,45 +466,6 @@ class DynamicBrain(nn.Module):
         for region in self.regions.values():
             region.update_temporal_parameters(new_dt_ms)
 
-        # Update all connections/pathways
-        for pathway in self.connections.values():
-            pathway.update_temporal_parameters(new_dt_ms)
-
-    def _broadcast_oscillator_phases(self) -> None:
-        """Broadcast oscillator phases to all regions.
-
-        Advances oscillators by dt_ms and updates all regions with current
-        phases for all frequency bands (delta, theta, alpha, beta, gamma, ripple).
-
-        This enables:
-        - Delta slow-wave sleep consolidation
-        - Theta-driven encoding/retrieval in hippocampus
-        - Alpha attention gating
-        - Beta motor control and working memory
-        - Gamma feature binding in cortex
-        - Ripple sharp-wave replay
-
-        **Note on Emergent Oscillations**:
-
-        **Theta (4-12 Hz)**: Disabled - emerges from medial septum pacemaker neurons
-        (cholinergic and GABAergic) that phase-lock hippocampal OLM interneurons.
-        OLM dendritic inhibition creates emergent encoding/retrieval separation.
-        This is biologically accurate: hippocampal theta arises from septal drive,
-        not a central oscillator.
-
-        **Gamma (30-80 Hz)**: Disabled - two gamma frequencies naturally emerge from
-        L6a-TRN-relay (~40Hz) and L6b-relay (~60Hz) feedback loops. This is biologically
-        accurate: cortical gamma arises from corticothalamic interactions, not a
-        central oscillator.
-        """
-        # Advance oscillators
-        self.oscillators.advance(dt_ms=self.dt_ms)
-
-        # Get all phases, signals, and coupled amplitudes
-        phases = self.oscillators.get_phases()
-        signals = self.oscillators.get_signals()
-        coupled_amplitudes = self.oscillators.get_coupled_amplitudes()
-
-        # Broadcast directly to all regions
-        for region in self.regions.values():
-            region.set_oscillator_phases(phases, signals, coupled_amplitudes)
+        # Update all axonal tracts
+        for axonal_tract in self.axonal_tracts.values():
+            axonal_tract.update_temporal_parameters(new_dt_ms)
