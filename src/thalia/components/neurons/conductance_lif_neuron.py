@@ -166,8 +166,16 @@ class ConductanceLIFConfig:
     # NMDA conductance (slow excitation for temporal integration)
     tau_nmda: float = 100.0  # NMDA decay time constant (80-150ms biologically)
     E_nmda: float = 3.0  # NMDA reversal potential (same as AMPA)
-    nmda_ratio: float = 0.0  # NMDA/(AMPA+NMDA) ratio - REDUCED from 0.3 to prevent accumulation
-    # TODO: Consider making nmda_ratio a per-source parameter for more biological realism (different synapses have different NMDA contributions)
+    nmda_ratio: float = 0.20  # NMDA/(AMPA+NMDA) ratio — 20% is biologically realistic (Jahr & Stevens 1990)
+    # TODO: Consider making nmda_ratio a per-source parameter for more biological realism
+
+    # NMDA Mg²⁺ voltage-dependent block parameters (Jahr-Stevens 1990)
+    # f_nmda(V) = sigmoid(k * (V_norm - V_half)) — smooth approximation of Mg²⁺ unblock
+    # At rest (V~0):      ~18% unblock  → NMDA barely conducts
+    # At threshold (V=1): ~97% unblock  → NMDA fully conducts
+    # Biological calibration: 50% unblock at ~-30mV (≈0.5 in normalized units with threshold=1)
+    nmda_mg_k: float = 5.0     # Sigmoid slope (steeper = sharper voltage-gate)
+    nmda_mg_v_half: float = 0.5  # Half-unblock voltage in normalized units
 
     # Adaptation (conductance-based)
     tau_adapt: float = 100.0
@@ -660,19 +668,28 @@ class ConductanceLIF(nn.Module):
         # This is the biologically correct way to implement homeostatic gain control
         g_L_effective = self.g_L * self.g_L_scale  # [n_neurons]
 
+        # NMDA Mg²⁺ voltage-dependent unblock (Jahr & Stevens 1990)
+        # f_nmda(V) = sigmoid(k * (V_norm - V_half)) — smooth approximation
+        # Restores coincidence detection: NMDA only amplifies when postsynaptic cell is depolarized.
+        # Without this gate, NMDA accumulates at rest → pathological excitation (reason nmda_ratio was forced to 0%).
+        # With the gate, safe 20% NMDA ratio restores biologically correct temporal integration.
+        V_mem = self.membrane if self.membrane is not None else torch.zeros(self.n_neurons, device=self.device)
+        f_nmda = torch.sigmoid(self.config.nmda_mg_k * (V_mem - self.config.nmda_mg_v_half))
+        g_nmda_eff = self.g_nmda * f_nmda  # Effective (voltage-gated) NMDA conductance
+
         # Compute total conductance (for effective time constant)
-        # Include NMDA for slow temporal integration
+        # Include voltage-gated NMDA for slow temporal integration
         # Use effective leak conductance (modulated by homeostasis)
-        g_total = g_L_effective + self.g_E + self.g_I + self.g_nmda + self.g_adapt
+        g_total = g_L_effective + self.g_E + self.g_I + g_nmda_eff + self.g_adapt
 
         # Compute equilibrium potential (weighted average of reversals)
-        # Include NMDA contribution
+        # Include voltage-gated NMDA contribution
         # Use effective leak conductance
         V_inf_numerator = (
             g_L_effective * self.E_L
             + self.g_E * self.E_E
             + self.g_I * self.E_I
-            + self.g_nmda * self.E_nmda
+            + g_nmda_eff * self.E_nmda
             + self.g_adapt * self.E_adapt
         )
 

@@ -450,28 +450,27 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     def _split_excitatory_conductance(
         self,
         g_exc_total: torch.Tensor,
-        nmda_ratio: float = 0.0,  # CRITICAL: Default 0.0 to prevent NMDA accumulation
-        # TODO: Consider making nmda_ratio a per-source parameter for more biological realism
+        nmda_ratio: float = 0.20,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Split excitatory conductance into AMPA (fast) and NMDA (slow) components.
 
         Biology: Excitatory synapses contain both AMPA and NMDA receptors.
         AMPA provides fast transmission (tau~5ms), NMDA provides slow temporal
-        integration (tau~100ms).
+        integration (tau~100ms) with coincidence-detection via Mg²⁺ voltage-gate.
 
-        CRITICAL: Due to tau_nmda=100ms vs tau_ampa=5ms (20x difference),
-        NMDA accumulates much more than AMPA in steady state. With 30% NMDA input,
-        steady-state conductance becomes 7-10x more NMDA than AMPA, causing
-        pathological over-excitation. Reduced to 5% NMDA to prevent over-integration
-        while still providing slow timescale dynamics.
+        Safety note: With the Mg²⁺ unblock gate in ConductanceLIF.forward(), NMDA only
+        conducts when the postsynaptic membrane is depolarised. At rest (~18% unblock),
+        the effective contribution is 0.20 × 0.18 ≈ 3.6% — preventing the sub-threshold
+        accumulation that forced the old 0% default. The full 20% ratio only activates
+        during coincident pre+post activity, restoring proper coincidence detection.
 
         Args:
             g_exc_total: Total excitatory conductance to split
-            nmda_ratio: Fraction of total conductance that is NMDA (default 0.05 = 5%)
+            nmda_ratio: Fraction of total conductance that is NMDA (default 0.20 = 20%)
 
         Returns:
-            g_ampa: Fast AMPA conductance (95% of total)
-            g_nmda: Slow NMDA conductance (5% of total)
+            g_ampa: Fast AMPA conductance (80% of total)
+            g_nmda: Slow NMDA conductance (20% of total, voltage-gated downstream)
         """
         ampa_ratio = 1.0 - nmda_ratio
         g_ampa = g_exc_total * ampa_ratio
