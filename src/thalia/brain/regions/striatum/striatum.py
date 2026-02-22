@@ -426,9 +426,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
             connectivity: Connection probability (0.0 = no connections, 1.0 = fully connected)
             weight_scale: Initial weight scale multiplier
         """
-        if synapse_id in self.input_sources:
-            raise ValueError(f"Input source '{synapse_id}' already exists")
-
         # NOTE: We create separate D1 and D2 weights for each input.
         # This is because both pathways receive the same input but may have different
         # synaptic strengths and STP dynamics.
@@ -506,6 +503,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process input and select action using separate D1/D2 populations.
 
@@ -730,8 +728,13 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # HOMEOSTATIC INTRINSIC PLASTICITY
         # =====================================================================
         # Add baseline noise (spontaneous miniature EPSPs)
-        d1_noise = torch.randn_like(d1_conductance) * cfg.baseline_noise_conductance
-        d2_noise = torch.randn_like(d2_conductance) * cfg.baseline_noise_conductance
+        if cfg.baseline_noise_conductance_enabled:
+            d1_noise = torch.randn_like(d1_conductance) * 0.007
+            d2_noise = torch.randn_like(d2_conductance) * 0.007
+        else:
+            d1_noise = torch.zeros_like(d1_conductance)
+            d2_noise = torch.zeros_like(d2_conductance)
+
         d1_conductance = (d1_conductance + d1_noise).clamp(min=0)
         d2_conductance = (d2_conductance + d2_noise).clamp(min=0)
 

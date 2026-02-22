@@ -32,7 +32,8 @@ from typing import Optional
 import torch
 
 from thalia.units import ConductanceTensor, VoltageTensor
-from .neuron import ConductanceLIF, ConductanceLIFConfig
+
+from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
@@ -173,6 +174,7 @@ class NorepinephrineNeuron(ConductanceLIF):
 
         return matrix
 
+    @torch.no_grad()
     def forward(
         self,
         g_ampa_input: Optional[ConductanceTensor],

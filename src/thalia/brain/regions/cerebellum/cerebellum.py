@@ -175,20 +175,9 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             tau_E=4.0,  # ms, AMPA kinetics (biological range 2-5ms)
             tau_I=10.0,  # ms, GABA_A kinetics (biological range 5-10ms)
             tau_ref=12.0,  # ms, refractory period (max ~83 Hz ceiling, allows biological 40-60 Hz range)
-            noise_std=0.05,  # Membrane noise (reduced from 0.15 to achieve 2-4% spontaneous baseline)
+            noise_std=0.007 if config.baseline_noise_conductance_enabled else 0.0,  # Membrane voltage noise
         )
         self.dcn_neurons = ConductanceLIF(n_neurons=self.dcn_size, config=dcn_config)
-
-        # HETEROGENEOUS tonic excitation to break pathological synchrony
-        # Real DCN neurons have different baseline excitabilities
-        # Use Gaussian distribution for moderate spontaneous firing (~40-60 Hz)
-        # DCN neurons are tonically active, but Purkinje inhibition sculpts output
-        self.tonic_excitation = torch.normal(
-            mean=0.001,  # Minimal baseline drive for heterogeneity (reduced from 0.005)
-            std=0.001,  # Small heterogeneity
-            size=(self.dcn_size,),
-            device=self.device,
-        ).clamp(min=0.0, max=0.003)  # Very low range - DCN activity primarily from mossy collaterals + noise
 
         # Initialize DCN neuron membrane potentials with heterogeneous values
         # This prevents all neurons starting at same potential and synchronizing
@@ -294,6 +283,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process input through cerebellar circuit.
 
@@ -314,8 +304,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
 
         # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
         # Noise represents stochastic miniature EPSPs from spontaneous vesicle release (conductance, not current)
-        if cfg.baseline_noise_conductance > 0:
-            noise = torch.randn(self.granule_size, device=self.device) * cfg.baseline_noise_conductance
+        if cfg.baseline_noise_conductance_enabled:
+            noise = torch.randn(self.granule_size, device=self.device) * 0.007
             mossy_fiber_conductances = mossy_fiber_conductances + noise
 
         # Pass conductances directly to granule cell neurons
@@ -370,11 +360,15 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
 
         # Update IO neurons (spontaneous activity + gap junction synchronization)
         # Add baseline depolarizing conductance to maintain ~1 Hz spontaneous firing
-        baseline_conductance = ConductanceTensor(torch.full(
-            (self.purkinje_size,), 0.004, device=self.device  # Small baseline conductance for ~1 Hz
-        ))
+        if cfg.baseline_noise_conductance_enabled:
+            baseline_conductance = ConductanceTensor(torch.full(
+                (self.purkinje_size,), 0.004, device=self.device  # Small baseline conductance for ~1 Hz
+            ))
+        else:
+            baseline_conductance = None
+
         climbing_fiber_spikes, _ = self.io_neurons.forward(
-            g_ampa_input=baseline_conductance,  # Baseline depolarization for spontaneous activity
+            g_ampa_input=baseline_conductance,  # Baseline depolarization for spontaneous activity (or None)
             g_gaba_a_input=None,
             g_nmda_input=None,
         )
@@ -413,11 +407,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             target_region=self.region_name,
             target_population=CerebellumPopulation.DCN.value,
         )
-        mossy_conductance = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size)
-
-        # Add heterogeneous tonic excitation (DCN neurons are intrinsically active)
-        # Mossy excitation + tonic background
-        dcn_total_excitation = self.tonic_excitation + mossy_conductance  # Total excitatory drive to DCN neurons
+        dcn_total_excitation = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size)
 
         # DCN spiking: Excitation (mossy + tonic) vs Inhibition (Purkinje)
         # Purkinje provides GABAergic shunting inhibition

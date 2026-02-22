@@ -2,7 +2,9 @@
 
 - Re-enable:
   - Synaptic weights: `GLOBAL_WEIGHT_SCALE`
-  - Baseline noise: `baseline_noise_conductance`
+  - Plasticity: `GLOBAL_LEARNING_ENABLED`
+  - Homeostasis: `GLOBAL_HOMEOSTASIS_ENABLED`
+  - Baseline noise: `baseline_noise_conductance_enabled`
   - Neuromodulation: `enable_neuromodulation`
   - SNR baseline drive: `baseline_drive`
 - Review CA3 persistence

@@ -32,7 +32,8 @@ from typing import Optional
 import torch
 
 from thalia.units import ConductanceTensor, VoltageTensor
-from .neuron import ConductanceLIF, ConductanceLIFConfig
+
+from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 @dataclass
@@ -124,6 +125,7 @@ class AcetylcholineNeuron(ConductanceLIF):
         # Initialize with varied phases (prevent artificial synchronization)
         self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.4
 
+    @torch.no_grad()
     def forward(
         self,
         g_ampa_input: Optional[ConductanceTensor],

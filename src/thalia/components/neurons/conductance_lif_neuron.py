@@ -33,7 +33,6 @@ When V ≥ V_threshold:
 This module uses type aliases from thalia.units for dimensional analysis:
 - ConductanceTensor: Synaptic/membrane conductances (≥ 0)
 - VoltageTensor: Membrane potentials
-- CurrentTensor: Membrane currents (derived from g × (E - V))
 
 Type checkers (mypy/pyright) will catch unit mismatches at development time.
 """
@@ -501,6 +500,7 @@ class ConductanceLIF(nn.Module):
         assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
         return super().__call__(*args, **kwds)
 
+    @torch.no_grad()
     def forward(
         self,
         g_ampa_input: Optional[ConductanceTensor],

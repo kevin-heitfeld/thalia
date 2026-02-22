@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, List
 
 import torch
 
-from .neuron import ConductanceLIF, ConductanceLIFConfig
+from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
 
 class NeuronType(Enum):

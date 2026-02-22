@@ -22,6 +22,9 @@ class WeightInitializer:
     # Global learning/plasticity enable flag
     GLOBAL_LEARNING_ENABLED: bool = False  # Set to False to disable all synaptic plasticity
 
+    # Global homeostatic plasticity enable flag
+    GLOBAL_HOMEOSTASIS_ENABLED: bool = False  # Set to False to disable homeostatic plasticity (intrinsic excitability, threshold adaptation, synaptic scaling)
+
     @staticmethod
     def sparse_gaussian(
         n_input: int,

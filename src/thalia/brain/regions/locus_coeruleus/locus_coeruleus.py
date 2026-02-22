@@ -71,7 +71,7 @@ Phase 3 (Future):
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import ClassVar, Dict, Optional
 
 import torch
 
@@ -108,6 +108,9 @@ from ..region_registry import register_region
 class LocusCoeruleus(NeuralRegion[LCConfig]):
     """Locus Coeruleus - Norepinephrine Arousal and Uncertainty System."""
 
+    # Declarative neuromodulator output registry.
+    neuromodulator_outputs: ClassVar[Dict[str, str]] = {'ne': 'ne'}
+
     def __init__(self, config: LCConfig, population_sizes: PopulationSizes, region_name: RegionName):
         super().__init__(config, population_sizes, region_name)
 
@@ -122,6 +125,8 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
             uncertainty_to_current_gain=self.config.uncertainty_gain,
             gap_junction_strength=self.config.gap_junction_strength,
             gap_junction_neighbor_radius=self.config.gap_junction_radius,
+            i_h_conductance=NorepinephrineNeuronConfig.i_h_conductance if self.config.baseline_noise_conductance_enabled else 0.0,
+            noise_std=NorepinephrineNeuronConfig.noise_std if self.config.baseline_noise_conductance_enabled else 0.0,
         )
         self.ne_neurons = NorepinephrineNeuron(
             n_neurons=self.ne_neurons_size,
@@ -170,6 +175,7 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
 
         self.__post_init__()
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute uncertainty and drive norepinephrine neurons to burst.
 
@@ -342,7 +348,9 @@ class LocusCoeruleus(NeuralRegion[LCConfig]):
         assert self._current_ne_spikes is not None, "NE spikes must be computed before GABA drive"
 
         # Tonic baseline conductance
-        baseline = 0.3  # CONDUCTANCE: tonic drive
+        # BIOLOGY: LC-GABA neurons have intrinsic pacemaker activity
+        # CONDUCTANCE: tonic drive
+        baseline = 0.3 if self.config.baseline_noise_conductance_enabled else 0.0
 
         # Increase during NE bursts (negative feedback)
         ne_activity = self._current_ne_spikes.float().mean().item()

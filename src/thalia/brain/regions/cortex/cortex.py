@@ -66,13 +66,13 @@ from thalia.components import (
 )
 from thalia.components.synapses import NeuromodulatorReceptor
 from thalia.learning import (
-    UnifiedHomeostasis,
     BCMConfig,
     BCMStrategy,
     STDPConfig,
     STDPStrategy,
     LearningStrategy,
     CompositeStrategy,
+    compute_excitability_modulation,
 )
 from thalia.typing import (
     NeuromodulatorInput,
@@ -731,6 +731,7 @@ class Cortex(NeuralRegion[CortexConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process input through layered cortical circuit.
 
@@ -845,11 +846,9 @@ class Cortex(NeuralRegion[CortexConfig]):
 
         # Add baseline noise (spontaneous miniature EPSPs)
         # Use stochastic noise to prevent inhibition-driven silence
-        if cfg.baseline_noise_conductance > 0:
-            # 70% constant, 30% random
-            baseline = cfg.baseline_noise_conductance * 0.7
-            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.l4_pyr_size, device=self.device)
-            l4_g_exc = l4_g_exc + baseline + stochastic.abs()
+        if cfg.baseline_noise_conductance_enabled:
+            stochastic = 0.007 * torch.randn(self.l4_pyr_size, device=self.device)
+            l4_g_exc = l4_g_exc + stochastic.abs()
 
         # =====================================================================
         # PREDICTIVE CODING: L5/L6 → L4 INHIBITORY PREDICTIONS
@@ -1060,10 +1059,9 @@ class Cortex(NeuralRegion[CortexConfig]):
 
         # Add baseline noise (spontaneous miniature EPSPs)
         # Use stochastic noise to prevent inhibition-driven silence
-        if cfg.baseline_noise_conductance > 0:
-            baseline = cfg.baseline_noise_conductance * 0.7
-            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.l23_pyr_size, device=self.device)
-            l23_input = l23_input + baseline + stochastic.abs()
+        if cfg.baseline_noise_conductance_enabled:
+            stochastic = 0.007 * torch.randn(self.l23_pyr_size, device=self.device)
+            l23_input = l23_input + stochastic.abs()
 
         # Norepinephrine gain modulation (arousal/uncertainty)
         ne_level_l23 = self._ne_concentration_l23.mean().item()
@@ -1141,10 +1139,9 @@ class Cortex(NeuralRegion[CortexConfig]):
 
         # Add baseline noise (spontaneous miniature EPSPs)
         # Use stochastic noise to prevent inhibition-driven silence
-        if cfg.baseline_noise_conductance > 0:
-            baseline = cfg.baseline_noise_conductance * 0.7
-            stochastic = cfg.baseline_noise_conductance * 0.3 * torch.randn(self.l5_pyr_size, device=self.device)
-            l5_g_exc = l5_g_exc + baseline + stochastic.abs()
+        if cfg.baseline_noise_conductance_enabled:
+            stochastic = 0.007 * torch.randn(self.l5_pyr_size, device=self.device)
+            l5_g_exc = l5_g_exc + stochastic.abs()
 
         # Norepinephrine gain modulation (arousal/uncertainty)
         ne_level_l5 = self._ne_concentration_l5.mean().item()
@@ -1530,7 +1527,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         self._l23_activity_history = 0.99 * self._l23_activity_history + (1.0 - 0.99) * l23_spikes.float()
 
         # Compute threshold modulation
-        threshold_mod = UnifiedHomeostasis.compute_excitability_modulation(
+        threshold_mod = compute_excitability_modulation(
             activity_history=self._l23_activity_history,
             activity_target=cfg.activity_target,
             tau=100.0,

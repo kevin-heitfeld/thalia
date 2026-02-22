@@ -253,7 +253,8 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         )
         # Initialize with self-excitation (heterogeneous)
         # Scale diagonal by heterogeneous recurrent strengths
-        rec_weights = rec_weights + torch.diag(wm_properties["recurrent_strength"])
+        # CRITICAL: Also multiply by GLOBAL_WEIGHT_SCALE to respect global disable
+        rec_weights = rec_weights + torch.diag(wm_properties["recurrent_strength"]) * WeightInitializer.GLOBAL_WEIGHT_SCALE
         self._add_internal_connection(
             source_population=PrefrontalPopulation.EXECUTIVE.value,
             target_population=PrefrontalPopulation.EXECUTIVE.value,
@@ -272,7 +273,13 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         )
 
         # Lateral inhibition weights
-        inhib_weights = torch.ones(self.executive_size, self.executive_size, device=self.device) * 0.08
+        inhib_weights = WeightInitializer.sparse_random(
+            n_input=self.executive_size,
+            n_output=self.executive_size,
+            connectivity=1.0,  # Fully connected lateral inhibition
+            weight_scale=0.08,
+            device=self.device,
+        )
         inhib_weights.fill_diagonal_(0.0)
         self._add_internal_connection(
             source_population=PrefrontalPopulation.EXECUTIVE.value,
@@ -383,6 +390,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process input through prefrontal cortex.
 
@@ -450,12 +458,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # With DEPRESSING STP, frequently-used synapses get temporarily weaker,
         # allowing WM to be updated with new information.
 
-        # Read delayed working memory from buffer (returns zeros if buffer not initialized)
-        wm_delayed = self._recurrent_buffer.read(self._recurrent_buffer.max_delay)
-
-        # Check if buffer has been written to (non-zero values indicate initialization)
-        has_wm_history = wm_delayed.abs().sum() > 1e-6
-
         executive_rec_exc_synapse = SynapseId(
             source_region=self.region_name,
             source_population=PrefrontalPopulation.EXECUTIVE.value,
@@ -471,22 +473,25 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             is_inhibitory=True,
         )
 
-        if has_wm_history:
-            stp_efficacy = self.stp_modules[executive_rec_exc_synapse].forward(wm_delayed)
-            effective_rec_weights = self.get_synaptic_weights(executive_rec_exc_synapse) * stp_efficacy.t()
+        # Read delayed working memory from buffer (returns zeros if buffer not initialized)
+        wm_delayed = self._recurrent_buffer.read(self._recurrent_buffer.max_delay)
 
-            # ACh modulation applied here (region-level neuromodulation):
-            # High ACh (attention/encoding): Suppress recurrence to prioritize sensory input
-            # Low ACh (maintenance): Enable recurrence for stable working memory attractors
-            ach_recurrent_modulation = compute_ach_recurrent_suppression(self._ach_concentration.mean().item())
+        stp_efficacy = self.stp_modules[executive_rec_exc_synapse].forward(wm_delayed)
+        effective_rec_weights = self.get_synaptic_weights(executive_rec_exc_synapse) * stp_efficacy.t()
 
-            rec_input = (effective_rec_weights @ wm_delayed).clamp(min=0) * ach_recurrent_modulation
-        else:
-            # First timestep: no working memory yet
-            rec_input = torch.zeros(self.executive_size, device=self.device)
+        # ACh modulation applied here (region-level neuromodulation):
+        # High ACh (attention/encoding): Suppress recurrence to prioritize sensory input
+        # Low ACh (maintenance): Enable recurrence for stable working memory attractors
+        ach_recurrent_modulation = compute_ach_recurrent_suppression(self._ach_concentration.mean().item())
+
+        rec_input = (effective_rec_weights @ wm_delayed).clamp(min=0) * ach_recurrent_modulation
 
         # Total excitation
-        g_exc = cfg.baseline_noise_conductance + ff_input + rec_input
+        g_exc = ff_input + rec_input
+        if cfg.baseline_noise_conductance_enabled:
+            noise = torch.randn_like(g_exc) * 0.007
+            g_exc = (g_exc + noise).clamp(min=0)
+
         g_ampa, g_nmda = self._split_excitatory_conductance(g_exc)
 
         # Lateral inhibition: use delayed working memory for causality

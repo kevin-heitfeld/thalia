@@ -72,7 +72,7 @@ Phase 2 (Future):
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import ClassVar, Dict, Optional
 
 import torch
 
@@ -131,6 +131,11 @@ class VTA(NeuralRegion[VTAConfig]):
     5. Broadcast DA spikes to target regions
     """
 
+    # Declarative neuromodulator output registry.
+    # DynamicBrain reads this ClassVar to build NeuromodulatorTract diffusion filters
+    # and route outputs without any hardcoded region-name checks in brain.py.
+    neuromodulator_outputs: ClassVar[Dict[str, str]] = {'da': 'da'}
+
     def __init__(self, config: VTAConfig, population_sizes: PopulationSizes, region_name: RegionName):
         super().__init__(config, population_sizes, region_name)
 
@@ -165,6 +170,7 @@ class VTA(NeuralRegion[VTAConfig]):
 
         self.__post_init__()
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute RPE and drive dopamine neurons to burst/pause.
 

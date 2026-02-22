@@ -7,23 +7,23 @@ This module contains spiking neuron models and dendritic processing components.
 from __future__ import annotations
 
 from .acetylcholine_neuron import (
-    AcetylcholineNeuron,
     AcetylcholineNeuronConfig,
+    AcetylcholineNeuron,
+)
+from .conductance_lif_neuron import (
+    ConductanceLIFConfig,
+    ConductanceLIF,
 )
 from .dopamine_neuron import (
     TonicDopamineNeuron,
 )
 from .izhikevich_neuron import (
-    IzhikevichNeuron,
     IzhikevichNeuronConfig,
-)
-from .neuron import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
+    IzhikevichNeuron,
 )
 from .norepinephrine_neuron import (
-    NorepinephrineNeuron,
     NorepinephrineNeuronConfig,
+    NorepinephrineNeuron,
 )
 from .neuron_factory import (
     NeuronFactory,
@@ -32,15 +32,15 @@ from .neuron_factory import (
 
 __all__ = [
     # Neuron models
-    "ConductanceLIF",
     "ConductanceLIFConfig",
-    "IzhikevichNeuron",
+    "ConductanceLIF",
     "IzhikevichNeuronConfig",
-    "AcetylcholineNeuron",
+    "IzhikevichNeuron",
     "AcetylcholineNeuronConfig",
+    "AcetylcholineNeuron",
     "TonicDopamineNeuron",
-    "NorepinephrineNeuron",
     "NorepinephrineNeuronConfig",
+    "NorepinephrineNeuron",
     # Neuron factory
     "NeuronFactory",
     "NeuronType",

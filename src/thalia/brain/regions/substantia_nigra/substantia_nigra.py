@@ -139,7 +139,7 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
             E_I=-0.5,
             tau_E=5.0,  # AMPA-like kinetics
             tau_I=10.0,  # GABA_A-like kinetics
-            noise_std=0.05,  # Moderate noise for stochastic tonic firing
+            noise_std=0.007 if self.config.baseline_noise_conductance_enabled else 0.0,  # Membrane voltage noise
         )
         self.neurons = ConductanceLIF(
             n_neurons=self.vta_feedback_size,
@@ -166,6 +166,7 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Update SNr neurons based on striatal input.
 
@@ -210,17 +211,18 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         g_exc_total = g_exc + self.baseline_drive
         g_inh_total = g_inh
 
+        # Add baseline noise conductance (stochastic background activity)
+        # BIOLOGY: Represents spontaneous miniature EPSPs and stochastic channel openings
+        if self.config.baseline_noise_conductance_enabled:
+            noise = torch.randn(self.vta_feedback_size, device=self.device) * 0.007
+            g_exc_total = g_exc_total + torch.clamp(noise, min=0.0)  # Only positive noise (excitatory)
+
         # Split excitatory conductance: 99% AMPA (fast), 1% NMDA (slow)
         # CRITICAL: Reduced from 5% to 1% NMDA to prevent over-integration
         # (NMDA accumulates 20x more than AMPA due to tau_nmda=100ms vs tau_ampa=5ms)
         # Even 1% NMDA provides temporal integration while avoiding slow buildup
         # that creates periodic bursting and 500 Hz oscillations
         g_ampa, g_nmda = g_exc_total * 0.99, g_exc_total * 0.01
-
-        # Add Poisson noise to break pathological synchronization
-        # This prevents SNr-VTA feedback loop from locking at 500 Hz
-        noise = torch.randn(self.vta_feedback_size, device=self.device) * 0.03
-        g_ampa = g_ampa + torch.clamp(noise, min=0.0)
 
         # Update neurons using conductance-based dynamics
         vta_feedback_spikes, vta_feedback_membrane = self.neurons.forward(

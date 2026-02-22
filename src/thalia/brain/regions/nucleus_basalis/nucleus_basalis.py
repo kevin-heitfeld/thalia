@@ -81,7 +81,7 @@ References:
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import ClassVar, Dict, Optional
 
 import torch
 
@@ -138,6 +138,9 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
     4. Broadcast ACh spikes to cortex and hippocampus
     """
 
+    # Declarative neuromodulator output registry.
+    neuromodulator_outputs: ClassVar[Dict[str, str]] = {'ach': 'ach'}
+
     def __init__(self, config: NBConfig, population_sizes: PopulationSizes, region_name: RegionName):
         super().__init__(config, population_sizes, region_name)
 
@@ -151,6 +154,8 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
             population_name=NucleusBasalisPopulation.ACH.value,
             device=self.device,
             prediction_error_to_current_gain=self.config.pe_gain,
+            i_h_conductance=AcetylcholineNeuronConfig.i_h_conductance if self.config.baseline_noise_conductance_enabled else 0.0,
+            noise_std=AcetylcholineNeuronConfig.noise_std if self.config.baseline_noise_conductance_enabled else 0.0,
         )
         self.ach_neurons = AcetylcholineNeuron(
             n_neurons=self.ach_neurons_size,
@@ -193,6 +198,7 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
 
         self.__post_init__()
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute prediction error and drive acetylcholine neurons to burst.
 
@@ -338,7 +344,9 @@ class NucleusBasalis(NeuralRegion[NBConfig]):
         assert self._current_ach_spikes is not None, "ACh spikes must be computed before GABA drive"
 
         # Tonic baseline conductance
-        baseline = 0.4  # CONDUCTANCE: tonic drive
+        # BIOLOGY: NB-GABA neurons have intrinsic pacemaker activity
+        # CONDUCTANCE: tonic drive
+        baseline = 0.4 if self.config.baseline_noise_conductance_enabled else 0.0
 
         # Increase during ACh bursts (negative feedback)
         ach_activity = self._current_ach_spikes.float().mean().item()

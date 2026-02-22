@@ -37,9 +37,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -178,6 +177,7 @@ class ShortTermPlasticity(nn.Module):
         assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
         return super().__call__(*args, **kwds)
 
+    @torch.no_grad()
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
         """Compute STP efficacy for current timestep (ADR-005: 1D tensors).
 

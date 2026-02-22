@@ -63,7 +63,7 @@ class NeuralRegionConfig:
     gain_learning_rate: float = 0.02  # INCREASED from 0.005 to respond faster to activity collapse
     target_firing_rate: float = 0.05  # Target firing rate for homeostatic plasticity
     gain_tau_ms: float = 2000.0  # Time constant for firing rate averaging
-    baseline_noise_conductance: float = 0.0  # DISABLED - stochastic synaptic background (miniature EPSPs)
+    baseline_noise_conductance_enabled: bool = False  # DISABLED - stochastic synaptic background (miniature EPSPs)
 
     # =========================================================================
     # NEUROMODULATION

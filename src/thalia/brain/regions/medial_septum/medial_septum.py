@@ -52,7 +52,7 @@ import numpy as np
 
 from thalia.brain.configs import MedialSeptumConfig
 from thalia.brain.regions.population_names import HippocampusPopulation, MedialSeptumPopulation
-from thalia.components.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.components import ConductanceLIF, ConductanceLIFConfig, WeightInitializer
 from thalia.typing import (
     NeuromodulatorInput,
     PopulationSizes,
@@ -158,7 +158,13 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # Cholinergic neurons are weakly coupled (gap junctions + chemical)
         # CRITICAL: Strong enough for synchrony but not drive amplification
         # Recurrence synchronizes firing during burst window
-        ach_recurrent_weights = torch.randn(self.ach_size, self.ach_size, device=self.device) * 0.03 / np.sqrt(self.ach_size)
+        ach_recurrent_weights = WeightInitializer.sparse_random(
+            n_input=self.ach_size,
+            n_output=self.ach_size,
+            connectivity=1.0,  # Fully connected (sparse recurrence handled by small scale)
+            weight_scale=0.03 / np.sqrt(self.ach_size),
+            device=self.device,
+        )
         ach_recurrent_weights.fill_diagonal_(0.0)  # Zero self-connections
         self._add_internal_connection(
             source_population=MedialSeptumPopulation.ACH.value,
@@ -170,7 +176,13 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
 
         # GABAergic neurons have stronger coupling (fast synchronization)
         # CRITICAL: Strong enough for tight synchrony
-        gaba_recurrent_weights = torch.randn(self.gaba_size, self.gaba_size, device=self.device) * 0.04 / np.sqrt(self.gaba_size)
+        gaba_recurrent_weights = WeightInitializer.sparse_random(
+            n_input=self.gaba_size,
+            n_output=self.gaba_size,
+            connectivity=1.0,  # Fully connected (sparse recurrence handled by small scale)
+            weight_scale=0.04 / np.sqrt(self.gaba_size),
+            device=self.device,
+        )
         gaba_recurrent_weights.fill_diagonal_(0.0)  # Zero self-connections
         self._add_internal_connection(
             source_population=MedialSeptumPopulation.GABA.value,
@@ -200,6 +212,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Generate theta rhythm through intrinsic bursting.
 
@@ -238,24 +251,29 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # =====================================================================
         # GENERATE BURST CURRENTS
         # =====================================================================
-        # Cholinergic neurons burst at phase 0 (theta peak, encoding)
-        ach_phase = self.pacemaker_phase
-        # CORRECTED: For X% duty cycle, use cos(phase) > cos(X * π)
-        # This ensures burst window is exactly X% of the cycle
-        burst_threshold = np.cos(self.burst_duty_cycle * np.pi)
-        ach_in_burst = np.cos(ach_phase) > burst_threshold
-        if ach_in_burst:
-            ach_drive = self.burst_amplitude
-        else:
-            ach_drive = self.inter_burst_amplitude
+        if self.config.baseline_noise_conductance_enabled:
+            # Cholinergic neurons burst at phase 0 (theta peak, encoding)
+            ach_phase = self.pacemaker_phase
+            # CORRECTED: For X% duty cycle, use cos(phase) > cos(X * π)
+            # This ensures burst window is exactly X% of the cycle
+            burst_threshold = np.cos(self.burst_duty_cycle * np.pi)
+            ach_in_burst = np.cos(ach_phase) > burst_threshold
+            if ach_in_burst:
+                ach_drive = self.burst_amplitude
+            else:
+                ach_drive = self.inter_burst_amplitude
 
-        # GABAergic neurons burst at phase π (theta trough, retrieval)
-        gaba_phase = (self.pacemaker_phase + np.pi) % (2 * np.pi)
-        gaba_in_burst = np.cos(gaba_phase) > burst_threshold
-        if gaba_in_burst:
-            gaba_drive = self.burst_amplitude
+            # GABAergic neurons burst at phase π (theta trough, retrieval)
+            gaba_phase = (self.pacemaker_phase + np.pi) % (2 * np.pi)
+            gaba_in_burst = np.cos(gaba_phase) > burst_threshold
+            if gaba_in_burst:
+                gaba_drive = self.burst_amplitude
+            else:
+                gaba_drive = self.inter_burst_amplitude
         else:
-            gaba_drive = self.inter_burst_amplitude
+            # No intrinsic pacemaker drive when baseline noise disabled
+            ach_drive = 0.0
+            gaba_drive = 0.0
 
         # =====================================================================
         # RECURRENT EXCITATION (synchrony)

@@ -8,34 +8,6 @@ which is common in neuroscience simulations (timesteps in ms, frequencies in Hz)
 
 from __future__ import annotations
 
-import math
-
-# ============================================================================
-# TIME UNIT CONVERSIONS
-# ============================================================================
-
-MS_PER_SECOND = 1000.0
-"""Milliseconds per second (1000.0 ms/s)."""
-
-# ============================================================================
-# PHASE AND OSCILLATION CONSTANTS
-# ============================================================================
-
-TAU = 2.0 * math.pi
-"""Full circle in radians (τ ≈ 6.283185307179586).
-
-Tau (τ) represents one complete turn, making circle mathematics more intuitive:
-- 1/4 turn = τ/4 (vs π/2)
-- 1/2 turn = τ/2 (vs π)
-- Full turn = τ (vs 2π)
-
-Common in oscillator phase calculations:
-- phase_increment = TAU * freq_hz * dt_seconds
-- normalized_phase = phase % TAU
-
-Reference: https://tauday.com/tau-manifesto
-"""
-
 # ============================================================================
 # SIMULATION DEFAULTS
 # ============================================================================

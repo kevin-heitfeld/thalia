@@ -10,7 +10,7 @@ Features:
 1. SPIKE FLOW TRACING: Track spike propagation through the entire network
 2. POPULATION ACTIVITY: Analyze firing rates for every population in every region
 3. OSCILLATORY ANALYSIS: EEG-like spectral analysis of network rhythms
-4. CONNECTIVITY VERIFICATION: Check that all pathways are functional
+4. CONNECTIVITY VERIFICATION: Check that all axonal tracts are functional
 5. HEALTH MONITORING: Detect pathological states (silence, seizure, etc.)
 6. BIOLOGICAL COMPARISON: Compare activity patterns to real brain data
 """
@@ -27,10 +27,10 @@ import torch
 
 from thalia.brain.regions.population_names import ThalamusPopulation
 from thalia.typing import (
-    BrainInput,
     BrainOutput,
     RegionOutput,
     SynapseId,
+    SynapticInput,
 )
 
 if TYPE_CHECKING:
@@ -198,7 +198,7 @@ class BrainActivityReport:
     silent_regions: List[str]
 
     # Connectivity
-    pathways: List[AxonalTractCheck]
+    axonal_tracts: List[AxonalTractCheck]
     functional_axonal_tracts: int
     broken_axonal_tracts: List[str]
 
@@ -245,6 +245,11 @@ class BrainActivityAnalyzer:
         self.spike_history: List[BrainOutput] = []
         self.region_activity: Dict[str, List[RegionOutput]] = defaultdict(list)
 
+        # Axonal tract transmission tracking
+        # Key: (source_region, source_pop, target_region, target_pop)
+        # Value: List of spike counts per timestep
+        self.axonal_tract_transmissions: Dict[tuple, List[int]] = defaultdict(list)
+
         # NEW: Temporal tracking for Phase 1 diagnostics
         self.gain_history: Dict[str, List[float]] = defaultdict(list)  # "region:pop" -> gains
         self.weight_snapshots: Dict[str, List[torch.Tensor]] = {}  # pathway -> weight tensors
@@ -259,6 +264,7 @@ class BrainActivityAnalyzer:
         self,
         input_pattern: Optional[str] = None,
         verbose: bool = True,
+        timestep_callback: Optional[Callable[[int, Any], None]] = None,
     ) -> None:
         """
         Run brain simulation and record all activity.
@@ -270,6 +276,7 @@ class BrainActivityAnalyzer:
                 - "rhythmic": Rhythmic input at theta frequency
                 - "burst": Single burst at t=100ms
             verbose: Print progress updates
+            timestep_callback: Optional callback function(timestep, outputs) called after each timestep
         """
         if verbose:
             print(f"\n{'='*80}")
@@ -288,7 +295,26 @@ class BrainActivityAnalyzer:
             # Run brain forward pass
             outputs = self.brain.forward(input_spikes)
 
-            # Record outputs
+            # Record axonal tract transmissions AFTER forward pass
+            # Track what's being SENT through tracts (what gets written to buffers)
+            for (target_region, target_pop), axonal_tract in self.brain.axonal_tracts.items():
+                # Count spikes from each source that will be transmitted
+                for source_spec in axonal_tract.source_specs:
+                    source_region = source_spec.region_name
+                    source_pop = source_spec.population
+
+                    # Extract spikes being sent from source region this timestep
+                    transmitted_count = 0
+                    if source_region in outputs:
+                        if source_pop in outputs[source_region]:
+                            source_spikes = outputs[source_region][source_pop]
+                            transmitted_count = int(source_spikes.sum().item())
+
+                    # Record transmission (these spikes are now in the axonal tract buffer)
+                    pathway_key = (source_region, source_pop, target_region, target_pop)
+                    self.axonal_tract_transmissions[pathway_key].append(transmitted_count)
+
+            # Record outputs for analysis
             self.spike_history.append(outputs)
             for region_name, region_outputs in outputs.items():
                 self.region_activity[region_name].append(region_outputs)
@@ -296,6 +322,10 @@ class BrainActivityAnalyzer:
             # Track gains and weights if enabled
             if self.track_dynamics:
                 self._record_timestep_diagnostics(t)
+
+            # Call custom callback if provided
+            if timestep_callback is not None:
+                timestep_callback(t, outputs)
 
             # Progress updates
             if verbose and (t + 1) % 100 == 0:
@@ -311,7 +341,7 @@ class BrainActivityAnalyzer:
         self,
         timestep: int,
         pattern: Optional[str],
-    ) -> Optional[BrainInput]:
+    ) -> Optional[SynapticInput]:
         """Generate input pattern for given timestep."""
         if pattern is None:
             return None
@@ -364,13 +394,7 @@ class BrainActivityAnalyzer:
         if spikes is None:
             spikes = torch.zeros(relay_size, dtype=torch.bool, device=self.device)
 
-        synapse_id = SynapseId(
-            source_region="external",
-            source_population="sensory",
-            target_region="thalamus",
-            target_population=ThalamusPopulation.RELAY.value,
-        )
-        return {"thalamus": {synapse_id: spikes}}
+        return {SynapseId.external_sensory_to_thalamus_relay(): spikes}
 
     def _record_timestep_diagnostics(self, timestep: int) -> None:
         """Record gains, weights, and activity for this timestep (Phase 1 diagnostics)."""
@@ -420,6 +444,7 @@ class BrainActivityAnalyzer:
         self,
         input_pattern: Optional[str] = "random",
         verbose: bool = True,
+        timestep_callback: Optional[Callable[[int, Any], None]] = None,
     ) -> BrainActivityReport:
         """
         Run complete brain analysis.
@@ -429,12 +454,13 @@ class BrainActivityAnalyzer:
         Args:
             input_pattern: Input pattern to use (see run_simulation)
             verbose: Print progress updates
+            timestep_callback: Optional callback function(timestep, outputs) called after each timestep
 
         Returns:
             Complete brain activity report
         """
         # Run simulation
-        self.run_simulation(input_pattern=input_pattern, verbose=verbose)
+        self.run_simulation(input_pattern=input_pattern, verbose=verbose, timestep_callback=timestep_callback)
 
         if verbose:
             print(f"\n{'='*80}")
@@ -453,15 +479,15 @@ class BrainActivityAnalyzer:
         silent_regions = [name for name, r in regions.items() if r.mean_firing_rate <= 0.001]
 
         # Connectivity analysis
-        pathways = self._analyze_connectivity()
-        functional_axonal_tracts = sum(1 for p in pathways if p.is_functional)
-        broken_axonal_tracts = [p.axonal_tract_name for p in pathways if not p.is_functional]
+        axonal_tracts = self._analyze_connectivity()
+        functional_axonal_tracts = sum(1 for t in axonal_tracts if t.is_functional)
+        broken_axonal_tracts = [t.axonal_tract_name for t in axonal_tracts if not t.is_functional]
 
         # Oscillatory analysis
         oscillations = self._analyze_oscillations()
 
         # Health assessment
-        health = self._assess_health(regions, pathways, oscillations)
+        health = self._assess_health(regions, axonal_tracts, oscillations)
 
         return BrainActivityReport(
             timestamp=time.time(),
@@ -472,7 +498,7 @@ class BrainActivityAnalyzer:
             total_spikes=total_spikes,
             active_regions=active_regions,
             silent_regions=silent_regions,
-            pathways=pathways,
+            axonal_tracts=axonal_tracts,
             functional_axonal_tracts=functional_axonal_tracts,
             broken_axonal_tracts=broken_axonal_tracts,
             oscillations=oscillations,
@@ -569,40 +595,36 @@ class BrainActivityAnalyzer:
         """Verify that all axonal tracts are transmitting spikes."""
         axonal_tract_checks = []
 
-        # Keys are "target:population" strings, not tuples
+        # Keys are (target_region, target_population) tuples
         # Each AxonalTract can have multiple sources
-        for target_key, axonal_tract in self.brain.axonal_tracts.items():
-            # Parse target region and population
-            target_region, target_population = target_key.split(":") if ":" in target_key else (target_key, "")
-
-            # Analyze each source -> target pathway
+        for (target_region, target_population), axonal_tract in self.brain.axonal_tracts.items():
+            # Analyze each source -> target axonal tract
             for source_spec in axonal_tract.source_specs:
                 source_region = source_spec.region_name
                 source_population = source_spec.population
 
-                # Count timesteps where axonal tract transmitted spikes
-                transmitted_timesteps = 0
-                total_transmitted_spikes = 0
-
-                # This is a simplified check - in practice we'd need to track
-                # axonal tract outputs separately
-                # For now, check if target region received input
-
-                # Build descriptive pathway name
+                # Build descriptive axonal tract name
                 source_label = f"{source_region}:{source_population}" if source_population else source_region
                 target_label = f"{target_region}:{target_population}" if target_population else target_region
                 axonal_tract_name = f"{source_label} → {target_label}"
 
-                # Check if target region was active (proxy for transmission)
-                if target_region in self.region_activity:
-                    target_history = self.region_activity[target_region]
-                    for outputs in target_history:
-                        if outputs:  # Any output means received input
-                            transmitted_timesteps += 1
-                            for pop_spikes in outputs.values():
-                                total_transmitted_spikes += int(pop_spikes.sum().item())
+                # Get actual transmission data from recorded buffer
+                pathway_key = (source_region, source_population, target_region, target_population)
 
-                transmission_ratio = transmitted_timesteps / max(1, self.timesteps)
+                if pathway_key in self.axonal_tract_transmissions:
+                    transmission_history = self.axonal_tract_transmissions[pathway_key]
+
+                    # Count timesteps with transmission and total spikes
+                    total_transmitted_spikes = sum(transmission_history)
+                    transmitted_timesteps = sum(1 for count in transmission_history if count > 0)
+
+                    transmission_ratio = transmitted_timesteps / max(1, len(transmission_history))
+                else:
+                    # No transmission data recorded (shouldn't happen if simulation ran)
+                    total_transmitted_spikes = 0
+                    transmitted_timesteps = 0
+                    transmission_ratio = 0.0
+
                 is_functional = transmission_ratio > 0.01  # Active at least 1% of time
 
                 axonal_tract_checks.append(AxonalTractCheck(
@@ -695,7 +717,7 @@ class BrainActivityAnalyzer:
     def _assess_health(
         self,
         regions: Dict[str, RegionActivity],
-        pathways: List[AxonalTractCheck],
+        axonal_tracts: List[AxonalTractCheck],
         oscillations: OscillatoryAnalysis,
     ) -> HealthReport:
         """Assess overall brain health."""
@@ -730,10 +752,10 @@ class BrainActivityAnalyzer:
                 )
 
         # Check connectivity
-        broken_axonal_tracts = [p for p in pathways if not p.is_functional]
+        broken_axonal_tracts = [t for t in axonal_tracts if not t.is_functional]
         if broken_axonal_tracts:
             for axonal_tract in broken_axonal_tracts:
-                warnings.append(f"Pathway '{axonal_tract.axonal_tract_name}' shows minimal transmission")
+                warnings.append(f"Axonal tract '{axonal_tract.axonal_tract_name}' shows minimal transmission")
 
         # Check oscillations
         if oscillations.dominant_frequency_hz == 0.0:
@@ -845,14 +867,14 @@ class BrainActivityAnalyzer:
         print(f"{'─'*80}")
         print("CONNECTIVITY")
         print(f"{'─'*80}")
-        print(f"Functional pathways: {report.functional_axonal_tracts}/{len(report.pathways)}")
+        print(f"Functional axonal tracts: {report.functional_axonal_tracts}/{len(report.axonal_tracts)}")
 
         if report.broken_axonal_tracts:
-            print(f"Non-functional pathways: {', '.join(report.broken_axonal_tracts)}")
+            print(f"Non-functional axonal tracts: {', '.join(report.broken_axonal_tracts)}")
 
-        if detailed and report.pathways:
-            print("\nPathway transmission rates:")
-            for axonal_tract in report.pathways:
+        if detailed and report.axonal_tracts:
+            print("\nAxonal tract transmission rates:")
+            for axonal_tract in report.axonal_tracts:
                 icon = "✓" if axonal_tract.is_functional else "✗"
                 print(f"  {icon} {axonal_tract.axonal_tract_name}: {axonal_tract.transmission_ratio*100:.1f}% "
                       f"({axonal_tract.spikes_transmitted:,} spikes)")

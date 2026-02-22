@@ -20,7 +20,7 @@ Biological Inspiration:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Dict, Optional, TypeVar, Generic
+from typing import TYPE_CHECKING, Optional, TypeVar, Generic
 
 import torch
 import torch.nn as nn
@@ -48,6 +48,139 @@ if TYPE_CHECKING:
 
 
 ConfigT = TypeVar('ConfigT', bound=NeuralRegionConfig)
+
+
+# =============================================================================
+# SYNAPSE-KEYED CONTAINERS
+# =============================================================================
+# nn.ParameterDict and nn.ModuleDict only accept str keys.  We wrap them so
+# callers can use SynapseId throughout while PyTorch still tracks every weight
+# and sub-module correctly (device moves, state_dict, parameters(), etc.).
+
+
+class SynapseIdParameterDict(nn.Module):
+    """nn.ParameterDict wrapper that accepts SynapseId keys.
+
+    Encodes SynapseId to a stable ASCII string key for the underlying
+    ParameterDict so that .to(), .parameters(), and .state_dict() all
+    work correctly.  The encoding is fully reversible.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._pd: nn.ParameterDict = nn.ParameterDict()
+
+    # ------------------------------------------------------------------
+    # Key encoding / decoding
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _encode(s: SynapseId) -> str:
+        """SynapseId → stable ASCII string suitable for ParameterDict."""
+        inh = "1" if s.is_inhibitory else "0"
+        return f"{s.source_region}|{s.source_population}|{s.target_region}|{s.target_population}|{inh}"
+
+    @staticmethod
+    def _decode(key: str) -> SynapseId:
+        """Stable ASCII string → SynapseId."""
+        src_r, src_p, tgt_r, tgt_p, inh = key.split("|")
+        return SynapseId(
+            source_region=src_r,
+            source_population=src_p,
+            target_region=tgt_r,
+            target_population=tgt_p,
+            is_inhibitory=(inh == "1"),
+        )
+
+    # ------------------------------------------------------------------
+    # Dict-like interface (SynapseId-typed)
+    # ------------------------------------------------------------------
+
+    def __setitem__(self, key: SynapseId, value: nn.Parameter) -> None:
+        self._pd[self._encode(key)] = value
+
+    def __getitem__(self, key: SynapseId) -> nn.Parameter:
+        return self._pd[self._encode(key)]
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, SynapseId):
+            return False
+        return self._encode(key) in self._pd
+
+    def __len__(self) -> int:
+        return len(self._pd)
+
+    def __iter__(self):
+        return (self._decode(k) for k in self._pd)
+
+    def items(self):
+        """Yield (SynapseId, nn.Parameter) pairs."""
+        return ((self._decode(k), v) for k, v in self._pd.items())
+
+    def keys(self):
+        """Yield SynapseId keys."""
+        return (self._decode(k) for k in self._pd)
+
+    def values(self):
+        """Yield nn.Parameter values."""
+        return self._pd.values()
+
+
+class SynapseIdModuleDict(nn.Module):
+    """nn.ModuleDict wrapper that accepts SynapseId keys.
+
+    Same key encoding as SynapseIdParameterDict so the two containers
+    always agree on key representation.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._md: nn.ModuleDict = nn.ModuleDict()
+
+    @staticmethod
+    def _encode(s: SynapseId) -> str:
+        inh = "1" if s.is_inhibitory else "0"
+        return f"{s.source_region}|{s.source_population}|{s.target_region}|{s.target_population}|{inh}"
+
+    @staticmethod
+    def _decode(key: str) -> SynapseId:
+        src_r, src_p, tgt_r, tgt_p, inh = key.split("|")
+        return SynapseId(
+            source_region=src_r,
+            source_population=src_p,
+            target_region=tgt_r,
+            target_population=tgt_p,
+            is_inhibitory=(inh == "1"),
+        )
+
+    def __setitem__(self, key: SynapseId, value: nn.Module) -> None:
+        self._md[self._encode(key)] = value
+
+    def __getitem__(self, key: SynapseId) -> nn.Module:
+        return self._md[self._encode(key)]
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, SynapseId):
+            return False
+        return self._encode(key) in self._md
+
+    def __len__(self) -> int:
+        return len(self._md)
+
+    def __iter__(self):
+        return (self._decode(k) for k in self._md)
+
+    def items(self):
+        """Yield (SynapseId, nn.Module) pairs."""
+        return ((self._decode(k), v) for k, v in self._md.items())
+
+    def keys(self):
+        """Yield SynapseId keys."""
+        return (self._decode(k) for k in self._md)
+
+    def values(self):
+        """Yield nn.Module values."""
+        return self._md.values()
 
 
 class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
@@ -110,17 +243,19 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self.config: ConfigT = config
         self.region_name: RegionName = region_name
 
-        # Synaptic weights: one weight matrix per input source
-        self._synaptic_weights: Dict[SynapseId, nn.Parameter] = {}  #nn.ParameterDict()
+        # Synaptic weights: one weight matrix per input source.
+        # SynapseIdParameterDict wraps nn.ParameterDict so PyTorch tracks every
+        # parameter correctly (.to(), .parameters(), .state_dict()) while the
+        # public API remains SynapseId-typed.
+        self._synaptic_weights: SynapseIdParameterDict = SynapseIdParameterDict()
 
         # Optional per-source STP modules for short-term plasticity (facilitation/depression)
-        self.stp_modules: Dict[SynapseId, ShortTermPlasticity] = {}  #nn.ModuleDict()
+        self.stp_modules: SynapseIdModuleDict = SynapseIdModuleDict()
 
-        # Track which sources have been added
-        self.input_sources: Dict[SynapseId, int] = {}
-
-        # Neuron populations within this region (e.g., L4, L2/3, L5 for Cortex)
-        self.neuron_populations: Dict[PopulationName, ConductanceLIF | IzhikevichNeuron] = {}
+        # Neuron populations within this region (e.g., L4, L2/3, L5 for Cortex).
+        # PopulationName is str so nn.ModuleDict works directly; subclasses keep
+        # their own typed references (self.l23, self.l4, …) for forward() calls.
+        self.neuron_populations: nn.ModuleDict = nn.ModuleDict()  # Dict[PopulationName, ConductanceLIF | IzhikevichNeuron]
 
         # Strategy instance (set by subclass)
         self.learning_strategy: Optional[LearningStrategy] = None
@@ -150,7 +285,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 f"Population '{population}' not found in {self.__class__.__name__}. "
                 f"Registered populations: {self.neuron_populations.keys()}"
             )
-        return self.neuron_populations[population].n_neurons
+        return self.neuron_populations[population].n_neurons  # type: ignore[union-attr]
 
     # =========================================================================
     # SYNAPTIC WEIGHT MANAGEMENT
@@ -203,17 +338,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     ) -> None:
         """Add synaptic weights for a new input source."""
 
-        if synapse_id in self.input_sources:
-            raise ValueError(f"Input source '{synapse_id}' already exists")
         if n_input < 0:
             raise ValueError("Number of input neurons must be non-negative")
         if not (0.0 <= connectivity <= 1.0):
             raise ValueError("Connectivity must be between 0 and 1")
         if weight_scale < 0:
             raise ValueError("Weight scale must be non-negative")
-
-        # Track source registration
-        self.input_sources[synapse_id] = n_input
 
         # All registered inputs are synaptic (neuromodulators use separate broadcast system)
         n_output = self.get_population_size(synapse_id.target_population)
@@ -254,9 +384,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             target_population=target_population,
             is_inhibitory=is_inhibitory,
         )
-
-        if synapse_id in self.input_sources:
-            raise ValueError(f"Input source '{synapse_id}' already exists")
 
         self.add_synaptic_weights(synapse_id, weights)
 
@@ -362,6 +489,10 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             firing_rate: Exponential moving average of firing rate [layer_size]
             neurons: Layer's neuron population (has g_L_scale, v_threshold)
         """
+        # Skip homeostasis if globally disabled
+        if not WeightInitializer.GLOBAL_HOMEOSTASIS_ENABLED:
+            return
+
         # Update firing rate EMA with current spikes
         current_rate = spikes.float()
         firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(current_rate * self._firing_rate_alpha)
@@ -391,11 +522,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
         # Check that all synaptic input sources are registered
         for synapse_id in synaptic_inputs.keys():
-            if synapse_id not in self.input_sources:
-                raise ValueError(
-                    f"Input source '{synapse_id}' not registered in {self.__class__.__name__}. "
-                    f"Registered sources: {list(self.input_sources.keys())}"
-                )
             # All registered inputs must have weights (neuromodulators use separate system)
             if synapse_id not in self._synaptic_weights:
                 raise ValueError(
@@ -416,6 +542,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
         return super().__call__(*args, **kwds)
 
+    @torch.no_grad()
     @abstractmethod
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process synaptic and neuromodulatory inputs through the region and produce outputs.

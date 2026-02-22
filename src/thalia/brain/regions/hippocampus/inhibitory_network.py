@@ -305,7 +305,13 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # =====================================================================
         # Septal GABAergic neurons inhibit OLM cells at theta peaks
         # → OLM cells rebound at theta troughs
-        self.septal_to_olm = torch.randn(self.n_olm, 100, device=self.device) * 0.5,
+        self.septal_to_olm = WeightInitializer.sparse_random(
+            n_input=100,  # Assumed septal GABA population size
+            n_output=self.n_olm,
+            connectivity=1.0,  # Fully connected
+            weight_scale=0.5,
+            device=self.device,
+        )
 
         self._prev_pv_spikes: Optional[torch.Tensor] = None
         self._prev_olm_spikes: Optional[torch.Tensor] = None
@@ -319,6 +325,7 @@ class HippocampalInhibitoryNetwork(nn.Module):
         assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
         return super().__call__(*args, **kwds)
 
+    @torch.no_grad()
     def forward(
         self,
         pyr_spikes: torch.Tensor,

@@ -6,7 +6,7 @@ import time
 import torch
 
 from thalia.brain import BrainBuilder, Thalamus
-from thalia.typing import BrainInput, BrainOutput, SynapseId
+from thalia.typing import BrainOutput, SynapseId, SynapticInput
 
 
 # NOTE: Enable line buffering for real-time output
@@ -22,9 +22,6 @@ print(f"Brain created in {time.time() - start:.2f}s")
 print("=== Brain Regions ===")
 for region_name, region in brain.regions.items():
     print(f"  - {region_name}")
-    print("    - Input sources:")
-    for source_name, size in region.input_sources.items():
-        print(f"      - Name: {source_name}, n_input: {size}")
     print("    - Synaptic weights:")
     for synapse_id, weights in region._synaptic_weights.items():
         print(f"      - Name: {synapse_id}, weights shape: {weights.shape}")
@@ -36,8 +33,8 @@ assert thalamus is not None, "Thalamus region not found in the brain."
 print("\n=== Forward Pass ===")
 print("Preparing input...")
 sensory_input = torch.randn(thalamus.relay_size) < 0.5  # Random binary spikes for testing
-brain_input: BrainInput = {
-    "thalamus": {SynapseId.external_sensory_to_thalamus_relay(): sensory_input},
+brain_input: SynapticInput = {
+    SynapseId.external_sensory_to_thalamus_relay(): sensory_input,
 }
 print("Running forward pass...")
 start = time.time()

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from .eligibility_trace_manager import EligibilityTraceManager
+from .intrinsic_plasticity import (
+    compute_excitability_modulation,
+)
 from .strategies import (
     BCMConfig,
     BCMStrategy,
@@ -14,13 +17,12 @@ from .strategies import (
     LearningStrategy,
     CompositeStrategy,
 )
-from .unified_homeostasis import (
-    UnifiedHomeostasis,
-)
 
 __all__ = [
     # Eligibility Traces
     "EligibilityTraceManager",
+    # Intrinsic Plasticity
+    "compute_excitability_modulation",
     # Learning Strategies
     "LearningConfig",
     "BCMConfig",
@@ -31,6 +33,4 @@ __all__ = [
     "ThreeFactorStrategy",
     "LearningStrategy",
     "CompositeStrategy",
-    # Unified Homeostasis
-    "UnifiedHomeostasis",
 ]

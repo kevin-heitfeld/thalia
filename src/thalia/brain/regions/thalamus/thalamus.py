@@ -426,6 +426,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
     # FORWARD PASS
     # =========================================================================
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process sensory input through thalamic relay.
 

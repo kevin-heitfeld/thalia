@@ -14,9 +14,10 @@ Biological Motivation:
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
 
 
-class CircularDelayBuffer:
+class CircularDelayBuffer(nn.Module):
     """Efficient circular buffer for axonal conduction delays.
 
     Models deterministic axonal delays using a ring buffer. Spikes are written
@@ -47,35 +48,26 @@ class CircularDelayBuffer:
         if size <= 0:
             raise ValueError(f"size must be > 0, got {size}")
 
+        super().__init__()
+
         self.max_delay = max_delay
         self.size = size
-        self.device = device
         self.dtype = dtype
 
         # Buffer: [max_delay + 1, size]
         # +1 because we need to store: current, t-1, t-2, ..., t-max_delay
-        self.buffer = torch.zeros(
-            (max_delay + 1, size),
-            dtype=dtype,
-            device=device,
+        self.register_buffer(
+            "buffer",
+            torch.zeros((max_delay + 1, size), dtype=dtype, device=device),
         )
 
         # Current write position (0 to max_delay, wraps around)
         self.ptr = 0
 
-    def to(self, device: str) -> CircularDelayBuffer:
-        """Move buffer to different device.
-
-        Args:
-            device: Target device ('cpu', 'cuda', etc.)
-
-        Returns:
-            Self (for chaining)
-        """
-        if device != self.device:
-            self.buffer = self.buffer.to(device)
-            self.device = device
-        return self
+    @property
+    def device(self) -> torch.device:  # type: ignore[override]
+        """Device where the buffer tensor resides."""
+        return self.buffer.device
 
     def read(self, delay: int) -> torch.Tensor:
         """Read spikes from `delay` timesteps ago.
@@ -114,7 +106,7 @@ class CircularDelayBuffer:
             )
 
         # Write to current position
-        self.buffer[self.ptr] = spikes.to(dtype=self.dtype, device=self.device)
+        self.buffer[self.ptr] = spikes.to(dtype=self.dtype, device=self.buffer.device)
 
     def advance(self) -> None:
         """Advance buffer to next timestep.
@@ -199,10 +191,9 @@ class CircularDelayBuffer:
             new_history = history_tensor
 
         # Create new buffer with new size
-        self.buffer = torch.zeros(
-            (new_delay_steps + 1, self.size),
-            dtype=self.dtype,
-            device=self.device,
+        self.register_buffer(
+            "buffer",
+            torch.zeros((new_delay_steps + 1, self.size), dtype=self.dtype, device=self.buffer.device),
         )
         self.max_delay = new_delay_steps
 
@@ -213,7 +204,7 @@ class CircularDelayBuffer:
         self.ptr = new_delay_steps
 
 
-class HeterogeneousDelayBuffer:
+class HeterogeneousDelayBuffer(nn.Module):
     """Circular buffer with per-neuron heterogeneous delays.
 
     Unlike CircularDelayBuffer (uniform delay for all neurons), this buffer
@@ -247,12 +238,13 @@ class HeterogeneousDelayBuffer:
         if delays.shape[0] != size:
             raise ValueError(f"delays.shape[0] ({delays.shape[0]}) must equal size ({size})")
 
+        super().__init__()
+
         self.size = size
-        self.device = device
         self.dtype = dtype
 
         # Store per-neuron delays [size]
-        self.delays = delays.long().to(device)
+        self.register_buffer("delays", delays.long().to(device))
 
         # Maximum delay determines buffer depth
         self.max_delay = int(self.delays.max().item())
@@ -261,22 +253,18 @@ class HeterogeneousDelayBuffer:
             raise ValueError(f"All delays must be >= 0, got min={self.delays.min().item()}")
 
         # Buffer: [max_delay + 1, size]
-        self.buffer = torch.zeros(
-            (self.max_delay + 1, size),
-            dtype=dtype,
-            device=device,
+        self.register_buffer(
+            "buffer",
+            torch.zeros((self.max_delay + 1, size), dtype=dtype, device=device),
         )
 
         # Current write position
         self.ptr = 0
 
-    def to(self, device: str) -> HeterogeneousDelayBuffer:
-        """Move buffer to different device."""
-        if device != self.device:
-            self.buffer = self.buffer.to(device)
-            self.delays = self.delays.to(device)
-            self.device = device
-        return self
+    @property
+    def device(self) -> torch.device:  # type: ignore[override]
+        """Device where the buffer tensor resides."""
+        return self.buffer.device
 
     def read_heterogeneous(self) -> torch.Tensor:
         """Read spikes with per-neuron delays (VECTORIZED).
@@ -290,7 +278,7 @@ class HeterogeneousDelayBuffer:
         # VECTORIZED: Use advanced indexing to gather all spikes at once
         # This replaces the Python loop with a single torch operation
         # buffer[read_indices, arange(size)] efficiently gathers per-neuron delayed spikes
-        neuron_indices = torch.arange(self.size, device=self.device)
+        neuron_indices = torch.arange(self.size, device=self.buffer.device)
         output = self.buffer[read_indices, neuron_indices]
 
         return output
@@ -306,7 +294,7 @@ class HeterogeneousDelayBuffer:
                 f"Spike vector size mismatch: expected {self.size}, got {spikes.shape[0]}"
             )
 
-        self.buffer[self.ptr] = spikes.to(dtype=self.dtype, device=self.device)
+        self.buffer[self.ptr] = spikes.to(dtype=self.dtype, device=self.buffer.device)
 
     def advance(self) -> None:
         """Advance buffer to next timestep."""
@@ -343,7 +331,7 @@ class HeterogeneousDelayBuffer:
         new_delays_steps = torch.clamp(new_delays_steps, min=0)
 
         # Update delay array
-        self.delays = new_delays_steps.to(self.device)
+        self.register_buffer("delays", new_delays_steps.to(self.buffer.device))
 
         # Update max_delay
         new_max_delay = int(self.delays.max().item())
@@ -387,10 +375,9 @@ class HeterogeneousDelayBuffer:
             new_history = history_tensor
 
         # Create new buffer with new size
-        self.buffer = torch.zeros(
-            (new_max_delay + 1, self.size),
-            dtype=self.dtype,
-            device=self.device,
+        self.register_buffer(
+            "buffer",
+            torch.zeros((new_max_delay + 1, self.size), dtype=self.dtype, device=self.buffer.device),
         )
         self.max_delay = new_max_delay
 

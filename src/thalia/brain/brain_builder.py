@@ -125,16 +125,6 @@ class BrainBuilder:
         Args:
             brain_config: Brain configuration (device, dt_ms, etc.)
         """
-        # =================================================================
-        # DISABLE GRADIENTS
-        # =================================================================
-        # Thalia uses local learning rules (STDP, BCM, Hebbian, three-factor)
-        # that do NOT require backpropagation. Disabling gradients provides:
-        # - Performance boost (no autograd overhead)
-        # - Memory savings (no gradient storage)
-        # - Biological plausibility (no non-local error signals)
-        torch.set_grad_enabled(False)
-
         self.brain_config = brain_config or BrainConfig()
         self._region_specs: Dict[RegionName, RegionSpec] = {}
         self._connection_specs: List[ConnectionSpec] = []

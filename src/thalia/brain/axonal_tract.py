@@ -36,6 +36,12 @@ class AxonalTractSourceSpec:
 class AxonalTract(nn.Module):
     """Pure axonal transmission between brain regions."""
 
+    _SEP = "|"
+
+    @classmethod
+    def _encode_src_key(cls, key: Tuple[RegionName, PopulationName]) -> str:
+        return f"{key[0]}{cls._SEP}{key[1]}"
+
     @property
     def device(self) -> torch.device:
         """Device where tensors are located."""
@@ -55,7 +61,7 @@ class AxonalTract(nn.Module):
 
         # Create delay buffers for each source
         # Use heterogeneous delays if delay_std_ms > 0, otherwise uniform delays
-        self.delay_buffers: Dict[Tuple[RegionName, PopulationName], CircularDelayBuffer | HeterogeneousDelayBuffer] = {}
+        self._delay_buffers_md = nn.ModuleDict()
         for spec in self.source_specs:
             source_key = (spec.region_name, spec.population)
 
@@ -72,7 +78,7 @@ class AxonalTract(nn.Module):
                     max=mean_delay_steps * 3.0
                 ).long()
 
-                self.delay_buffers[source_key] = HeterogeneousDelayBuffer(
+                self._delay_buffers_md[self._encode_src_key(source_key)] = HeterogeneousDelayBuffer(
                     delays=delays_steps,
                     size=spec.size,
                     device=device,
@@ -81,7 +87,7 @@ class AxonalTract(nn.Module):
             else:
                 # Uniform delay: all neurons have same delay
                 delay_steps = int(spec.delay_ms / self.dt_ms)
-                self.delay_buffers[source_key] = CircularDelayBuffer(
+                self._delay_buffers_md[self._encode_src_key(source_key)] = CircularDelayBuffer(
                     max_delay=delay_steps,
                     size=spec.size,
                     device=device,
@@ -101,7 +107,7 @@ class AxonalTract(nn.Module):
 
         for source_spec in self.source_specs:
             source_key = (source_spec.region_name, source_spec.population)
-            buffer = self.delay_buffers[source_key]
+            buffer = self._delay_buffers_md[self._encode_src_key(source_key)]
 
             # Read delayed spikes
             # HeterogeneousDelayBuffer: uses per-neuron delays
@@ -127,7 +133,7 @@ class AxonalTract(nn.Module):
 
         for source_spec in self.source_specs:
             source_key = (source_spec.region_name, source_spec.population)
-            buffer = self.delay_buffers[source_key]
+            buffer = self._delay_buffers_md[self._encode_src_key(source_key)]
 
             # Extract spikes from RegionOutput
             spikes = None
@@ -169,9 +175,9 @@ class AxonalTract(nn.Module):
         # Resize each delay buffer
         for spec in self.source_specs:
             source_key = (spec.region_name, spec.population)
-            assert source_key in self.delay_buffers, f"Source key '{source_key}' not found in delay buffers."
+            assert self._encode_src_key(source_key) in self._delay_buffers_md, f"Source key '{source_key}' not found in delay buffers."
 
-            buffer = self.delay_buffers[source_key]
+            buffer = self._delay_buffers_md[self._encode_src_key(source_key)]
             buffer.resize_for_new_dt(
                 new_dt_ms=dt_ms,
                 delay_ms=spec.delay_ms,

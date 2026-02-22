@@ -137,6 +137,7 @@ class RewardEncoder(NeuralRegion[RewardEncoderConfig]):
         # Store for next forward() call
         self._current_reward = reward
 
+    @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Encode current reward as population spike pattern.
 

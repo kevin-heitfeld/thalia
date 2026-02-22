@@ -15,15 +15,19 @@ import os
 import sys
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
 import torch
 
 from thalia.brain import BrainBuilder, DynamicBrain
+from thalia.brain.regions.population_names import ThalamusPopulation
 from thalia.components.synapses import WeightInitializer
 from thalia.diagnostics import BrainActivityAnalyzer, BrainActivityReport
 from thalia.typing import BrainOutput
+
+if TYPE_CHECKING:
+    from thalia.components import STPType, STPConfig, ShortTermPlasticity
 
 
 # NOTE: Enable line buffering for real-time output
@@ -36,7 +40,7 @@ class ComprehensiveDiagnostics:
     Uses BrainActivityAnalyzer for brain-wide metrics + callbacks for specialized tracking.
     """
 
-    def __init__(self, brain: DynamicBrain, timesteps: int, input_pattern: str = "random"):
+    def __init__(self, brain: DynamicBrain, timesteps: int, input_pattern: str):
         self.brain = brain
         self.timesteps = timesteps
         self.input_pattern = input_pattern
@@ -87,7 +91,7 @@ class ComprehensiveDiagnostics:
 
         # Thalamus T-channel diagnostics (CRITICAL for debugging alpha oscillations)
         thalamus = brain.regions["thalamus"]
-        if thalamus and hasattr(thalamus, "relay_neurons"):
+        if thalamus and ThalamusPopulation.RELAY.value in thalamus.neuron_populations:
             # Sample 10 relay neurons for detailed traces
             self.n_relay_samples = min(10, thalamus.relay_size)
             self.relay_voltage_traces = np.zeros((timesteps, self.n_relay_samples))
@@ -349,63 +353,14 @@ class ComprehensiveDiagnostics:
         print(f"\nTracking {len(self.brain.regions)} regions with {self.timesteps} timesteps")
         print()
 
-        # Monkey-patch the analyzer to call our callback during simulation
-        original_run_sim = self.brain_analyzer.run_simulation
-
-        def run_with_callback(input_pattern=None, verbose=True):
-            """Wrapper around run_simulation that injects our callback."""
-            if verbose:
-                print(f"\n{'='*80}")
-                print(f"BRAIN ACTIVITY ANALYZER - Simulating {self.brain_analyzer.timesteps} timesteps")
-                print(f"{'='*80}\n")
-
-            self.brain_analyzer.spike_history = []
-            self.brain_analyzer.region_activity = defaultdict(list)
-
-            start_time = time.time()
-
-            for t in range(self.brain_analyzer.timesteps):
-                # Generate input
-                input_spikes = self.brain_analyzer._generate_input(t, input_pattern)
-
-                # Run brain forward pass
-                outputs = self.brain.forward(input_spikes)
-
-                # Record outputs (original behavior)
-                self.brain_analyzer.spike_history.append(outputs)
-                for region_name, region_outputs in outputs.items():
-                    self.brain_analyzer.region_activity[region_name].append(region_outputs)
-
-                # Track gains and weights if enabled
-                if self.brain_analyzer.track_dynamics:
-                    self.brain_analyzer._record_timestep_diagnostics(t)
-
-                # INJECT OUR CALLBACK HERE
-                self._timestep_callback(t, outputs)
-
-                # Progress updates
-                if verbose and (t + 1) % 100 == 0:
-                    elapsed = time.time() - start_time
-                    rate = (t + 1) / elapsed
-                    print(f"  Timestep {t+1}/{self.brain_analyzer.timesteps} ({rate:.1f} steps/sec)")
-
-            if verbose:
-                elapsed = time.time() - start_time
-                print(f"\n✓ Simulation complete in {elapsed:.2f}s ({self.brain_analyzer.timesteps/elapsed:.1f} steps/sec)")
-
-        # Replace method temporarily
-        self.brain_analyzer.run_simulation = run_with_callback
-
-        # Run the analysis (now with our callbacks)
+        # Run the analysis with our callback
         print(f"Running brain-wide activity analysis with specialized tracking...")
         print(f"Input pattern: {self.input_pattern}")
         self.brain_report = self.brain_analyzer.analyze_full_brain(
             input_pattern=self.input_pattern,
-            verbose=True
+            verbose=True,
+            timestep_callback=self._timestep_callback,
         )
-
-        # Restore original method
-        self.brain_analyzer.run_simulation = original_run_sim
 
         print("\n✓ Comprehensive analysis complete")
 
@@ -1231,7 +1186,17 @@ def analyze_synaptic_weights(brain: DynamicBrain) -> None:
             mean_weight = weights.mean()
             min_weight = weights.min()
             max_weight = weights.max()
-            print(f"  {region.__class__.__name__}:{synapse_id} - Mean: {mean_weight:.4f}, Min: {min_weight:.4f}, Max: {max_weight:.4f}")
+            stp: Optional[ShortTermPlasticity] = region.stp_modules.get(synapse_id, None)
+            if stp is not None:
+                stp_config: STPConfig = stp.config
+                stp_info = f"(STP: U={stp_config.U}, tau_d={stp_config.tau_d}ms, tau_f={stp_config.tau_f}ms)"
+            else:
+                stp_info = "(No STP)"
+            print(
+                f"  {region.__class__.__name__}:{synapse_id} - "
+                f"Mean: {mean_weight:.4f}, Min: {min_weight:.4f}, Max: {max_weight:.4f}"
+                f" {stp_info}"
+            )
 
 
 def main():
@@ -1277,7 +1242,7 @@ def main():
     print(f"  Regions: {len(brain.regions)}")
     for region_name, region in brain.regions.items():
         print(f"  - {region_name}:")
-        print(f"    Baseline noise conductance: {region.config.baseline_noise_conductance}")
+        print(f"    Baseline noise conductance enabled: {region.config.baseline_noise_conductance_enabled}")
         print(f"    Neuromodulation enabled: {region.config.enable_neuromodulation}")
         if hasattr(region.config, "baseline_drive"):
             print(f"    Baseline drive: {region.config.baseline_drive}")

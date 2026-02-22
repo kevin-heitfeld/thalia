@@ -89,17 +89,11 @@ SynapticInput = Dict[SynapseId, torch.Tensor]
 
 This structure allows for flexible routing of spikes to the correct dendritic compartments
 based on their source and target, enabling complex connectivity patterns within neural regions.
-
-NOTE: This is ONLY for synaptic connections. Neuromodulatory inputs use NeuromodulatorInput instead.
 """
 
 
 RegionOutput = Dict[PopulationName, torch.Tensor]
 """Mapping of population names to their output spike tensors, where each population's output is a binary spike tensor."""
-
-
-BrainInput = Dict[RegionName, SynapticInput]
-"""Mapping of region names to their input spikes, where each region's input is a SynapticInput."""
 
 
 BrainOutput = Dict[RegionName, RegionOutput]

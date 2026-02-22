@@ -43,6 +43,8 @@ from typing import List
 
 import torch
 
+from thalia.components import WeightInitializer
+
 
 class EmergentGoalSystem:
     """Goals emerge from PFC working memory attractor dynamics.
@@ -105,7 +107,14 @@ class EmergentGoalSystem:
 
         # Goal value associations: OFC-like value mapping
         # Maps WM patterns to expected value (learned from experience)
-        self.value_weights = torch.randn(n_wm_neurons, device=device) * 0.1
+        self.value_weights = WeightInitializer.sparse_uniform(
+            n_input=1,
+            n_output=n_wm_neurons,
+            connectivity=1.0,
+            w_min=0.0,
+            w_max=0.2,
+            device=device,
+        )  # [n_wm_neurons]
 
         # Synaptic tags for goal patterns (Frey-Morris)
         # Recently-activated goals get tagged for consolidation

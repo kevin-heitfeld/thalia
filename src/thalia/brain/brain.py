@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple, Type, TypeVar, cast
+from typing import Any, Dict, Iterator, Optional, Tuple, Type, TypeVar, cast
+
+import math
 
 import torch
 import torch.nn as nn
 
 from thalia.typing import (
-    BrainInput,
     BrainOutput,
     NeuromodulatorInput,
     PopulationName,
@@ -21,6 +22,7 @@ from thalia.utils import compute_firing_rate, validate_spike_tensor
 
 from .axonal_tract import AxonalTract
 from .configs import BrainConfig, NeuralRegionConfig
+
 from .regions import (
     NeuralRegion,
     Cortex,
@@ -31,6 +33,120 @@ from .regions import (
 
 
 RegionT = TypeVar('RegionT', bound=NeuralRegion[NeuralRegionConfig])
+
+
+# =============================================================================
+# TYPED-KEY CONTAINER FOR AXONAL TRACTS
+# =============================================================================
+
+class AxonalTractDict(nn.Module):
+    """nn.ModuleDict wrapper keyed by (RegionName, PopulationName) tuples.
+
+    nn.ModuleDict requires str keys; this class encodes the tuple to a stable
+    string so that .to(), .state_dict(), and .parameters() all work correctly.
+    """
+
+    _SEP = "|"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._md: nn.ModuleDict = nn.ModuleDict()
+
+    @classmethod
+    def _encode(cls, key: Tuple[RegionName, PopulationName]) -> str:
+        region, population = key
+        return f"{region}{cls._SEP}{population}"
+
+    @classmethod
+    def _decode(cls, raw: str) -> Tuple[RegionName, PopulationName]:
+        region, population = raw.split(cls._SEP, 1)
+        return region, population
+
+    def __setitem__(self, key: Tuple[RegionName, PopulationName], value: AxonalTract) -> None:
+        self._md[self._encode(key)] = value
+
+    def __getitem__(self, key: Tuple[RegionName, PopulationName]) -> AxonalTract:
+        return self._md[self._encode(key)]  # type: ignore[return-value]
+
+    def __contains__(self, key: object) -> bool:
+        try:
+            return self._encode(key) in self._md
+        except Exception:
+            return False
+
+    def __len__(self) -> int:
+        return len(self._md)
+
+    def __iter__(self) -> Iterator[Tuple[RegionName, PopulationName]]:
+        return (self._decode(k) for k in self._md)
+
+    def items(self) -> Iterator[Tuple[Tuple[RegionName, PopulationName], AxonalTract]]:
+        """Yield ((RegionName, PopulationName), AxonalTract) pairs."""
+        return ((self._decode(k), v) for k, v in self._md.items())  # type: ignore[return-value]
+
+    def values(self) -> Iterator[AxonalTract]:
+        """Yield AxonalTract values."""
+        return self._md.values()  # type: ignore[return-value]
+
+
+# =============================================================================
+# NEUROMODULATOR DIFFUSION TRACTS
+# =============================================================================
+
+# Default first-order low-pass time constants for neuromodulator volume diffusion.
+# Biological refs: DA ~100–300 ms (Garris et al.); NE ~80 ms; ACh ~60 ms (muscarinic onset).
+_NEUROMOD_DEFAULT_TAU_MS: Dict[str, float] = {
+    'da': 150.0,
+    'ne': 80.0,
+    'ach': 60.0,
+}
+
+
+class NeuromodulatorTract(nn.Module):
+    """First-order IIR low-pass filter modeling neuromodulator volume diffusion.
+
+    Replaces the raw 1-step delay with a biologically realistic filter::
+
+        filtered(t) = α · filtered(t-1) + (1 - α) · raw(t)
+
+    where α = exp(-dt / tau_ms).  This models the slow extracellular spread of
+    dopamine (τ ≈ 150 ms), norepinephrine (τ ≈ 80 ms), and acetylcholine
+    (τ ≈ 60 ms).  The ``filtered`` buffer is registered via
+    ``register_buffer`` so ``.to()``, ``state_dict()``, and
+    ``load_state_dict()`` all work correctly.
+    """
+
+    def __init__(self, tau_ms: float, dt_ms: float) -> None:
+        super().__init__()
+        self.tau_ms = tau_ms
+        self._alpha: float = math.exp(-dt_ms / tau_ms)
+
+    def update(self, raw: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+        """Update filter state with the latest raw neuromodulator spike tensor.
+
+        Args:
+            raw: Spike tensor from the neuromodulator source population, or
+                 ``None`` if the source region produced no output this step.
+
+        Returns:
+            Filtered tensor (same shape/device as *raw*), or ``None`` if the
+            tract has not yet received any input.
+        """
+        if raw is None:
+            return self._buffers.get('filtered', None)
+
+        raw_f = raw.float()
+        if 'filtered' not in self._buffers or self._buffers['filtered'] is None:
+            # Lazy initialisation: allocate on first spike, matching shape & device.
+            self.register_buffer('filtered', torch.zeros_like(raw_f))
+
+        # Exponential moving average — models slow extracellular diffusion.
+        self.filtered: torch.Tensor = self._alpha * self.filtered + (1.0 - self._alpha) * raw_f
+        return self.filtered
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Recompute the IIR decay coefficient when the simulation timestep changes."""
+        self._alpha = math.exp(-dt_ms / self.tau_ms)
 
 
 class DynamicBrain(nn.Module):
@@ -87,16 +203,6 @@ class DynamicBrain(nn.Module):
             axonal_tracts: Dict mapping (target_region, target_population) to AxonalTract instances
         """
         # =================================================================
-        # DISABLE GRADIENTS
-        # =================================================================
-        # Thalia uses local learning rules (STDP, BCM, Hebbian, three-factor)
-        # that do NOT require backpropagation. Disabling gradients provides:
-        # - Performance boost (no autograd overhead)
-        # - Memory savings (no gradient storage)
-        # - Biological plausibility (no non-local error signals)
-        torch.set_grad_enabled(False)
-
-        # =================================================================
         # INITIALIZE BRAIN STATE
         # =================================================================
         super().__init__()
@@ -106,8 +212,24 @@ class DynamicBrain(nn.Module):
         # Store regions as nn.ModuleDict for proper parameter tracking
         self.regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]] = nn.ModuleDict(regions)
 
-        # Store axonal tracts in a dict keyed by (target_region, target_population) for routing
-        self.axonal_tracts: Dict[Tuple[RegionName, PopulationName], AxonalTract] = axonal_tracts
+        # Store axonal tracts in a typed nn.ModuleDict wrapper so .to(), .state_dict(),
+        # and .parameters() track all delay-buffer state correctly.
+        self.axonal_tracts: AxonalTractDict = AxonalTractDict()
+        for key, tract in axonal_tracts.items():
+            self.axonal_tracts[key] = tract
+
+        # Create one NeuromodulatorTract per modulator key, discovered by scanning
+        # regions for the neuromodulator_outputs ClassVar.
+        # Each tract models volume diffusion via a first-order IIR low-pass filter.
+        self.neuromodulator_tracts: nn.ModuleDict = nn.ModuleDict()
+        for region in regions.values():
+            if hasattr(region, 'neuromodulator_outputs'):
+                for mod_key in region.neuromodulator_outputs:
+                    if mod_key not in self.neuromodulator_tracts:
+                        tau = _NEUROMOD_DEFAULT_TAU_MS.get(mod_key, 100.0)
+                        self.neuromodulator_tracts[mod_key] = NeuromodulatorTract(
+                            tau_ms=tau, dt_ms=config.dt_ms
+                        )
 
         # Current simulation time
         self._current_time: float = 0.0
@@ -130,7 +252,8 @@ class DynamicBrain(nn.Module):
         assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
         return super().__call__(*args, **kwds)
 
-    def forward(self, input_spikes: Optional[BrainInput] = None) -> BrainOutput:
+    @torch.no_grad()
+    def forward(self, synaptic_inputs: Optional[SynapticInput] = None) -> BrainOutput:
         """Run one timestep of the brain."""
         # === CLOCK-DRIVEN EXECUTION (ADR-003) ===
         # All regions execute every timestep.
@@ -152,16 +275,13 @@ class DynamicBrain(nn.Module):
         # =====================================================================
 
         # STEP 1: Read delayed outputs from all axonal tracts (spikes from T-delay)
-        region_inputs: BrainInput = {name: {} for name in self.regions.keys()}
+        region_inputs: SynapticInput = {}
 
         for (target_region, target_population), axonal_tract in self.axonal_tracts.items():
             # Read delayed outputs WITHOUT writing or advancing
             delayed_outputs: BrainOutput = axonal_tract.read_delayed_outputs()
 
             for source_region, population_dict in delayed_outputs.items():
-                if target_region not in region_inputs:
-                    region_inputs[target_region] = {}
-
                 for source_population, delayed_source_spikes in population_dict.items():
                     synapse_id = SynapseId(
                         source_region=source_region,
@@ -171,67 +291,45 @@ class DynamicBrain(nn.Module):
                         is_inhibitory=False,  # TODO: Support inhibitory tracts in the future by adding is_inhibitory to AxonalTract and SynapseId
                     )
 
-                    if synapse_id in region_inputs[target_region]:
+                    if synapse_id in region_inputs:
                         raise ValueError(
-                            f"Routing collision: '{synapse_id}' already exists in region '{target_region}'. "
-                            f"This indicates duplicate axonal tract connections with different delays. "
-                            f"Each (target_population, source_region, source_population) tuple should map to "
-                            f"exactly one axonal tract. Check brain architecture configuration."
+                            f"Duplicate synapse_id {synapse_id} from axonal tracts. "
+                            f"Check for overlapping source populations or routing errors."
                         )
 
-                    region_inputs[target_region][synapse_id] = delayed_source_spikes
+                    region_inputs[synapse_id] = delayed_source_spikes
 
         # STEP 2: Inject external input spikes (e.g., sensory) - these have FULL routing keys already
         # External inputs are added on top of delayed spikes (logical OR) since both contribute to activation
-        if input_spikes is not None:
-            for target_region, external_region_input in input_spikes.items():
-                if target_region not in region_inputs:
-                    region_inputs[target_region] = {}
+        if synaptic_inputs is not None:
+            for synapse_id, synapse_input in synaptic_inputs.items():
+                validate_spike_tensor(synapse_input, tensor_name=str(synapse_id))
 
-                for synapse_id, synapse_input in external_region_input.items():
-                    validate_spike_tensor(synapse_input, tensor_name=str(synapse_id))
+                # Logical OR if key already exists
+                # (e.g., external sensory input + delayed thalamic input to same target)
+                if synapse_id in region_inputs:
+                    region_inputs[synapse_id] = region_inputs[synapse_id] | synapse_input
+                else:
+                    region_inputs[synapse_id] = synapse_input
 
-                    # Logical OR if key already exists
-                    # (e.g., external sensory input + delayed thalamic input to same target)
-                    if synapse_id in region_inputs[target_region]:
-                        region_inputs[target_region][synapse_id] = (
-                            region_inputs[target_region][synapse_id] | synapse_input
-                        )
-                    else:
-                        region_inputs[target_region][synapse_id] = synapse_input
-
-        # STEP 3: Collect neuromodulator signals for broadcast
-        # Neuromodulators use volume transmission - broadcast to ALL regions
+        # STEP 3: Collect neuromodulator signals via diffusion tracts.
+        # Each neuromodulator region declares outputs via a `neuromodulator_outputs` ClassVar.
+        # Raw spikes are fed through a NeuromodulatorTract IIR filter that models the
+        # slow volume diffusion of DA/NE/ACh.
         neuromodulator_signals: NeuromodulatorInput = {}
-
-        # Collect from last timestep's outputs (neuromodulators have slow dynamics)
-        if self._last_brain_output is not None:
-            # Dopamine from VTA
-            if 'vta' in self._last_brain_output and 'da' in self._last_brain_output['vta']:
-                neuromodulator_signals['da'] = self._last_brain_output['vta']['da']
-            else:
-                neuromodulator_signals['da'] = None
-
-            # Norepinephrine from Locus Coeruleus
-            if 'locus_coeruleus' in self._last_brain_output and 'ne' in self._last_brain_output['locus_coeruleus']:
-                neuromodulator_signals['ne'] = self._last_brain_output['locus_coeruleus']['ne']
-            else:
-                neuromodulator_signals['ne'] = None
-
-            # Acetylcholine from Nucleus Basalis
-            if 'nucleus_basalis' in self._last_brain_output and 'ach' in self._last_brain_output['nucleus_basalis']:
-                neuromodulator_signals['ach'] = self._last_brain_output['nucleus_basalis']['ach']
-            else:
-                neuromodulator_signals['ach'] = None
-        else:
-            # First timestep - no neuromodulator signals yet
-            neuromodulator_signals = {'da': None, 'ne': None, 'ach': None}
+        for region_name, region in self.regions.items():
+            if hasattr(region, 'neuromodulator_outputs'):
+                for mod_key, pop_name in region.neuromodulator_outputs.items():
+                    raw: Optional[torch.Tensor] = None
+                    if self._last_brain_output is not None:
+                        raw = self._last_brain_output.get(region_name, {}).get(pop_name)
+                    neuromodulator_signals[mod_key] = self.neuromodulator_tracts[mod_key].update(raw)
 
         # STEP 4: Execute all regions with synaptic inputs AND neuromodulator broadcast → produce outputs at T
         brain_output: BrainOutput = {}
         for region_name, region in self.regions.items():
-            synaptic_inputs: SynapticInput = region_inputs.get(region_name, {})
-            region_output: RegionOutput = region.forward(synaptic_inputs, neuromodulator_signals)
+            synaptic_inputs_for_region: SynapticInput = {k: v for k, v in region_inputs.items() if k.target_region == region_name}
+            region_output: RegionOutput = region.forward(synaptic_inputs_for_region, neuromodulator_signals)
             brain_output[region_name] = region_output
 
         # Store for next timestep's neuromodulator broadcast
@@ -469,3 +567,7 @@ class DynamicBrain(nn.Module):
         # Update all axonal tracts
         for axonal_tract in self.axonal_tracts.values():
             axonal_tract.update_temporal_parameters(new_dt_ms)
+
+        # Update neuromodulator diffusion tracts
+        for nm_tract in self.neuromodulator_tracts.values():
+            nm_tract.update_temporal_parameters(new_dt_ms)
