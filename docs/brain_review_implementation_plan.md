@@ -529,17 +529,17 @@ All regions' internal `CircularDelayBuffer` instances (L4→L2/3 in Cortex, DG�
 
 ---
 
-### Phase 2 — NMDA Voltage-Gating (Critical Biological Fix) 🚧 IN PROGRESS
+### Phase 2 — NMDA Voltage-Gating (Critical Biological Fix) ✅ COMPLETE
 
 *Goal: Restore proper coincidence detection.*
 
-**2.1 — Implement Mg²⁺ Unblock in `ConductanceLIF`**
+**2.1 — Implement Mg²⁺ Unblock in `ConductanceLIF`** ✅
 
 Add normalized voltage-dependent NMDA gate to `ConductanceLIF.step()`. The effective NMDA conductance: `g_nmda_eff = g_nmda * sigmoid(k * (V_norm - V_half))` where `k ≈ 5.0` and `V_half ≈ 0.3` in normalized units (calibrated to match biological 50% unblock at -30mV relative to resting). This is a smooth approximation that avoids the sharp threshold but captures the voltage-dependence.
 
 Raise the default `nmda_ratio` in `_split_excitatory_conductance()` from `0.0` to `0.20` and do a quick diagnostic run to confirm stable network dynamics.
 
-**2.2 — Validate STDP Coincidence Detection is Restored**
+**2.2 — Validate STDP Coincidence Detection is Restored** ✅
 
 Write a unit test: two populations with a single synapse, fire pre before post (LTP scenario). Confirm weight increases only when NMDA unblock occurs (post is depolarized), not when post is silent.
 
@@ -710,7 +710,7 @@ Move `SynapticTagging` from the hippocampus-only implementation into `NeuralRegi
 | Phase | Description | Biological Priority | Effort |
 |-------|-------------|--------------------|-|
 | 1 | Architecture foundations | ★★★★★ | ✅ Done |
-| 2 | NMDA voltage-gating | ★★★★★ | Small |
+| 2 | NMDA voltage-gating | ★★★★★ | ✅ Done |
 | 3 | Basal ganglia completion (GPe, STN, GPi) | ★★★★★ | Large |
 | 4 | LHb + RMTg + negative RPE | ★★★★★ | Medium |
 | 5 | Cortical disinhibition (SOM+/VIP) | ★★★★☆ | Medium |
