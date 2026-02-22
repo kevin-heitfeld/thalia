@@ -350,8 +350,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         )
 
         # DA concentration state (updated each timestep from VTA spikes)
-        self._da_concentration_d1 = torch.zeros(self.d1_size, device=self.device)
-        self._da_concentration_d2 = torch.zeros(self.d2_size, device=self.device)
+        self._da_concentration_d1: torch.Tensor
+        self._da_concentration_d2: torch.Tensor
+        self.register_buffer("_da_concentration_d1", torch.zeros(self.d1_size, device=self.device))
+        self.register_buffer("_da_concentration_d2", torch.zeros(self.d2_size, device=self.device))
 
         # =====================================================================
         # NOREPINEPHRINE RECEPTORS (Spiking NE from LC)
@@ -380,8 +382,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         )
 
         # NE concentration state (updated from LC spikes)
-        self._ne_concentration_d1 = torch.zeros(self.d1_size, device=self.device)
-        self._ne_concentration_d2 = torch.zeros(self.d2_size, device=self.device)
+        self._ne_concentration_d1: torch.Tensor
+        self._ne_concentration_d2: torch.Tensor
+        self.register_buffer("_ne_concentration_d1", torch.zeros(self.d1_size, device=self.device))
+        self.register_buffer("_ne_concentration_d2", torch.zeros(self.d2_size, device=self.device))
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -540,15 +544,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # weights, so integration must remain separate per pathway.
         d1_conductance = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs, self.d1_size, filter_by_target_population=StriatumPopulation.D1.value
-        )
+        ).g_exc
         d2_conductance = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs, self.d2_size, filter_by_target_population=StriatumPopulation.D2.value
-        )
-
-        # Compute excitation from D1 and D2 MSNs to FSI
-        # Use previous timestep's spikes for causal feedback (delay=1)
-        prev_d1_spikes = self._d1_spike_buffer.read(1).float()
-        prev_d2_spikes = self._d2_spike_buffer.read(1).float()
+        ).g_exc
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Feedforward Inhibition
@@ -560,7 +559,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         if self.fsi_size > 0:
             fsi_conductance = self._integrate_synaptic_inputs_at_dendrites(
                 synaptic_inputs, self.fsi_size, filter_by_target_population=StriatumPopulation.FSI.value
-            )
+            ).g_exc
 
             # Apply gap junction coupling
             if (self.gap_junctions_fsi is not None and self.fsi_neurons.membrane is not None):
@@ -593,11 +592,14 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 target_population=StriatumPopulation.FSI.value,
             )
 
-            d1_fsi_conductance = self.get_synaptic_weights(d1_fsi_synapse) @ prev_d1_spikes
-            d2_fsi_conductance = self.get_synaptic_weights(d2_fsi_synapse) @ prev_d2_spikes
-
-            # Add MSN excitation to FSI conductance
-            fsi_conductance = fsi_conductance + d1_fsi_conductance + d2_fsi_conductance
+            # Add MSN→FSI excitation (causal: t-1 MSN spikes via spike buffers)
+            fsi_conductance = fsi_conductance + self._integrate_synaptic_inputs_at_dendrites(
+                {
+                    d1_fsi_synapse: self._d1_spike_buffer.read(1),
+                    d2_fsi_synapse: self._d2_spike_buffer.read(1),
+                },
+                n_neurons=self.fsi_size,
+            ).g_exc
 
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
             # Split excitatory conductance into AMPA (fast) and NMDA (slow)
@@ -689,10 +691,14 @@ class Striatum(NeuralRegion[StriatumConfig]):
             target_population=StriatumPopulation.D2.value,
             is_inhibitory=True,
         )
-        d1_d1_inhib_weights = self.get_synaptic_weights(d1_d1_inhib_synapse)
-        d2_d2_inhib_weights = self.get_synaptic_weights(d2_d2_inhib_synapse)
-        d1_d1_inhibition = d1_d1_inhib_weights @ prev_d1_spikes
-        d2_d2_inhibition = d2_d2_inhib_weights @ prev_d2_spikes
+        d1_d1_inhibition = self._integrate_synaptic_inputs_at_dendrites(
+            {d1_d1_inhib_synapse: self._d1_spike_buffer.read(1)},
+            n_neurons=self.d1_size,
+        ).g_inh
+        d2_d2_inhibition = self._integrate_synaptic_inputs_at_dendrites(
+            {d2_d2_inhib_synapse: self._d2_spike_buffer.read(1)},
+            n_neurons=self.d2_size,
+        ).g_inh
 
         # =====================================================================
         # D1/D2 NEURON ACTIVATION with Modulation

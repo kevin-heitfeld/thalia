@@ -166,12 +166,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # INITIALIZE STATE VARIABLES
         # =====================================================================
-        # TRN state
-        self._last_trn_spikes: torch.Tensor = torch.zeros(self.trn_size, dtype=torch.bool, device=self.device)
-
         # Mode state (0=burst, 1=tonic)
         # Initialize to tonic
-        self.current_mode: torch.Tensor = torch.ones(self.relay_size, device=self.device)
+        self.current_mode: torch.Tensor
+        self.register_buffer("current_mode", torch.ones(self.relay_size, device=self.device))
 
         # Homeostatic plasticity: track firing rates for gain adaptation
         self.register_buffer("relay_firing_rate", torch.zeros(self.relay_size, device=self.device))
@@ -181,7 +179,8 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # Input → TRN (collateral activation)
         # Created lazily when first source is added (size unknown at init)
-        self.input_to_trn: Optional[torch.Tensor] = None
+        self.input_to_trn: Optional[torch.Tensor]
+        self.register_buffer("input_to_trn", None)
 
         # Relay → TRN (collateral activation)
         # CONDUCTANCE-BASED: Strong conductance to drive TRN firing
@@ -227,6 +226,15 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             dtype=torch.bool,
         )
 
+        # Relay→TRN delay buffer (1-step; relay axon collaterals reach TRN with ~1ms delay)
+        # Biology: relay→TRN is a collateral of the thalamocortical axon, not zero-latency
+        self._relay_spike_buffer = CircularDelayBuffer(
+            max_delay=1,
+            size=self.relay_size,
+            device=str(self.device),
+            dtype=torch.bool,
+        )
+
         # =====================================================================
         # ACETYLCHOLINE RECEPTOR (NB projection for sleep/wake modulation)
         # =====================================================================
@@ -251,7 +259,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Thalamocortical synapses show robust STDP
         # Critical for sensory learning, attention, and routing
         # Both ascending (sensory→relay) and descending (L6→relay) pathways learn
-        self.learning_strategy = STDPStrategy(STDPConfig(
+        self._stdp_strategy = STDPStrategy(STDPConfig(
             learning_rate=config.learning_rate,
             a_plus=0.005,  # Moderate LTP (thalamic synapses are conservative)
             a_minus=0.001,  # Weak LTD (5:1 LTP:LTD ratio)
@@ -296,16 +304,15 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         """
         # Create gap junctions using input_to_trn connectivity pattern
         if self.input_to_trn is not None and self.gap_junctions is None:
-            gap_junctions_config = GapJunctionConfig(
-                coupling_strength=0.1,
-                connectivity_threshold=0.3,
-                max_neighbors=6,
-                interneuron_only=True,  # All TRN neurons are inhibitory
-            )
             self.gap_junctions = GapJunctionCoupling(
                 n_neurons=self.trn_size,
                 afferent_weights=self.input_to_trn,
-                config=gap_junctions_config,
+                config=GapJunctionConfig(
+                    coupling_strength=0.1,
+                    connectivity_threshold=0.3,
+                    max_neighbors=6,
+                    interneuron_only=True,  # All TRN neurons are inhibitory
+                ),
                 interneuron_mask=None,  # All TRN neurons are interneurons
                 device=self.device,
             )
@@ -452,13 +459,13 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
         # =====================================================================
-        # Accumulate synaptic conductances from all registered sources
+        # Accumulate synaptic conductances from all registered external sources
         # - "sensory": External sensory input (retina→LGN, etc.)
         # - "cortex:l6a": Corticothalamic feedback to TRN
         # - "cortex:l6b": Corticothalamic feedback to relay
-        # - TRN→relay inhibition: INTERNAL (from self._last_trn_spikes), not from synaptic_inputs!
+        # Internal connections (TRN→relay, relay→TRN, TRN→TRN) are integrated below
+        # using _integrate_synaptic_inputs_at_dendrites with their respective delay buffers.
         relay_conductance = torch.zeros(self.relay_size, device=self.device)
-        relay_inhibition = torch.zeros(self.relay_size, device=self.device)
         trn_conductance = torch.zeros(self.trn_size, device=self.device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
@@ -491,10 +498,11 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 raise ValueError(f"Received spikes for unrecognized synapse_id key: {synapse_id}")
 
         # =====================================================================
-        # INTERNAL TRN→RELAY INHIBITION (local recurrent connection)
+        # INTERNAL TRN→RELAY INHIBITION (1-step delayed, via _trn_recurrent_buffer)
         # =====================================================================
-        # TRN spikes from PREVIOUS timestep inhibit relay (must use delayed spikes)
-        # This is a local connection within thalamus, not routed through brain.forward()
+        # TRN spikes from the PREVIOUS timestep inhibit relay neurons.
+        # _trn_recurrent_buffer already holds TRN spikes; reading at lag=1 reuses
+        # it for both TRN→relay and TRN→TRN recurrent paths without a separate tensor.
         trn_relay_synapse = SynapseId(
             source_region=self.region_name,
             source_population=ThalamusPopulation.TRN.value,
@@ -502,9 +510,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             target_population=ThalamusPopulation.RELAY.value,
             is_inhibitory=True,
         )
-        trn_relay_weights = self.get_synaptic_weights(trn_relay_synapse)
-        trn_spikes_float = self._last_trn_spikes.float()
-        relay_inhibition += trn_relay_weights @ trn_spikes_float
+        relay_inhibition = self._integrate_synaptic_inputs_at_dendrites(
+            {trn_relay_synapse: self._trn_recurrent_buffer.read(1)},
+            n_neurons=self.relay_size,
+        ).g_inh
 
         # =====================================================================
         # RELAY NEURONS: Conductances → Relay
@@ -565,28 +574,27 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # - Sensory collateral (via input_to_trn)
         # - L6a feedback (via cortex:l6a routing)
         #
-        # Now add relay collateral excitation
+        # Now add relay collateral excitation (1-step delayed via _relay_spike_buffer)
+        # Biology: relay→TRN is a collateral of the thalamocortical axon; ~1ms synaptic delay.
+        # Using the previous step's relay output preserves causality within the timestep.
         relay_trn_synapse = SynapseId(
             source_region=self.region_name,
             source_population=ThalamusPopulation.RELAY.value,
             target_region=self.region_name,
             target_population=ThalamusPopulation.TRN.value,
         )
-        relay_trn_weights = self.get_synaptic_weights(relay_trn_synapse)  # [trn_size, relay_size]
-        trn_excitation_relay = torch.mv(relay_trn_weights, relay_output.float())  # [trn_size]
-        trn_excitation = trn_conductance + trn_excitation_relay
+        trn_excitation = trn_conductance + self._integrate_synaptic_inputs_at_dendrites(
+            {relay_trn_synapse: self._relay_spike_buffer.read(1)},
+            n_neurons=self.trn_size,
+        ).g_exc
 
-        # TRN recurrent inhibition with delay (prevents instant feedback oscillations)
-        # Read PREVIOUS timestep TRN spikes for causality (before writing current spikes)
-        trn_delayed = self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)
-
-        # ACh modulation of TRN recurrent inhibition (McCormick & Prince 1986)
+        # TRN recurrent inhibition with configurable delay (prevents instant feedback oscillations)
+        # ACh modulation of TRN recurrent inhibition (McCormick & Prince 1986):
         # High ACh (wakefulness): Suppress TRN oscillations → tonic relay mode
         # Low ACh (sleep): Enable TRN spindles → burst mode, sensory disconnection
         ach_level = self._ach_concentration_trn.mean().item()
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
-        # Get TRN recurrent weights from synaptic_weights dict
         trn_recurrent_synapse = SynapseId(
             source_region=self.region_name,
             source_population=ThalamusPopulation.TRN.value,
@@ -594,8 +602,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             target_population=ThalamusPopulation.TRN.value,
             is_inhibitory=True,
         )
-        trn_recurrent_weights = self.get_synaptic_weights(trn_recurrent_synapse)  # [trn_size, trn_size]
-        trn_inhibition = torch.mv(trn_recurrent_weights, trn_delayed.float()) * ach_recurrent_modulation  # [trn_size]
+        trn_inhibition = self._integrate_synaptic_inputs_at_dendrites(
+            {trn_recurrent_synapse: self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)},
+            n_neurons=self.trn_size,
+        ).g_inh * ach_recurrent_modulation
 
         # Gap junction coupling (TRN synchronization)
         # Ultra-fast electrical coupling (<0.1ms) for coherent inhibitory volleys
@@ -638,18 +648,6 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # pathways show robust STDP that shapes sensory representations
 
         if cfg.learning_rate > 0:
-            # Learn sensory→relay pathway (ascending plasticity)
-            # This allows thalamus to learn which sensory features are informative
-            sensory_input = synaptic_inputs.get("sensory")
-            if sensory_input is not None and self.has_synaptic_weights("relay:sensory"):
-                sensory_relay_weights = self.get_synaptic_weights("relay:sensory")
-                sensory_relay_weights.data = self.learning_strategy.compute_update(
-                    weights=sensory_relay_weights.data,
-                    pre_spikes=sensory_input,
-                    post_spikes=relay_output,
-                    learning_rate=cfg.learning_rate,
-                )
-
             # Learn L6b→relay pathway (corticothalamic precision modulation)
             # This implements top-down attention: cortex learns to modulate relay gain
             l6b_relay_synapse = SynapseId(
@@ -661,7 +659,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             l6b_feedback = synaptic_inputs.get(l6b_relay_synapse)
             if l6b_feedback is not None and self.has_synaptic_weights(l6b_relay_synapse):
                 if self.get_learning_strategy(l6b_relay_synapse) is None:
-                    self.add_learning_strategy(l6b_relay_synapse, self.learning_strategy)
+                    self.add_learning_strategy(l6b_relay_synapse, self._stdp_strategy)
                 self.apply_learning(
                     l6b_relay_synapse, l6b_feedback, relay_output,
                     learning_rate=cfg.learning_rate * 0.5,  # Slower for feedback
@@ -678,7 +676,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             l6a_feedback = synaptic_inputs.get(l6a_trn_synapse)
             if l6a_feedback is not None and self.has_synaptic_weights(l6a_trn_synapse):
                 if self.get_learning_strategy(l6a_trn_synapse) is None:
-                    self.add_learning_strategy(l6a_trn_synapse, self.learning_strategy)
+                    self.add_learning_strategy(l6a_trn_synapse, self._stdp_strategy)
                 self.apply_learning(
                     l6a_trn_synapse, l6a_feedback, trn_spikes,  # TRN is postsynaptic target
                     learning_rate=cfg.learning_rate * 0.3,  # Even slower for TRN
@@ -689,10 +687,8 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             ThalamusPopulation.TRN.value: trn_spikes,
         }
 
-        # TODO: Remove _last_trn_spikes and use _trn_recurrent_buffer exclusively for TRN→relay inhibition
-        self._last_trn_spikes = trn_spikes
-
-        # Write current TRN spikes to buffer for next timestep (causality)
+        # Write current outputs to delay buffers for next timestep (causality)
+        self._relay_spike_buffer.write_and_advance(relay_output)
         self._trn_recurrent_buffer.write_and_advance(trn_spikes)
 
         return self._post_forward(region_outputs)

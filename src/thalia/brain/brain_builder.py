@@ -7,9 +7,7 @@ This module provides a fluent, progressive API for building brain architectures.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
-import torch
+from typing import Any, Callable, Dict, List, Optional
 
 from thalia.brain.regions.population_names import (
     CerebellumPopulation,
@@ -81,6 +79,7 @@ class ConnectionSpec:
     axonal_delay_std_ms: float
     connectivity: float
     weight_scale: float
+    is_inhibitory: bool = False  # True for GABAergic long-range projections (e.g., SNr→Thalamus)
     instance: Optional[AxonalTract] = None
 
 
@@ -181,6 +180,7 @@ class BrainBuilder:
         axonal_delay_std_ms: float,
         connectivity: float,
         weight_scale: float,
+        is_inhibitory: bool = False,
     ) -> BrainBuilder:
         """Connect two regions with an axonal tract.
 
@@ -193,6 +193,9 @@ class BrainBuilder:
             axonal_delay_std_ms: Standard deviation for heterogeneous delays (0 = uniform delay)
             connectivity: Connection probability (fraction of connections present, 0-1)
             weight_scale: Initial weight scale (normalized conductance)
+            is_inhibitory: If True, creates a GABAergic (inhibitory) projection. The delayed spikes
+                will be routed through the target region's inhibitory conductance channel (g_inh).
+                Default False (glutamatergic/excitatory).
 
         Returns:
             Self for method chaining
@@ -216,6 +219,7 @@ class BrainBuilder:
             axonal_delay_std_ms=axonal_delay_std_ms,
             connectivity=connectivity,
             weight_scale=weight_scale,
+            is_inhibitory=is_inhibitory,
         )
 
         self._connection_specs.append(spec)
@@ -294,65 +298,55 @@ class BrainBuilder:
 
     def _create_axonal_tract(
         self,
-        target_specs: List[ConnectionSpec],
+        conn_spec: ConnectionSpec,
         regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]],
     ) -> AxonalTract:
-        """Create AxonalTract from connection specs.
+        """Create a single-source :class:`AxonalTract` from one connection spec.
+
+        Registers the corresponding input source on the target region so it
+        can allocate synaptic weights and STP modules.
 
         Args:
-            target_specs: List of ConnectionSpec for this target
-            regions: Dict of instantiated regions
+            conn_spec: A single :class:`ConnectionSpec` (one source → one target).
+            regions: Dict of instantiated regions.
 
         Returns:
-            AxonalTract instance
+            :class:`AxonalTract` instance.
         """
-        assert len(target_specs) > 0, "At least one ConnectionSpec is required to create an AxonalTract"
+        source_region = regions[conn_spec.source]
+        target_region = regions[conn_spec.target]
 
-        # Build sources list: [(region_name, population, size, delay_ms), ...]
-        # and register input sources with target region for size inference and routing
-        source_specs: List[AxonalTractSourceSpec] = []
-        target_population = target_specs[0].target_population  # All specs in this group share the same target population
-        for spec in target_specs:
-            source_region = regions[spec.source]
-            target_region = regions[spec.target]
+        source_size = source_region.get_population_size(conn_spec.source_population)
 
-            source_size = source_region.get_population_size(spec.source_population)
+        synapse_id = SynapseId(
+            source_region=conn_spec.source,
+            source_population=conn_spec.source_population,
+            target_region=conn_spec.target,
+            target_population=conn_spec.target_population,
+            is_inhibitory=conn_spec.is_inhibitory,
+        )
 
-            source_specs.append(AxonalTractSourceSpec(
-                region_name=spec.source,
-                population=spec.source_population,
-                size=source_size,
-                delay_ms=spec.axonal_delay_ms,
-                delay_std_ms=spec.axonal_delay_std_ms,
-            ))
+        spec = AxonalTractSourceSpec(
+            synapse_id=synapse_id,
+            size=source_size,
+            delay_ms=conn_spec.axonal_delay_ms,
+            delay_std_ms=conn_spec.axonal_delay_std_ms,
+        )
 
-            synapse_id = SynapseId(
-                source_region=spec.source,
-                source_population=spec.source_population,
-                target_region=spec.target,
-                target_population=target_population,
-                # TODO: Add is_inhibitory to ConnectionSpec if needed for inhibitory connections
-                # (e.g., striatum D2 neurons projecting to SNr are inhibitory)
-                is_inhibitory=False,
-            )
+        target_region.add_input_source(
+            synapse_id=synapse_id,
+            n_input=source_size,
+            connectivity=conn_spec.connectivity,
+            weight_scale=conn_spec.weight_scale,
+            # TODO: Add STP config support to ConnectionSpec if needed.
+            stp_config=None,
+        )
 
-            target_region.add_input_source(
-                synapse_id=synapse_id,
-                n_input=source_size,
-                connectivity=spec.connectivity,
-                weight_scale=spec.weight_scale,
-                # TODO: Add support for specifying STP config in ConnectionSpec if needed;
-                # for now using default STP based on source region
-                stp_config=None,
-            )
-
-        axonal_tract = AxonalTract(
-            source_specs=source_specs,
+        return AxonalTract(
+            spec=spec,
             dt_ms=self.brain_config.dt_ms,
             device=self.brain_config.device,
         )
-
-        return axonal_tract
 
     def build(self) -> DynamicBrain:
         """Build DynamicBrain from specifications.
@@ -402,24 +396,20 @@ class BrainBuilder:
             regions[name] = region
             spec.instance = region
 
-        # Group connections by (target, target_population) to create multi-source axonal tracts
-        # Key is (target_name, target_population) so L6a and L6b are separate groups
-        connections_by_target_population: Dict[Tuple[RegionName, PopulationName], List[ConnectionSpec]] = {}
+        # Create one AxonalTract per connection (single-source, keyed by SynapseId).
+        # Each SynapseId is unique across all connections (same source/target/population
+        # combination must not appear twice in well-formed brain graphs).
+        axonal_tracts: Dict[SynapseId, AxonalTract] = {}
         for conn_spec in self._connection_specs:
-            group_key = (conn_spec.target, conn_spec.target_population)
-            if group_key not in connections_by_target_population:
-                connections_by_target_population[group_key] = []
-            connections_by_target_population[group_key].append(conn_spec)
-
-        # Create one axonal tract per (target, target_population) group (multi-source if multiple inputs)
-        # Key is target:population only (not source) because one AxonalTract serves one target
-        axonal_tracts: Dict[Tuple[RegionName, PopulationName], AxonalTract] = {}
-        for (target_name, target_population), target_specs in connections_by_target_population.items():
-            axonal_tract: AxonalTract = self._create_axonal_tract(target_specs, regions)
-            conn_key: Tuple[RegionName, PopulationName] = (target_name, target_population)
-            axonal_tracts[conn_key] = axonal_tract
-            for conn_spec in target_specs:
-                conn_spec.instance = axonal_tract
+            axonal_tract = self._create_axonal_tract(conn_spec, regions)
+            synapse_id = axonal_tract.spec.synapse_id
+            if synapse_id in axonal_tracts:
+                raise ValueError(
+                    f"Duplicate connection {synapse_id}. "
+                    f"Each source→target→population combination must be unique."
+                )
+            axonal_tracts[synapse_id] = axonal_tract
+            conn_spec.instance = axonal_tract
 
         # Register external input sources (if any)
         # These are provided by the training loop, not from other brain regions

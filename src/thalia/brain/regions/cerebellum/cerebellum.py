@@ -92,8 +92,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             region_name=self.region_name,
             population_name=CerebellumPopulation.GRANULE.value,
             device=self.device,
-            v_threshold=-50.0,  # mV, more excitable than pyramidal
-            v_reset=-65.0,  # mV
+            v_threshold=0.85,  # Normalized: more excitable than pyramidal (1.0)
+            v_reset=0.0,       # Normalized rest potential
             tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
             tau_E=2.5,  # ms, fast AMPA-like (biological minimum ~2-3ms)
             tau_I=6.0,  # ms, fast GABA_A (biological range 5-10ms)
@@ -300,7 +300,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # nuclei, which give rise to mossy fibers. We model this as a integration stage.
         # NOTE: Weights project directly to granule layer (granule_size), not to mossy
         # fiber intermediates. The granule layer handles internal expansion/sparsification.
-        mossy_fiber_conductances = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.granule_size)
+        mossy_fiber_conductances = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.granule_size).g_exc
 
         # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
         # Noise represents stochastic miniature EPSPs from spontaneous vesicle release (conductance, not current)
@@ -398,7 +398,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             target_population=CerebellumPopulation.DCN.value,
             is_inhibitory=True,  # Purkinje cells are GABAergic (inhibitory)
         )
-        purkinje_conductance = self._integrate_synaptic_inputs_at_dendrites({purkinje_synapse: purkinje_simple_spikes}, n_neurons=self.dcn_size)
+        purkinje_conductance = self._integrate_synaptic_inputs_at_dendrites({purkinje_synapse: purkinje_simple_spikes}, n_neurons=self.dcn_size).g_inh
 
         # Apply STP to Mossy → DCN (facilitating)
         mossy_synapse = SynapseId(
@@ -407,7 +407,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             target_region=self.region_name,
             target_population=CerebellumPopulation.DCN.value,
         )
-        dcn_total_excitation = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size)
+        dcn_total_excitation = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size).g_exc
 
         # DCN spiking: Excitation (mossy + tonic) vs Inhibition (Purkinje)
         # Purkinje provides GABAergic shunting inhibition

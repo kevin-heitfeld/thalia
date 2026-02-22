@@ -227,11 +227,16 @@ class Cortex(NeuralRegion[CortexConfig]):
         )
         # Per-layer DA concentration buffers
         # Only L5 receives DA (30% projection strength), others get zero
-        self._da_concentration_l23: torch.Tensor = torch.zeros(self.l23_pyr_size, device=device)
-        self._da_concentration_l4: torch.Tensor = torch.zeros(self.l4_pyr_size, device=device)
-        self._da_concentration_l5: torch.Tensor = torch.zeros(self.l5_pyr_size, device=device)
-        self._da_concentration_l6a: torch.Tensor = torch.zeros(self.l6a_pyr_size, device=device)
-        self._da_concentration_l6b: torch.Tensor = torch.zeros(self.l6b_pyr_size, device=device)
+        self._da_concentration_l23: torch.Tensor
+        self._da_concentration_l4: torch.Tensor
+        self._da_concentration_l5: torch.Tensor
+        self._da_concentration_l6a: torch.Tensor
+        self._da_concentration_l6b: torch.Tensor
+        self.register_buffer("_da_concentration_l23", torch.zeros(self.l23_pyr_size, device=device))
+        self.register_buffer("_da_concentration_l4", torch.zeros(self.l4_pyr_size, device=device))
+        self.register_buffer("_da_concentration_l5", torch.zeros(self.l5_pyr_size, device=device))
+        self.register_buffer("_da_concentration_l6a", torch.zeros(self.l6a_pyr_size, device=device))
+        self.register_buffer("_da_concentration_l6b", torch.zeros(self.l6b_pyr_size, device=device))
 
         # =====================================================================
         # NOREPINEPHRINE RECEPTOR (LC projection - all layers)
@@ -246,11 +251,16 @@ class Cortex(NeuralRegion[CortexConfig]):
             device=device,
         )
         # Per-layer NE concentration buffers (all layers receive NE)
-        self._ne_concentration_l23 = torch.zeros(self.l23_pyr_size, device=device)
-        self._ne_concentration_l4 = torch.zeros(self.l4_pyr_size, device=device)
-        self._ne_concentration_l5 = torch.zeros(self.l5_pyr_size, device=device)
-        self._ne_concentration_l6a = torch.zeros(self.l6a_pyr_size, device=device)
-        self._ne_concentration_l6b = torch.zeros(self.l6b_pyr_size, device=device)
+        self._ne_concentration_l23: torch.Tensor
+        self._ne_concentration_l4: torch.Tensor
+        self._ne_concentration_l5: torch.Tensor
+        self._ne_concentration_l6a: torch.Tensor
+        self._ne_concentration_l6b: torch.Tensor
+        self.register_buffer("_ne_concentration_l23", torch.zeros(self.l23_pyr_size, device=device))
+        self.register_buffer("_ne_concentration_l4", torch.zeros(self.l4_pyr_size, device=device))
+        self.register_buffer("_ne_concentration_l5", torch.zeros(self.l5_pyr_size, device=device))
+        self.register_buffer("_ne_concentration_l6a", torch.zeros(self.l6a_pyr_size, device=device))
+        self.register_buffer("_ne_concentration_l6b", torch.zeros(self.l6b_pyr_size, device=device))
 
         # =====================================================================
         # ACETYLCHOLINE RECEPTOR (NB projection - layer-specific)
@@ -267,11 +277,16 @@ class Cortex(NeuralRegion[CortexConfig]):
             device=device,
         )
         # Per-layer ACh concentration buffers
-        self._ach_concentration_l23 = torch.zeros(self.l23_pyr_size, device=device)
-        self._ach_concentration_l4 = torch.zeros(self.l4_pyr_size, device=device)
-        self._ach_concentration_l5 = torch.zeros(self.l5_pyr_size, device=device)
-        self._ach_concentration_l6a = torch.zeros(self.l6a_pyr_size, device=device)
-        self._ach_concentration_l6b = torch.zeros(self.l6b_pyr_size, device=device)
+        self._ach_concentration_l23: torch.Tensor
+        self._ach_concentration_l4: torch.Tensor
+        self._ach_concentration_l5: torch.Tensor
+        self._ach_concentration_l6a: torch.Tensor
+        self._ach_concentration_l6b: torch.Tensor
+        self.register_buffer("_ach_concentration_l23", torch.zeros(self.l23_pyr_size, device=device))
+        self.register_buffer("_ach_concentration_l4", torch.zeros(self.l4_pyr_size, device=device))
+        self.register_buffer("_ach_concentration_l5", torch.zeros(self.l5_pyr_size, device=device))
+        self.register_buffer("_ach_concentration_l6a", torch.zeros(self.l6a_pyr_size, device=device))
+        self.register_buffer("_ach_concentration_l6b", torch.zeros(self.l6b_pyr_size, device=device))
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -872,7 +887,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             synaptic_inputs,
             n_neurons=self.l4_pyr_size,
             filter_by_target_population=CortexPopulation.L4_PYR.value,
-        )
+        ).g_exc
 
         # Integrate L4 PV inputs (feedforward inhibition drive)
         # Biology: Thalamic afferents synapse directly onto PV cells for fast inhibition
@@ -880,7 +895,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             synaptic_inputs,
             n_neurons=self.l4_inhibitory.pv_size,
             filter_by_target_population=CortexPopulation.L4_INHIBITORY_PV.value,
-        )
+        ).g_exc
 
         # Add baseline noise (spontaneous miniature EPSPs)
         # Use stochastic noise to prevent inhibition-driven silence
@@ -1090,7 +1105,7 @@ class Cortex(NeuralRegion[CortexConfig]):
             synaptic_inputs,
             n_neurons=self.l23_pyr_size,
             filter_by_target_population=CortexPopulation.L23_PYR.value,
-        )
+        ).g_exc
 
         # Integrate all L2/3 inputs
         l23_input = l23_ff + l23_rec + l23_td

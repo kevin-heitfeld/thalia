@@ -20,7 +20,7 @@ Biological Inspiration:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Optional, TypeVar, Generic
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, TypeVar, Generic
 
 import torch
 import torch.nn as nn
@@ -40,7 +40,7 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import validate_spike_tensor, validate_spike_tensors, clamp_weights
+from thalia.utils import validate_spike_tensor, clamp_weights
 
 if TYPE_CHECKING:
     from thalia.components.neurons import ConductanceLIF, IzhikevichNeuron
@@ -48,6 +48,20 @@ if TYPE_CHECKING:
 
 
 ConfigT = TypeVar('ConfigT', bound=NeuralRegionConfig)
+
+
+class DendriteOutput(NamedTuple):
+    """Output of `_integrate_synaptic_inputs_at_dendrites`.
+
+    Both tensors are non-negative conductances (clamped ≥ 0).
+
+    Attributes:
+        g_exc: Total excitatory conductance [n_neurons]
+        g_inh: Total inhibitory conductance [n_neurons]
+    """
+
+    g_exc: torch.Tensor  # [n_neurons], non-negative
+    g_inh: torch.Tensor  # [n_neurons], non-negative
 
 
 # =============================================================================
@@ -61,65 +75,40 @@ ConfigT = TypeVar('ConfigT', bound=NeuralRegionConfig)
 class SynapseIdParameterDict(nn.Module):
     """nn.ParameterDict wrapper that accepts SynapseId keys.
 
-    Encodes SynapseId to a stable ASCII string key for the underlying
-    ParameterDict so that .to(), .parameters(), and .state_dict() all
-    work correctly.  The encoding is fully reversible.
+    Delegates key encoding/decoding entirely to :meth:`SynapseId.to_key` and
+    :meth:`SynapseId.from_key` so there is exactly one encoding definition in
+    the codebase.  ``.to()``, ``.parameters()``, and ``.state_dict()`` all
+    work correctly through the underlying ``nn.ParameterDict``.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._pd: nn.ParameterDict = nn.ParameterDict()
 
-    # ------------------------------------------------------------------
-    # Key encoding / decoding
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _encode(s: SynapseId) -> str:
-        """SynapseId → stable ASCII string suitable for ParameterDict."""
-        inh = "1" if s.is_inhibitory else "0"
-        return f"{s.source_region}|{s.source_population}|{s.target_region}|{s.target_population}|{inh}"
-
-    @staticmethod
-    def _decode(key: str) -> SynapseId:
-        """Stable ASCII string → SynapseId."""
-        src_r, src_p, tgt_r, tgt_p, inh = key.split("|")
-        return SynapseId(
-            source_region=src_r,
-            source_population=src_p,
-            target_region=tgt_r,
-            target_population=tgt_p,
-            is_inhibitory=(inh == "1"),
-        )
-
-    # ------------------------------------------------------------------
-    # Dict-like interface (SynapseId-typed)
-    # ------------------------------------------------------------------
-
     def __setitem__(self, key: SynapseId, value: nn.Parameter) -> None:
-        self._pd[self._encode(key)] = value
+        self._pd[key.to_key()] = value
 
     def __getitem__(self, key: SynapseId) -> nn.Parameter:
-        return self._pd[self._encode(key)]
+        return self._pd[key.to_key()]
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, SynapseId):
             return False
-        return self._encode(key) in self._pd
+        return key.to_key() in self._pd
 
     def __len__(self) -> int:
         return len(self._pd)
 
     def __iter__(self):
-        return (self._decode(k) for k in self._pd)
+        return (SynapseId.from_key(k) for k in self._pd)
 
     def items(self):
         """Yield (SynapseId, nn.Parameter) pairs."""
-        return ((self._decode(k), v) for k, v in self._pd.items())
+        return ((SynapseId.from_key(k), v) for k, v in self._pd.items())
 
     def keys(self):
         """Yield SynapseId keys."""
-        return (self._decode(k) for k in self._pd)
+        return (SynapseId.from_key(k) for k in self._pd)
 
     def values(self):
         """Yield nn.Parameter values."""
@@ -137,46 +126,30 @@ class SynapseIdModuleDict(nn.Module):
         super().__init__()
         self._md: nn.ModuleDict = nn.ModuleDict()
 
-    @staticmethod
-    def _encode(s: SynapseId) -> str:
-        inh = "1" if s.is_inhibitory else "0"
-        return f"{s.source_region}|{s.source_population}|{s.target_region}|{s.target_population}|{inh}"
-
-    @staticmethod
-    def _decode(key: str) -> SynapseId:
-        src_r, src_p, tgt_r, tgt_p, inh = key.split("|")
-        return SynapseId(
-            source_region=src_r,
-            source_population=src_p,
-            target_region=tgt_r,
-            target_population=tgt_p,
-            is_inhibitory=(inh == "1"),
-        )
-
     def __setitem__(self, key: SynapseId, value: nn.Module) -> None:
-        self._md[self._encode(key)] = value
+        self._md[key.to_key()] = value
 
     def __getitem__(self, key: SynapseId) -> nn.Module:
-        return self._md[self._encode(key)]
+        return self._md[key.to_key()]
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, SynapseId):
             return False
-        return self._encode(key) in self._md
+        return key.to_key() in self._md
 
     def __len__(self) -> int:
         return len(self._md)
 
     def __iter__(self):
-        return (self._decode(k) for k in self._md)
+        return (SynapseId.from_key(k) for k in self._md)
 
     def items(self):
         """Yield (SynapseId, nn.Module) pairs."""
-        return ((self._decode(k), v) for k, v in self._md.items())
+        return ((SynapseId.from_key(k), v) for k, v in self._md.items())
 
     def keys(self):
         """Yield SynapseId keys."""
-        return (self._decode(k) for k in self._md)
+        return (SynapseId.from_key(k) for k in self._md)
 
     def values(self):
         """Yield nn.Module values."""
@@ -184,9 +157,9 @@ class SynapseIdModuleDict(nn.Module):
 
     def get(self, key: SynapseId, default: Optional[nn.Module] = None) -> Optional[nn.Module]:
         """Return module for *key*, or *default* if not found."""
-        if not isinstance(key, SynapseId) or self._encode(key) not in self._md:
+        if not isinstance(key, SynapseId) or key.to_key() not in self._md:
             return default
-        return self._md[self._encode(key)]
+        return self._md[key.to_key()]
 
 
 class SynapseIdBufferDict(nn.Module):
@@ -215,25 +188,9 @@ class SynapseIdBufferDict(nn.Module):
         super().__init__()
         self._pd: nn.ParameterDict = nn.ParameterDict()
 
-    @staticmethod
-    def _encode(s: SynapseId) -> str:
-        inh = "1" if s.is_inhibitory else "0"
-        return f"{s.source_region}|{s.source_population}|{s.target_region}|{s.target_population}|{inh}"
-
-    @staticmethod
-    def _decode(key: str) -> SynapseId:
-        src_r, src_p, tgt_r, tgt_p, inh = key.split("|")
-        return SynapseId(
-            source_region=src_r,
-            source_population=src_p,
-            target_region=tgt_r,
-            target_population=tgt_p,
-            is_inhibitory=(inh == "1"),
-        )
-
     def __setitem__(self, key: SynapseId, value: torch.Tensor) -> None:
         """Assign a tensor.  Existing entries are updated in-place (copy_)."""
-        encoded = self._encode(key)
+        encoded = key.to_key()
         existing = self._pd.get(encoded)
         if existing is not None:
             existing.data.copy_(value)
@@ -244,30 +201,30 @@ class SynapseIdBufferDict(nn.Module):
             )
 
     def __getitem__(self, key: SynapseId) -> torch.Tensor:
-        return self._pd[self._encode(key)]
+        return self._pd[key.to_key()]
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, SynapseId):
             return False
-        return self._encode(key) in self._pd
+        return key.to_key() in self._pd
 
     def __len__(self) -> int:
         return len(self._pd)
 
     def get(self, key: SynapseId, default: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
         """Return tensor for *key*, or *default* if absent."""
-        encoded = self._encode(key)
+        encoded = key.to_key()
         if encoded in self._pd:
             return self._pd[encoded]
         return default
 
     def items(self):
         """Yield ``(SynapseId, torch.Tensor)`` pairs."""
-        return ((self._decode(k), v) for k, v in self._pd.items())
+        return ((SynapseId.from_key(k), v) for k, v in self._pd.items())
 
     def keys(self):
         """Yield ``SynapseId`` keys."""
-        return (self._decode(k) for k in self._pd)
+        return (SynapseId.from_key(k) for k in self._pd)
 
     def values(self):
         """Yield tensors."""
@@ -351,9 +308,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # PopulationName is str so nn.ModuleDict works directly; subclasses keep
         # their own typed references (self.l23, self.l4, …) for forward() calls.
         self.neuron_populations: nn.ModuleDict = nn.ModuleDict()  # Dict[PopulationName, ConductanceLIF | IzhikevichNeuron]
-
-        # Strategy instance (set by subclass)
-        self.learning_strategy: Optional[LearningStrategy] = None
 
         # EMA alpha for firing rate tracking
         self._firing_rate_alpha = self.dt_ms / self.config.gain_tau_ms
@@ -612,11 +566,9 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
     def _pre_forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> None:
         """Pre-forward processing (input validation, etc.)."""
-        # Validate synaptic input spike tensors
-        validate_spike_tensors(synaptic_inputs, context=f"{self.__class__.__name__} forward synaptic inputs")
+        for synapse_id, spikes in synaptic_inputs.items():
+            validate_spike_tensor(spikes, tensor_name=f"synaptic_input_{synapse_id}")
 
-        # Check that all synaptic input sources are registered
-        for synapse_id in synaptic_inputs.keys():
             # All registered inputs must have weights (neuromodulators use separate system)
             if synapse_id not in self._synaptic_weights:
                 raise ValueError(
@@ -658,14 +610,17 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         filter_by_source_region: Optional[RegionName] = None,
         filter_by_source_population: Optional[PopulationName] = None,
         filter_by_target_population: Optional[PopulationName] = None,
-    ) -> torch.Tensor:
+    ) -> DendriteOutput:
         """Integrate synaptic inputs at dendrites (multi-source summation).
 
         Biological Process:
         1. Spikes arrive via axons (already delayed in AxonalTract)
         2. Synapses convert spikes to conductances: g = weights @ spikes
         3. Dendrites sum conductances from all sources: g_total = Σ g_i
-        4. Soma integrates total conductance: neurons.forward(g_total)
+        4. Soma integrates total conductance: neurons.forward(g_exc, g_inh)
+
+        Excitatory and inhibitory conductances are accumulated separately so
+        callers can pass them to the correct neuron channels (AMPA/NMDA vs GABA_A).
 
         Args:
             synaptic_inputs: Dict mapping synapse IDs to spike tensors [n_source]
@@ -675,7 +630,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             filter_by_target_population: If provided, only integrate inputs targeting this population (e.g., "l4")
 
         Returns:
-            Total synaptic conductance [n_neurons] (float tensor, normalized by g_L)
+            DendriteOutput(g_exc, g_inh): Both tensors are [n_neurons], non-negative conductances.
 
         Raises:
             AssertionError: If input tensors violate ADR-005 (not 1D)
@@ -684,7 +639,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             Routing keys are used directly as synaptic weight keys.
             Region subclasses should initialize _synaptic_weights with routing keys.
         """
-        g_total = torch.zeros(n_neurons, device=self.device)
+        g_exc = torch.zeros(n_neurons, device=self.device)
+        g_inh = torch.zeros(n_neurons, device=self.device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
             validate_spike_tensor(source_spikes, tensor_name=synapse_id)
@@ -707,32 +663,34 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             weights = self._synaptic_weights[synapse_id]
             source_spikes_float = source_spikes.float()
 
+            # OPTIONAL PER-SOURCE STP (SHORT-TERM PLASTICITY)
+            # Models synaptic facilitation/depression (millisecond timescale)
+            # Different sources can have different STP dynamics
+            if synapse_id in self.stp_modules:
+                # Get STP efficacy modulation for this source
+                stp_efficacy = self.stp_modules[synapse_id].forward(source_spikes_float)
+                # Apply as multiplicative modulation of weights
+                # STP returns [n_pre, n_post], weights are [n_post, n_pre] → transpose
+                weights = weights * stp_efficacy.T
+
+            # SYNAPTIC CONDUCTANCE CALCULATION
+            # Convert incoming spikes to conductance: g = W @ s
+            source_conductance = weights @ source_spikes_float
+
             if synapse_id.is_inhibitory:
-                # TODO: Also integrate inhibitory conductance here?
-                pass
+                # ACCUMULATE INHIBITORY CONDUCTANCE (GABA_A)
+                # Biology: GABAergic inputs sum separately from glutamatergic inputs
+                g_inh += source_conductance
             else:
-                # OPTIONAL PER-SOURCE STP (SHORT-TERM PLASTICITY)
-                # Models synaptic facilitation/depression (millisecond timescale)
-                # Different sources can have different STP dynamics
-                if synapse_id in self.stp_modules:
-                    # Get STP efficacy modulation for this source
-                    stp_efficacy = self.stp_modules[synapse_id].forward(source_spikes_float)
-                    # Apply as multiplicative modulation of weights
-                    # STP returns [n_pre, n_post], weights are [n_post, n_pre] → transpose
-                    weights = weights * stp_efficacy.T
-
-                # SYNAPTIC CONDUCTANCE CALCULATION
-                # Convert incoming spikes to conductance: g = W @ s
-                source_conductance = weights @ source_spikes_float
-
-                # ACCUMULATE SYNAPTIC CONDUCTANCE
+                # ACCUMULATE EXCITATORY CONDUCTANCE (AMPA/NMDA)
                 # Biology: Dendritic conductances sum at soma (linear superposition)
-                g_total += source_conductance
+                g_exc += source_conductance
 
         # Clamp to non-negative (conductances cannot be negative!)
-        g_total = torch.clamp(g_total, min=0.0)
+        g_exc = torch.clamp(g_exc, min=0.0)
+        g_inh = torch.clamp(g_inh, min=0.0)
 
-        return g_total
+        return DendriteOutput(g_exc=g_exc, g_inh=g_inh)
 
     # =========================================================================
     # LEARNING STRATEGY MANAGEMENT
@@ -819,10 +777,5 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             if sid not in seen:
                 seen.add(sid)
                 strategy.update_temporal_parameters(dt_ms)  # type: ignore[union-attr]
-
-        # Backward-compat: single learning_strategy used by subclasses that have
-        # not yet migrated to _learning_strategies.
-        if self.learning_strategy is not None and id(self.learning_strategy) not in seen:
-            self.learning_strategy.update_temporal_parameters(dt_ms)
 
         self._firing_rate_alpha = self.dt_ms / self.config.gain_tau_ms

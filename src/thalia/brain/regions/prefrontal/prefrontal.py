@@ -189,7 +189,8 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # =====================================================================
         # INITIALIZE STATE FIELDS
         # =====================================================================
-        self.working_memory: torch.Tensor = torch.zeros(self.executive_size, device=self.device, dtype=torch.float32)
+        self.working_memory: torch.Tensor
+        self.register_buffer("working_memory", torch.zeros(self.executive_size, device=self.device, dtype=torch.float32))
 
         # =====================================================================
         # HETEROGENEOUS WORKING MEMORY NEURONS
@@ -210,8 +211,10 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Split neurons into D1-dominant (excitatory DA response) and
         # D2-dominant (inhibitory DA response) populations
         n_d1 = int(self.executive_size * config.d1_fraction)
-        self._d1_neurons: torch.Tensor = torch.arange(n_d1, device=self.device)
-        self._d2_neurons: torch.Tensor = torch.arange(n_d1, self.executive_size, device=self.device)
+        self._d1_neurons: torch.Tensor
+        self._d2_neurons: torch.Tensor
+        self.register_buffer("_d1_neurons", torch.arange(n_d1, device=self.device), persistent=False)
+        self.register_buffer("_d2_neurons", torch.arange(n_d1, self.executive_size, device=self.device), persistent=False)
 
         self.neurons = ConductanceLIF(
             n_neurons=self.executive_size,
@@ -304,7 +307,8 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             spike_amplitude=0.15,  # Moderate amplitude
             device=self.device,
         )
-        self._da_concentration = torch.zeros(self.executive_size, device=self.device)
+        self._da_concentration: torch.Tensor
+        self.register_buffer("_da_concentration", torch.zeros(self.executive_size, device=self.device))
 
         # =====================================================================
         # NOREPINEPHRINE RECEPTORS (Spiking NE from LC)
@@ -321,7 +325,8 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             spike_amplitude=0.12,
             device=self.device,
         )
-        self._ne_concentration = torch.zeros(self.executive_size, device=self.device)
+        self._ne_concentration: torch.Tensor
+        self.register_buffer("_ne_concentration", torch.zeros(self.executive_size, device=self.device))
 
         # =====================================================================
         # ACETYLCHOLINE RECEPTORS (Spiking ACh from NB)
@@ -338,12 +343,13 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             spike_amplitude=0.2,
             device=self.device,
         )
-        self._ach_concentration = torch.zeros(self.executive_size, device=self.device)
+        self._ach_concentration: torch.Tensor
+        self.register_buffer("_ach_concentration", torch.zeros(self.executive_size, device=self.device))
 
         # =====================================================================
         # LEARNING STRATEGY: STDP with dopamine gating
         # =====================================================================
-        self.learning_strategy = STDPStrategy(STDPConfig(
+        self._stdp_strategy = STDPStrategy(STDPConfig(
             learning_rate=config.learning_rate,
             a_plus=config.a_plus,
             a_minus=config.a_minus,
@@ -436,7 +442,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Use base class helper for standardized multi-source integration
         # Apply per-source STP for temporal filtering and gain control
         # No modulation callback needed (unlike cortex's alpha suppression)
-        ff_input = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.executive_size)
+        ff_input = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.executive_size).g_exc
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -582,7 +588,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
 
                     # Apply STDP learning via strategy
                     if self.get_learning_strategy(synapse_id) is None:
-                        self.add_learning_strategy(synapse_id, self.learning_strategy)
+                        self.add_learning_strategy(synapse_id, self._stdp_strategy)
                     self.apply_learning(
                         synapse_id, source_spikes, output_spikes,
                         learning_rate=effective_lr,

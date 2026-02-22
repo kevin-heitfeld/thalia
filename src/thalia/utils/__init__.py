@@ -20,7 +20,6 @@ from .numerical_validation import (
 )
 from .spike_utils import (
     validate_spike_tensor,
-    validate_spike_tensors,
     compute_firing_rate,
     compute_spike_count,
     cosine_similarity_safe,
@@ -42,7 +41,6 @@ __all__ = [
     "validate_finite",
     # Spike Utilities
     "validate_spike_tensor",
-    "validate_spike_tensors",
     "compute_firing_rate",
     "compute_spike_count",
     "cosine_similarity_safe",

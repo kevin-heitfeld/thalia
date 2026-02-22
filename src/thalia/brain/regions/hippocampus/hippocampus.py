@@ -155,13 +155,16 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Models I_NaP/I_CAN currents that allow neurons to maintain firing
         # without continuous external input. This is essential for stable
         # attractor states during delay periods.
-        self.ca3_persistent: torch.Tensor = torch.zeros(self.ca3_size, device=self.device)
+        self.ca3_persistent: torch.Tensor
+        self.register_buffer("ca3_persistent", torch.zeros(self.ca3_size, device=self.device))
 
-        # NMDA trace for temporal integration (slow kinetics)
-        self.nmda_trace: Optional[torch.Tensor] = None
+        # NMDA trace for temporal integration (slow kinetics); None until first forward step
+        self.nmda_trace: Optional[torch.Tensor]
+        self.register_buffer("nmda_trace", None)
 
         # Stored DG pattern from sample phase (for match/mismatch detection)
-        self.stored_dg_pattern: torch.Tensor = torch.zeros(self.dg_size, device=self.device)
+        self.stored_dg_pattern: torch.Tensor
+        self.register_buffer("stored_dg_pattern", torch.zeros(self.dg_size, device=self.device))
 
         # Spontaneous replay (sharp-wave ripple) detection
         self.ripple_detected: bool = False
@@ -355,8 +358,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # PLASTICITY AND HOMEOSTASIS
         # =====================================================================
         # Intrinsic plasticity state (threshold adaptation)
-        self._ca3_activity_history: torch.Tensor = torch.zeros(self.ca3_size, device=self.device)
-        self._ca3_threshold_offset: torch.Tensor = torch.zeros(self.ca3_size, device=self.device)
+        self._ca3_activity_history: torch.Tensor
+        self._ca3_threshold_offset: torch.Tensor
+        self.register_buffer("_ca3_activity_history", torch.zeros(self.ca3_size, device=self.device))
+        self.register_buffer("_ca3_threshold_offset", torch.zeros(self.ca3_size, device=self.device))
 
         # Synaptic tagging for emergent priority
         # Tags mark recently-active synapses for consolidation
@@ -389,7 +394,14 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._homeostasis_counter: int = 0
         self._homeostasis_interval: int = 1000  # Check every 1 second (1000ms)
         self._homeostasis_window_size: int = 30  # Average over 30 checks = 30 seconds
-        self._homeostasis_firing_history: list = []  # Sliding window of avg firing rates
+        self._homeostasis_write_idx: int = 0     # Ring buffer write position
+        self._homeostasis_filled: int = 0        # Values written (capped at buffer size)
+        # Pre-allocated tensor ring buffer; survives .to(device) unlike a Python list
+        self._homeostasis_history: torch.Tensor
+        self.register_buffer(
+            "_homeostasis_history",
+            torch.zeros(self._homeostasis_window_size * self._homeostasis_interval, device=self.device),
+        )
 
         # =========================================================================
         # MULTI-TIMESCALE CONSOLIDATION
@@ -397,20 +409,28 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # DG→CA3 (mossy fiber pathway - one-shot binding)
         # Biology: Mossy fiber synapses are "detonator" synapses with powerful LTP.
         # They bind sparse DG codes to CA3 attractors.
-        self._dg_ca3_fast: torch.Tensor = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
-        self._dg_ca3_slow: torch.Tensor = torch.zeros(self.ca3_size, self.dg_size, device=self.device)
+        self._dg_ca3_fast: torch.Tensor
+        self._dg_ca3_slow: torch.Tensor
+        self.register_buffer("_dg_ca3_fast", torch.zeros(self.ca3_size, self.dg_size, device=self.device))
+        self.register_buffer("_dg_ca3_slow", torch.zeros(self.ca3_size, self.dg_size, device=self.device))
 
         # CA3 recurrent (autoassociative memory)
-        self._ca3_ca3_fast: torch.Tensor = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
-        self._ca3_ca3_slow: torch.Tensor = torch.zeros(self.ca3_size, self.ca3_size, device=self.device)
+        self._ca3_ca3_fast: torch.Tensor
+        self._ca3_ca3_slow: torch.Tensor
+        self.register_buffer("_ca3_ca3_fast", torch.zeros(self.ca3_size, self.ca3_size, device=self.device))
+        self.register_buffer("_ca3_ca3_slow", torch.zeros(self.ca3_size, self.ca3_size, device=self.device))
 
         # CA3→CA2 (temporal context)
-        self._ca3_ca2_fast: torch.Tensor = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
-        self._ca3_ca2_slow: torch.Tensor = torch.zeros(self.ca2_size, self.ca3_size, device=self.device)
+        self._ca3_ca2_fast: torch.Tensor
+        self._ca3_ca2_slow: torch.Tensor
+        self.register_buffer("_ca3_ca2_fast", torch.zeros(self.ca2_size, self.ca3_size, device=self.device))
+        self.register_buffer("_ca3_ca2_slow", torch.zeros(self.ca2_size, self.ca3_size, device=self.device))
 
         # CA2→CA1 (context to output)
-        self._ca2_ca1_fast: torch.Tensor = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
-        self._ca2_ca1_slow: torch.Tensor = torch.zeros(self.ca1_size, self.ca2_size, device=self.device)
+        self._ca2_ca1_fast: torch.Tensor
+        self._ca2_ca1_slow: torch.Tensor
+        self.register_buffer("_ca2_ca1_fast", torch.zeros(self.ca1_size, self.ca2_size, device=self.device))
+        self.register_buffer("_ca2_ca1_slow", torch.zeros(self.ca1_size, self.ca2_size, device=self.device))
 
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY
@@ -484,7 +504,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # Default to dopamine-modulated learning for reward-driven memory formation
         # Three-factor rule: ΔW = eligibility_trace × dopamine × learning_rate
-        self.learning_strategy = ThreeFactorStrategy(ThreeFactorConfig(
+        self._three_factor_strategy = ThreeFactorStrategy(ThreeFactorConfig(
             learning_rate=0.001,  # Conservative rate for stable learning
             eligibility_tau=100.0,  # Eligibility trace decay (ms) - matches temporal integration
             modulator_tau=50.0,  # Modulator (dopamine) decay (ms)
@@ -824,18 +844,18 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             synaptic_inputs,
             n_neurons=self.dg_size,
             filter_by_target_population=HippocampusPopulation.DG.value
-        )
+        ).g_exc
         ca3_input = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=self.ca3_size,
             filter_by_target_population=HippocampusPopulation.CA3.value
-        )
+        ).g_exc
         # TODO: Integrate CA2 input here as well (currently only from CA3, but could add EC→CA2)
         ca1_input = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=self.ca1_size,
             filter_by_target_population=HippocampusPopulation.CA1.value
-        )
+        ).g_exc
 
         # =====================================================================
         # GET SEPTAL INPUT (for OLM phase-locking)
@@ -1517,7 +1537,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 # Punishment dip → modulator < 0 (weaken synapses)
                 da_ca3_deviation = ca3_da_level - 0.5
                 if self.get_learning_strategy(ca3_ca3_synapse) is None:
-                    self.add_learning_strategy(ca3_ca3_synapse, self.learning_strategy)
+                    self.add_learning_strategy(ca3_ca3_synapse, self._three_factor_strategy)
                 self.apply_learning(
                     ca3_ca3_synapse, ca3_delayed, ca3_spikes,
                     modulator=da_ca3_deviation,
@@ -1613,20 +1633,21 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # Track current firing rate every timestep
         current_rate = ca3_spikes_float.mean().item()
-        self._homeostasis_firing_history.append(current_rate)
-
-        # Keep only last N measurements (sliding window)
-        if len(self._homeostasis_firing_history) > self._homeostasis_interval * self._homeostasis_window_size:
-            self._homeostasis_firing_history.pop(0)
+        # Ring-buffer write (circular overwrite of oldest value when full)
+        max_hist = self._homeostasis_history.shape[0]
+        self._homeostasis_history[self._homeostasis_write_idx % max_hist] = current_rate
+        self._homeostasis_write_idx += 1
+        self._homeostasis_filled = min(self._homeostasis_filled + 1, max_hist)
 
         # Check for chronic hyperactivity/hypoactivity every interval
         if self._homeostasis_counter >= self._homeostasis_interval:
             self._homeostasis_counter = 0
 
             # Need enough history to make decision
-            if len(self._homeostasis_firing_history) >= self._homeostasis_interval * 5:  # At least 5 seconds
+            if self._homeostasis_filled >= self._homeostasis_interval * 5:  # At least 5 seconds
                 # Compute average firing rate over window
-                avg_firing_rate = sum(self._homeostasis_firing_history) / len(self._homeostasis_firing_history)
+                hist_slice = self._homeostasis_history if self._homeostasis_filled >= max_hist else self._homeostasis_history[:self._homeostasis_filled]
+                avg_firing_rate = hist_slice.mean().item()
 
                 # Compute deviation from target
                 deviation = (avg_firing_rate - self.config.target_firing_rate) / (self.config.target_firing_rate + 1e-8)

@@ -3,44 +3,50 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 import torch
 import torch.nn as nn
 
 from thalia.typing import (
     BrainOutput,
-    PopulationName,
-    RegionName,
-    RegionOutput
+    SynapseId,
+    SynapticInput,
 )
 from thalia.utils import (
     CircularDelayBuffer,
     HeterogeneousDelayBuffer,
     validate_spike_tensor,
-    validate_spike_tensors,
 )
 
 
 @dataclass
 class AxonalTractSourceSpec:
-    """Specification for an axonal source."""
+    """Specification for an axonal source.
 
-    region_name: RegionName
-    population: PopulationName
+    ``synapse_id`` is the single source of truth for routing metadata (source
+    region/population, target region/population, and polarity).  The ``size``,
+    ``delay_ms``, and ``delay_std_ms`` fields carry the physical axon properties
+    that are not encoded in ``SynapseId``.
+    """
+
+    synapse_id: SynapseId  # full routing key: source, target, and is_inhibitory
     size: int
     delay_ms: float
-    delay_std_ms: float = 0.0  # Standard deviation for heterogeneous delays (0 = uniform)
+    delay_std_ms: float  # Standard deviation for heterogeneous delays (0 = uniform)
 
 
 class AxonalTract(nn.Module):
-    """Pure axonal transmission between brain regions."""
+    """Pure axonal transmission for a single source→target synapse.
 
-    _SEP = "|"
+    Each ``AxonalTract`` manages the delay buffer for exactly **one**
+    :class:`AxonalTractSourceSpec` (one source population → one target
+    population).  The :class:`BrainBuilder` creates one tract per
+    :class:`ConnectionSpec`, keyed by its :class:`SynapseId`.
 
-    @classmethod
-    def _encode_src_key(cls, key: Tuple[RegionName, PopulationName]) -> str:
-        return f"{key[0]}{cls._SEP}{key[1]}"
+    This 1-to-1 design simplifies routing: every tract is uniquely identified
+    by its ``SynapseId``, and the brain's ``AxonalTractDict`` can be addressed
+    with the same key.
+    """
 
     @property
     def device(self) -> torch.device:
@@ -51,135 +57,106 @@ class AxonalTract(nn.Module):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, source_specs: List[AxonalTractSourceSpec], dt_ms: float, device: str):
-        """Initialize axonal tract."""
+    def __init__(self, spec: AxonalTractSourceSpec, dt_ms: float, device: str):
+        """Initialize an axonal tract for a single source/target pair.
+
+        Args:
+            spec: Source specification (synapse_id, size, delay_ms, delay_std_ms).
+            dt_ms: Simulation timestep in milliseconds.
+            device: PyTorch device string (e.g. ``"cpu"`` or ``"cuda:0"``).
+        """
         super().__init__()
 
-        self.source_specs = source_specs
+        self.spec = spec
         self.dt_ms = dt_ms
         self._device = device
 
-        # Create delay buffers for each source
-        # Use heterogeneous delays if delay_std_ms > 0, otherwise uniform delays
-        self._delay_buffers_md = nn.ModuleDict()
-        for spec in self.source_specs:
-            source_key = (spec.region_name, spec.population)
+        # Create the delay buffer for this source.
+        # Use heterogeneous delays when delay_std_ms > 0, uniform otherwise.
+        if spec.delay_std_ms > 0:
+            # Heterogeneous delays: sample per-neuron delays from a Gaussian.
+            mean_steps = spec.delay_ms / self.dt_ms
+            std_steps = spec.delay_std_ms / self.dt_ms
+            delays_steps = torch.randn(spec.size) * std_steps + mean_steps
+            delays_steps = torch.clamp(
+                delays_steps,
+                min=max(0.0, mean_steps * 0.5),
+                max=mean_steps * 3.0,
+            ).long()
+            self._delay_buffer: nn.Module = HeterogeneousDelayBuffer(
+                delays=delays_steps,
+                size=spec.size,
+                device=device,
+                dtype=torch.bool,
+            )
+        else:
+            delay_steps = max(1, int(spec.delay_ms / self.dt_ms))
+            self._delay_buffer = CircularDelayBuffer(
+                max_delay=delay_steps,
+                size=spec.size,
+                device=device,
+                dtype=torch.bool,
+            )
 
-            if spec.delay_std_ms > 0:
-                # Heterogeneous delays: sample per-neuron delays from Gaussian
-                mean_delay_steps = spec.delay_ms / self.dt_ms
-                std_delay_steps = spec.delay_std_ms / self.dt_ms
-
-                # Sample delays (clamp to reasonable range: 0.5*mean to 3*mean)
-                delays_steps = torch.randn(spec.size) * std_delay_steps + mean_delay_steps
-                delays_steps = torch.clamp(
-                    delays_steps,
-                    min=max(0, mean_delay_steps * 0.5),
-                    max=mean_delay_steps * 3.0
-                ).long()
-
-                self._delay_buffers_md[self._encode_src_key(source_key)] = HeterogeneousDelayBuffer(
-                    delays=delays_steps,
-                    size=spec.size,
-                    device=device,
-                    dtype=torch.bool,
-                )
-            else:
-                # Uniform delay: all neurons have same delay
-                delay_steps = int(spec.delay_ms / self.dt_ms)
-                self._delay_buffers_md[self._encode_src_key(source_key)] = CircularDelayBuffer(
-                    max_delay=delay_steps,
-                    size=spec.size,
-                    device=device,
-                    dtype=torch.bool,
-                )
-
-        # Ensure all parameters are on correct device
         self.to(self.device)
 
     # =========================================================================
     # SPIKE ROUTING
     # =========================================================================
 
-    def read_delayed_outputs(self) -> BrainOutput:
-        """Read delayed outputs from buffers WITHOUT writing or advancing."""
-        delayed_outputs: BrainOutput = {}
+    def read_delayed_outputs(self) -> SynapticInput:
+        """Read the delayed output for this tract without writing or advancing.
 
-        for source_spec in self.source_specs:
-            source_key = (source_spec.region_name, source_spec.population)
-            buffer = self._delay_buffers_md[self._encode_src_key(source_key)]
+        Returns:
+            A one-entry :class:`SynapticInput` dict keyed by ``spec.synapse_id``.
+        """
+        if isinstance(self._delay_buffer, HeterogeneousDelayBuffer):
+            delayed_spikes = self._delay_buffer.read_heterogeneous()
+        else:
+            delay_steps = max(1, int(self.spec.delay_ms / self.dt_ms))
+            delayed_spikes = self._delay_buffer.read(delay_steps)  # type: ignore[attr-defined]
 
-            # Read delayed spikes
-            # HeterogeneousDelayBuffer: uses per-neuron delays
-            # CircularDelayBuffer: uses uniform delay
-            if isinstance(buffer, HeterogeneousDelayBuffer):
-                delayed_spikes = buffer.read_heterogeneous()
-            else:
-                delay_steps = int(source_spec.delay_ms / self.dt_ms)
-                delayed_spikes = buffer.read(delay_steps)
-
-            # Store in output dict under source region and population
-            if source_spec.region_name not in delayed_outputs:
-                delayed_outputs[source_spec.region_name] = {}
-
-            delayed_outputs[source_spec.region_name][source_spec.population] = delayed_spikes
-
-        return delayed_outputs
+        return {self.spec.synapse_id: delayed_spikes}
 
     def write_and_advance(self, source_outputs: BrainOutput) -> None:
-        """Write current outputs to buffers and advance pointers."""
-        for _region_name, spikes in source_outputs.items():
-            validate_spike_tensors(spikes, context="AxonalTract.write_and_advance")
+        """Write the current source spikes to the buffer and advance the pointer.
 
-        for source_spec in self.source_specs:
-            source_key = (source_spec.region_name, source_spec.population)
-            buffer = self._delay_buffers_md[self._encode_src_key(source_key)]
+        Args:
+            source_outputs: Full brain output dict from the current timestep.
+                            The tract extracts its source region/population.
+        """
+        sid = self.spec.synapse_id
+        population_outputs = source_outputs.get(sid.source_region, {})
+        spikes = population_outputs.get(sid.source_population)
 
-            # Extract spikes from RegionOutput
-            spikes = None
-            if source_spec.region_name in source_outputs:
-                population_outputs: RegionOutput = source_outputs[source_spec.region_name]
-                if source_spec.population in population_outputs:
-                    spikes = population_outputs[source_spec.population]
+        if spikes is not None:
+            validate_spike_tensor(spikes)
+            if spikes.shape[0] != self.spec.size:
+                raise ValueError(
+                    f"AxonalTract size mismatch for {sid}: "
+                    f"expected {self.spec.size} neurons, got {spikes.shape[0]}."
+                )
+            self._delay_buffer.write(spikes)  # type: ignore[attr-defined]
 
-            if spikes is not None:
-                validate_spike_tensor(spikes)
-
-                if spikes.shape[0] != source_spec.size:
-                    raise ValueError(
-                        f"Size mismatch for {source_spec.region_name}:{source_spec.population}: "
-                        f"expected {source_spec.size}, got {spikes.shape[0]}"
-                    )
-
-                # Write current spikes to buffer
-                buffer.write(spikes)
-
-            # Advance buffer for next timestep
-            buffer.advance()
+        self._delay_buffer.advance()  # type: ignore[attr-defined]
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
     # =========================================================================
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes.
+        """Resize the delay buffer for a new simulation timestep.
 
-        Resizes delay buffers to accommodate new timestep while preserving
-        spike history. Delays are specified in milliseconds (fixed), but the
-        number of steps changes with dt:
-            delay_steps = delay_ms / dt_ms
+        Delay durations are fixed in milliseconds; changing ``dt_ms`` alters
+        how many buffer slots are needed.
+
+        Args:
+            dt_ms: New timestep in milliseconds (must be positive).
         """
         old_dt_ms = self.dt_ms
         self.dt_ms = dt_ms
-
-        # Resize each delay buffer
-        for spec in self.source_specs:
-            source_key = (spec.region_name, spec.population)
-            assert self._encode_src_key(source_key) in self._delay_buffers_md, f"Source key '{source_key}' not found in delay buffers."
-
-            buffer = self._delay_buffers_md[self._encode_src_key(source_key)]
-            buffer.resize_for_new_dt(
-                new_dt_ms=dt_ms,
-                delay_ms=spec.delay_ms,
-                old_dt_ms=old_dt_ms,
-            )
+        self._delay_buffer.resize_for_new_dt(  # type: ignore[attr-defined]
+            new_dt_ms=dt_ms,
+            delay_ms=self.spec.delay_ms,
+            old_dt_ms=old_dt_ms,
+        )

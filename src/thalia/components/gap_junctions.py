@@ -109,6 +109,7 @@ class GapJunctionCoupling(nn.Module):
         coupling_matrix = self._build_coupling_matrix(afferent_weights)
 
         # Store as buffer (not a parameter - doesn't get gradient updates)
+        self.coupling_matrix: torch.Tensor
         self.register_buffer("coupling_matrix", coupling_matrix)
 
     def _build_coupling_matrix(self, weights: torch.Tensor) -> torch.Tensor:
@@ -222,13 +223,11 @@ class GapJunctionCoupling(nn.Module):
             E_gap_effective: Effective reversal potential per neuron [n_neurons]
                 (weighted average of neighbor voltages)
         """
-        coupling_matrix_tensor: torch.Tensor = self.coupling_matrix
-
         # Total gap junction conductance per neuron
-        g_gap_total = coupling_matrix_tensor.sum(dim=1)  # [n_neurons]
+        g_gap_total = self.coupling_matrix.sum(dim=1)  # [n_neurons]
 
         # Weighted sum of neighbor voltages
-        neighbor_weighted_v = coupling_matrix_tensor @ voltages  # [n_neurons]
+        neighbor_weighted_v = self.coupling_matrix @ voltages  # [n_neurons]
 
         # Effective reversal potential = weighted average of neighbor voltages
         # Initialize with zeros for neurons with no gap junctions

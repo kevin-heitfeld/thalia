@@ -30,28 +30,6 @@ def validate_spike_tensor(spikes: torch.Tensor, tensor_name: str = "<unspecified
         raise ValueError(f"{tensor_name} must be a binary spike tensor (ADR-005) containing only 0s and 1s.")
 
 
-def validate_spike_tensors(spikes_dict: dict[str, torch.Tensor], context: str = "<unspecified>") -> None:
-    """Validate that all tensors in a dict are binary spike tensors (0s and 1s).
-
-    Args:
-        spikes_dict: Dict of tensors to validate
-        context: Context string for error messages
-
-    Raises:
-        TypeError: If any value in the dict is not a torch.Tensor
-        ValueError: If any tensor is not binary (contains values other than 0 or 1)
-    """
-    if not isinstance(spikes_dict, dict):
-        raise TypeError(f"{context} must be a dict mapping keys to spike tensors, got {type(spikes_dict)}.")
-
-    for key, tensor in spikes_dict.items():
-        if not isinstance(tensor, torch.Tensor):
-            raise TypeError(
-                f"{context}.{key} must be a torch.Tensor, got {type(tensor)}."
-            )
-        validate_spike_tensor(tensor, tensor_name=f"{context}.{key}")
-
-
 def compute_firing_rate(spikes: torch.Tensor) -> float:
     """Compute population firing rate from binary spike tensor.
 
