@@ -1516,14 +1516,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 # Reward burst → modulator > 0 (strengthen synapses)
                 # Punishment dip → modulator < 0 (weaken synapses)
                 da_ca3_deviation = ca3_da_level - 0.5
-                ca3_ca3_weights.data = self.learning_strategy.compute_update(
-                    weights=ca3_ca3_weights,
-                    pre_spikes=ca3_delayed,
-                    post_spikes=ca3_spikes,
+                if self.get_learning_strategy(ca3_ca3_synapse) is None:
+                    self.add_learning_strategy(ca3_ca3_synapse, self.learning_strategy)
+                self.apply_learning(
+                    ca3_ca3_synapse, ca3_delayed, ca3_spikes,
                     modulator=da_ca3_deviation,
                 )
-                ca3_ca3_weights.data.fill_diagonal_(0.0)  # Maintain no self-connections (biological constraint)
-                clamp_weights(ca3_ca3_weights.data, cfg.w_min, cfg.w_max)
+                self.get_synaptic_weights(ca3_ca3_synapse).data.fill_diagonal_(0.0)  # Maintain no self-connections (biological constraint)
 
             # =====================================================================
             # DOPAMINE-GATED CONSOLIDATION

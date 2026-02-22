@@ -206,7 +206,7 @@ habenula → anti-reward) now requires zero changes to `brain.py`.
 
 ---
 
-### ARCH-02: Lazy initialization in learning strategies is fragile
+### ✅ ARCH-02: Lazy initialization in learning strategies is fragile
 
 **Files:** `src/thalia/learning/strategies.py`
 
@@ -231,9 +231,11 @@ class LearningStrategy(nn.Module, ABC):
 buffers eagerly. `BCMStrategy.setup()` creates theta. `BrainBuilder.build()`
 calls `strategy.setup()` for every synapse after dimensions are known.
 
+**Status: DONE.** `setup()` / `ensure_setup()` protocol added to `LearningStrategy` base. `STDPStrategy`, `BCMStrategy`, and `ThreeFactorStrategy` override `setup()` to eagerly allocate all state via `register_buffer`. Lazy-init code removed entirely.
+
 ---
 
-### ARCH-03: `learning_strategy` field on `NeuralRegion` is misleading
+### ✅ ARCH-03: `learning_strategy` field on `NeuralRegion` is misleading
 
 **File:** `src/thalia/brain/regions/neural_region.py`
 
@@ -259,6 +261,8 @@ def apply_learning(self, synapse_id: SynapseId, pre_spikes, post_spikes, **kwarg
 
 `apply_learning()` centralizes the weight-update + clamp pattern that is
 currently copy-pasted across Cortex, Hippocampus, Striatum, etc.
+
+**Status: DONE.** `self._learning_strategies: SynapseIdModuleDict` added to `NeuralRegion.__init__`. `SynapseIdModuleDict.get()` added. `add_learning_strategy()`, `get_learning_strategy()`, and `apply_learning()` helpers added to `NeuralRegion`. `update_temporal_parameters()` iterates `_learning_strategies` with `id()`-based deduplication (shared `BCMStrategy` instances updated once). Cortex migrated from `strategies_lXX: nn.ModuleList` to `composite_lXX: CompositeStrategy`; all 9 `CompositeStrategy.compute_update(strategies=…)` static calls replaced with instance method calls. Backward-compat `self.learning_strategy` field preserved for Hippocampus, Thalamus, and PFC.
 
 ---
 

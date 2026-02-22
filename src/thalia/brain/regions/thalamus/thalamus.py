@@ -93,7 +93,6 @@ from thalia.typing import (
 )
 from thalia.utils import (
     CircularDelayBuffer,
-    clamp_weights,
     compute_ach_recurrent_suppression,
 )
 
@@ -650,7 +649,6 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                     post_spikes=relay_output,
                     learning_rate=cfg.learning_rate,
                 )
-                clamp_weights(sensory_relay_weights.data, cfg.w_min, cfg.w_max)
 
             # Learn L6b→relay pathway (corticothalamic precision modulation)
             # This implements top-down attention: cortex learns to modulate relay gain
@@ -662,14 +660,12 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             )
             l6b_feedback = synaptic_inputs.get(l6b_relay_synapse)
             if l6b_feedback is not None and self.has_synaptic_weights(l6b_relay_synapse):
-                l6b_relay_weights = self.get_synaptic_weights(l6b_relay_synapse)
-                l6b_relay_weights.data = self.learning_strategy.compute_update(
-                    weights=l6b_relay_weights.data,
-                    pre_spikes=l6b_feedback,
-                    post_spikes=relay_output,
+                if self.get_learning_strategy(l6b_relay_synapse) is None:
+                    self.add_learning_strategy(l6b_relay_synapse, self.learning_strategy)
+                self.apply_learning(
+                    l6b_relay_synapse, l6b_feedback, relay_output,
                     learning_rate=cfg.learning_rate * 0.5,  # Slower for feedback
                 )
-                clamp_weights(l6b_relay_weights.data, cfg.w_min, cfg.w_max)
 
             # Learn L6a→TRN pathway (corticothalamic attention control)
             # This allows cortex to learn attentional gating patterns
@@ -681,14 +677,12 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             )
             l6a_feedback = synaptic_inputs.get(l6a_trn_synapse)
             if l6a_feedback is not None and self.has_synaptic_weights(l6a_trn_synapse):
-                l6a_trn_weights = self.get_synaptic_weights(l6a_trn_synapse)
-                l6a_trn_weights.data = self.learning_strategy.compute_update(
-                    weights=l6a_trn_weights.data,
-                    pre_spikes=l6a_feedback,
-                    post_spikes=trn_spikes,  # TRN is postsynaptic target
+                if self.get_learning_strategy(l6a_trn_synapse) is None:
+                    self.add_learning_strategy(l6a_trn_synapse, self.learning_strategy)
+                self.apply_learning(
+                    l6a_trn_synapse, l6a_feedback, trn_spikes,  # TRN is postsynaptic target
                     learning_rate=cfg.learning_rate * 0.3,  # Even slower for TRN
                 )
-                clamp_weights(l6a_trn_weights.data, cfg.w_min, cfg.w_max)
 
         region_outputs: RegionOutput = {
             ThalamusPopulation.RELAY.value: relay_output,

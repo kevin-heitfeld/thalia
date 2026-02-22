@@ -20,7 +20,7 @@ Biological Inspiration:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional, TypeVar, Generic
+from typing import TYPE_CHECKING, Any, Optional, TypeVar, Generic
 
 import torch
 import torch.nn as nn
@@ -40,7 +40,7 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import validate_spike_tensor, validate_spike_tensors
+from thalia.utils import validate_spike_tensor, validate_spike_tensors, clamp_weights
 
 if TYPE_CHECKING:
     from thalia.components.neurons import ConductanceLIF, IzhikevichNeuron
@@ -182,6 +182,97 @@ class SynapseIdModuleDict(nn.Module):
         """Yield nn.Module values."""
         return self._md.values()
 
+    def get(self, key: SynapseId, default: Optional[nn.Module] = None) -> Optional[nn.Module]:
+        """Return module for *key*, or *default* if not found."""
+        if not isinstance(key, SynapseId) or self._encode(key) not in self._md:
+            return default
+        return self._md[self._encode(key)]
+
+
+class SynapseIdBufferDict(nn.Module):
+    """Dict-like container for per-synapse non-learnable tensors (e.g. eligibility traces).
+
+    Stores each tensor as a ``nn.Parameter(requires_grad=False)`` inside an
+    ``nn.ParameterDict`` so that:
+    - ``.to(device)`` / ``.cuda()`` move all tensors automatically.
+    - ``state_dict()`` / ``load_state_dict()`` save and restore all tensors.
+    - Tensors do **not** receive gradients (biologically-accurate learning only).
+
+    Keys are ``SynapseId`` objects; they are encoded to a pipe-delimited string
+    for the underlying ``ParameterDict`` (same encoding used by
+    ``SynapseIdParameterDict`` and ``SynapseIdModuleDict``).
+
+    Usage::
+
+        elig = SynapseIdBufferDict()
+        elig[sid] = torch.zeros(n_post, n_pre, device=device)
+        elig[sid] = elig[sid] * decay + update   # in-place copy on assignment
+        for sid, tensor in elig.items():
+            ...
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._pd: nn.ParameterDict = nn.ParameterDict()
+
+    @staticmethod
+    def _encode(s: SynapseId) -> str:
+        inh = "1" if s.is_inhibitory else "0"
+        return f"{s.source_region}|{s.source_population}|{s.target_region}|{s.target_population}|{inh}"
+
+    @staticmethod
+    def _decode(key: str) -> SynapseId:
+        src_r, src_p, tgt_r, tgt_p, inh = key.split("|")
+        return SynapseId(
+            source_region=src_r,
+            source_population=src_p,
+            target_region=tgt_r,
+            target_population=tgt_p,
+            is_inhibitory=(inh == "1"),
+        )
+
+    def __setitem__(self, key: SynapseId, value: torch.Tensor) -> None:
+        """Assign a tensor.  Existing entries are updated in-place (copy_)."""
+        encoded = self._encode(key)
+        existing = self._pd.get(encoded)
+        if existing is not None:
+            existing.data.copy_(value)
+        else:
+            self._pd[encoded] = nn.Parameter(
+                value.detach() if value.requires_grad else value,
+                requires_grad=False,
+            )
+
+    def __getitem__(self, key: SynapseId) -> torch.Tensor:
+        return self._pd[self._encode(key)]
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, SynapseId):
+            return False
+        return self._encode(key) in self._pd
+
+    def __len__(self) -> int:
+        return len(self._pd)
+
+    def get(self, key: SynapseId, default: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
+        """Return tensor for *key*, or *default* if absent."""
+        encoded = self._encode(key)
+        if encoded in self._pd:
+            return self._pd[encoded]
+        return default
+
+    def items(self):
+        """Yield ``(SynapseId, torch.Tensor)`` pairs."""
+        return ((self._decode(k), v) for k, v in self._pd.items())
+
+    def keys(self):
+        """Yield ``SynapseId`` keys."""
+        return (self._decode(k) for k in self._pd)
+
+    def values(self):
+        """Yield tensors."""
+        return self._pd.values()
+
 
 class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     """Base class for brain regions with biologically accurate synaptic inputs.
@@ -247,10 +338,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # SynapseIdParameterDict wraps nn.ParameterDict so PyTorch tracks every
         # parameter correctly (.to(), .parameters(), .state_dict()) while the
         # public API remains SynapseId-typed.
-        self._synaptic_weights: SynapseIdParameterDict = SynapseIdParameterDict()
+        self._synaptic_weights: SynapseIdParameterDict = SynapseIdParameterDict()  # Dict[SynapseId, nn.Parameter]
 
         # Optional per-source STP modules for short-term plasticity (facilitation/depression)
-        self.stp_modules: SynapseIdModuleDict = SynapseIdModuleDict()
+        self.stp_modules: SynapseIdModuleDict = SynapseIdModuleDict()  # Dict[SynapseId, ShortTermPlasticity]
+
+        # Per-synapse learning strategies: registered as nn.Module so .to(device)
+        # and state_dict() work automatically.
+        self._learning_strategies: SynapseIdModuleDict = SynapseIdModuleDict()  # Dict[SynapseId, LearningStrategy]
 
         # Neuron populations within this region (e.g., L4, L2/3, L5 for Cortex).
         # PopulationName is str so nn.ModuleDict works directly; subclasses keep
@@ -640,6 +735,67 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         return g_total
 
     # =========================================================================
+    # LEARNING STRATEGY MANAGEMENT
+    # =========================================================================
+
+    def add_learning_strategy(
+        self,
+        synapse_id: SynapseId,
+        strategy: LearningStrategy,
+        n_pre: Optional[int] = None,
+        n_post: Optional[int] = None,
+    ) -> None:
+        """Register *strategy* for *synapse_id*, optionally calling setup() immediately.
+
+        If *n_pre* and *n_post* are both provided the strategy is set up eagerly
+        (``strategy.setup(n_pre, n_post, self.device)``).  Otherwise setup is
+        deferred until the first call to :meth:`apply_learning`.
+        """
+        self._learning_strategies[synapse_id] = strategy
+        if n_pre is not None and n_post is not None:
+            strategy.setup(n_pre, n_post, self.device)
+
+    def get_learning_strategy(self, synapse_id: SynapseId) -> Optional[LearningStrategy]:
+        """Return the :class:`~thalia.learning.LearningStrategy` for *synapse_id*, or ``None``."""
+        strategy = self._learning_strategies.get(synapse_id)
+        if strategy is not None:
+            # Narrow the type from nn.Module → LearningStrategy via local import
+            # (local import avoids potential circular-import issues at module load time)
+            from thalia.learning import LearningStrategy as _LS  # noqa: PLC0415
+            assert isinstance(strategy, _LS), f"Expected LearningStrategy for '{synapse_id}', got {type(strategy)}"
+        return strategy
+
+    def apply_learning(
+        self,
+        synapse_id: SynapseId,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> None:
+        """Look up the strategy for *synapse_id* and apply it, clamping weights in-place.
+
+        No-ops when:
+        - global learning is disabled (:data:`WeightInitializer.GLOBAL_LEARNING_ENABLED`)
+        - no strategy is registered for *synapse_id*
+
+        Weight clamping uses ``self.config.w_min`` / ``self.config.w_max``.
+        """
+        if not WeightInitializer.GLOBAL_LEARNING_ENABLED:
+            return
+
+        strategy = self.get_learning_strategy(synapse_id)
+        if strategy is not None:
+            weights = self.get_synaptic_weights(synapse_id)
+            updated: torch.Tensor = strategy.compute_update(
+                weights=weights.data,
+                pre_spikes=pre_spikes,
+                post_spikes=post_spikes,
+                **kwargs,
+            )
+            clamp_weights(updated, self.config.w_min, self.config.w_max)
+            weights.data = updated
+
+    # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
     # =========================================================================
 
@@ -654,7 +810,19 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         for stp_module in self.stp_modules.values():
             stp_module.update_temporal_parameters(dt_ms)
 
-        if self.learning_strategy is not None:
+        # Update per-synapse strategies; deduplicate by id() so shared strategies
+        # (e.g. one CompositeStrategy registered for multiple SynapseIds) are only
+        # updated once.
+        seen: set[int] = set()
+        for strategy in self._learning_strategies.values():
+            sid = id(strategy)
+            if sid not in seen:
+                seen.add(sid)
+                strategy.update_temporal_parameters(dt_ms)  # type: ignore[union-attr]
+
+        # Backward-compat: single learning_strategy used by subclasses that have
+        # not yet migrated to _learning_strategies.
+        if self.learning_strategy is not None and id(self.learning_strategy) not in seen:
             self.learning_strategy.update_temporal_parameters(dt_ms)
 
         self._firing_rate_alpha = self.dt_ms / self.config.gain_tau_ms

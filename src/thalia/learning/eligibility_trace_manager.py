@@ -18,32 +18,43 @@ gates weight changes based on the accumulated eligibility.
 
 Biological Accuracy:
 ====================
-- Exponential decay with biological time constants (100-1000ms)
-- Soft bounds prevent saturation (LTP weakens near w_max, LTD weakens near w_min)
-- Heterosynaptic plasticity (weak learning in non-active synapses)
-- Local computation (no global error signals)
+- True exponential decay: exp(-dt/tau), not the linear approximation 1 - dt/tau.
+  The linear form gives negative decay factors when dt > tau, producing oscillating
+  traces with no biological basis.
+- Separate tau_plus (LTP pre-trace) and tau_minus (LTD post-trace) — independently
+  tunable per pathway (e.g., thalamocortical: tau_plus=20ms, tau_minus=40ms).
+- Heterosynaptic plasticity (weak learning in non-active synapses).
+- Local computation (no global error signals).
+- All trace state registered as nn.Module buffers: correct .to(device) and state_dict.
 """
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Tuple
 
 import torch
+import torch.nn as nn
 
 if TYPE_CHECKING:
     from thalia.learning.strategies import STDPConfig
 
 
-class EligibilityTraceManager:
+class EligibilityTraceManager(nn.Module):
     """
-    Manages STDP eligibility traces with soft bounds and exponential decay.
+    Manages STDP eligibility traces with exponential decay.
 
-    This class consolidates the repeated pattern of:
-    1. Decay spike traces (pre/post)
-    2. Add current spikes to traces
-    3. Compute STDP (LTP/LTD via outer products)
-    4. Apply soft bounds (prevent saturation)
-    5. Accumulate into eligibility traces
+    Stores pre-trace, post-trace, and eligibility accumulator as registered
+    nn.Module buffers so that:
+    - .to(device) correctly moves all trace state.
+    - state_dict() / load_state_dict() preserves traces across checkpoints.
+    - The parent STDPStrategy automatically picks up this submodule.
+
+    Decay uses the mathematically correct exp(-dt/tau), not the linear
+    approximation 1 - dt/tau which produces negative values for dt > tau.
+
+    Separate decay constants for LTP (tau_plus, applied to pre-trace) and
+    LTD (tau_minus, applied to post-trace) match biological STDP asymmetry.
     """
 
     def __init__(
@@ -62,15 +73,37 @@ class EligibilityTraceManager:
             config: STDP configuration (from thalia.learning.strategies)
             device: Torch device
         """
+        super().__init__()
+
         self.n_input = n_input
         self.n_output = n_output
         self.config = config
-        self.device = device
 
-        # Initialize traces
-        self.input_trace = torch.zeros(n_input, device=device)
-        self.output_trace = torch.zeros(n_output, device=device)
-        self.eligibility = torch.zeros(n_output, n_input, device=device)
+        # All trace state is registered as buffers:
+        # - moves with .to(device)
+        # - serialised in state_dict()
+        self.register_buffer("input_trace",  torch.zeros(n_input,          device=device))
+        self.register_buffer("output_trace", torch.zeros(n_output,         device=device))
+        self.register_buffer("eligibility",  torch.zeros(n_output, n_input, device=device))
+
+        # Pre-compute decay scalars (updated via update_temporal_parameters)
+        self._decay_plus:  float = math.exp(-1.0 / config.tau_plus)
+        self._decay_minus: float = math.exp(-1.0 / config.tau_minus)
+        self._decay_elig:  float = math.exp(-1.0 / config.eligibility_tau_ms)
+
+    # ------------------------------------------------------------------
+    # Temporal parameter management
+    # ------------------------------------------------------------------
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Recompute decay scalars when the simulation timestep changes."""
+        self._decay_plus  = math.exp(-dt_ms / self.config.tau_plus)
+        self._decay_minus = math.exp(-dt_ms / self.config.tau_minus)
+        self._decay_elig  = math.exp(-dt_ms / self.config.eligibility_tau_ms)
+
+    # ------------------------------------------------------------------
+    # Trace update
+    # ------------------------------------------------------------------
 
     def update_traces(
         self,
@@ -83,21 +116,27 @@ class EligibilityTraceManager:
 
         Trace(t) = Trace(t-1) * exp(-dt/tau) + Spikes(t)
 
+        LTP pre-trace uses tau_plus; LTD post-trace uses tau_minus.
+        Decay factors are pre-computed and updated via update_temporal_parameters().
+
         Args:
             input_spikes: Presynaptic spikes [n_input] (bool or float)
             output_spikes: Postsynaptic spikes [n_output] (bool or float)
-            dt_ms: Timestep in milliseconds
+            dt_ms: Timestep in milliseconds (used only to refresh cached decays if changed)
         """
-        # Compute decay factor
-        trace_decay = 1.0 - dt_ms / self.config.tau_plus
+        # Refresh decay if dt changed (rare but safe)
+        expected_plus = math.exp(-dt_ms / self.config.tau_plus)
+        if abs(self._decay_plus - expected_plus) > 1e-7:
+            self.update_temporal_parameters(dt_ms)
 
         # Convert to float if needed
-        input_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
+        input_float  = input_spikes.float()  if input_spikes.dtype  == torch.bool else input_spikes
         output_float = output_spikes.float() if output_spikes.dtype == torch.bool else output_spikes
 
-        # Decay and add current spikes
-        self.input_trace = self.input_trace * trace_decay + input_float
-        self.output_trace = self.output_trace * trace_decay + output_float
+        # LTP pre-trace: decays with tau_plus
+        # LTD post-trace: decays with tau_minus
+        self.input_trace  = self.input_trace  * self._decay_plus  + input_float
+        self.output_trace = self.output_trace * self._decay_minus + output_float
 
     def compute_ltp_ltd_separate(
         self,
@@ -161,21 +200,23 @@ class EligibilityTraceManager:
         dt_ms: float,
     ) -> None:
         """
-        Add eligibility update to accumulated eligibility with decay.
+        Add eligibility update to accumulated eligibility with exponential decay.
 
         Eligibility(t) = Eligibility(t-1) * exp(-dt/tau_elig) + Update(t)
 
+        Uses the pre-computed _decay_elig factor (refreshed by update_temporal_parameters).
+
         Args:
             eligibility_update: Eligibility increment [n_output, n_input]
-            dt_ms: Timestep in milliseconds
+            dt_ms: Timestep in milliseconds (used only to refresh cached decay if changed)
         """
-        eligibility_decay = 1.0 - dt_ms / self.config.eligibility_tau_ms
-        self.eligibility = self.eligibility * eligibility_decay + eligibility_update
+        # Refresh if dt changed
+        expected = math.exp(-dt_ms / self.config.eligibility_tau_ms)
+        if abs(self._decay_elig - expected) > 1e-7:
+            self.update_temporal_parameters(dt_ms)
+        self.eligibility = self.eligibility * self._decay_elig + eligibility_update
 
-    def to(self, device: torch.device) -> EligibilityTraceManager:
-        """Move all tensors to specified device."""
-        self.device = device
-        self.input_trace = self.input_trace.to(device)
-        self.output_trace = self.output_trace.to(device)
-        self.eligibility = self.eligibility.to(device)
-        return self
+    # ------------------------------------------------------------------
+    # .to(device) is handled automatically by nn.Module via register_buffer.
+    # No hand-written override needed.
+    # ------------------------------------------------------------------

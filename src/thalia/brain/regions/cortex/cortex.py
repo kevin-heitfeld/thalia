@@ -52,7 +52,7 @@ Architecture (based on canonical cortical microcircuit):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -70,8 +70,9 @@ from thalia.learning import (
     BCMStrategy,
     STDPConfig,
     STDPStrategy,
-    LearningStrategy,
     CompositeStrategy,
+    PredictiveCodingConfig,
+    PredictiveCodingStrategy,
     compute_excitability_modulation,
 )
 from thalia.typing import (
@@ -85,7 +86,6 @@ from thalia.typing import (
 from thalia.units import ConductanceTensor
 from thalia.utils import (
     CircularDelayBuffer,
-    clamp_weights,
     compute_ach_recurrent_suppression,
     compute_ne_gain,
 )
@@ -192,12 +192,12 @@ class Cortex(NeuralRegion[CortexConfig]):
             activity_threshold=0.01,  # 1% - allows LTD in sparse networks
         )
 
-        # Create BCM+STDP strategies for each layer
-        self.strategies_l23: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
-        self.strategies_l4: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
-        self.strategies_l5: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
-        self.strategies_l6a: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
-        self.strategies_l6b: List[LearningStrategy] = [STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)]
+        # Create per-layer CompositeStrategy instances (STDP + BCM, nn.Module → tracked correctly)
+        self.composite_l23: CompositeStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
+        self.composite_l4:  CompositeStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
+        self.composite_l5:  CompositeStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
+        self.composite_l6a: CompositeStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
+        self.composite_l6b: CompositeStrategy = CompositeStrategy([STDPStrategy(stdp_cfg), BCMStrategy(bcm_cfg)])
 
         # Intrinsic plasticity tracking
         self._l23_activity_history: torch.Tensor = torch.zeros(self.l23_pyr_size, device=device)
@@ -599,6 +599,44 @@ class Cortex(NeuralRegion[CortexConfig]):
             ),
             stp_config=None,
             is_inhibitory=True,
+        )
+
+        # =====================================================================
+        # PREDICTIVE CODING LEARNING STRATEGIES
+        # =====================================================================
+        # Register PredictiveCodingStrategy for L5→L4 and L6→L4 feedback synapses.
+        # Each strategy owns a 1-step pre-spike delay buffer and computes the
+        # anti-Hebbian outer-product update:  Δw = lr × post ⊗ delayed_pre.
+        # Dopamine modulation is applied via learning_rate_override at call time.
+        pred_cfg = PredictiveCodingConfig(
+            learning_rate=self.config.prediction_learning_rate,
+            prediction_delay_steps=1,
+        )
+        self._l5_l4_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L5_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L4_PYR.value,
+            is_inhibitory=True,
+        )
+        self._l6_l4_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=CortexPopulation.L6_PYR.value,
+            target_region=self.region_name,
+            target_population=CortexPopulation.L4_PYR.value,
+            is_inhibitory=True,
+        )
+        self.add_learning_strategy(
+            self._l5_l4_synapse,
+            PredictiveCodingStrategy(pred_cfg),
+            n_pre=self.l5_pyr_size,
+            n_post=self.l4_pyr_size,
+        )
+        self.add_learning_strategy(
+            self._l6_l4_synapse,
+            PredictiveCodingStrategy(pred_cfg),
+            n_pre=self.l6a_pyr_size + self.l6b_pyr_size,
+            n_post=self.l4_pyr_size,
         )
 
         # =====================================================================
@@ -1370,45 +1408,37 @@ class Cortex(NeuralRegion[CortexConfig]):
         l6b_dopamine = self._da_concentration_l6b.mean().item()
 
         # Route input spikes to appropriate layers for plasticity
+        # NOTE: Only pyramidal neurons undergo BCM learning (PV weights are fixed)
         for synapse_id, source_spikes in synaptic_inputs.items():
-            weights = self.get_synaptic_weights(synapse_id)
-
-            # NOTE: Only pyramidal neurons undergo BCM learning (PV weights are fixed)
-
             if synapse_id.target_population == CortexPopulation.L23_PYR.value:
-                weights.data = CompositeStrategy.compute_update(
-                    strategies=self.strategies_l23,
-                    weights=weights.data,
-                    pre_spikes=source_spikes,
-                    post_spikes=l23_spikes,
+                if self.get_learning_strategy(synapse_id) is None:
+                    self.add_learning_strategy(synapse_id, self.composite_l23)
+                self.apply_learning(
+                    synapse_id, source_spikes, l23_spikes,
                     dopamine=l23_dopamine,
                     acetylcholine=self._ach_concentration_l23.mean().item(),
                     norepinephrine=self._ne_concentration_l23.mean().item(),
                 )
 
             elif synapse_id.target_population == CortexPopulation.L4_PYR.value:
-                weights.data = CompositeStrategy.compute_update(
-                    strategies=self.strategies_l4,
-                    weights=weights.data,
-                    pre_spikes=source_spikes,
-                    post_spikes=l4_spikes,
+                if self.get_learning_strategy(synapse_id) is None:
+                    self.add_learning_strategy(synapse_id, self.composite_l4)
+                self.apply_learning(
+                    synapse_id, source_spikes, l4_spikes,
                     dopamine=l4_dopamine,
                     acetylcholine=self._ach_concentration_l4.mean().item(),
                     norepinephrine=self._ne_concentration_l4.mean().item(),
                 )
 
             elif synapse_id.target_population == CortexPopulation.L5_PYR.value:
-                weights.data = CompositeStrategy.compute_update(
-                    strategies=self.strategies_l5,
-                    weights=weights.data,
-                    pre_spikes=source_spikes,
-                    post_spikes=l5_spikes,
+                if self.get_learning_strategy(synapse_id) is None:
+                    self.add_learning_strategy(synapse_id, self.composite_l5)
+                self.apply_learning(
+                    synapse_id, source_spikes, l5_spikes,
                     dopamine=l5_dopamine,
                     acetylcholine=self._ach_concentration_l5.mean().item(),
                     norepinephrine=self._ne_concentration_l5.mean().item(),
                 )
-
-            clamp_weights(weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # L4 → L2/3 - L2/3-specific dopamine
@@ -1419,17 +1449,14 @@ class Cortex(NeuralRegion[CortexConfig]):
             target_region=self.region_name,
             target_population=CortexPopulation.L23_PYR.value,
         )
-        l4_l23_weights = self.get_synaptic_weights(l4_l23_synapse)
-        l4_l23_weights.data = CompositeStrategy.compute_update(
-            strategies=self.strategies_l23,
-            weights=l4_l23_weights.data,
-            pre_spikes=l4_spikes,
-            post_spikes=l23_spikes,
+        if self.get_learning_strategy(l4_l23_synapse) is None:
+            self.add_learning_strategy(l4_l23_synapse, self.composite_l23)
+        self.apply_learning(
+            l4_l23_synapse, l4_spikes, l23_spikes,
             dopamine=l23_dopamine,
             acetylcholine=self._ach_concentration_l23.mean().item(),
             norepinephrine=self._ne_concentration_l23.mean().item(),
         )
-        clamp_weights(l4_l23_weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # L2/3 → L5 - L5-specific dopamine (highest modulation)
@@ -1440,17 +1467,14 @@ class Cortex(NeuralRegion[CortexConfig]):
             target_region=self.region_name,
             target_population=CortexPopulation.L5_PYR.value,
         )
-        l23_l5_weights = self.get_synaptic_weights(l23_l5_synapse)
-        l23_l5_weights.data = CompositeStrategy.compute_update(
-            strategies=self.strategies_l5,
-            weights=l23_l5_weights.data,
-            pre_spikes=l23_spikes,
-            post_spikes=l5_spikes,
+        if self.get_learning_strategy(l23_l5_synapse) is None:
+            self.add_learning_strategy(l23_l5_synapse, self.composite_l5)
+        self.apply_learning(
+            l23_l5_synapse, l23_spikes, l5_spikes,
             dopamine=l5_dopamine,
             acetylcholine=self._ach_concentration_l5.mean().item(),
             norepinephrine=self._ne_concentration_l5.mean().item(),
         )
-        clamp_weights(l23_l5_weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # L2/3 → L6a (corticothalamic type I → TRN) - L6-specific dopamine
@@ -1461,17 +1485,14 @@ class Cortex(NeuralRegion[CortexConfig]):
             target_region=self.region_name,
             target_population=CortexPopulation.L6A_PYR.value,
         )
-        l23_l6a_weights = self.get_synaptic_weights(l23_l6a_synapse)
-        l23_l6a_weights.data = CompositeStrategy.compute_update(
-            strategies=self.strategies_l6a,
-            weights=l23_l6a_weights.data,
-            pre_spikes=l23_spikes,
-            post_spikes=l6a_spikes,
+        if self.get_learning_strategy(l23_l6a_synapse) is None:
+            self.add_learning_strategy(l23_l6a_synapse, self.composite_l6a)
+        self.apply_learning(
+            l23_l6a_synapse, l23_spikes, l6a_spikes,
             dopamine=l6a_dopamine,
             acetylcholine=self._ach_concentration_l6a.mean().item(),
             norepinephrine=self._ne_concentration_l6a.mean().item(),
         )
-        clamp_weights(l23_l6a_weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # L2/3 → L6b (corticothalamic type II → relay) - L6-specific dopamine
@@ -1482,17 +1503,14 @@ class Cortex(NeuralRegion[CortexConfig]):
             target_region=self.region_name,
             target_population=CortexPopulation.L6B_PYR.value,
         )
-        l23_l6b_weights = self.get_synaptic_weights(l23_l6b_synapse)
-        l23_l6b_weights.data = CompositeStrategy.compute_update(
-            strategies=self.strategies_l6b,
-            weights=l23_l6b_weights.data,
-            pre_spikes=l23_spikes,
-            post_spikes=l6b_spikes,
+        if self.get_learning_strategy(l23_l6b_synapse) is None:
+            self.add_learning_strategy(l23_l6b_synapse, self.composite_l6b)
+        self.apply_learning(
+            l23_l6b_synapse, l23_spikes, l6b_spikes,
             dopamine=l6b_dopamine,
             acetylcholine=self._ach_concentration_l6b.mean().item(),
             norepinephrine=self._ne_concentration_l6b.mean().item(),
         )
-        clamp_weights(l23_l6b_weights.data, cfg.w_min, cfg.w_max)
 
         # =====================================================================
         # L2/3 RECURRENT LEARNING (Critical for Cortical Plasticity)
@@ -1507,18 +1525,15 @@ class Cortex(NeuralRegion[CortexConfig]):
             target_region=self.region_name,
             target_population=CortexPopulation.L23_PYR.value,
         )
-        l23_l23_weights = self.get_synaptic_weights(l23_l23_synapse)
-        l23_l23_weights.data = CompositeStrategy.compute_update(
-            strategies=self.strategies_l23,
-            weights=l23_l23_weights.data,
-            pre_spikes=prev_l23_spikes,
-            post_spikes=l23_spikes,
+        if self.get_learning_strategy(l23_l23_synapse) is None:
+            self.add_learning_strategy(l23_l23_synapse, self.composite_l23)
+        self.apply_learning(
+            l23_l23_synapse, prev_l23_spikes, l23_spikes,
             dopamine=l23_dopamine,
             acetylcholine=self._ach_concentration_l23.mean().item(),
             norepinephrine=self._ne_concentration_l23.mean().item(),
         )
-        l23_l23_weights.data.fill_diagonal_(0.0)  # Maintain biological constraints (No self-connections)
-        clamp_weights(l23_l23_weights.data, cfg.w_min, cfg.w_max)
+        self.get_synaptic_weights(l23_l23_synapse).data.fill_diagonal_(0.0)  # Maintain biological constraints (No self-connections)
 
         # =================================================================
         # INTRINSIC PLASTICITY: Update per-neuron threshold offsets
@@ -1546,44 +1561,27 @@ class Cortex(NeuralRegion[CortexConfig]):
         # When prediction wrong: L4 fires → strengthen inhibition (learn)
         # This is anti-Hebbian: co-activation → increase inhibition
 
-        # Dopamine modulation of prediction learning
+        # Dopamine modulation of prediction learning (scalar effective learning rate)
         pred_lr = cfg.prediction_learning_rate * (1.0 + l5_dopamine)
 
-        l4_spikes_float = l4_spikes.float()
-
-        # L5 → L4 anti-Hebbian learning
-        # Learn temporal prediction: previous L5 activity predicts current L4 response
-        # Positive correlation → strengthen inhibitory weight
-        # This makes L5 better at predicting and suppressing L4
-        prev_l5_spikes = self._l5_spike_buffer.read(1)
-        dW_l5 = torch.outer(l4_spikes_float, prev_l5_spikes.float())
-        l5_l4_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=CortexPopulation.L5_PYR.value,
-            target_region=self.region_name,
-            target_population=CortexPopulation.L4_PYR.value,
-            is_inhibitory=True,
+        # L5 → L4 anti-Hebbian: PredictiveCodingStrategy owns the 1-step delay buffer.
+        # Pass *current* L5 spikes; the strategy uses its internal buffer to retrieve
+        # the previous timestep's L5 spikes as delayed_pre.
+        self.apply_learning(
+            self._l5_l4_synapse,
+            pre_spikes=l5_spikes,
+            post_spikes=l4_spikes,
+            learning_rate_override=pred_lr,
         )
-        l5_l4_weights = self.get_synaptic_weights(l5_l4_synapse)
-        l5_l4_weights.data.add_(pred_lr * dW_l5)
-        clamp_weights(l5_l4_weights.data, cfg.w_min, cfg.w_max)
 
-        # L6 → L4 anti-Hebbian learning
-        # Learn temporal prediction: previous L6 activity predicts current L4 response
-        prev_l6a_spikes = self._l6a_spike_buffer.read(1)
-        prev_l6b_spikes = self._l6b_spike_buffer.read(1)
-        l6_combined_prev = torch.cat([prev_l6a_spikes, prev_l6b_spikes], dim=-1)
-        dW_l6 = torch.outer(l4_spikes_float, l6_combined_prev.float())
-        l6_l4_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=CortexPopulation.L6_PYR.value,
-            target_region=self.region_name,
-            target_population=CortexPopulation.L4_PYR.value,
-            is_inhibitory=True,
+        # L6 (combined) → L4 anti-Hebbian: concatenate current L6a+L6b as pre-spikes.
+        l6_combined = torch.cat([l6a_spikes, l6b_spikes], dim=-1)
+        self.apply_learning(
+            self._l6_l4_synapse,
+            pre_spikes=l6_combined,
+            post_spikes=l4_spikes,
+            learning_rate_override=pred_lr,
         )
-        l6_l4_weights = self.get_synaptic_weights(l6_l4_synapse)
-        l6_l4_weights.data.add_(pred_lr * dW_l6)
-        clamp_weights(l6_l4_weights.data, cfg.w_min, cfg.w_max)
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
@@ -1613,9 +1611,7 @@ class Cortex(NeuralRegion[CortexConfig]):
         self.l6a_inhibitory.update_temporal_parameters(dt_ms)
         self.l6b_inhibitory.update_temporal_parameters(dt_ms)
 
-        # Update STP components
-        CompositeStrategy.update_temporal_parameters(self.strategies_l23, dt_ms)
-        CompositeStrategy.update_temporal_parameters(self.strategies_l4, dt_ms)
-        CompositeStrategy.update_temporal_parameters(self.strategies_l5, dt_ms)
-        CompositeStrategy.update_temporal_parameters(self.strategies_l6a, dt_ms)
-        CompositeStrategy.update_temporal_parameters(self.strategies_l6b, dt_ms)
+        # Update learning strategies (CompositeStrategy propagates to sub-strategies)
+        for composite in (self.composite_l23, self.composite_l4, self.composite_l5,
+                          self.composite_l6a, self.composite_l6b):
+            composite.update_temporal_parameters(dt_ms)

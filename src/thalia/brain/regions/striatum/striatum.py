@@ -62,7 +62,6 @@ from thalia.components.synapses.stp import (
 )
 from thalia.typing import (
     NeuromodulatorInput,
-    PopulationName,
     PopulationSizes,
     RegionName,
     RegionOutput,
@@ -70,9 +69,14 @@ from thalia.typing import (
     SynapticInput,
 )
 from thalia.units import ConductanceTensor
+from thalia.learning import (
+    D1STDPConfig,
+    D2STDPConfig,
+    D1STDPStrategy,
+    D2STDPStrategy,
+)
 from thalia.utils import (
     CircularDelayBuffer,
-    clamp_weights,
     compute_da_gain,
     compute_ne_gain,
 )
@@ -120,22 +124,11 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # =====================================================================
         # MULTI-SOURCE ELIGIBILITY TRACES
         # =====================================================================
-        # Per-source-pathway eligibility traces for multi-source learning
-        # Structure: {"source_d1": tensor, "source_d2": tensor, ...}
-        #
-        # Multi-timescale eligibility traces
-        # Biology: Synaptic tags (eligibility) exist at multiple timescales:
-        # - Fast traces (~500ms): Immediate coincidence detection (STDP-like)
-        # - Slow traces (~60s): Consolidated long-term tags for delayed reward
-        # Combined eligibility = fast + α*slow enables both rapid and multi-second
-        # credit assignment.
-        self._eligibility_d1_fast: Dict[str, torch.Tensor] = {}
-        self._eligibility_d2_fast: Dict[str, torch.Tensor] = {}
-        self._eligibility_d1_slow: Dict[str, torch.Tensor] = {}
-        self._eligibility_d2_slow: Dict[str, torch.Tensor] = {}
-
-        # Source-specific eligibility tau configuration (optional overrides)
-        # If not set, uses biological defaults in _get_source_eligibility_tau()
+        # Per-synapse D1STDPStrategy / D2STDPStrategy instances are lazily created
+        # in _apply_msn_learning when a new synapse_id is first encountered.
+        # Each strategy stores its own fast_trace + slow_trace buffers as
+        # nn.Module buffers, replacing the previous SynapseIdBufferDict approach.
+        # Source-specific eligibility tau configuration (optional overrides for future use)
         self._source_eligibility_tau: Dict[str, float] = {}
 
         # =====================================================================
@@ -797,10 +790,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # =====================================================================
         # LEARNING: UPDATE ELIGIBILITY TRACES AND APPLY DOPAMINE-MODULATED PLASTICITY
         # =====================================================================
-        self._update_pathway_eligibility(synaptic_inputs, d1_spikes, StriatumPopulation.D1, "_eligibility_d1")
-        self._update_pathway_eligibility(synaptic_inputs, d2_spikes, StriatumPopulation.D2, "_eligibility_d2")
-
-        self._apply_dopamine_modulated_learning()
+        self._apply_msn_learning(synaptic_inputs, d1_spikes, d2_spikes)
 
         region_outputs: RegionOutput = {
             StriatumPopulation.D1.value: d1_spikes,
@@ -817,103 +807,78 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
         return self._post_forward(region_outputs)
 
-    def _apply_dopamine_modulated_learning(self) -> None:
-        """Apply three-factor learning rule using current dopamine level.
+    def _apply_msn_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        d1_spikes: torch.Tensor,
+        d2_spikes: torch.Tensor,
+    ) -> None:
+        """Apply D1/D2 three-factor learning via registered D1/D2STDPStrategy instances.
 
-        **Continuous Biological Plasticity**: This method implements the core
-        three-factor learning rule (Δw = eligibility × dopamine × lr) that runs
-        continuously in real neurons.
+        Each synapse_id targeting a D1 or D2 population gets a lazily-created
+        :class:`~thalia.learning.D1STDPStrategy` or :class:`~thalia.learning.D2STDPStrategy`
+        registered in ``self._learning_strategies``.  The strategy owns the multi-scale
+        eligibility trace buffers, replacing the previous SynapseIdBufferDict approach.
 
-        **Multi-Source Learning**: Applies dopamine-modulated plasticity to each
-        source-pathway combination separately using their respective eligibility traces.
-
-        **Multi-Step Credit Assignment**: Credit naturally distributes to all recently
-        active synapses via eligibility trace decay. Earlier actions receive weaker
-        credit due to exponential trace decay (tau ~1000ms).
-
-        **Spiking DA Receptors**: Uses per-neuron DA concentration from VTA spikes
-        instead of scalar broadcast, enabling spatially-heterogeneous learning.
-
-        Returns:
-            Metrics dict with dopamine level and weight changes per source.
+        Three-factor update rule (D1):  Δw = (fast + α·slow) × DA × lr
+        D2 path is identical but with dopamine signal inverted (Gi-coupled receptor).
         """
+        # Use per-neuron DA concentration from receptors (not scalar broadcast)
+        d1_da = self._da_concentration_d1   # [d1_size]
+        d2_da = self._da_concentration_d2   # [d2_size]
 
+        for synapse_id, source_spikes in synaptic_inputs.items():
+            if not self.has_synaptic_weights(synapse_id):
+                continue
+
+            if synapse_id.target_population == StriatumPopulation.D1.value:
+                if self.get_learning_strategy(synapse_id) is None:
+                    self._register_msn_strategy(synapse_id, d1_pathway=True)
+                self.apply_learning(
+                    synapse_id,
+                    pre_spikes=source_spikes,
+                    post_spikes=d1_spikes,
+                    dopamine=d1_da,
+                )
+
+            elif synapse_id.target_population == StriatumPopulation.D2.value:
+                if self.get_learning_strategy(synapse_id) is None:
+                    self._register_msn_strategy(synapse_id, d1_pathway=False)
+                self.apply_learning(
+                    synapse_id,
+                    pre_spikes=source_spikes,
+                    post_spikes=d2_spikes,
+                    dopamine=d2_da,
+                )
+
+    def _register_msn_strategy(self, synapse_id: SynapseId, *, d1_pathway: bool) -> None:
+        """Lazily create and register a D1 or D2 learning strategy for *synapse_id*.
+
+        Called the first time a synapse_id for a D1 or D2 population is encountered
+        during learning.  The strategy is added to ``self._learning_strategies``
+        (a :class:`SynapseIdModuleDict`) so it is tracked as a proper ``nn.Module``
+        submodule and participates in ``.to(device)`` and ``state_dict()``.
+        """
         cfg = self.config
-
-        # Use per-neuron DA concentration from receptors (not scalar)
-        # Each MSN neuron has its own DA receptor with local concentration
-        d1_da_level = self._da_concentration_d1  # [d1_size]
-        d2_da_level = self._da_concentration_d2  # [d2_size]
-
-        # Apply learning per source-pathway using eligibility traces
-        # Three-factor rule: Δw = eligibility × dopamine × learning_rate
-        # Biology: Dopamine broadcasts globally to ALL synapses with eligibility traces.
-        # No action-specific masking - this matches biological dopamine modulation.
-        # Action differentiation emerges from differences in eligibility (which neurons spiked most)
-        d1_total_ltp = 0.0
-        d1_total_ltd = 0.0
-        d2_total_ltp = 0.0
-        d2_total_ltd = 0.0
-
-        if WeightInitializer.GLOBAL_LEARNING_ENABLED:
-            # D1 pathway learning (DA+ → LTP, DA- → LTD)
-            for synapse_id, eligibility in self._eligibility_d1_fast.items():
-                if self.has_synaptic_weights(synapse_id):
-                    # Combined eligibility = fast + α*slow
-                    # Biology: Fast traces for immediate learning, slow traces for delayed reward
-                    fast_trace = self._eligibility_d1_fast.get(synapse_id, eligibility)
-                    slow_trace = self._eligibility_d1_slow.get(synapse_id, torch.zeros_like(eligibility))
-                    combined_eligibility = fast_trace + cfg.slow_trace_weight * slow_trace
-
-                    # Compute weight update: Δw = eligibility × dopamine × lr
-                    # Biology: Per-neuron DA concentration modulates plasticity
-                    # Shape: [d1_size, n_input] × [d1_size, 1] = [d1_size, n_input]
-                    weight_update = combined_eligibility * d1_da_level.unsqueeze(1) * cfg.learning_rate
-
-                    # Apply update with weight bounds
-                    weights = self.get_synaptic_weights(synapse_id)
-                    weights.data = clamp_weights(
-                        weights=weights + weight_update,
-                        w_min=cfg.w_min,
-                        w_max=cfg.w_max,
-                        inplace=False,
-                    )
-
-                    # Track LTP/LTD for diagnostics (per-neuron DA, use mean for reporting)
-                    mean_da = d1_da_level.mean().item()
-                    if mean_da > 0:
-                        d1_total_ltp += weight_update.sum().item()
-                    else:
-                        d1_total_ltd += weight_update.sum().item()
-
-            # D2 pathway learning (DA+ → LTD, DA- → LTP - INVERTED!)
-            for synapse_id, eligibility in self._eligibility_d2_fast.items():
-                if self.has_synaptic_weights(synapse_id):
-                    # Combined eligibility = fast + α*slow
-                    fast_trace = self._eligibility_d2_fast.get(synapse_id, eligibility)
-                    slow_trace = self._eligibility_d2_slow.get(synapse_id, torch.zeros_like(eligibility))
-                    combined_eligibility = fast_trace + cfg.slow_trace_weight * slow_trace
-
-                    # Compute weight update with INVERTED dopamine (D2 = Gi-coupled)
-                    # Biology: Per-neuron DA concentration modulates plasticity inversely
-                    # Shape: [d2_size, n_input] × [d2_size, 1] = [d2_size, n_input]
-                    weight_update = combined_eligibility * (-d2_da_level.unsqueeze(1)) * cfg.learning_rate
-
-                    # Apply update with weight bounds
-                    weights = self.get_synaptic_weights(synapse_id)
-                    weights.data = clamp_weights(
-                        weights=weights + weight_update,
-                        w_min=cfg.w_min,
-                        w_max=cfg.w_max,
-                        inplace=False,
-                    )
-
-                    # Track LTP/LTD for diagnostics (note inverted dopamine, use mean for reporting)
-                    mean_da = d2_da_level.mean().item()
-                    if mean_da > 0:
-                        d2_total_ltd += weight_update.sum().item()
-                    else:
-                        d2_total_ltp += weight_update.sum().item()
+        base_cfg = D1STDPConfig(
+            learning_rate=cfg.learning_rate,
+            fast_eligibility_tau_ms=cfg.fast_eligibility_tau_ms,
+            slow_eligibility_tau_ms=cfg.slow_eligibility_tau_ms,
+            eligibility_consolidation_rate=cfg.eligibility_consolidation_rate,
+            slow_trace_weight=cfg.slow_trace_weight,
+        )
+        if d1_pathway:
+            strategy: D1STDPStrategy = D1STDPStrategy(base_cfg)
+        else:
+            strategy = D2STDPStrategy(D2STDPConfig(
+                learning_rate=cfg.learning_rate,
+                fast_eligibility_tau_ms=cfg.fast_eligibility_tau_ms,
+                slow_eligibility_tau_ms=cfg.slow_eligibility_tau_ms,
+                eligibility_consolidation_rate=cfg.eligibility_consolidation_rate,
+                slow_trace_weight=cfg.slow_trace_weight,
+            ))
+        # Register without eager setup — ensure_setup() is called on first compute_update()
+        self.add_learning_strategy(synapse_id, strategy)
 
     def _get_source_eligibility_tau(self, source_name: str) -> float:
         """Get source-specific eligibility trace tau.
@@ -951,81 +916,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 if self.config.eligibility_tau_ms is not None
                 else 1000.0
             )
-
-    def _update_pathway_eligibility(
-        self,
-        synaptic_inputs: SynapticInput,
-        post_spikes: torch.Tensor,
-        target_population: StriatumPopulation,
-        eligibility_attr: str,
-    ) -> None:
-        """Update eligibility traces for one pathway (D1 or D2).
-
-        This helper consolidates eligibility update logic that is identical between
-        D1 and D2 pathways. Biological separation is maintained:
-        - D1 and D2 have separate eligibility trace dictionaries
-        - D1 and D2 have different post-synaptic spike patterns
-        - Dopamine modulation (applied later) differs between pathways
-
-        Multi-timescale eligibility
-        - Fast traces (~500ms): Immediate coincidence detection
-        - Slow traces (~60s): Consolidated long-term tags
-        - Consolidation: slow ← slow*decay + fast*consolidation_rate
-        - Combined eligibility = fast + α*slow (used in continuous learning)
-
-        Args:
-            synaptic_inputs: Full input dict with synapse IDs and spike tensors
-            post_spikes: Post-synaptic spikes for this pathway [n_neurons]
-            target_population: StriatumPopulation.D1 or StriatumPopulation.D2 (for filtering inputs)
-            eligibility_attr: "_eligibility_d1" or "_eligibility_d2"
-
-        Biological note:
-            Eligibility traces are the "synaptic tags" that mark recently active
-            synapses. When dopamine arrives (seconds later), only tagged synapses
-            undergo plasticity. This implements the three-factor learning rule.
-        """
-        # Get or initialize eligibility dicts for fast and slow traces
-        fast_attr = f"{eligibility_attr}_fast"
-        slow_attr = f"{eligibility_attr}_slow"
-
-        assert hasattr(self, fast_attr), f"Missing attribute: {fast_attr}"
-        assert hasattr(self, slow_attr), f"Missing attribute: {slow_attr}"
-
-        fast_dict = getattr(self, fast_attr)
-        slow_dict = getattr(self, slow_attr)
-
-        # Decay constants
-        fast_decay = torch.exp(torch.tensor(-self.config.dt_ms / self.config.fast_eligibility_tau_ms))
-        slow_decay = torch.exp(torch.tensor(-self.config.dt_ms / self.config.slow_eligibility_tau_ms))
-        consolidation_rate = self.config.eligibility_consolidation_rate
-
-        post_spikes_float = post_spikes.float()
-        for synapse_id, source_spikes in synaptic_inputs.items():
-            # Filter inputs to only update eligibility for synapses targeting this pathway
-            if synapse_id.target_population != target_population.value:
-                continue
-
-            # Only update eligibility for synapses that have weights (i.e., are connected)
-            if not self.has_synaptic_weights(synapse_id):
-                continue
-
-            # Initialize traces if needed
-            weight_shape = self.get_synaptic_weights(synapse_id).shape
-            if synapse_id not in fast_dict:
-                fast_dict[synapse_id] = torch.zeros(weight_shape, device=self.device)
-            if synapse_id not in slow_dict:
-                slow_dict[synapse_id] = torch.zeros(weight_shape, device=self.device)
-
-            # Compute STDP-style eligibility update
-            eligibility_update = torch.outer(post_spikes_float, source_spikes.float())
-
-            # Update fast trace: decay + immediate tagging
-            # NOTE: Do NOT apply learning rate here - it's applied during weight update
-            fast_dict[synapse_id] = fast_dict[synapse_id] * fast_decay + eligibility_update
-
-            # Update slow trace: decay + consolidation from fast trace
-            # Biology: Fast tags consolidate into persistent slow tags
-            slow_dict[synapse_id] = slow_dict[synapse_id] * slow_decay + fast_dict[synapse_id] * consolidation_rate
 
     # =========================================================================
     # MULTI-SOURCE SYNAPTIC INTEGRATION

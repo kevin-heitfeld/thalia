@@ -67,7 +67,6 @@ from thalia.typing import (
 from thalia.units import ConductanceTensor
 from thalia.utils import (
     CircularDelayBuffer,
-    clamp_weights,
     compute_ach_recurrent_suppression,
     compute_ne_gain,
 )
@@ -582,15 +581,13 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
                         continue
 
                     # Apply STDP learning via strategy
-                    weights = self.get_synaptic_weights(synapse_id)
-                    weights.data = self.learning_strategy.compute_update(
-                        weights=weights.data,
-                        pre_spikes=source_spikes,
-                        post_spikes=output_spikes,
+                    if self.get_learning_strategy(synapse_id) is None:
+                        self.add_learning_strategy(synapse_id, self.learning_strategy)
+                    self.apply_learning(
+                        synapse_id, source_spikes, output_spikes,
                         learning_rate=effective_lr,
                         neuromodulator=da_modulation,
                     )
-                    clamp_weights(weights.data, cfg.w_min, cfg.w_max)
 
                 # ======================================================================
                 # RECURRENT WEIGHT LEARNING: Strengthen active WM patterns
