@@ -10,14 +10,17 @@ from .brain_builder import (
 from .brain import (
     DynamicBrain,
 )
+from .neuromodulator_hub import (
+    NeuromodulatorHub,
+)
 from .configs import (
     BrainConfig,
-    CortexLayer,
-    NeuralRegionConfig,
-    MedialSeptumConfig,
     CerebellumConfig,
     CortexConfig,
+    CortexLayer,
     HippocampusConfig,
+    MedialSeptumConfig,
+    NeuralRegionConfig,
     PrefrontalConfig,
     StriatumConfig,
     ThalamusConfig,
@@ -25,7 +28,7 @@ from .configs import (
 from .regions import (
     NeuralRegion,
     Cerebellum,
-    Cortex,
+    CorticalColumn,
     Hippocampus,
     Prefrontal,
     Striatum,
@@ -41,19 +44,19 @@ __all__ = [
     "AxonalTractSourceSpec",
     # Configurations
     "BrainConfig",
-    "CortexLayer",
-    "NeuralRegionConfig",
-    "MedialSeptumConfig",
     "CerebellumConfig",
     "CortexConfig",
+    "CortexLayer",
     "HippocampusConfig",
+    "MedialSeptumConfig",
+    "NeuralRegionConfig",
     "PrefrontalConfig",
     "StriatumConfig",
     "ThalamusConfig",
     # Regions
     "NeuralRegion",
     "Cerebellum",
-    "Cortex",
+    "CorticalColumn",
     "Hippocampus",
     "Prefrontal",
     "Striatum",
@@ -65,4 +68,6 @@ __all__ = [
     "BrainBuilder",
     # Dynamic Brain
     "DynamicBrain",
+    # Neuromodulator Hub
+    "NeuromodulatorHub",
 ]

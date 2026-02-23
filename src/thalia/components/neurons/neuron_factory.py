@@ -10,7 +10,7 @@ Date: December 2025
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Callable, Dict, List
 
 import torch
@@ -18,7 +18,7 @@ import torch
 from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
 
-class NeuronType(Enum):
+class NeuronType(StrEnum):
     """Enumeration of standard neuron types for factory registration."""
 
     PYRAMIDAL = "pyramidal"
@@ -89,8 +89,8 @@ class NeuronFactory:
         """Create neurons by type name.
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             neuron_type: Type identifier for the neuron population
             n_neurons: Number of neurons to create
             device: Device for tensor allocation
@@ -141,8 +141,8 @@ class NeuronFactory:
         - L5: 30ms (slower for output stability)
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of neurons in population
             device: Device for tensor allocation
             **overrides: Custom parameters to override defaults (e.g., adapt_increment, tau_adapt, tau_mem)
@@ -200,8 +200,8 @@ class NeuronFactory:
         - Standard excitability parameters
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of relay neurons
             device: Device for tensor allocation
             **overrides: Custom parameters to override defaults
@@ -232,6 +232,15 @@ class NeuronFactory:
             "tau_h_T_ms": 50.0,  # 50ms de-inactivation for ~10 Hz rhythms
             "V_half_h_T": -0.3,  # De-inactivates when hyperpolarized below -0.3
             "k_h_T": 0.15,  # Smooth de-inactivation curve
+            # I_h (HCN) current — depolarising sag and pacemaker contribution
+            # Works in concert with T-channels: I_h provides sustained depolarisation
+            # after hyperpolarisation, T-channels add burst transient on rebound.
+            "enable_ih": True,
+            "g_h_max": 0.04,   # Moderate HCN for thalamic pacemaker (alpha/spindle range)
+            "E_h": -0.3,       # Depolarising reversal (above E_I, below rest)
+            "V_half_h": -0.3,  # Activates when hyperpolarised (e.g., during TRN inhibition)
+            "k_h": 0.10,
+            "tau_h_ms": 100.0, # ~100ms for thalamic HCN (McCormick & Pape 1990)
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
@@ -255,8 +264,8 @@ class NeuronFactory:
         - Fast inhibitory
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of TRN neurons
             device: Device for tensor allocation
             **overrides: Custom parameters to override defaults
@@ -303,8 +312,8 @@ class NeuronFactory:
         """Create layer-specific cortical neurons with temporal heterogeneity.
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "L2/3", "L4", "L5") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of neurons in the layer
             device: Device for tensor allocation
             **overrides: Custom parameters to override layer defaults
@@ -393,8 +402,8 @@ class NeuronFactory:
         - Cerebellar basket cells
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of FSI neurons to create
             device: Device for tensor allocation ("cpu" or "cuda")
             **overrides: Custom parameters to override defaults
@@ -471,8 +480,8 @@ class NeuronFactory:
         - Standard threshold and reversal potentials
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of D1-MSN neurons to create
             device: Device for tensor allocation ("cpu" or "cuda")
             **overrides: Custom parameters to override defaults
@@ -533,8 +542,8 @@ class NeuronFactory:
         - Spike-frequency adaptation (τ_adapt = 100ms, increment = 0.1)
 
         Args:
-            region_name: Brain region identifier (e.g., "cortex", "thalamus") - REQUIRED for RNG independence
-            population_name: Population identifier (e.g., "FSI") - REQUIRED for RNG independence
+            region_name: Brain region identifier - REQUIRED for RNG independence
+            population_name: Population identifier - REQUIRED for RNG independence
             n_neurons: Number of D2-MSN neurons to create
             device: Device for tensor allocation ("cpu" or "cuda")
             **overrides: Custom parameters to override defaults

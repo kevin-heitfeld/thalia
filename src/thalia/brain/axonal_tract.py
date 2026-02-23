@@ -42,10 +42,6 @@ class AxonalTract(nn.Module):
     :class:`AxonalTractSourceSpec` (one source population → one target
     population).  The :class:`BrainBuilder` creates one tract per
     :class:`ConnectionSpec`, keyed by its :class:`SynapseId`.
-
-    This 1-to-1 design simplifies routing: every tract is uniquely identified
-    by its ``SynapseId``, and the brain's ``AxonalTractDict`` can be addressed
-    with the same key.
     """
 
     @property

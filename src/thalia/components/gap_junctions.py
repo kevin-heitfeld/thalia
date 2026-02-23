@@ -15,12 +15,6 @@ Implementation approach:
     Since we don't have explicit spatial coordinates, we use FUNCTIONAL
     connectivity to define neighborhoods. Neurons sharing presynaptic inputs
     are assumed to be anatomically close (biologically valid for most circuits).
-
-References:
-    - Bennett & Zukin (2004): Electrical coupling and neuronal synchronization
-    - Galarreta & Hestrin (2001): Gap junctions in cortical interneurons
-    - Connors & Long (2004): Electrical synapses in the mammalian brain
-    - Landisman et al. (2002): Gap junctions in thalamic reticular nucleus
 """
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from thalia.units import GapJunctionConductance, GapJunctionReversal, VoltageTensor
+from thalia.typing import GapJunctionConductance, GapJunctionReversal, VoltageTensor
 
 
 @dataclass
@@ -190,10 +184,6 @@ class GapJunctionCoupling(nn.Module):
             )
 
         return coupling_matrix
-
-    def __call__(self, *args, **kwds):
-        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
-        return super().__call__(*args, **kwds)
 
     @torch.no_grad()
     def forward(self, voltages: VoltageTensor) -> tuple[GapJunctionConductance, GapJunctionReversal]:

@@ -2,10 +2,7 @@
 Eligibility Trace Utilities - Consolidated STDP eligibility trace computation.
 
 This module provides shared utilities for computing STDP-based eligibility traces
-with soft bounds and exponential decay. These patterns are used across:
-- Striatum (D1/D2 pathways)
-- Pathways (inter-region connections)
-- Cortex, Hippocampus, Cerebellum (regional plasticity)
+with soft bounds and exponential decay.
 
 Key Concept:
 ============

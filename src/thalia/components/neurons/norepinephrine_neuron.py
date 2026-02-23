@@ -31,7 +31,7 @@ from typing import Optional
 
 import torch
 
-from thalia.units import ConductanceTensor, VoltageTensor
+from thalia.typing import ConductanceTensor, GapJunctionReversal, VoltageTensor
 
 from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -128,9 +128,6 @@ class NorepinephrineNeuron(ConductanceLIF):
         """
         super().__init__(n_neurons, config)
 
-        # Store specialized config
-        self.ne_config = config
-
         # SK channel state (calcium-activated K+ for adaptation)
         self.ca_concentration = torch.zeros(n_neurons, device=self.device)
         self.sk_activation = torch.zeros(n_neurons, device=self.device)
@@ -142,9 +139,10 @@ class NorepinephrineNeuron(ConductanceLIF):
         # Initialize with varied phases (prevent artificial synchronization at start)
         self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.3
 
-    def _create_gap_junction_matrix(
-        self, n_neurons: int, config: NorepinephrineNeuronConfig
-    ) -> torch.Tensor:
+        # Store current uncertainty for conductance calculation
+        self._current_uncertainty = 0.0
+
+    def _create_gap_junction_matrix(self, n_neurons: int, config: NorepinephrineNeuronConfig) -> torch.Tensor:
         """Create gap junction coupling matrix.
 
         LC neurons are spatially organized and coupled via gap junctions.
@@ -212,15 +210,15 @@ class NorepinephrineNeuron(ConductanceLIF):
         #
         # Biology: Some gap junctions show rectification (voltage-dependent conductance)
         g_gap_total: Optional[ConductanceTensor] = None
-        E_gap_effective: Optional[torch.Tensor] = None
+        E_gap_effective: Optional[GapJunctionReversal] = None
 
         if self.gap_junction_matrix is not None and self.gap_junction_matrix.sum() > 1e-6:
             # Voltage-dependent activation: sigmoid function of membrane potential
             # Activation increases as neurons approach threshold
             # - Below 0.7 × threshold: weak/no coupling (independent pacemaking)
             # - Above 0.7 × threshold: strong coupling (burst synchronization)
-            v_activation = self.ne_config.gap_junction_v_activation
-            v_slope = self.ne_config.gap_junction_v_slope
+            v_activation = self.config.gap_junction_v_activation
+            v_slope = self.config.gap_junction_v_slope
             gap_activation = torch.sigmoid((self.v_mem - v_activation) / v_slope)
 
             # Apply voltage-dependent gating to gap junction matrix
@@ -246,7 +244,7 @@ class NorepinephrineNeuron(ConductanceLIF):
 
                 # Only pass gap junctions if non-zero
                 g_gap_total = ConductanceTensor(g_gap_total_raw)
-                E_gap_effective = E_gap_effective_raw
+                E_gap_effective = GapJunctionReversal(E_gap_effective_raw)
 
         # Call parent's forward with gap junction conductances
         spikes, _ = super().forward(
@@ -259,10 +257,10 @@ class NorepinephrineNeuron(ConductanceLIF):
 
         # === Update Calcium and SK Activation ===
         # Calcium influx on spike
-        self.ca_concentration += spikes.float() * self.ne_config.ca_influx_per_spike
+        self.ca_concentration += spikes.float() * self.config.ca_influx_per_spike
 
         # Calcium decay
-        self.ca_concentration *= self.ne_config.ca_decay
+        self.ca_concentration *= self.config.ca_decay
 
         # SK activation (sigmoidal function of calcium)
         # High calcium → high SK → hyperpolarization → limits burst duration
@@ -283,15 +281,15 @@ class NorepinephrineNeuron(ConductanceLIF):
         """
         # I_h pacemaker (modulated by uncertainty)
         uncertainty = getattr(self, '_current_uncertainty', 0.0)
-        g_ih_base = self.ne_config.i_h_conductance
+        g_ih_base = self.config.i_h_conductance
         g_ih_modulated = g_ih_base * (1.0 + 0.4 * uncertainty)  # Uncertainty boosts I_h
         g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
 
         # SK adaptation
-        g_sk = self.ne_config.sk_conductance * self.sk_activation
+        g_sk = self.config.sk_conductance * self.sk_activation
 
         # Return conductances with reversals
         return [
-            (g_ih, self.ne_config.i_h_reversal),  # I_h pacemaker
-            (g_sk, self.ne_config.sk_reversal),   # SK adaptation
+            (g_ih, self.config.i_h_reversal),  # I_h pacemaker
+            (g_sk, self.config.sk_reversal),   # SK adaptation
         ]

@@ -32,9 +32,10 @@ import math
 from typing import Optional
 
 import torch
+import torch.nn as nn
 
 
-class NeuromodulatorReceptor:
+class NeuromodulatorReceptor(nn.Module):
     """Convert neuromodulator spikes to synaptic concentration.
 
     Implements biologically-realistic dynamics:
@@ -71,21 +72,25 @@ class NeuromodulatorReceptor:
                             Typically 0.1-0.2 to allow summation
             device: PyTorch device for tensor allocation
         """
+        super().__init__()
         self.n_receptors = n_receptors
         self.tau_rise_ms = tau_rise_ms
         self.tau_decay_ms = tau_decay_ms
         self.spike_amplitude = spike_amplitude
-        self.device = device or torch.device("cpu")
 
-        # Synaptic concentration state [0, 1]
-        self.concentration = torch.zeros(n_receptors, device=self.device)
-
-        # Rising phase component (fast release dynamics)
-        self.rising = torch.zeros(n_receptors, device=self.device)
+        # Synaptic concentration state [0, 1] — registered as buffers so
+        # .to(device), state_dict(), and load_state_dict() all work correctly.
+        self.concentration: torch.Tensor
+        self.rising: torch.Tensor
+        self.register_buffer("concentration", torch.zeros(n_receptors))
+        self.register_buffer("rising", torch.zeros(n_receptors))
 
         # Decay factors (precomputed for efficiency)
         self.alpha_rise = math.exp(-1.0 / tau_rise_ms)
         self.alpha_decay = math.exp(-1.0 / tau_decay_ms)
+
+        if device is not None:
+            self.to(device)
 
     def update(self, neuromod_spikes: Optional[torch.Tensor]) -> torch.Tensor:
         """Update concentration from incoming neuromodulator spikes.
@@ -110,15 +115,14 @@ class NeuromodulatorReceptor:
             return self.concentration
 
         # Convert to float and ensure correct device
-        spikes_float = neuromod_spikes.float().to(self.device)
+        device = self.concentration.device
+        spikes_float = neuromod_spikes.float().to(device)
 
         # Project spikes to receptor size if needed (volume transmission)
         if spikes_float.shape[0] != self.n_receptors:
             # Spatial averaging: models diffusion from release sites
             spike_rate = spikes_float.mean()
-            spikes_float = torch.full(
-                (self.n_receptors,), spike_rate, device=self.device
-            )
+            spikes_float = torch.full((self.n_receptors,), spike_rate, device=device)
 
         # Fast release on spike arrival
         self.rising += spikes_float * self.spike_amplitude
@@ -215,8 +219,6 @@ def create_acetylcholine_receptors(
     - Very fast rise time (~5 ms)
     - Fast decay (~50 ms) via AChE enzymatic degradation
     - High amplitude for rapid encoding/retrieval switching
-
-    Used by: Cortex (especially sensory), Hippocampus, Striatum
 
     Args:
         n_receptors: Number of receptor sites

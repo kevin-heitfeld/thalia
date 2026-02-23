@@ -36,14 +36,14 @@ Computational benefits:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
 
 
-class STPType(Enum):
+class STPType(StrEnum):
     """Predefined synapse types based on Markram et al. (1998) classification."""
 
     # Depressing synapses (high U, dominant depression)
@@ -172,10 +172,6 @@ class ShortTermPlasticity(nn.Module):
         self.u: torch.Tensor = torch.full(shape, self.U.item(), device=self.config.device, dtype=torch.float32)
         # Available resources (depression)
         self.x: torch.Tensor = torch.ones(shape, device=self.config.device, dtype=torch.float32)
-
-    def __call__(self, *args, **kwds):
-        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
-        return super().__call__(*args, **kwds)
 
     @torch.no_grad()
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
@@ -345,7 +341,7 @@ SCHAFFER_COLLATERAL_PRESET = STPPreset(
 # =============================================================================
 
 CORTICOSTRIATAL_PRESET = STPPreset(
-    name="Corticostriatal (Cortex→Striatum)",
+    name="Corticostriatal",
     U=0.4,
     tau_u=150.0,
     tau_x=250.0,

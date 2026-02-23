@@ -10,22 +10,36 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from thalia.brain.regions.population_names import (
+    ExternalPopulation,
+    BLAPopulation,
+    CeAPopulation,
     CerebellumPopulation,
     CortexPopulation,
+    GPePopulation,
     HippocampusPopulation,
+    LHbPopulation,
     LocusCoeruleusPopulation,
     MedialSeptumPopulation,
     NucleusBasalisPopulation,
     PrefrontalPopulation,
-    RewardEncoderPopulation,
+    RMTgPopulation,
+    SNcPopulation,
+    STNPopulation,
     StriatumPopulation,
     SubstantiaNigraPopulation,
     ThalamusPopulation,
     VTAPopulation,
 )
+from thalia.components import STPConfig
+from thalia.components.synapses.stp import (
+    CORTICOSTRIATAL_PRESET,
+    SCHAFFER_COLLATERAL_PRESET,
+    THALAMO_STRIATAL_PRESET,
+)
 from thalia.typing import (
     PopulationName,
     PopulationSizes,
+    ReceptorType,
     RegionName,
     SynapseId,
 )
@@ -41,9 +55,9 @@ class RegionSpec:
     """Specification for a brain region.
 
     Attributes:
-        name: Instance name (e.g., "my_cortex", "visual_input")
-        registry_name: Region type in registry (e.g., "cortex")
-        population_sizes: Population size specifications (e.g., {"l23": 500, "l5": 300})
+        name: Instance name
+        registry_name: Region type in registry
+        population_sizes: Population size specifications
         config: Region configuration parameters
         instance: Instantiated region (set after build())
     """
@@ -60,10 +74,7 @@ class ConnectionSpec:
     """Specification for a connection between two regions.
 
     Attributes:
-        source: Source region name
-        source_population: Output population on source (e.g., 'l23', 'l5', 'relay', 'ca1', 'd1', 'executive', 'dcn')
-        target: Target region name
-        target_population: Input population on target (e.g., 'feedforward', 'top_down')
+        synapse_id: Unique identifier for the synapse (source/target/population combination)
         axonal_delay_ms: Axonal conduction delay in milliseconds (mean)
         axonal_delay_std_ms: Standard deviation for heterogeneous delays (0 = uniform)
         connectivity: Connection probability (fraction of connections present, 0-1)
@@ -71,15 +82,12 @@ class ConnectionSpec:
         instance: Instantiated axonal tract (set after build())
     """
 
-    source: RegionName
-    source_population: PopulationName
-    target: RegionName
-    target_population: PopulationName
+    synapse_id: SynapseId
     axonal_delay_ms: float
     axonal_delay_std_ms: float
     connectivity: float
     weight_scale: float
-    is_inhibitory: bool = False  # True for GABAergic long-range projections (e.g., SNr→Thalamus)
+    stp_config: Optional[STPConfig]
     instance: Optional[AxonalTract] = None
 
 
@@ -88,20 +96,17 @@ class ExternalInputSpec:
     """Specification for an external input source.
 
     Attributes:
-        source_name: Name of external source (e.g., "sensory", "motor_command")
-        target: Target region name
-        target_population: Target population on target (e.g., "relay")
+        synapse_id: Unique identifier for the synapse (source/target/population combination)
         n_input: Number of input neurons from external source
         connectivity: Connection probability (0-1)
         weight_scale: Initial weight scale
     """
 
-    source_population: PopulationName
-    target: RegionName
-    target_population: PopulationName
+    synapse_id: SynapseId
     n_input: int
     connectivity: float
     weight_scale: float
+    stp_config: Optional[STPConfig]
 
 
 class BrainBuilder:
@@ -139,9 +144,9 @@ class BrainBuilder:
         """Add a region to the brain.
 
         Args:
-            name: Instance name (e.g., "my_cortex", "thalamus")
-            registry_name: Region type in registry (e.g., "cortex", "thalamus")
-            population_sizes: Population size specifications (e.g., {"l23": 500, "l5": 300})
+            name: Instance name
+            registry_name: Region type in registry
+            population_sizes: Population size specifications
             config: Optional region configuration parameters
 
         Returns:
@@ -172,30 +177,22 @@ class BrainBuilder:
 
     def connect(
         self,
-        source: RegionName,
-        source_population: PopulationName,
-        target: RegionName,
-        target_population: PopulationName,
+        synapse_id: SynapseId,
         axonal_delay_ms: float,
         axonal_delay_std_ms: float,
         connectivity: float,
         weight_scale: float,
-        is_inhibitory: bool = False,
+        stp_config: Optional[STPConfig] = None,
     ) -> BrainBuilder:
         """Connect two regions with an axonal tract.
 
         Args:
-            source: Source region name
-            source_population: Output population on source (e.g., 'l23', 'l5', 'relay', 'ca1', 'd1', 'executive', 'dcn')
-            target: Target region name
-            target_population: Target population on target (e.g., 'l23', 'trn', 'dg', 'ca1', 'executive')
+            synapse_id: Unique identifier for the synapse (source/target/population combination)
             axonal_delay_ms: Axonal conduction delay in milliseconds (mean)
             axonal_delay_std_ms: Standard deviation for heterogeneous delays (0 = uniform delay)
             connectivity: Connection probability (fraction of connections present, 0-1)
             weight_scale: Initial weight scale (normalized conductance)
-            is_inhibitory: If True, creates a GABAergic (inhibitory) projection. The delayed spikes
-                will be routed through the target region's inhibitory conductance channel (g_inh).
-                Default False (glutamatergic/excitatory).
+            stp_config: Optional short-term plasticity configuration for this connection (if None, no STP applied)
 
         Returns:
             Self for method chaining
@@ -203,52 +200,41 @@ class BrainBuilder:
         Raises:
             ValueError: If source or target region doesn't exist
         """
-        if source not in self._region_specs:
-            raise ValueError(f"Source region '{source}' not found")
-        if target not in self._region_specs:
-            raise ValueError(f"Target region '{target}' not found")
+        if synapse_id.source_region not in self._region_specs:
+            raise ValueError(f"Source region '{synapse_id.source_region}' not found")
+        if synapse_id.target_region not in self._region_specs:
+            raise ValueError(f"Target region '{synapse_id.target_region}' not found")
         if weight_scale < 0:
             raise ValueError("Weight scale must be non-negative")
 
         spec = ConnectionSpec(
-            source=source,
-            source_population=source_population,
-            target=target,
-            target_population=target_population,
+            synapse_id=synapse_id,
             axonal_delay_ms=axonal_delay_ms,
             axonal_delay_std_ms=axonal_delay_std_ms,
             connectivity=connectivity,
             weight_scale=weight_scale,
-            is_inhibitory=is_inhibitory,
+            stp_config=stp_config,
         )
 
         self._connection_specs.append(spec)
         return self
 
-    def add_external_input(
+    def add_external_input_source(
         self,
-        source_population: PopulationName,
-        target: RegionName,
-        target_population: PopulationName,
+        synapse_id: SynapseId,
         n_input: int,
         connectivity: float,
         weight_scale: float,
+        stp_config: Optional[STPConfig] = None,
     ) -> BrainBuilder:
-        """Register an external input source (e.g., sensory input).
-
-        External inputs are not brain regions - they're provided by the training loop
-        via the `brain_inputs` dict passed to `brain.forward()`.
-
-        This method registers the source with the target region and creates
-        synaptic weights, just like connect() but without creating an AxonalTract.
+        """Add an external input source to a region.
 
         Args:
-            source_population: Name of external source population (e.g., "sensory", "motor_command")
-            target: Target region name
-            target_population: Target population on target (e.g., "relay")
+            synapse_id: Unique identifier for the synapse (source/target/population combination)
             n_input: Number of input neurons from external source
             connectivity: Connection probability (0-1)
             weight_scale: Initial weight scale
+            stp_config: Optional short-term plasticity configuration for this connection (if None, no STP applied)
 
         Returns:
             Self for method chaining
@@ -256,21 +242,99 @@ class BrainBuilder:
         Raises:
             ValueError: If target region doesn't exist
         """
-        if target not in self._region_specs:
-            raise ValueError(f"Target region '{target}' not found")
+        if synapse_id.target_region not in self._region_specs:
+            raise ValueError(f"Target region '{synapse_id.target_region}' not found")
         if weight_scale < 0:
             raise ValueError("Weight scale must be non-negative")
 
         spec = ExternalInputSpec(
-            source_population=source_population,
-            target=target,
-            target_population=target_population,
+            synapse_id=synapse_id,
             n_input=n_input,
             connectivity=connectivity,
             weight_scale=weight_scale,
+            stp_config=stp_config,
         )
 
         self._external_input_specs.append(spec)
+        return self
+
+    def connect_to_striatum(
+        self,
+        source_region: RegionName,
+        source_population: PopulationName,
+        axonal_delay_ms: float,
+        axonal_delay_std_ms: float,
+        connectivity: float,
+        weight_scale: float,
+        *,
+        target_region: RegionName = "striatum",
+        d2_weight_scale: Optional[float] = None,
+        fsi_connectivity: float = 0.5,
+        tan_connectivity: float = 0.3,
+        stp_config: Optional[STPConfig] = None,
+    ) -> "BrainBuilder":
+        """Connect a source region to the striatum with explicit D1, D2, FSI, and TAN pathways.
+
+        Creates four ConnectionSpecs (one per sub-population) at the same axonal
+        delay but with biologically-motivated connectivity and weight differences:
+
+        +----------+----------------+---------------------+--------------------+
+        | Pop      | connectivity   | weight_scale        | STP                |
+        +==========+================+=====================+====================+
+        | D1       | *connectivity* | *weight_scale*      | *stp_config*       |
+        | D2       | *connectivity* | *d2_weight_scale*   | *stp_config*       |
+        | FSI      | *fsi_connectivity* | *weight_scale*  | None               |
+        | TAN      | *tan_connectivity* | weight_scale×0.5 | None             |
+        +----------+----------------+---------------------+--------------------+
+
+        Use ``stp_config`` to pass a source-appropriate short-term plasticity preset::
+
+            builder.connect_to_striatum(
+                "cortex_sensory", CortexPopulation.L5_PYR,
+                axonal_delay_ms=4.0, axonal_delay_std_ms=6.0,
+                connectivity=0.3, weight_scale=0.0001,
+                stp_config=CORTICOSTRIATAL_PRESET.configure(),
+            )
+
+        Args:
+            source_region: Name of the source region.
+            source_population: Source population identifier.
+            axonal_delay_ms: Mean axonal delay in milliseconds (applied to all four connections).
+            axonal_delay_std_ms: Std-dev for heterogeneous delays.
+            connectivity: Connection probability for D1 and D2 MSNs.
+            weight_scale: Initial weight scale for D1 MSNs (and FSI baseline).
+            target_region: Name of the target striatal region (default: ``"striatum"``).
+            d2_weight_scale: Weight scale for D2 MSNs; defaults to *weight_scale* if None.
+            fsi_connectivity: Connection probability for FSI input (default 0.5).
+            tan_connectivity: Connection probability for TAN input (default 0.3).
+            stp_config: Short-term plasticity config applied to D1 and D2 only;
+                        FSI and TAN always receive ``None``.
+
+        Returns:
+            Self for method chaining.
+        """
+        d2_ws = d2_weight_scale if d2_weight_scale is not None else weight_scale
+
+        for target_pop, conn, ws, use_stp in [
+            (StriatumPopulation.D1,  connectivity,     weight_scale,      True),
+            (StriatumPopulation.D2,  connectivity,     d2_ws,             True),
+            (StriatumPopulation.FSI, fsi_connectivity, weight_scale,      False),
+            (StriatumPopulation.TAN, tan_connectivity, weight_scale * 0.5, False),
+        ]:
+            self.connect(
+                synapse_id=SynapseId(
+                    source_region=source_region,
+                    source_population=source_population,
+                    target_region=target_region,
+                    target_population=target_pop,
+                    receptor_type=ReceptorType.AMPA,
+                ),
+                axonal_delay_ms=axonal_delay_ms,
+                axonal_delay_std_ms=axonal_delay_std_ms,
+                connectivity=conn,
+                weight_scale=ws,
+                stp_config=stp_config if use_stp else None,
+            )
         return self
 
     def validate(self) -> List[str]:
@@ -287,8 +351,8 @@ class BrainBuilder:
         # Check for isolated regions (no connections)
         connected_regions: set[str] = set()
         for conn in self._connection_specs:
-            connected_regions.add(conn.source)
-            connected_regions.add(conn.target)
+            connected_regions.add(conn.synapse_id.source_region)
+            connected_regions.add(conn.synapse_id.target_region)
 
         isolated: set[str] = set(self._region_specs.keys()) - connected_regions
         if isolated:
@@ -313,18 +377,11 @@ class BrainBuilder:
         Returns:
             :class:`AxonalTract` instance.
         """
-        source_region = regions[conn_spec.source]
-        target_region = regions[conn_spec.target]
+        synapse_id = conn_spec.synapse_id
+        source_region = regions[synapse_id.source_region]
+        target_region = regions[synapse_id.target_region]
 
-        source_size = source_region.get_population_size(conn_spec.source_population)
-
-        synapse_id = SynapseId(
-            source_region=conn_spec.source,
-            source_population=conn_spec.source_population,
-            target_region=conn_spec.target,
-            target_population=conn_spec.target_population,
-            is_inhibitory=conn_spec.is_inhibitory,
-        )
+        source_size = source_region.get_population_size(synapse_id.source_population)
 
         spec = AxonalTractSourceSpec(
             synapse_id=synapse_id,
@@ -338,8 +395,7 @@ class BrainBuilder:
             n_input=source_size,
             connectivity=conn_spec.connectivity,
             weight_scale=conn_spec.weight_scale,
-            # TODO: Add STP config support to ConnectionSpec if needed.
-            stp_config=None,
+            stp_config=conn_spec.stp_config,
         )
 
         return AxonalTract(
@@ -414,21 +470,13 @@ class BrainBuilder:
         # Register external input sources (if any)
         # These are provided by the training loop, not from other brain regions
         for ext_spec in self._external_input_specs:
-            target_region = regions[ext_spec.target]
+            target_region = regions[ext_spec.synapse_id.target_region]
             target_region.add_input_source(
-                synapse_id=SynapseId(
-                    source_region="external",
-                    source_population=ext_spec.source_population,
-                    target_region=ext_spec.target,
-                    target_population=ext_spec.target_population,
-                    # TODO: Assuming external inputs are excitatory by default; can be extended to support inhibitory if needed
-                    is_inhibitory=False,
-                ),
+                synapse_id=ext_spec.synapse_id,
                 n_input=ext_spec.n_input,
                 connectivity=ext_spec.connectivity,
                 weight_scale=ext_spec.weight_scale,
-                # TODO: External inputs can also have STP if desired - add stp_config to ExternalInputSpec and pass it here
-                stp_config=None,
+                stp_config=ext_spec.stp_config,
             )
 
         # Finalize initialization for regions that need post-connection setup
@@ -444,6 +492,11 @@ class BrainBuilder:
             regions=regions,
             axonal_tracts=axonal_tracts,
         )
+
+        # Validate neuromodulator subscriptions: every channel declared in a region's
+        # neuromodulator_subscriptions must be published by at least one other region.
+        # Raises ValueError at build time rather than silently returning None at runtime.
+        brain.neuromodulator_hub.validate()
 
         return brain
 
@@ -554,101 +607,145 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # =============================================================================
 
     default_cerebellum_sizes: PopulationSizes = {
-        CerebellumPopulation.GRANULE.value: 20000,  # Granule:Purkinje = 200:1 (biology: 1000:1, most numerous neurons in brain)
-        CerebellumPopulation.PURKINJE.value: 100,   # Purkinje cells are sole output of cerebellar cortex, provide strong inhibition to DCN
-        CerebellumPopulation.DCN.value: 100,        # DCN:Purkinje = 1:1 (biology ~1:1, DCN are sole cerebellar output neurons
+        CerebellumPopulation.GRANULE: 20000,  # Granule:Purkinje = 200:1 (biology: 1000:1, most numerous neurons in brain)
+        CerebellumPopulation.PURKINJE: 100,   # Purkinje cells are sole output of cerebellar cortex, provide strong inhibition to DCN
+        CerebellumPopulation.DCN: 100,        # DCN:Purkinje = 1:1 (biology ~1:1, DCN are sole cerebellar output neurons
     }
-    default_cortex_sizes: PopulationSizes = {
-        CortexPopulation.L23_PYR.value: 1200,  # 40% (supragranular, associative)
-        CortexPopulation.L4_PYR.value: 300,    # 10% (granular, thalamic input)
-        CortexPopulation.L5_PYR.value: 450,    # 15% (output to subcortex)
-        CortexPopulation.L6A_PYR.value: 150,   # 5% (corticothalamic type I)
-        CortexPopulation.L6B_PYR.value: 900,   # 30% (corticothalamic type II)
+    default_bla_sizes: PopulationSizes = {
+        BLAPopulation.PRINCIPAL: 2000,   # ~60% of BLA — glutamatergic fear/extinction engrams
+        BLAPopulation.PV: 500,           # ~20% — fast-spiking, feedforward inhibition
+        BLAPopulation.SOM: 300,          # ~10% — slow, dendritic inhibition (extinction)
+    }
+    default_cea_sizes: PopulationSizes = {
+        CeAPopulation.LATERAL: 750,      # CeL — integrative (ON/OFF cell division)
+        CeAPopulation.MEDIAL: 500,       # CeM — output nucleus (→ LC, LHb)
+    }
+    default_cortex_sensory_sizes: PopulationSizes = {
+        CortexPopulation.L23_PYR: 1200,  # 40% (supragranular, associative)
+        CortexPopulation.L4_PYR: 300,    # 10% (granular, thalamic input — prominent in sensory areas)
+        CortexPopulation.L5_PYR: 450,    # 15% (output to subcortex)
+        CortexPopulation.L6A_PYR: 150,   # 5% (corticothalamic type I)
+        CortexPopulation.L6B_PYR: 900,   # 30% (corticothalamic type II)
+    }
+    default_cortex_association_sizes: PopulationSizes = {
+        # Association cortex (e.g. IT, PPC, PMC) has proportionally *thin* L4
+        # (less thalamic drive) and thick L2/3 (more corticocortical integration).
+        # Sizes scaled to ~75% of sensory column to reflect smaller absolute area.
+        CortexPopulation.L23_PYR: 900,   # 40% (thicker relative L2/3 — strong associative integration)
+        CortexPopulation.L4_PYR: 150,    # 5%  (thin L4 — hallmark of association / agranular areas)
+        CortexPopulation.L5_PYR: 375,    # 15% (strong subcortical output to striatum, STN)
+        CortexPopulation.L6A_PYR: 120,   # 5%  (corticothalamic type I)
+        CortexPopulation.L6B_PYR: 750,   # 30% (corticothalamic type II)
+    }
+    default_gpe_sizes: PopulationSizes = {
+        GPePopulation.ARKYPALLIDAL: 700,   # ~25%, project back to striatum (global suppression)
+        GPePopulation.PROTOTYPIC: 2000,    # ~75% of GPe, project to STN + SNr (~50 Hz tonic)
     }
     default_hippocampus_sizes: PopulationSizes = {
-        HippocampusPopulation.DG.value: 500,   # cortex:hippocampus biological ratio (400:1)
-        HippocampusPopulation.CA3.value: 250,  # Autoassociative recurrent memory
-        HippocampusPopulation.CA2.value: 75,   # Small transitional zone (CA2 is tiny in biology)
-        HippocampusPopulation.CA1.value: 375,  # Output to cortex (slightly larger than CA3)
+        HippocampusPopulation.DG: 500,   # cortex:hippocampus biological ratio (400:1)
+        HippocampusPopulation.CA3: 250,  # Autoassociative recurrent memory
+        HippocampusPopulation.CA2: 75,   # Small transitional zone (CA2 is tiny in biology)
+        HippocampusPopulation.CA1: 375,  # Output to cortex (slightly larger than CA3)
+    }
+    default_lhb_sizes: PopulationSizes = {
+        LHbPopulation.PRINCIPAL: 500,      # Glutamatergic, excited by SNr (bad outcome signal)
+    }
+    default_locus_coeruleus_sizes: PopulationSizes = {
+        LocusCoeruleusPopulation.NE: 1600,
+        LocusCoeruleusPopulation.GABA: 300,
+    }
+    default_medial_septum_sizes: PopulationSizes = {
+        MedialSeptumPopulation.ACH: 200,
+        MedialSeptumPopulation.GABA: 200,
+    }
+    default_nucleus_basalis_sizes: PopulationSizes = {
+        NucleusBasalisPopulation.ACH: 3000,
+        NucleusBasalisPopulation.GABA: 500,
     }
     default_prefrontal_sizes: PopulationSizes = {
-        PrefrontalPopulation.EXECUTIVE.value: 800,
+        PrefrontalPopulation.EXECUTIVE: 800,
+    }
+    default_rmtg_sizes: PopulationSizes = {
+        RMTgPopulation.GABA: 1000,         # GABAergic, inhibit VTA DA (dopamine pause)
     }
     default_striatum_sizes: PopulationSizes = {
-        StriatumPopulation.D1.value: 200,
-        StriatumPopulation.D2.value: 200,
+        StriatumPopulation.D1: 200,
+        StriatumPopulation.D2: 200,
         'n_actions': 10,
         'neurons_per_action': 10,
     }
-    default_thalamus_sizes: PopulationSizes = {
-        ThalamusPopulation.RELAY.value: 400,  # Thalamic relay neurons (input from sensory pathways, output to cortex)
-        ThalamusPopulation.TRN.value: 40,     # 10:1 relay:TRN ratio
-    }
-
-    # Medial septum: Theta pacemaker for hippocampal circuits
-    # Small subcortical region with cholinergic and GABAergic pacemaker neurons
-    # Generates intrinsic ~8 Hz bursting that phase-locks hippocampal OLM cells
-    default_medial_septum_sizes: PopulationSizes = {
-        MedialSeptumPopulation.ACH.value: 200,
-        MedialSeptumPopulation.GABA.value: 200,
-    }
-
-    # Spiking dopamine system: RewardEncoder, SNr, VTA
-    # Implements biologically-accurate dopamine release with burst/pause dynamics
-    # Replaces scalar dopamine broadcast with spike-based volume transmission
-    default_reward_encoder_sizes: PopulationSizes = {
-        RewardEncoderPopulation.REWARD_SIGNAL.value: 100,
-    }
     default_substantia_nigra_sizes: PopulationSizes = {
-        SubstantiaNigraPopulation.VTA_FEEDBACK.value: 1000,  # SNr receives dense feedback from VTA dopamine neurons (inhibitory)
+        SubstantiaNigraPopulation.VTA_FEEDBACK: 1000,  # SNr receives dense feedback from VTA dopamine neurons (inhibitory)
     }
-    default_locus_coeruleus_sizes: PopulationSizes = {
-        LocusCoeruleusPopulation.NE.value: 1600,
-        LocusCoeruleusPopulation.GABA.value: 300,
+    default_snc_sizes: PopulationSizes = {
+        SNcPopulation.DA: 1500,    # DA:GABA roughly 3:1 (same calibration as VTA)
+        SNcPopulation.GABA: 500,
     }
-    default_nucleus_basalis_sizes: PopulationSizes = {
-        NucleusBasalisPopulation.ACH.value: 3000,
-        NucleusBasalisPopulation.GABA.value: 500,
+    default_stn_sizes: PopulationSizes = {
+        STNPopulation.STN: 500,            # Glutamatergic pacemakers (~20 Hz autonomous)
+    }
+    default_thalamus_sizes: PopulationSizes = {
+        ThalamusPopulation.RELAY: 400,  # Thalamic relay neurons (input from sensory pathways, output to cortex)
+        ThalamusPopulation.TRN: 40,     # 10:1 relay:TRN ratio
     }
     default_vta_sizes: PopulationSizes = {
-        VTAPopulation.DA.value: 2500,
-        VTAPopulation.GABA.value: 1000,  # 40% of DA population for local inhibitory control
+        # 2500 total DA neurons split into mesolimbic (~55%) and mesocortical (~35%)
+        # per Lammel et al. (2008): ~55% project to ventral striatum/limbic, ~35% to PFC.
+        # Remaining ~10% are glutamatergic (not modeled).
+        VTAPopulation.DA_MESOLIMBIC: 1375,   # 55% \u2014 reward/motivation; D2 autoreceptors present
+        VTAPopulation.DA_MESOCORTICAL: 875,  # 35% \u2014 executive/arousal; no D2 autoreceptors
+        VTAPopulation.GABA: 1000,  # 40% of DA population for local inhibitory control
     }
 
     # Merge with overrides (user overrides take precedence)
     sizes_overrides: Dict[RegionName, PopulationSizes] = overrides.get('population_sizes', {})
 
+    bla_sizes: PopulationSizes = {**default_bla_sizes, **sizes_overrides.get('basolateral_amygdala', {})}
+    cea_sizes: PopulationSizes = {**default_cea_sizes, **sizes_overrides.get('central_amygdala', {})}
     cerebellum_sizes: PopulationSizes = {**default_cerebellum_sizes, **sizes_overrides.get('cerebellum', {})}
-    cortex_sizes: PopulationSizes = {**default_cortex_sizes, **sizes_overrides.get('cortex', {})}
+    cortex_sensory_sizes: PopulationSizes = {**default_cortex_sensory_sizes, **sizes_overrides.get('cortex_sensory', {})}
+    cortex_association_sizes: PopulationSizes = {**default_cortex_association_sizes, **sizes_overrides.get('cortex_association', {})}
+    gpe_sizes: PopulationSizes = {**default_gpe_sizes, **sizes_overrides.get('globus_pallidus_externa', {})}
     hippocampus_sizes: PopulationSizes = {**default_hippocampus_sizes, **sizes_overrides.get('hippocampus', {})}
-    prefrontal_sizes: PopulationSizes = {**default_prefrontal_sizes, **sizes_overrides.get('prefrontal', {})}
-    striatum_sizes: PopulationSizes = {**default_striatum_sizes, **sizes_overrides.get('striatum', {})}
-    thalamus_sizes: PopulationSizes = {**default_thalamus_sizes, **sizes_overrides.get('thalamus', {})}
-    medial_septum_sizes: PopulationSizes = {**default_medial_septum_sizes, **sizes_overrides.get('medial_septum', {})}
-    reward_encoder_sizes: PopulationSizes = {**default_reward_encoder_sizes, **sizes_overrides.get('reward_encoder', {})}
-    substantia_nigra_sizes: PopulationSizes = {**default_substantia_nigra_sizes, **sizes_overrides.get('substantia_nigra', {})}
+    lhb_sizes: PopulationSizes = {**default_lhb_sizes, **sizes_overrides.get('lateral_habenula', {})}
     locus_coeruleus_sizes: PopulationSizes = {**default_locus_coeruleus_sizes, **sizes_overrides.get('locus_coeruleus', {})}
+    medial_septum_sizes: PopulationSizes = {**default_medial_septum_sizes, **sizes_overrides.get('medial_septum', {})}
     nucleus_basalis_sizes: PopulationSizes = {**default_nucleus_basalis_sizes, **sizes_overrides.get('nucleus_basalis', {})}
+    prefrontal_sizes: PopulationSizes = {**default_prefrontal_sizes, **sizes_overrides.get('prefrontal', {})}
+    rmtg_sizes: PopulationSizes = {**default_rmtg_sizes, **sizes_overrides.get('rostromedial_tegmentum', {})}
+    striatum_sizes: PopulationSizes = {**default_striatum_sizes, **sizes_overrides.get('striatum', {})}
+    substantia_nigra_sizes: PopulationSizes = {**default_substantia_nigra_sizes, **sizes_overrides.get('substantia_nigra', {})}
+    snc_sizes: PopulationSizes = {**default_snc_sizes, **sizes_overrides.get('substantia_nigra_compacta', {})}
+    stn_sizes: PopulationSizes = {**default_stn_sizes, **sizes_overrides.get('subthalamic_nucleus', {})}
+    thalamus_sizes: PopulationSizes = {**default_thalamus_sizes, **sizes_overrides.get('thalamus', {})}
     vta_sizes: PopulationSizes = {**default_vta_sizes, **sizes_overrides.get('vta', {})}
 
-    external_sensory_size: Optional[int] = sizes_overrides.get('external', {}).get('sensory', None)
+    external_reward_size: int = sizes_overrides.get(SynapseId._EXTERNAL_REGION_NAME, {}).get(ExternalPopulation.REWARD, 100)
+    external_sensory_size: Optional[int] = sizes_overrides.get(SynapseId._EXTERNAL_REGION_NAME, {}).get(ExternalPopulation.SENSORY, None)
     if external_sensory_size is None:
-        external_sensory_size = thalamus_sizes[ThalamusPopulation.RELAY.value]
+        external_sensory_size = thalamus_sizes[ThalamusPopulation.RELAY]
 
     # =============================================================================
     # Define regions with biologically realistic population sizes
     # =============================================================================
 
+    builder.add_region("basolateral_amygdala", "basolateral_amygdala", population_sizes=bla_sizes)
+    builder.add_region("central_amygdala", "central_amygdala", population_sizes=cea_sizes)
     builder.add_region("cerebellum", "cerebellum", population_sizes=cerebellum_sizes)
-    builder.add_region("cortex", "cortex", population_sizes=cortex_sizes)
+    builder.add_region("cortex_sensory", "cortical_column", population_sizes=cortex_sensory_sizes)
+    builder.add_region("cortex_association", "cortical_column", population_sizes=cortex_association_sizes)
+    builder.add_region("globus_pallidus_externa", "globus_pallidus_externa", population_sizes=gpe_sizes)
     builder.add_region("hippocampus", "hippocampus", population_sizes=hippocampus_sizes)
+    builder.add_region("lateral_habenula", "lateral_habenula", population_sizes=lhb_sizes)
     builder.add_region("locus_coeruleus", "locus_coeruleus", population_sizes=locus_coeruleus_sizes)
     builder.add_region("medial_septum", "medial_septum", population_sizes=medial_septum_sizes)
     builder.add_region("nucleus_basalis", "nucleus_basalis", population_sizes=nucleus_basalis_sizes)
     builder.add_region("prefrontal", "prefrontal", population_sizes=prefrontal_sizes)
-    builder.add_region("reward_encoder", "reward_encoder", population_sizes=reward_encoder_sizes)
+    builder.add_region("rostromedial_tegmentum", "rostromedial_tegmentum", population_sizes=rmtg_sizes)
     builder.add_region("striatum", "striatum", population_sizes=striatum_sizes)
     builder.add_region("substantia_nigra", "substantia_nigra", population_sizes=substantia_nigra_sizes)
+    builder.add_region("substantia_nigra_compacta", "substantia_nigra_compacta", population_sizes=snc_sizes)
+    builder.add_region("subthalamic_nucleus", "subthalamic_nucleus", population_sizes=stn_sizes)
     builder.add_region("thalamus", "thalamus", population_sizes=thalamus_sizes)
     builder.add_region("vta", "vta", population_sizes=vta_sizes)
 
@@ -670,16 +767,25 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     #
     # NOTE: Sensory input size can differ from relay_size for spatial
     # compression/expansion (e.g., 256 retinal ganglion cells → 128 LGN neurons)
-    builder.add_external_input(
-        source_population="sensory",
-        target="thalamus",
-        target_population=ThalamusPopulation.RELAY.value,
+    builder.add_external_input_source(
+        synapse_id=SynapseId.external_sensory_to_thalamus_relay("thalamus"),
         n_input=external_sensory_size,
         connectivity=0.25,
         weight_scale=0.0005,
     )
 
-    # Thalamus → Cortex L4: Thalamocortical projection with feedforward inhibition
+    # External reward → VTA DA: Direct reward signal delivery
+    # Population-coded spikes generated by DynamicBrain.deliver_reward() and
+    # injected directly, bypassing a dedicated region.  n_input controls the
+    # size of the spike vector expected by deliver_reward() at runtime.
+    builder.add_external_input_source(
+        synapse_id=SynapseId.external_reward_to_vta_da("vta"),
+        n_input=external_reward_size,
+        connectivity=0.7,
+        weight_scale=0.0008,
+    )
+
+    # Thalamus → CorticalColumn L4: Thalamocortical projection with feedforward inhibition
     # Fast, heavily myelinated pathway
     # Distance: ~2-3cm, conduction velocity: ~10-20 m/s → 2-3ms delay
     # Uses 'relay' population: Only relay neurons project to cortex (TRN provides lateral inhibition)
@@ -690,10 +796,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Thalamus → L4 Pyramidal: Main thalamocortical drive
     builder.connect(
-        source="thalamus",
-        source_population=ThalamusPopulation.RELAY.value,
-        target="cortex",
-        target_population=CortexPopulation.L4_PYR.value,
+        synapse_id=SynapseId(
+            source_region="thalamus",
+            source_population=ThalamusPopulation.RELAY,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L4_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=2.5,
         axonal_delay_std_ms=5.0,
         connectivity=0.7,
@@ -704,17 +813,20 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Biology: Same axons branch to PV cells for fast inhibition
     # Weaker weights compensate for PV's lower threshold (0.8 vs 1.4)
     builder.connect(
-        source="thalamus",
-        source_population=ThalamusPopulation.RELAY.value,
-        target="cortex",
-        target_population=CortexPopulation.L4_INHIBITORY_PV.value,
+        synapse_id=SynapseId(
+            source_region="thalamus",
+            source_population=ThalamusPopulation.RELAY,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L4_INHIBITORY_PV,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=2.5,
         axonal_delay_std_ms=5.0,
         connectivity=0.7,
         weight_scale=0.00002,
     )
 
-    # Cortex L6a/L6b → Thalamus: Dual corticothalamic feedback pathways
+    # CorticalColumn L6a/L6b → Thalamus: Dual corticothalamic feedback pathways
     # L6a (type I) → TRN: Inhibitory modulation for selective attention (slow pathway, low gamma 25-35 Hz)
     # L6b (type II) → Relay: Excitatory modulation for precision processing (fast pathway, high gamma 60-80 Hz)
     #
@@ -731,58 +843,74 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # - Refractory periods (tau_ref): post-spike delays
     # These neural dynamics add ~10-20ms to total loop period, producing gamma oscillations
     builder.connect(
-        source="cortex",
-        source_population=CortexPopulation.L6A_PYR.value,
-        target="thalamus",
-        target_population=ThalamusPopulation.TRN.value,
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L6A_PYR,
+            target_region="thalamus",
+            target_population=ThalamusPopulation.TRN,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=10.0,
         axonal_delay_std_ms=15.0,
         connectivity=0.3,
         weight_scale=0.001,
     )
     builder.connect(
-        source="cortex",
-        source_population=CortexPopulation.L6B_PYR.value,
-        target="thalamus",
-        target_population=ThalamusPopulation.RELAY.value,
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L6B_PYR,
+            target_region="thalamus",
+            target_population=ThalamusPopulation.RELAY,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=5.0,
         axonal_delay_std_ms=7.5,
         connectivity=0.3,
         weight_scale=0.0001,
     )
 
-    # Cortex ⇄ Hippocampus: Bidirectional memory integration
+    # CorticalColumn ⇄ Hippocampus: Bidirectional memory integration
     # Entorhinal cortex ↔ hippocampus: moderately myelinated
     # Distance: ~3-5cm, conduction velocity: ~5-10 m/s → 5-8ms delay
     builder.connect(
-        source="cortex",
-        source_population=CortexPopulation.L5_PYR.value,
-        target="hippocampus",
-        target_population=HippocampusPopulation.DG.value,
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L5_PYR,
+            target_region="hippocampus",
+            target_population=HippocampusPopulation.DG,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=6.5,
         axonal_delay_std_ms=10.0,
         connectivity=0.3,
         weight_scale=0.0005,
     )
     builder.connect(
-        source="hippocampus",
-        source_population=HippocampusPopulation.CA1.value,
-        target="cortex",
-        target_population=CortexPopulation.L5_PYR.value,
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L5_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=6.5,
         axonal_delay_std_ms=10.0,
         connectivity=0.3,
         weight_scale=0.0001,
     )
 
-    # Cortex → PFC: Executive control pathway
-    # Corticocortical long-range connections
+    # Association → PFC: Higher-level integrated representations drive executive control
+    # Association cortex is the primary corticocortical driver of PFC — sensory percepts
+    # are first integrated across modalities in association areas before reaching PFC.
     # Distance: ~5-10cm, conduction velocity: ~3-8 m/s → 10-15ms delay
     builder.connect(
-        source="cortex",
-        source_population=CortexPopulation.L23_PYR.value,
-        target="prefrontal",
-        target_population=PrefrontalPopulation.EXECUTIVE.value,
+        synapse_id=SynapseId(
+            source_region="cortex_association",
+            source_population=CortexPopulation.L23_PYR,
+            target_region="prefrontal",
+            target_population=PrefrontalPopulation.EXECUTIVE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=12.5,
         axonal_delay_std_ms=20.0,
         connectivity=0.3,
@@ -790,49 +918,51 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     )
 
     # Multi-source → Striatum: Corticostriatal + hippocampostriatal + PFC inputs
+    # connect_to_striatum() creates explicit D1, D2, FSI, and TAN pathways for each source,
+    # so all populations receive actual synaptic input via dedicated axonal tracts.
     # Per-target delays model different myelination patterns (Gerfen & Surmeier 2011):
-    # - Cortex → Striatum: Fast, heavily myelinated, short distance (~2-4cm) → 3-5ms
+    # - CorticalColumn → Striatum: Fast, heavily myelinated, short distance (~2-4cm) → 3-5ms
     # - Hippocampus → Striatum: Moderate, longer distance (~4-6cm) → 7-10ms
     # - PFC → Striatum: Variable, longest distance (~6-10cm) → 12-18ms
-    builder.connect(
-        source="cortex",
-        source_population=CortexPopulation.L5_PYR.value,
-        target="striatum",
-        target_population=StriatumPopulation.D1.value,
+    builder.connect_to_striatum(
+        source_region="cortex_sensory",
+        source_population=CortexPopulation.L5_PYR,
         axonal_delay_ms=4.0,
         axonal_delay_std_ms=6.0,
         connectivity=0.3,
         weight_scale=0.0001,
+        stp_config=CORTICOSTRIATAL_PRESET.configure(),
     )
-    builder.connect(
-        source="hippocampus",
-        source_population=HippocampusPopulation.CA1.value,
-        target="striatum",
-        target_population=StriatumPopulation.D1.value,
+    builder.connect_to_striatum(
+        source_region="hippocampus",
+        source_population=HippocampusPopulation.CA1,
         axonal_delay_ms=8.5,
         axonal_delay_std_ms=13.0,
         connectivity=0.3,
         weight_scale=0.0002,
+        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
     )
-    builder.connect(
-        source="prefrontal",
-        source_population=PrefrontalPopulation.EXECUTIVE.value,
-        target="striatum",
-        target_population=StriatumPopulation.D1.value,
+    builder.connect_to_striatum(
+        source_region="prefrontal",
+        source_population=PrefrontalPopulation.EXECUTIVE,
         axonal_delay_ms=15.0,
         axonal_delay_std_ms=22.5,
         connectivity=0.3,
         weight_scale=0.0002,
+        stp_config=CORTICOSTRIATAL_PRESET.configure(),
     )
 
     # Striatum → PFC: Basal ganglia gating of working memory
     # Via thalamus (MD/VA nuclei), total distance ~8-12cm (Haber 2003)
     # Includes striatum→thalamus→PFC relay → 15-20ms total delay
     builder.connect(
-        source="striatum",
-        source_population=StriatumPopulation.D1.value,
-        target="prefrontal",
-        target_population=PrefrontalPopulation.EXECUTIVE.value,
+        synapse_id=SynapseId(
+            source_region="striatum",
+            source_population=StriatumPopulation.D1,
+            target_region="prefrontal",
+            target_population=PrefrontalPopulation.EXECUTIVE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=17.5,
         axonal_delay_std_ms=26.0,
         connectivity=0.6,
@@ -844,10 +974,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Corticopontocerebellar pathway: via pontine nuclei (Schmahmann 1996)
     # Distance: ~10-15cm total, includes relay → 20-30ms delay
     builder.connect(
-        source="cortex",
-        source_population=CortexPopulation.L5_PYR.value,
-        target="cerebellum",
-        target_population=CerebellumPopulation.GRANULE.value,
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L5_PYR,
+            target_region="cerebellum",
+            target_population=CerebellumPopulation.GRANULE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=25.0,
         axonal_delay_std_ms=37.5,
         connectivity=0.3,
@@ -857,27 +990,33 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # PFC → Cerebellum: similar pathway length
     # Goal/context input
     builder.connect(
-        source="prefrontal",
-        source_population=PrefrontalPopulation.EXECUTIVE.value,
-        target="cerebellum",
-        target_population=CerebellumPopulation.GRANULE.value,
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="cerebellum",
+            target_population=CerebellumPopulation.GRANULE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=25.0,
         axonal_delay_std_ms=37.5,
         connectivity=0.3,
         weight_scale=0.0002,
     )
 
-    # Cerebellum → Cortex L4: via thalamus (VL/VA nuclei), moderately fast
+    # Cerebellum → CorticalColumn L4: via thalamus (VL/VA nuclei), moderately fast
     # Distance: ~8-12cm, includes thalamic relay → 15-20ms delay
     # Forward model predictions
     # Split into pyramidal and PV for feedforward inhibition (same as thalamus)
 
     # Cerebellum → L4 Pyramidal: Motor predictions
     builder.connect(
-        source="cerebellum",
-        source_population=CerebellumPopulation.DCN.value,
-        target="cortex",
-        target_population=CortexPopulation.L4_PYR.value,
+        synapse_id=SynapseId(
+            source_region="cerebellum",
+            source_population=CerebellumPopulation.DCN,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L4_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=17.5,
         axonal_delay_std_ms=26.0,
         connectivity=0.3,
@@ -886,10 +1025,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
 
     # Cerebellum → L4 PV: Feedforward inhibition for motor predictions
     builder.connect(
-        source="cerebellum",
-        source_population=CerebellumPopulation.DCN.value,
-        target="cortex",
-        target_population=CortexPopulation.L4_INHIBITORY_PV.value,
+        synapse_id=SynapseId(
+            source_region="cerebellum",
+            source_population=CerebellumPopulation.DCN,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L4_INHIBITORY_PV,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=17.5,
         axonal_delay_std_ms=26.0,
         connectivity=0.3,
@@ -904,10 +1046,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Distance: ~5-7cm, conduction velocity: ~3-5 m/s → 12-18ms delay
     # Enables: goal-directed memory search, schema-based encoding modulation
     builder.connect(
-        source="prefrontal",
-        source_population=PrefrontalPopulation.EXECUTIVE.value,
-        target="hippocampus",
-        target_population=HippocampusPopulation.CA1.value,
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="hippocampus",
+            target_population=HippocampusPopulation.CA1,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=15.0,
         axonal_delay_std_ms=22.5,
         connectivity=0.3,
@@ -919,27 +1064,33 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Distance: ~5-7cm, similar pathway to reverse direction → 10-15ms delay
     # Enables: episodic future thinking, memory-guided decisions
     builder.connect(
-        source="hippocampus",
-        source_population=HippocampusPopulation.CA1.value,
-        target="prefrontal",
-        target_population=PrefrontalPopulation.EXECUTIVE.value,
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="prefrontal",
+            target_population=PrefrontalPopulation.EXECUTIVE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=12.0,
         axonal_delay_std_ms=18.0,
         connectivity=0.3,
         weight_scale=0.0002,
     )
 
-    # PFC → Cortex: Top-down attention and cognitive control
+    # PFC → CorticalColumn: Top-down attention and cognitive control
     # PFC biases cortical processing via direct feedback projections to L2/3
     # Corticocortical feedback: ~5-8cm, conduction velocity: ~3-6 m/s → 10-15ms
     # Biological accuracy: PFC feedback targets superficial layers (L2/3), NOT L4
     # This bypasses thalamic input and directly modulates cortical representations
     # Enables: attentional bias, cognitive control over perception, working memory maintenance
     builder.connect(
-        source="prefrontal",
-        source_population=PrefrontalPopulation.EXECUTIVE.value,
-        target="cortex",
-        target_population=CortexPopulation.L23_PYR.value,
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L23_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=12.0,
         axonal_delay_std_ms=18.0,
         connectivity=0.3,
@@ -952,10 +1103,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Distance: ~4-6cm, conduction velocity: ~5-8 m/s → 6-10ms delay
     # Enables: fast sensory encoding, subcortical memory formation
     builder.connect(
-        source="thalamus",
-        source_population=ThalamusPopulation.RELAY.value,
-        target="hippocampus",
-        target_population=HippocampusPopulation.DG.value,
+        synapse_id=SynapseId(
+            source_region="thalamus",
+            source_population=ThalamusPopulation.RELAY,
+            target_region="hippocampus",
+            target_population=HippocampusPopulation.DG,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=8.0,
         axonal_delay_std_ms=12.0,
         connectivity=0.3,
@@ -967,15 +1121,14 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Fast subcortical route for stimulus-response habits
     # Distance: ~3-5cm, conduction velocity: ~6-10 m/s → 4-7ms delay
     # Enables: fast habitual responses, stimulus-response learning, subcortical reflexes
-    builder.connect(
-        source="thalamus",
-        source_population=ThalamusPopulation.RELAY.value,
-        target="striatum",
-        target_population=StriatumPopulation.D1.value,
+    builder.connect_to_striatum(
+        source_region="thalamus",
+        source_population=ThalamusPopulation.RELAY,
         axonal_delay_ms=5.0,
         axonal_delay_std_ms=7.5,
         connectivity=0.3,
         weight_scale=0.0002,
+        stp_config=THALAMO_STRIATAL_PRESET.configure(),
     )
 
     # Medial Septum → Hippocampus CA3: Septal theta drive for emergent oscillations
@@ -983,12 +1136,14 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # OLM dendritic inhibition creates emergent encoding/retrieval separation
     # Distance: ~1-2cm (local subcortical), well-myelinated → 2ms delay
     # CRITICAL: This connection enables emergent theta (replaces hardcoded sinusoid)
-    # STRENGTHENED: 0.03 → 0.09 to propagate 8 Hz rhythm and break 1 Hz delta lock
     builder.connect(
-        source="medial_septum",
-        source_population=MedialSeptumPopulation.GABA.value,
-        target="hippocampus",
-        target_population=HippocampusPopulation.CA3.value,
+        synapse_id=SynapseId(
+            source_region="medial_septum",
+            source_population=MedialSeptumPopulation.GABA,
+            target_region="hippocampus",
+            target_population=HippocampusPopulation.CA3,
+            receptor_type=ReceptorType.GABA_A,
+        ),
         axonal_delay_ms=2.0,
         axonal_delay_std_ms=3.0,
         connectivity=0.15,
@@ -1001,31 +1156,17 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # This closes the loop: Septum drives hippocampus, hippocampus regulates septum
     # Distance: ~1-2cm, similar myelination → 2ms delay
     builder.connect(
-        source="hippocampus",
-        source_population=HippocampusPopulation.CA1.value,
-        target="medial_septum",
-        target_population=MedialSeptumPopulation.GABA.value,
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="medial_septum",
+            target_population=MedialSeptumPopulation.GABA,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=2.0,
         axonal_delay_std_ms=3.0,
         connectivity=0.2,
         weight_scale=0.0005,
-    )
-
-    # Medial Septum → Hippocampus CA1: Cholinergic modulation
-    # Biology: Septum ACh neurons enhance CA1 plasticity and attention
-    # Complements GABAergic theta drive to CA3 with cholinergic modulation to CA1
-    # ACh phase-locked to theta peaks (encoding mode), modulates LTP/LTD
-    # Distance: ~1-2cm, similar pathway → 2ms delay
-    # STRENGTHENED: 0.008 → 0.032 to enhance theta entrainment in CA1
-    builder.connect(
-        source="medial_septum",
-        source_population=MedialSeptumPopulation.ACH.value,
-        target="hippocampus",
-        target_population=HippocampusPopulation.CA1.value,
-        axonal_delay_ms=2.0,
-        axonal_delay_std_ms=3.0,
-        connectivity=0.15,
-        weight_scale=0.0003,
     )
 
     # =============================================================================
@@ -1055,56 +1196,311 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # producing 50-70 Hz baseline. Striatum MODULATES this (cannot completely silence).
     # With maximal D1, SNR drops to ~30-40 Hz. With maximal D2, SNR rises to ~80-90 Hz.
     builder.connect(
-        source="striatum",
-        source_population=StriatumPopulation.D1.value,
-        target="substantia_nigra",
-        target_population=SubstantiaNigraPopulation.VTA_FEEDBACK.value,
+        synapse_id=SynapseId(
+            source_region="striatum",
+            source_population=StriatumPopulation.D1,
+            target_region="substantia_nigra",
+            target_population=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            receptor_type=ReceptorType.GABA_A,
+        ),
         axonal_delay_ms=2.5,
         axonal_delay_std_ms=7.5,
         connectivity=0.6,
         weight_scale=0.0008,
     )
+    # D2 MSNs (indirect, NoGo): Inhibit GPe PROTOTYPIC
+    # Biology: D2-MSN → GPe is the first link of the INDIRECT pathway
+    # D2 fires → suppresses GPe → disinhibits STN → STN bursts → excites SNr
+    # Net effect: SNr fires more → thalamus suppressed → action cancelled
+    # Distance: ~1-2cm, well-myelinated → 2-4ms delay
     builder.connect(
-        source="striatum",
-        source_population=StriatumPopulation.D2.value,
-        target="substantia_nigra",
-        target_population=SubstantiaNigraPopulation.VTA_FEEDBACK.value,
-        axonal_delay_ms=2.5,
-        axonal_delay_std_ms=7.5,
-        connectivity=0.6,
-        weight_scale=0.0001,
-    )
-
-    # SNr → VTA: Value estimate feedback for TD learning
-    # SNr provides inhibitory feedback encoding value: V(s) ∝ 1/firing_rate
-    # High SNr firing (low D1) → high inhibition → low value signal to VTA
-    # Low SNr firing (high D1) → low inhibition → high value signal to VTA
-    # Distance: ~0.5-1cm (adjacent midbrain nuclei) → 1.5ms mean delay
-    builder.connect(
-        source="substantia_nigra",
-        source_population=SubstantiaNigraPopulation.VTA_FEEDBACK.value,
-        target="vta",
-        target_population=VTAPopulation.DA.value,
-        axonal_delay_ms=1.5,
+        synapse_id=SynapseId(
+            source_region="striatum",
+            source_population=StriatumPopulation.D2,
+            target_region="globus_pallidus_externa",
+            target_population=GPePopulation.PROTOTYPIC,
+            receptor_type=ReceptorType.GABA_A,
+        ),
+        axonal_delay_ms=3.0,
         axonal_delay_std_ms=4.5,
-        connectivity=0.6,
+        connectivity=0.5,
+        weight_scale=0.0006,
+    )
+
+    # =============================================================================
+    # BASAL GANGLIA INDIRECT PATHWAY (GPe, STN)
+    # =============================================================================
+    # Complete biological indirect pathway: D2 → GPe → STN → SNr
+    # Also: CorticalColumn (hyperdirect) → STN → SNr (fastest action-suppression pathway)
+
+    # GPe PROTOTYPIC → STN: Inhibitory pacing of STN autonomous pacemaker
+    # GPe → STN inhibition is the basis of the GPe-STN oscillatory loop
+    # Biology: GABAergic, myelinated → 3-5ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="globus_pallidus_externa",
+            source_population=GPePopulation.PROTOTYPIC,
+            target_region="subthalamic_nucleus",
+            target_population=STNPopulation.STN,
+            receptor_type=ReceptorType.GABA_A,
+        ),
+        axonal_delay_ms=4.0,
+        axonal_delay_std_ms=6.0,
+        connectivity=0.5,
+        weight_scale=0.000025,
+    )
+
+    # STN → GPe PROTOTYPIC: Excitatory feedback (closes GPe-STN loop)
+    # STN bursts re-excite GPe, sustaining the oscillatory sub-second loop
+    # Biology: Glutamatergic, moderately myelinated → 3-5ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="subthalamic_nucleus",
+            source_population=STNPopulation.STN,
+            target_region="globus_pallidus_externa",
+            target_population=GPePopulation.PROTOTYPIC,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=4.0,
+        axonal_delay_std_ms=6.0,
+        connectivity=0.5,
+        weight_scale=0.0005,
+    )
+
+    # STN → SNr: Net excitatory output of indirect pathway
+    # When D2-MSNs fire → GPe inhibited → STN disinhibited → STN bursts → SNr excited
+    # Biology: Glutamatergic, moderately myelinated → 3-7ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="subthalamic_nucleus",
+            source_population=STNPopulation.STN,
+            target_region="substantia_nigra",
+            target_population=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=7.5,
+        connectivity=0.5,
+        weight_scale=0.0004,
+    )
+
+    # GPe PROTOTYPIC → SNr: Pallido-nigral inhibitory pathway
+    # GPe also directly projects to SNr providing additional inhibitory gating
+    # Biology: GABAergic, myelinated → 3-5ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="globus_pallidus_externa",
+            source_population=GPePopulation.PROTOTYPIC,
+            target_region="substantia_nigra",
+            target_population=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            receptor_type=ReceptorType.GABA_A,
+        ),
+        axonal_delay_ms=4.0,
+        axonal_delay_std_ms=6.0,
+        connectivity=0.4,
+        weight_scale=0.00003,
+    )
+
+    # CorticalColumn L5 → STN: HYPERDIRECT pathway (fastest cortex-basal ganglia route)
+    # CorticalColumn sends 'hold' signal directly to STN while direct-pathway decision propagates
+    # Arrives at SNr before striatal signals, enabling rapid action suppression
+    # Biology: Corticospinal-type axons, heavily myelinated → 3-8ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L5_PYR,
+            target_region="subthalamic_nucleus",
+            target_population=STNPopulation.STN,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=7.5,
+        connectivity=0.3,
+        weight_scale=0.0004,
+    )
+
+    # =============================================================================
+    # INTER-COLUMN CORTICOCORTICAL CONNECTIONS
+    # =============================================================================
+    # Two-column hierarchy: cortex_sensory → cortex_association → prefrontal.
+    #
+    # cortex_sensory  – receives thalamic/cerebellar drive, encodes perceptual features
+    # cortex_association – integrates sensory with hippocampal memory; routes to PFC
+    #                      and subcortex for goal-directed action selection
+    #
+    # Feedforward (sensory L2/3 → assoc. L4): ~5ms, well-myelinated, ~2-3cm
+    # Feedback  (assoc. L6B → sensory L2/3): ~8ms, partly unmyelinated component
+    # These implement the canonical predictive-coding FF/FB architecture
+    # (Felleman & Van Essen 1991; Bastos et al. 2012).
+
+    # Sensory L2/3 → Association L4: Feedforward percept transfer
+    # Supragranular pyramidals project to granular layer of the next-higher area.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L23_PYR,
+            target_region="cortex_association",
+            target_population=CortexPopulation.L4_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=7.5,
+        connectivity=0.3,
+        weight_scale=0.0004,
+    )
+
+    # Association L6B → Sensory L2/3: Top-down prediction feedback
+    # Deep-layer → superficial-layer of lower area (canonical FB pathway).
+    # Carries predictions; suppresses expected patterns (predictive coding).
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_association",
+            source_population=CortexPopulation.L6B_PYR,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L23_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=8.0,
+        axonal_delay_std_ms=12.0,
+        connectivity=0.2,
+        weight_scale=0.0004,
+    )
+
+    # Hippocampus CA1 → Association L2/3: Retrieved episodic content to context
+    # Complements sensory→DG encoding; retrieval arrives at association for integration.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="cortex_association",
+            target_population=CortexPopulation.L23_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=6.5,
+        axonal_delay_std_ms=10.0,
+        connectivity=0.3,
         weight_scale=0.0001,
     )
 
-    # RewardEncoder → VTA: External reward signal delivery
-    # Population-coded reward spikes from environment/task
-    # VTA decodes to scalar reward: r = mean(spikes) / max_rate
-    # Note: RewardEncoder receives external input via Brain.forward()
-    # Distance: Conceptual (external input pathway) → minimal delay
+    # PFC → Association L2/3: Top-down executive modulation of higher representations
+    # PFC biases both cortical columns; association column receives goal-context signal.
     builder.connect(
-        source="reward_encoder",
-        source_population=RewardEncoderPopulation.REWARD_SIGNAL.value,
-        target="vta",
-        target_population=VTAPopulation.DA.value,
-        axonal_delay_ms=0.5,
-        axonal_delay_std_ms=1.0,
-        connectivity=0.7,
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="cortex_association",
+            target_population=CortexPopulation.L23_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=12.0,
+        axonal_delay_std_ms=18.0,
+        connectivity=0.3,
+        weight_scale=0.0005,
+    )
+
+    # Association L5 → Striatum D1/D2/FSI/TAN: Goal-directed corticostriatal projection
+    # High-level context drives direct pathway for action selection.
+    # Slightly longer delay than sensory→D1 (additional cortical processing).
+    # connect_to_striatum() creates all four sub-population pathways explicitly.
+    builder.connect_to_striatum(
+        source_region="cortex_association",
+        source_population=CortexPopulation.L5_PYR,
+        axonal_delay_ms=6.0,
+        axonal_delay_std_ms=9.0,
+        connectivity=0.3,
+        weight_scale=0.0001,
+        stp_config=CORTICOSTRIATAL_PRESET.configure(),
+    )
+
+    # Association L6A → Thalamus TRN: Corticothalamic attention control
+    # Association cortex gates thalamic relay to shape L4 input in sensory column.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_association",
+            source_population=CortexPopulation.L6A_PYR,
+            target_region="thalamus",
+            target_population=ThalamusPopulation.TRN,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=12.0,
+        axonal_delay_std_ms=18.0,
+        connectivity=0.2,
         weight_scale=0.0008,
+    )
+
+    # =============================================================================
+    # ANTI-REWARD / NEGATIVE RPE PATHWAY (LHb, RMTg → VTA)
+    # =============================================================================
+    # SNr (high activity = bad outcome) → LHb → RMTg → VTA DA pause
+    # This implements the biological negative RPE pathway replacing the old
+    # direct SNr→VTA value decoding.
+
+    # SNr → LHb: High SNr activity = suppressed action = bad outcome → LHb excited
+    # Biology: SNr projects excitatory input to LHb (glutamatergic via relay cells)
+    # Distance: ~1-2cm (adjacent midbrain to epithalamus) → 2-4ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="substantia_nigra",
+            source_population=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            target_region="lateral_habenula",
+            target_population=LHbPopulation.PRINCIPAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.0,
+        axonal_delay_std_ms=4.5,
+        connectivity=0.5,
+        weight_scale=0.00008,
+    )
+
+    # LHb → RMTg: Aversive signal drives GABAergic pause mediator
+    # Biology: Glutamatergic LHb→RMTg (heaviest known projection from LHb)
+    # Distance: ~0.5-1cm (adjacent brainstem structures) → 1-3ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="lateral_habenula",
+            source_population=LHbPopulation.PRINCIPAL,
+            target_region="rostromedial_tegmentum",
+            target_population=RMTgPopulation.GABA,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=2.0,
+        axonal_delay_std_ms=3.0,
+        connectivity=0.6,
+        weight_scale=0.0006,
+    )
+
+    # RMTg → VTA DA_MESOLIMBIC: GABAergic pause = negative RPE (mesolimbic channel)
+    # RMTg inhibits all VTA DA neurons; route to each sub-population separately so the
+    # two populations have independent synaptic weight matrices.
+    # Fast GABA_A-mediated, short distance → 1-2ms delay.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="rostromedial_tegmentum",
+            source_population=RMTgPopulation.GABA,
+            target_region="vta",
+            target_population=VTAPopulation.DA_MESOLIMBIC,
+            receptor_type=ReceptorType.GABA_A,
+        ),
+        axonal_delay_ms=1.5,
+        axonal_delay_std_ms=2.0,
+        connectivity=0.7,
+        weight_scale=0.0005,
+    )
+
+    # RMTg → VTA DA_MESOCORTICAL: same pause mechanism for mesocortical sub-population.
+    # Mesocortical DA neurons recover faster (higher baseline, no D2 autoreceptors).
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="rostromedial_tegmentum",
+            source_population=RMTgPopulation.GABA,
+            target_region="vta",
+            target_population=VTAPopulation.DA_MESOCORTICAL,
+            receptor_type=ReceptorType.GABA_A,
+        ),
+        axonal_delay_ms=1.5,
+        axonal_delay_std_ms=2.0,
+        connectivity=0.7,
+        weight_scale=0.0005,
     )
 
     # =============================================================================
@@ -1120,10 +1516,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Executive population variance indicates decision uncertainty
     # Distance: ~3-5cm, well-myelinated → 5-8ms delay
     builder.connect(
-        source="prefrontal",
-        source_population=PrefrontalPopulation.EXECUTIVE.value,
-        target="locus_coeruleus",
-        target_population=LocusCoeruleusPopulation.NE.value,
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="locus_coeruleus",
+            target_population=LocusCoeruleusPopulation.NE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=6.5,
         axonal_delay_std_ms=10.0,
         connectivity=0.3,
@@ -1135,10 +1534,13 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Novel contexts → high LC firing → memory encoding enhancement
     # Distance: ~4-6cm, moderately myelinated → 8-12ms delay
     builder.connect(
-        source="hippocampus",
-        source_population=HippocampusPopulation.CA1.value,
-        target="locus_coeruleus",
-        target_population=LocusCoeruleusPopulation.NE.value,
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="locus_coeruleus",
+            target_population=LocusCoeruleusPopulation.NE,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=10.0,
         axonal_delay_std_ms=15.0,
         connectivity=0.3,
@@ -1158,14 +1560,161 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     # Unexpected events drive encoding mode in cortex/hippocampus
     # Distance: ~3-5cm, well-myelinated → 5-8ms delay
     builder.connect(
-        source="prefrontal",
-        source_population=PrefrontalPopulation.EXECUTIVE.value,
-        target="nucleus_basalis",
-        target_population=NucleusBasalisPopulation.ACH.value,
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="nucleus_basalis",
+            target_population=NucleusBasalisPopulation.ACH,
+            receptor_type=ReceptorType.AMPA,
+        ),
         axonal_delay_ms=6.5,
         axonal_delay_std_ms=10.0,
         connectivity=0.3,
         weight_scale=0.0002,
+    )
+
+    # =============================================================================
+    # AMYGDALA (BLA + CeA) CONNECTIONS
+    # =============================================================================
+    # BLA: fear conditioning / extinction (CS–US association)
+    # CeA: fear output (→ LC arousal, LHb aversive RPE)
+
+    # CorticalColumn → BLA PRINCIPAL: CS representation (slow, detailed pathway)
+    # Auditory/somatosensory cortex provides the conditioned stimulus (CS) signal.
+    # Distance: ~3-5cm, moderately myelinated → 6-10ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_sensory",
+            source_population=CortexPopulation.L5_PYR,
+            target_region="basolateral_amygdala",
+            target_population=BLAPopulation.PRINCIPAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=8.0,
+        axonal_delay_std_ms=12.0,
+        connectivity=0.15,
+        weight_scale=0.0003,
+    )
+
+    # Thalamus → BLA PRINCIPAL: Fast CS pathway (thalamo-amygdalar shortcut)
+    # Direct thalamic relay bypasses cortex (~12ms faster than cortical path).
+    # Enables rapid fear conditioning before full cortical elaboration of CS.
+    # Distance: ~2-3cm → ~5ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="thalamus",
+            source_population=ThalamusPopulation.RELAY,
+            target_region="basolateral_amygdala",
+            target_population=BLAPopulation.PRINCIPAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=8.0,
+        connectivity=0.2,
+        weight_scale=0.0003,
+    )
+
+    # Hippocampus → BLA PRINCIPAL: Context signal for contextual fear / extinction renewal
+    # CA1 encodes spatial/temporal context; gates fear recall based on place-memory.
+    # Distance: ~1-2cm (directly adjacent structures) → 3-5ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="basolateral_amygdala",
+            target_population=BLAPopulation.PRINCIPAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=4.0,
+        axonal_delay_std_ms=6.0,
+        connectivity=0.2,
+        weight_scale=0.0003,
+    )
+
+    # PFC → BLA SOM: Top-down extinction regulation
+    # Infralimbic PFC → BLA SOM interneurons inhibits principal neurons → extinction.
+    # Distance: ~4-6cm, well-myelinated → 6-10ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="prefrontal",
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_region="basolateral_amygdala",
+            target_population=BLAPopulation.SOM,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=8.0,
+        axonal_delay_std_ms=12.0,
+        connectivity=0.2,
+        weight_scale=0.0002,
+    )
+
+    # BLA PRINCIPAL → CeA LATERAL: Core fear signal transmission
+    # LA/BA principal neurons project to CeL, driving fear-ON cells.
+    # Distance: ~0.5-1cm (within amygdaloid complex) → 2-3ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="basolateral_amygdala",
+            source_population=BLAPopulation.PRINCIPAL,
+            target_region="central_amygdala",
+            target_population=CeAPopulation.LATERAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=2.5,
+        axonal_delay_std_ms=3.0,
+        connectivity=0.3,
+        weight_scale=0.0005,
+    )
+
+    # BLA PRINCIPAL → CeA MEDIAL: Direct strong projection (bypasses CeL gating)
+    # Some BLA principal neurons project directly to CeM for rapid fear output.
+    # Distance: ~0.5-1cm → 2-3ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="basolateral_amygdala",
+            source_population=BLAPopulation.PRINCIPAL,
+            target_region="central_amygdala",
+            target_population=CeAPopulation.MEDIAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.0,
+        axonal_delay_std_ms=4.0,
+        connectivity=0.2,
+        weight_scale=0.0004,
+    )
+
+    # CeA MEDIAL → LC: Fear-driven NE arousal
+    # CeM activates LC during fear, driving NE release and sympathetic arousal.
+    # Distance: ~3-5cm (amygdala → pons) → 5-10ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="central_amygdala",
+            source_population=CeAPopulation.MEDIAL,
+            target_region="locus_coeruleus",
+            target_population=LocusCoeruleusPopulation.NE,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=7.0,
+        axonal_delay_std_ms=10.0,
+        connectivity=0.3,
+        weight_scale=0.0004,
+    )
+
+    # CeA MEDIAL → LHb: Aversive prediction error signal
+    # CeM output encodes expected punishment; drives LHb for negative RPE.
+    # LHb will then activate RMTg → DA pause in VTA.
+    # Distance: ~3-4cm → 5-8ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="central_amygdala",
+            source_population=CeAPopulation.MEDIAL,
+            target_region="lateral_habenula",
+            target_population=LHbPopulation.PRINCIPAL,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=6.0,
+        axonal_delay_std_ms=8.0,
+        connectivity=0.3,
+        weight_scale=0.0004,
     )
 
 

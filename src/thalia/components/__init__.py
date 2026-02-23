@@ -12,10 +12,14 @@ from .gap_junctions import (
     GapJunctionCoupling,
 )
 from .neurons import (
-    ConductanceLIF,
+    AcetylcholineNeuronConfig,
+    AcetylcholineNeuron,
     ConductanceLIFConfig,
+    ConductanceLIF,
     NeuronFactory,
     NeuronType,
+    NorepinephrineNeuronConfig,
+    NorepinephrineNeuron,
 )
 from .synapses import (
     ShortTermPlasticity,
@@ -30,8 +34,12 @@ from .synapses import (
 
 __all__ = [
     # Neuron models
-    "ConductanceLIF",
+    "AcetylcholineNeuronConfig",
+    "AcetylcholineNeuron",
     "ConductanceLIFConfig",
+    "ConductanceLIF",
+    "NorepinephrineNeuronConfig",
+    "NorepinephrineNeuron",
     # Neuron factory
     "NeuronFactory",
     "NeuronType",

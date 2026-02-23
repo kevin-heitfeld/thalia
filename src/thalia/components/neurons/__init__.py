@@ -14,13 +14,6 @@ from .conductance_lif_neuron import (
     ConductanceLIFConfig,
     ConductanceLIF,
 )
-from .dopamine_neuron import (
-    TonicDopamineNeuron,
-)
-from .izhikevich_neuron import (
-    IzhikevichNeuronConfig,
-    IzhikevichNeuron,
-)
 from .norepinephrine_neuron import (
     NorepinephrineNeuronConfig,
     NorepinephrineNeuron,
@@ -34,11 +27,8 @@ __all__ = [
     # Neuron models
     "ConductanceLIFConfig",
     "ConductanceLIF",
-    "IzhikevichNeuronConfig",
-    "IzhikevichNeuron",
     "AcetylcholineNeuronConfig",
     "AcetylcholineNeuron",
-    "TonicDopamineNeuron",
     "NorepinephrineNeuronConfig",
     "NorepinephrineNeuron",
     # Neuron factory

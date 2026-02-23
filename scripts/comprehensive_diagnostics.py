@@ -20,14 +20,21 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import numpy as np
 import torch
 
+from thalia import GlobalConfig
 from thalia.brain import BrainBuilder, DynamicBrain
-from thalia.brain.regions.population_names import ThalamusPopulation
-from thalia.components.synapses import WeightInitializer
+from thalia.brain.regions.population_names import (
+    CortexPopulation,
+    HippocampusPopulation,
+    MedialSeptumPopulation,
+    StriatumPopulation,
+    SubstantiaNigraPopulation,
+    ThalamusPopulation,
+)
 from thalia.diagnostics import BrainActivityAnalyzer, BrainActivityReport
-from thalia.typing import BrainOutput
+from thalia.typing import BrainOutput, PopulationName, RegionName
 
 if TYPE_CHECKING:
-    from thalia.components import STPType, STPConfig, ShortTermPlasticity
+    from thalia.components import STPConfig, ShortTermPlasticity
 
 
 # NOTE: Enable line buffering for real-time output
@@ -40,35 +47,34 @@ class ComprehensiveDiagnostics:
     Uses BrainActivityAnalyzer for brain-wide metrics + callbacks for specialized tracking.
     """
 
-    def __init__(self, brain: DynamicBrain, timesteps: int, input_pattern: str):
+    def __init__(self, brain: DynamicBrain, timesteps: int):
         self.brain = brain
         self.timesteps = timesteps
-        self.input_pattern = input_pattern
 
         # Use existing BrainActivityAnalyzer for comprehensive brain-wide analysis
         self.brain_analyzer = BrainActivityAnalyzer(brain=brain, timesteps=timesteps)
         self.brain_report: Optional[BrainActivityReport] = None
 
         # Septum-specific tracking
-        septum = brain.regions["medial_septum"]
+        septum = brain.get_region_by_name("medial_septum")
         if septum:
             self.septum_ach_trace = np.zeros(timesteps)
             self.septum_gaba_trace = np.zeros(timesteps)
-            self.gaba_spike_times: List[List[int]] = [[] for _ in range(septum.gaba_size)]
+            self.septum_gaba_spike_times: List[List[int]] = [[] for _ in range(septum.gaba_size)]
         else:
             self.septum_ach_trace = None
             self.septum_gaba_trace = None
-            self.gaba_spike_times = None
+            self.septum_gaba_spike_times = None
 
         # Hippocampus-specific tracking
-        hippocampus = brain.regions["hippocampus"]
+        hippocampus = brain.get_region_by_name("hippocampus")
         if hippocampus:
             self.ca3_firing_rates: List[float] = []
         else:
             self.ca3_firing_rates = None
 
         # SNR-specific tracking (basal ganglia output)
-        substantia_nigra = brain.regions["substantia_nigra"]
+        substantia_nigra = brain.get_region_by_name("substantia_nigra")
         if substantia_nigra:
             self.snr_firing_trace = np.zeros(timesteps)
             self.snr_membrane_trace = np.zeros((timesteps, substantia_nigra.vta_feedback_size))
@@ -81,7 +87,7 @@ class ComprehensiveDiagnostics:
             self.snr_d2_input_trace = None
 
         # Striatum pathway tracking
-        striatum = brain.regions["striatum"]
+        striatum = brain.get_region_by_name("striatum")
         if striatum:
             self.d1_firing_trace = np.zeros(timesteps)
             self.d2_firing_trace = np.zeros(timesteps)
@@ -90,8 +96,8 @@ class ComprehensiveDiagnostics:
             self.d2_firing_trace = None
 
         # Thalamus T-channel diagnostics (CRITICAL for debugging alpha oscillations)
-        thalamus = brain.regions["thalamus"]
-        if thalamus and ThalamusPopulation.RELAY.value in thalamus.neuron_populations:
+        thalamus = brain.get_region_by_name("thalamus")
+        if thalamus and ThalamusPopulation.RELAY in thalamus.neuron_populations:
             # Sample 10 relay neurons for detailed traces
             self.n_relay_samples = min(10, thalamus.relay_size)
             self.relay_voltage_traces = np.zeros((timesteps, self.n_relay_samples))
@@ -114,9 +120,9 @@ class ComprehensiveDiagnostics:
             self.trn_voltage_traces = None
             self.trn_spikes_traces = None
 
-        # Cortex L4 inhibitory network tracking
-        cortex = brain.regions["cortex"]
-        if cortex and hasattr(cortex, "l4_inhibitory"):
+        # CorticalColumn L4 inhibitory network tracking
+        cortex = brain.get_region_by_name("cortical_column")
+        if cortex is not None:
             self.l4_pyr_firing_trace = np.zeros(timesteps)
             self.l4_pv_firing_trace = np.zeros(timesteps)
         else:
@@ -127,7 +133,7 @@ class ComprehensiveDiagnostics:
         self.gain_traces: Dict[str, List[float]] = defaultdict(list)
 
         # Delta synchrony investigation: Per-neuron spike time tracking for ISI analysis
-        self.spike_times: Dict[str, Dict[str, List[List[int]]]] = {}  # region -> pop -> neuron -> [times]
+        self.spike_times: Dict[RegionName, Dict[PopulationName, List[List[int]]]] = {}  # region -> pop -> neuron -> [times]
 
         # Population firing rates (10ms bins) for FFT analysis
         self.bin_size_ms = 10.0
@@ -176,42 +182,40 @@ class ComprehensiveDiagnostics:
         # Sample conductances every 50ms for phase diagram analysis
         if timestep % 50 == 0:
             # Sample relay neurons from thalamus
-            if "thalamus" in self.brain.regions:
-                thalamus = self.brain.regions["thalamus"]
-                if hasattr(thalamus, "relay_neurons"):
-                    relay = thalamus.relay_neurons
-                    if relay.g_E is not None and relay.g_I is not None:
-                        key = "thalamus:relay"
-                        if key not in self.conductance_samples:
-                            self.conductance_samples[key] = []
-                        self.conductance_samples[key].append({
-                            "g_exc": float(relay.g_E.mean().item()),
-                            "g_inh": float(relay.g_I.mean().item()),
-                            "g_nmda": float(relay.g_nmda.mean().item()) if relay.g_nmda is not None else 0.0,
-                            "v_mem": float(relay.membrane.mean().item()) if relay.membrane is not None else 0.0,
-                        })
+            thalamus = self.brain.get_region_by_name("thalamus")
+            if thalamus is not None:
+                relay = thalamus.get_neuron_population(ThalamusPopulation.RELAY)
+                if relay is not None and relay.g_E is not None and relay.g_I is not None:
+                    key = "thalamus:relay"
+                    if key not in self.conductance_samples:
+                        self.conductance_samples[key] = []
+                    self.conductance_samples[key].append({
+                        "g_exc": float(relay.g_E.mean().item()),
+                        "g_inh": float(relay.g_I.mean().item()),
+                        "g_nmda": float(relay.g_nmda.mean().item()) if relay.g_nmda is not None else 0.0,
+                        "v_mem": float(relay.membrane.mean().item()) if relay.membrane is not None else 0.0,
+                    })
 
             # Sample cortical L4 neurons
-            if "cortex" in self.brain.regions:
-                cortex = self.brain.regions["cortex"]
-                if hasattr(cortex, "l4_neurons"):
-                    l4 = cortex.l4_neurons
-                    if l4.g_E is not None and l4.g_I is not None:
-                        key = "cortex:l4"
-                        if key not in self.conductance_samples:
-                            self.conductance_samples[key] = []
-                        self.conductance_samples[key].append({
-                            "g_exc": float(l4.g_E.mean().item()),
-                            "g_inh": float(l4.g_I.mean().item()),
-                            "g_nmda": float(l4.g_nmda.mean().item()) if l4.g_nmda is not None else 0.0,
-                            "v_mem": float(l4.membrane.mean().item()) if l4.membrane is not None else 0.0,
-                        })
+            cortex = self.brain.get_region_by_name("cortical_column")
+            if cortex is not None:
+                l4 = cortex.get_neuron_population(CortexPopulation.L4_PYR)
+                if l4 is not None and l4.g_E is not None and l4.g_I is not None:
+                    key = "cortex:l4"
+                    if key not in self.conductance_samples:
+                        self.conductance_samples[key] = []
+                    self.conductance_samples[key].append({
+                        "g_exc": float(l4.g_E.mean().item()),
+                        "g_inh": float(l4.g_I.mean().item()),
+                        "g_nmda": float(l4.g_nmda.mean().item()) if l4.g_nmda is not None else 0.0,
+                        "v_mem": float(l4.membrane.mean().item()) if l4.membrane is not None else 0.0,
+                    })
 
         # Track septum activity (original tracking code continues below)
         if self.septum_ach_trace is not None:
             septum_output = outputs.get("medial_septum", {})
-            septum_ach = septum_output.get("ach", torch.zeros(200, dtype=torch.bool))
-            septum_gaba = septum_output.get("gaba", torch.zeros(200, dtype=torch.bool))
+            septum_ach = septum_output.get(MedialSeptumPopulation.ACH, torch.zeros(200, dtype=torch.bool))
+            septum_gaba = septum_output.get(MedialSeptumPopulation.GABA, torch.zeros(200, dtype=torch.bool))
 
             self.septum_ach_trace[timestep] = septum_ach.sum().item()
             self.septum_gaba_trace[timestep] = septum_gaba.sum().item()
@@ -219,20 +223,20 @@ class ComprehensiveDiagnostics:
             # Track individual GABA neuron spike times
             spiking_neurons = torch.where(septum_gaba)[0]
             for neuron_idx in spiking_neurons.tolist():
-                self.gaba_spike_times[neuron_idx].append(timestep)
+                self.septum_gaba_spike_times[neuron_idx].append(timestep)
 
         # Track hippocampus CA3 firing rate
         if self.ca3_firing_rates is not None:
-            hippocampus = self.brain.regions["hippocampus"]
-            if hippocampus:
+            hippocampus = self.brain.get_region_by_name("hippocampus")
+            if hippocampus is not None:
                 ca3_spikes = hippocampus._ca3_spike_buffer.read(0)
                 self.ca3_firing_rates.append(ca3_spikes.float().mean().item())
 
         # Track SNR activity (basal ganglia output for TD learning)
         if self.snr_firing_trace is not None:
-            substantia_nigra = self.brain.regions["substantia_nigra"]
+            substantia_nigra = self.brain.get_region_by_name("substantia_nigra")
             snr_output = outputs.get("substantia_nigra", {})
-            snr_spikes = snr_output.get("vta_feedback", torch.zeros(substantia_nigra.vta_feedback_size, dtype=torch.bool))
+            snr_spikes = snr_output.get(SubstantiaNigraPopulation.VTA_FEEDBACK, torch.zeros(substantia_nigra.get_population_size(SubstantiaNigraPopulation.VTA_FEEDBACK), dtype=torch.bool))
 
             self.snr_firing_trace[timestep] = snr_spikes.sum().item()
 
@@ -243,24 +247,24 @@ class ComprehensiveDiagnostics:
 
             # Track striatal inputs (from previous timestep outputs)
             striatum_output = outputs.get("striatum", {})
-            d1_spikes = striatum_output.get("d1", torch.zeros(200, dtype=torch.bool))
-            d2_spikes = striatum_output.get("d2", torch.zeros(200, dtype=torch.bool))
+            d1_spikes = striatum_output.get(StriatumPopulation.D1, torch.zeros(200, dtype=torch.bool))
+            d2_spikes = striatum_output.get(StriatumPopulation.D2, torch.zeros(200, dtype=torch.bool))
             self.snr_d1_input_trace[timestep] = d1_spikes.sum().item()
             self.snr_d2_input_trace[timestep] = d2_spikes.sum().item()
 
         # Track striatum D1/D2 pathways
         if self.d1_firing_trace is not None:
             striatum_output = outputs.get("striatum", {})
-            d1_spikes = striatum_output.get("d1", torch.zeros(200, dtype=torch.bool))
-            d2_spikes = striatum_output.get("d2", torch.zeros(200, dtype=torch.bool))
+            d1_spikes = striatum_output.get(StriatumPopulation.D1, torch.zeros(200, dtype=torch.bool))
+            d2_spikes = striatum_output.get(StriatumPopulation.D2, torch.zeros(200, dtype=torch.bool))
             self.d1_firing_trace[timestep] = d1_spikes.sum().item()
             self.d2_firing_trace[timestep] = d2_spikes.sum().item()
 
         # Track cortex L4 inhibitory network
         if self.l4_pyr_firing_trace is not None:
-            cortex = self.brain.regions["cortex"]
-            cortex_output = outputs.get("cortex", {})
-            l4_spikes = cortex_output.get("l4", torch.zeros(cortex.l4_pyr_size, dtype=torch.bool))
+            cortex = self.brain.get_region_by_name("cortical_column")
+            cortex_output = outputs.get("cortical_column", {})
+            l4_spikes = cortex_output.get(CortexPopulation.L4, torch.zeros(cortex.l4_pyr_size, dtype=torch.bool))
             self.l4_pyr_firing_trace[timestep] = l4_spikes.sum().item()
 
             # Get PV interneuron activity (from inhibitory network if available)
@@ -269,10 +273,10 @@ class ComprehensiveDiagnostics:
 
         # Track thalamus T-channel state (CRITICAL for debugging alpha oscillations!)
         if self.relay_voltage_traces is not None:
-            thalamus = self.brain.regions["thalamus"]
-            # Sample relay neurons (first N neurons)
-            relay_neurons = thalamus.relay_neurons
+            thalamus = self.brain.get_region_by_name("thalamus")
+            relay_neurons = thalamus.get_neuron_population(ThalamusPopulation.RELAY)
             if relay_neurons.membrane is not None:
+                # Sample relay neurons (first N neurons)
                 self.relay_voltage_traces[timestep, :] = relay_neurons.membrane[:self.n_relay_samples].detach().cpu().numpy()
 
             # Track h_T de-inactivation state
@@ -281,7 +285,7 @@ class ComprehensiveDiagnostics:
 
             # Track relay spikes
             thalamus_output = outputs.get("thalamus", {})
-            relay_spikes = thalamus_output.get("relay", torch.zeros(thalamus.relay_size, dtype=torch.bool))
+            relay_spikes = thalamus_output.get(ThalamusPopulation.RELAY, torch.zeros(thalamus.relay_size, dtype=torch.bool))
             self.relay_spikes_traces[timestep, :] = relay_spikes[:self.n_relay_samples].cpu().numpy()
 
             # Track conductances (excitatory and inhibitory)
@@ -291,61 +295,20 @@ class ComprehensiveDiagnostics:
                 self.relay_g_inh_traces[timestep, :] = relay_neurons.g_I[:self.n_relay_samples].detach().cpu().numpy()
 
             # Sample TRN neurons
-            trn_neurons = thalamus.trn_neurons
+            trn_neurons = thalamus.get_neuron_population(ThalamusPopulation.TRN)
             if trn_neurons.membrane is not None:
                 self.trn_voltage_traces[timestep, :] = trn_neurons.membrane[:self.n_trn_samples].detach().cpu().numpy()
-            trn_spikes = thalamus_output.get("trn", torch.zeros(thalamus.trn_size, dtype=torch.bool))
+            trn_spikes = thalamus_output.get(ThalamusPopulation.TRN, torch.zeros(thalamus.trn_size, dtype=torch.bool))
             self.trn_spikes_traces[timestep, :] = trn_spikes[:self.n_trn_samples].cpu().numpy()
 
         # Sample homeostatic gains (g_L_scale) every 10ms
         if timestep % 10 == 0:
-            # Cortex layers
-            if 'cortex' in self.brain.regions:
-                cortex = self.brain.regions['cortex']
-                if hasattr(cortex, 'l23_neurons'):
-                    self.gain_traces['cortex:l23'].append(float(cortex.l23_neurons.g_L_scale.mean().item()))
-                if hasattr(cortex, 'l4_neurons'):
-                    self.gain_traces['cortex:l4'].append(float(cortex.l4_neurons.g_L_scale.mean().item()))
-                if hasattr(cortex, 'l5_neurons'):
-                    self.gain_traces['cortex:l5'].append(float(cortex.l5_neurons.g_L_scale.mean().item()))
-                if hasattr(cortex, 'l6a_neurons'):
-                    self.gain_traces['cortex:l6a'].append(float(cortex.l6a_neurons.g_L_scale.mean().item()))
-                if hasattr(cortex, 'l6b_neurons'):
-                    self.gain_traces['cortex:l6b'].append(float(cortex.l6b_neurons.g_L_scale.mean().item()))
+            for region_name, region in self.brain.regions.items():
+                for pop_name, population in region.neuron_populations.items():
+                    if hasattr(population, 'g_L_scale'):
+                        self.gain_traces[f"{region_name}:{pop_name}"].append(float(population.g_L_scale.mean().item()))
 
-            # Thalamus
-            if 'thalamus' in self.brain.regions:
-                thalamus = self.brain.regions['thalamus']
-                if hasattr(thalamus, 'relay_neurons'):
-                    self.gain_traces['thalamus:relay'].append(float(thalamus.relay_neurons.g_L_scale.mean().item()))
-                if hasattr(thalamus, 'trn_neurons'):
-                    self.gain_traces['thalamus:trn'].append(float(thalamus.trn_neurons.g_L_scale.mean().item()))
-
-            # Hippocampus
-            if 'hippocampus' in self.brain.regions:
-                hippocampus = self.brain.regions['hippocampus']
-                if hasattr(hippocampus, 'dg_neurons'):
-                    self.gain_traces['hippocampus:dg'].append(float(hippocampus.dg_neurons.g_L_scale.mean().item()))
-                if hasattr(hippocampus, 'ca3_neurons'):
-                    self.gain_traces['hippocampus:ca3'].append(float(hippocampus.ca3_neurons.g_L_scale.mean().item()))
-                if hasattr(hippocampus, 'ca1_neurons'):
-                    self.gain_traces['hippocampus:ca1'].append(float(hippocampus.ca1_neurons.g_L_scale.mean().item()))
-
-            # Striatum
-            if 'striatum' in self.brain.regions:
-                striatum = self.brain.regions['striatum']
-                if hasattr(striatum, 'd1_pathway') and hasattr(striatum.d1_pathway, 'neurons'):
-                    self.gain_traces['striatum:d1'].append(float(striatum.d1_pathway.neurons.g_L_scale.mean().item()))
-                if hasattr(striatum, 'd2_pathway') and hasattr(striatum.d2_pathway, 'neurons'):
-                    self.gain_traces['striatum:d2'].append(float(striatum.d2_pathway.neurons.g_L_scale.mean().item()))
-
-            # PFC
-            if 'prefrontal' in self.brain.regions:
-                prefrontal = self.brain.regions['prefrontal']
-                if hasattr(prefrontal, 'neurons'):
-                    self.gain_traces['prefrontal:executive'].append(float(prefrontal.neurons.g_L_scale.mean().item()))
-
-    def run_simulation_with_callbacks(self) -> None:
+    def run_simulation_with_callbacks(self, input_pattern: str) -> None:
         """Run single simulation with BrainActivityAnalyzer plus specialized tracking via callbacks."""
         print("\n" + "="*80)
         print(f"RUNNING {self.timesteps}ms SIMULATION WITH COMPREHENSIVE DIAGNOSTICS")
@@ -355,9 +318,9 @@ class ComprehensiveDiagnostics:
 
         # Run the analysis with our callback
         print(f"Running brain-wide activity analysis with specialized tracking...")
-        print(f"Input pattern: {self.input_pattern}")
+        print(f"Input pattern: {input_pattern}")
         self.brain_report = self.brain_analyzer.analyze_full_brain(
-            input_pattern=self.input_pattern,
+            input_pattern=input_pattern,
             verbose=True,
             timestep_callback=self._timestep_callback,
         )
@@ -405,21 +368,22 @@ class ComprehensiveDiagnostics:
         neuron_isis = []
         neuron_frequencies = []
 
-        septum = self.brain.regions["medial_septum"]
-        for neuron_idx in range(septum.gaba_size):
-            spike_times = self.gaba_spike_times[neuron_idx]
+        septum = self.brain.get_region_by_name("medial_septum")
+        if septum is not None:
+            for neuron_idx in range(septum.gaba_size):
+                spike_times = self.septum_gaba_spike_times[neuron_idx]
 
-            if len(spike_times) >= 3:
-                spike_times_array = np.array(spike_times)
-                isis = np.diff(spike_times_array)
-                neuron_isis.extend(isis.tolist())
+                if len(spike_times) >= 3:
+                    spike_times_array = np.array(spike_times)
+                    isis = np.diff(spike_times_array)
+                    neuron_isis.extend(isis.tolist())
 
-                mean_isi = isis.mean()
-                if mean_isi > 0:
-                    neuron_freq = 1000.0 / mean_isi
-                    neuron_frequencies.append(neuron_freq)
+                    mean_isi = isis.mean()
+                    if mean_isi > 0:
+                        neuron_freq = 1000.0 / mean_isi
+                        neuron_frequencies.append(neuron_freq)
 
-        if len(neuron_frequencies) > 0:
+        if septum is not None and len(neuron_frequencies) > 0:
             neuron_isis_array = np.array(neuron_isis)
             neuron_frequencies_array = np.array(neuron_frequencies)
 
@@ -438,6 +402,8 @@ class ComprehensiveDiagnostics:
             else:
                 print(f"    ⚠️ Individual neurons fire at ~{neuron_frequencies_array.mean():.1f} Hz (too fast!)")
                 print(f"    ⚠️ Expected ~8 Hz for theta pacemaker")
+        else:
+            print(f"\n  Not enough GABA neuron spikes for ISI analysis")
 
     def analyze_hippocampus_inhibition(self) -> None:
         """Analyze hippocampus inhibitory network strength."""
@@ -449,7 +415,10 @@ class ComprehensiveDiagnostics:
         print("HIPPOCAMPUS INHIBITION ANALYSIS")
         print("="*80)
 
-        hippocampus = self.brain.regions["hippocampus"]
+        hippocampus = self.brain.get_region_by_name("hippocampus")
+        if hippocampus is None:
+            print("\n⚠️  Hippocampus region not found - skipping inhibition analysis")
+            return
 
         # CA3 firing rate
         mean_ca3_rate = np.mean(self.ca3_firing_rates) * 100
@@ -458,10 +427,10 @@ class ComprehensiveDiagnostics:
 
         # Inhibitory network structure
         print(f"\nInhibitory network structure:")
-        print(f"  CA3 pyramidal neurons: {hippocampus.ca3_size}")
-        print(f"  CA3 PV neurons: {hippocampus.ca3_inhibitory.n_pv}")
-        print(f"  CA3 OLM neurons: {hippocampus.ca3_inhibitory.n_olm}")
-        print(f"  CA3 Bistratified: {hippocampus.ca3_inhibitory.n_bistratified}")
+        print(f"  CA3 pyramidal neurons: {hippocampus.get_population_size(HippocampusPopulation.CA3)}")
+        print(f"  CA3 PV neurons: {hippocampus.get_population_size(HippocampusPopulation.CA3_INHIBITORY_PV)}")
+        print(f"  CA3 OLM neurons: {hippocampus.get_population_size(HippocampusPopulation.CA3_INHIBITORY_OLM)}")
+        print(f"  CA3 Bistratified: {hippocampus.get_population_size(HippocampusPopulation.CA3_INHIBITORY_BISTRATIFIED)}")
 
         # Inhibitory weights
         pv_to_pyr = hippocampus.ca3_inhibitory.pv_to_pyr
@@ -499,11 +468,11 @@ class ComprehensiveDiagnostics:
         print("SNR BASAL GANGLIA OUTPUT ANALYSIS")
         print("="*80)
 
-        substantia_nigra = self.brain.regions["substantia_nigra"]
+        substantia_nigra = self.brain.get_region_by_name("substantia_nigra")
 
         # SNR firing statistics
         total_snr_spikes = self.snr_firing_trace.sum()
-        mean_snr_rate = (total_snr_spikes / (substantia_nigra.vta_feedback_size * self.timesteps)) * 100
+        mean_snr_rate = (total_snr_spikes / (substantia_nigra.get_population_size(SubstantiaNigraPopulation.VTA_FEEDBACK) * self.timesteps)) * 100
         mean_spikes_per_ms = self.snr_firing_trace.mean()
 
         print(f"\nSNR tonic activity:")
@@ -599,27 +568,31 @@ class ComprehensiveDiagnostics:
     def analyze_cortex_l4_inhibition(self) -> None:
         """Analyze cortex L4 inhibitory network."""
         if self.l4_pyr_firing_trace is None:
-            print("\n⚠️  Cortex L4 not found - skipping L4 inhibition analysis")
+            print("\n⚠️  CorticalColumn L4 not found - skipping L4 inhibition analysis")
             return
 
         print("\n" + "="*80)
         print("CORTEX L4 INHIBITORY NETWORK ANALYSIS")
         print("="*80)
 
-        cortex = self.brain.regions["cortex"]
+        cortex = self.brain.get_region_by_name("cortical_column")
+        if cortex is None:
+            print("\n⚠️  CorticalColumn region not found - skipping L4 inhibition analysis")
+            return
 
         # L4 pyramidal activity
-        l4_pyr_rate = (self.l4_pyr_firing_trace.sum() / (cortex.l4_pyr_size * self.timesteps)) * 100
+        l4_pyr_size = cortex.get_population_size(CortexPopulation.L4_PYR)
+        l4_pyr_rate = (self.l4_pyr_firing_trace.sum() / (l4_pyr_size * self.timesteps)) * 100
         l4_pyr_spikes_per_ms = self.l4_pyr_firing_trace.mean()
 
         print(f"\nL4 pyramidal neurons:")
+        print(f"  Total neurons: {l4_pyr_size}")
         print(f"  Mean firing rate: {l4_pyr_rate:.2f}%")
         print(f"  Mean spikes/ms: {l4_pyr_spikes_per_ms:.2f}")
-        print(f"  Total neurons: {cortex.l4_pyr_size}")
 
         # PV interneuron activity (if available)
         if self.l4_pv_firing_trace is not None and self.l4_pv_firing_trace.sum() > 0:
-            l4_pv_size = cortex.l4_inhibitory.pv_size
+            l4_pv_size = cortex.get_population_size(CortexPopulation.L4_INHIBITORY_PV)
             l4_pv_rate = (self.l4_pv_firing_trace.sum() / (l4_pv_size * self.timesteps)) * 100
             l4_pv_spikes_per_ms = self.l4_pv_firing_trace.mean()
 
@@ -806,8 +779,8 @@ class ComprehensiveDiagnostics:
         # Analyze a few key populations
         sample_populations = [
             ("thalamus:relay", "Thalamus relay"),
-            ("cortex:l4", "Cortex L4"),
-            ("cortex:l23", "Cortex L2/3"),
+            ("cortex:l4", "CorticalColumn L4"),
+            ("cortex:l23", "CorticalColumn L2/3"),
             ("hippocampus:ca1", "Hippocampus CA1"),
         ]
 
@@ -876,8 +849,8 @@ class ComprehensiveDiagnostics:
 
         sample_populations = [
             ("thalamus", "relay", "Thalamus relay"),
-            ("cortex", "l4", "Cortex L4"),
-            ("cortex", "l23", "Cortex L2/3"),
+            ("cortical_column", "l4", "CorticalColumn L4"),
+            ("cortical_column", "l23", "CorticalColumn L2/3"),
             ("hippocampus", "ca1", "Hippocampus CA1"),
         ]
 
@@ -1175,14 +1148,14 @@ def print_neuron_populations(brain: DynamicBrain) -> None:
         print(f"    Total neurons in {region_name}: {region_neuron_count}")
 
 
-def analyze_synaptic_weights(brain: DynamicBrain) -> None:
+def analyze_synaptic_weights(brain: DynamicBrain, heading: Optional[str] = None) -> None:
     """Analyze synaptic weight distributions across brain regions."""
     print("\n" + "="*80)
-    print("SYNAPTIC WEIGHTS ANALYSIS")
+    print(heading if heading is not None else "SYNAPTIC WEIGHTS ANALYSIS")
     print("="*80)
 
     for region in brain.regions.values():
-        for synapse_id, weights in region._synaptic_weights.items():
+        for synapse_id, weights in region.synaptic_weights.items():
             mean_weight = weights.mean()
             min_weight = weights.min()
             max_weight = weights.max()
@@ -1237,40 +1210,44 @@ def main():
     build_time = time.time() - start_time
 
     print(f"✓ Brain built in {build_time:.2f}s")
-    print(f"  WeightInitializer.GLOBAL_WEIGHT_SCALE: {WeightInitializer.GLOBAL_WEIGHT_SCALE}")
+    print(f"  GlobalConfig:")
+    print(f"    DEFAULT_DT_MS: {GlobalConfig.DEFAULT_DT_MS}")
+    print(f"    HOMEOSTASIS_DISABLED: {GlobalConfig.HOMEOSTASIS_DISABLED}")
+    print(f"    LEARNING_DISABLED: {GlobalConfig.LEARNING_DISABLED}")
+    print(f"    NEUROMODULATION_DISABLED: {GlobalConfig.NEUROMODULATION_DISABLED}")
+    print(f"    SYNAPTIC_WEIGHT_SCALE: {GlobalConfig.SYNAPTIC_WEIGHT_SCALE}")
     print(f"  Axonal tracts: {len(brain.axonal_tracts)}")
     print(f"  Regions: {len(brain.regions)}")
     for region_name, region in brain.regions.items():
         print(f"  - {region_name}:")
         print(f"    Baseline noise conductance enabled: {region.config.baseline_noise_conductance_enabled}")
-        print(f"    Neuromodulation enabled: {region.config.enable_neuromodulation}")
         if hasattr(region.config, "baseline_drive"):
             print(f"    Baseline drive: {region.config.baseline_drive}")
         if hasattr(region.config, "ca3_persistent_gain"):
             print(f"    CA3 persistent gain: {region.config.ca3_persistent_gain}")
 
     print_neuron_populations(brain)
-    analyze_synaptic_weights(brain)
+    analyze_synaptic_weights(brain, heading="INITIAL SYNAPTIC WEIGHTS")
 
     # Create diagnostics runner
-    diagnostics = ComprehensiveDiagnostics(brain, timesteps=args.timesteps, input_pattern=args.input_pattern)
+    diagnostics = ComprehensiveDiagnostics(brain, timesteps=args.timesteps)
 
     # Run SINGLE simulation with callbacks for specialized tracking
-    diagnostics.run_simulation_with_callbacks()
+    diagnostics.run_simulation_with_callbacks(input_pattern=args.input_pattern)
 
-    analyze_synaptic_weights(brain)
+    analyze_synaptic_weights(brain, heading="FINAL SYNAPTIC WEIGHTS")
 
     # Print brain-wide activity report
     diagnostics.print_brain_activity_report()
 
     # Run specialized analyses
+    diagnostics.analyze_homeostatic_gains()
     diagnostics.analyze_septum_rhythm()
-    diagnostics.analyze_thalamus_t_channels()
     diagnostics.analyze_snr_basal_ganglia()
+    diagnostics.analyze_thalamus_t_channels()
     diagnostics.analyze_cortex_l4_inhibition()
     diagnostics.analyze_hippocampus_inhibition()
     diagnostics.analyze_striatum_pathways()
-    diagnostics.analyze_homeostatic_gains()
 
     # Run delta synchrony investigation analyses
     diagnostics.analyze_frequency_spectrum()

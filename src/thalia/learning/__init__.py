@@ -9,20 +9,24 @@ from .intrinsic_plasticity import (
     compute_excitability_modulation,
 )
 from .strategies import (
+    LearningConfig,
+    LearningStrategy,
     BCMConfig,
     BCMStrategy,
-    LearningConfig,
+    MaIConfig,
+    MaIStrategy,
+    PredictiveCodingConfig,
+    PredictiveCodingStrategy,
     STDPConfig,
     D1STDPConfig,
     D2STDPConfig,
-    PredictiveCodingConfig,
     STDPStrategy,
-    ThreeFactorConfig,
-    ThreeFactorStrategy,
-    LearningStrategy,
     D1STDPStrategy,
     D2STDPStrategy,
-    PredictiveCodingStrategy,
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
+    TagAndCaptureConfig,
+    TagAndCaptureStrategy,
     CompositeStrategy,
 )
 
@@ -31,24 +35,24 @@ __all__ = [
     "EligibilityTraceManager",
     # Intrinsic Plasticity
     "compute_excitability_modulation",
-    # Configurations
+    # Learning Strategies
     "LearningConfig",
+    "LearningStrategy",
     "BCMConfig",
+    "BCMStrategy",
+    "MaIConfig",
+    "MaIStrategy",
+    "PredictiveCodingConfig",
+    "PredictiveCodingStrategy",
     "STDPConfig",
-    "ThreeFactorConfig",
     "D1STDPConfig",
     "D2STDPConfig",
-    "PredictiveCodingConfig",
-    # Learning Strategies
-    "LearningStrategy",
     "STDPStrategy",
-    "BCMStrategy",
-    "ThreeFactorStrategy",
-    # Striatal MSN strategies
     "D1STDPStrategy",
     "D2STDPStrategy",
-    # Cortical predictive coding
-    "PredictiveCodingStrategy",
-    # Composite strategy for multi-strategy learning
+    "ThreeFactorConfig",
+    "ThreeFactorStrategy",
+    "TagAndCaptureConfig",
+    "TagAndCaptureStrategy",
     "CompositeStrategy",
 ]

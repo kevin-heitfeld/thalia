@@ -4,28 +4,6 @@ Unified Component Registry for Brain Regions.
 This module provides a unified registration and factory system for all
 brain regions, enabling dynamic regioncreation, plugin architectures,
 and consistent region discovery.
-
-Design Philosophy:
-==================
-- Enables dynamic region creation from configuration
-- Supports plugin system for external regions
-- Unified registration system
-- Separates behavioral config from structural sizes
-
-Architecture:
-=============
-    NeuralRegionRegistry
-        ├── cortex → Cortex
-        └── hippocampus → Hippocampus
-
-Benefits:
-=========
-1. **Uniform Treatment**: All regions use same registration pattern
-2. **Dynamic Creation**: Instantiate any region from config/name
-3. **Plugin Support**: External packages can register regions
-4. **Discovery**: List/inspect all available regions
-5. **Validation**: Type checking and config validation
-6. **Unified Registry**: Single source of truth for all region types
 """
 
 from __future__ import annotations
@@ -44,20 +22,7 @@ _NeuralRegion = NeuralRegion[NeuralRegionConfig]
 
 
 class NeuralRegionRegistry:
-    """Unified registry for all brain regions.
-
-    Registry Structure:
-        _registry = {
-            "cortex": Cortex,
-            "hippocampus": Hippocampus,
-        }
-
-    Attributes:
-        _registry: Dict of name -> class
-        _aliases: Dict of alias -> canonical_name
-        _metadata: Region metadata (description, version, author, etc.)
-        _config_classes: Dict of name -> config class
-    """
+    """Unified registry for all brain regions."""
 
     _registry: Dict[RegionName, Type[_NeuralRegion]] = {}
     _aliases: Dict[RegionName, RegionName] = {}

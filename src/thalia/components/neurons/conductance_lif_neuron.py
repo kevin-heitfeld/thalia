@@ -30,7 +30,7 @@ When V ≥ V_threshold:
 
 **Type Safety**:
 ================
-This module uses type aliases from thalia.units for dimensional analysis:
+This module uses type aliases from thalia.typing for dimensional analysis:
 - ConductanceTensor: Synaptic/membrane conductances (≥ 0)
 - VoltageTensor: Membrane potentials
 
@@ -47,7 +47,7 @@ import math
 import torch
 import torch.nn as nn
 
-from thalia.units import ConductanceTensor, VoltageTensor
+from thalia.typing import ConductanceTensor, GapJunctionReversal, VoltageTensor
 
 
 # =============================================================================
@@ -138,8 +138,8 @@ class ConductanceLIFConfig:
     """
 
     # RNG configuration (counter-based per-neuron for true independence)
-    region_name: str  # Brain region identifier (e.g., "cortex", "striatum")
-    population_name: str  # Population identifier (e.g., "L4", "D1_MSN")
+    region_name: str  # Brain region identifier
+    population_name: str  # Population identifier
     rng_seed: Optional[int] = None  # Master seed for deriving per-neuron seeds (None = hash from identity)
 
     device: str = "cpu"
@@ -196,6 +196,19 @@ class ConductanceLIFConfig:
     tau_h_T_ms: float = 50.0  # T-channel de-inactivation time constant (40-80ms)
     V_half_h_T: float = -0.3  # Half-activation voltage for h_T (hyperpolarized)
     k_h_T: float = 0.15  # Slope of h_T activation curve
+
+    # I_h (HCN / "funny") current — voltage-dependent pacemaker
+    # Activates on HYPERPOLARIZATION (opposite to most channels).
+    # Creates a depolarising "sag" that drives the membrane back toward rest and underlies
+    # rhythmic pacemaker activity in STN, thalamic relay, and VTA/SNc neurons.
+    #   E_h ≈ -45 mV → normalised ≈ -0.3 (between E_L=0 and E_I=-0.5)
+    #   tau_h ~100 ms (slow activation, creates long depolarising ramp)
+    enable_ih: bool = False    # Set True in STN, thalamus relay, VTA/SNc configs
+    g_h_max: float = 0.05     # Maximum HCN conductance (scales pacemaker strength)
+    E_h: float = -0.3         # HCN reversal potential (normalised units, between rest and E_I)
+    V_half_h: float = -0.3    # Half-activation voltage (negative = activated by hyperpolarisation)
+    k_h: float = 0.10         # Slope factor (small → steep voltage-dependence)
+    tau_h_ms: float = 100.0   # Activation time constant (ms); slow ramp → pacemaker
 
     @property
     def tau_m(self) -> float:
@@ -378,6 +391,12 @@ class ConductanceLIF(nn.Module):
         self.h_T: Optional[torch.Tensor] = None  # T-channel de-inactivation variable (0-1)
         self._h_T_decay: Optional[torch.Tensor] = None  # Cached decay factor
 
+        # I_h (HCN) pacemaker channel state
+        # h_gate is the ACTIVATION variable: high when hyperpolarised, low when depolarised
+        # (opposite convention to most gates — HCN is anomalous rectifier)
+        self.h_gate: Optional[torch.Tensor] = None   # HCN gate open probability (0-1)
+        self._h_decay: Optional[torch.Tensor] = None  # Cached exp(-dt/tau_h)
+
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update decay factors for new timestep.
 
@@ -419,6 +438,13 @@ class ConductanceLIF(nn.Module):
         if self.config.enable_t_channels:
             self._h_T_decay = torch.tensor(
                 float(torch.exp(torch.tensor(-dt_ms / self.config.tau_h_T_ms)).item()),
+                device=device,
+            )
+
+        # Recompute I_h (HCN) gate decay (if enabled)
+        if self.config.enable_ih:
+            self._h_decay = torch.tensor(
+                float(torch.exp(torch.tensor(-dt_ms / self.config.tau_h_ms)).item()),
                 device=device,
             )
 
@@ -504,10 +530,6 @@ class ConductanceLIF(nn.Module):
         z = torch.sqrt(-2.0 * torch.log(u1)) * torch.cos(2 * math.pi * u2)
         return z
 
-    def __call__(self, *args, **kwds):
-        assert False, f"{self.__class__.__name__} instances should not be called directly. Use forward() instead."
-        return super().__call__(*args, **kwds)
-
     @torch.no_grad()
     def forward(
         self,
@@ -515,7 +537,7 @@ class ConductanceLIF(nn.Module):
         g_gaba_a_input: Optional[ConductanceTensor],
         g_nmda_input: Optional[ConductanceTensor],
         g_gap_input: Optional[ConductanceTensor] = None,
-        E_gap_reversal: Optional[torch.Tensor] = None,
+        E_gap_reversal: Optional[GapJunctionReversal] = None,
     ) -> tuple[torch.Tensor, VoltageTensor]:
         """Process one timestep of conductance input.
 
@@ -734,6 +756,28 @@ class ConductanceLIF(nn.Module):
             g_total = g_total + g_T_eff
             V_inf_numerator = V_inf_numerator + g_T_eff * self.config.E_Ca
 
+        # ---------------------------------------------------------------
+        # I_h (HCN pacemaker current)
+        # ---------------------------------------------------------------
+        # h_inf(V) = 1 / (1 + exp((V - V_half_h) / k_h))
+        # Because k_h > 0 and V_half_h is hyperpolarised, h_inf → 1 when V << V_half_h
+        # and h_inf → 0 when V >> V_half_h. This is the anomalous-rectifier property.
+        # The gate relaxes with time constant tau_h_ms (slow, ~100 ms).
+        # I_h is depolarising (E_h > E_I) and provides the sag/pacemaker ramp.
+        if self.config.enable_ih and self.membrane is not None:
+            h_inf = 1.0 / (1.0 + torch.exp((self.membrane - self.config.V_half_h) / self.config.k_h))
+
+            if self.h_gate is not None:
+                assert self._h_decay is not None, "I_h enabled but _h_decay not initialised; call update_temporal_parameters first"
+                self.h_gate = h_inf + (self.h_gate - h_inf) * self._h_decay
+            else:
+                # Initialise at steady-state for resting voltage
+                self.h_gate = h_inf
+
+            g_ih = self.config.g_h_max * self.h_gate  # [n_neurons]
+            g_total = g_total + g_ih
+            V_inf_numerator = V_inf_numerator + g_ih * self.config.E_h
+
         # Add intrinsic conductances from specialized neurons (e.g., I_h, SK)
         # NOTE: Gap junctions should now be passed via g_gap_input parameter, not via this hook
         additional_conductances = self._get_additional_conductances()
@@ -787,6 +831,10 @@ class ConductanceLIF(nn.Module):
                 # h_T_inf = 1 / (1 + exp((V - V_half) / k))
                 h_T_init = 1.0 / (1.0 + torch.exp((v_init - self.config.V_half_h_T) / self.config.k_h_T))
                 self.h_T = h_T_init
+
+            # Initialize I_h (HCN) gate at steady-state for starting voltage
+            if self.config.enable_ih:
+                self.h_gate = 1.0 / (1.0 + torch.exp((v_init - self.config.V_half_h) / self.config.k_h))
 
         V_diff = self.membrane - V_inf
         new_membrane = V_inf + V_diff * decay_factor

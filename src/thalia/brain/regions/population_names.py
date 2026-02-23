@@ -1,19 +1,51 @@
+"""Population names for different brain regions."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class CerebellumPopulation(Enum):
+class ExternalPopulation(StrEnum):
+    """Special population names for external inputs that don't belong to any specific region."""
+
+    REWARD = "reward"
+    SENSORY = "sensory"
+
+
+class BLAPopulation(StrEnum):
+    """Basolateral amygdala population names.
+
+    Principal neurons (glutamatergic) are the primary computation units.
+    PV interneurons provide fast feedforward inhibition for fear gating.
+    SOM interneurons provide slow dendritic inhibition for extinction.
+    """
+
+    PRINCIPAL = "principal"    # Glutamatergic principal (fear/extinction engrams)
+    PV = "pv"                  # Parvalbumin interneurons (feedforward gating)
+    SOM = "som"                # Somatostatin interneurons (dendritic inhibition)
+
+
+class CeAPopulation(StrEnum):
+    """Central amygdala population names.
+
+    CeA is the output nucleus: integrates BLA signals and drives
+    downstream fear responses via hypothalamus, brainstem, LC, and LHb.
+    """
+
+    LATERAL = "lateral"        # CeL: integrates BLA, contains On/Off cells
+    MEDIAL = "medial"          # CeM: final output → hypothalamus / LC / LHb
+
+
+class CerebellumPopulation(StrEnum):
     """Cerebellar population names."""
 
-    GRANULE = "granule"
-    PURKINJE = "purkinje"
     DCN = "dcn"
+    GRANULE = "granule"
+    INFERIOR_OLIVE = "inferior_olive"
     MOSSY = "mossy"
     PARALLEL_FIBERS = "parallel_fibers"
-    INFERIOR_OLIVE = "inferior_olive"
+    PURKINJE = "purkinje"
 
 
-class CortexPopulation(Enum):
+class CortexPopulation(StrEnum):
     """Cortical population names."""
 
     L23 = "l23"
@@ -29,6 +61,7 @@ class CortexPopulation(Enum):
     L4_INHIBITORY_PV = "l4_inhibitory_pv"
     L4_INHIBITORY_SST = "l4_inhibitory_sst"
     L4_INHIBITORY_VIP = "l4_inhibitory_vip"
+    L4_SST_PRED = "l4_sst_pred"  # Dedicated prediction-error SST interneuron (L5→disynaptic→L4)
 
     L5 = "l5"
     L5_PYR = "l5_pyr"
@@ -59,7 +92,14 @@ class CortexPopulation(Enum):
     L6B_INHIBITORY_VIP = "l6b_inhibitory_vip"
 
 
-class HippocampusPopulation(Enum):
+class GPePopulation(StrEnum):
+    """Globus pallidus externa population names."""
+
+    ARKYPALLIDAL = "arkypallidal"  # Projects back to striatum (global suppression)
+    PROTOTYPIC = "prototypic"    # Projects to STN / SNr (canonical indirect pathway)
+
+
+class HippocampusPopulation(StrEnum):
     """Hippocampal population names."""
 
     DG = "dg"
@@ -87,62 +127,93 @@ class HippocampusPopulation(Enum):
     CA1_INHIBITORY_BISTRATIFIED = "ca1_inhibitory_bistratified"
 
 
-class LocusCoeruleusPopulation(Enum):
+class LHbPopulation(StrEnum):
+    """Lateral habenula population names."""
+
+    PRINCIPAL = "principal"
+
+
+class LocusCoeruleusPopulation(StrEnum):
     """Locus coeruleus population names."""
 
     NE = "ne"
     GABA = "gaba"
 
 
-class MedialSeptumPopulation(Enum):
+class MedialSeptumPopulation(StrEnum):
     """Medial septum population names."""
 
     ACH = "ach"
     GABA = "gaba"
 
 
-class NucleusBasalisPopulation(Enum):
+class NucleusBasalisPopulation(StrEnum):
     """Nucleus basalis population names."""
 
     ACH = "ach"
     GABA = "gaba"
 
 
-class PrefrontalPopulation(Enum):
+class PrefrontalPopulation(StrEnum):
     """Prefrontal population names."""
 
     EXECUTIVE = "executive"
 
 
-class RewardEncoderPopulation(Enum):
-    """Reward encoder population names."""
+class RMTgPopulation(StrEnum):
+    """Rostromedial tegmental nucleus (tail of VTA / anti-reward centre) population names."""
 
-    REWARD_SIGNAL = "reward_signal"
-
-
-class SubstantiaNigraPopulation(Enum):
-    """Substantia nigra population names."""
-
-    VTA_FEEDBACK = "vta_feedback"
+    GABA = "gaba"
 
 
-class StriatumPopulation(Enum):
+class SNcPopulation(StrEnum):
+    """Substantia nigra pars compacta population names."""
+
+    DA = "da"
+    GABA = "gaba"
+
+
+class STNPopulation(StrEnum):
+    """Subthalamic nucleus population names."""
+
+    STN = "stn"
+
+
+class StriatumPopulation(StrEnum):
     """Striatal population names."""
 
     D1 = "d1"
     D2 = "d2"
     FSI = "fsi"
+    TAN = "tan"   # Tonically Active Neurons (cholinergic interneurons)
 
 
-class ThalamusPopulation(Enum):
+class SubstantiaNigraPopulation(StrEnum):
+    """Substantia nigra population names."""
+
+    VTA_FEEDBACK = "vta_feedback"
+
+
+class ThalamusPopulation(StrEnum):
     """Thalamic population names."""
 
     RELAY = "relay"
     TRN = "trn"
 
 
-class VTAPopulation(Enum):
-    """Ventral tegmental area population names."""
+class VTAPopulation(StrEnum):
+    """Ventral tegmental area population names.
 
-    DA = "da"
+    DA_MESOLIMBIC: Mesolimbic DA neurons (55% of VTA DA) — project to ventral striatum,
+        hippocampus, amygdala. Have D2 somatodendritic autoreceptors. Encode reward RPE.
+    DA_MESOCORTICAL: Mesocortical DA neurons (35% of VTA DA) — project to PFC. Lack D2
+        autoreceptors; higher baseline firing (~8 Hz). Encode cognitive salience/arousal.
+    DA: Legacy alias kept for synaptic input targeting (e.g. RMTg→VTA connections that
+        should inhibit both sub-populations). Regions declaring neuromodulator_subscriptions
+        should use the specific sub-population keys.
+    """
+
+    DA_MESOLIMBIC = "da_mesolimbic"
+    DA_MESOCORTICAL = "da_mesocortical"
+    DA = "da"  # Legacy — maps to combined DA input; prefer sub-population keys
     GABA = "gaba"

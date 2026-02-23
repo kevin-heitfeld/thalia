@@ -40,7 +40,7 @@ This ensures the correct environment is activated with all dependencies (pytest,
 **Key Components**:
 - **NeuralRegion**: Base class (nn.Module + mixins) for brain regions
     - **Learning Strategies**: Pluggable learning rules (STDP, BCM, Hebbian, Three-factor, etc.)
-    - **Synaptic Weights**: Stored at target dendrites in `region._synaptic_weights` dict
+    - **Synaptic Weights**: Stored at target dendrites in `region.synaptic_weights` dict
 - **AxonalTract**: Pure spike routing with delays (NO weights)
 
 ## Biological Accuracy Constraints

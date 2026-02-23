@@ -58,16 +58,22 @@ Use when: You need to model sensory input pathways
 
 from __future__ import annotations
 
+from .basolateral_amygdala import BasolateralAmygdala
+from .central_amygdala import CentralAmygdala
 from .cerebellum import Cerebellum
-from .cortex import Cortex
+from .cortical_column import CorticalColumn
+from .globus_pallidus_externa import GlobusPallidusExterna
 from .hippocampus import Hippocampus
+from .lateral_habenula import LateralHabenula
 from .locus_coeruleus import LocusCoeruleus
 from .medial_septum import MedialSeptum
 from .nucleus_basalis import NucleusBasalis
 from .prefrontal import Prefrontal
-from .reward_encoder import RewardEncoder
+from .rostromedial_tegmentum import RostromedialTegmentum
 from .striatum import Striatum
 from .substantia_nigra import SubstantiaNigra
+from .substantia_nigra_compacta import SubstantiaNigraCompacta
+from .subthalamic_nucleus import SubthalamicNucleus
 from .thalamus import Thalamus
 from .vta import VTA
 
@@ -78,16 +84,23 @@ from .stimulus_gating import StimulusGating
 __all__ = [
     # Base Neural Region
     "NeuralRegion",
+    # Regions
+    "BasolateralAmygdala",
+    "CentralAmygdala",
     "Cerebellum",
-    "Cortex",
+    "CorticalColumn",
+    "GlobusPallidusExterna",
     "Hippocampus",
+    "LateralHabenula",
     "LocusCoeruleus",
     "MedialSeptum",
     "NucleusBasalis",
     "Prefrontal",
-    "RewardEncoder",
+    "RostromedialTegmentum",
     "Striatum",
     "SubstantiaNigra",
+    "SubstantiaNigraCompacta",
+    "SubthalamicNucleus",
     "Thalamus",
     "VTA",
     # Neural Region Registry

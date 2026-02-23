@@ -31,7 +31,7 @@ from typing import Optional
 
 import torch
 
-from thalia.units import ConductanceTensor, VoltageTensor
+from thalia.typing import ConductanceTensor, VoltageTensor
 
 from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -115,9 +115,6 @@ class AcetylcholineNeuron(ConductanceLIF):
         """
         super().__init__(n_neurons, config)
 
-        # Store specialized config
-        self.ach_config = config
-
         # SK channel state (calcium-activated K+ for fast adaptation)
         self.ca_concentration = torch.zeros(n_neurons, device=self.device)
         self.sk_activation = torch.zeros(n_neurons, device=self.device)
@@ -158,10 +155,10 @@ class AcetylcholineNeuron(ConductanceLIF):
 
         # === Update Calcium and SK Activation ===
         # Large calcium influx on spike (fast SK activation)
-        self.ca_concentration += spikes.float() * self.ach_config.ca_influx_per_spike
+        self.ca_concentration += spikes.float() * self.config.ca_influx_per_spike
 
         # Fast calcium decay (limits burst duration to 50-100ms)
-        self.ca_concentration *= self.ach_config.ca_decay
+        self.ca_concentration *= self.config.ca_decay
 
         # SK activation (sigmoidal function of calcium)
         # High calcium → high SK → hyperpolarization → terminates burst
@@ -182,14 +179,14 @@ class AcetylcholineNeuron(ConductanceLIF):
         """
         # I_h pacemaker (modulated by prediction error)
         pe = getattr(self, '_current_pe', 0.0)
-        g_ih_base = self.ach_config.i_h_conductance
+        g_ih_base = self.config.i_h_conductance
         g_ih_modulated = g_ih_base * (1.0 + 0.8 * pe)  # Strong PE modulation
         g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
 
         # SK adaptation (strong and fast for brief bursts)
-        g_sk = self.ach_config.sk_conductance * self.sk_activation
+        g_sk = self.config.sk_conductance * self.sk_activation
 
         return [
-            (g_ih, self.ach_config.i_h_reversal),  # I_h pacemaker
-            (g_sk, self.ach_config.sk_reversal),   # SK adaptation
+            (g_ih, self.config.i_h_reversal),  # I_h pacemaker
+            (g_sk, self.config.sk_reversal),   # SK adaptation
         ]

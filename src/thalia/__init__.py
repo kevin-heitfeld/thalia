@@ -12,6 +12,8 @@ __version__ = "0.1.0"
 # PUBLIC API
 # ============================================================================
 
+from thalia.global_config import GlobalConfig
+
 # Visualization (optional - requires manim)
 # try:
 #     from thalia.visualization import BrainActivityVisualization, MANIM_AVAILABLE
@@ -23,6 +25,8 @@ MANIM_AVAILABLE = False
 __all__ = [
     # Version
     "__version__",
+    # Global configuration
+    "GlobalConfig",
     # Visualization
     "MANIM_AVAILABLE",
 ]
