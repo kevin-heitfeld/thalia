@@ -46,8 +46,6 @@ from thalia.brain.configs import SubstantiaNigraCompactaConfig
 from thalia.components import (
     ConductanceLIFConfig,
     ConductanceLIF,
-    NeuronFactory,
-    NeuronType,
 )
 from thalia.typing import (
     ConductanceTensor,
@@ -61,7 +59,7 @@ from thalia.typing import (
 )
 from thalia.utils import split_excitatory_conductance
 
-from .neural_region import NeuralRegion
+from .neuromodulator_source_region import NeuromodulatorSourceRegion
 from .population_names import SNcPopulation
 from .region_registry import register_region
 
@@ -74,7 +72,7 @@ from .region_registry import register_region
     author="Thalia Project",
     config_class=SubstantiaNigraCompactaConfig,
 )
-class SubstantiaNigraCompacta(NeuralRegion[SubstantiaNigraCompactaConfig]):
+class SubstantiaNigraCompacta(NeuromodulatorSourceRegion[SubstantiaNigraCompactaConfig]):
     """Substantia Nigra pars Compacta — Nigrostriatal Dopamine System.
 
     Provides tonic dopaminergic drive to dorsal striatum for motor learning.
@@ -148,18 +146,12 @@ class SubstantiaNigraCompacta(NeuralRegion[SubstantiaNigraCompactaConfig]):
         )
 
         # GABAergic interneurons (local inhibitory control)
-        self.gaba_neurons = NeuronFactory.create(
-            region_name=self.region_name,
-            population_name=SNcPopulation.GABA,
-            neuron_type=NeuronType.FAST_SPIKING,
-            n_neurons=self.gaba_size,
-            device=self.device,
-        )
+        self._init_gaba_interneurons(SNcPopulation.GABA, self.gaba_size)
 
         self._register_neuron_population(SNcPopulation.DA, self.da_neurons)
-        self._register_neuron_population(SNcPopulation.GABA, self.gaba_neurons)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(
@@ -200,27 +192,20 @@ class SubstantiaNigraCompacta(NeuralRegion[SubstantiaNigraCompactaConfig]):
             n_neurons=self.da_size,
             filter_by_target_population=SNcPopulation.DA,
         )
-        g_inh = striatal_dendrite.g_inh
+        g_inh = striatal_dendrite.g_gaba_a
 
         da_spikes, _ = self.da_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh),
             g_nmda_input=ConductanceTensor(g_nmda),
+            g_gaba_a_input=ConductanceTensor(g_inh),
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
         # GABA INTERNEURONS
         # =====================================================================
         da_activity = da_spikes.float().mean().item()
-        gaba_drive = torch.full(
-            (self.gaba_size,), 0.5 + da_activity, device=self.device
-        )
-        gaba_g_ampa, gaba_g_nmda = split_excitatory_conductance(gaba_drive, nmda_ratio=0.3)
-        gaba_spikes, _ = self.gaba_neurons.forward(
-            g_ampa_input=ConductanceTensor(gaba_g_ampa),
-            g_gaba_a_input=None,
-            g_nmda_input=ConductanceTensor(gaba_g_nmda),
-        )
+        gaba_spikes = self._step_gaba_interneurons(da_activity)
 
         region_outputs: RegionOutput = {
             SNcPopulation.DA: da_spikes,
@@ -228,3 +213,14 @@ class SubstantiaNigraCompacta(NeuralRegion[SubstantiaNigraCompactaConfig]):
         }
 
         return self._post_forward(region_outputs)
+
+    def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
+        """SNc GABA drive: fixed 0.5 baseline + 1.0× DA feedback.
+
+        SNc uses a higher baseline (0.5) than the default (0.3) because SNc
+        GABA interneurons are strongly tonically active, and does not gate on
+        ``baseline_noise_conductance_enabled``.
+        """
+        return torch.full(
+            (self.gaba_neurons_size,), 0.5 + primary_activity, device=self.device
+        )

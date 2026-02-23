@@ -92,6 +92,29 @@ class CortexPopulation(StrEnum):
     L6B_INHIBITORY_VIP = "l6b_inhibitory_vip"
 
 
+
+class DRNPopulation(StrEnum):
+    """Dorsal raphe nucleus population names."""
+
+    SEROTONIN = "serotonin"   # 5-HT projection neurons (tonic pacemakers)
+    GABA = "gaba"             # Local GABAergic interneurons (homeostatic inhibition)
+
+
+class ECPopulation(StrEnum):
+    """Entorhinal cortex population names.
+
+    The entorhinal cortex is the primary gateway between neocortex and hippocampus.
+    Layer II (EC_II) cells project to DG and CA3 via the perforant path.
+    Layer III (EC_III) cells project directly to CA1 via the temporoammonic path.
+    Layer V (EC_V) cells receive back-projections from CA1/subiculum and relay
+    integrated memory signals back to neocortex.
+    """
+
+    EC_II = "ec_ii"    # Layer II stellate/pyramidal cells → DG, CA3 (perforant path)
+    EC_III = "ec_iii"  # Layer III pyramidal time cells → CA1 (temporoammonic direct path)
+    EC_V = "ec_v"      # Layer V pyramidal output cells ← CA1/subiculum → neocortex
+
+
 class GPePopulation(StrEnum):
     """Globus pallidus externa population names."""
 

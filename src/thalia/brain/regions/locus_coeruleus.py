@@ -14,28 +14,23 @@ import torch
 
 from thalia.brain.configs import LocusCoeruleusConfig
 from thalia.components import (
-    NeuronFactory,
-    NeuronType,
     NorepinephrineNeuron,
     NorepinephrineNeuronConfig,
 )
 from thalia.typing import (
-    ConductanceTensor,
     NeuromodulatorInput,
     NeuromodulatorType,
     PopulationName,
     PopulationPolarity,
     PopulationSizes,
-    ReceptorType,
     RegionName,
     RegionOutput,
-    SynapseId,
     SynapticInput,
 )
-from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
+from thalia.utils import CircularDelayBuffer
 
-from .neural_region import NeuralRegion
-from .population_names import HippocampusPopulation, LocusCoeruleusPopulation, PrefrontalPopulation
+from .neuromodulator_source_region import NeuromodulatorSourceRegion
+from .population_names import LocusCoeruleusPopulation
 from .region_registry import register_region
 
 
@@ -47,7 +42,7 @@ from .region_registry import register_region
     author="Thalia Project",
     config_class=LocusCoeruleusConfig,
 )
-class LocusCoeruleus(NeuralRegion[LocusCoeruleusConfig]):
+class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
     """Locus Coeruleus - Norepinephrine Arousal and Uncertainty System."""
 
     # Declarative neuromodulator output registry.
@@ -77,13 +72,7 @@ class LocusCoeruleus(NeuralRegion[LocusCoeruleusConfig]):
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
-        self.gaba_neurons = NeuronFactory.create(
-            region_name=self.region_name,
-            population_name=LocusCoeruleusPopulation.GABA,
-            neuron_type=NeuronType.FAST_SPIKING,
-            n_neurons=self.gaba_neurons_size,
-            device=self.device,
-        )
+        self._init_gaba_interneurons(LocusCoeruleusPopulation.GABA, self.gaba_neurons_size)
 
         # Uncertainty computation state - use CircularDelayBuffer for history
         self._pfc_activity_buffer = CircularDelayBuffer(
@@ -114,9 +103,9 @@ class LocusCoeruleus(NeuralRegion[LocusCoeruleusConfig]):
         # REGISTER NEURON POPULATIONS
         # =====================================================================
         self._register_neuron_population(LocusCoeruleusPopulation.NE, self.ne_neurons, polarity=PopulationPolarity.ANY)
-        self._register_neuron_population(LocusCoeruleusPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
@@ -126,23 +115,20 @@ class LocusCoeruleus(NeuralRegion[LocusCoeruleusConfig]):
         """
         self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
-        pfc_ne_synapse = SynapseId(
-            source_region="prefrontal",
-            source_population=PrefrontalPopulation.EXECUTIVE,
-            target_region=self.region_name,
-            target_population=LocusCoeruleusPopulation.NE,
-            receptor_type=ReceptorType.AMPA,
-        )
-        ca1_ne_synapse = SynapseId(
-            source_region="hippocampus",
-            source_population=HippocampusPopulation.CA1,  # For simplicity, use overall CA1 activity as novelty signal
-            target_region=self.region_name,
-            target_population=LocusCoeruleusPopulation.NE,
-            receptor_type=ReceptorType.AMPA,
-        )
-
-        pfc_spikes = synaptic_inputs.get(pfc_ne_synapse, None)
-        hippocampus_spikes = synaptic_inputs.get(ca1_ne_synapse, None)
+        # Extract PFC and hippocampus spikes from registered synaptic inputs.
+        # Iterate over all inputs and identify by source_region so that any
+        # BrainBuilder-registered PFC→LC or HPC→LC connection is automatically
+        # picked up without constructing a hardcoded SynapseId at runtime.
+        # (Constructing a SynapseId at runtime and using it as a dict key is
+        # fragile: the key will never match unless BrainBuilder registered the
+        # exact same connection, and it completely bypasses weight matrices.)
+        pfc_spikes: Optional[torch.Tensor] = None
+        hippocampus_spikes: Optional[torch.Tensor] = None
+        for sid, spikes in synaptic_inputs.items():
+            if sid.source_region == "prefrontal":
+                pfc_spikes = spikes
+            elif sid.source_region == "hippocampus":
+                hippocampus_spikes = spikes
 
         # Compute uncertainty signal from inputs
         uncertainty = self._compute_uncertainty(pfc_spikes, hippocampus_spikes)
@@ -159,21 +145,14 @@ class LocusCoeruleus(NeuralRegion[LocusCoeruleusConfig]):
         # Gap junctions → population synchronization
         ne_spikes, _ = self.ne_neurons.forward(
             g_ampa_input=None,  # No direct AMPA input to NE neurons (modulated by uncertainty drive instead)
-            g_gaba_a_input=None,  # No direct GABA input to NE neurons (inhibition via gap junctions and interneurons)
             g_nmda_input=None,  # NE neurons do not receive NMDA input
+            g_gaba_a_input=None,  # No direct GABA input to NE neurons (inhibition via gap junctions and interneurons)
+            g_gaba_b_input=None,
             uncertainty_drive=uncertainty,
         )
-        self._current_ne_spikes = ne_spikes  # Store for GABA computation
-
         # Update GABA interneurons (homeostatic control)
-        gaba_drive = self._compute_gaba_drive()
-
-        gaba_g_ampa, gaba_g_nmda = split_excitatory_conductance(gaba_drive, nmda_ratio=0.3)
-        self.gaba_neurons.forward(
-            g_ampa_input=ConductanceTensor(gaba_g_ampa),
-            g_gaba_a_input=None,
-            g_nmda_input=ConductanceTensor(gaba_g_nmda),
-        )
+        ne_activity = ne_spikes.float().mean().item()
+        self._step_gaba_interneurons(ne_activity)
 
         region_outputs: RegionOutput = {
             LocusCoeruleusPopulation.NE: ne_spikes,
@@ -278,27 +257,3 @@ class LocusCoeruleus(NeuralRegion[LocusCoeruleusConfig]):
         normalized = max(0.0, min(2.0, normalized))
 
         return normalized
-
-    def _compute_gaba_drive(self) -> torch.Tensor:
-        """Compute drive for GABAergic interneurons.
-
-        GABA interneurons provide homeostatic control, preventing
-        runaway NE bursting through local inhibition.
-
-        Returns:
-            Drive conductance for GABA neurons [gaba_neurons_size]
-        """
-        assert self._current_ne_spikes is not None, "NE spikes must be computed before GABA drive"
-
-        # Tonic baseline conductance
-        # BIOLOGY: LC-GABA neurons have intrinsic pacemaker activity
-        # CONDUCTANCE: tonic drive
-        baseline = 0.3 if self.config.baseline_noise_conductance_enabled else 0.0
-
-        # Increase during NE bursts (negative feedback)
-        ne_activity = self._current_ne_spikes.float().mean().item()
-        feedback = ne_activity * 0.8  # CONDUCTANCE: proportional
-
-        total_drive = baseline + feedback
-
-        return torch.full((self.gaba_neurons_size,), total_drive, device=self.device)

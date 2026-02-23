@@ -52,10 +52,9 @@ Architecture (based on canonical cortical microcircuit):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Tuple
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from thalia import GlobalConfig
@@ -100,7 +99,7 @@ from .region_registry import register_region
 from .stimulus_gating import StimulusGating
 
 if TYPE_CHECKING:
-    from thalia.components.neurons import ConductanceLIF
+    from thalia.components.neurons import ConductanceLIF, TwoCompartmentLIF
 
 
 @register_region(
@@ -215,6 +214,8 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
 
         # Initialize stimulus gating (transient inhibition)
         self.stimulus_gating: StimulusGating = StimulusGating(
+            n_neurons=self.l4_pyr_size,
+            device=device,
             threshold=config.ffi_threshold,
             max_inhibition=config.ffi_strength * 10.0,
             decay_rate=1.0 - (1.0 / config.ffi_tau),
@@ -331,10 +332,8 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         self._register_neuron_population(CortexPopulation.L6B_INHIBITORY_SST, self.l6b_inhibitory.sst_neurons, polarity=PopulationPolarity.INHIBITORY)
         self._register_neuron_population(CortexPopulation.L6B_INHIBITORY_VIP, self.l6b_inhibitory.vip_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        # =====================================================================
-        # POST-INITIALIZATION
-        # =====================================================================
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     def _init_layers(self) -> None:
         """Initialize conductance-based LIF neurons for each layer.
@@ -356,7 +355,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         # =====================================================================
         # LAYER-SPECIFIC HETEROGENEITY
         # =====================================================================
-        self.l23_neurons = NeuronFactory.create_cortical_layer_neurons(
+        self.l23_neurons = NeuronFactory.create_pyramidal_two_compartment(
             region_name=self.region_name,
             population_name=CortexPopulation.L23_PYR,
             n_neurons=self.l23_pyr_size,
@@ -370,7 +369,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             device=device,
             **cfg.layer_overrides[CortexLayer.L4]
         )
-        self.l5_neurons = NeuronFactory.create_cortical_layer_neurons(
+        self.l5_neurons = NeuronFactory.create_pyramidal_two_compartment(
             region_name=self.region_name,
             population_name=CortexPopulation.L5_PYR,
             n_neurons=self.l5_pyr_size,
@@ -703,10 +702,11 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         prev_spikes: Optional[torch.Tensor],
         prev_membrane: Optional[torch.Tensor],
         inhibitory_network: CorticalInhibitoryNetwork,
-        ach_concentration: torch.Tensor,
         additional_inhibition: Optional[torch.Tensor] = None,
         feedforward_fsi_excitation: Optional[torch.Tensor] = None,
         return_full_output: bool = False,
+        ach_spikes: Optional[torch.Tensor] = None,
+        long_range_excitation: Optional[torch.Tensor] = None,
     ) -> torch.Tensor | Tuple[torch.Tensor, Optional[Dict[str, torch.Tensor]]]:
         """Compute total inhibition for a cortical layer.
 
@@ -722,10 +722,12 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             prev_spikes: Previous timestep's spikes (for causal inhibition)
             prev_membrane: Previous timestep's membrane potentials
             inhibitory_network: Layer's inhibitory network (PV/SST/VIP)
-            ach_concentration: Acetylcholine concentration for the layer
             additional_inhibition: Extra inhibition (e.g., predictions)
             feedforward_fsi_excitation: Direct excitation to FSI for feedforward inhibition
             return_full_output: If True, return (g_inh_total, inhib_output_dict) for diagnostics
+            ach_spikes: Raw NB ACh spikes for nicotinic receptors on VIP cells (optional).
+            long_range_excitation: Top-down / long-range corticocortical input in pyramidal
+                space [pyr_size], routed preferentially to VIP cells (L2/3 only).
 
         Returns:
             Total inhibitory conductance, or (g_inh_total, inhib_output_dict) if return_full_output=True
@@ -739,8 +741,9 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
                 pyr_spikes=prev_spikes,
                 pyr_membrane=prev_membrane,
                 external_excitation=g_exc,
-                acetylcholine=ach_concentration.mean().item(),
                 feedforward_excitation=feedforward_fsi_excitation,  # Direct FSI drive
+                long_range_excitation=long_range_excitation,
+                ach_spikes=ach_spikes,
             )
             g_inh_total = g_inh_baseline + inhib_output["total_inhibition"]
         else:
@@ -762,9 +765,9 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         self,
         g_exc: torch.Tensor,
         g_inh: torch.Tensor,
-        neurons: ConductanceLIF,
+        neurons: "ConductanceLIF",
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Split conductances and run neuron forward pass.
+        """Split conductances and run single-compartment neuron forward pass.
 
         All cortical layers use the same conductance-based integration:
         - Split excitation into AMPA (fast) and NMDA (slow)
@@ -774,7 +777,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         Args:
             g_exc: Total excitatory conductance
             g_inh: Total inhibitory conductance
-            neurons: Layer's neuron population
+            neurons: Layer's single-compartment neuron population
 
         Returns:
             (spikes, membrane_potentials)
@@ -782,11 +785,67 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.2)
         spikes, membrane = neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh),
             g_nmda_input=ConductanceTensor(g_nmda),
+            g_gaba_a_input=ConductanceTensor(g_inh),
+            g_gaba_b_input=None,
         )
 
         return spikes, membrane
+
+    def _integrate_and_spike_two_compartment(
+        self,
+        g_exc_basal: torch.Tensor,
+        g_inh_basal: torch.Tensor,
+        g_exc_apical: Optional[torch.Tensor],
+        neurons: "TwoCompartmentLIF",
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Split conductances and run two-compartment pyramidal neuron forward pass.
+
+        Routes basal (feedforward / proximal) inputs to the somatic compartment
+        and apical (top-down / distal) inputs to the dendritic compartment.
+        NMDA Mg²⁺ block is applied at **dendritic voltage** for apical NMDA,
+        implementing biologically correct coincidence detection.
+
+        Args:
+            g_exc_basal:  Excitatory conductance for basal compartment (L4→L2/3
+                          feedforward, recurrent L2/3→L2/3, L2/3→L5).
+            g_inh_basal:  Inhibitory conductance for basal compartment (local
+                          PV/SST network output).
+            g_exc_apical: Excitatory conductance for apical compartment
+                          (top-down feedback from higher areas).
+                          Pass ``None`` if no apical input this timestep.
+            neurons: Two-compartment :class:`TwoCompartmentLIF` population.
+
+        Returns:
+            (spikes, V_soma, V_dend)
+        """
+        from thalia.components.neurons import TwoCompartmentLIF  # local import avoids circular
+        assert isinstance(neurons, TwoCompartmentLIF), (
+            f"_integrate_and_spike_two_compartment expects TwoCompartmentLIF, got {type(neurons).__name__}"
+        )
+
+        # Basal: feedforward / somatic inputs (20% NMDA — standard cortical ratio)
+        g_ampa_b, g_nmda_b = split_excitatory_conductance(g_exc_basal, nmda_ratio=0.2)
+
+        # Apical: top-down feedback inputs (30% NMDA apically — higher NMDA proportion
+        # in distal dendrites matches biology: Bhatt et al., Spruston 2008)
+        if g_exc_apical is not None:
+            g_ampa_a, g_nmda_a = split_excitatory_conductance(g_exc_apical, nmda_ratio=0.3)
+        else:
+            zero = torch.zeros(neurons.n_neurons, device=neurons.device)
+            g_ampa_a, g_nmda_a = zero, zero
+
+        spikes, V_soma, V_dend = neurons.forward(
+            g_ampa_basal=ConductanceTensor(g_ampa_b),
+            g_nmda_basal=ConductanceTensor(g_nmda_b),
+            g_gaba_a_basal=ConductanceTensor(g_inh_basal),
+            g_gaba_b_basal=None,
+            g_ampa_apical=ConductanceTensor(g_ampa_a),
+            g_nmda_apical=ConductanceTensor(g_nmda_a),
+            g_gaba_a_apical=None,
+        )
+
+        return spikes, V_soma, V_dend
 
     # =========================================================================
     # FORWARD PASS
@@ -803,6 +862,10 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
         self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
         cfg = self.config
+
+        # Raw NB ACh spikes needed after the neuromodulation block for VIP nicotinic receptors.
+        # Hoisted here so it is always defined regardless of NEUROMODULATION_DISABLED flag.
+        nb_ach_spikes: Optional[torch.Tensor] = None
 
         if not GlobalConfig.NEUROMODULATION_DISABLED:
             # =====================================================================
@@ -857,7 +920,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             # =====================================================================
             # Process NB acetylcholine spikes → encoding/retrieval and attention
             # ACh has layer-specific effects on feedforward vs recurrent processing
-            nb_ach_spikes = neuromodulator_inputs.get('ach', None)
+            nb_ach_spikes = neuromodulator_inputs.get('ach', None)  # preserved for VIP nicotinic
             ach_concentration_full = self.ach_receptor.update(nb_ach_spikes)
             # Split into per-layer buffers
             offset = 0
@@ -870,9 +933,6 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             self._ach_concentration_l6a = ach_concentration_full[offset : offset + self.l6a_pyr_size]
             offset += self.l6a_pyr_size
             self._ach_concentration_l6b = ach_concentration_full[offset :]
-        else:
-            # Neuromodulation disabled: keep baseline concentrations
-            pass
 
         # =====================================================================
         # MULTI-SOURCE ROUTING: L4 (bottom-up) vs L2/3 (top-down)
@@ -895,7 +955,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             synaptic_inputs,
             n_neurons=self.l4_pyr_size,
             filter_by_target_population=CortexPopulation.L4_PYR,
-        ).g_exc
+        ).g_ampa
 
         # Integrate L4 PV inputs (feedforward inhibition drive)
         # Biology: Thalamic afferents synapse directly onto PV cells for fast inhibition
@@ -903,7 +963,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             synaptic_inputs,
             n_neurons=self.l4_inhibitory.pv_size,
             filter_by_target_population=CortexPopulation.L4_INHIBITORY_PV,
-        ).g_exc
+        ).g_ampa
 
         # Add baseline noise (spontaneous miniature EPSPs)
         # Use stochastic noise to prevent inhibition-driven silence
@@ -934,6 +994,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             g_ampa_input=ConductanceTensor(sst_pred_g_ampa),
             g_nmda_input=ConductanceTensor(sst_pred_g_nmda),
             g_gaba_a_input=None,
+            g_gaba_b_input=None,
         )
 
         # Step 2: L4_SST_PRED (GABA_A) → L4_PYR: apply prediction as inhibition.
@@ -1002,10 +1063,10 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             prev_spikes=self._l4_spike_buffer.read(1),
             prev_membrane=self._l4_membrane_buffer.read(1),
             inhibitory_network=self.l4_inhibitory,
-            ach_concentration=self._ach_concentration_l4,
             additional_inhibition=l4_pred_inhibition,  # Predictive coding
             feedforward_fsi_excitation=l4_g_exc_pv,  # Direct thalamic input to PV cells
             return_full_output=True,  # Get full output for diagnostics
+            ach_spikes=nb_ach_spikes,
         )
 
         # Store PV spikes for diagnostics (None on first timestep)
@@ -1110,21 +1171,31 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             synaptic_inputs,
             n_neurons=self.l23_pyr_size,
             filter_by_target_population=CortexPopulation.L23_PYR,
-        ).g_exc
+        ).g_ampa
 
-        # Integrate all L2/3 inputs
-        l23_input = l23_ff + l23_rec + l23_td
+        # =====================================================================
+        # TWO-COMPARTMENT ROUTING: Basal (proximal) vs Apical (distal)
+        # =====================================================================
+        # Basal compartment: feedforward (L4→L2/3) + lateral recurrent (L2/3→L2/3)
+        # These synapse on proximal/basal dendrites of L2/3 pyramidal cells.
+        # Apical compartment: top-down feedback from higher cortical areas.
+        # These synapse on distal apical tufts in L1.
+        l23_basal_input = l23_ff + l23_rec
 
-        # Add baseline noise (spontaneous miniature EPSPs)
-        # Use stochastic noise to prevent inhibition-driven silence
+        # Add baseline noise to basal compartment (miniature EPSPs at proximal synapses)
         if cfg.baseline_noise_conductance_enabled:
             stochastic = 0.007 * torch.randn(self.l23_pyr_size, device=self.device)
-            l23_input = l23_input + stochastic.abs()
+            l23_basal_input = l23_basal_input + stochastic.abs()
 
-        # Norepinephrine gain modulation (arousal/uncertainty)
+        # Norepinephrine gain modulation applied to BOTH compartments
         ne_level_l23 = self._ne_concentration_l23.mean().item()
         ne_gain_l23 = compute_ne_gain(ne_level_l23)
-        l23_input = l23_input * ne_gain_l23
+        l23_basal_input  = l23_basal_input * ne_gain_l23
+        l23_apical_input = l23_td * ne_gain_l23
+
+        # Combined input for inhibition computation (inhibitory network doesn't
+        # distinguish compartments; it responds to total somatic depolarisation)
+        l23_input = l23_basal_input + l23_apical_input
 
         # INTRINSIC PLASTICITY: Apply per-neuron threshold adjustment
         # Under-firing neurons get lower thresholds (more excitable)
@@ -1149,13 +1220,15 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             prev_spikes=self._l23_spike_buffer.read(1),
             prev_membrane=self._l23_membrane_buffer.read(1),
             inhibitory_network=self.l23_inhibitory,
-            ach_concentration=self._ach_concentration_l23,
+            ach_spikes=nb_ach_spikes,
+            long_range_excitation=l23_td,  # S2-3: top-down input gates VIP disinhibition
         )
 
-        # Integrate conductances and generate spikes using helper
-        l23_spikes, l23_membrane = self._integrate_and_spike(
-            g_exc=l23_g_exc,
-            g_inh=l23_g_inh,
+        # Two-compartment integration: feedforward+recurrent → basal, top-down → apical
+        l23_spikes, l23_membrane, _l23_V_dend = self._integrate_and_spike_two_compartment(
+            g_exc_basal=F.relu(l23_basal_input),
+            g_inh_basal=l23_g_inh,
+            g_exc_apical=F.relu(l23_apical_input),
             neurons=self.l23_neurons,
         )
 
@@ -1200,13 +1273,27 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             prev_spikes=self._l5_spike_buffer.read(1),
             prev_membrane=self._l5_membrane_buffer.read(1),
             inhibitory_network=self.l5_inhibitory,
-            ach_concentration=self._ach_concentration_l5,
+            ach_spikes=nb_ach_spikes,
         )
 
+        # TOP-DOWN MODULATION TO L5 (Apical dendrite)
+        # Biology: L5 apical tufts in L1 receive top-down feedback from higher
+        # cortical areas (PFC, association cortex, contralateral cortex), mirroring
+        # the L2/3 apical compartment mechanism. NE gain is applied equally here.
+        l5_td = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs,
+            n_neurons=self.l5_pyr_size,
+            filter_by_target_population=CortexPopulation.L5_PYR,
+        ).g_ampa
+        l5_apical_input = F.relu(l5_td * ne_gain_l5)
+
         # Integrate conductances and generate spikes using helper
-        l5_spikes, l5_membrane = self._integrate_and_spike(
-            g_exc=l5_g_exc,
-            g_inh=l5_g_inh,
+        # L5 uses two-compartment neurons: L2/3 input targets basal dendrites,
+        # top-down cortical feedback targets apical tufts.
+        l5_spikes, l5_membrane, _l5_V_dend = self._integrate_and_spike_two_compartment(
+            g_exc_basal=l5_g_exc,
+            g_inh_basal=l5_g_inh,
+            g_exc_apical=l5_apical_input,
             neurons=self.l5_neurons,
         )
 
@@ -1252,7 +1339,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             prev_spikes=self._l6a_spike_buffer.read(1),
             prev_membrane=self._l6a_membrane_buffer.read(1),
             inhibitory_network=self.l6a_inhibitory,
-            ach_concentration=self._ach_concentration_l6a,
+            ach_spikes=nb_ach_spikes,
         )
 
         # Integrate conductances and generate spikes using helper
@@ -1295,7 +1382,7 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             prev_spikes=self._l6b_spike_buffer.read(1),
             prev_membrane=self._l6b_membrane_buffer.read(1),
             inhibitory_network=self.l6b_inhibitory,
-            ach_concentration=self._ach_concentration_l6b,
+            ach_spikes=nb_ach_spikes,
         )
 
         # Integrate conductances and generate spikes using helper
@@ -1381,32 +1468,14 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
             if synapse_id.target_population == CortexPopulation.L23_PYR:
                 if self.get_learning_strategy(synapse_id) is None:
                     self._add_learning_strategy(synapse_id, self.composite_l23)
-                self._apply_learning(
-                    synapse_id, source_spikes, l23_spikes,
-                    dopamine=l23_dopamine,
-                    acetylcholine=self._ach_concentration_l23.mean().item(),
-                    norepinephrine=self._ne_concentration_l23.mean().item(),
-                )
 
             elif synapse_id.target_population == CortexPopulation.L4_PYR:
                 if self.get_learning_strategy(synapse_id) is None:
                     self._add_learning_strategy(synapse_id, self.composite_l4)
-                self._apply_learning(
-                    synapse_id, source_spikes, l4_spikes,
-                    dopamine=l4_dopamine,
-                    acetylcholine=self._ach_concentration_l4.mean().item(),
-                    norepinephrine=self._ne_concentration_l4.mean().item(),
-                )
 
             elif synapse_id.target_population == CortexPopulation.L5_PYR:
                 if self.get_learning_strategy(synapse_id) is None:
                     self._add_learning_strategy(synapse_id, self.composite_l5)
-                self._apply_learning(
-                    synapse_id, source_spikes, l5_spikes,
-                    dopamine=l5_dopamine,
-                    acetylcholine=self._ach_concentration_l5.mean().item(),
-                    norepinephrine=self._ne_concentration_l5.mean().item(),
-                )
 
         # =====================================================================
         # L4 → L2/3 - L2/3-specific dopamine
@@ -1549,6 +1618,28 @@ class CorticalColumn(NeuralRegion[CortexConfig]):
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
     # =========================================================================
+
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        """Map external synapse target population to layer-specific neuromodulator kwargs."""
+        if synapse_id.target_population == CortexPopulation.L23_PYR:
+            return {
+                "dopamine": self._da_concentration_l23.mean().item(),
+                "acetylcholine": self._ach_concentration_l23.mean().item(),
+                "norepinephrine": self._ne_concentration_l23.mean().item(),
+            }
+        if synapse_id.target_population == CortexPopulation.L4_PYR:
+            return {
+                "dopamine": self._da_concentration_l4.mean().item(),
+                "acetylcholine": self._ach_concentration_l4.mean().item(),
+                "norepinephrine": self._ne_concentration_l4.mean().item(),
+            }
+        if synapse_id.target_population == CortexPopulation.L5_PYR:
+            return {
+                "dopamine": self._da_concentration_l5.mean().item(),
+                "acetylcholine": self._ach_concentration_l5.mean().item(),
+                "norepinephrine": self._ne_concentration_l5.mean().item(),
+            }
+        return {}
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update temporal parameters when brain timestep changes.

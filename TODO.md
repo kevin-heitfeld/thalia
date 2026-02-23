@@ -1,6 +1,5 @@
 # TODO
 
-- Re-enable baseline noise (`baseline_noise_conductance_enabled`)
 - Review CA3 persistence (`ca3_persistent_gain`)
 - Implement synaptic scaling for all regions (currently only implemented for CorticalColumn)
 - Implement spillover for all regions?

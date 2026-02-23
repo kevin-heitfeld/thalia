@@ -7,7 +7,7 @@ hebbian CS–US associations via STDP-like plasticity at principal neuron synaps
 
 from __future__ import annotations
 
-from typing import ClassVar, List
+from typing import Any, ClassVar, Dict, List
 
 import torch
 
@@ -18,6 +18,8 @@ from thalia.components import (
     ConductanceLIFConfig,
     NeuronFactory,
     NeuronType,
+    TwoCompartmentLIF,
+    TwoCompartmentLIFConfig,
     WeightInitializer,
 )
 from thalia.learning import STDPConfig, STDPStrategy
@@ -77,9 +79,11 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         # =====================================================================
 
         # Principal neurons: slow, STDP-plastic, CS-US association
-        self.principal_neurons = ConductanceLIF(
+        # Two-compartment: basal (proximal) receives thalamic/cortical CS input;
+        # apical (distal) receives SOM dendritic inhibition for extinction gating.
+        self.principal_neurons = TwoCompartmentLIF(
             n_neurons=self.principal_size,
-            config=ConductanceLIFConfig(
+            config=TwoCompartmentLIFConfig(
                 region_name=self.region_name,
                 population_name=BLAPopulation.PRINCIPAL,
                 device=self.device,
@@ -97,6 +101,14 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 adapt_increment=0.05,  # Mild adaptation (principal cells spike-adapt)
                 tau_adapt=150.0,
                 noise_std=0.04,
+                # Two-compartment dendritic parameters
+                g_c=0.05,          # Somato-dendritic coupling conductance
+                C_d=0.5,           # Dendritic membrane capacitance
+                g_L_d=0.03,        # Dendritic leak conductance
+                bap_amplitude=0.3, # Back-propagating AP strength (enables STDP coincidence)
+                theta_Ca=2.0,      # Ca2+ spike threshold (dendritic burst)
+                g_Ca_spike=0.30,   # Ca2+ spike conductance
+                tau_Ca_ms=20.0,    # Ca2+ decay time (synaptogenesis window)
             ),
         )
 
@@ -232,7 +244,8 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self._register_neuron_population(BLAPopulation.PV, self.pv_neurons, polarity=PopulationPolarity.INHIBITORY)
         self._register_neuron_population(BLAPopulation.SOM, self.som_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FORWARD PASS
@@ -267,7 +280,8 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             filter_by_target_population=BLAPopulation.PRINCIPAL,
         )
 
-        # Internal PV inhibition (from previous step, read via synaptic_weights)
+        # PV → PRINCIPAL: perisomatic (basal) inhibition — fast, soma-targeted
+        # Biology: PV basket cells form synapses on soma and proximal dendrites
         pv_principal_synapse = SynapseId(
             source_region=self.region_name,
             source_population=BLAPopulation.PV,
@@ -275,6 +289,9 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             target_population=BLAPopulation.PRINCIPAL,
             receptor_type=ReceptorType.GABA_A,
         )
+        # SOM → PRINCIPAL: dendritic (apical) inhibition — slow, extinction gating
+        # Biology: SOM/Martinotti cells target distal apical dendrites, reducing
+        # excitatory integration of top-down and associative inputs during extinction
         som_principal_synapse = SynapseId(
             source_region=self.region_name,
             source_population=BLAPopulation.SOM,
@@ -282,25 +299,35 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             target_population=BLAPopulation.PRINCIPAL,
             receptor_type=ReceptorType.GABA_A,
         )
-        int_inh = self._integrate_synaptic_inputs_at_dendrites(
-            {
-                pv_principal_synapse: self._pv_spikes_prev,
-                som_principal_synapse: self._som_spikes_prev,
-            }
+
+        # Separate PV and SOM inhibition so they map to the correct compartments
+        pv_int_inh = self._integrate_synaptic_inputs_at_dendrites(
+            {pv_principal_synapse: self._pv_spikes_prev}
             if hasattr(self, '_pv_spikes_prev')
             else {},
             n_neurons=self.principal_size,
         )
+        som_int_inh = self._integrate_synaptic_inputs_at_dendrites(
+            {som_principal_synapse: self._som_spikes_prev}
+            if hasattr(self, '_som_spikes_prev')
+            else {},
+            n_neurons=self.principal_size,
+        )
 
-        g_exc = self.baseline_drive.clone() + dendrite_principal.g_exc + da_boost
-        g_inh = dendrite_principal.g_inh + int_inh.g_inh
-
+        g_exc = self.baseline_drive.clone() + dendrite_principal.g_ampa + da_boost
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.25)
 
-        principal_spikes, _ = self.principal_neurons.forward(
-            g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh),
-            g_nmda_input=ConductanceTensor(g_nmda),
+        # Basal conductances: external GABAergic inputs + PV perisomatic inhibition
+        g_gaba_a_basal = dendrite_principal.g_gaba_a + pv_int_inh.g_gaba_a
+        # Apical conductances: SOM dendritic inhibition (extinction gating)
+        g_gaba_a_apical = som_int_inh.g_gaba_a
+
+        principal_spikes, _v_soma, _v_dend = self.principal_neurons.forward(
+            g_ampa_basal=ConductanceTensor(g_ampa),
+            g_nmda_basal=ConductanceTensor(g_nmda),
+            g_gaba_a_basal=ConductanceTensor(g_gaba_a_basal),
+            g_gaba_b_basal=None,
+            g_gaba_a_apical=ConductanceTensor(g_gaba_a_apical),
         )
 
         # =====================================================================
@@ -325,15 +352,16 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             n_neurons=self.pv_size,
         )
 
-        g_exc_pv = dendrite_pv.g_exc + int_principal_pv.g_exc
-        g_inh_pv = dendrite_pv.g_inh
+        g_exc_pv = dendrite_pv.g_ampa + int_principal_pv.g_ampa
+        g_inh_pv = dendrite_pv.g_gaba_a
 
         g_ampa_pv, g_nmda_pv = split_excitatory_conductance(g_exc_pv, nmda_ratio=0.05)  # Fast, mostly AMPA
 
         pv_spikes, _ = self.pv_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa_pv),
-            g_gaba_a_input=ConductanceTensor(g_inh_pv),
             g_nmda_input=ConductanceTensor(g_nmda_pv),
+            g_gaba_a_input=ConductanceTensor(g_inh_pv),
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
@@ -357,15 +385,16 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             n_neurons=self.som_size,
         )
 
-        g_exc_som = dendrite_som.g_exc + int_principal_som.g_exc
-        g_inh_som = dendrite_som.g_inh
+        g_exc_som = dendrite_som.g_ampa + int_principal_som.g_ampa
+        g_inh_som = dendrite_som.g_gaba_a
 
         g_ampa_som, g_nmda_som = split_excitatory_conductance(g_exc_som, nmda_ratio=0.15)
 
         som_spikes, _ = self.som_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa_som),
-            g_gaba_a_input=ConductanceTensor(g_inh_som),
             g_nmda_input=ConductanceTensor(g_nmda_som),
+            g_gaba_a_input=ConductanceTensor(g_inh_som),
+            g_gaba_b_input=None,
         )
 
         region_outputs: RegionOutput = {
@@ -385,16 +414,14 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                     if self.get_learning_strategy(synapse_id) is None:
                         self._add_learning_strategy(synapse_id, self._stdp_strategy)
 
-            self._apply_all_learning(
-                synaptic_inputs, region_outputs,
-                kwargs_provider=lambda _: {"learning_rate": self.config.learning_rate},
-            )
-
         # Cache inhibitory spike trains for next-step integration
         self._pv_spikes_prev = pv_spikes
         self._som_spikes_prev = som_spikes
 
         return self._post_forward(region_outputs)
+
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        return {"learning_rate": self.config.learning_rate}
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Propagate temporal parameter update to neuron populations."""

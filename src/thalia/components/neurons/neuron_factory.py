@@ -15,13 +15,19 @@ from typing import Any, Callable, Dict, List
 
 import torch
 
-from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
+from .conductance_lif_neuron import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
+    TwoCompartmentLIF,
+    TwoCompartmentLIFConfig,
+)
 
 
 class NeuronType(StrEnum):
     """Enumeration of standard neuron types for factory registration."""
 
     PYRAMIDAL = "pyramidal"
+    PYRAMIDAL_TWO_COMPARTMENT = "pyramidal_two_compartment"
     RELAY = "relay"
     TRN = "trn"
     CORTICAL_LAYER = "cortical_layer"
@@ -574,8 +580,81 @@ class NeuronFactory:
         return neurons
 
 
+    @staticmethod
+    def create_pyramidal_two_compartment(
+        region_name: str,
+        population_name: str,
+        n_neurons: int,
+        device: torch.device,
+        **overrides: dict[str, Any],
+    ) -> TwoCompartmentLIF:
+        """Create a two-compartment (soma + apical dendrite) pyramidal neuron population.
+
+        Used for all cell types where feedforward (proximal/basal) and feedback
+        (distal/apical) inputs must be segregated:
+
+        - Cortical L2/3 pyramidal: L4 feedforward (basal) vs PFC feedback (apical).
+        - Cortical L5 pyramidal: L2/3 input (basal); future L1/apical-tuft inputs (apical).
+        - Hippocampal CA1: CA3 Schaffer collateral (basal) vs EC direct path (apical).
+
+        Key biological accuracy improvements over single-compartment:
+        - NMDA Mg²⁺ block at **dendritic** voltage for apical NMDA (correct locus).
+        - BAP retrograde depolarises dendrite on soma spike (enables STDP).
+        - Ca²⁺ spike when apical threshold exceeded (dendritic burst).
+
+        Args:
+            region_name: Region identifier (for RNG independence).
+            population_name: Population identifier (for RNG independence).
+            n_neurons: Population size.
+            device: Computation device.
+            **overrides: Any :class:`TwoCompartmentLIFConfig` field overrides.
+
+        Returns:
+            :class:`TwoCompartmentLIF` neuron population.
+        """
+        # Somatic tau_mem heterogeneity (same as create_pyramidal_neurons)
+        if "tau_mem" not in overrides:
+            tau_mem_mean = 20.0
+            tau_mem_mean = float(overrides.pop("tau_mem_mean", tau_mem_mean))
+            tau_mem_std = tau_mem_mean * 0.15
+            tau_mem = torch.normal(
+                mean=tau_mem_mean,
+                std=tau_mem_std,
+                size=(n_neurons,),
+                device=device,
+            ).clamp(min=tau_mem_mean * 0.7, max=tau_mem_mean * 1.3)
+        else:
+            tau_mem = overrides.pop("tau_mem")  # type: ignore[assignment]
+
+        config_params: dict[str, Any] = {
+            "region_name": region_name,
+            "population_name": population_name,
+            "device": device,
+            "tau_mem": tau_mem,
+            "g_L": 0.05,
+            "tau_E": 5.0,
+            "tau_I": 10.0,
+            "v_reset": 0.0,
+            "E_L": 0.0,
+            "E_E": 3.0,
+            "E_I": -0.5,
+            # Two-compartment defaults (tuned for L5/CA1 pyramidal biophysics)
+            "g_c": 0.05,
+            "C_d": 0.5,
+            "g_L_d": 0.03,
+            "bap_amplitude": 0.3,
+            "theta_Ca": 2.0,
+            "g_Ca_spike": 0.30,
+            "tau_Ca_ms": 20.0,
+        }
+        config_params.update(overrides)
+        config = TwoCompartmentLIFConfig(**config_params)
+        return TwoCompartmentLIF(n_neurons=n_neurons, config=config)
+
+
 # Register standard neuron types
 NeuronFactory.register(NeuronType.PYRAMIDAL)(NeuronFactory.create_pyramidal_neurons)
+NeuronFactory.register(NeuronType.PYRAMIDAL_TWO_COMPARTMENT)(NeuronFactory.create_pyramidal_two_compartment)
 NeuronFactory.register(NeuronType.RELAY)(NeuronFactory.create_relay_neurons)
 NeuronFactory.register(NeuronType.TRN)(NeuronFactory.create_trn_neurons)
 NeuronFactory.register(NeuronType.CORTICAL_LAYER)(NeuronFactory.create_cortical_layer_neurons)

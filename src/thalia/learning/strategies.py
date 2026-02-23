@@ -14,7 +14,7 @@ from thalia import GlobalConfig
 from thalia.errors import ConfigurationError
 from thalia.utils import validate_spike_tensor
 
-from .eligibility_trace_manager import EligibilityTraceManager
+from .eligibility_trace_manager import EligibilityTraceConfig, EligibilityTraceManager
 
 
 # =============================================================================
@@ -267,6 +267,9 @@ class LearningStrategy(nn.Module, ABC):
         super().__init__()
         self.config = config
         self._dt_ms: float = GlobalConfig.DEFAULT_DT_MS
+        # Set to True by ensure_setup() after the first successful setup() call.
+        # Checked by callers to verify initialization order (setup before compute_update).
+        self._is_setup: bool = False
 
     def setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
         """Called once by BrainBuilder.build() after synapse dimensions are known.
@@ -291,10 +294,13 @@ class LearningStrategy(nn.Module, ABC):
 
         Concrete subclasses should override this to check their own state tensors
         and re-call setup() when the synapse dimensions change between calls.
-        The default implementation delegates to setup() unconditionally only on
-        the very first call (i.e., when the subclass hasn't registered any state).
+        The default implementation calls setup() exactly once (on the very first
+        call) and then sets ``_is_setup = True`` so that callers (e.g. compute_update
+        guard-checks) know that initialization has completed.
         """
-        ...
+        if not self._is_setup:
+            self.setup(n_pre, n_post, device)
+            self._is_setup = True
 
     @abstractmethod
     def compute_update(
@@ -391,14 +397,25 @@ class STDPStrategy(LearningStrategy):
         Assigns trace_manager as an nn.Module child so .to(device) and
         state_dict() automatically include all trace tensors.
         """
+        cfg = self.config
+
+        # Build a standalone EligibilityTraceConfig from our STDPConfig fields.
+        # EligibilityTraceManager no longer requires STDPConfig directly —
+        # any strategy can use it by providing the minimal config.
+        trace_cfg = EligibilityTraceConfig(
+            tau_plus=cfg.tau_plus,
+            tau_minus=cfg.tau_minus,
+            eligibility_tau_ms=cfg.eligibility_tau_ms,
+            a_plus=cfg.a_plus,
+            a_minus=cfg.a_minus,
+        )
         # nn.Module child assignment registers it automatically
-        self.trace_manager = EligibilityTraceManager(n_pre, n_post, self.config, device)
+        self.trace_manager = EligibilityTraceManager(n_pre, n_post, trace_cfg, device)
 
         # Registered buffers travel with .to(device) and appear in state_dict()
         self.register_buffer("firing_rates",      torch.zeros(n_post, device=device))
         self.register_buffer("retrograde_signal", torch.zeros(n_post, device=device))
 
-        cfg = self.config
         self._firing_rate_decay = math.exp(-self._dt_ms / self._firing_rate_tau_ms)
         self._retrograde_decay  = math.exp(-self._dt_ms / cfg.retrograde_tau_ms)
 
@@ -410,6 +427,7 @@ class STDPStrategy(LearningStrategy):
             or self.trace_manager.n_output != n_post
         ):
             self.setup(n_pre, n_post, device)
+        self._is_setup = True
 
     def compute_update(
         self,
@@ -596,6 +614,7 @@ class BCMStrategy(LearningStrategy):
         """Call setup() if not yet initialised or if post-population size changed."""
         if not hasattr(self, "theta") or self.theta.shape[0] != n_post:
             self.setup(n_pre, n_post, device)
+        self._is_setup = True
 
     def compute_phi(self, post_spikes: torch.Tensor, firing_rates: torch.Tensor) -> torch.Tensor:
         """Compute BCM modulation function with firing-rate-based LTD gating.
@@ -732,27 +751,45 @@ class ThreeFactorStrategy(LearningStrategy):
     def __init__(self, config: ThreeFactorConfig):
         super().__init__(config)
 
-        # Scalar decay factor — dimension-independent, pre-computed at default dt
-        self._decay_elig_val: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.eligibility_tau)
+        # Decay scalar is now owned by the EligibilityTraceManager submodule
+        # (created in setup()).  Keep a reference-free __init__ so that the
+        # strategy can be constructed before synapse dimensions are known.
 
     # ------------------------------------------------------------------
     # Eager initialisation
     # ------------------------------------------------------------------
 
     def setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
-        """Eagerly register eligibility buffer.
+        """Eagerly initialise the eligibility trace manager.
 
         Must be called once (by BrainBuilder.build()) before compute_update().
+        Uses ``EligibilityTraceManager`` for the eligibility buffer and decay,
+        removing the need for a hand-written ``register_buffer`` + scalar-decay
+        pattern here.  Only ``accumulate_eligibility()`` is used; the pre/post
+        traces inside the manager are not read (they stay at zero).
         """
-        self.register_buffer("eligibility", torch.zeros(n_post, n_pre, device=device))
+        cfg = self.config
+        trace_cfg = EligibilityTraceConfig(
+            # Three-factor learning doesn't distinguish LTP/LTD trace timescales;
+            # use eligibility_tau for both pre- and post-trace decay constants.
+            tau_plus=cfg.eligibility_tau,
+            tau_minus=cfg.eligibility_tau,
+            eligibility_tau_ms=cfg.eligibility_tau,
+            a_plus=1.0,
+            a_minus=0.0,  # LTD component not used; caller computes raw Hebbian
+        )
+        # Registered as an nn.Module child so .to(device) and state_dict() work.
+        self.trace_manager = EligibilityTraceManager(n_pre, n_post, trace_cfg, device)
 
     def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
         """Call setup() if not yet initialised or if synapse dimensions changed."""
         if (
-            not hasattr(self, "eligibility")
-            or self.eligibility.shape != (n_post, n_pre)
+            not hasattr(self, "trace_manager")
+            or self.trace_manager.n_input  != n_pre
+            or self.trace_manager.n_output != n_post
         ):
             self.setup(n_pre, n_post, device)
+        self._is_setup = True
 
     def update_eligibility(
         self,
@@ -762,6 +799,9 @@ class ThreeFactorStrategy(LearningStrategy):
         """Update eligibility trace with current activity.
 
         Eligibility accumulates Hebbian correlations until modulator arrives.
+        Delegates buffer storage and exponential decay to the shared
+        ``EligibilityTraceManager`` (``accumulate_eligibility``), so the
+        buffer registration and decay constants are not duplicated here.
 
         Args:
             pre_spikes: Presynaptic spikes [n_pre] (1D)
@@ -774,21 +814,26 @@ class ThreeFactorStrategy(LearningStrategy):
         if post_spikes.dim() != 1:
             post_spikes = post_spikes.squeeze()
 
-        # Decay in-place
-        self.eligibility.mul_(self._decay_elig_val)
-
-        # Add Hebbian correlation: outer product [n_post, n_pre], normalized
-        pre_rate = pre_spikes.float().mean() + 1e-6
+        # Normalized Hebbian coincidence: outer product, normalized by geometric-mean
+        # firing rate so that co-activation from sparse populations is not drowned
+        # out by dense populations and vice-versa.
+        pre_rate  = pre_spikes.float().mean()  + 1e-6
         post_rate = post_spikes.float().mean() + 1e-6
         normalization = (pre_rate * post_rate).sqrt()
 
         hebbian = torch.outer(post_spikes.float(), pre_spikes.float())
-        self.eligibility.add_(hebbian / normalization)
 
-        # Clamp to prevent saturation (biological bound on synaptic tags)
-        self.eligibility.clamp_(0.0, 1.0)
+        # Delegate decay + accumulation to EligibilityTraceManager; this
+        # replaces the former hand-written:
+        #   self.eligibility.mul_(self._decay_elig_val).add_(hebbian / normalization)
+        self.trace_manager.accumulate_eligibility(hebbian / normalization, self._dt_ms)
 
-        return self.eligibility
+        # Clamp to prevent saturation (biological bound on synaptic tags).
+        # In-place clamp on the manager's buffer is safe — it is a plain
+        # registered buffer, not a Parameter.
+        self.trace_manager.eligibility.clamp_(0.0, 1.0)
+
+        return self.trace_manager.eligibility
 
     def compute_update(
         self,
@@ -820,13 +865,15 @@ class ThreeFactorStrategy(LearningStrategy):
         self.update_eligibility(pre_spikes, post_spikes)
 
         # Three-factor update — no internal clamping (_apply_learning() owns it)
-        dw = cfg.learning_rate * self.eligibility * modulator
+        dw = cfg.learning_rate * self.trace_manager.eligibility * modulator
         return weights + dw
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update decay factor when brain timestep changes."""
         super().update_temporal_parameters(dt_ms)
-        self._decay_elig_val = math.exp(-dt_ms / self.config.eligibility_tau)
+        # Propagate to trace_manager if already set up
+        if hasattr(self, "trace_manager"):
+            self.trace_manager.update_temporal_parameters(dt_ms)
 
 
 # =============================================================================
@@ -871,6 +918,7 @@ class D1STDPStrategy(LearningStrategy):
             or self.fast_trace.shape != (n_post, n_pre)
         ):
             self.setup(n_pre, n_post, device)
+        self._is_setup = True
 
     # ------------------------------------------------------------------
     # Core update
@@ -1012,6 +1060,7 @@ class PredictiveCodingStrategy(LearningStrategy):
             or self.pre_spike_buffer.shape != (delay, n_pre)
         ):
             self.setup(n_pre, n_post, device)
+        self._is_setup = True
 
     # ------------------------------------------------------------------
     # Core update
@@ -1202,6 +1251,7 @@ class CompositeStrategy(LearningStrategy):
         for s in self.sub_strategies:
             if isinstance(s, LearningStrategy):
                 s.ensure_setup(n_pre, n_post, device)
+        self._is_setup = True
 
     def compute_update(
         self,
@@ -1301,6 +1351,7 @@ class TagAndCaptureStrategy(LearningStrategy):
             self.setup(n_pre, n_post, device)
         else:
             self.base_strategy.ensure_setup(n_pre, n_post, device)
+        self._is_setup = True
 
     # ------------------------------------------------------------------
     # Per-step learning

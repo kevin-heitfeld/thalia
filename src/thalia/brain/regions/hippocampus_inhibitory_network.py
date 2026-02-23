@@ -240,6 +240,19 @@ class HippocampalInhibitoryNetwork(nn.Module):
             device=self.device,
         )
 
+        # PV → Pyramidal GABA_B (slow metabotropic K⁺ channel)
+        # Activated only during high-frequency PV bursts (sufficient [GABA] to recruit
+        # metabotropic receptors). Weight ~15% of GABA_A: slower onset, ~400ms decay.
+        # Provides the inter-burst brake for SWR termination.
+        self.pv_to_pyr_gaba_b = WeightInitializer.sparse_uniform(
+            n_input=self.n_pv,
+            n_output=pyr_size,
+            connectivity=pv_connectivity,
+            w_min=0.0,
+            w_max=pv_w_max * 0.15,
+            device=self.device,
+        )
+
         # OLM → Pyramidal (dendritic inhibition)
         # This is the KEY pathway for encoding/retrieval separation!
         self.olm_to_pyr = WeightInitializer.sparse_uniform(
@@ -386,13 +399,15 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # =====================================================================
         # SEPTAL INPUT TO OLM (key for theta phase-locking!)
         # =====================================================================
-
-        if septal_gaba is not None:
-            # Septal GABA inhibits OLM at theta peaks
-            # OLM rebounds at theta troughs (rebound bursting)
-            if septal_gaba.numel() > 0:
-                septal_inhib = self.septal_to_olm @ septal_gaba.float()
-                olm_exc = olm_exc - septal_inhib
+        # Septal GABA inhibits OLM at theta peaks by providing true GABAergic
+        # hyperpolarization — NOT by reducing excitatory drive.
+        # Only proper GABA_A conductance (passed to the neuron as g_inh) can
+        # push V_mem below rest, which is the prerequisite for any I_h-like
+        # rebound after the septal burst ends.
+        olm_g_inh = torch.zeros(self.n_olm, device=self.device)
+        if septal_gaba is not None and septal_gaba.numel() > 0:
+            # Compute synaptic inhibitory conductance from septal spikes → OLM
+            olm_g_inh = self.septal_to_olm @ septal_gaba.float()
 
         # =====================================================================
         # I → I LATERAL INHIBITION
@@ -443,18 +458,21 @@ class HippocampalInhibitoryNetwork(nn.Module):
 
         pv_spikes, _ = self.pv_neurons.forward(
             g_ampa_input=ConductanceTensor(pv_g_ampa),
-            g_gaba_a_input=None,
             g_nmda_input=ConductanceTensor(pv_g_nmda),
+            g_gaba_a_input=None,
+            g_gaba_b_input=None,
         )
         olm_spikes, _ = self.olm_neurons.forward(
             g_ampa_input=ConductanceTensor(olm_g_ampa),
-            g_gaba_a_input=None,
             g_nmda_input=ConductanceTensor(olm_g_nmda),
+            g_gaba_a_input=ConductanceTensor(olm_g_inh),  # Septal GABA as true GABA_A conductance
+            g_gaba_b_input=None,
         )
         bistratified_spikes, _ = self.bistratified_neurons.forward(
             g_ampa_input=ConductanceTensor(bistratified_g_ampa),
-            g_gaba_a_input=None,
             g_nmda_input=ConductanceTensor(bistratified_g_nmda),
+            g_gaba_a_input=None,
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
@@ -464,6 +482,9 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # Perisomatic inhibition (PV basket cells)
         # Weight matrices are [n_post, n_pre], need to transpose for [n_pre] @ [n_pre, n_post]
         perisomatic_inhib = self.pv_to_pyr @ pv_spikes.float()
+
+        # Slow perisomatic GABA_B (same PV basket cells, metabotropic K⁺)
+        perisomatic_gaba_b = self.pv_to_pyr_gaba_b @ pv_spikes.float()
 
         # Dendritic inhibition (OLM + bistratified)
         olm_dendritic_inhib = self.olm_to_pyr @ olm_spikes.float()
@@ -484,9 +505,10 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # =====================================================================
 
         return {
-            "perisomatic": perisomatic_inhib,      # PV → soma
-            "dendritic": total_dendritic_inhib,    # OLM + bistratified → dendrites
-            "olm_dendritic": olm_dendritic_inhib,  # OLM only (for theta tracking)
+            "perisomatic": perisomatic_inhib,          # PV → soma (GABA_A, fast)
+            "perisomatic_gaba_b": perisomatic_gaba_b,  # PV → soma (GABA_B, slow brake)
+            "dendritic": total_dendritic_inhib,        # OLM + bistratified → dendrites
+            "olm_dendritic": olm_dendritic_inhib,      # OLM only (for theta tracking)
             "pv_spikes": pv_spikes,
             "olm_spikes": olm_spikes,
             "bistratified_spikes": bistratified_spikes,

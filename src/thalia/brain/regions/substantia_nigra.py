@@ -164,7 +164,8 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         # =====================================================================
         self._register_neuron_population(SubstantiaNigraPopulation.VTA_FEEDBACK, self.neurons, polarity=PopulationPolarity.ANY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FORWARD PASS
@@ -188,8 +189,8 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         )
 
         # Add baseline drive as excitatory conductance to maintain tonic firing (~50-70Hz)
-        g_exc_total = dendrite.g_exc + self.baseline_drive
-        g_inh_total = dendrite.g_inh
+        g_exc_total = dendrite.g_ampa + self.baseline_drive
+        g_inh_total = dendrite.g_gaba_a
 
         # Add baseline noise conductance (stochastic background activity)
         # BIOLOGY: Represents spontaneous miniature EPSPs and stochastic channel openings
@@ -203,8 +204,9 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         # Update neurons using conductance-based dynamics
         vta_feedback_spikes, vta_feedback_membrane = self.neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh_total),
             g_nmda_input=ConductanceTensor(g_nmda),
+            g_gaba_a_input=ConductanceTensor(g_inh_total),
+            g_gaba_b_input=None,
         )
 
         # Store current output for diagnostics (as tuple)

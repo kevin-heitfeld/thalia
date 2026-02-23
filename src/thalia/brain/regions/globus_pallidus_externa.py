@@ -151,7 +151,8 @@ class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
         self._register_neuron_population(GPePopulation.ARKYPALLIDAL, self.arkypallidal_neurons, polarity=PopulationPolarity.INHIBITORY)
         self._register_neuron_population(GPePopulation.PROTOTYPIC, self.prototypic_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
@@ -168,14 +169,15 @@ class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
         )
         # D2-MSN inhibition reduces prototypic activity (indirect pathway)
         # STN excitation provides GPe-STN feedback loop drive
-        g_exc_proto = self.prototypic_baseline.clone() + proto_dendrite.g_exc
-        g_inh_proto = proto_dendrite.g_inh
+        g_exc_proto = self.prototypic_baseline.clone() + proto_dendrite.g_ampa
+        g_inh_proto = proto_dendrite.g_gaba_a
 
         g_ampa_proto, g_nmda_proto = split_excitatory_conductance(g_exc_proto, nmda_ratio=0.05)
         prototypic_spikes, _ = self.prototypic_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa_proto),
-            g_gaba_a_input=ConductanceTensor(g_inh_proto),
             g_nmda_input=ConductanceTensor(g_nmda_proto),
+            g_gaba_a_input=ConductanceTensor(g_inh_proto),
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
@@ -187,14 +189,15 @@ class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
             filter_by_target_population=GPePopulation.ARKYPALLIDAL,
         )
         # D2-MSN inhibition of arkypallidal as well
-        g_exc_arky = self.arkypallidal_baseline.clone() + arky_dendrite.g_exc
-        g_inh_arky = arky_dendrite.g_inh
+        g_exc_arky = self.arkypallidal_baseline.clone() + arky_dendrite.g_ampa
+        g_inh_arky = arky_dendrite.g_gaba_a
 
         g_ampa_arky, g_nmda_arky = split_excitatory_conductance(g_exc_arky, nmda_ratio=0.05)
         arkypallidal_spikes, _ = self.arkypallidal_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa_arky),
-            g_gaba_a_input=ConductanceTensor(g_inh_arky),
             g_nmda_input=ConductanceTensor(g_nmda_arky),
+            g_gaba_a_input=ConductanceTensor(g_inh_arky),
+            g_gaba_b_input=None,
         )
 
         region_outputs: RegionOutput = {

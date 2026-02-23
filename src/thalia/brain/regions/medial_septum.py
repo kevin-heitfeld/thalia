@@ -134,6 +134,9 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
 
         # GABAergic neurons (inhibit hippocampal interneurons)
         # Properties: Phase-locked to ACh but 180° offset, similar burst dynamics
+        # I_h (HCN): intrinsic current — opens during quiescence, provides slow depolarising
+        # ramp that times the GABA rebound burst at ~180° vs ACh.  tau_h_ms=250ms is slower
+        # than thalamic HCN (100ms) to match theta-band (4–10 Hz) pacemaking.
         gaba_config = ConductanceLIFConfig(
             region_name=self.region_name,
             population_name=MedialSeptumPopulation.GABA,
@@ -144,6 +147,13 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             tau_adapt=config.gaba_adaptation_tau,
             adapt_increment=config.gaba_adaptation_increment,
             tau_ref=5.0,  # SHORT refractory (5ms) allows multiple spikes per burst
+            # Intrinsic HCN (I_h) current — replaces manual _g_ih_gaba workaround
+            enable_ih=True,
+            g_h_max=config.i_h_conductance,  # max HCN conductance from config
+            E_h=-0.30,          # depolarising reversal (above E_I, below rest)
+            V_half_h=-0.35,     # activates when hyperpolarised
+            k_h=0.08,           # smooth activation curve
+            tau_h_ms=250.0,     # slower than thalamic (100ms) for theta-range timing
         )
         self.gaba_neurons = ConductanceLIF(
             n_neurons=self.gaba_size,
@@ -177,9 +187,8 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         self._i_ahp_gaba: torch.Tensor
         self.register_buffer("_i_ahp_ach",  torch.zeros(self.ach_size,  device=self.device))
         self.register_buffer("_i_ahp_gaba", torch.zeros(self.gaba_size, device=self.device))
-        # I_h (HCN) : activation variable for GABA rebound (0 = closed, 1 = open)
-        self._g_ih_gaba: torch.Tensor
-        self.register_buffer("_g_ih_gaba",  torch.zeros(self.gaba_size, device=self.device))
+        # I_h (HCN): now handled intrinsically by ConductanceLIF (enable_ih=True).
+        # The manual _g_ih_gaba external conductance buffer has been removed.
 
         # =====================================================================
         # RECURRENT CONNECTIONS (for synchrony)
@@ -267,10 +276,8 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         self._register_neuron_population(MedialSeptumPopulation.ACH, self.ach_neurons, polarity=PopulationPolarity.ANY)
         self._register_neuron_population(MedialSeptumPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        # =====================================================================
-        # POST-INITIALIZATION
-        # =====================================================================
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FORWARD PASS
@@ -331,12 +338,9 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         self._i_ahp_ach.mul_(decay_ahp).add_(self._last_ach_spikes.float()  * cfg.i_ahp_increment)
         self._i_ahp_gaba.mul_(decay_ahp).add_(self._last_gaba_spikes.float() * cfg.i_ahp_increment)
 
-        # I_h (HCN): opens during GABA quiescence, closes when GABA fires (tau ~150ms)
-        # Provides slow depolarising ramp → times GABA rebound burst at ~180°.
-        alpha_ih = dt_ms / 150.0
-        gaba_fired = self._last_gaba_spikes.float()
-        ih_target = cfg.i_h_conductance * (1.0 - gaba_fired)  # Closes when spiking
-        self._g_ih_gaba.add_(alpha_ih * (ih_target - self._g_ih_gaba))
+        # I_h (HCN): handled intrinsically by ConductanceLIF (enable_ih=True in gaba_config).
+        # The neuron model tracks the HCN activation gate h internally, so no external
+        # conductance injection is needed here.
 
         # =====================================================================
         # INTER-POPULATION CONDUCTANCES
@@ -410,8 +414,9 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # ACh inhibitory: I_AHP (burst termination) + GABA feedback
         g_inh_ach = torch.clamp(self._i_ahp_ach + gaba_to_ach_inh, min=0.0)
 
-        # GABA excitatory: I_h rebound + ACh→GABA drive + recurrent synchrony + hippocampal CA1 feedback (AMPA, excites septal GABA)
-        g_exc_gaba = torch.clamp(self._g_ih_gaba + ach_to_gaba_exc + gaba_recurrent_exc + hippocampal_exc, min=0.0)
+        # GABA excitatory: ACh→GABA drive + recurrent synchrony + hippocampal CA1 feedback (AMPA, excites septal GABA)
+        # I_h (HCN) rebound is now generated intrinsically by the neuron model (enable_ih=True)
+        g_exc_gaba = torch.clamp(ach_to_gaba_exc + gaba_recurrent_exc + hippocampal_exc, min=0.0)
         # GABA inhibitory: I_AHP (burst termination) only
         g_inh_gaba = torch.clamp(self._i_ahp_gaba, min=0.0)
 
@@ -423,13 +428,15 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
 
         ach_spikes, _ = self.ach_neurons.forward(
             g_ampa_input=ConductanceTensor(ach_g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh_ach),
             g_nmda_input=ConductanceTensor(ach_g_nmda),
+            g_gaba_a_input=ConductanceTensor(g_inh_ach),
+            g_gaba_b_input=None,
         )
         gaba_spikes, _ = self.gaba_neurons.forward(
             g_ampa_input=ConductanceTensor(gaba_g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh_gaba),
             g_nmda_input=ConductanceTensor(gaba_g_nmda),
+            g_gaba_a_input=ConductanceTensor(g_inh_gaba),
+            g_gaba_b_input=None,
         )
 
         # =====================================================================

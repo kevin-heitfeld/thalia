@@ -72,7 +72,6 @@ from thalia.utils import (
 )
 
 from .hippocampus_inhibitory_network import HippocampalInhibitoryNetwork
-from .hippocampus_spontaneous_replay import SpontaneousReplayGenerator
 from .neural_region import NeuralRegion
 from .population_names import HippocampusPopulation
 from .region_registry import register_region
@@ -203,7 +202,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             tau_adapt=120.0,  # Slow decay to persist across pattern presentations
         )
         # CA3 gets spike-frequency adaptation to prevent frozen attractors
-        self.ca3_neurons = NeuronFactory.create_pyramidal_neurons(
+        # Two-compartment: basal dendrites receive DG mossy fibers + recurrents;
+        # apical compartment is available for future EC direct-path feedback.
+        self.ca3_neurons = NeuronFactory.create_pyramidal_two_compartment(
             region_name=self.region_name,
             population_name=HippocampusPopulation.CA3,
             n_neurons=self.ca3_size,
@@ -222,8 +223,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             adapt_increment=0.25,  # Moderate adaptation for selectivity
             tau_adapt=100.0,  # Medium decay for temporal integration
         )
-        # CA1: Output layer
-        self.ca1_neurons = NeuronFactory.create_pyramidal_neurons(
+        # CA1: Output layer — two-compartment pyramidal (CA3 Schaffer collateral basal, EC direct apical)
+        self.ca1_neurons = NeuronFactory.create_pyramidal_two_compartment(
             region_name=self.region_name,
             population_name=HippocampusPopulation.CA1,
             n_neurons=self.ca1_size,
@@ -281,6 +282,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # Stimulus gating module (transient inhibition at stimulus changes)
         self.stimulus_gating = StimulusGating(
+            n_neurons=self.dg_size,
+            device=self.device,
             threshold=config.ffi_threshold,
             max_inhibition=config.ffi_strength * 10.0,  # Scale to appropriate range
             decay_rate=1.0 - (1.0 / config.ffi_tau),  # Convert tau to rate
@@ -363,15 +366,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._ca3_threshold_offset: torch.Tensor
         self.register_buffer("_ca3_activity_history", torch.zeros(self.ca3_size, device=self.device))
         self.register_buffer("_ca3_threshold_offset", torch.zeros(self.ca3_size, device=self.device))
-
-        # Spontaneous replay generator (sharp-wave ripples)
-        # Occurs during low ACh (sleep/rest) for memory consolidation
-        self.spontaneous_replay = SpontaneousReplayGenerator(
-            ripple_rate_hz=2.0,  # Biological rate: 1-3 Hz during sleep
-            ach_threshold=0.3,   # Ripples only below this ACh level
-            ripple_refractory_ms=200.0,  # Minimum 200ms between ripples
-            device=self.device,
-        )
 
         # =========================================================================
         # ADAPTIVE HOMEOSTATIC SCALING (Biologically-Inspired)
@@ -563,10 +557,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_OLM, self.ca1_inhibitory.olm_neurons, polarity=PopulationPolarity.INHIBITORY)
         self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_BISTRATIFIED, self.ca1_inhibitory.bistratified_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        # =====================================================================
-        # POST-INITIALIZATION
-        # =====================================================================
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     def _init_circuit_weights(self) -> None:
         """Initialize internal circuit weights.
@@ -597,17 +589,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # CA3 → CA3 RECURRENT: Autoassociative memory weights
         # Learning: One-shot Hebbian with fast/slow traces and heterosynaptic LTD
-        ca3_ca3_weights = WeightInitializer.sparse_random(
+        ca3_ca3_weights = WeightInitializer.sparse_random_no_autapses(
             n_input=self.ca3_size,
             n_output=self.ca3_size,
             connectivity=0.05,
-            weight_scale=0.0005,
+            weight_scale=0.00001,
             device=device,
         )
-        # Apply phase diversity: ±15% weight variation for temporal coding
-        # Phase leads/lags enable different neurons to fire at different theta phases
-        ca3_ca3_weights = WeightInitializer.add_phase_diversity(ca3_ca3_weights, phase_diversity=0.15)
-        ca3_ca3_weights.fill_diagonal_(0.0)  # Zero out self-connections
         self._add_internal_connection(
             source_population=HippocampusPopulation.CA3,
             target_population=HippocampusPopulation.CA3,
@@ -626,7 +614,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 n_input=self.ca3_size,
                 n_output=self.ca3_size,
                 connectivity=0.2,
-                weight_scale=0.0003,
+                weight_scale=0.0001,
                 device=self.device,
             ),
             stp_config=None,
@@ -805,17 +793,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca1_da_level = self._da_concentration_ca1.mean().item()
 
         # =====================================================================
-        # CONSOLIDATION MODE: Spontaneous CA3→CA1 Replay (Sharp-Wave Ripples)
+        # INTERNAL WEIGHT HANDLES
         # =====================================================================
-        # During sleep consolidation, hippocampus spontaneously reactivates stored
-        # patterns without external input. This simulates sharp-wave ripples where
-        # CA3 recurrent activity triggers CA1 output for cortical replay.
-        #
-        # Biological mechanism:
-        # - LOW acetylcholine enables CA3 spontaneous reactivation
-        # - CA3 attractor pattern propagates through Schaffer collaterals to CA1
-        # - STP dynamics preserved (biological timing maintained)
-        # - CA1 output drives cortical consolidation via back-projections
+        # Cached each forward pass for use in integrate + STDP stages.
 
         dg_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.DG, self.region_name, HippocampusPopulation.CA3, receptor_type=ReceptorType.AMPA)
         ca3_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3, self.region_name, HippocampusPopulation.CA3, receptor_type=ReceptorType.AMPA)
@@ -829,26 +809,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_ca1_weights = self.get_synaptic_weights(ca3_ca1_synapse)
         ca2_ca1_weights = self.get_synaptic_weights(ca2_ca1_synapse)
 
-        # Reset ripple detection flag
+        # ripple_detected is set below, after CA3 spikes are computed
         self.ripple_detected = False
-
-        # Check if spontaneous replay should occur (low ACh, probabilistic trigger)
-        should_replay = self.spontaneous_replay.should_trigger_ripple(
-            acetylcholine=self._ach_concentration_ca3.mean().item(),
-            dt_ms=dt_ms,
-        )
-
-        if should_replay:
-            # Select pattern to replay based on tags and weight strength
-            seed_pattern = self.spontaneous_replay.select_pattern_to_replay(
-                synaptic_tags=self._tag_and_capture_strategy.tags,
-                ca3_weights=ca3_ca3_weights,
-                seed_fraction=0.15,
-            )
-
-            # Inject seed pattern into CA3 persistent activity
-            self.ca3_persistent = self.ca3_persistent * 0.25 + seed_pattern.float() * 0.75
-            self.ripple_detected = True
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
@@ -857,13 +819,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             synaptic_inputs,
             n_neurons=self.dg_size,
             filter_by_target_population=HippocampusPopulation.DG
-        ).g_exc
+        ).g_ampa
 
         ca3_input = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=self.ca3_size,
             filter_by_target_population=HippocampusPopulation.CA3
-        ).g_exc
+        ).g_ampa
 
         # TODO: Integrate CA2 input here as well (currently only from CA3, but could add EC→CA2)
 
@@ -871,7 +833,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             synaptic_inputs,
             n_neurons=self.ca1_size,
             filter_by_target_population=HippocampusPopulation.CA1
-        ).g_exc
+        ).g_ampa
 
         # =====================================================================
         # GET SEPTAL INPUT (for OLM phase-locking)
@@ -925,8 +887,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         dg_spikes, _ = self.dg_neurons.forward(
             g_ampa_input=ConductanceTensor(dg_g_ampa),
-            g_gaba_a_input=ConductanceTensor(dg_perisomatic_inhib),
             g_nmda_input=ConductanceTensor(dg_g_nmda),
+            g_gaba_a_input=ConductanceTensor(dg_perisomatic_inhib),
+            g_gaba_b_input=None,
         )
 
         dg_spikes_delayed = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps)
@@ -1103,13 +1066,27 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Split excitatory conductance into AMPA (fast) and NMDA (slow)
         ca3_g_ampa, ca3_g_nmda = split_excitatory_conductance(ca3_g_exc, nmda_ratio=0.2)
 
-        ca3_spikes, _ = self.ca3_neurons.forward(
-            g_ampa_input=ConductanceTensor(ca3_g_ampa),
-            g_gaba_a_input=ConductanceTensor(ca3_g_inh),
-            g_nmda_input=ConductanceTensor(ca3_g_nmda),
+        # Run through CA3 neurons (two-compartment).
+        # All current inputs are perisomatic (basal): DG mossy fibers, CA3 recurrents,
+        # persistent activity, and perisomatic interneuron inhibition.
+        # Apical compartment is available for future EC direct-path or PFC feedback.
+        ca3_spikes, _, _ = self.ca3_neurons.forward(
+            g_ampa_basal=ConductanceTensor(ca3_g_ampa),
+            g_nmda_basal=ConductanceTensor(ca3_g_nmda),
+            g_gaba_a_basal=ConductanceTensor(ca3_g_inh),
+            g_gaba_b_basal=ConductanceTensor(ca3_inhib_output["perisomatic_gaba_b"]),
+            g_ampa_apical=None,   # No EC direct input to CA3 in current model
+            g_nmda_apical=None,
+            g_gaba_a_apical=None,
         )
 
         ca3_spikes_float = ca3_spikes.float()
+
+        # Emergent sharp-wave ripple detection: synchronous CA3 burst > 5% of population
+        # Biology: SWRs are characterised by >5% of CA3 pyramidals firing in a 1-5ms window.
+        # No explicit trigger — ripples must emerge from network dynamics (attractor recall,
+        # low ACh disinhibiting recurrence, GABA_B-terminated bursts).
+        self.ripple_detected = ca3_spikes_float.mean().item() > 0.05
 
         # Update persistent activity AFTER computing new spikes
         # The trace accumulates spike activity with slow decay
@@ -1302,8 +1279,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         ca2_spikes, _ = self.ca2_neurons.forward(
             g_ampa_input=ConductanceTensor(ca2_g_ampa),
-            g_gaba_a_input=ConductanceTensor(ca2_perisomatic_inhib),
             g_nmda_input=ConductanceTensor(ca2_g_nmda),
+            g_gaba_a_input=ConductanceTensor(ca2_perisomatic_inhib),
+            g_gaba_b_input=ConductanceTensor(ca2_inhib_output["perisomatic_gaba_b"]),
         )
         ca2_spikes_float = ca2_spikes.float()
 
@@ -1412,18 +1390,21 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # acetylcholine that provides baseline encoding drive even without septal input.
         self._prev_encoding_mod = torch.clamp(torch.tensor(0.3 + olm_firing_rate * 2.0), 0.0, 1.0).item()
 
-        # Split excitation and inhibition for ConductanceLIF
-        ca1_g_exc = ca3_contribution + ca1_from_ca2 + ampa_conductance + nmda_conductance
+        # -----------------------------------------------------------------------
+        # TWO-COMPARTMENT CA1: Separate basal and apical pathways
+        # -----------------------------------------------------------------------
+        # Basal (proximal) compartment: CA3 Schaffer collateral + CA2 temporal context.
+        # These arrive at basal/oblique dendrites of CA1 pyramidal cells.
+        ca1_basal_g_exc = ca3_contribution + ca1_from_ca2
         if cfg.baseline_noise_conductance_enabled:
-            noise = torch.randn_like(ca1_g_exc) * 0.007
-            ca1_g_exc = ca1_g_exc + noise.abs()
+            noise = torch.randn_like(ca1_basal_g_exc) * 0.007
+            ca1_basal_g_exc = ca1_basal_g_exc + noise.abs()
+        ca1_basal_g_ampa, ca1_basal_g_nmda = split_excitatory_conductance(ca1_basal_g_exc, nmda_ratio=0.2)
 
-        # Apply dendritic inhibition to excitatory input (models apical dendrite suppression)
-        # OLM cells target apical dendrites where EC input arrives
-        # Normalize dendritic inhibition to biological range [0, 1]
-        ca1_dendritic_inhib_normalized = torch.sigmoid((ca1_dendritic_inhib - 1.5) * 2.0)
-        suppression_factor = torch.clamp(ca1_dendritic_inhib_normalized.mean() * 0.8, 0.0, 0.8)
-        ca1_g_exc = ca1_g_exc * (1.0 - suppression_factor)
+        # Apical (distal) compartment: EC direct perforant path (ampa + nmda retrieval gating).
+        # EC→CA1 direct path targets apical tuft dendrites — the key retrieval route.
+        ca1_apical_g_exc = ampa_conductance + nmda_conductance
+        ca1_apical_g_ampa, ca1_apical_g_nmda = split_excitatory_conductance(ca1_apical_g_exc, nmda_ratio=0.3)
 
         # Add CA1 feedback inhibition (like CA3) to prevent hyperactivity
         # CA1 pyramidal cells recruit basket cells for lateral inhibition
@@ -1431,8 +1412,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         prev_ca1_spikes = self._ca1_spike_buffer.read(1)
         ca1_feedback_inhib = prev_ca1_spikes.float().mean() * 0.1  # Light feedback strength
 
-        # Inhibitory: perisomatic inhibition from PV cells + lateral CA1 inhibition + tonic
-        # Tonic inhibition from extrasynaptic GABA_A receptors provides constant baseline
+        # Perisomatic (basal) inhibition: PV basket cells + feedback + tonic
         ca1_g_inh = F.relu(cfg.tonic_inhibition + ca1_perisomatic_inhib + ca1_feedback_inhib)
 
         # Add instantaneous self-inhibition to prevent burst escalation
@@ -1447,14 +1427,17 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             burst_risk = torch.clamp((v_normalized - 0.8) / 0.2, 0.0, 1.0)
             ca1_g_inh = ca1_g_inh + burst_risk * 0.1
 
-        # Split excitatory conductance into AMPA (fast) and NMDA (slow)
-        ca1_g_ampa, ca1_g_nmda = split_excitatory_conductance(ca1_g_exc, nmda_ratio=0.2)
-
-        # Run through CA1 neurons (ConductanceLIF with E/I separation)
-        ca1_spikes, _ca1_membrane = self.ca1_neurons.forward(
-            g_ampa_input=ConductanceTensor(ca1_g_ampa),
-            g_gaba_a_input=ConductanceTensor(ca1_g_inh),
-            g_nmda_input=ConductanceTensor(ca1_g_nmda),
+        # Run through CA1 neurons (two-compartment).
+        # OLM dendritic inhibition goes directly to the apical compartment
+        # (biologically correct: OLM axons target distal apical dendrites, NOT soma).
+        ca1_spikes, _ca1_membrane, _ca1_V_dend = self.ca1_neurons.forward(
+            g_ampa_basal=ConductanceTensor(ca1_basal_g_ampa),
+            g_nmda_basal=ConductanceTensor(ca1_basal_g_nmda),
+            g_gaba_a_basal=ConductanceTensor(ca1_g_inh),
+            g_gaba_b_basal=ConductanceTensor(ca1_inhib_output["perisomatic_gaba_b"]),
+            g_ampa_apical=ConductanceTensor(ca1_apical_g_ampa),
+            g_nmda_apical=ConductanceTensor(ca1_apical_g_nmda),
+            g_gaba_a_apical=ConductanceTensor(F.relu(ca1_dendritic_inhib)),  # OLM → apical
         )
         ca1_spikes_float = ca1_spikes.float()
 

@@ -222,7 +222,8 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         self._register_neuron_population(CeAPopulation.LATERAL, self.lateral_neurons, polarity=PopulationPolarity.INHIBITORY)
         self._register_neuron_population(CeAPopulation.MEDIAL, self.medial_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FORWARD PASS
@@ -274,15 +275,16 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             n_neurons=self.lateral_size,
         )
 
-        g_exc_lat = self.baseline_drive_lateral.clone() + dendrite_lateral.g_exc + ne_boost
-        g_inh_lat = dendrite_lateral.g_inh + int_cel_inh.g_inh
+        g_exc_lat = self.baseline_drive_lateral.clone() + dendrite_lateral.g_ampa + ne_boost
+        g_inh_lat = dendrite_lateral.g_gaba_a + int_cel_inh.g_gaba_a
 
         g_ampa_lat, g_nmda_lat = split_excitatory_conductance(g_exc_lat, nmda_ratio=0.20)
 
         lateral_spikes, _ = self.lateral_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa_lat),
-            g_gaba_a_input=ConductanceTensor(g_inh_lat),
             g_nmda_input=ConductanceTensor(g_nmda_lat),
+            g_gaba_a_input=ConductanceTensor(g_inh_lat),
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
@@ -307,15 +309,16 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             n_neurons=self.medial_size,
         )
 
-        g_exc_med = self.baseline_drive_medial.clone() + dendrite_medial.g_exc + ne_boost
-        g_inh_med = dendrite_medial.g_inh + int_cel_cem.g_inh
+        g_exc_med = self.baseline_drive_medial.clone() + dendrite_medial.g_ampa + ne_boost
+        g_inh_med = dendrite_medial.g_gaba_a + int_cel_cem.g_gaba_a
 
         g_ampa_med, g_nmda_med = split_excitatory_conductance(g_exc_med, nmda_ratio=0.20)
 
         medial_spikes, _ = self.medial_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa_med),
-            g_gaba_a_input=ConductanceTensor(g_inh_med),
             g_nmda_input=ConductanceTensor(g_nmda_med),
+            g_gaba_a_input=ConductanceTensor(g_inh_med),
+            g_gaba_b_input=None,
         )
 
         # Cache for next timestep

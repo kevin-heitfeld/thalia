@@ -17,6 +17,7 @@ from .basal_ganglia import (
 )
 from .brainstem import (
     CerebellumConfig,
+    DorsalRapheNucleusConfig,
     LocusCoeruleusConfig,
     NucleusBasalisConfig,
 )
@@ -26,6 +27,7 @@ from .cortex import (
     PrefrontalConfig,
 )
 from .hippocampus import (
+    EntorhinalCortexConfig,
     HippocampusConfig,
     MedialSeptumConfig,
 )
@@ -50,6 +52,7 @@ __all__ = [
     "VTAConfig",
     # Brainstem configs
     "CerebellumConfig",
+    "DorsalRapheNucleusConfig",
     "LocusCoeruleusConfig",
     "NucleusBasalisConfig",
     # Cortex configs
@@ -57,6 +60,7 @@ __all__ = [
     "CortexConfig",
     "PrefrontalConfig",
     # Hippocampus configs
+    "EntorhinalCortexConfig",
     "HippocampusConfig",
     "MedialSeptumConfig",
     # Thalamus config

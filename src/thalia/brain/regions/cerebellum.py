@@ -254,10 +254,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         self._register_neuron_population(CerebellumPopulation.INFERIOR_OLIVE, self.io_neurons, polarity=PopulationPolarity.EXCITATORY)
         self._register_neuron_population(CerebellumPopulation.PURKINJE, self.purkinje_layer.soma_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        # =====================================================================
-        # POST-INITIALIZATION
-        # =====================================================================
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FORWARD PASS
@@ -284,7 +282,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             synaptic_inputs,
             n_neurons=self.granule_size,
             filter_by_target_population=CerebellumPopulation.GRANULE,
-        ).g_exc
+        ).g_ampa
 
         # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
         # Noise represents stochastic miniature EPSPs from spontaneous vesicle release (conductance, not current)
@@ -296,8 +294,9 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
 
         granule_spikes, _ = self.granule_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=None,  # TODO: No inhibition for now (future: Golgi cells)
             g_nmda_input=ConductanceTensor(g_nmda),
+            g_gaba_a_input=None,  # TODO: No inhibition for now (future: Golgi cells)
+            g_gaba_b_input=None,
         )
 
         # Enforce sparsity (top-k activation) - cerebellar granule cells are VERY sparse (~3%)
@@ -347,7 +346,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=self.purkinje_size,
             filter_by_target_population=CerebellumPopulation.INFERIOR_OLIVE,
         )
-        io_exc = io_external.g_exc  # [purkinje_size] — external error drive
+        io_exc = io_external.g_ampa  # [purkinje_size] — external error drive
         if cfg.baseline_noise_conductance_enabled:
             baseline_drive = 0.004  # Small baseline conductance for ~1 Hz spontaneous firing
             io_g_ampa = ConductanceTensor(io_exc + baseline_drive)
@@ -356,8 +355,9 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
 
         climbing_fiber_spikes, _ = self.io_neurons.forward(
             g_ampa_input=io_g_ampa,
-            g_gaba_a_input=None,
             g_nmda_input=None,
+            g_gaba_a_input=None,
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
@@ -382,7 +382,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             target_population=CerebellumPopulation.DCN,
             receptor_type=ReceptorType.GABA_A,
         )
-        purkinje_conductance = self._integrate_synaptic_inputs_at_dendrites({purkinje_synapse: purkinje_simple_spikes}, n_neurons=self.dcn_size).g_inh
+        purkinje_conductance = self._integrate_synaptic_inputs_at_dendrites({purkinje_synapse: purkinje_simple_spikes}, n_neurons=self.dcn_size).g_gaba_a
 
         mossy_synapse = SynapseId(
             source_region=self.region_name,
@@ -391,7 +391,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             target_population=CerebellumPopulation.DCN,
             receptor_type=ReceptorType.AMPA,
         )
-        dcn_total_excitation = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size).g_exc
+        dcn_total_excitation = self._integrate_synaptic_inputs_at_dendrites({mossy_synapse: mossy_spikes}, n_neurons=self.dcn_size).g_ampa
 
         # DCN spiking: Excitation (mossy + tonic) vs Inhibition (Purkinje)
         # Purkinje provides GABAergic shunting inhibition
@@ -399,8 +399,9 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
 
         dcn_spikes, _ = self.dcn_neurons.forward(
             g_ampa_input=ConductanceTensor(dcn_total_g_ampa),
-            g_gaba_a_input=ConductanceTensor(purkinje_conductance),
             g_nmda_input=ConductanceTensor(dcn_total_g_nmda),
+            g_gaba_a_input=ConductanceTensor(purkinje_conductance),
+            g_gaba_b_input=None,
         )
 
         # ======================================================================

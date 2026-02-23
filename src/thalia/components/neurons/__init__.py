@@ -13,10 +13,16 @@ from .acetylcholine_neuron import (
 from .conductance_lif_neuron import (
     ConductanceLIFConfig,
     ConductanceLIF,
+    TwoCompartmentLIFConfig,
+    TwoCompartmentLIF,
 )
 from .norepinephrine_neuron import (
     NorepinephrineNeuronConfig,
     NorepinephrineNeuron,
+)
+from .serotonin_neuron import (
+    SerotoninNeuronConfig,
+    SerotoninNeuron,
 )
 from .neuron_factory import (
     NeuronFactory,
@@ -27,10 +33,14 @@ __all__ = [
     # Neuron models
     "ConductanceLIFConfig",
     "ConductanceLIF",
+    "TwoCompartmentLIFConfig",
+    "TwoCompartmentLIF",
     "AcetylcholineNeuronConfig",
     "AcetylcholineNeuron",
     "NorepinephrineNeuronConfig",
     "NorepinephrineNeuron",
+    "SerotoninNeuronConfig",
+    "SerotoninNeuron",
     # Neuron factory
     "NeuronFactory",
     "NeuronType",

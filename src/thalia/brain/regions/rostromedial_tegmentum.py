@@ -129,7 +129,8 @@ class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
         # =====================================================================
         self._register_neuron_population(RMTgPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
@@ -146,16 +147,17 @@ class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
             filter_by_target_population=RMTgPopulation.GABA,
         )
 
-        g_exc = self.baseline_drive.clone() + dendrite.g_exc
-        g_inh = dendrite.g_inh
+        g_exc = self.baseline_drive.clone() + dendrite.g_ampa
+        g_gaba_a = dendrite.g_gaba_a
 
         # Fast AMPA-dominant excitation (RMTg needs precise fast responses)
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.05)
 
         gaba_spikes, _ = self.gaba_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh),
             g_nmda_input=ConductanceTensor(g_nmda),
+            g_gaba_a_input=ConductanceTensor(g_gaba_a),
+            g_gaba_b_input=None,
         )
 
         region_outputs: RegionOutput = {

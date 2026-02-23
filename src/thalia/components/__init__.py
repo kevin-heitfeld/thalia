@@ -16,10 +16,14 @@ from .neurons import (
     AcetylcholineNeuron,
     ConductanceLIFConfig,
     ConductanceLIF,
+    TwoCompartmentLIFConfig,
+    TwoCompartmentLIF,
     NeuronFactory,
     NeuronType,
     NorepinephrineNeuronConfig,
     NorepinephrineNeuron,
+    SerotoninNeuronConfig,
+    SerotoninNeuron,
 )
 from .synapses import (
     ShortTermPlasticity,
@@ -38,8 +42,12 @@ __all__ = [
     "AcetylcholineNeuron",
     "ConductanceLIFConfig",
     "ConductanceLIF",
+    "TwoCompartmentLIFConfig",
+    "TwoCompartmentLIF",
     "NorepinephrineNeuronConfig",
     "NorepinephrineNeuron",
+    "SerotoninNeuronConfig",
+    "SerotoninNeuron",
     # Neuron factory
     "NeuronFactory",
     "NeuronType",

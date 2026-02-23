@@ -15,6 +15,8 @@ from thalia.brain.regions.population_names import (
     CeAPopulation,
     CerebellumPopulation,
     CortexPopulation,
+    DRNPopulation,
+    ECPopulation,
     GPePopulation,
     HippocampusPopulation,
     LHbPopulation,
@@ -33,6 +35,7 @@ from thalia.brain.regions.population_names import (
 from thalia.components import STPConfig
 from thalia.components.synapses.stp import (
     CORTICOSTRIATAL_PRESET,
+    MOSSY_FIBER_PRESET,
     SCHAFFER_COLLATERAL_PRESET,
     THALAMO_STRIATAL_PRESET,
 )
@@ -637,9 +640,20 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         CortexPopulation.L6A_PYR: 120,   # 5%  (corticothalamic type I)
         CortexPopulation.L6B_PYR: 750,   # 30% (corticothalamic type II)
     }
+    default_drn_sizes: PopulationSizes = {
+        # Biology: ~100K-200K neurons in humans (~85% serotonergic, ~15% GABAergic).
+        # Scaled to 5K for tractability; 10:1 ratio matches biological composition.
+        DRNPopulation.SEROTONIN: 5000,   # Serotonergic projection neurons (2-4 Hz tonic pacemaker, I_h driven)
+        DRNPopulation.GABA: 500,         # Local GABAergic interneurons (5-HT1A → feedback inhibition)
+    }
     default_gpe_sizes: PopulationSizes = {
         GPePopulation.ARKYPALLIDAL: 700,   # ~25%, project back to striatum (global suppression)
         GPePopulation.PROTOTYPIC: 2000,    # ~75% of GPe, project to STN + SNr (~50 Hz tonic)
+    }
+    default_ec_sizes: PopulationSizes = {
+        ECPopulation.EC_II: 400,    # Layer II stellate cells: grid/place → DG, CA3 (perforant path)
+        ECPopulation.EC_III: 300,   # Layer III pyramidal time cells → CA1 (temporoammonic direct path)
+        ECPopulation.EC_V: 200,     # Layer V output back-projection ← CA1 → neocortex
     }
     default_hippocampus_sizes: PopulationSizes = {
         HippocampusPopulation.DG: 500,   # cortex:hippocampus biological ratio (400:1)
@@ -705,6 +719,8 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     cerebellum_sizes: PopulationSizes = {**default_cerebellum_sizes, **sizes_overrides.get('cerebellum', {})}
     cortex_sensory_sizes: PopulationSizes = {**default_cortex_sensory_sizes, **sizes_overrides.get('cortex_sensory', {})}
     cortex_association_sizes: PopulationSizes = {**default_cortex_association_sizes, **sizes_overrides.get('cortex_association', {})}
+    drn_sizes: PopulationSizes = {**default_drn_sizes, **sizes_overrides.get('dorsal_raphe', {})}
+    ec_sizes: PopulationSizes = {**default_ec_sizes, **sizes_overrides.get('entorhinal_cortex', {})}
     gpe_sizes: PopulationSizes = {**default_gpe_sizes, **sizes_overrides.get('globus_pallidus_externa', {})}
     hippocampus_sizes: PopulationSizes = {**default_hippocampus_sizes, **sizes_overrides.get('hippocampus', {})}
     lhb_sizes: PopulationSizes = {**default_lhb_sizes, **sizes_overrides.get('lateral_habenula', {})}
@@ -734,6 +750,8 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
     builder.add_region("cerebellum", "cerebellum", population_sizes=cerebellum_sizes)
     builder.add_region("cortex_sensory", "cortical_column", population_sizes=cortex_sensory_sizes)
     builder.add_region("cortex_association", "cortical_column", population_sizes=cortex_association_sizes)
+    builder.add_region("dorsal_raphe", "dorsal_raphe", population_sizes=drn_sizes)
+    builder.add_region("entorhinal_cortex", "entorhinal_cortex", population_sizes=ec_sizes)
     builder.add_region("globus_pallidus_externa", "globus_pallidus_externa", population_sizes=gpe_sizes)
     builder.add_region("hippocampus", "hippocampus", population_sizes=hippocampus_sizes)
     builder.add_region("lateral_habenula", "lateral_habenula", population_sizes=lhb_sizes)
@@ -869,34 +887,145 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         weight_scale=0.0001,
     )
 
-    # CorticalColumn ⇄ Hippocampus: Bidirectional memory integration
-    # Entorhinal cortex ↔ hippocampus: moderately myelinated
-    # Distance: ~3-5cm, conduction velocity: ~5-10 m/s → 5-8ms delay
+    # =========================================================================
+    # CorticalColumn → EntorhinalCortex → Hippocampus: Bidirectional memory integration
+    # All neocortical signals enter hippocampus via entorhinal cortex (EC) gateway.
+    # =========================================================================
+
+    # Sensory cortex L5 → EC_II  (spatial/sensory context → perforant path)
+    # Moderately myelinated; distance ~3-5 cm, velocity ~5-10 m/s → 5-7 ms delay
     builder.connect(
         synapse_id=SynapseId(
             source_region="cortex_sensory",
             source_population=CortexPopulation.L5_PYR,
+            target_region="entorhinal_cortex",
+            target_population=ECPopulation.EC_II,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=6.0,
+        axonal_delay_std_ms=9.0,
+        connectivity=0.3,
+        weight_scale=0.0006,
+    )
+
+    # Association cortex L2/3 → EC_II  (semantic / multi-modal context → perforant path)
+    # Association cortex is the primary driver of EC layer II grid cells.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_association",
+            source_population=CortexPopulation.L23_PYR,
+            target_region="entorhinal_cortex",
+            target_population=ECPopulation.EC_II,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=7.5,
+        connectivity=0.35,
+        weight_scale=0.0006,
+    )
+
+    # Association cortex L2/3 → EC_III  (temporal / semantic context → temporoammonic path)
+    # EC layer III time cells receive strong association cortex input.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="cortex_association",
+            source_population=CortexPopulation.L23_PYR,
+            target_region="entorhinal_cortex",
+            target_population=ECPopulation.EC_III,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=7.5,
+        connectivity=0.30,
+        weight_scale=0.0005,
+    )
+
+    # EC_II → Hippocampus DG  (perforant path — principal input, facilitating STP)
+    # Outer molecular layer: sparse, 15-20 % connectivity.
+    # MOSSY_FIBER facilitating STP approximates the burst-then-fade characteristic
+    # of true perforant path EPSPs at DG granule cells.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="entorhinal_cortex",
+            source_population=ECPopulation.EC_II,
             target_region="hippocampus",
             target_population=HippocampusPopulation.DG,
             receptor_type=ReceptorType.AMPA,
         ),
-        axonal_delay_ms=6.5,
-        axonal_delay_std_ms=10.0,
-        connectivity=0.3,
-        weight_scale=0.0005,
+        axonal_delay_ms=3.0,
+        axonal_delay_std_ms=4.5,
+        connectivity=0.25,
+        weight_scale=0.0008,
+        stp_config=MOSSY_FIBER_PRESET.configure(),
     )
+
+    # EC_II → Hippocampus CA3  (direct perforant path to CA3 — less sparse)
+    # Stratum lacunosum-moleculare projection; weaker than DG perforant.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="entorhinal_cortex",
+            source_population=ECPopulation.EC_II,
+            target_region="hippocampus",
+            target_population=HippocampusPopulation.CA3,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.5,
+        axonal_delay_std_ms=5.0,
+        connectivity=0.20,
+        weight_scale=0.0005,
+        stp_config=MOSSY_FIBER_PRESET.configure(),
+    )
+
+    # EC_III → Hippocampus CA1  (temporoammonic direct path — depressing STP)
+    # Distal apical dendrites of CA1; bypasses DG/CA3 (direct path).
+    # Depression emphasizes novelty: strong initial pulse, then adapts.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="entorhinal_cortex",
+            source_population=ECPopulation.EC_III,
+            target_region="hippocampus",
+            target_population=HippocampusPopulation.CA1,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=4.0,
+        axonal_delay_std_ms=6.0,
+        connectivity=0.25,
+        weight_scale=0.0006,
+        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),  # Depressing (U=0.5)
+    )
+
+    # Hippocampus CA1 → EC_V  (back-projection — memory index to layer V)
+    # Subicular / CA1 axons ascend to entorhinal layer V.
+    # ~3 ms synaptic latency; moderate connectivity.
     builder.connect(
         synapse_id=SynapseId(
             source_region="hippocampus",
             source_population=HippocampusPopulation.CA1,
-            target_region="cortex_sensory",
-            target_population=CortexPopulation.L5_PYR,
+            target_region="entorhinal_cortex",
+            target_population=ECPopulation.EC_V,
             receptor_type=ReceptorType.AMPA,
         ),
-        axonal_delay_ms=6.5,
-        axonal_delay_std_ms=10.0,
-        connectivity=0.3,
-        weight_scale=0.0001,
+        axonal_delay_ms=3.0,
+        axonal_delay_std_ms=4.5,
+        connectivity=0.30,
+        weight_scale=0.0004,
+    )
+
+    # EC_V → Association cortex L2/3  (memory indexing output → cortical consolidation)
+    # EC layer V neurons broadcast the compressed hippocampal memory index back to
+    # neocortex, driving systems consolidation during offline replay.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="entorhinal_cortex",
+            source_population=ECPopulation.EC_V,
+            target_region="cortex_association",
+            target_population=CortexPopulation.L23_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=6.0,
+        axonal_delay_std_ms=9.0,
+        connectivity=0.25,
+        weight_scale=0.0003,
     )
 
     # Association → PFC: Higher-level integrated representations drive executive control
@@ -1250,6 +1379,26 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         weight_scale=0.000025,
     )
 
+    # GPe PROTOTYPIC → STN: Slow GABA_B component (metabotropic K⁺ channel)
+    # GABA_B provides late-onset (~100ms), long-duration (~400ms) inhibitory tail,
+    # underlying sustained STN suppression and post-inhibitory rebound burst timing.
+    # Critical for beta-oscillation power and the hyperdirect pathway suppression window.
+    # Biology: Same GPe→STN axons release sufficient GABA to activate metabotropic receptors
+    #          at high-frequency bursts; GABA_B requires higher [GABA] than GABA_A.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="globus_pallidus_externa",
+            source_population=GPePopulation.PROTOTYPIC,
+            target_region="subthalamic_nucleus",
+            target_population=STNPopulation.STN,
+            receptor_type=ReceptorType.GABA_B,
+        ),
+        axonal_delay_ms=4.0,
+        axonal_delay_std_ms=6.0,
+        connectivity=0.4,
+        weight_scale=0.000015,
+    )
+
     # STN → GPe PROTOTYPIC: Excitatory feedback (closes GPe-STN loop)
     # STN bursts re-excite GPe, sustaining the oscillatory sub-second loop
     # Biology: Glutamatergic, moderately myelinated → 3-5ms delay
@@ -1452,6 +1601,29 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         weight_scale=0.00008,
     )
 
+    # SNr → VTA DA_MESOLIMBIC: Direct value-feedback path for full TD error
+    # This connection delivers SNr spikes to VTA so that VTA.forward() can decode
+    # V(s) = 1 − SNr_rate / 2·baseline (inverse coding: high SNr = low value).
+    # VTA reads the raw spike tensor but does NOT integrate the GABA_A conductance —
+    # value decoding is done by the explicit scan in forward().
+    # Biology: SNr collaterals to VTA are documented (Tepper et al. 1995; Paladini &
+    # Tepper 1999); this pathway provides a direct value estimate bypassing the
+    # multi-synapse LHb→RMTg→VTA delay chain (~8–12 ms vs ~2 ms here).
+    # Distance: ~0.5–1 cm (same midbrain region) → 1–2 ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="substantia_nigra",
+            source_population=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            target_region="vta",
+            target_population=VTAPopulation.DA_MESOLIMBIC,
+            receptor_type=ReceptorType.GABA_A,
+        ),
+        axonal_delay_ms=1.5,
+        axonal_delay_std_ms=2.0,
+        connectivity=0.4,
+        weight_scale=0.00001,  # Very weak — spikes are decoded, not integrated as conductance
+    )
+
     # LHb → RMTg: Aversive signal drives GABAergic pause mediator
     # Biology: Glutamatergic LHb→RMTg (heaviest known projection from LHb)
     # Distance: ~0.5-1cm (adjacent brainstem structures) → 1-3ms delay
@@ -1571,6 +1743,57 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
         axonal_delay_std_ms=10.0,
         connectivity=0.3,
         weight_scale=0.0002,
+    )
+
+    # BLA PRINCIPAL → NB: Emotional salience drives ACh encoding-mode bursts
+    # BLA principal neurons respond to unexpected or aversive stimuli (US, threat).
+    # High BLA activity signals a salient, emotionally significant event →
+    # strong prediction error → NB bursts ACh → cortex/hippocampus encode the event.
+    # This is the direct basal-forebrain projection of the BLA described in
+    # Zaborszky et al. (2015) and Holland & Gallagher (1999).
+    # Distance: amygdala → basal forebrain ~2-4 cm, moderately myelinated → 5-8ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="basolateral_amygdala",
+            source_population=BLAPopulation.PRINCIPAL,
+            target_region="nucleus_basalis",
+            target_population=NucleusBasalisPopulation.ACH,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=6.0,
+        axonal_delay_std_ms=9.0,
+        connectivity=0.2,
+        weight_scale=0.0003,
+    )
+
+    # =============================================================================
+    # SPIKING SEROTONIN SYSTEM (Dorsal Raphe Nucleus)
+    # =============================================================================
+    # DRN 5-HT neurons: 2-4 Hz tonic pacemaking (I_h driven), suppressed by LHb.
+    # Serotonin broadcasts patience/mood signals to striatum, PFC, hippocampus, and
+    # BLA via the '5ht' neuromodulator hub (wired automatically from neuromodulator_outputs).
+    # This section provides the inhibitory input that drives 5-HT pauses.
+
+    # LHb → DRN SEROTONIN: Punishment / negative RPE → 5-HT pause
+    # LHb principal (glutamatergic) projects heavily to DRN.
+    # In DorsalRapheNucleus.forward() the LHb spike rate is converted to a negative
+    # serotonin drive via `lhb_inhibition_gain`: high LHb activity → 5-HT pause.
+    # Biology: Vertes & Linley (2008), Stern et al. (2017) — one of the strongest
+    #          LHb output projections; monosynaptically suppresses 5-HT neurons
+    #          via local GABA interneurons.
+    # Distance: ~1-2cm (adjacent midbrain structures) → 2-4ms delay
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="lateral_habenula",
+            source_population=LHbPopulation.PRINCIPAL,
+            target_region="dorsal_raphe",
+            target_population=DRNPopulation.SEROTONIN,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.0,
+        axonal_delay_std_ms=4.5,
+        connectivity=0.5,
+        weight_scale=0.001,
     )
 
     # =============================================================================
@@ -1721,13 +1944,6 @@ def _build_default(builder: BrainBuilder, **overrides: Any) -> None:
 # Register built-in presets
 BrainBuilder.register_preset(
     name="default",
-    description=(
-        "Default biologically realistic brain architecture with 12 regions, "
-        "population sizes based on primate data, and axonal delays reflecting "
-        "conduction velocities and distances. Includes spiking dopamine, norepinephrine, "
-        "and acetylcholine systems for neuromodulation. Recurrent connections are "
-        "externalized for biological accuracy. Suitable for modeling a wide range of "
-        "cognitive tasks with realistic neural dynamics."
-    ),
+    description="Default preset",
     builder_fn=_build_default,
 )

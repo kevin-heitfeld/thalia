@@ -8,6 +8,140 @@ from .neural_region import NeuralRegionConfig
 
 
 @dataclass
+class EntorhinalCortexConfig(NeuralRegionConfig):
+    """Configuration for entorhinal cortex — hippocampal gateway.
+
+    The entorhinal cortex (EC) is the primary interface between neocortex and
+    the hippocampal formation.  It provides spatial and temporal context via two
+    anatomically distinct pathways:
+
+    **Perforant path (EC_II → DG, CA3)**
+        Layer II stellate cells project strongly to dentate gyrus granule cells
+        and less densely to CA3.  This pathway carries allocentric spatial
+        information (grid cells) and drives pattern separation in DG.
+        Synapses are initially facilitating, reflecting the high-frequency grid
+        cell bursts during active exploration.
+
+    **Temporoammonic path (EC_III → CA1)**
+        Layer III pyramidal cells bypass the trisynaptic loop and project
+        directly to CA1 distal dendrites.  This pathway is thought to carry
+        a "current sensory context" signal that disambiguates retrieved memories
+        from ongoing perception.  Synapses are initially depressing (novelty
+        emphasis; strong initial drive, then adaptation).
+
+    **Back-projection (CA1 → EC_V → cortex)**
+        Layer V neurons integrate CA1 outputs and relay the compressed memory
+        index back to association cortex, closing the hippocortico-neocortical
+        loop essential for memory consolidation.
+
+    Key features:
+    - Grid-cell–like tiling (approximated by heterogeneous noise-driven LIF)
+    - Layer-specific STP (facilitating perforant; depressing temporoammonic)
+    - Direct CA1 readout pathway for memory-indexing output to cortex
+
+    References:
+    - Hafting et al. (2005): Grid cells in entorhinal cortex
+    - Amaral & Witter (1989): Three-dimensional organisation of the hippocampal
+      formation — a review of anatomical data
+    - Brun et al. (2008): Impaired spatial representation in the dentate gyrus
+      following entorhinal cortex lesions
+    - Deshmukh & Knierim (2011): Representation of non-spatial and spatial
+      information in the lateral entorhinal cortex
+    """
+
+    # =========================================================================
+    # EC_II — PERFORANT PATH (Grid/Place cells → DG, CA3)
+    # =========================================================================
+    ec_ii_tau_mem_ms: float = 20.0
+    """EC layer II stellate cell membrane time constant (ms).
+
+    Stellate cells have relatively fast integration (~20 ms) consistent
+    with their role as feedforward relay neurons.
+    """
+
+    ec_ii_threshold: float = 1.1
+    """EC_II firing threshold (normalised).
+
+    Slightly below CA3 threshold — EC drives hippocampus, not the other
+    way around.
+    """
+
+    ec_ii_adapt_increment: float = 0.15
+    """Spike-frequency adaptation increment for EC_II neurons.
+
+    Moderate adaptation to prevent sustained high-rate responses; grid cells
+    show burst-then-adapt firing at field crossing.
+    """
+
+    ec_ii_adapt_tau_ms: float = 100.0
+    """EC_II adaptation decay time constant (ms)."""
+
+    ec_ii_tonic_drive: float = 0.02
+    """Background excitatory conductance to EC_II (maintains low tonic activity).
+
+    Models the persistent depolarisation from layer I inputs and recurrent
+    EC activity.  Value is normalised input conductance per neuron.
+    """
+
+    # =========================================================================
+    # EC_III — TEMPOROAMMONIC PATH (Time cells → CA1)
+    # =========================================================================
+    ec_iii_tau_mem_ms: float = 25.0
+    """EC layer III pyramidal cell membrane time constant (ms).
+
+    Layer III cells are larger, slower integrators than layer II stellate
+    cells.  Their longer time constant (~25 ms) supports the temporal coding
+    required for 'time cell' activity along the theta cycle.
+    """
+
+    ec_iii_threshold: float = 1.2
+    """EC_III firing threshold (normalised)."""
+
+    ec_iii_adapt_increment: float = 0.20
+    """EC_III adaptation increment.  Slightly stronger than EC_II to implement
+    the depressing (novelty-emphasis) character of the temporoammonic synapse.
+    """
+
+    ec_iii_adapt_tau_ms: float = 80.0
+    """EC_III adaptation decay time constant (ms)."""
+
+    ec_iii_tonic_drive: float = 0.015
+    """Background excitatory conductance to EC_III (lower than EC_II;
+    time-cell activity is sparser).
+    """
+
+    # =========================================================================
+    # EC_V — BACK-PROJECTION (Receives CA1 → outputs to cortex)
+    # =========================================================================
+    ec_v_tau_mem_ms: float = 30.0
+    """EC layer V pyramidal cell membrane time constant (ms).
+
+    Deeper-layer cells tend to be larger with slower integration, consistent
+    with their role aggregating hippocampal outputs over several theta cycles.
+    """
+
+    ec_v_threshold: float = 1.15
+    """EC_V firing threshold (normalised)."""
+
+    ec_v_adapt_increment: float = 0.12
+    """EC_V adaptation increment.  Mild — layer V cells maintain moderate
+    sustained activity to drive cortical consolidation.
+    """
+
+    ec_v_adapt_tau_ms: float = 150.0
+    """EC_V adaptation decay time constant (ms).
+
+    Long adaptation time constant supports persistent activity over
+    multiple theta cycles, acting as a short-term memory buffer.
+    """
+
+    ec_v_tonic_drive: float = 0.01
+    """Background excitatory conductance to EC_V (very low — driven mainly
+    by CA1 back-projection input rather than tonic drive).
+    """
+
+
+@dataclass
 class HippocampusConfig(NeuralRegionConfig):
     """Configuration for hippocampus (trisynaptic circuit).
 

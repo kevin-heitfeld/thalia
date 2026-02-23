@@ -58,10 +58,15 @@ Use when: You need to model sensory input pathways
 
 from __future__ import annotations
 
+from .neural_region import NeuralRegion
+from .neuromodulator_source_region import NeuromodulatorSourceRegion
+
 from .basolateral_amygdala import BasolateralAmygdala
 from .central_amygdala import CentralAmygdala
 from .cerebellum import Cerebellum
 from .cortical_column import CorticalColumn
+from .dorsal_raphe import DorsalRapheNucleus
+from .entorhinal_cortex import EntorhinalCortex
 from .globus_pallidus_externa import GlobusPallidusExterna
 from .hippocampus import Hippocampus
 from .lateral_habenula import LateralHabenula
@@ -77,18 +82,20 @@ from .subthalamic_nucleus import SubthalamicNucleus
 from .thalamus import Thalamus
 from .vta import VTA
 
-from .neural_region import NeuralRegion
 from .region_registry import NeuralRegionRegistry, register_region
 from .stimulus_gating import StimulusGating
 
 __all__ = [
     # Base Neural Region
     "NeuralRegion",
+    "NeuromodulatorSourceRegion",
     # Regions
     "BasolateralAmygdala",
     "CentralAmygdala",
     "Cerebellum",
     "CorticalColumn",
+    "DorsalRapheNucleus",
+    "EntorhinalCortex",
     "GlobusPallidusExterna",
     "Hippocampus",
     "LateralHabenula",

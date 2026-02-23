@@ -58,16 +58,16 @@ Striatum (learns Q-values) → SNr (encodes V) → VTA (computes RPE) → Striat
 
 **Implementation Notes:**
 =========================
-Current State:
-- Simplified RPE: δ ≈ r - V(s) (no next-state value)
-- SNr provides V(s) estimate via firing rate
+Current implementation:
+- Full TD error: δ = r + γ·V(s’) − V(s)
+- V(s) decoded from SNr firing rate (inverse coding: high SNr = low value)
+- V(s’) via ``CircularDelayBuffer`` tracking SNr value history (configurable lag)
+- Anticipatory DA ramp (Howe et al. 2013): tonic DA rises during reward approach
 - Two DA sub-populations: mesolimbic (reward/motivation) + mesocortical (PFC arousal)
 - Mesolimbic has D2 somatodendritic autoreceptors; mesocortical does not
-- LHb → RMTg → VTA inhibitory pause pathway implemented
-
-Planned Enhancements (Phase 2):
-- Full TD: Include V(s') from eligibility traces
-- PFC → VTA contextual modulation
+- LHb → RMTg → VTA inhibitory pause pathway (negative RPE)
+- Requires SNr → VTA GABA_A connection in brain builder for V(s) decoding;
+  gracefully degrades to δ ≈ r if no SNr connection is present
 """
 
 from __future__ import annotations
@@ -80,8 +80,6 @@ from thalia.brain.configs import VTAConfig
 from thalia.components import (
     ConductanceLIFConfig,
     ConductanceLIF,
-    NeuronFactory,
-    NeuronType,
 )
 from thalia.typing import (
     ConductanceTensor,
@@ -95,9 +93,9 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
+from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
 
-from .neural_region import NeuralRegion
+from .neuromodulator_source_region import NeuromodulatorSourceRegion
 from .population_names import VTAPopulation
 from .region_registry import register_region
 
@@ -110,7 +108,7 @@ from .region_registry import register_region
     author="Thalia Project",
     config_class=VTAConfig,
 )
-class VTA(NeuralRegion[VTAConfig]):
+class VTA(NeuromodulatorSourceRegion[VTAConfig]):
     """Ventral Tegmental Area - Dopamine Reward Prediction Error System.
 
     Computes reward prediction errors (RPE) and broadcasts dopamine signals
@@ -214,13 +212,7 @@ class VTA(NeuralRegion[VTAConfig]):
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
-        self.gaba_neurons = NeuronFactory.create(
-            region_name=self.region_name,
-            population_name=VTAPopulation.GABA,
-            neuron_type=NeuronType.FAST_SPIKING,
-            n_neurons=self.gaba_neurons_size,
-            device=self.device,
-        )
+        self._init_gaba_interneurons(VTAPopulation.GABA, self.gaba_neurons_size)
 
         # D2 somatodendritic autoreceptors — MESOLIMBIC ONLY
         # Exponential moving average of per-neuron DA firing rate (one-step lag).
@@ -229,6 +221,29 @@ class VTA(NeuralRegion[VTAConfig]):
             "_prev_mesolimbic_spike_rate",
             torch.zeros(self.da_mesolimbic_size, device=self.device),
         )
+
+        # -----------------------------------------------------------------------
+        # V(s') ring buffer — full TD error: δ = r + γ·V(s') − V(s)
+        # Stores the SNr-decoded scalar value estimate as a float over time.
+        # V(s') = buffer read ``value_lag_steps`` steps ago.
+        # -----------------------------------------------------------------------
+        self._value_lag_steps: int = max(1, int(config.value_lag_ms / config.dt_ms))
+        self._snr_rate_buffer = CircularDelayBuffer(
+            max_delay=self._value_lag_steps,
+            size=1,
+            device=self.device,
+            dtype=torch.float32,
+        )
+
+        # -----------------------------------------------------------------------
+        # DA ramp — anticipatory reward signal (Howe et al. 2013)
+        # Slowly builds up each step without reward; resets on reward delivery.
+        # -----------------------------------------------------------------------
+        if config.da_ramp_enabled:
+            self.register_buffer(
+                "_da_ramp_signal",
+                torch.zeros(1, device=self.device),
+            )
 
         # Adaptive normalization state
         if config.rpe_normalization:
@@ -240,21 +255,29 @@ class VTA(NeuralRegion[VTAConfig]):
         # =====================================================================
         self._register_neuron_population(VTAPopulation.DA_MESOLIMBIC, self.da_mesolimbic_neurons, polarity=PopulationPolarity.ANY)
         self._register_neuron_population(VTAPopulation.DA_MESOCORTICAL, self.da_mesocortical_neurons, polarity=PopulationPolarity.ANY)
-        self._register_neuron_population(VTAPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Compute RPE and drive both DA sub-populations to burst/pause.
+        """Compute full TD RPE and drive both DA sub-populations to burst/pause.
 
-        Mesolimbic and mesocortical neurons receive the same RPE-driven drive but differ
-        in autoreceptor feedback and baseline rate.  Both are inhibited by RMTg (negative
-        RPE pathway).  Only mesolimbic neurons have D2 autoreceptor state.
+        Implements the canonical temporal-difference error:
+
+            δ = r + γ·V(s’) − V(s)
+
+        where V(s) is decoded from the current SNr firing rate (high SNr = low value)
+        and V(s’) is the same quantity lagged by ``config.value_lag_ms``.  If no SNr
+        connection is present, the system falls back to δ ≈ r.
+
+        An anticipatory DA ramp (Howe et al. 2013) slowly builds tonic drive across
+        unrewarded steps and resets on reward delivery, providing additional temporal
+        credit beyond eligibility-trace windows.
 
         Args:
-            synaptic_inputs: Reward signal (injected by DynamicBrain.deliver_reward()), RMTg GABA
-            neuromodulator_inputs: Not consumed (VTA is a neuromodulator source, not consumer)
+            synaptic_inputs: Reward signal, RMTg GABA pauses, optional SNr GABA_A
+            neuromodulator_inputs: Not consumed (VTA is a neuromodulator source)
         """
         self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
@@ -265,8 +288,55 @@ class VTA(NeuralRegion[VTAConfig]):
         reward_spikes = synaptic_inputs.get(reward_synapse, None)
         reward = self._decode_reward(reward_spikes)
 
-        # Positive RPE path: reward — negative RPE handled by RMTg→VTA GABA pause.
-        rpe = reward
+        # =====================================================================
+        # FULL TD ERROR: δ = r + γ·V(s’) − V(s)
+        # V(s) is decoded from current SNr firing rate (high SNr = suppressed
+        # action = low value).  V(s’) is the same signal ``value_lag_steps`` ago.
+        # Falls back to δ ≈ r if no SNr connection is present.
+        # =====================================================================
+
+        # Extract SNr spikes (any SynapseId whose source_region is "substantia_nigra")
+        snr_spikes: Optional[torch.Tensor] = None
+        for sid, spikes in synaptic_inputs.items():
+            if sid.source_region == "substantia_nigra":
+                snr_spikes = spikes
+                break
+
+        V_s = self._decode_value(snr_spikes)  # Current state value [0, 1]
+
+        if self._value_lag_steps > 0:
+            # V(s’): read lagged value BEFORE writing current, so the buffer always
+            # returns the state estimate from ``value_lag_steps`` timesteps ago.
+            V_s_prime_tensor = self._snr_rate_buffer.read(self._value_lag_steps)  # [1]
+            V_s_prime = float(V_s_prime_tensor.item())
+            # Now write current V(s) into buffer
+            self._snr_rate_buffer.write(
+                torch.tensor([V_s], dtype=torch.float32, device=self.device)
+            )
+        else:
+            V_s_prime = 0.0
+
+        # Full temporal-difference error
+        rpe = reward + self.config.gamma * V_s_prime - V_s
+
+        # =====================================================================
+        # DA RAMP — anticipatory reward signal
+        # =====================================================================
+        ramp: float = 0.0
+        if self.config.da_ramp_enabled:
+            if reward > 0:
+                # Reward received: reset ramp (dopamine ramp collapses post-reward)
+                self._da_ramp_signal.fill_(0.0)
+            else:
+                # No reward: build anticipatory ramp (bounded exponential rise)
+                decay = 1.0 - self.config.dt_ms / self.config.da_ramp_tau_ms
+                self._da_ramp_signal.mul_(decay).add_(
+                    torch.tensor(
+                        [self.config.da_ramp_gain * self.config.dt_ms],
+                        dtype=torch.float32, device=self.device,
+                    )
+                )
+            ramp = float(self._da_ramp_signal.item())
 
         if self.config.rpe_normalization:
             self._rpe_count += 1
@@ -296,6 +366,10 @@ class VTA(NeuralRegion[VTAConfig]):
             autoreceptor_suppression = self.config.d2_autoreceptor_gain * self._prev_mesolimbic_spike_rate
             ml_baseline = (ml_baseline * (1.0 - autoreceptor_suppression)).clamp(min=0.0)
 
+        # Anticipatory DA ramp (mesolimbic: full ramp amplitude)
+        if ramp > 0.0:
+            ml_baseline = ml_baseline + ramp
+
         ml_g_ampa, ml_g_nmda = split_excitatory_conductance(ml_baseline, nmda_ratio=0.30)
 
         # RMTg inhibition targeting mesolimbic neurons specifically
@@ -308,8 +382,9 @@ class VTA(NeuralRegion[VTAConfig]):
 
         ml_spikes, _ = self.da_mesolimbic_neurons.forward(
             g_ampa_input=ConductanceTensor(ml_g_ampa),
-            g_gaba_a_input=ConductanceTensor(rmtg_ml.g_inh),
             g_nmda_input=ConductanceTensor(ml_g_nmda),
+            g_gaba_a_input=ConductanceTensor(rmtg_ml.g_gaba_a),
+            g_gaba_b_input=None,
         )
 
         # Update D2 autoreceptor EMA (mesolimbic only; ~10ms tau at 1ms dt)
@@ -333,6 +408,11 @@ class VTA(NeuralRegion[VTAConfig]):
             mc_baseline = mc_baseline + rpe_exc * rpe_jitter
         # No D2 autoreceptor suppression for mesocortical neurons
 
+        # Anticipatory DA ramp (mesocortical: 50% amplitude, models weaker ramp
+        # in PFC-projecting neurons; less reward-driven than mesolimbic)
+        if ramp > 0.0:
+            mc_baseline = mc_baseline + ramp * 0.5
+
         mc_g_ampa, mc_g_nmda = split_excitatory_conductance(mc_baseline, nmda_ratio=0.30)
 
         # RMTg inhibition targeting mesocortical neurons specifically
@@ -345,25 +425,17 @@ class VTA(NeuralRegion[VTAConfig]):
 
         mc_spikes, _ = self.da_mesocortical_neurons.forward(
             g_ampa_input=ConductanceTensor(mc_g_ampa),
-            g_gaba_a_input=ConductanceTensor(rmtg_mc.g_inh),
             g_nmda_input=ConductanceTensor(mc_g_nmda),
+            g_gaba_a_input=ConductanceTensor(rmtg_mc.g_gaba_a),
+            g_gaba_b_input=None,
         )
 
         # =====================================================================
         # GABA INTERNEURONS (homeostatic control of both DA sub-populations)
         # =====================================================================
-        baseline_gaba_drive = 0.5
-        # Total DA activity drives GABA interneurons
+        # Total DA activity (average of both sub-populations) drives GABA interneurons
         da_activity = (ml_spikes.float().mean() + mc_spikes.float().mean()).item() * 0.5
-        gaba_drive = torch.full(
-            (self.gaba_neurons_size,), baseline_gaba_drive + da_activity, device=self.device
-        )
-        gaba_g_ampa, gaba_g_nmda = split_excitatory_conductance(gaba_drive, nmda_ratio=0.3)
-        gaba_spikes, _gaba_membrane = self.gaba_neurons.forward(
-            g_ampa_input=ConductanceTensor(gaba_g_ampa),
-            g_gaba_a_input=None,
-            g_nmda_input=ConductanceTensor(gaba_g_nmda),
-        )
+        gaba_spikes = self._step_gaba_interneurons(da_activity)
 
         region_outputs: RegionOutput = {
             VTAPopulation.DA_MESOLIMBIC: ml_spikes,
@@ -372,6 +444,18 @@ class VTA(NeuralRegion[VTAConfig]):
         }
 
         return self._post_forward(region_outputs)
+
+    def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
+        """VTA GABA drive: fixed 0.5 baseline + 1.0× average DA feedback.
+
+        VTA uses a higher baseline (0.5) than the default (0.3) reflecting the
+        spontaneously active GABAergic interneurons observed in VTA (Margolis
+        et al. 2012). The baseline is not gated by
+        ``baseline_noise_conductance_enabled``; it is always present.
+        """
+        return torch.full(
+            (self.gaba_neurons_size,), 0.5 + primary_activity, device=self.device
+        )
 
     def _decode_reward(self, reward_spikes: Optional[torch.Tensor]) -> float:
         """Decode reward value from population spike pattern.

@@ -42,17 +42,17 @@ Biological Basis:
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List
 
 import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import PrefrontalConfig
 from thalia.components import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
     NeuromodulatorReceptor,
     STPConfig,
+    TwoCompartmentLIF,
+    TwoCompartmentLIFConfig,
     WeightInitializer,
 )
 from thalia.learning import STDPConfig, STDPStrategy
@@ -225,18 +225,32 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         self.register_buffer("_d1_neurons", torch.arange(n_d1, device=self.device), persistent=False)
         self.register_buffer("_d2_neurons", torch.arange(n_d1, self.executive_size, device=self.device), persistent=False)
 
-        self.neurons = ConductanceLIF(
+        # Two-compartment pyramidal neurons for executive/WM population.
+        # Basal dendrites integrate recurrent excitation and feedforward inputs;
+        # apical compartment provides the dendritic substrate for top-down
+        # feedback and Ca²⁺-spike-based burst-mode working memory maintenance.
+        # Biology: Layer 2/3 and layer 5 PFC pyramidal cells are two-compartment
+        # (Larkum et al. 1999; Wang 2001); apical tuft is critical for WM persistence.
+        self.neurons = TwoCompartmentLIF(
             n_neurons=self.executive_size,
-            config=ConductanceLIFConfig(
+            config=TwoCompartmentLIFConfig(
                 region_name=self.region_name,
                 population_name=PrefrontalPopulation.EXECUTIVE,
                 device=self.device,
-                tau_mem=wm_properties["tau_mem"],  # Per-neuron tensor (100-500ms)!
-                g_L=0.02,  # Leak conductance (will work with per-neuron tau_mem in dynamics)
+                tau_mem=wm_properties["tau_mem"],  # Per-neuron tensor (100–500ms)!
+                g_L=0.02,
                 tau_E=10.0,  # Slower excitatory (for integration)
                 tau_I=15.0,  # Slower inhibitory
                 adapt_increment=self.config.adapt_increment,  # SFA enabled!
                 tau_adapt=self.config.adapt_tau,
+                # Two-compartment parameters
+                g_c=0.03,        # moderate soma–dendrite coupling
+                C_d=0.5,         # dendritic capacitance
+                g_L_d=0.02,      # slow dendritic leak (matches somatic)
+                bap_amplitude=0.3,
+                theta_Ca=2.0,
+                g_Ca_spike=0.25,  # moderate Ca²⁺ spike for PFC burst dynamics
+                tau_Ca_ms=30.0,   # slightly slower for WM integration
             ),
         )
 
@@ -391,10 +405,12 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # =====================================================================
         self._register_neuron_population(PrefrontalPopulation.EXECUTIVE, self.neurons, polarity=PopulationPolarity.EXCITATORY)
 
-        # =====================================================================
-        # POST-INITIALIZATION
-        # =====================================================================
-        self.__post_init__()
+        # PFC per-forward learning state (populated during forward; used by _get_learning_kwargs)
+        self._pfc_effective_lr: float = 0.0
+        self._pfc_da_modulation: float = 0.0
+
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FORWARD PASS
@@ -447,7 +463,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # Use base class helper for standardized multi-source integration
         # Apply per-source STP for temporal filtering and gain control
         # No modulation callback needed (unlike cortex's alpha suppression)
-        ff_input = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.executive_size).g_exc
+        ff_input = self._integrate_synaptic_inputs_at_dendrites(synaptic_inputs, n_neurons=self.executive_size).g_ampa
 
         # =====================================================================
         # NOREPINEPHRINE GAIN MODULATION (Locus Coeruleus)
@@ -508,10 +524,16 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         g_inh = g_inh.clamp(min=0)
 
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.2)
-        output_spikes, _ = self.neurons.forward(
-            g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh),
-            g_nmda_input=ConductanceTensor(g_nmda),
+        # Two-compartment forward: all current inputs are somatic/basal;
+        # apical compartment is available for future top-down feedback connections.
+        output_spikes, _, _ = self.neurons.forward(
+            g_ampa_basal=ConductanceTensor(g_ampa),
+            g_nmda_basal=ConductanceTensor(g_nmda),
+            g_gaba_a_basal=ConductanceTensor(g_inh),
+            g_gaba_b_basal=None,
+            g_ampa_apical=None,
+            g_nmda_apical=None,
+            g_gaba_a_apical=None,
         )
 
         # =====================================================================
@@ -586,19 +608,14 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             da_modulation = self._da_concentration.mean().item()
             effective_lr = cfg.learning_rate * (1.0 + da_modulation)
 
+            # Cache for _get_learning_kwargs (called automatically by _post_forward)
+            self._pfc_effective_lr = effective_lr
+            self._pfc_da_modulation = da_modulation
+
             # Register strategies lazily for all feedforward inputs
             for synapse_id in synaptic_inputs:
                 if self.get_learning_strategy(synapse_id) is None:
                     self._add_learning_strategy(synapse_id, self._stdp_strategy)
-
-            # Apply per-source STDP learning to feedforward connections
-            self._apply_all_learning(
-                synaptic_inputs, region_outputs,
-                kwargs_provider=lambda _: {
-                    "learning_rate": effective_lr,
-                    "neuromodulator": da_modulation,
-                },
-            )
 
             # ======================================================================
             # RECURRENT WEIGHT LEARNING: Strengthen active WM patterns
@@ -658,6 +675,9 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
     # =========================================================================
+
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        return {"learning_rate": self._pfc_effective_lr, "neuromodulator": self._pfc_da_modulation}
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update temporal parameters when brain timestep changes.

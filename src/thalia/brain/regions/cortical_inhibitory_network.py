@@ -68,7 +68,7 @@ import torch
 import torch.nn as nn
 
 from thalia import GlobalConfig
-from thalia.components import NeuronFactory, WeightInitializer
+from thalia.components import NeuronFactory, NeuromodulatorReceptor, WeightInitializer
 from thalia.typing import ConductanceTensor, PopulationName, RegionName
 from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
 
@@ -271,13 +271,48 @@ class CorticalInhibitoryNetwork(nn.Module):
             device=device,
         )
 
-        # VIP → SST (strong disinhibition - primary VIP target)
+        # VIP → SST (strong disinhibition - primary VIP target, ~80% per Pfeffer et al. 2013)
         self.w_vip_sst = WeightInitializer.sparse_gaussian(
             n_input=self.vip_size,
             n_output=self.sst_size,
-            connectivity=0.7,
+            connectivity=0.8,
             mean=0.0015,
             std=0.003,
+            device=device,
+        )
+
+        # =====================================================================
+        # VIP LONG-RANGE INPUT MATRIX
+        # =====================================================================
+        # Biology: VIP cells are the primary cortical recipients of top-down
+        # long-range corticocortical projections (from PFC, association cortex).
+        # This weight matrix projects from the layer's pyramidal population size
+        # (since long-range input size matches that of the local excitatory signal)
+        # into VIP space, implementing the attentional disinhibitory gate:
+        #   top-down input → VIP fires → SST suppressed → apical disinhibition
+        # Reference: Zhang et al. 2014, Pi et al. 2013
+        self.w_lr_vip = WeightInitializer.sparse_gaussian(
+            n_input=self.pyr_size,
+            n_output=self.vip_size,
+            connectivity=0.4,
+            mean=0.012,
+            std=0.004,
+            device=device,
+        )
+
+        # =====================================================================
+        # NICOTINIC ACh RECEPTOR ON VIP (alpha4beta2 subtype)
+        # =====================================================================
+        # Biology: VIP interneurons are selectively excited by ACh via nicotinic
+        # alpha4beta2 receptors (Pi et al. 2013; Arroyo et al. 2012).
+        # These are IONOTROPIC (fast): tau_rise ~2ms, tau_decay ~20ms,
+        # contrasting with muscarinic metabotropic effects on pyramidal cells.
+        # NB → ACh spikes → nicotinic depolarisation of VIP → VIP→SST disinhibition
+        self.ach_nicotinic_vip = NeuromodulatorReceptor(
+            n_receptors=self.vip_size,
+            tau_rise_ms=2.0,
+            tau_decay_ms=20.0,
+            spike_amplitude=0.15,
             device=device,
         )
 
@@ -303,8 +338,9 @@ class CorticalInhibitoryNetwork(nn.Module):
         pyr_spikes: torch.Tensor,
         pyr_membrane: torch.Tensor,
         external_excitation: torch.Tensor,
-        acetylcholine: float,
         feedforward_excitation: Optional[torch.Tensor] = None,
+        long_range_excitation: Optional[torch.Tensor] = None,
+        ach_spikes: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Run inhibitory network for one timestep.
 
@@ -312,8 +348,14 @@ class CorticalInhibitoryNetwork(nn.Module):
             pyr_spikes: Pyramidal neuron spikes [pyr_size], bool
             pyr_membrane: Pyramidal membrane potentials [pyr_size], float
             external_excitation: External excitation to layer [pyr_size], float
-            acetylcholine: ACh level (0-1), modulates VIP activation
-            feedforward_excitation: Direct excitation to PV cells [pv_size] for feedforward inhibition
+            feedforward_excitation: Direct excitation to PV cells [pv_size] for feedforward
+                inhibition (e.g., thalamic afferents driving PV directly).
+            long_range_excitation: Top-down / long-range corticocortical input projected
+                into this layer's pyramidal space [pyr_size].  Used to drive VIP cells
+                (via ``w_lr_vip``) which in turn disinhibit pyramidal apical dendrites.
+            ach_spikes: Raw ACh spike tensor from the nucleus basalis (or None if
+                neuromodulation is disabled).  Processed by the nicotinic alpha4beta2
+                receptor on VIP cells, producing fast (tau ~20 ms) ionotropic excitation.
 
         Returns:
             Dictionary with:
@@ -353,11 +395,25 @@ class CorticalInhibitoryNetwork(nn.Module):
         sst_exc_from_pyr = torch.matmul(self.w_pyr_sst, pyr_spikes_float)
         sst_exc = sst_exc_from_pyr
 
-        # VIP cells: Driven by pyramidal activity + acetylcholine modulation
-        # ACh enhances VIP activity → disinhibition during attention/encoding
+        # VIP cells: Driven by pyramidal activity + long-range inputs + nicotinic ACh
         vip_exc_from_pyr = torch.matmul(self.w_pyr_vip, pyr_spikes_float)
-        ach_boost = 1.0 + acetylcholine * 0.5  # Up to 1.5x with high ACh
-        vip_exc = vip_exc_from_pyr * ach_boost
+
+        # S2-3 — Long-range (top-down) inputs preferentially routed to VIP cells.
+        # Biology: VIP interneurons are primary recipients of long-range projections
+        # from PFC and association cortex; firing VIP releases SST inhibition from
+        # pyramidal apical dendrites (disinhibitory attention gate, Zhang et al. 2014).
+        if long_range_excitation is not None:
+            vip_lr_drive = torch.matmul(self.w_lr_vip, long_range_excitation)
+        else:
+            vip_lr_drive = torch.zeros(self.vip_size, device=device)
+
+        # S2-4 — Nicotinic ACh (alpha4beta2) excitation of VIP cells.
+        # Biology: VIP interneurons express nicotinic receptors whose ionotropic
+        # kinetics (tau_rise=2ms, tau_decay=20ms) are much faster than the muscarinic
+        # M1/M4 receptors on pyramidal cells.  This means ACh bursts from NB rapidly
+        # gate attention via VIP before slower pyramidal modulation takes effect.
+        ach_nicotinic_drive = self.ach_nicotinic_vip.update(ach_spikes)  # [vip_size]
+        vip_exc = vip_exc_from_pyr + vip_lr_drive + ach_nicotinic_drive * 0.25
 
         # =====================================================================
         # COMPUTE INHIBITION TO INHIBITORY POPULATIONS (I→I)
@@ -413,24 +469,27 @@ class CorticalInhibitoryNetwork(nn.Module):
         pv_g_ampa, pv_g_nmda = split_excitatory_conductance(pv_exc, nmda_ratio=0.3)
         pv_spikes, pv_membrane = self.pv_neurons.forward(
             g_ampa_input=ConductanceTensor(pv_g_ampa),
-            g_gaba_a_input=ConductanceTensor(pv_inh),
             g_nmda_input=ConductanceTensor(pv_g_nmda),
+            g_gaba_a_input=ConductanceTensor(pv_inh),
+            g_gaba_b_input=None,
         )
 
         # SST cells (regular-spiking)
         sst_g_ampa, sst_g_nmda = split_excitatory_conductance(sst_exc, nmda_ratio=0.3)
         sst_spikes, sst_membrane = self.sst_neurons.forward(
             g_ampa_input=ConductanceTensor(sst_g_ampa),
-            g_gaba_a_input=ConductanceTensor(sst_inh),
             g_nmda_input=ConductanceTensor(sst_g_nmda),
+            g_gaba_a_input=ConductanceTensor(sst_inh),
+            g_gaba_b_input=None,
         )
 
         # VIP cells (disinhibitory)
         vip_g_ampa, vip_g_nmda = split_excitatory_conductance(vip_exc, nmda_ratio=0.3)
         vip_spikes, vip_membrane = self.vip_neurons.forward(
             g_ampa_input=ConductanceTensor(vip_g_ampa),
-            g_gaba_a_input=ConductanceTensor(vip_inh),
             g_nmda_input=ConductanceTensor(vip_g_nmda),
+            g_gaba_a_input=ConductanceTensor(vip_inh),
+            g_gaba_b_input=None,
         )
 
         # Store for next timestep using CircularDelayBuffer

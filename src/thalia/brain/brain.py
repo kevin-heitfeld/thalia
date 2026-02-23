@@ -221,7 +221,7 @@ class DynamicBrain(nn.Module):
             brain_output[region_name] = region_output
 
         # STEP 5: Write current outputs to axonal tracts and advance buffers (available at T+delay)
-        for _, axonal_tract in self.axonal_tracts.items():
+        for axonal_tract in self.axonal_tracts.values():
             # Write ALL source regions' current outputs to buffer (for T+delay reads)
             axonal_tract.write_and_advance(brain_output)
 
@@ -267,10 +267,10 @@ class DynamicBrain(nn.Module):
             )
 
         # During consolidation there is no sensory input, so NucleusBasalis is
-        # silent and ACh concentration decays to near-zero naturally.  The
-        # hippocampus detects this low-ACh state via its NeuromodulatorReceptor
-        # and triggers spontaneous CA3 replay (sharp-wave ripples) autonomously
-        # through SpontaneousReplayGenerator.should_trigger_ripple().
+        # silent and ACh concentration decays to near-zero naturally.
+        # Sharp-wave ripples emerge from CA3 attractor dynamics (low-ACh disinhibits
+        # recurrence; GABA_B-terminated bursts produce the inter-ripple interval).
+        # hippocampus.ripple_detected is set True whenever >5% of CA3 fires synchronously.
         # No region-specific enter/exit API is required.
         n_timesteps = int(duration_ms / self.dt_ms)
         ripple_count = 0
@@ -319,10 +319,11 @@ class DynamicBrain(nn.Module):
             )
 
         vta = self.get_region_by_name("vta")
-        if vta is None or not hasattr(vta, 'neuromodulator_outputs') or 'da' not in vta.neuromodulator_outputs.values():
+        if vta is None or not hasattr(vta, 'neuromodulator_outputs') or not any('da' in k for k in vta.neuromodulator_outputs.keys()):
             raise ValueError(
                 "VTA with DA output not found. Cannot deliver reward. "
-                "Brain must include a region named 'vta' with at least one neuromodulator_outputs value of 'da' for RL tasks."
+                "Brain must include a region named 'vta' whose neuromodulator_outputs "
+                "contains at least one channel key that includes 'da' (e.g. 'da_mesolimbic')."
             )
 
         # Use external reward directly.

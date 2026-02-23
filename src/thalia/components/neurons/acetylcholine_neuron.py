@@ -126,16 +126,18 @@ class AcetylcholineNeuron(ConductanceLIF):
     def forward(
         self,
         g_ampa_input: Optional[ConductanceTensor],
-        g_gaba_a_input: Optional[ConductanceTensor],
         g_nmda_input: Optional[ConductanceTensor],
+        g_gaba_a_input: Optional[ConductanceTensor],
+        g_gaba_b_input: Optional[ConductanceTensor],
         prediction_error_drive: float,
     ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update acetylcholine neurons with prediction error modulation.
 
         Args:
             g_ampa_input: AMPA (fast excitatory) conductance input [n_neurons]
-            g_gaba_a_input: GABA_A (fast inhibitory) conductance input [n_neurons]
             g_nmda_input: NMDA (slow excitatory) conductance input [n_neurons] (not used for ACh neurons)
+            g_gaba_a_input: GABA_A (fast inhibitory) conductance input [n_neurons]
+            g_gaba_b_input: GABA_B (slow inhibitory) conductance input [n_neurons] (not used for ACh neurons)
             prediction_error_drive: Prediction error magnitude (normalized scalar)
                                   +1.0 = high prediction error (burst)
                                    0.0 = low prediction error (tonic)
@@ -149,8 +151,9 @@ class AcetylcholineNeuron(ConductanceLIF):
         # Call parent's forward
         spikes, _membrane = super().forward(
             g_ampa_input=g_ampa_input,
-            g_gaba_a_input=g_gaba_a_input,
             g_nmda_input=g_nmda_input,
+            g_gaba_a_input=g_gaba_a_input,
+            g_gaba_b_input=g_gaba_b_input,
         )
 
         # === Update Calcium and SK Activation ===

@@ -197,6 +197,15 @@ class StriatumConfig(NeuralRegionConfig):
     d1_to_output_delay_ms: float = 15.0  # D1 direct pathway delay
     d2_to_output_delay_ms: float = 25.0  # D2 indirect pathway delay (slower!)
 
+    # =========================================================================
+    # TAN (TONICALLY ACTIVE NEURONS) PAUSE DYNAMICS
+    # =========================================================================
+    # Biology: TANs pause for ~300 ms on coincident cortical + thalamic bursts
+    # (Aosaki et al. 1994). The pause is mediated by mAChR autoreceptors (M2/M4)
+    # and triggers the corticostriatal plasticity window.
+    tan_pause_threshold: float = 0.05   # Mean g_ampa per TAN neuron that signals a burst
+    tan_pause_strength: float = 0.20    # Inhibitory g_gaba_a injected per TAN during pause
+
 
 @dataclass
 class SubstantiaNigraConfig(NeuralRegionConfig):
@@ -332,11 +341,12 @@ class VTAConfig(NeuralRegionConfig):
     reinforcement learning system by broadcasting teaching signals to all regions.
 
     Key features:
-    - Dopamine neurons: Tonic (4-5 Hz) + phasic (burst/pause)
-    - RPE computation: δ = r - V(s)
-    - Closed-loop TD learning with SNr feedback
-    - Adaptive normalization to prevent saturation
-    - Strong baseline inhibition to maintain biological firing rates
+    - Dopamine neurons: Tonic (4-6 Hz mesolimbic / 7-9 Hz mesocortical) + phasic (burst/pause)
+    - Full TD RPE: δ = r + γ·V(s’) − V(s)  with SNr value feedback
+    - Anticipatory DA ramp (Howe et al. 2013) for temporal credit assignment
+    - Closed-loop TD learning with SNr feedback via CircularDelayBuffer
+    - Adaptive RPE normalization to prevent saturation
+    - D2 somatodendritic autoreceptors on mesolimbic sub-population
     """
 
     rpe_gain: float = 0.0015
@@ -416,4 +426,45 @@ class VTAConfig(NeuralRegionConfig):
 
     Slightly larger than mesolimbic (0.013) reflecting broader dynamic range
     and faster adaptation to tonic bursting seen in mesocortical neurons.
+    """
+
+    # -------------------------------------------------------------------------
+    # Full TD-learning: V(s') — next-state value estimate
+    # -------------------------------------------------------------------------
+    value_lag_ms: float = 50.0
+    """Lag (ms) between V(s) and V(s') for the TD next-state estimate.
+
+    V(s') is approximated as the SNr-decoded value from ``value_lag_ms`` ago.
+    Biologically, this corresponds to the dopamine ramp: DA neurons predict a
+    reward ~50-100 ms in the future via an internal timing signal.
+    Range: 20–200 ms.  Default 50 ms balances temporal credit assignment
+    with stability under fast reward schedules.
+    """
+
+    # -------------------------------------------------------------------------
+    # DA ramp — anticipatory reward signal
+    # -------------------------------------------------------------------------
+    da_ramp_enabled: bool = True
+    """Enable slowly-building anticipatory DA ramp before expected rewards.
+
+    The ramp models the "dopamine ramp" observed in primate recording (Howe
+    et al. 2013, Schultz 2016): tonic DA rises monotonically during an approach
+    to reward even before the reward is received.  This provides additional
+    temporal credit assignment beyond the eligibility trace.
+
+    Mechanics: each timestep without a reward increments a bounded ramp signal;
+    each reward delivery resets it.  The ramp is added to the baseline DA drive.
+    """
+
+    da_ramp_tau_ms: float = 500.0
+    """Time constant (ms) for DA ramp build-up.  The ramp asymptotes to
+    ``da_ramp_gain / (dt_ms / da_ramp_tau_ms)`` under no-reward conditions.
+    Biological range: 200–2000 ms depending on trial duration.
+    """
+
+    da_ramp_gain: float = 0.00015
+    """Per-timestep increment added to the DA ramp signal each step without reward.
+
+    Scales with dt_ms in practice; keep small to avoid overwhelming tonic drive.
+    The mesocortical ramp is weighted at 50% of the mesolimbic value.
     """

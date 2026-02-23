@@ -75,9 +75,25 @@ class NeuromodulatorHub(nn.Module):
 
                 if raw is not None:
                     existing = signals.get(channel_key)
-                    # Logical OR accumulates spikes from multiple source regions
-                    # (e.g., VTA + SNc both contributing to a 'da' flood channel).
-                    signals[channel_key] = (existing | raw) if existing is not None else raw
+                    if existing is not None:
+                        # Two regions publish to the same channel (e.g., VTA + SNc both
+                        # publish dopamine).  Use element-wise maximum so that any source
+                        # firing is reflected in the combined signal.  `.float()` ensures
+                        # this works for both bool spike tensors and float rate tensors.
+                        # Population sizes MUST match; mismatches indicate a brain-builder
+                        # configuration error and are raised immediately so they are never
+                        # silently swallowed.
+                        if existing.shape != raw.shape:
+                            raise ValueError(
+                                f"NeuromodulatorHub: cannot combine spikes for channel "
+                                f"'{channel_key}' from two regions with different population "
+                                f"sizes ({tuple(existing.shape)} vs {tuple(raw.shape)}).  "
+                                f"All regions publishing to the same channel must expose a "
+                                f"population with the same number of neurons."
+                            )
+                        signals[channel_key] = torch.maximum(existing.float(), raw.float())
+                    else:
+                        signals[channel_key] = raw.float()
                 elif channel_key not in signals:
                     # Publish the channel as None so regions know it exists but
                     # there was no activity this step (receptor dynamics return

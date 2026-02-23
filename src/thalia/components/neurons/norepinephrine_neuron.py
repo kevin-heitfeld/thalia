@@ -176,16 +176,18 @@ class NorepinephrineNeuron(ConductanceLIF):
     def forward(
         self,
         g_ampa_input: Optional[ConductanceTensor],
-        g_gaba_a_input: Optional[ConductanceTensor],
         g_nmda_input: Optional[ConductanceTensor],
+        g_gaba_a_input: Optional[ConductanceTensor],
+        g_gaba_b_input: Optional[ConductanceTensor],
         uncertainty_drive: float,
     ) -> tuple[torch.Tensor, VoltageTensor]:
         """Update norepinephrine neurons with uncertainty modulation.
 
         Args:
             g_ampa_input: AMPA (fast excitatory) conductance input [n_neurons]
-            g_gaba_a_input: GABA_A (fast inhibitory) conductance input [n_neurons]
             g_nmda_input: NMDA (slow excitatory) conductance input [n_neurons] (not used for NE neurons)
+            g_gaba_a_input: GABA_A (fast inhibitory) conductance input [n_neurons]
+            g_gaba_b_input: GABA_B (slow inhibitory) conductance input [n_neurons] (not used for NE neurons)
             uncertainty_drive: Uncertainty/novelty drive (normalized scalar)
                              +1.0 = high uncertainty (burst)
                              -1.0 = low uncertainty (pause)
@@ -249,8 +251,9 @@ class NorepinephrineNeuron(ConductanceLIF):
         # Call parent's forward with gap junction conductances
         spikes, _ = super().forward(
             g_ampa_input=g_ampa_input,
-            g_gaba_a_input=g_gaba_a_input,
             g_nmda_input=g_nmda_input,
+            g_gaba_a_input=g_gaba_a_input,
+            g_gaba_b_input=g_gaba_b_input,
             g_gap_input=g_gap_total,
             E_gap_reversal=E_gap_effective,
         )

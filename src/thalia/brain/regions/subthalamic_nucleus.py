@@ -92,7 +92,8 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
         # =====================================================================
         self._register_neuron_population(STNPopulation.STN, self.stn_neurons)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
@@ -112,16 +113,16 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
         # Baseline autonomous pacemaker drive (tonic excitatory conductance)
         # I_h (voltage-dependent HCN current) is now computed inside stn_neurons.forward()
         # via enable_ih=True in the ConductanceLIF config.
-        g_exc = self.baseline_drive.clone() + dendrite.g_exc
-        g_inh = dendrite.g_inh
+        g_exc = self.baseline_drive.clone() + dendrite.g_ampa
 
         # Split excitatory: 30% NMDA (stronger for STN glutamatergic character)
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.30)
 
         stn_spikes, _ = self.stn_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
-            g_gaba_a_input=ConductanceTensor(g_inh),
             g_nmda_input=ConductanceTensor(g_nmda),
+            g_gaba_a_input=ConductanceTensor(dendrite.g_gaba_a),
+            g_gaba_b_input=ConductanceTensor(dendrite.g_gaba_b),
         )
 
         region_outputs: RegionOutput = {

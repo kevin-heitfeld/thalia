@@ -17,14 +17,13 @@ Note:
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Union
 
 import torch
+import torch.nn as nn
 
-from thalia.utils import CircularDelayBuffer
 
-
-class StimulusGating:
+class StimulusGating(nn.Module):
     """
     Computes stimulus-onset inhibition triggered by stimulus changes.
 
@@ -37,6 +36,13 @@ class StimulusGating:
 
     The inhibition strength is proportional to how much the input changed.
 
+    As an ``nn.Module``, all internal state (specifically ``_smoothed_input``)
+    is registered as a buffer so it:
+
+    - Moves correctly with ``.to(device)``
+    - Is included in ``state_dict()`` and survives checkpoint save/load
+    - Is initialised on the correct device at construction time
+
     Note:
         This is NOT canonical "feedforward inhibition" (lateral inhibition
         via interneurons). This is stimulus-onset gating that clears
@@ -45,6 +51,8 @@ class StimulusGating:
 
     def __init__(
         self,
+        n_neurons: int,
+        device: Union[str, torch.device] = "cpu",
         threshold: float = 0.3,
         max_inhibition: float = 5.0,
         decay_rate: float = 0.8,
@@ -54,21 +62,30 @@ class StimulusGating:
         Initialize stimulus gating.
 
         Args:
-            threshold: Input change threshold to trigger inhibition
-            max_inhibition: Maximum inhibition strength
-            decay_rate: How fast the previous input trace decays
-            steepness: Steepness of sigmoid for change detection
+            n_neurons: Number of neurons in the gated population.  The
+                smoothed-input buffer is pre-allocated with this size so the
+                module is device-safe from construction.
+            device: Device on which the internal buffer should reside.
+            threshold: Input change threshold to trigger inhibition.
+            max_inhibition: Maximum inhibition strength.
+            decay_rate: How fast the previous input trace decays.
+            steepness: Steepness of sigmoid for change detection.
         """
+        super().__init__()
+
         self.threshold = threshold
         self.max_inhibition = max_inhibition
         self.decay_rate = decay_rate
         self.steepness = steepness
-
-        # Track previous input for change detection using CircularDelayBuffer
-        # Note: Buffer will be initialized on first call with proper shape/device
-        self._input_buffer: Optional[CircularDelayBuffer] = None
-        self._smoothed_input: Optional[torch.Tensor] = None  # Exponentially-smoothed input
         self._current_inhibition: float = 0.0
+
+        # Exponentially-smoothed input trace used for change detection.
+        # Registered as a buffer so it is included in state_dict and moved
+        # automatically with .to(device).
+        self.register_buffer(
+            "_smoothed_input",
+            torch.zeros(n_neurons, dtype=torch.float32, device=device),
+        )
 
     def compute(
         self,
@@ -79,25 +96,14 @@ class StimulusGating:
         Compute stimulus-onset inhibition for current input.
 
         Args:
-            current_input: Current input tensor
-            return_tensor: If True, return tensor matching input shape
+            current_input: Current input tensor (shape ``[n_neurons]``).
+            return_tensor: If True, return a per-neuron inhibition tensor
+                matching the input shape; otherwise return a scalar tensor.
 
         Returns:
-            Inhibition strength (scalar or tensor matching input shape)
+            Inhibition strength (scalar tensor, or per-neuron tensor when
+            ``return_tensor=True``).
         """
-        # Initialize buffer on first call
-        if self._input_buffer is None:
-            self._input_buffer = CircularDelayBuffer(
-                max_delay=1,
-                size=current_input.shape[0],
-                dtype=torch.float32,
-                device=current_input.device,
-            )
-            self._smoothed_input = current_input.detach().clone().float()
-            if return_tensor:
-                return torch.zeros_like(current_input, dtype=torch.float32)
-            return torch.tensor(0.0)
-
         # Convert bool spikes to float for arithmetic (ADR-004)
         current_float = current_input.float()
 
@@ -105,21 +111,18 @@ class StimulusGating:
         input_diff = (current_float - self._smoothed_input).abs()
         change_magnitude = input_diff.sum() / (current_input.numel() + 1e-6)
 
-        # Sigmoid activation based on change magnitude
-        # High change → high inhibition
+        # Sigmoid activation: high change → high inhibition
         inhibition = (
             torch.sigmoid((change_magnitude - self.threshold) * self.steepness)
             * self.max_inhibition
         )
 
-        # Update smoothed input (exponential moving average for smooth tracking)
-        self._smoothed_input = (
-            self.decay_rate * self._smoothed_input
-            + (1 - self.decay_rate) * current_float.detach().clone()
+        # Update smoothed input in-place (exponential moving average).
+        # In-place ops on a registered buffer are safe because the buffer is
+        # never part of a computation graph that requires grad.
+        self._smoothed_input.mul_(self.decay_rate).add_(
+            (1.0 - self.decay_rate) * current_float.detach()
         )
-
-        # Write current smoothed input to buffer for next timestep
-        self._input_buffer.write(self._smoothed_input)
 
         self._current_inhibition = inhibition.item()
 
@@ -130,5 +133,5 @@ class StimulusGating:
 
     @property
     def current_inhibition(self) -> float:
-        """Current inhibition level."""
+        """Current inhibition level (scalar, updated each ``compute()`` call)."""
         return self._current_inhibition

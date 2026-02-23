@@ -260,24 +260,3 @@ class WeightInitializer:
         )
         weights.fill_diagonal_(0.0)  # Eliminate autapses (biologically absent)
         return weights
-
-    @staticmethod
-    def add_phase_diversity(
-        weights: torch.Tensor,
-        phase_diversity: float,
-    ) -> torch.Tensor:
-        """
-        Add phase diversity to recurrent weights to promote rich dynamics.
-
-        Args:
-            weights: Original weight matrix [n_output, n_input]
-            phase_diversity: Degree of phase diversity (0 = no diversity, higher = more diversity)
-
-        Returns:
-            Weight matrix with added phase diversity
-        """
-        if phase_diversity <= 0.0:
-            raise ValueError("Phase diversity must be greater than 0.")
-
-        noise = torch.randn_like(weights) * (1.0 + phase_diversity) * GlobalConfig.SYNAPTIC_WEIGHT_SCALE
-        return (weights + noise).abs()  # Ensure positive conductances for biological realism

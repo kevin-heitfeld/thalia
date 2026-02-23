@@ -39,6 +39,7 @@ Key Features:
 
 from __future__ import annotations
 
+import math
 from typing import Any, ClassVar, Dict, List, Optional
 
 import torch
@@ -104,6 +105,13 @@ class Striatum(NeuralRegion[StriatumConfig]):
     # Mesolimbic DA (VTA → ventral striatum) drives D1/D2 opponent learning.
     # NE from LC modulates the gain of burst responses and threshold adaptation.
     neuromodulator_subscriptions: ClassVar[List[str]] = ['da_mesolimbic', 'ne']
+
+    # Striatum publishes local ACh from TANs (cholinergic interneurons) on a
+    # dedicated 'ach_striatal' channel so downstream circuits (e.g., SNc, VTA DA
+    # terminals) can detect striatal ACh tone independently from cortical NB ACh.
+    neuromodulator_outputs: ClassVar[Dict[str, str]] = {
+        'ach_striatal': StriatumPopulation.TAN,
+    }
 
     # =========================================================================
     # INITIALIZATION
@@ -177,19 +185,30 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None  # Lazily initialized on first forward pass
 
         # =====================================================================
-        # MSN→FSI CONNECTIONS (Excitatory Feedback, Koos & Tepper 1999)
+        # REGISTER FOUNDATIONAL POPULATIONS
+        # MUST happen before _add_internal_connection so the Dale's Law polarity
+        # checks in _add_internal_connection have the correct registered polarity.
         # =====================================================================
-        # Biology: MSNs excite FSI via glutamatergic collaterals (~30% connectivity)
-        # This creates the feedback loop needed for winner-take-all dynamics:
-        # - Winning action's MSNs fire more → excite FSI more
-        # - FSI depolarizes → voltage-dependent Ca²⁺ channels open
-        # - More GABA release → stronger inhibition of losing actions
+        self._register_neuron_population(StriatumPopulation.D1, self.d1_neurons, polarity=PopulationPolarity.INHIBITORY)
+        self._register_neuron_population(StriatumPopulation.D2, self.d2_neurons, polarity=PopulationPolarity.INHIBITORY)
+        self._register_neuron_population(StriatumPopulation.FSI, self.fsi_neurons, polarity=PopulationPolarity.INHIBITORY)
+
+        # =====================================================================
+        # MSN→FSI CONNECTIONS (Inhibitory Feedback via GABAergic Collaterals)
+        # =====================================================================
+        # Biology: MSNs are purely GABAergic neurons (Dale's Law) and therefore
+        # form INHIBITORY synapses via GABA_A receptors on all targets, including
+        # FSI.  The comment previously claiming "glutamatergic collaterals" was
+        # biologically incorrect.  MSN axon collaterals release GABA, not glutamate.
+        # This lateral GABA inhibition contributes to winner-take-all dynamics:
+        # - Winning action's MSNs fire more → increase GABA release onto rival MSNs
+        # - FSI also receive inhibitory input (matching Tunstall et al. 2002)
         #
         # Implementation: Sparse connectivity from both D1 and D2 MSNs to FSI
         # Shape: [fsi_size, d1_size+d2_size] - FSI receive from all MSNs
 
-        # D1 MSNs → FSI (excitatory, ~30% connectivity)
-        # CONDUCTANCE-BASED: Weak MSN→FSI connections
+        # D1 MSNs → FSI (inhibitory GABAergic collaterals, ~30% connectivity)
+        # CONDUCTANCE-BASED: Weak MSN→FSI GABAergic connections (Dale's Law)
         self._add_internal_connection(
             source_population=StriatumPopulation.D1,
             target_population=StriatumPopulation.FSI,
@@ -201,11 +220,11 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=self.device,
             ),
             stp_config=None,
-            receptor_type=ReceptorType.AMPA,
+            receptor_type=ReceptorType.GABA_A,
         )
 
-        # D2 MSNs → FSI (excitatory, ~30% connectivity)
-        # CONDUCTANCE-BASED: Weak MSN→FSI connections (matches D1)
+        # D2 MSNs → FSI (inhibitory GABAergic collaterals, ~30% connectivity)
+        # CONDUCTANCE-BASED: Weak MSN→FSI GABAergic connections (matches D1, Dale's Law)
         self._add_internal_connection(
             source_population=StriatumPopulation.D2,
             target_population=StriatumPopulation.FSI,
@@ -217,7 +236,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=self.device,
             ),
             stp_config=None,
-            receptor_type=ReceptorType.AMPA,
+            receptor_type=ReceptorType.GABA_A,
         )
 
         # =====================================================================
@@ -293,6 +312,45 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d2_size,
                 n_output=self.d2_size,
                 connectivity=0.4,
+                weight_scale=0.0005,
+                device=self.device,
+            ),
+            stp_config=None,
+            receptor_type=ReceptorType.GABA_A,
+        )
+
+        # =====================================================================
+        # MSN CROSS-PATHWAY LATERAL INHIBITION (Go/NoGo Competition)
+        # =====================================================================
+        # Biology: D1 and D2 MSNs inhibit each other via GABAergic axon collaterals,
+        # creating the opponent Go/NoGo competition that underlies action selection.
+        # Cross-pathway connectivity is sparser (~10%) than within-pathway (~40%)
+        # reflecting the greater anatomical distance between D1/D2 MSN soma clusters.
+        # Reference: Taverna et al. (2008) J. Neurosci.; Planert et al. (2010)
+        #
+        # D1 (Go) → D2 (NoGo): when Go pathway is activated it actively suppresses NoGo
+        self._add_internal_connection(
+            source_population=StriatumPopulation.D1,
+            target_population=StriatumPopulation.D2,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.d1_size,
+                n_output=self.d2_size,
+                connectivity=0.1,
+                weight_scale=0.0005,
+                device=self.device,
+            ),
+            stp_config=None,
+            receptor_type=ReceptorType.GABA_A,
+        )
+
+        # D2 (NoGo) → D1 (Go): when NoGo pathway is activated it suppresses Go
+        self._add_internal_connection(
+            source_population=StriatumPopulation.D2,
+            target_population=StriatumPopulation.D1,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.d2_size,
+                n_output=self.d1_size,
+                connectivity=0.1,
                 weight_scale=0.0005,
                 device=self.device,
             ),
@@ -436,18 +494,32 @@ class Striatum(NeuralRegion[StriatumConfig]):
             receptor_type=ReceptorType.GABA_A,
         )
 
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(StriatumPopulation.D1, self.d1_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(StriatumPopulation.D2, self.d2_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(StriatumPopulation.FSI, self.fsi_neurons, polarity=PopulationPolarity.INHIBITORY)
+        # Register TAN population after neuron creation and its internal connections.
+        # (D1, D2, FSI were registered earlier, before their first _add_internal_connection)
         self._register_neuron_population(StriatumPopulation.TAN, self.tan_neurons, polarity=PopulationPolarity.ANY)
 
         # =====================================================================
-        # POST-INITIALIZATION
+        # TAN ACh CONCENTRATION TRACKING (muscarinic timescale)
         # =====================================================================
-        self.__post_init__()
+        # TANs fire tonically at ~5 Hz, releasing ACh that tonically suppresses
+        # corticostriatal LTP via M1/M4 MSN receptors.  During the TAN pause the
+        # ACh concentration drops (tau_decay ~300 ms) and the plasticity window
+        # opens in synchrony with the arriving DA burst.
+        self.tan_ach_receptor = NeuromodulatorReceptor(
+            n_receptors=self.tan_size,
+            tau_rise_ms=5.0,
+            tau_decay_ms=300.0,
+            spike_amplitude=0.5,
+            device=self.device,
+        )
+        self.register_buffer("_tan_ach_concentration", torch.zeros(self.tan_size, device=self.device))
+        # Scalar inhibitory trace driving the TAN pause; decays with tau = 300 ms.
+        self.register_buffer("_tan_pause_trace", torch.zeros(1, device=self.device))
+        # Pre-compute per-step decay factor (updated by update_temporal_parameters).
+        self._tan_pause_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / 300.0)
+
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     # =========================================================================
     # FSI GAP JUNCTION INITIALIZATION
@@ -527,10 +599,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # weights, so integration must remain separate per pathway.
         d1_conductance = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs, self.d1_size, filter_by_target_population=StriatumPopulation.D1
-        ).g_exc
+        ).g_ampa
         d2_conductance = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs, self.d2_size, filter_by_target_population=StriatumPopulation.D2
-        ).g_exc
+        ).g_ampa
 
         # =====================================================================
         # FSI (FAST-SPIKING INTERNEURONS) - Feedforward Inhibition
@@ -546,7 +618,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
             fsi_conductance = self._integrate_synaptic_inputs_at_dendrites(
                 synaptic_inputs, self.fsi_size, filter_by_target_population=StriatumPopulation.FSI
-            ).g_exc
+            ).g_ampa
 
             # Apply gap junction coupling
             if (self.gap_junctions_fsi is not None and self.fsi_neurons.membrane is not None):
@@ -554,14 +626,15 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 fsi_conductance = fsi_conductance + gap_conductance
 
             # =====================================================================
-            # MSN→FSI EXCITATION (Winner-Take-All Feedback)
+            # MSN→FSI INHIBITION (GABAergic Lateral Collaterals)
             # =====================================================================
-            # Biology: MSN collaterals excite FSI via glutamatergic synapses
-            # This creates positive feedback for winner-take-all:
-            # - Winning action's MSNs fire more → excite FSI more
-            # - FSI depolarizes → voltage-dependent GABA release increases
-            # - Increased GABA → suppresses losing action more
-            # - Gap widens → runaway to winner-take-all state
+            # Biology: MSN axon collaterals release GABA onto FSI (Dale's Law —
+            # MSNs are purely GABAergic).  Contrary to earlier comments, this
+            # connection is INHIBITORY (GABA_A) not excitatory.  The net effect
+            # on winner-take-all dynamics is via disinhibition: when the winning
+            # action's MSNs fire, they suppress FSI activity, reducing
+            # feedforward inhibition on themselves (a relief-from-inhibition
+            # mechanism rather than the direct excitation previously described).
             #
             # CRITICAL: Use PREVIOUS timestep's MSN activity (causal)
             # FSI response from t-1 MSN activity influences t MSN spikes
@@ -571,31 +644,34 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 source_population=StriatumPopulation.D1,
                 target_region=self.region_name,
                 target_population=StriatumPopulation.FSI,
-                receptor_type=ReceptorType.AMPA,
+                receptor_type=ReceptorType.GABA_A,
             )
             d2_fsi_synapse = SynapseId(
                 source_region=self.region_name,
                 source_population=StriatumPopulation.D2,
                 target_region=self.region_name,
                 target_population=StriatumPopulation.FSI,
-                receptor_type=ReceptorType.AMPA,
+                receptor_type=ReceptorType.GABA_A,
             )
 
-            # Add MSN→FSI excitation (causal: t-1 MSN spikes via spike buffers)
-            fsi_conductance = fsi_conductance + self._integrate_synaptic_inputs_at_dendrites(
+            # Add MSN→FSI inhibition (causal: t-1 MSN spikes via spike buffers)
+            # Route to a SEPARATE inhibitory conductance accumulator so it
+            # can be passed to g_gaba_a_input (not mixed with excitatory AMPA).
+            fsi_gaba_a_conductance = self._integrate_synaptic_inputs_at_dendrites(
                 {
                     d1_fsi_synapse: self._d1_spike_buffer.read(1),
                     d2_fsi_synapse: self._d2_spike_buffer.read(1),
                 },
                 n_neurons=self.fsi_size,
-            ).g_exc
+            ).g_gaba_a
 
             # Update FSI neurons (fast kinetics, tau_mem ~5ms)
             fsi_g_ampa, fsi_g_nmda = split_excitatory_conductance(fsi_conductance, nmda_ratio=0.2)
             fsi_spikes, fsi_membrane = self.fsi_neurons.forward(
                 g_ampa_input=ConductanceTensor(fsi_g_ampa),
-                g_gaba_a_input=None,
                 g_nmda_input=ConductanceTensor(fsi_g_nmda),
+                g_gaba_a_input=ConductanceTensor(fsi_gaba_a_conductance),
+                g_gaba_b_input=None,
             )
             fsi_spikes_float = fsi_spikes.float()
 
@@ -681,11 +757,42 @@ class Striatum(NeuralRegion[StriatumConfig]):
         d1_d1_inhibition = self._integrate_synaptic_inputs_at_dendrites(
             {d1_d1_inhib_synapse: self._d1_spike_buffer.read(1)},
             n_neurons=self.d1_size,
-        ).g_inh
+        ).g_gaba_a
         d2_d2_inhibition = self._integrate_synaptic_inputs_at_dendrites(
             {d2_d2_inhib_synapse: self._d2_spike_buffer.read(1)},
             n_neurons=self.d2_size,
-        ).g_inh
+        ).g_gaba_a
+
+        # =====================================================================
+        # D1 ↔ D2 CROSS-PATHWAY LATERAL INHIBITION (Go/NoGo Competition)
+        # =====================================================================
+        # Biology: D1 and D2 MSNs mutually inhibit each other via sparse GABAergic
+        # collaterals, creating the opponent process that drives action selection.
+        # This is the key circuit mechanism for Go/NoGo gating (Taverna et al. 2008).
+        d1_d2_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.D1,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.D2,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        d2_d1_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.D2,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.D1,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        # D1 spikes → inhibit D2 (Go suppresses NoGo)
+        d1_d2_inhibition = self._integrate_synaptic_inputs_at_dendrites(
+            {d1_d2_inhib_synapse: self._d1_spike_buffer.read(1)},
+            n_neurons=self.d2_size,
+        ).g_gaba_a
+        # D2 spikes → inhibit D1 (NoGo suppresses Go)
+        d2_d1_inhibition = self._integrate_synaptic_inputs_at_dendrites(
+            {d2_d1_inhib_synapse: self._d2_spike_buffer.read(1)},
+            n_neurons=self.d1_size,
+        ).g_gaba_a
 
         # =====================================================================
         # TAN (TONICALLY ACTIVE NEURONS) - Cholinergic Inhibition of MSNs
@@ -694,17 +801,39 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # TAN ACh → M2 receptors on MSN dendrites → shunting inhibition.
         # Pause-burst response: TANs pause at CS onset → disinhibit MSNs (enable learning);
         # then burst → inhibit MSNs (terminate plasticity window).
+        tan_spikes: Optional[torch.Tensor] = None  # defined inside if-block; kept here for region_outputs
         if self.tan_size > 0:
             tan_conductance = self._integrate_synaptic_inputs_at_dendrites(
                 synaptic_inputs, self.tan_size, filter_by_target_population=StriatumPopulation.TAN
-            ).g_exc
+            ).g_ampa
+
+            # S3-4 — TAN PAUSE DETECTION
+            # Biology: Coincident corticostriatal + thalamostriatal bursts trigger a
+            # ~300 ms silence in TAN firing, mediated by mAChR autoreceptors (M2/M4)
+            # and GABAergic input from the same afferent burst (Aosaki et al. 1994).
+            # Approximation: detect when mean TAN afferent conductance exceeds the
+            # burst threshold; drive a slow inhibitory trace (tau = 300 ms) that
+            # adds g_gaba_a to TANs and suppresses tonic firing during the pause.
+            tan_burst = (tan_conductance.mean() > cfg.tan_pause_threshold).float()
+            self._tan_pause_trace = (
+                self._tan_pause_trace * self._tan_pause_decay
+                + tan_burst * (1.0 - self._tan_pause_decay)
+            )
+            # Expand scalar pause trace to a per-neuron inhibitory conductance tensor
+            tan_g_pause = self._tan_pause_trace.expand(self.tan_size) * cfg.tan_pause_strength
 
             tan_g_ampa, tan_g_nmda = split_excitatory_conductance(tan_conductance, nmda_ratio=0.1)
             tan_spikes, _ = self.tan_neurons.forward(
                 g_ampa_input=ConductanceTensor(tan_g_ampa),
-                g_gaba_a_input=None,
                 g_nmda_input=ConductanceTensor(tan_g_nmda),
+                g_gaba_a_input=ConductanceTensor(tan_g_pause),  # pause-driven inhibition
+                g_gaba_b_input=None,
             )
+
+            # S3-3 / S3-5 — Track TAN ACh concentration for plasticity gating.
+            # High TAN firing → high [ACh] → M1/M4 suppresses corticostriatal LTP.
+            # TAN pause → [ACh] drops (tau ~300 ms) → plasticity window opens.
+            self._tan_ach_concentration = self.tan_ach_receptor.update(tan_spikes)
 
             # TAN → D1 inhibition (M2-mediated cholinergic shunting)
             tan_d1_inhib_synapse = SynapseId(
@@ -772,20 +901,23 @@ class Striatum(NeuralRegion[StriatumConfig]):
         d2_g_ampa, d2_g_nmda = split_excitatory_conductance(d2_conductance, nmda_ratio=0.2)
 
         # CONDUCTANCE-BASED: Inhibition goes to g_gaba_a_input, NOT mixed with excitation
-        # Combine all inhibitory sources (FSI + MSN lateral) - all are POSITIVE conductances
-        d1_inhibition = (fsi_inhibition_d1 + d1_d1_inhibition + tan_inhibition_d1).clamp(min=0)
-        d2_inhibition = (fsi_inhibition_d2 + d2_d2_inhibition + tan_inhibition_d2).clamp(min=0)
+        # Combine all inhibitory sources (FSI + within-pathway + cross-pathway + TAN)
+        # All are POSITIVE conductances
+        d1_inhibition = (fsi_inhibition_d1 + d1_d1_inhibition + d2_d1_inhibition + tan_inhibition_d1).clamp(min=0)
+        d2_inhibition = (fsi_inhibition_d2 + d2_d2_inhibition + d1_d2_inhibition + tan_inhibition_d2).clamp(min=0)
 
         # Execute D1 and D2 MSN populations
         d1_spikes, _ = self.d1_neurons.forward(
             g_ampa_input=ConductanceTensor(d1_g_ampa),
-            g_gaba_a_input=ConductanceTensor(d1_inhibition),
             g_nmda_input=ConductanceTensor(d1_g_nmda),
+            g_gaba_a_input=ConductanceTensor(d1_inhibition),
+            g_gaba_b_input=None,
         )
         d2_spikes, _ = self.d2_neurons.forward(
             g_ampa_input=ConductanceTensor(d2_g_ampa),
-            g_gaba_a_input=ConductanceTensor(d2_inhibition),
             g_nmda_input=ConductanceTensor(d2_g_nmda),
+            g_gaba_a_input=ConductanceTensor(d2_inhibition),
+            g_gaba_b_input=None,
         )
 
         if not GlobalConfig.HOMEOSTASIS_DISABLED:
@@ -831,6 +963,9 @@ class Striatum(NeuralRegion[StriatumConfig]):
             StriatumPopulation.D1: d1_spikes,
             StriatumPopulation.D2: d2_spikes,
         }
+        # S3-3: Include TAN spikes so NeuromodulatorHub can broadcast 'ach_striatal'.
+        if tan_spikes is not None:
+            region_outputs[StriatumPopulation.TAN] = tan_spikes
 
         if not GlobalConfig.LEARNING_DISABLED:
             # Use per-neuron DA concentration from receptors (not scalar broadcast)
@@ -846,17 +981,12 @@ class Striatum(NeuralRegion[StriatumConfig]):
                     if self.get_learning_strategy(synapse_id) is None:
                         self._register_msn_strategy(synapse_id, d1_pathway=False)
 
-            def _msn_learning_kwargs(synapse_id: SynapseId) -> Dict[str, Any]:
-                if synapse_id.target_population == StriatumPopulation.D1:
-                    return {"dopamine": d1_da}
-                if synapse_id.target_population == StriatumPopulation.D2:
-                    return {"dopamine": d2_da}
-                return {}
-
-            self._apply_all_learning(
-                synaptic_inputs, region_outputs,
-                kwargs_provider=_msn_learning_kwargs,
-            )
+            # S3-5 — TAN ACh gates corticostriatal plasticity (inverted: pause = enable).
+            # During tonic TAN firing: ACh high → tan_plasticity_gate low → LTP suppressed.
+            # During TAN pause: ACh drops → gate rises toward 1.0 → LTP enabled.
+            # Biology: The ~300 ms pause precisely times the DA burst window
+            # for optimal Hebbian reinforcement (Surmeier et al. 2014).
+            tan_plasticity_gate = 1.0 - self._tan_ach_concentration.mean().item()
 
         # =====================================================================
         # UPDATE STATE BUFFERS FOR NEXT TIMESTEP
@@ -867,6 +997,16 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self._d2_spike_buffer.write_and_advance(d2_spikes)
 
         return self._post_forward(region_outputs)
+
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        d1_da = self._da_concentration_d1.mean().item()
+        d2_da = self._da_concentration_d2.mean().item()
+        tan_gate = 1.0 - self._tan_ach_concentration.mean().item()
+        if synapse_id.target_population == StriatumPopulation.D1:
+            return {"dopamine": d1_da, "acetylcholine": tan_gate}
+        if synapse_id.target_population == StriatumPopulation.D2:
+            return {"dopamine": d2_da, "acetylcholine": tan_gate}
+        return {}
 
     def _register_msn_strategy(self, synapse_id: SynapseId, *, d1_pathway: bool) -> None:
         """Lazily create and register a D1 or D2 learning strategy for *synapse_id*.

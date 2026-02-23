@@ -94,6 +94,39 @@ class CerebellumConfig(NeuralRegionConfig):
 
 
 @dataclass
+class DorsalRapheNucleusConfig(NeuralRegionConfig):
+    """Configuration for the Dorsal Raphe Nucleus (DRN) — serotonin system.
+
+    The DRN is the brain's primary source of serotonin (5-HT), broadcasting
+    patience, mood, and behavioural inhibition signals.  DRN neurons fire
+    tonically at 2-4 Hz and are suppressed by punishment via LHb input.
+
+    Key features:
+    - 5-HT neurons: Tonic 2-4 Hz + 5-HT1A autoreceptor self-inhibition
+    - LHb → DRN inhibition: punishment suppresses 5-HT (disinhibits aversive circuits)
+    - DRN output channel ``'5ht'``: broadcast to striatum, PFC, hippocampus, BLA, thalamus
+    """
+
+    tonic_drive_gain: float = 1.0
+    """Overall gain on tonic excitatory drive to 5-HT neurons.
+
+    Values > 1 increase baseline firing; values < 1 decrease it.
+    Normal range: 0.5-2.0.
+    """
+
+    lhb_inhibition_gain: float = 3.0
+    """Gain converting normalised LHb spiking rate to inhibitory conductance.
+
+    High LHb activity (punishment) → strong DRN suppression → 5-HT pause.
+    Biology: LHb→DRN operates via GABA interneurons and direct habenulo-raphe fibres.
+    Typical range: 2.0-5.0.
+    """
+
+    drive_normalization: bool = True
+    """Enable adaptive normalization of the tonic drive to prevent firing rate drift."""
+
+
+@dataclass
 class LocusCoeruleusConfig(NeuralRegionConfig):
     """Configuration for LC (locus coeruleus) region.
 

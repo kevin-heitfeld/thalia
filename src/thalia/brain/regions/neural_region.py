@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Dict, Generic, List, NamedTuple, Optional, TypeVar
+from typing import Any, Callable, ClassVar, Dict, Generic, List, NamedTuple, Optional, TypeVar, Union
 
 import torch
 import torch.nn as nn
@@ -30,6 +30,7 @@ from thalia import GlobalConfig
 from thalia.brain.configs import NeuralRegionConfig
 from thalia.components import (
     ConductanceLIF,
+    TwoCompartmentLIF,
     STPConfig,
     ShortTermPlasticity,
     WeightInitializer,
@@ -80,15 +81,20 @@ class PopulationHomeostasisState:
 class DendriteOutput(NamedTuple):
     """Output of `_integrate_synaptic_inputs_at_dendrites`.
 
-    Both tensors are non-negative conductances (clamped ≥ 0).
+    All tensors are non-negative conductances (clamped ≥ 0), separated by
+    receptor type so callers can pass them to the correct neuron channels.
 
     Attributes:
-        g_exc: Total excitatory conductance [n_neurons]
-        g_inh: Total inhibitory conductance [n_neurons]
+        g_ampa:   AMPA conductance [n_neurons]   — fast excitatory
+        g_nmda:   NMDA conductance [n_neurons]   — slow, voltage-gated excitatory
+        g_gaba_a: GABA_A conductance [n_neurons] — fast inhibitory (Cl⁻, τ≈10 ms)
+        g_gaba_b: GABA_B conductance [n_neurons] — slow inhibitory (K⁺, τ≈400 ms)
     """
 
-    g_exc: torch.Tensor  # [n_neurons], non-negative
-    g_inh: torch.Tensor  # [n_neurons], non-negative
+    g_ampa:   torch.Tensor  # [n_neurons], non-negative
+    g_nmda:   torch.Tensor  # [n_neurons], non-negative
+    g_gaba_a: torch.Tensor  # [n_neurons], non-negative
+    g_gaba_b: torch.Tensor  # [n_neurons], non-negative
 
 
 class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
@@ -156,7 +162,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # Neuron populations within this region.
         # PopulationName is str so nn.ModuleDict works directly; subclasses keep
         # their own typed references (self.l23, self.l4, …) for forward() calls.
-        self.neuron_populations: nn.ModuleDict = nn.ModuleDict()  # Dict[PopulationName, ConductanceLIF]
+        self.neuron_populations: nn.ModuleDict = nn.ModuleDict()  # Dict[PopulationName, ConductanceLIF | TwoCompartmentLIF]
 
         # Per-population polarity (EXCITATORY / INHIBITORY / ANY).
         # Populated by _register_neuron_population(); used for Dale's Law enforcement.
@@ -183,8 +189,18 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # EMA alpha for firing rate tracking
         self._firing_rate_alpha: float = self.dt_ms / self.config.gain_tau_ms
 
-    def __post_init__(self) -> None:
-        """Post-initialization processing after dataclass __init__."""
+        # -----------------------------------------------------------------------
+        # LEARNING CONTROL
+        # -----------------------------------------------------------------------
+        # When True, _post_forward skips the automatic _apply_all_learning call.
+        # Use this to pause plasticity during inference or consolidation without
+        # removing registered learning strategies.
+        self.freeze_learning: bool = False
+
+        # Synaptic inputs from the current forward() call; stored by _pre_forward
+        # so that _post_forward can drive _apply_all_learning automatically.
+        self._last_synaptic_inputs: SynapticInput = {}
+
         # Ensure all tensors are on the correct device
         self.to(self.device)
 
@@ -195,14 +211,15 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     def _register_neuron_population(
         self,
         population_name: PopulationName,
-        population: ConductanceLIF,
+        population: Union[ConductanceLIF, TwoCompartmentLIF],
         polarity: PopulationPolarity = PopulationPolarity.ANY,
     ) -> None:
         """Register a neuron population within this region.
 
         Args:
             population_name: Unique name for the population within this region.
-            population: The :class:`ConductanceLIF` neuron group.
+            population: The neuron group — either a :class:`ConductanceLIF` (single
+                compartment) or a :class:`TwoCompartmentLIF` (soma + apical dendrite).
             polarity: Biological polarity of this population per Dale's Law.
                 ``EXCITATORY`` populations may only form excitatory synapses;
                 ``INHIBITORY`` populations may only form inhibitory synapses;
@@ -213,10 +230,10 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self.neuron_populations[population_name] = population
         self._population_polarities[population_name] = polarity
 
-    def get_neuron_population(self, population_name: PopulationName) -> Optional[ConductanceLIF]:
+    def get_neuron_population(self, population_name: PopulationName) -> Optional[Union[ConductanceLIF, TwoCompartmentLIF]]:
         """Get a registered neuron population by name."""
         population = self.neuron_populations[population_name] if population_name in self.neuron_populations else None
-        assert population is None or isinstance(population, ConductanceLIF), (
+        assert population is None or isinstance(population, (ConductanceLIF, TwoCompartmentLIF)), (
             f"Registered population '{population_name}' is not a valid neuron type: {type(population)}"
         )
         return population
@@ -420,6 +437,9 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
     def _pre_forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> None:
         """Pre-forward validation of inputs."""
+        # Cache inputs so _post_forward can drive the automatic learning step.
+        self._last_synaptic_inputs = synaptic_inputs
+
         for synapse_id, spikes in synaptic_inputs.items():
             validate_spike_tensor(spikes, tensor_name=f"synaptic_input_{synapse_id}")
 
@@ -439,9 +459,45 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             if spikes is not None:
                 validate_spike_tensor(spikes, tensor_name=f"neuromodulator_{neuromod_type}")
 
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        """Return extra keyword arguments for the learning strategy of *synapse_id*.
+
+        Override in subclasses to supply neuromodulator concentrations or
+        region-specific learning-rate multipliers without repeating the
+        ``_apply_all_learning`` call in every ``forward()``.
+
+        The base implementation returns an empty dict, which is correct for
+        plain STDP with no neuromodulation.
+
+        Example override (dopamine + ACh gate)::
+
+            def _get_learning_kwargs(self, synapse_id):
+                return {
+                    "dopamine": self._da_concentration.mean().item(),
+                    "acetylcholine": 1.0 - self._ach_concentration.mean().item(),
+                }
+        """
+        return {}
+
     def _post_forward(self, region_outputs: RegionOutput) -> RegionOutput:
-        """Post-forward validation of outputs."""
-        # TODO: Add output validation (e.g., check that all expected populations are present, tensor shapes, etc.)
+        """Post-forward: auto-apply learning for every registered external synapse.
+
+        Automatically calls :meth:`_apply_all_learning` using the synaptic inputs
+        cached by :meth:`_pre_forward` and the kwargs provided by
+        :meth:`_get_learning_kwargs`.  Regions that need custom logic simply override
+        ``_get_learning_kwargs``; they do **not** need to call
+        ``_apply_all_learning`` in their own ``forward()``.
+
+        Skips learning when :attr:`freeze_learning` is ``True`` — set this flag to
+        pause plasticity during inference or offline consolidation without
+        removing the registered learning strategies.
+        """
+        if not self.freeze_learning:
+            self._apply_all_learning(
+                self._last_synaptic_inputs,
+                region_outputs,
+                kwargs_provider=self._get_learning_kwargs,
+            )
         return region_outputs
 
     @torch.no_grad()
@@ -515,7 +571,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             filter_by_target_population: If provided, only integrate inputs targeting this population (e.g., "l4")
 
         Returns:
-            DendriteOutput(g_exc, g_inh): Both tensors are [n_neurons], non-negative conductances.
+            DendriteOutput(g_ampa, g_nmda, g_gaba_a, g_gaba_b): All tensors are
+            [n_neurons], non-negative conductances, separated by receptor type.
 
         Raises:
             AssertionError: If input tensors violate ADR-005 (not 1D)
@@ -524,8 +581,10 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             Routing keys are used directly as synaptic weight keys.
             Region subclasses should initialize synaptic_weights with routing keys.
         """
-        g_exc = torch.zeros(n_neurons, device=self.device)
-        g_inh = torch.zeros(n_neurons, device=self.device)
+        g_ampa   = torch.zeros(n_neurons, device=self.device)
+        g_nmda   = torch.zeros(n_neurons, device=self.device)
+        g_gaba_a = torch.zeros(n_neurons, device=self.device)
+        g_gaba_b = torch.zeros(n_neurons, device=self.device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
             validate_spike_tensor(source_spikes, tensor_name=synapse_id)
@@ -554,28 +613,40 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             if synapse_id in self.stp_modules:
                 # Get STP efficacy modulation for this source
                 stp_efficacy = self.stp_modules[synapse_id].forward(source_spikes_float)
+                # STP returns [n_pre, n_post]; weights are [n_post, n_pre].
+                # Transposing stp_efficacy to [n_post, n_pre] matches the weight layout
+                # for element-wise multiplication.
+                assert stp_efficacy.shape == (weights.shape[1], weights.shape[0]), (
+                    f"STP efficacy shape {tuple(stp_efficacy.shape)} does not match "
+                    f"expected (n_pre={weights.shape[1]}, n_post={weights.shape[0]}) "
+                    f"for synapse {synapse_id}.  Check ShortTermPlasticity.forward() "
+                    f"returns shape [n_pre, n_post]."
+                )
                 # Apply as multiplicative modulation of weights
-                # STP returns [n_pre, n_post], weights are [n_post, n_pre] → transpose
                 weights = weights * stp_efficacy.T
 
             # SYNAPTIC CONDUCTANCE CALCULATION
             # Convert incoming spikes to conductance: g = W @ s
             source_conductance = weights @ source_spikes_float
 
-            if synapse_id.is_inhibitory:
-                # ACCUMULATE INHIBITORY CONDUCTANCE (GABA_A)
-                # Biology: GABAergic inputs sum separately from glutamatergic inputs
-                g_inh += source_conductance
-            else:
-                # ACCUMULATE EXCITATORY CONDUCTANCE (AMPA/NMDA)
-                # Biology: Dendritic conductances sum at soma (linear superposition)
-                g_exc += source_conductance
+            # Route by receptor type — four separate channels
+            match synapse_id.receptor_type:
+                case ReceptorType.AMPA:
+                    g_ampa += source_conductance
+                case ReceptorType.NMDA:
+                    g_nmda += source_conductance
+                case ReceptorType.GABA_A:
+                    g_gaba_a += source_conductance
+                case ReceptorType.GABA_B:
+                    g_gaba_b += source_conductance
 
         # Clamp to non-negative (conductances cannot be negative!)
-        g_exc = torch.clamp(g_exc, min=0.0)
-        g_inh = torch.clamp(g_inh, min=0.0)
-
-        return DendriteOutput(g_exc=g_exc, g_inh=g_inh)
+        return DendriteOutput(
+            g_ampa=torch.clamp(g_ampa, min=0.0),
+            g_nmda=torch.clamp(g_nmda, min=0.0),
+            g_gaba_a=torch.clamp(g_gaba_a, min=0.0),
+            g_gaba_b=torch.clamp(g_gaba_b, min=0.0),
+        )
 
     # =========================================================================
     # HOMEOSTATIC STATE REGISTRATION

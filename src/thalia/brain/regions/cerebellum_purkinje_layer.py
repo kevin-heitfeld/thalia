@@ -217,8 +217,9 @@ class VectorizedPurkinjeLayer(nn.Module):
         # Process through soma LIF neurons
         simple_spikes, _ = self.soma_neurons.forward(
             g_ampa_input=ConductanceTensor(soma_g_ampa),
-            g_gaba_a_input=None,
             g_nmda_input=ConductanceTensor(soma_g_nmda),
+            g_gaba_a_input=None,
+            g_gaba_b_input=None,
         )
 
         # Increment timestep

@@ -16,11 +16,8 @@ from thalia.brain.configs import NucleusBasalisConfig
 from thalia.components import (
     AcetylcholineNeuron,
     AcetylcholineNeuronConfig,
-    NeuronFactory,
-    NeuronType,
 )
 from thalia.typing import (
-    ConductanceTensor,
     NeuromodulatorInput,
     NeuromodulatorType,
     PopulationName,
@@ -30,10 +27,10 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
+from thalia.utils import CircularDelayBuffer
 
-from .neural_region import NeuralRegion
-from .population_names import NucleusBasalisPopulation
+from .neuromodulator_source_region import NeuromodulatorSourceRegion
+from .population_names import NucleusBasalisPopulation, PrefrontalPopulation
 from .region_registry import register_region
 
 
@@ -45,28 +42,12 @@ from .region_registry import register_region
     author="Thalia Project",
     config_class=NucleusBasalisConfig,
 )
-class NucleusBasalis(NeuralRegion[NucleusBasalisConfig]):
+class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
     """Nucleus Basalis - Acetylcholine Attention and Encoding System.
 
     Computes prediction errors and attention signals, broadcasting acetylcholine
     via fast, brief bursts. Switches between encoding and retrieval modes,
     modulates attention, and coordinates cortical-hippocampal learning.
-
-    Input Populations:
-    ------------------
-    - "pfc_input": Prefrontal cortex activity (prediction errors, attention)
-    - "amygdala_input": Amygdala activity (emotional salience) [future]
-
-    Output Populations:
-    -------------------
-    - "ach_neurons": Acetylcholine neuron spikes (to cortex/hippocampus)
-
-    Computational Function:
-    -----------------------
-    1. Compute prediction error magnitude from PFC activity
-    2. Drive ACh neurons: high |PE| → fast burst
-    3. Fast SK adaptation limits burst to 50-100ms
-    4. Broadcast ACh spikes to cortex and hippocampus
     """
 
     # Declarative neuromodulator output registry.
@@ -95,13 +76,7 @@ class NucleusBasalis(NeuralRegion[NucleusBasalisConfig]):
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
-        self.gaba_neurons = NeuronFactory.create(
-            region_name=self.region_name,
-            population_name=NucleusBasalisPopulation.GABA,
-            neuron_type=NeuronType.FAST_SPIKING,
-            n_neurons=self.gaba_neurons_size,
-            device=self.device,
-        )
+        self._init_gaba_interneurons(NucleusBasalisPopulation.GABA, self.gaba_neurons_size)
 
         # Prediction error computation state - use CircularDelayBuffer for history
         self._pfc_activity_buffer = CircularDelayBuffer(
@@ -126,9 +101,9 @@ class NucleusBasalis(NeuralRegion[NucleusBasalisConfig]):
         # REGISTER NEURON POPULATIONS
         # =====================================================================
         self._register_neuron_population(NucleusBasalisPopulation.ACH, self.ach_neurons, polarity=PopulationPolarity.ANY)
-        self._register_neuron_population(NucleusBasalisPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
-        self.__post_init__()
+        # Ensure all tensors are on the correct device
+        self.to(self.device)
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
@@ -138,9 +113,15 @@ class NucleusBasalis(NeuralRegion[NucleusBasalisConfig]):
         """
         self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
-        # Get inputs using routing keys (target_pop:source_region:source_pop)
-        pfc_spikes = synaptic_inputs.get("ach_neurons:pfc:executive")
-        amygdala_spikes = synaptic_inputs.get("ach_neurons:amygdala:...")  # Not connected yet
+        # Find PFC executive spikes via SynapseId (SynapticInput is Dict[SynapseId, Tensor])
+        pfc_spikes: Optional[torch.Tensor] = None
+        amygdala_spikes: Optional[torch.Tensor] = None
+        for sid, spikes in synaptic_inputs.items():
+            if sid.source_region == "prefrontal" and sid.source_population == PrefrontalPopulation.EXECUTIVE:
+                pfc_spikes = spikes
+            elif sid.source_region == "basolateral_amygdala":
+                # BLA → NB: emotional salience / aversive surprise drives ACh bursts
+                amygdala_spikes = spikes
 
         # Compute prediction error signal from inputs
         prediction_error = self._compute_prediction_error(pfc_spikes, amygdala_spikes)
@@ -156,22 +137,15 @@ class NucleusBasalis(NeuralRegion[NucleusBasalisConfig]):
         # High |PE| → depolarization → fast burst (10-20 Hz for 50-100ms)
         # ACh responds to magnitude, not sign (|PE|)
         ach_spikes, _ = self.ach_neurons.forward(
-            g_ampa_input=None,  # No direct excitatory input; drive is via prediction error modulation
+            g_ampa_input=None,    # No direct excitatory input; drive is via prediction error modulation
+            g_nmda_input=None,    # NMDA not used for ACh neurons
             g_gaba_a_input=None,  # No direct inhibitory input; homeostasis via interneurons
-            g_nmda_input=None,  # NMDA not used for ACh neurons
+            g_gaba_b_input=None,  # No GABA_B for fast ACh bursting
             prediction_error_drive=prediction_error,
         )
-        self._current_ach_spikes = ach_spikes  # Store for GABA computation
-
         # Update GABA interneurons (homeostatic control)
-        gaba_drive = self._compute_gaba_drive()
-
-        gaba_g_ampa, gaba_g_nmda = split_excitatory_conductance(gaba_drive, nmda_ratio=0.3)
-        self.gaba_neurons.forward(
-            g_ampa_input=ConductanceTensor(gaba_g_ampa),
-            g_gaba_a_input=None,
-            g_nmda_input=ConductanceTensor(gaba_g_nmda),
-        )
+        ach_activity = ach_spikes.float().mean().item()
+        self._step_gaba_interneurons(ach_activity)
 
         region_outputs: RegionOutput = {
             NucleusBasalisPopulation.ACH: ach_spikes,
@@ -262,28 +236,19 @@ class NucleusBasalis(NeuralRegion[NucleusBasalisConfig]):
 
         return normalized
 
-    def _compute_gaba_drive(self) -> torch.Tensor:
+    def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
         """Compute drive for GABAergic interneurons.
 
-        GABA interneurons provide homeostatic control, preventing
-        runaway ACh bursting through local inhibition.
+        NB uses stronger feedback (1.2×) and higher baseline (0.4) than the
+        default, reflecting robust homeostatic control of ACh burst duration.
 
         Returns:
             Drive conductance for GABA neurons [gaba_neurons_size]
         """
-        assert self._current_ach_spikes is not None, "ACh spikes must be computed before GABA drive"
-
         # Tonic baseline conductance
-        # BIOLOGY: NB-GABA neurons have intrinsic pacemaker activity
-        # CONDUCTANCE: tonic drive
         baseline = 0.4 if self.config.baseline_noise_conductance_enabled else 0.0
 
         # Increase during ACh bursts (negative feedback)
-        ach_activity = self._current_ach_spikes.float().mean().item()
-        feedback = ach_activity * 1.2  # CONDUCTANCE: strong feedback
+        feedback = primary_activity * 1.2  # CONDUCTANCE: strong feedback
 
-        total_drive = baseline + feedback
-
-        return torch.full(
-            (self.gaba_neurons_size,), total_drive, device=self.device
-        )
+        return torch.full((self.gaba_neurons_size,), baseline + feedback, device=self.device)

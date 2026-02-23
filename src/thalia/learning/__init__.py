@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .eligibility_trace_manager import (
+    EligibilityTraceConfig,
     EligibilityTraceManager,
 )
 from .intrinsic_plasticity import (
@@ -32,6 +33,7 @@ from .strategies import (
 
 __all__ = [
     # Eligibility Traces
+    "EligibilityTraceConfig",
     "EligibilityTraceManager",
     # Intrinsic Plasticity
     "compute_excitability_modulation",

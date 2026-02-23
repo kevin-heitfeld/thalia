@@ -23,18 +23,64 @@ Biological Accuracy:
 - Heterosynaptic plasticity (weak learning in non-active synapses).
 - Local computation (no global error signals).
 - All trace state registered as nn.Module buffers: correct .to(device) and state_dict.
+
+Reusability:
+============
+``EligibilityTraceManager`` accepts ``EligibilityTraceConfig`` — a standalone
+dataclass that is NOT coupled to ``STDPConfig``.  Any learning strategy that needs
+standard eligibility trace machinery can construct an ``EligibilityTraceConfig``
+from its own parameters and pass it here directly.  This avoids each strategy
+re-implementing its own buffer + exponential-decay boilerplate.
+
+Current users:
+- ``STDPStrategy``: uses pre-trace, post-trace, and full eligibility accumulation.
+- ``ThreeFactorStrategy``: uses only ``accumulate_eligibility()`` (pre/post traces
+  are created but left at zero — only the eligibility buffer is needed).
 """
 
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Tuple
+from dataclasses import dataclass
+from typing import Tuple
 
 import torch
 import torch.nn as nn
 
-if TYPE_CHECKING:
-    from thalia.learning.strategies import STDPConfig
+
+# ---------------------------------------------------------------------------
+# Standalone configuration dataclass (decoupled from STDPConfig)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EligibilityTraceConfig:
+    """Minimal configuration required by ``EligibilityTraceManager``.
+
+    Designed to be constructed from any learning strategy config — no
+    inheritance from ``STDPConfig`` (or any other strategy config) required.
+
+    Args:
+        tau_plus: LTP pre-trace time constant (ms).  Governs how long a
+            pre-synaptic spike contributes to future LTP.
+        tau_minus: LTD post-trace time constant (ms).  Governs how long a
+            post-synaptic spike contributes to future LTD.
+        eligibility_tau_ms: Eligibility accumulator decay time (ms).  The
+            window over which spike-timing correlations are integrated before
+            a neuromodulatory signal arrives.
+        a_plus: LTP amplitude used by ``compute_ltp_ltd_separate()``.
+            Set to ``1.0`` (or any positive value) when only the raw
+            correlation magnitude is needed and amplitude scaling is done
+            externally.
+        a_minus: LTD amplitude used by ``compute_ltp_ltd_separate()``.
+            Set to ``0.0`` when LTD is not computed via this manager
+            (e.g. ``ThreeFactorStrategy`` computes its own Hebbian update).
+    """
+
+    tau_plus: float = 20.0
+    tau_minus: float = 20.0
+    eligibility_tau_ms: float = 1000.0
+    a_plus: float = 0.01
+    a_minus: float = 0.012
 
 
 class EligibilityTraceManager(nn.Module):
@@ -45,20 +91,25 @@ class EligibilityTraceManager(nn.Module):
     nn.Module buffers so that:
     - .to(device) correctly moves all trace state.
     - state_dict() / load_state_dict() preserves traces across checkpoints.
-    - The parent STDPStrategy automatically picks up this submodule.
+    - The parent strategy automatically picks up this submodule.
 
     Decay uses the mathematically correct exp(-dt/tau), not the linear
     approximation 1 - dt/tau which produces negative values for dt > tau.
 
     Separate decay constants for LTP (tau_plus, applied to pre-trace) and
     LTD (tau_minus, applied to post-trace) match biological STDP asymmetry.
+
+    Accepts ``EligibilityTraceConfig`` directly rather than ``STDPConfig``,
+    so any learning strategy can use this class without coupling to ``STDPConfig``.
+    ``STDPStrategy`` constructs an ``EligibilityTraceConfig`` from its own config
+    fields at setup time.
     """
 
     def __init__(
         self,
         n_input: int,
         n_output: int,
-        config: STDPConfig,
+        config: EligibilityTraceConfig,
         device: torch.device,
     ):
         """
@@ -67,7 +118,9 @@ class EligibilityTraceManager(nn.Module):
         Args:
             n_input: Number of presynaptic neurons
             n_output: Number of postsynaptic neurons
-            config: STDP configuration (from thalia.learning.strategies)
+            config: ``EligibilityTraceConfig`` specifying time constants and
+                amplitudes.  Build one from any learning strategy config:
+                ``EligibilityTraceConfig(tau_plus=cfg.tau_plus, ...)``.
             device: Torch device
         """
         super().__init__()
