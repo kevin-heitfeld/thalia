@@ -48,6 +48,7 @@ from thalia import GlobalConfig
 from thalia.brain.configs import StriatumConfig
 from thalia.components import (
     ConductanceLIF,
+    ConductanceLIFConfig,
     GapJunctionConfig,
     GapJunctionCoupling,
     NeuronFactory,
@@ -55,14 +56,15 @@ from thalia.components import (
     WeightInitializer,
     NeuromodulatorReceptor,
 )
+from thalia.components.synapses.stp import FSI_MSN_PRESET, MSN_LATERAL_PRESET
 from thalia.learning import (
-    D1STDPConfig,
-    D2STDPConfig,
+    D1D2STDPConfig,
     D1STDPStrategy,
     D2STDPStrategy,
 )
 from thalia.typing import (
     ConductanceTensor,
+    GapJunctionReversal,
     NeuromodulatorInput,
     PopulationPolarity,
     PopulationSizes,
@@ -175,12 +177,21 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Critical for action selection timing (Koós & Tepper 1999)
         # Gap junction networks enable ultra-fast synchronization (<0.1ms)
 
-        self.fsi_size = max(1, int(total_msn_neurons * 0.02))  # FSI as fraction of total striatal neurons (2%), minimum 1 neuron
+        # FSI: 2% of MSNs (Koós & Tepper 1999), but clamped to a minimum for
+        # simulation stability — at <15 neurons gap-junction topology collapses
+        # and feedforward inhibition becomes all-or-nothing.
+        self.fsi_size = max(self.config.fsi_min_neurons, int(total_msn_neurons * 0.02))
         self.fsi_neurons: ConductanceLIF = NeuronFactory.create_fast_spiking_neurons(
             region_name=self.region_name,
             population_name=StriatumPopulation.FSI,
             n_neurons=self.fsi_size,
             device=self.device,
+            # v_threshold restored to 1.0 (standard): threshold=1.3 was a stopgap for
+            # the old NMDA-driven 406 Hz saturation. NMDA is now disabled (nmda_ratio=0.0
+            # in forward pass), so 1.3 is too high and prevents any firing on cortical input.
+            # With 1.0 and 20× afferent weights, FSI fires at ~80-120 Hz on thalamic drive
+            # (fast-spiking tau_mem=5ms means FSI always fire fast once above threshold).
+            v_threshold=1.0,
         )
         self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None  # Lazily initialized on first forward pass
 
@@ -219,8 +230,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=None,
         )
 
         # D2 MSNs → FSI (inhibitory GABAergic collaterals, ~30% connectivity)
@@ -235,8 +246,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=None,
         )
 
         # =====================================================================
@@ -252,6 +263,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # FSI → D1 connections
         # ~15% connectivity to match ~18 FSI per MSN (18/120 ≈ 0.15)
         # CONDUCTANCE-BASED: Strong inhibition (4-10x stronger than MSN lateral)
+        # weight_scale raised from 0.001 → 0.005 → 0.015: diagnostics showed E/I = 12.0 for
+        # striatum with D1/D2 firing at 17 Hz; heavier transient IPSP needed to gate bursts.
+        # STP: FSI_MSN_PRESET — strong depression (Planert et al. 2010).
+        # Large initial IPSP fades rapidly; feedforward inhibition is transient.
         self._add_internal_connection(
             source_population=StriatumPopulation.FSI,
             target_population=StriatumPopulation.D1,
@@ -259,15 +274,16 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.fsi_size,
                 n_output=self.d1_size,
                 connectivity=0.15,
-                weight_scale=0.001,
+                weight_scale=0.015,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=FSI_MSN_PRESET.configure(),
         )
 
         # FSI → D2 connections (same structure)
         # CONDUCTANCE-BASED: Strong inhibition (matches D1)
+        # STP: FSI_MSN_PRESET — same strong depression as FSI→D1.
         self._add_internal_connection(
             source_population=StriatumPopulation.FSI,
             target_population=StriatumPopulation.D2,
@@ -275,20 +291,20 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.fsi_size,
                 n_output=self.d2_size,
                 connectivity=0.15,
-                weight_scale=0.001,
+                weight_scale=0.015,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=FSI_MSN_PRESET.configure(),
         )
 
         # =====================================================================
-        # MSN→MSN LATERAL INHIBITION (INTERNAL - like CA3→CA3 recurrence)
+        # MSN→MSN LATERAL INHIBITION
         # =====================================================================
         # D1 → D1: Lateral inhibition for action selection
         # MSN→MSN GABAergic collaterals create winner-take-all dynamics
-        # Distance: ~100-300μm (local), unmyelinated → 1-2ms delay (handled in forward)
-        # Enables action-specific competition
+        # Distance: ~100-300μm (local), unmyelinated → 1-2ms delay
+        # Enables action-specific competition.
         self._add_internal_connection(
             source_population=StriatumPopulation.D1,
             target_population=StriatumPopulation.D1,
@@ -296,11 +312,11 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d1_size,
                 n_output=self.d1_size,
                 connectivity=0.4,
-                weight_scale=0.0005,
+                weight_scale=0.001,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=MSN_LATERAL_PRESET.configure(),
         )
 
         # D2 → D2: Lateral inhibition for NoGo pathway
@@ -312,11 +328,11 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d2_size,
                 n_output=self.d2_size,
                 connectivity=0.4,
-                weight_scale=0.0005,
+                weight_scale=0.001,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=MSN_LATERAL_PRESET.configure(),
         )
 
         # =====================================================================
@@ -339,8 +355,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=MSN_LATERAL_PRESET.configure(),
         )
 
         # D2 (NoGo) → D1 (Go): when NoGo pathway is activated it suppresses Go
@@ -354,8 +370,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=MSN_LATERAL_PRESET.configure(),
         )
 
         # =====================================================================
@@ -365,8 +381,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Buffer names produced by _register_homeostasis are d1_firing_rate /
         # d2_firing_rate, matching the direct accesses in forward().
         # Striatum uses a custom joint D1+D2 update rather than _update_homeostasis.
-        self._register_homeostasis(StriatumPopulation.D1, self.d1_size)
-        self._register_homeostasis(StriatumPopulation.D2, self.d2_size)
+        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.008)
+        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.008)
 
         # =====================================================================
         # D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
@@ -455,13 +471,43 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # They pause briefly in response to salient stimuli (cue onset, reward) then burst.
         # TAN ACh inhibits MSNs via M2 muscarinic receptors (shunting inhibition on dendrites).
         # Key role: modulate corticostriatal plasticity window and action gating.
+        #
+        # NEURON TYPE: TANs use slow conductance params (NOT FAST_SPIKING).
+        # FSI neurons (g_L=0.10, tau_mem=8ms) cannot fire below ~55 Hz above threshold.
+        # TANs are large cholinergic neurons: tau_mem~80ms, g_L=0.04, tau_E=10ms.
         self.tan_size = max(1, int(total_msn_neurons * 0.01))  # ~1% of MSNs, minimum 1
-        self.tan_neurons: ConductanceLIF = NeuronFactory.create(
-            region_name=self.region_name,
-            population_name=StriatumPopulation.TAN,
-            neuron_type=NeuronType.FAST_SPIKING,  # Best approximation; custom TAN type in future
+        self.tan_neurons = ConductanceLIF(
             n_neurons=self.tan_size,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=StriatumPopulation.TAN,
+                tau_mem=80.0,    # Long integration window (cholinergic neurons: ~80-100ms)
+                g_L=0.04,        # Low leak for sustained depolarisation
+                tau_E=10.0,      # Slow AMPA kinetics matching cortical/thalamic cholinergic drive
+                tau_I=20.0,      # Slow GABA-A kinetics (pause inhibition)
+                v_threshold=1.2, # Raised (1.0→1.2): thalamic overflow was driving 28 Hz; needs higher bar
+                v_reset=0.0,
+                tau_ref=5.0,     # Longer refractory for slow cholinergic neurons
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                noise_std=0.005, # Reduced (0.01→0.005) to lower noise-driven jitter
+                adapt_increment=0.20,  # Added adaptation to resist thalamic overflow (28 Hz → target 5-10 Hz)
+                tau_adapt=200.0,       # Slow AHP matching cholinergic neuron biophysics
+            ),
             device=self.device,
+        )
+        # Tonic baseline drive for autonomous 5-10 Hz pacemaking.
+        # TANs fire tonically without external drive (intrinsic pacemaking via I_h etc.),
+        # approximated here as a constant excitatory conductance baseline.
+        self._tan_baseline = torch.full(
+            (self.tan_size,), self.config.tan_baseline_drive, device=self.device
+        )
+
+        # Tonic baseline drive for FSI; provides minimal sub-threshold depolarisation so
+        # cortical/thalamic bursts can push FSI above threshold. AMPA-only (NMDA disabled).
+        self._fsi_baseline = torch.full(
+            (self.fsi_size,), self.config.fsi_baseline_drive, device=self.device
         )
 
         # TAN → D1 inhibition (M2 receptor-mediated, widespread cholinergic inhibition)
@@ -475,8 +521,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=None,
         )
 
         # TAN → D2 inhibition (M2 receptor-mediated, cholinergic gating of NoGo pathway)
@@ -490,8 +536,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=None,
         )
 
         # Register TAN population after neuron creation and its internal connections.
@@ -611,120 +657,130 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # 1. Gap junction coupling for synchronization (<0.1ms)
         # 2. Feedforward inhibition to MSNs (sharpens action timing)
         # Biology: FSI are parvalbumin+ interneurons (~2% of striatum)
-        if self.fsi_size > 0:
-            # Lazy-initialize gap junctions on first forward pass (after weights have been registered)
-            if self.gap_junctions_fsi is None:
-                self._init_gap_junctions_fsi()
 
-            fsi_conductance = self._integrate_synaptic_inputs_at_dendrites(
-                synaptic_inputs, self.fsi_size, filter_by_target_population=StriatumPopulation.FSI
-            ).g_ampa
+        # Lazy-initialize gap junctions on first forward pass (after weights have been registered)
+        if self.gap_junctions_fsi is None:
+            self._init_gap_junctions_fsi()
 
-            # Apply gap junction coupling
-            if (self.gap_junctions_fsi is not None and self.fsi_neurons.membrane is not None):
-                gap_conductance, _gap_reversal = self.gap_junctions_fsi.forward(self.fsi_neurons.membrane)
-                fsi_conductance = fsi_conductance + gap_conductance
+        fsi_conductance = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs, self.fsi_size, filter_by_target_population=StriatumPopulation.FSI
+        ).g_ampa
 
-            # =====================================================================
-            # MSN→FSI INHIBITION (GABAergic Lateral Collaterals)
-            # =====================================================================
-            # Biology: MSN axon collaterals release GABA onto FSI (Dale's Law —
-            # MSNs are purely GABAergic).  Contrary to earlier comments, this
-            # connection is INHIBITORY (GABA_A) not excitatory.  The net effect
-            # on winner-take-all dynamics is via disinhibition: when the winning
-            # action's MSNs fire, they suppress FSI activity, reducing
-            # feedforward inhibition on themselves (a relief-from-inhibition
-            # mechanism rather than the direct excitation previously described).
-            #
-            # CRITICAL: Use PREVIOUS timestep's MSN activity (causal)
-            # FSI response from t-1 MSN activity influences t MSN spikes
+        # Apply gap junction coupling
+        # IMPORTANT: gap_conductance is g_gap_total (row-sum of coupling matrix) and
+        # gap_reversal is the voltage-weighted average of neighbours.  These must be
+        # passed to ConductanceLIF.forward() as g_gap_input / E_gap_reversal so the
+        # neuron model computes the correct current I_gap = g_gap × (E_gap - V).
+        # Adding gap_conductance to the AMPA channel (old bug) treated it as a
+        # constant excitatory drive with E_E=3.0 reversal, creating ~1.05 artificial
+        # excitation that saturated FSI at 400+ Hz.
+        fsi_gap_conductance: Optional[torch.Tensor] = None
+        fsi_gap_reversal: Optional[GapJunctionReversal] = None
+        if self.gap_junctions_fsi is not None:
+            fsi_gap_conductance, fsi_gap_reversal = self.gap_junctions_fsi.forward(self.fsi_neurons.V_soma)
 
-            d1_fsi_synapse = SynapseId(
-                source_region=self.region_name,
-                source_population=StriatumPopulation.D1,
-                target_region=self.region_name,
-                target_population=StriatumPopulation.FSI,
-                receptor_type=ReceptorType.GABA_A,
-            )
-            d2_fsi_synapse = SynapseId(
-                source_region=self.region_name,
-                source_population=StriatumPopulation.D2,
-                target_region=self.region_name,
-                target_population=StriatumPopulation.FSI,
-                receptor_type=ReceptorType.GABA_A,
-            )
+        # =====================================================================
+        # MSN→FSI INHIBITION (GABAergic Lateral Collaterals)
+        # =====================================================================
+        # Biology: MSN axon collaterals release GABA onto FSI (Dale's Law —
+        # MSNs are purely GABAergic).  Contrary to earlier comments, this
+        # connection is INHIBITORY (GABA_A) not excitatory.  The net effect
+        # on winner-take-all dynamics is via disinhibition: when the winning
+        # action's MSNs fire, they suppress FSI activity, reducing
+        # feedforward inhibition on themselves (a relief-from-inhibition
+        # mechanism rather than the direct excitation previously described).
+        #
+        # CRITICAL: Use PREVIOUS timestep's MSN activity (causal)
+        # FSI response from t-1 MSN activity influences t MSN spikes
 
-            # Add MSN→FSI inhibition (causal: t-1 MSN spikes via spike buffers)
-            # Route to a SEPARATE inhibitory conductance accumulator so it
-            # can be passed to g_gaba_a_input (not mixed with excitatory AMPA).
-            fsi_gaba_a_conductance = self._integrate_synaptic_inputs_at_dendrites(
-                {
-                    d1_fsi_synapse: self._d1_spike_buffer.read(1),
-                    d2_fsi_synapse: self._d2_spike_buffer.read(1),
-                },
-                n_neurons=self.fsi_size,
-            ).g_gaba_a
+        d1_fsi_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.D1,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.FSI,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        d2_fsi_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.D2,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.FSI,
+            receptor_type=ReceptorType.GABA_A,
+        )
 
-            # Update FSI neurons (fast kinetics, tau_mem ~5ms)
-            fsi_g_ampa, fsi_g_nmda = split_excitatory_conductance(fsi_conductance, nmda_ratio=0.2)
-            fsi_spikes, fsi_membrane = self.fsi_neurons.forward(
-                g_ampa_input=ConductanceTensor(fsi_g_ampa),
-                g_nmda_input=ConductanceTensor(fsi_g_nmda),
-                g_gaba_a_input=ConductanceTensor(fsi_gaba_a_conductance),
-                g_gaba_b_input=None,
-            )
-            fsi_spikes_float = fsi_spikes.float()
+        # Add MSN→FSI inhibition (causal: t-1 MSN spikes via spike buffers)
+        # Route to a SEPARATE inhibitory conductance accumulator so it
+        # can be passed to g_gaba_a_input (not mixed with excitatory AMPA).
+        fsi_gaba_a_conductance = self._integrate_synaptic_inputs_at_dendrites(
+            {
+                d1_fsi_synapse: self._d1_spike_buffer.read(1),
+                d2_fsi_synapse: self._d2_spike_buffer.read(1),
+            },
+            n_neurons=self.fsi_size,
+        ).g_gaba_a
 
-            # =====================================================================
-            # PER-NEURON FSI→MSN INHIBITION WITH VOLTAGE-DEPENDENT GABA RELEASE
-            # =====================================================================
-            # Biology: Each MSN receives ~116 feedforward connections from ~18 FSIs
-            # FSI inputs are 4-10× STRONGER than MSN lateral inputs
-            # CRITICAL: GABA release is voltage-dependent (Ca²⁺ channel dynamics)!
-            #
-            # Mechanism:
-            # 1. FSI spikes create baseline inhibition via fsi_to_msn_weights
-            # 2. FSI membrane voltage modulates release strength (Ca²⁺-dependent)
-            # 3. Depolarized FSI (recent high activity) → more GABA release
-            # 4. Hyperpolarized FSI (recent low activity) → less GABA release
-            #
-            # This creates BISTABILITY:
-            # - Competitive state (~-60 mV): weak GABA, balanced competition
-            # - Winner-take-all state (~-50 mV): strong GABA, losers suppressed
+        # Update FSI neurons (fast kinetics, tau_mem ~5ms)
+        # FSI are PV+ fast-spiking: AMPA-dominated, no meaningful NMDA contribution.
+        # nmda_ratio=0.2 with tau_nmda=100ms gives g_NMDA_ss = input × 100 — a runaway
+        # attractor that saturates FSI at 400+ Hz.  Use purely AMPA drive (nmda_ratio=0.0).
+        fsi_g_ampa, fsi_g_nmda = split_excitatory_conductance(fsi_conductance, nmda_ratio=0.0)
+        fsi_g_ampa = fsi_g_ampa + self._fsi_baseline  # Tonic sub-threshold seed
+        fsi_spikes, fsi_membrane = self.fsi_neurons.forward(
+            g_ampa_input=ConductanceTensor(fsi_g_ampa),
+            g_nmda_input=ConductanceTensor(fsi_g_nmda),
+            g_gaba_a_input=ConductanceTensor(fsi_gaba_a_conductance),
+            g_gaba_b_input=None,
+            g_gap_input=fsi_gap_conductance,
+            E_gap_reversal=fsi_gap_reversal,
+        )
+        fsi_spikes_float = fsi_spikes.float()
 
-            # Compute voltage-dependent inhibition scaling factor
-            # fsi_membrane is [fsi_size] tensor of membrane voltages
-            # Returns [fsi_size] tensor of scaling factors (0.1 to 0.8)
-            inhibition_scale = self._fsi_membrane_to_inhibition_strength(fsi_membrane)
+        # =====================================================================
+        # PER-NEURON FSI→MSN INHIBITION WITH VOLTAGE-DEPENDENT GABA RELEASE
+        # =====================================================================
+        # Biology: Each MSN receives ~116 feedforward connections from ~18 FSIs
+        # FSI inputs are 4-10× STRONGER than MSN lateral inputs
+        # CRITICAL: GABA release is voltage-dependent (Ca²⁺ channel dynamics)!
+        #
+        # Mechanism:
+        # 1. FSI spikes create baseline inhibition via fsi_to_msn_weights
+        # 2. FSI membrane voltage modulates release strength (Ca²⁺-dependent)
+        # 3. Depolarized FSI (recent high activity) → more GABA release
+        # 4. Hyperpolarized FSI (recent low activity) → less GABA release
+        #
+        # This creates BISTABILITY:
+        # - Competitive state (~-60 mV): weak GABA, balanced competition
+        # - Winner-take-all state (~-50 mV): strong GABA, losers suppressed
 
-            # Average scaling across FSI population (they're synchronized via gap junctions)
-            # This gives single scaling factor for whole network
-            avg_inhibition_scale = inhibition_scale.mean()
+        # Compute voltage-dependent inhibition scaling factor
+        # fsi_membrane is [fsi_size] tensor of membrane voltages
+        # Returns [fsi_size] tensor of scaling factors (0.1 to 0.8)
+        inhibition_scale = self._fsi_membrane_to_inhibition_strength(fsi_membrane)
 
-            # FSI → D1+D2 inhibition
-            fsi_d1_inhib_synapse = SynapseId(
-                source_region=self.region_name,
-                source_population=StriatumPopulation.FSI,
-                target_region=self.region_name,
-                target_population=StriatumPopulation.D1,
-                receptor_type=ReceptorType.GABA_A,
-            )
-            fsi_d2_inhib_synapse = SynapseId(
-                source_region=self.region_name,
-                source_population=StriatumPopulation.FSI,
-                target_region=self.region_name,
-                target_population=StriatumPopulation.D2,
-                receptor_type=ReceptorType.GABA_A,
-            )
-            fsi_d1_inhib_weights = self.get_synaptic_weights(fsi_d1_inhib_synapse)
-            fsi_d2_inhib_weights = self.get_synaptic_weights(fsi_d2_inhib_synapse)
+        # Average scaling across FSI population (they're synchronized via gap junctions)
+        # This gives single scaling factor for whole network
+        avg_inhibition_scale = inhibition_scale.mean()
 
-            fsi_inhibition_d1 = (fsi_d1_inhib_weights @ fsi_spikes_float) * avg_inhibition_scale
-            fsi_inhibition_d2 = (fsi_d2_inhib_weights @ fsi_spikes_float) * avg_inhibition_scale
-        else:
-            # FSI disabled → no FSI inhibition
-            fsi_inhibition_d1 = torch.zeros(self.d1_size, device=self.device)
-            fsi_inhibition_d2 = torch.zeros(self.d2_size, device=self.device)
+        # FSI → D1+D2 inhibition
+        fsi_d1_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.FSI,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.D1,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        fsi_d2_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.FSI,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.D2,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        fsi_d1_inhib_weights = self.get_synaptic_weights(fsi_d1_inhib_synapse)
+        fsi_d2_inhib_weights = self.get_synaptic_weights(fsi_d2_inhib_synapse)
+
+        fsi_inhibition_d1 = (fsi_d1_inhib_weights @ fsi_spikes_float) * avg_inhibition_scale
+        fsi_inhibition_d2 = (fsi_d2_inhib_weights @ fsi_spikes_float) * avg_inhibition_scale
 
         # =====================================================================
         # MSN→MSN LATERAL INHIBITION
@@ -801,63 +857,60 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # TAN ACh → M2 receptors on MSN dendrites → shunting inhibition.
         # Pause-burst response: TANs pause at CS onset → disinhibit MSNs (enable learning);
         # then burst → inhibit MSNs (terminate plasticity window).
-        tan_spikes: Optional[torch.Tensor] = None  # defined inside if-block; kept here for region_outputs
-        if self.tan_size > 0:
-            tan_conductance = self._integrate_synaptic_inputs_at_dendrites(
-                synaptic_inputs, self.tan_size, filter_by_target_population=StriatumPopulation.TAN
-            ).g_ampa
+        tan_conductance = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs, self.tan_size, filter_by_target_population=StriatumPopulation.TAN
+        ).g_ampa
 
-            # S3-4 — TAN PAUSE DETECTION
-            # Biology: Coincident corticostriatal + thalamostriatal bursts trigger a
-            # ~300 ms silence in TAN firing, mediated by mAChR autoreceptors (M2/M4)
-            # and GABAergic input from the same afferent burst (Aosaki et al. 1994).
-            # Approximation: detect when mean TAN afferent conductance exceeds the
-            # burst threshold; drive a slow inhibitory trace (tau = 300 ms) that
-            # adds g_gaba_a to TANs and suppresses tonic firing during the pause.
-            tan_burst = (tan_conductance.mean() > cfg.tan_pause_threshold).float()
-            self._tan_pause_trace = (
-                self._tan_pause_trace * self._tan_pause_decay
-                + tan_burst * (1.0 - self._tan_pause_decay)
-            )
-            # Expand scalar pause trace to a per-neuron inhibitory conductance tensor
-            tan_g_pause = self._tan_pause_trace.expand(self.tan_size) * cfg.tan_pause_strength
+        # S3-4 — TAN PAUSE DETECTION
+        # Biology: Coincident corticostriatal + thalamostriatal bursts trigger a
+        # ~300 ms silence in TAN firing, mediated by mAChR autoreceptors (M2/M4)
+        # and GABAergic input from the same afferent burst (Aosaki et al. 1994).
+        # Approximation: detect when mean TAN afferent conductance exceeds the
+        # burst threshold; drive a slow inhibitory trace (tau = 300 ms) that
+        # adds g_gaba_a to TANs and suppresses tonic firing during the pause.
+        tan_burst = (tan_conductance.mean() > cfg.tan_pause_threshold).float()
+        self._tan_pause_trace = (
+            self._tan_pause_trace * self._tan_pause_decay
+            + tan_burst * (1.0 - self._tan_pause_decay)
+        )
+        # Expand scalar pause trace to a per-neuron inhibitory conductance tensor
+        tan_g_pause = self._tan_pause_trace.expand(self.tan_size) * cfg.tan_pause_strength
 
-            tan_g_ampa, tan_g_nmda = split_excitatory_conductance(tan_conductance, nmda_ratio=0.1)
-            tan_spikes, _ = self.tan_neurons.forward(
-                g_ampa_input=ConductanceTensor(tan_g_ampa),
-                g_nmda_input=ConductanceTensor(tan_g_nmda),
-                g_gaba_a_input=ConductanceTensor(tan_g_pause),  # pause-driven inhibition
-                g_gaba_b_input=None,
-            )
+        # Add tonic baseline + synaptic AMPA (NMDA omitted: 100ms tau creates bistability
+        # at sub-threshold V due to Mg2+ block; AMPA-only stable for slow pacemaking)
+        tan_total_exc = self._tan_baseline.clone() + tan_conductance
+        tan_spikes, _ = self.tan_neurons.forward(
+            g_ampa_input=ConductanceTensor(tan_total_exc),
+            g_nmda_input=None,
+            g_gaba_a_input=ConductanceTensor(tan_g_pause),  # pause-driven inhibition
+            g_gaba_b_input=None,
+        )
 
-            # S3-3 / S3-5 — Track TAN ACh concentration for plasticity gating.
-            # High TAN firing → high [ACh] → M1/M4 suppresses corticostriatal LTP.
-            # TAN pause → [ACh] drops (tau ~300 ms) → plasticity window opens.
-            self._tan_ach_concentration = self.tan_ach_receptor.update(tan_spikes)
+        # S3-3 / S3-5 — Track TAN ACh concentration for plasticity gating.
+        # High TAN firing → high [ACh] → M1/M4 suppresses corticostriatal LTP.
+        # TAN pause → [ACh] drops (tau ~300 ms) → plasticity window opens.
+        self._tan_ach_concentration = self.tan_ach_receptor.update(tan_spikes)
 
-            # TAN → D1 inhibition (M2-mediated cholinergic shunting)
-            tan_d1_inhib_synapse = SynapseId(
-                source_region=self.region_name,
-                source_population=StriatumPopulation.TAN,
-                target_region=self.region_name,
-                target_population=StriatumPopulation.D1,
-                receptor_type=ReceptorType.GABA_A,
-            )
-            # TAN → D2 inhibition
-            tan_d2_inhib_synapse = SynapseId(
-                source_region=self.region_name,
-                source_population=StriatumPopulation.TAN,
-                target_region=self.region_name,
-                target_population=StriatumPopulation.D2,
-                receptor_type=ReceptorType.GABA_A,
-            )
-            tan_d1_weights = self.get_synaptic_weights(tan_d1_inhib_synapse)
-            tan_d2_weights = self.get_synaptic_weights(tan_d2_inhib_synapse)
-            tan_inhibition_d1 = (tan_d1_weights @ tan_spikes.float()).clamp(min=0)
-            tan_inhibition_d2 = (tan_d2_weights @ tan_spikes.float()).clamp(min=0)
-        else:
-            tan_inhibition_d1 = torch.zeros(self.d1_size, device=self.device)
-            tan_inhibition_d2 = torch.zeros(self.d2_size, device=self.device)
+        # TAN → D1 inhibition (M2-mediated cholinergic shunting)
+        tan_d1_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.TAN,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.D1,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        # TAN → D2 inhibition
+        tan_d2_inhib_synapse = SynapseId(
+            source_region=self.region_name,
+            source_population=StriatumPopulation.TAN,
+            target_region=self.region_name,
+            target_population=StriatumPopulation.D2,
+            receptor_type=ReceptorType.GABA_A,
+        )
+        tan_d1_weights = self.get_synaptic_weights(tan_d1_inhib_synapse)
+        tan_d2_weights = self.get_synaptic_weights(tan_d2_inhib_synapse)
+        tan_inhibition_d1 = (tan_d1_weights @ tan_spikes.float()).clamp(min=0)
+        tan_inhibition_d2 = (tan_d2_weights @ tan_spikes.float()).clamp(min=0)
 
         # =====================================================================
         # D1/D2 NEURON ACTIVATION with Modulation
@@ -885,20 +938,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY
         # =====================================================================
-        # Add baseline noise (spontaneous miniature EPSPs)
-        if cfg.baseline_noise_conductance_enabled:
-            d1_noise = torch.randn_like(d1_conductance) * 0.007
-            d2_noise = torch.randn_like(d2_conductance) * 0.007
-        else:
-            d1_noise = torch.zeros_like(d1_conductance)
-            d2_noise = torch.zeros_like(d2_conductance)
-
-        d1_conductance = (d1_conductance + d1_noise).clamp(min=0)
-        d2_conductance = (d2_conductance + d2_noise).clamp(min=0)
-
         # Split excitatory conductance into AMPA (fast) and NMDA (slow)
-        d1_g_ampa, d1_g_nmda = split_excitatory_conductance(d1_conductance, nmda_ratio=0.2)
-        d2_g_ampa, d2_g_nmda = split_excitatory_conductance(d2_conductance, nmda_ratio=0.2)
+        # nmda_ratio reduced 0.2→0.10: high NMDA was accumulating (tau=100ms) and driving MSN bistability issues
+        d1_g_ampa, d1_g_nmda = split_excitatory_conductance(d1_conductance, nmda_ratio=0.10)
+        d2_g_ampa, d2_g_nmda = split_excitatory_conductance(d2_conductance, nmda_ratio=0.10)
 
         # CONDUCTANCE-BASED: Inhibition goes to g_gaba_a_input, NOT mixed with excitation
         # Combine all inhibitory sources (FSI + within-pathway + cross-pathway + TAN)
@@ -940,7 +983,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             combined_rate = (self.d1_firing_rate.mean() + self.d2_firing_rate.mean()) / 2.0
 
             # Rate error for combined population (positive = underactive)
-            combined_rate_error = cfg.target_firing_rate - combined_rate
+            combined_rate_error = self._get_target_firing_rate(StriatumPopulation.D1) - combined_rate
 
             # INTRINSIC EXCITABILITY: Modulate leak conductance for BOTH pathways
             # Inverse relationship: underactive → lower g_L
@@ -962,31 +1005,29 @@ class Striatum(NeuralRegion[StriatumConfig]):
         region_outputs: RegionOutput = {
             StriatumPopulation.D1: d1_spikes,
             StriatumPopulation.D2: d2_spikes,
+            StriatumPopulation.TAN: tan_spikes,  # Include TAN spikes so NeuromodulatorHub can broadcast 'ach_striatal'.
+            StriatumPopulation.FSI: fsi_spikes,  # Include FSI spikes for diagnostics and downstream tracts.
         }
-        # S3-3: Include TAN spikes so NeuromodulatorHub can broadcast 'ach_striatal'.
-        if tan_spikes is not None:
-            region_outputs[StriatumPopulation.TAN] = tan_spikes
 
         if not GlobalConfig.LEARNING_DISABLED:
-            # Use per-neuron DA concentration from receptors (not scalar broadcast)
-            d1_da = self._da_concentration_d1   # [d1_size]
-            d2_da = self._da_concentration_d2   # [d2_size]
-
             # Lazily register strategies for D1/D2 targets before dispatching
             for synapse_id in synaptic_inputs:
-                if synapse_id.target_population == StriatumPopulation.D1:
-                    if self.get_learning_strategy(synapse_id) is None:
-                        self._register_msn_strategy(synapse_id, d1_pathway=True)
-                elif synapse_id.target_population == StriatumPopulation.D2:
-                    if self.get_learning_strategy(synapse_id) is None:
-                        self._register_msn_strategy(synapse_id, d1_pathway=False)
+                if self.get_learning_strategy(synapse_id) is None:
+                    strategy_class = None
+                    if synapse_id.target_population == StriatumPopulation.D1:
+                        strategy_class = D1STDPStrategy
+                    elif synapse_id.target_population == StriatumPopulation.D2:
+                        strategy_class = D2STDPStrategy
 
-            # S3-5 — TAN ACh gates corticostriatal plasticity (inverted: pause = enable).
-            # During tonic TAN firing: ACh high → tan_plasticity_gate low → LTP suppressed.
-            # During TAN pause: ACh drops → gate rises toward 1.0 → LTP enabled.
-            # Biology: The ~300 ms pause precisely times the DA burst window
-            # for optimal Hebbian reinforcement (Surmeier et al. 2014).
-            tan_plasticity_gate = 1.0 - self._tan_ach_concentration.mean().item()
+                    if strategy_class is not None:
+                        strategy = strategy_class(D1D2STDPConfig(
+                            learning_rate=cfg.learning_rate,
+                            fast_eligibility_tau_ms=cfg.fast_eligibility_tau_ms,
+                            slow_eligibility_tau_ms=cfg.slow_eligibility_tau_ms,
+                            eligibility_consolidation_rate=cfg.eligibility_consolidation_rate,
+                            slow_trace_weight=cfg.slow_trace_weight,
+                        ))
+                        self._add_learning_strategy(synapse_id, strategy)
 
         # =====================================================================
         # UPDATE STATE BUFFERS FOR NEXT TIMESTEP
@@ -1007,35 +1048,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
         if synapse_id.target_population == StriatumPopulation.D2:
             return {"dopamine": d2_da, "acetylcholine": tan_gate}
         return {}
-
-    def _register_msn_strategy(self, synapse_id: SynapseId, *, d1_pathway: bool) -> None:
-        """Lazily create and register a D1 or D2 learning strategy for *synapse_id*.
-
-        Called the first time a synapse_id for a D1 or D2 population is encountered
-        during learning.  The strategy is added to ``self._learning_strategies``
-        (a :class:`SynapseIdModuleDict`) so it is tracked as a proper ``nn.Module``
-        submodule and participates in ``.to(device)`` and ``state_dict()``.
-        """
-        cfg = self.config
-        base_cfg = D1STDPConfig(
-            learning_rate=cfg.learning_rate,
-            fast_eligibility_tau_ms=cfg.fast_eligibility_tau_ms,
-            slow_eligibility_tau_ms=cfg.slow_eligibility_tau_ms,
-            eligibility_consolidation_rate=cfg.eligibility_consolidation_rate,
-            slow_trace_weight=cfg.slow_trace_weight,
-        )
-        if d1_pathway:
-            strategy: D1STDPStrategy = D1STDPStrategy(base_cfg)
-        else:
-            strategy = D2STDPStrategy(D2STDPConfig(
-                learning_rate=cfg.learning_rate,
-                fast_eligibility_tau_ms=cfg.fast_eligibility_tau_ms,
-                slow_eligibility_tau_ms=cfg.slow_eligibility_tau_ms,
-                eligibility_consolidation_rate=cfg.eligibility_consolidation_rate,
-                slow_trace_weight=cfg.slow_trace_weight,
-            ))
-        # Register without eager setup — ensure_setup() is called on first compute_update()
-        self._add_learning_strategy(synapse_id, strategy)
 
     # =========================================================================
     # MULTI-SOURCE SYNAPTIC INTEGRATION

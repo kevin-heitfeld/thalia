@@ -26,14 +26,13 @@ from .neurons import (
     SerotoninNeuron,
 )
 from .synapses import (
+    ConductanceScaledSpec,
     ShortTermPlasticity,
     STPConfig,
     STPPreset,
     STPType,
     WeightInitializer,
     NeuromodulatorReceptor,
-    STP_PRESETS,
-    get_stp_config,
 )
 
 __all__ = [
@@ -52,15 +51,14 @@ __all__ = [
     "NeuronFactory",
     "NeuronType",
     # Weight Initialization
+    "ConductanceScaledSpec",
     "WeightInitializer",
     # Short-term plasticity
     "ShortTermPlasticity",
     "STPConfig",
     "STPType",
     # STP presets
-    "STP_PRESETS",
     "STPPreset",
-    "get_stp_config",
     # Gap Junctions
     "GapJunctionConfig",
     "GapJunctionCoupling",

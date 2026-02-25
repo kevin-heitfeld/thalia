@@ -27,17 +27,14 @@ class CerebellumConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    # Purkinje cells have high spontaneous firing rates (~40-50 Hz in biology)
-    # At 1ms timestep: 40-50 Hz = 4-5% firing rate per timestep
-    target_firing_rate: float = 0.045  # 4.5% target = 45 Hz (biological Purkinje baseline)
-    gain_learning_rate: float = 0.005  # Reduced 10x to prevent runaway (was 0.05, tried 0.0005 - too slow)
+    gain_learning_rate: float = 0.005  # Slow learning rate for gain adaptation (prevents instability)
     gain_tau_ms: float = 2000.0  # 2s averaging window (slow for motor stability)
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
     # =========================================================================
-    threshold_learning_rate: float = 0.03  # Moderate threshold adaptation
-    threshold_min: float = 0.05  # Lower floor to allow more aggressive adaptation for under-firing
+    threshold_learning_rate: float = 0.005  # Slow learning rate for threshold adaptation (prevents instability)
+    threshold_min: float = 0.5   # Moderate min (ensures some baseline excitability)
     threshold_max: float = 1.2  # Moderate max (Purkinje cells naturally active)
 
     # =========================================================================
@@ -56,7 +53,7 @@ class CerebellumConfig(NeuralRegionConfig):
     # MARR-ALBUS-ITO LEARNING RATES
     # =========================================================================
     # Cerebellar plasticity at parallel fiber → Purkinje synapses is governed by
-    # the conjunctive climbing fiber + parallel fiber rule (Ito 1989).
+    # the conjunctive climbing fiber + parallel fiber rule.
     # LTD is 100× faster than LTP (strong asymmetry is characteristic of cerebellar learning).
     mai_ltd_rate: float = 0.01
     """LTD rate when climbing fiber fires coincident with parallel fiber activity."""

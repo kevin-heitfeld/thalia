@@ -7,7 +7,7 @@ from typing import Optional, cast
 import torch
 
 from thalia.brain import BrainBuilder, DynamicBrain
-from thalia.brain.regions.population_names import ThalamusPopulation
+from thalia.brain.regions.population_names import ExternalPopulation, ThalamusPopulation
 from thalia.components import ShortTermPlasticity, STPConfig
 from thalia.typing import BrainOutput, SynapseId, SynapticInput
 
@@ -17,11 +17,31 @@ sys.stdout.reconfigure(line_buffering=True)
 
 
 def main() -> None:
+    # Override default population sizes for testing
+    external_reward_size: int = 10
+    external_sensory_size: int = 42
+    default_overrides = {
+        "population_sizes": {
+            SynapseId._EXTERNAL_REGION_NAME: {
+                ExternalPopulation.REWARD: external_reward_size,
+                ExternalPopulation.SENSORY: external_sensory_size,
+            },
+        },
+    }
+
     # Create brain with default preset
     print("Creating brain...")
     start_time = time.time()
+    # TODO: brain: DynamicBrain = BrainBuilder.preset("default", overrides=default_overrides)
     brain: DynamicBrain = BrainBuilder.preset("default")
     print(f"Brain created in {time.time() - start_time:.2f}s")
+
+    # TODO
+    # {
+    thalamus = brain.get_region_by_name("thalamus")
+    assert thalamus is not None, "Thalamus region not found in brain"
+    external_sensory_size = thalamus.get_population_size(ThalamusPopulation.RELAY)
+    # }
 
     print("=== Brain Regions ===")
     for region_name, region in brain.regions.items():
@@ -46,10 +66,8 @@ def main() -> None:
     # Perform a forward pass through the brain
     print("\n=== Forward Pass ===")
     print("Preparing input...")
-    thalamus = brain.get_region_by_name("thalamus")
-    assert thalamus is not None, "Thalamus region not found in brain"
-    sensory_input = torch.randn(thalamus.get_population_size(ThalamusPopulation.RELAY)) < 0.5  # Random binary spikes for testing
-    brain_input: SynapticInput = {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): sensory_input}
+    sensory_input = torch.randn(external_sensory_size) < 0.5  # Random binary spikes for testing
+    brain_input: SynapticInput = {SynapseId.external_sensory_to_thalamus_relay("thalamus"): sensory_input}
     print("Running forward pass...")
     start_time = time.time()
     brain_output: BrainOutput = brain.forward(brain_input)

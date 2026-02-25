@@ -128,26 +128,24 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         self.vta_feedback_size = population_sizes[SubstantiaNigraPopulation.VTA_FEEDBACK]
 
         # GABAergic output neurons (tonically active)
-        snr_neuron_config = ConductanceLIFConfig(
-            region_name=self.region_name,
-            population_name=SubstantiaNigraPopulation.VTA_FEEDBACK,
-            device=self.device,
-            tau_mem=self.config.tau_mem,  # 15ms - realistic SNr membrane tau
-            v_threshold=self.config.v_threshold,  # 1.0 - standard threshold
-            v_reset=0.0,
-            v_rest=0.0,
-            tau_ref=self.config.tau_ref,  # 2.0ms - biological refractory period
-            g_L=0.10,  # Moderate leak (tau_m = C_m/g_L = 1.0/0.10 = 10ms effective)
-            E_L=0.0,
-            E_E=3.0,
-            E_I=-0.5,
-            tau_E=5.0,  # AMPA-like kinetics
-            tau_I=10.0,  # GABA_A-like kinetics
-            noise_std=0.007 if self.config.baseline_noise_conductance_enabled else 0.0,  # Membrane voltage noise
-        )
         self.neurons = ConductanceLIF(
             n_neurons=self.vta_feedback_size,
-            config=snr_neuron_config,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=SubstantiaNigraPopulation.VTA_FEEDBACK,
+                tau_mem=self.config.tau_mem,  # 15ms - realistic SNr membrane tau
+                v_threshold=self.config.v_threshold,  # 1.0 - standard threshold
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,  # 2.0ms - biological refractory period
+                g_L=0.10,  # Moderate leak (tau_m = C_m/g_L = 1.0/0.10 = 10ms effective)
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,  # AMPA-like kinetics
+                tau_I=10.0,  # GABA_A-like kinetics
+                noise_std=0.007,  # Membrane voltage noise
+            ),
+            device=self.device,
         )
 
         # Tonic drive for baseline firing
@@ -179,9 +177,6 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         """
         self._pre_forward(synaptic_inputs, neuromodulator_inputs)
 
-        # Integrate all inputs targeting VTA_FEEDBACK population.
-        # The dendrite helper correctly separates excitatory (STN) and
-        # inhibitory (D1-MSN, GPe) conductances based on SynapseId.is_inhibitory.
         dendrite = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=self.vta_feedback_size,
@@ -191,12 +186,6 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         # Add baseline drive as excitatory conductance to maintain tonic firing (~50-70Hz)
         g_exc_total = dendrite.g_ampa + self.baseline_drive
         g_inh_total = dendrite.g_gaba_a
-
-        # Add baseline noise conductance (stochastic background activity)
-        # BIOLOGY: Represents spontaneous miniature EPSPs and stochastic channel openings
-        if self.config.baseline_noise_conductance_enabled:
-            noise = torch.randn(self.vta_feedback_size, device=self.device) * 0.007
-            g_exc_total = g_exc_total + torch.clamp(noise, min=0.0)  # Only positive noise (excitatory)
 
         # Split excitatory conductance: 99% AMPA (fast), 1% NMDA (slow)
         g_ampa, g_nmda = split_excitatory_conductance(g_exc_total, nmda_ratio=0.01)

@@ -27,7 +27,7 @@ attention shifts and prediction errors through fast, brief bursts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
@@ -50,32 +50,40 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     - Sarter & Parikh (2005): Cholinergic neuron electrophysiology
     - Hasselmo & McGaughy (2004): ACh dynamics
     """
-
+    # =========================================================================
     # Membrane properties
-    tau_mem: float = 12.0  # Fast membrane (faster than DA/NE)
-    v_rest: float = 0.0
+    # =========================================================================
+    tau_mem: Union[float, torch.Tensor] = 12.0  # Fast membrane (faster than DA/NE)
     v_reset: float = -0.08  # Shallow reset (allows rapid bursting)
-    v_threshold: float = 1.0
+    v_threshold: Union[float, torch.Tensor] = 1.0
     tau_ref: float = 1.5  # Very short refractory (enables fast bursts)
 
-    # Leak conductance (tuned for moderate tonic firing)
+    # Leak conductance
     g_L: float = 0.083  # tau_m = C_m/g_L = 12ms
 
-    # Reversal potentials
-    E_L: float = 0.0
-    E_E: float = 3.0
-    E_I: float = -0.5
-
+    # =========================================================================
     # Synaptic time constants
+    # =========================================================================
     tau_E: float = 4.0  # Fast excitation
     tau_I: float = 8.0
 
+    # =========================================================================
+    # Noise
+    # =========================================================================
+    noise_std: float = 0.07
+
+    # =========================================================================
+    # I_h (HCN) pacemaker current parameters
+    # =========================================================================
     # I_h pacemaking current (HCN channels) - MODERATE
     # Between NE and DA for 2-5 Hz baseline
     # Must dominate g_L for pacemaking
     i_h_conductance: float = 0.45
     i_h_reversal: float = 0.77
 
+    # =========================================================================
+    # SK calcium-activated K+ channels (spike-frequency adaptation)
+    # =========================================================================
     # SK calcium-activated K+ channels - FAST ADAPTATION
     # Strong and fast → limits burst duration to 50-100ms
     sk_conductance: float = 0.035  # Stronger than DA/NE
@@ -84,16 +92,12 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     ca_influx_per_spike: float = 0.25  # High influx (rapid SK activation)
 
     # Prediction error modulation parameters
-    prediction_error_to_current_gain: float = 25.0  # Strong response to PE
     # High PE → strong burst
     # Low PE → baseline
+    prediction_error_to_current_gain: float = 25.0  # Strong response to PE
 
     # Disable adaptation from base class (we use SK instead)
     adapt_increment: float = 0.0
-
-    # Noise for biological realism and tonic firing
-    # Tuned to 0.07 for ~2-5 Hz firing rate
-    noise_std: float = 0.07
 
 
 class AcetylcholineNeuron(ConductanceLIF):
@@ -106,21 +110,24 @@ class AcetylcholineNeuron(ConductanceLIF):
     4. Rapid return to baseline after burst
     """
 
-    def __init__(self, n_neurons: int, config: AcetylcholineNeuronConfig):
+    def __init__(self, n_neurons: int, config: AcetylcholineNeuronConfig, device: str = "cpu"):
         """Initialize acetylcholine neuron population.
 
         Args:
             n_neurons: Number of ACh neurons (~3,000-5,000 in human NB)
             config: Configuration with pacemaking and fast burst parameters
         """
-        super().__init__(n_neurons, config)
+        super().__init__(n_neurons, config, device)
 
         # SK channel state (calcium-activated K+ for fast adaptation)
-        self.ca_concentration = torch.zeros(n_neurons, device=self.device)
-        self.sk_activation = torch.zeros(n_neurons, device=self.device)
+        self.ca_concentration = torch.zeros(n_neurons, device=device)
+        self.sk_activation = torch.zeros(n_neurons, device=device)
 
         # Initialize with varied phases (prevent artificial synchronization)
-        self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.4
+        self.v_mem = torch.rand(n_neurons, device=device) * config.v_threshold * 0.4
+
+        # Store current prediction error for conductance calculation
+        self._current_pe = 0.0
 
     @torch.no_grad()
     def forward(
@@ -170,7 +177,7 @@ class AcetylcholineNeuron(ConductanceLIF):
         # Store spikes for diagnostic access
         self.spikes = spikes
 
-        return spikes, self.membrane
+        return spikes, self.V_soma
 
     def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
         """Compute I_h and SK conductances.
@@ -180,11 +187,9 @@ class AcetylcholineNeuron(ConductanceLIF):
         Returns:
             List of (conductance, reversal) tuples
         """
-        # I_h pacemaker (modulated by prediction error)
-        pe = getattr(self, '_current_pe', 0.0)
-        g_ih_base = self.config.i_h_conductance
-        g_ih_modulated = g_ih_base * (1.0 + 0.8 * pe)  # Strong PE modulation
-        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
+        # I_h pacemaker (strong prediction error modulation for fast bursts)
+        g_ih_modulated = self.config.i_h_conductance * (1.0 + 0.8 * self._current_pe)
+        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.V_soma.device)
 
         # SK adaptation (strong and fast for brief bursts)
         g_sk = self.config.sk_conductance * self.sk_activation

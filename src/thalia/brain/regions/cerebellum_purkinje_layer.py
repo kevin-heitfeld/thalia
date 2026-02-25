@@ -73,11 +73,14 @@ class VectorizedPurkinjeLayer(nn.Module):
         # Shape: [n_purkinje, n_parallel_fibers]
         # Biology: Each Purkinje cell receives ~200k parallel fibers (20% connectivity)
         # CONDUCTANCE-BASED: Weak individual synapses, strong in aggregate
+        # weight_scale reduced from 0.0008: double-integration amplification (dendritic leaky
+        # integrator tau=10ms × tau_E=2ms in soma) creates ~11x gain before NMDA, so
+        # 0.0008 was driving g_ampa_ss >> 1.0 → Purkinje firing at 47% (target 4-6%).
         self.synaptic_weights = WeightInitializer.sparse_random(
             n_input=n_parallel_fibers,
             n_output=n_purkinje,
             connectivity=0.2,
-            weight_scale=0.0008,
+            weight_scale=0.000013,
             device=device,
         )
 
@@ -89,17 +92,17 @@ class VectorizedPurkinjeLayer(nn.Module):
             config=ConductanceLIFConfig(
                 region_name="cerebellum",
                 population_name=CerebellumPopulation.PURKINJE,
-                device=device,
                 tau_mem=20.0,
                 tau_E=2.0,
                 tau_I=10.0,
                 tau_nmda=50.0,
                 v_threshold=1.0,
                 v_reset=0.0,
-                v_rest=0.0,
                 E_L=0.0,
                 tau_ref=2.0,
+                g_L=0.10,
             ),
+            device=device,
         )
 
         # =====================================================================
@@ -154,7 +157,15 @@ class VectorizedPurkinjeLayer(nn.Module):
         dendrite_input_distributed = dendrite_input_distributed.expand(-1, self.n_dendrites)
 
         # Add dendritic variability (biology: dendrites have different properties)
-        dendrite_noise = torch.randn_like(self.dendrite_voltage) * 0.1
+        # noise_std reduced from 0.001: with weight_scale=1.3e-5, signal per dendrite
+        # is ~1.4e-5, so 0.001 noise was 70x higher than signal.  Crucially, the
+        # clamp(min=0.0) on soma_input introduced a systematic rectified bias:
+        #   E[clamp(N(0, σ))] = σ/√(2π) → spurious constant g_AMPA upward bias.
+        # With 100 dendrites, bias ≈ 0.0235/√(2π) ≈ 0.009/step → g_AMPA_ss ≈ 0.02.
+        # This drove V_inf ≈ 0.47 which, when threshold was homeostasis-lowered to ~0.2,
+        # caused noise-only firing at 200+ Hz.  Noise reduced to 0.00001: bias now
+        # negligible (< 4×10⁻⁵ per step).
+        dendrite_noise = torch.randn_like(self.dendrite_voltage) * 0.00001
         dendrite_input_distributed = dendrite_input_distributed + dendrite_noise
 
         # Dendritic voltage integration (leaky)
@@ -209,10 +220,24 @@ class VectorizedPurkinjeLayer(nn.Module):
         calcium_modulation = 1.0 + 0.2 * calcium_per_cell
 
         # Apply calcium modulation to soma input
-        soma_conductance = soma_input * calcium_modulation
+        soma_conductance = (soma_input * calcium_modulation).clamp(min=0.0)
 
-        # Split AMPA/NMDA (70/30 ratio)
-        soma_g_ampa, soma_g_nmda = split_excitatory_conductance(soma_conductance, nmda_ratio=0.3)
+        # Purkinje intrinsic pacemaker drive
+        # Biology: Purkinje cells fire spontaneously at 40–100 Hz in vivo via
+        # resurgent Na⁺ (NaV1.6) and P/Q-type Ca²⁺ channels.  This is NOT driven
+        # by parallel fibres; parallel fibres modulate the rate, not initiate it.
+        # With tau_E=2ms and 1ms timestep, g_AMPA_ss = g_ampa_input / (1 - exp(-0.5))
+        #   ≈ g_ampa_input × 2.541.  For V_inf = 1.3 (target ∼60 Hz at threshold=1.0):
+        #   g_AMPA_ss_needed = 1.3 × g_L / (E_E - 1.3) = 1.3 × 0.10 / 1.7 = 0.0765
+        #   g_ampa_pacemaker = 0.0765 / 2.541 ≈ 0.030 per step.
+        # Homeostasis (threshold range [0.5, 1.2]) will tune the actual rate.
+        _PURKINJE_PACEMAKER_G: float = 0.030
+        soma_conductance = soma_conductance + _PURKINJE_PACEMAKER_G
+
+        # AMPA-only: with dendritic tau=10ms + soma tau_E=2ms, NMDA (tau=50ms) would
+        # amplify by an additional 50/2=25x on top of existing dendritic gain,
+        # driving Purkinje far above threshold. Target: ~4-6% (40-60 Hz biological).
+        soma_g_ampa, soma_g_nmda = split_excitatory_conductance(soma_conductance, nmda_ratio=0.0)
 
         # Process through soma LIF neurons
         simple_spikes, _ = self.soma_neurons.forward(

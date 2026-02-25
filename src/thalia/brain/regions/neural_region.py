@@ -30,6 +30,7 @@ from thalia import GlobalConfig
 from thalia.brain.configs import NeuralRegionConfig
 from thalia.components import (
     ConductanceLIF,
+    ConductanceScaledSpec,
     TwoCompartmentLIF,
     STPConfig,
     ShortTermPlasticity,
@@ -69,12 +70,14 @@ class PopulationHomeostasisState:
     Attributes:
         population_name: Key in ``neuron_populations`` for neuron lookup.
         firing_rate_attr: Attribute name of the registered firing-rate EMA buffer.
+        target_firing_rate: Per-population homeostatic target rate (spikes/ms).
         weight_scale_attr: Attribute name of the synaptic weight-scale buffer, or
             ``None`` when synaptic scaling is not enabled for this population.
     """
 
     population_name: PopulationName
     firing_rate_attr: str
+    target_firing_rate: float
     weight_scale_attr: Optional[str] = None
 
 
@@ -192,11 +195,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # -----------------------------------------------------------------------
         # LEARNING CONTROL
         # -----------------------------------------------------------------------
-        # When True, _post_forward skips the automatic _apply_all_learning call.
-        # Use this to pause plasticity during inference or consolidation without
-        # removing registered learning strategies.
-        self.freeze_learning: bool = False
-
         # Synaptic inputs from the current forward() call; stored by _pre_forward
         # so that _post_forward can drive _apply_all_learning automatically.
         self._last_synaptic_inputs: SynapticInput = {}
@@ -298,50 +296,17 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             raise ValueError(f"STP module for '{synapse_id}' already exists in {self.__class__.__name__}")
         self.stp_modules[synapse_id] = ShortTermPlasticity(n_pre, n_post, config).to(self.device)
 
-    def add_input_source(
+    def _add_synapse(
         self,
         synapse_id: SynapseId,
-        n_input: int,
-        connectivity: float,
-        weight_scale: float,
-        *,
-        stp_config: Optional[STPConfig] = None,
-        learning_strategy: Optional[LearningStrategy] = None,
+        weights: torch.Tensor,
+        stp_config: Optional[STPConfig],
+        learning_strategy: Optional[LearningStrategy],
     ) -> None:
-        """Add synaptic weights for a new input source.
+        """Add a new synaptic input source with weights, optional STP, and optional learning strategy."""
+        self._add_synaptic_weights(synapse_id, weights)
 
-        Args:
-            synapse_id: Fully-typed routing key identifying the connection.
-            n_input: Number of pre-synaptic neurons.
-            connectivity: Sparse connection probability (0–1).
-            weight_scale: Scale of random initial weights.
-            stp_config: Optional short-term plasticity configuration.
-            learning_strategy: Optional :class:`~thalia.learning.LearningStrategy`
-                registered atomically with the weight matrix.  Equivalent to
-                calling :meth:`_add_learning_strategy` immediately after this
-                call but keeps weight and strategy registration co-located.
-        """
-
-        if n_input < 0:
-            raise ValueError("Number of input neurons must be non-negative")
-        if not (0.0 <= connectivity <= 1.0):
-            raise ValueError("Connectivity must be between 0 and 1")
-        if weight_scale < 0:
-            raise ValueError("Weight scale must be non-negative")
-
-        # All registered inputs are synaptic (neuromodulators use separate broadcast system)
-        n_output = self.get_population_size(synapse_id.target_population)
-
-        self._add_synaptic_weights(
-            synapse_id,
-            WeightInitializer.sparse_random(
-                n_input=n_input,
-                n_output=n_output,
-                connectivity=connectivity,
-                weight_scale=weight_scale,
-                device=self.device,
-            ),
-        )
+        n_output, n_input = weights.shape
 
         if stp_config is not None:
             self._add_stp_module(
@@ -352,9 +317,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             )
 
         if learning_strategy is not None:
-            self._add_learning_strategy(
-                synapse_id, learning_strategy, n_pre=n_input, n_post=n_output
-            )
+            self._add_learning_strategy(synapse_id, learning_strategy, n_pre=n_input, n_post=n_output)
 
     def _add_internal_connection(
         self,
@@ -362,8 +325,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         target_population: PopulationName,
         weights: torch.Tensor,
         *,
-        stp_config: STPConfig,
-        receptor_type: ReceptorType = ReceptorType.AMPA,
+        receptor_type: ReceptorType,
+        stp_config: Optional[STPConfig],
         learning_strategy: Optional[LearningStrategy] = None,
     ) -> SynapseId:
         """Add internal synaptic weights between neuron populations within this region.
@@ -376,8 +339,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             source_population: Name of the pre-synaptic population within this region.
             target_population: Name of the post-synaptic population within this region.
             weights: Weight tensor ``[n_post, n_pre]``.
+            receptor_type: Post-synaptic receptor type.
             stp_config: Short-term plasticity configuration (or ``None`` to skip STP).
-            receptor_type: Post-synaptic receptor type (default: AMPA / excitatory).
             learning_strategy: Optional :class:`~thalia.learning.LearningStrategy`
                 registered atomically with the weight matrix.  Equivalent to
                 calling :meth:`_add_learning_strategy` immediately after this
@@ -412,24 +375,84 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             receptor_type=receptor_type,
         )
 
-        self._add_synaptic_weights(synapse_id, weights)
-
-        if stp_config is not None:
-            n_output, n_input = weights.shape
-            self._add_stp_module(
-                synapse_id=synapse_id,
-                n_pre=n_input,
-                n_post=n_output,
-                config=stp_config,
-            )
-
-        if learning_strategy is not None:
-            n_output, n_input = weights.shape
-            self._add_learning_strategy(
-                synapse_id, learning_strategy, n_pre=n_input, n_post=n_output
-            )
+        self._add_synapse(
+            synapse_id=synapse_id,
+            weights=weights,
+            stp_config=stp_config,
+            learning_strategy=learning_strategy,
+        )
 
         return synapse_id
+
+    def add_input_source(
+        self,
+        synapse_id: SynapseId,
+        n_input: int,
+        connectivity: float,
+        weight_scale: Union[float, ConductanceScaledSpec],
+        *,
+        stp_config: Optional[STPConfig] = None,
+        learning_strategy: Optional[LearningStrategy] = None,
+    ) -> None:
+        """Add synaptic weights for a new input source.
+
+        Args:
+            synapse_id: Fully-typed routing key identifying the connection.
+            n_input: Number of pre-synaptic neurons.
+            connectivity: Sparse connection probability (0–1).
+            weight_scale: Either a plain float scale for
+                :meth:`~thalia.components.WeightInitializer.sparse_random`, or a
+                :class:`~thalia.components.ConductanceScaledSpec` for physics-based
+                calibration via
+                :meth:`~thalia.components.WeightInitializer.conductance_scaled`.
+            stp_config: Optional short-term plasticity configuration.
+            learning_strategy: Optional :class:`~thalia.learning.LearningStrategy`
+                registered atomically with the weight matrix.  Equivalent to
+                calling :meth:`_add_learning_strategy` immediately after this
+                call but keeps weight and strategy registration co-located.
+        """
+
+        if n_input < 0:
+            raise ValueError("Number of input neurons must be non-negative")
+        if not (0.0 <= connectivity <= 1.0):
+            raise ValueError("Connectivity must be between 0 and 1")
+        if isinstance(weight_scale, float) and weight_scale < 0:
+            raise ValueError("Weight scale must be non-negative")
+
+        # All registered inputs are synaptic (neuromodulators use separate broadcast system)
+        n_output = self.get_population_size(synapse_id.target_population)
+
+        if isinstance(weight_scale, ConductanceScaledSpec):
+            spec = weight_scale
+            weights = WeightInitializer.conductance_scaled(
+                n_input=n_input,
+                n_output=n_output,
+                connectivity=connectivity,
+                source_rate_hz=spec.source_rate_hz,
+                target_g_L=spec.target_g_L,
+                target_E_E=spec.target_E_E,
+                target_E_L=spec.target_E_L,
+                target_tau_E_ms=spec.target_tau_E_ms,
+                target_v_inf=spec.target_v_inf,
+                fraction_of_drive=spec.fraction_of_drive,
+                stp_utilization_factor=spec.stp_utilization_factor,
+                device=self.device,
+            )
+        else:
+            weights = WeightInitializer.sparse_random(
+                n_input=n_input,
+                n_output=n_output,
+                connectivity=connectivity,
+                weight_scale=weight_scale,
+                device=self.device,
+            )
+
+        self._add_synapse(
+            synapse_id=synapse_id,
+            weights=weights,
+            stp_config=stp_config,
+            learning_strategy=learning_strategy,
+        )
 
     # =========================================================================
     # FORWARD PASS
@@ -487,12 +510,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         :meth:`_get_learning_kwargs`.  Regions that need custom logic simply override
         ``_get_learning_kwargs``; they do **not** need to call
         ``_apply_all_learning`` in their own ``forward()``.
-
-        Skips learning when :attr:`freeze_learning` is ``True`` — set this flag to
-        pause plasticity during inference or offline consolidation without
-        removing the registered learning strategies.
         """
-        if not self.freeze_learning:
+        if not GlobalConfig.LEARNING_DISABLED:
             self._apply_all_learning(
                 self._last_synaptic_inputs,
                 region_outputs,
@@ -658,6 +677,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         n_neurons: int,
         *,
         use_synaptic_scaling: bool = False,
+        target_firing_rate: float,
     ) -> None:
         """Register homeostatic state tracking for a neuron population.
 
@@ -679,6 +699,9 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 firing-rate tensor before the population itself is registered).
             use_synaptic_scaling: When ``True``, also registers a weight-scale
                 buffer for multiplicative synaptic scaling (Turrigiano & Nelson 2004).
+            target_firing_rate: Homeostatic target (spikes/ms) for this population.
+                Populations within the same region may have biologically distinct
+                activity levels (e.g. L23 vs L5 pyramidals, or DG vs CA1).
         """
         if population_name in self._homeostasis:
             raise ValueError(
@@ -698,8 +721,20 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self._homeostasis[population_name] = PopulationHomeostasisState(
             population_name=population_name,
             firing_rate_attr=fr_attr,
+            target_firing_rate=target_firing_rate,
             weight_scale_attr=ws_attr,
         )
+
+    def _get_target_firing_rate(self, population_name: PopulationName) -> float:
+        """Return the homeostatic target firing rate for a population.
+
+        Returns the target registered via :meth:`_register_homeostasis`.
+
+        Args:
+            population_name: The population key (same value used in
+                :meth:`_register_homeostasis`).
+        """
+        return self._homeostasis[population_name].target_firing_rate
 
     def _apply_synaptic_scaling(self, population_name: PopulationName) -> None:
         """Apply multiplicative synaptic scaling if a population is chronically underactive.
@@ -796,8 +831,9 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         current_rate = spikes.float()
         firing_rate.mul_(1.0 - self._firing_rate_alpha).add_(current_rate * self._firing_rate_alpha)
 
-        # Compute rate error: positive when underactive
-        rate_error = self.config.target_firing_rate - firing_rate  # [n_neurons]
+        # Compute rate error: positive when underactive.
+        pop_target = state.target_firing_rate
+        rate_error = pop_target - firing_rate  # [n_neurons]
 
         # INTRINSIC EXCITABILITY: Modulate leak conductance
         # Underactive (rate_error > 0) → lower g_L_scale → lower leak → more excitable
@@ -884,6 +920,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         strategy = self.get_learning_strategy(synapse_id)
         if strategy is not None:
             weights = self.get_synaptic_weights(synapse_id)
+            # Capture connectivity mask BEFORE the update so that only
+            # pre-existing synapses (weight > 0 at initialisation or after LTP)
+            # can be modified.  Hebbian/STDP outer-products produce dense
+            # [n_post × n_pre] matrices; without this mask they would create
+            # de-novo connections at anatomically absent entries, violating
+            # the sparse connectivity layout set at build time and causing the
+            # same runaway potentiation seen in hippocampus (Fix 2, 2025-07).
+            syn_mask = weights.data > 0.0
             updated: torch.Tensor = strategy.compute_update(
                 weights=weights.data,
                 pre_spikes=pre_spikes,
@@ -891,6 +935,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 **kwargs,
             )
             clamp_weights(updated, self.config.w_min, self.config.w_max)
+            # Zero any newly-created entries; anatomically absent synapses stay absent.
+            updated.mul_(syn_mask.float())
             weights.data = updated
 
     def _apply_all_learning(

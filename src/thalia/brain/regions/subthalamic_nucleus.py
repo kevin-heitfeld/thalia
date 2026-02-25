@@ -20,7 +20,6 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
 from .neural_region import NeuralRegion
 from .population_names import STNPopulation
@@ -56,11 +55,9 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
             config=ConductanceLIFConfig(
                 region_name=self.region_name,
                 population_name=STNPopulation.STN,
-                device=self.device,
                 tau_mem=self.config.tau_mem,
                 v_threshold=self.config.v_threshold,
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=self.config.tau_ref,
                 g_L=0.08,
                 E_L=0.0,
@@ -68,7 +65,7 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
-                noise_std=0.006 if self.config.baseline_noise_conductance_enabled else 0.0,
+                noise_std=0.006,
                 # I_h (HCN) pacemaker — voltage-dependent, activates during hyperpolarisation
                 enable_ih=True,
                 g_h_max=self.config.i_h_conductance * 10.0,  # Scale from old constant to max-conductance
@@ -77,6 +74,7 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
                 k_h=0.10,      # Steep voltage-dependence
                 tau_h_ms=80.0, # Slightly faster than default for ~20 Hz pacemaking
             ),
+            device=self.device,
         )
 
         # Baseline drive for autonomous pacemaking (tonic excitatory conductance)
@@ -115,12 +113,14 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
         # via enable_ih=True in the ConductanceLIF config.
         g_exc = self.baseline_drive.clone() + dendrite.g_ampa
 
-        # Split excitatory: 30% NMDA (stronger for STN glutamatergic character)
-        g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.30)
-
+        # AMPA-only for tonic pacemaking: tau_NMDA=100ms creates Mg²⁺-blocked bistability
+        # at resting V≈0 (only 7.5% NMDA unblocked), locking STN in sub-threshold regime.
+        # Biological STN tonic pacemaking is driven by T-type Ca²⁺ / persistent Na⁺,
+        # represented here as pure AMPA baseline. NMDA contributes to burst responses
+        # (not tonic 20 Hz pacemaking) and can be re-added once HCN/Ca dynamics are added.
         stn_spikes, _ = self.stn_neurons.forward(
-            g_ampa_input=ConductanceTensor(g_ampa),
-            g_nmda_input=ConductanceTensor(g_nmda),
+            g_ampa_input=ConductanceTensor(g_exc),
+            g_nmda_input=None,
             g_gaba_a_input=ConductanceTensor(dendrite.g_gaba_a),
             g_gaba_b_input=ConductanceTensor(dendrite.g_gaba_b),
         )

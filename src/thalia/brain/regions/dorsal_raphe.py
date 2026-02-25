@@ -62,6 +62,7 @@ from thalia.components import (
     SerotoninNeuronConfig,
 )
 from thalia.typing import (
+    ConductanceTensor,
     NeuromodulatorInput,
     NeuromodulatorType,
     PopulationName,
@@ -124,16 +125,9 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
             config=SerotoninNeuronConfig(
                 region_name=self.region_name,
                 population_name=DRNPopulation.SEROTONIN,
-                device=self.device,
                 serotonin_drive_gain=config.tonic_drive_gain * 20.0,
-                # Scale default gain by the region-level tonic_drive_gain factor
-                i_h_conductance=SerotoninNeuronConfig.i_h_conductance
-                if config.baseline_noise_conductance_enabled
-                else SerotoninNeuronConfig.i_h_conductance * 0.5,
-                noise_std=SerotoninNeuronConfig.noise_std
-                if config.baseline_noise_conductance_enabled
-                else 0.0,
             ),
+            device=self.device,
         )
 
         # ── Local GABAergic interneurons (homeostatic inhibition) ────────────
@@ -201,19 +195,24 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         serotonin_drive = float(torch.tensor(raw_drive).clamp(-1.0, 1.0).item())
 
         # ── 3. Update 5-HT neurons ────────────────────────────────────────────
+        # Apply GABA feedback from the previous timestep's interneuron activity.
+        # This closes the homeostatic loop: primary fires → GABA fires → primary
+        # is inhibited next step (one-step causal delay, no circular dependency).
+        gaba_feedback = self._get_gaba_feedback_conductance(self.serotonin_neurons_size, gain=0.01)
         serotonin_spikes, _ = self.serotonin_neurons.forward(
             g_ampa_input=None,    # No direct AMPA; drive via I_h modulation
             g_nmda_input=None,
-            g_gaba_a_input=None,  # GABA interneuron feedback handled below
+            g_gaba_a_input=ConductanceTensor(gaba_feedback),
             g_gaba_b_input=None,
             serotonin_drive=serotonin_drive,
         )
         # ── 4. Update GABA interneurons (homeostatic inhibition) ─────────────
         serotonin_activity = serotonin_spikes.float().mean().item()
-        self._step_gaba_interneurons(serotonin_activity)
+        gaba_spikes = self._step_gaba_interneurons(serotonin_activity)
 
         region_outputs: RegionOutput = {
             DRNPopulation.SEROTONIN: serotonin_spikes,
+            DRNPopulation.GABA: gaba_spikes,
         }
         return self._post_forward(region_outputs)
 
@@ -222,8 +221,9 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
     def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
         """Compute excitatory drive for GABA interneurons from 5-HT activity.
 
-        DRN uses a stronger feedback multiplier (1.0×) than the default (0.8×),
-        reflecting the tight homeostatic loop between 5-HT and local GABA cells.
+        No tonic baseline: GABA only fires proportionally when 5-HT overshoots
+        its target (gain=2.0).  The previous baseline=0.3 saturated GABA at
+        ~420 Hz which completely silenced serotonin neurons via feedback.
 
         Args:
             primary_activity: Mean serotonin neuron firing rate.
@@ -231,14 +231,13 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         Returns:
             Drive conductance tensor [gaba_neurons_size]
         """
-        # Tonic baseline (DRN-GABA cells are spontaneously active)
-        baseline = 0.3 if self.config.baseline_noise_conductance_enabled else 0.0
+        # Tonic baseline REMOVED: a constant 0.3 drive pushes GABA neurons to V*=2.25
+        # (threshold=0.9), saturating them at ~420 Hz and fully silencing serotonin
+        # neurons via massive GABA feedback. GABA should only fire when serotonin
+        # overshoots its target. Match the base-class convention: gain 2.0, no baseline.
+        feedback = primary_activity * 2.0
 
-        # Negative feedback proportional to 5-HT activity
-        feedback = primary_activity * 1.0
-
-        total = baseline + feedback
-        return torch.full((self.gaba_neurons_size,), total, device=self.device)
+        return torch.full((self.gaba_neurons_size,), feedback, device=self.device)
 
     def _normalize_drive(self, raw_drive: float) -> float:
         """Adaptive normalisation to prevent saturation / silence.

@@ -96,26 +96,24 @@ class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
         self.principal_size = population_sizes[LHbPopulation.PRINCIPAL]
 
         # Glutamatergic principal neurons (mostly silent at baseline)
-        principal_config = ConductanceLIFConfig(
-            region_name=self.region_name,
-            population_name=LHbPopulation.PRINCIPAL,
-            device=self.device,
-            tau_mem=self.config.tau_mem,
-            v_threshold=self.config.v_threshold,
-            v_reset=0.0,
-            v_rest=0.0,
-            tau_ref=self.config.tau_ref,
-            g_L=0.08,
-            E_L=0.0,
-            E_E=3.0,
-            E_I=-0.5,
-            tau_E=5.0,
-            tau_I=10.0,
-            noise_std=0.003 if self.config.baseline_noise_conductance_enabled else 0.0,
-        )
         self.principal_neurons = ConductanceLIF(
             n_neurons=self.principal_size,
-            config=principal_config,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=LHbPopulation.PRINCIPAL,
+                tau_mem=self.config.tau_mem,
+                v_threshold=self.config.v_threshold,
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=0.08,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=0.003,
+            ),
+            device=self.device,
         )
 
         # Low baseline drive (LHb is mostly quiet except during aversive events)
@@ -149,8 +147,8 @@ class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
         g_exc = self.baseline_drive.clone() + dendrite.g_ampa
         g_gaba_a = dendrite.g_gaba_a
 
-        # Split excitatory conductance: mostly AMPA for fast LHb responses
-        g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.10)
+        # LHb is a fast prediction-error encoder: AMPA-only, no NMDA.
+        g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.0)
 
         principal_spikes, _ = self.principal_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),

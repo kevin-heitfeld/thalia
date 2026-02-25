@@ -236,7 +236,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             config=TwoCompartmentLIFConfig(
                 region_name=self.region_name,
                 population_name=PrefrontalPopulation.EXECUTIVE,
-                device=self.device,
                 tau_mem=wm_properties["tau_mem"],  # Per-neuron tensor (100–500ms)!
                 g_L=0.02,
                 tau_E=10.0,  # Slower excitatory (for integration)
@@ -252,6 +251,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
                 g_Ca_spike=0.25,  # moderate Ca²⁺ spike for PFC burst dynamics
                 tau_Ca_ms=30.0,   # slightly slower for WM integration
             ),
+            device=self.device,
         )
 
         # =====================================================================
@@ -276,15 +276,38 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             std=0.0005,
             device=self.device,
         )
-        # Initialize with self-excitation (heterogeneous)
-        # Scale diagonal by heterogeneous recurrent strengths
-        rec_weights = rec_weights + torch.diag(wm_properties["recurrent_strength"]) * GlobalConfig.SYNAPTIC_WEIGHT_SCALE
+        # Initialize with self-excitation (heterogeneous WM maintenance)
+        # recurrent_strength is normalised to [0.2, 1.0]; scale to conductance range
+        # (~0.005–0.025) so diagonal weights are comparable to off-diagonal background
+        # (μ≈0.0005, random off-diagonal) rather than 40–200× larger.
+        DIAGONAL_CONDUCTANCE_SCALE = 0.025 * GlobalConfig.SYNAPTIC_WEIGHT_SCALE  # max diagonal ≈ 0.025 (5× background mean)
+        rec_weights = rec_weights + torch.diag(wm_properties["recurrent_strength"]) * DIAGONAL_CONDUCTANCE_SCALE
+        clamp_weights(rec_weights, w_min=self.config.w_min, w_max=self.config.w_max)
         self._add_internal_connection(
             source_population=PrefrontalPopulation.EXECUTIVE,
             target_population=PrefrontalPopulation.EXECUTIVE,
             weights=rec_weights,
-            stp_config=STPConfig(U=0.2, tau_d=200.0, tau_f=150.0),
             receptor_type=ReceptorType.AMPA,
+            stp_config=STPConfig(U=0.2, tau_d=200.0, tau_f=150.0),
+        )
+
+        # Lateral inhibition weights
+        # REDUCED from 0.08: at any non-trivial firing rate, 800 neurons × mean_weight × rate
+        # completely dominated excitation. At 2 Hz: g_inh = 800×0.04×0.002 = 0.064/step vs
+        # baseline 0.003 → inhibition 20× stronger than excitation → E/I=0.00 imbalance.
+        # At 0.015: g_inh = 800×0.0075×0.002 = 0.012/step → manageable lateral inhibition.
+        self._add_internal_connection(
+            source_population=PrefrontalPopulation.EXECUTIVE,
+            target_population=PrefrontalPopulation.EXECUTIVE,
+            weights=WeightInitializer.sparse_random_no_autapses(
+                n_input=self.executive_size,
+                n_output=self.executive_size,
+                connectivity=1.0,
+                weight_scale=0.015,
+                device=self.device,
+            ),
+            receptor_type=ReceptorType.GABA_A,
+            stp_config=None,
         )
 
         # PFC recurrent delay buffer (prevents instant feedback oscillations)
@@ -294,21 +317,6 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
             size=self.executive_size,
             device=str(self.device),
             dtype=torch.float32,  # Working memory values (continuous)
-        )
-
-        # Lateral inhibition weights
-        self._add_internal_connection(
-            source_population=PrefrontalPopulation.EXECUTIVE,
-            target_population=PrefrontalPopulation.EXECUTIVE,
-            weights=WeightInitializer.sparse_random_no_autapses(
-                n_input=self.executive_size,
-                n_output=self.executive_size,
-                connectivity=1.0,  # Fully connected lateral inhibition
-                weight_scale=0.08,
-                device=self.device,
-            ),
-            stp_config=None,
-            receptor_type=ReceptorType.GABA_A,
         )
 
         # =====================================================================
@@ -382,7 +390,7 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY
         # =====================================================================
-        self._register_homeostasis(PrefrontalPopulation.EXECUTIVE, self.executive_size)
+        self._register_homeostasis(PrefrontalPopulation.EXECUTIVE, self.executive_size, target_firing_rate=0.002)
 
         # =====================================================================
         # EMERGENT HIERARCHICAL GOALS (Biologically Plausible)
@@ -512,11 +520,11 @@ class Prefrontal(NeuralRegion[PrefrontalConfig]):
 
         rec_input = (effective_rec_weights @ wm_delayed).clamp(min=0) * ach_recurrent_modulation
 
-        # Total excitation
-        g_exc = ff_input + rec_input
-        if cfg.baseline_noise_conductance_enabled:
-            noise = torch.randn_like(g_exc) * 0.007
-            g_exc = (g_exc + noise).clamp(min=0)
+        # Total excitation (tonic baseline + feedforward + recurrent)
+        # baseline_drive provides the subthreshold offset that allows sparse
+        # cortical/hippocampal inputs to evoke spiking (PFC has no dedicated
+        # pacemaker, but has persistent up-state depolarisation in vivo).
+        g_exc = cfg.baseline_drive + ff_input + rec_input
 
         # Lateral inhibition: use delayed working memory for causality
         # inhib_weights[executive_size, executive_size] @ wm[executive_size] → [executive_size]

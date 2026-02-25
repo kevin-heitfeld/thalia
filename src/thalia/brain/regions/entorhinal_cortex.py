@@ -223,17 +223,23 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         # Add tonic baseline drive (sub-threshold depolarisation from layer I)
         ec_ii_drive = ec_ii_raw + cfg.ec_ii_tonic_drive
 
-        if cfg.baseline_noise_conductance_enabled:
-            ec_ii_drive = ec_ii_drive + torch.randn_like(ec_ii_drive) * 0.005
-
         ec_ii_drive = torch.nn.functional.relu(ec_ii_drive)  # Non-negative conductance
 
         # ── 2. Fire EC_II neurons ─────────────────────────────────────────────
         ec_ii_g_ampa, ec_ii_g_nmda = split_excitatory_conductance(ec_ii_drive, nmda_ratio=0.3)
+        # Implicit lateral inhibition: EC_II has dense PV/SST interneurons (not explicitly
+        # modelled). We approximate their net E→I→E effect as GABA-A conductance
+        # proportional to the same-step excitatory drive (PV cells respond within ~1ms,
+        # so dt=1ms same-step approximation is biologically accurate). This prevents
+        # runaway activity and keeps EC_II in the biological 1-10 Hz range.
+        # Ratio tuning: with NMDA tau≈100ms accumulating far more than GABA-A tau≈10ms,
+        # the large-x equilibrium V* = (17.25-5r)/(4.75+10r); setting this to threshold
+        # (≈1.0) gives r≈0.83.  Using 1.0 to stay conservatively below target.
+        ec_ii_inh = ec_ii_drive * 1.0
         ec_ii_spikes, _ = self.ec_ii_neurons.forward(
             g_ampa_input=ConductanceTensor(ec_ii_g_ampa),
             g_nmda_input=ConductanceTensor(ec_ii_g_nmda),
-            g_gaba_a_input=None,
+            g_gaba_a_input=ConductanceTensor(ec_ii_inh),
             g_gaba_b_input=None,
         )
 
@@ -245,18 +251,16 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         ).g_ampa
 
         ec_iii_drive = ec_iii_raw + cfg.ec_iii_tonic_drive
-
-        if cfg.baseline_noise_conductance_enabled:
-            ec_iii_drive = ec_iii_drive + torch.randn_like(ec_iii_drive) * 0.005
-
         ec_iii_drive = torch.nn.functional.relu(ec_iii_drive)
 
         # ── 4. Fire EC_III neurons ────────────────────────────────────────────
         ec_iii_g_ampa, ec_iii_g_nmda = split_excitatory_conductance(ec_iii_drive, nmda_ratio=0.3)
+        # Implicit lateral inhibition (see EC_II above for rationale).
+        ec_iii_inh = ec_iii_drive * 1.0
         ec_iii_spikes, _ = self.ec_iii_neurons.forward(
             g_ampa_input=ConductanceTensor(ec_iii_g_ampa),
             g_nmda_input=ConductanceTensor(ec_iii_g_nmda),
-            g_gaba_a_input=None,
+            g_gaba_a_input=ConductanceTensor(ec_iii_inh),
             g_gaba_b_input=None,
         )
 
@@ -268,18 +272,18 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         ).g_ampa
 
         ec_v_drive = ec_v_raw + cfg.ec_v_tonic_drive
-
-        if cfg.baseline_noise_conductance_enabled:
-            ec_v_drive = ec_v_drive + torch.randn_like(ec_v_drive) * 0.003
-
         ec_v_drive = torch.nn.functional.relu(ec_v_drive)
 
         # ── 6. Fire EC_V neurons ──────────────────────────────────────────────
         ec_v_g_ampa, ec_v_g_nmda = split_excitatory_conductance(ec_v_drive, nmda_ratio=0.25)
+        # EC_V lateral inhibition: slightly weaker than EC_II/III (layer V pyramids
+        # provide the back-projection output; over-inhibition would silence memory
+        # readout from CA1).
+        ec_v_inh = ec_v_drive * 0.65
         ec_v_spikes, _ = self.ec_v_neurons.forward(
             g_ampa_input=ConductanceTensor(ec_v_g_ampa),
             g_nmda_input=ConductanceTensor(ec_v_g_nmda),
-            g_gaba_a_input=None,
+            g_gaba_a_input=ConductanceTensor(ec_v_inh),
             g_gaba_b_input=None,
         )
 

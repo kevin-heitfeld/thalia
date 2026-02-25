@@ -78,6 +78,8 @@ class HippocampalInhibitoryNetwork(nn.Module):
         total_inhib_fraction: float,
         dt_ms: float,
         device: str,
+        v_threshold_olm: float = 1.0,
+        v_threshold_bistratified: float = 0.9,
     ):
         """Initialize hippocampal inhibitory network.
 
@@ -88,6 +90,10 @@ class HippocampalInhibitoryNetwork(nn.Module):
             total_inhib_fraction: Fraction of pyramidal count
             dt_ms: Timestep in milliseconds
             device: Torch device
+            v_threshold_olm: Spike threshold for OLM cells. DG uses 1.0 (near-silence
+                target); CA3/CA2/CA1 use ~0.35 to allow sparse-driven theta firing.
+            v_threshold_bistratified: Spike threshold for bistratified cells. DG uses
+                0.9; CA3/CA2/CA1 use ~0.30 for the same reason.
         """
         super().__init__()
 
@@ -117,50 +123,60 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # =====================================================================
 
         # PV basket cells: Fast-spiking perisomatic inhibition
-        # CRITICAL: PV neurons should ONLY fire when driven by pyramidal cells
+        # Normal fast-spiking threshold (0.9) — PV cells should fire in response
+        # to pyramidal activity to maintain E/I balance and generate gamma oscillations.
         self.pv_neurons = ConductanceLIF(
             n_neurons=self.n_pv,
             config=ConductanceLIFConfig(
                 region_name=region_name,
                 population_name=f"{population_name}_pv",
-                device=device,
                 tau_mem=7.0,    # Fast-spiking
-                v_threshold=2.0,  # HIGH threshold: Prevents spontaneous firing
+                v_threshold=0.9,  # Normal fast-spiking threshold
                 v_reset=0.0,
                 tau_adapt=50.0,     # Weak adaptation
                 adapt_increment=0.05,
             ),
+            device=device,
         )
 
         # OLM cells: CRITICAL for theta phase-locking
         # High adaptation creates burst-pause dynamics for theta rhythm
+        # v_threshold is passed in from the caller: DG uses 1.0 (near-silence target)
+        # while CA3/CA2/CA1 use ~0.35 so sparse pyramidal drive (0.75–2 Hz) recruits them.
         self.olm_neurons = ConductanceLIF(
             n_neurons=self.n_olm,
             config=ConductanceLIFConfig(
                 region_name=region_name,
                 population_name=f"{population_name}_olm",
-                device=device,
                 tau_mem=25.0,   # Slow (regular-spiking)
-                v_threshold=1.1,  # Higher threshold (needs strong drive)
+                v_threshold=v_threshold_olm,
                 v_reset=0.0,
                 tau_adapt=100.0,    # STRONG adaptation (creates bursting)
                 adapt_increment=0.20,  # Large increment (burst termination)
+                # Reduced noise: default 0.08 gives sigma_V≈0.66 → noise-driven 2 Hz.
+                # At 0.020: sigma_V≈0.16, gap/sigma≈5.9 → <0.01 Hz noise floor (target 0-1 Hz).
+                noise_std=0.020,
             ),
+            device=device,
         )
 
         # Bistratified cells: Dendritic targeting
+        # v_threshold is passed in from the caller: DG uses 0.9; CA3/CA2/CA1 use ~0.30.
         self.bistratified_neurons = ConductanceLIF(
             n_neurons=self.n_bistratified,
             config=ConductanceLIFConfig(
                 region_name=region_name,
                 population_name=f"{population_name}_bistratified",
-                device=device,
                 tau_mem=12.0,   # Medium
-                v_threshold=0.9,
+                v_threshold=v_threshold_bistratified,
                 v_reset=0.0,
                 tau_adapt=60.0,
                 adapt_increment=0.08,
+                # Reduced noise: default 0.08 gives sigma_V≈0.46, gap=0.77 → 3 Hz noise floor.
+                # At 0.020: sigma_V≈0.23, gap/sigma≈3.4 → ~0.3 Hz (target 0-1 Hz).
+                noise_std=0.020,
             ),
+            device=device,
         )
 
         # =====================================================================
@@ -168,13 +184,25 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # =====================================================================
 
         # Pyramidal → PV (strong, reliable)
-        # CONDUCTANCE-BASED: Single Pyr→PV synapse ~0.5-1nS, normalized by g_L (10nS) = 0.05-0.1
+        if population_name == HippocampusPopulation.DG_INHIBITORY:
+            _pv_total_dg = 0.02317 / (0.001 * 5.0)
+            pv_to_pv_connectivity = 0.5
+            _pv_w_max_ei = 2.0 * _pv_total_dg / (pyr_size * pv_to_pv_connectivity)
+        elif population_name == HippocampusPopulation.CA3_INHIBITORY:
+            _pv_total_ca3 = 0.02317 / (0.002 * 5.0)
+            pv_to_pv_connectivity = 0.5
+            _pv_w_max_ei = 2.0 * _pv_total_ca3 / (pyr_size * pv_to_pv_connectivity)
+        else:
+            _pv_total_ca = 0.02317 / (0.002 * 5.0)
+            pv_to_pv_connectivity = 0.5
+            _pv_w_max_ei = 2.0 * _pv_total_ca / (pyr_size * pv_to_pv_connectivity)
+
         self.pyr_to_pv = WeightInitializer.sparse_uniform(
             n_input=pyr_size,
             n_output=self.n_pv,
-            connectivity=0.5,
+            connectivity=pv_to_pv_connectivity,
             w_min=0.0,
-            w_max=0.0012,
+            w_max=_pv_w_max_ei,
             device=self.device,
         )
 
@@ -185,7 +213,7 @@ class HippocampalInhibitoryNetwork(nn.Module):
             n_output=self.n_olm,
             connectivity=0.3,
             w_min=0.0,
-            w_max=0.0006,
+            w_max=0.015,
             device=self.device,
         )
 
@@ -196,7 +224,7 @@ class HippocampalInhibitoryNetwork(nn.Module):
             n_output=self.n_bistratified,
             connectivity=0.35,
             w_min=0.0,
-            w_max=0.0007,
+            w_max=0.012,
             device=self.device,
         )
 
@@ -209,22 +237,22 @@ class HippocampalInhibitoryNetwork(nn.Module):
             # DG: Light inhibition for sparse coding (pattern separation)
             pv_connectivity = 0.3
             pv_w_min = 0.0
-            pv_w_max = 0.001
+            pv_w_max = 0.005
         elif population_name == HippocampusPopulation.CA3_INHIBITORY:
             # CA3: STRONG inhibition to control runaway recurrent activity
             pv_connectivity = 0.7  # High connectivity for effective inhibition
             pv_w_min = 0.0
-            pv_w_max = 0.003
+            pv_w_max = 0.015
         elif population_name == HippocampusPopulation.CA2_INHIBITORY:
             # CA2: Stronger inhibition for precise timing control (encoding/retrieval separation)
             pv_connectivity = 0.5
             pv_w_min = 0.0
-            pv_w_max = 0.003
+            pv_w_max = 0.012
         elif population_name == HippocampusPopulation.CA1_INHIBITORY:
             # CA1: Strong inhibition to control excitability and support theta modulations
             pv_connectivity = 0.5
             pv_w_min = 0.0
-            pv_w_max = 0.003
+            pv_w_max = 0.015
         else:
             raise ValueError(
                 f"Unknown hippocampal population: {population_name}. "
@@ -327,7 +355,7 @@ class HippocampalInhibitoryNetwork(nn.Module):
 
         self._prev_pv_spikes: Optional[torch.Tensor] = None
         self._prev_olm_spikes: Optional[torch.Tensor] = None
-        self._prev_pv_v_mem: Optional[torch.Tensor] = None
+        self._prev_pv_v_soma: Optional[torch.Tensor] = None
 
     # =========================================================================
     # FORWARD PASS
@@ -434,7 +462,7 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # Otherwise, gap junctions create positive feedback loops that sustain
         # PV firing even with zero pyramidal input (biologically impossible)
 
-        if self._prev_pv_v_mem is not None:
+        if self._prev_pv_v_soma is not None:
             # Measure pyramidal drive strength (use original drive before lateral inhibition)
             pyr_drive_strength = pv_exc_from_pyramidal.mean().item()
 
@@ -444,17 +472,21 @@ class HippocampalInhibitoryNetwork(nn.Module):
                 # Scale gap junction strength proportional to pyramidal drive
                 # This prevents spontaneous synchronization
                 gap_junction_gain = min(1.0, pyr_drive_strength / 0.1)
-                pv_gap_current = (self._prev_pv_v_mem @ self.pv_gap_junctions.T)
+                pv_gap_current = (self._prev_pv_v_soma @ self.pv_gap_junctions.T)
                 pv_exc = pv_exc + pv_gap_current * 0.05 * gap_junction_gain
 
         # =====================================================================
         # RUN INTERNEURONS
         # =====================================================================
 
-        # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
+        # Split excitatory conductance: AMPA only for OLM and bistratified (5% NMDA).
+        # nmda_ratio=0.30 caused NMDA accumulation (tau=100ms) at tonic 1 Hz pyramidal:
+        # g_nmda_ss ≈ 0.033 → V_inf ≈ 0.87, triggering 3-7 Hz bistratified firing at rest.
+        # 5% NMDA gives negligible NMDA contribution at tonic rates; OLM/bistratified
+        # fire only when driven by genuine gamma/theta pyramidal bursts.
         pv_g_ampa, pv_g_nmda = split_excitatory_conductance(pv_exc, nmda_ratio=0.3)
-        olm_g_ampa, olm_g_nmda = split_excitatory_conductance(olm_exc, nmda_ratio=0.3)
-        bistratified_g_ampa, bistratified_g_nmda = split_excitatory_conductance(bistratified_exc, nmda_ratio=0.3)
+        olm_g_ampa, olm_g_nmda = split_excitatory_conductance(olm_exc, nmda_ratio=0.05)
+        bistratified_g_ampa, bistratified_g_nmda = split_excitatory_conductance(bistratified_exc, nmda_ratio=0.05)
 
         pv_spikes, _ = self.pv_neurons.forward(
             g_ampa_input=ConductanceTensor(pv_g_ampa),
@@ -498,7 +530,7 @@ class HippocampalInhibitoryNetwork(nn.Module):
 
         self._prev_pv_spikes = pv_spikes
         self._prev_olm_spikes = olm_spikes
-        self._prev_pv_v_mem = self.pv_neurons.membrane if self.pv_neurons.membrane is not None else torch.zeros(self.n_pv, device=self.device)
+        self._prev_pv_v_soma = self.pv_neurons.V_soma.clone()
 
         # =====================================================================
         # RETURN STRUCTURED OUTPUT

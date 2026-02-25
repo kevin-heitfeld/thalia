@@ -29,7 +29,7 @@ class AxonalTractSourceSpec:
     that are not encoded in ``SynapseId``.
     """
 
-    synapse_id: SynapseId  # full routing key: source, target, and is_inhibitory
+    synapse_id: SynapseId
     size: int
     delay_ms: float
     delay_std_ms: float  # Standard deviation for heterogeneous delays (0 = uniform)

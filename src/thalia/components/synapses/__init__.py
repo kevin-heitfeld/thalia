@@ -16,11 +16,10 @@ from .stp import (
     ShortTermPlasticity,
     STPConfig,
     STPType,
-    STP_PRESETS,
     STPPreset,
-    get_stp_config,
 )
 from .weight_init import (
+    ConductanceScaledSpec,
     WeightInitializer,
 )
 
@@ -32,13 +31,12 @@ __all__ = [
     "SpilloverTransmission",
     "apply_spillover_to_weights",
     # Weight Initialization
+    "ConductanceScaledSpec",
     "WeightInitializer",
     # Short-term plasticity
     "ShortTermPlasticity",
     "STPConfig",
     "STPType",
     # STP presets
-    "STP_PRESETS",
     "STPPreset",
-    "get_stp_config",
 ]

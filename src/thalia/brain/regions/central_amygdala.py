@@ -63,6 +63,7 @@ from thalia.components import (
     ConductanceLIFConfig,
     WeightInitializer,
 )
+from thalia.components.synapses.stp import STPConfig, STPType
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -128,11 +129,9 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             config=ConductanceLIFConfig(
                 region_name=self.region_name,
                 population_name=CeAPopulation.LATERAL,
-                device=self.device,
                 tau_mem=config.tau_mem,
                 v_threshold=config.v_threshold,
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=config.tau_ref,
                 g_L=0.06,
                 E_L=0.0,
@@ -144,6 +143,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
                 tau_adapt=120.0,
                 noise_std=0.03,
             ),
+            device=self.device,
         )
 
         # CeM neurons (medial CeA): output, projects to LC and LHb
@@ -153,11 +153,9 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             config=ConductanceLIFConfig(
                 region_name=self.region_name,
                 population_name=CeAPopulation.MEDIAL,
-                device=self.device,
                 tau_mem=config.tau_mem,
                 v_threshold=config.v_threshold * 0.9,  # Slightly easier to activate
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=config.tau_ref,
                 g_L=0.05,
                 E_L=0.0,
@@ -169,6 +167,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
                 tau_adapt=150.0,
                 noise_std=0.03,
             ),
+            device=self.device,
         )
 
         # =====================================================================
@@ -189,8 +188,8 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
                 weight_scale=0.002,
                 device=self.device,
             ),
-            stp_config=None,
-            receptor_type=ReceptorType.GABA_A,  # CeL is GABAergic → inhibits CeM
+            receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING),
         )
 
         # CeL self-inhibition (lateral mutual inhibition: ON/OFF dynamics)
@@ -204,8 +203,8 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
                 weight_scale=0.0015,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING),
         )
 
         # Baseline drives

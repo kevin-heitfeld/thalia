@@ -88,19 +88,18 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Granule cell layer (sparse expansion from mossy fibers)
         # --------------------------------------------------------------------
         # Granule cells are small, fast-spiking neurons
-        granule_config = ConductanceLIFConfig(
-            region_name=self.region_name,
-            population_name=CerebellumPopulation.GRANULE,
-            device=self.device,
-            v_threshold=0.85,  # Normalized: more excitable than pyramidal (1.0)
-            v_reset=0.0,       # Normalized rest potential
-            tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
-            tau_E=2.5,  # ms, fast AMPA-like (biological minimum ~2-3ms)
-            tau_I=6.0,  # ms, fast GABA_A (biological range 5-10ms)
-        )
         self.granule_neurons = ConductanceLIF(
             n_neurons=self.granule_size,
-            config=granule_config,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=CerebellumPopulation.GRANULE,
+                v_threshold=0.85,  # Normalized: more excitable than pyramidal (1.0)
+                v_reset=0.0,       # Normalized rest potential
+                tau_mem=5.0,  # ms, faster than pyramidal (5ms vs 10-30ms)
+                tau_E=2.5,  # ms, fast AMPA-like (biological minimum ~2-3ms)
+                tau_I=6.0,  # ms, fast GABA_A (biological range 5-10ms)
+            ),
+            device=self.device,
         )
 
         # --------------------------------------------------------------------
@@ -133,9 +132,9 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 weight_scale=0.0015,
                 device=self.device,
             ),
+            receptor_type=ReceptorType.GABA_A,
             # Biology: Strong Purkinje inhibition shows depression, preventing runaway inhibition
             stp_config=STPConfig.from_type(STPType.DEPRESSING),
-            receptor_type=ReceptorType.GABA_A,
         )
 
         # Mossy fiber → DCN (excitatory collaterals)
@@ -152,42 +151,32 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 weight_scale=0.0005,
                 device=self.device,
             ),
+            receptor_type=ReceptorType.AMPA,
             # Biology: Mossy fiber collaterals show facilitation, reinforcing sustained input
             stp_config=STPConfig.from_type(STPType.FACILITATING),
-            receptor_type=ReceptorType.AMPA,
         )
 
         # DCN neurons (tonic firing, modulated by inhibition)
         # DCN neurons are spontaneously active (tonic firing ~40-60 Hz)
         # Use NORMALIZED units (threshold=1.0 scale) NOT absolute millivolts
-        dcn_config = ConductanceLIFConfig(
-            region_name=self.region_name,
-            population_name=CerebellumPopulation.DCN,
+        self.dcn_neurons = ConductanceLIF(
+            n_neurons=self.dcn_size,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=CerebellumPopulation.DCN,
+                v_threshold=1.0,  # Standard normalized threshold
+                v_reset=0.0,  # Reset to rest
+                E_L=0.0,  # Leak reversal (normalized)
+                E_E=3.0,  # Excitatory reversal (normalized, above threshold)
+                E_I=-0.5,  # Inhibitory reversal (normalized, hyperpolarizing)
+                g_L=0.10,  # Moderate leak conductance
+                tau_mem=20.0,  # ms, moderate integration
+                tau_E=4.0,  # ms, AMPA kinetics (biological range 2-5ms)
+                tau_I=10.0,  # ms, GABA_A kinetics (biological range 5-10ms)
+                tau_ref=12.0,  # ms, refractory period (max ~83 Hz ceiling, allows biological 40-60 Hz range)
+            ),
             device=self.device,
-            v_threshold=1.0,  # Standard normalized threshold
-            v_reset=0.0,  # Reset to rest
-            v_rest=0.0,  # Resting potential (normalized)
-            E_L=0.0,  # Leak reversal (normalized)
-            E_E=3.0,  # Excitatory reversal (normalized, above threshold)
-            E_I=-0.5,  # Inhibitory reversal (normalized, hyperpolarizing)
-            g_L=0.10,  # Moderate leak conductance
-            tau_mem=20.0,  # ms, moderate integration
-            tau_E=4.0,  # ms, AMPA kinetics (biological range 2-5ms)
-            tau_I=10.0,  # ms, GABA_A kinetics (biological range 5-10ms)
-            tau_ref=12.0,  # ms, refractory period (max ~83 Hz ceiling, allows biological 40-60 Hz range)
-            noise_std=0.007 if config.baseline_noise_conductance_enabled else 0.0,  # Membrane voltage noise
         )
-        self.dcn_neurons = ConductanceLIF(n_neurons=self.dcn_size, config=dcn_config)
-
-        # Initialize DCN neuron membrane potentials with heterogeneous values
-        # This prevents all neurons starting at same potential and synchronizing
-        dcn_v_init = torch.normal(
-            mean=0.0,  # Around rest (normalized units)
-            std=0.1,  # Moderate spread
-            size=(self.dcn_size,),
-            device=self.device,
-        ).clamp(min=-0.2, max=0.5)  # Subthreshold range (normalized units)
-        self.dcn_neurons.membrane = dcn_v_init.clone()
 
         # IO membrane potential for gap junction coupling
         self._io_membrane: Optional[torch.Tensor] = None
@@ -196,7 +185,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # HOMEOSTATIC INTRINSIC PLASTICITY (Adaptive Gain)
         # =====================================================================
         # EMA tracking of Purkinje firing rates (reserved for future use).
-        self._register_homeostasis(CerebellumPopulation.PURKINJE, self.purkinje_size)
+        self._register_homeostasis(CerebellumPopulation.PURKINJE, self.purkinje_size, target_firing_rate=0.045)
 
         # Adaptive gains (per neuron)
         self.gain = torch.ones(self.purkinje_size, device=self.device)
@@ -254,6 +243,13 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         self._register_neuron_population(CerebellumPopulation.INFERIOR_OLIVE, self.io_neurons, polarity=PopulationPolarity.EXCITATORY)
         self._register_neuron_population(CerebellumPopulation.PURKINJE, self.purkinje_layer.soma_neurons, polarity=PopulationPolarity.INHIBITORY)
 
+        # Golgi-cell feedback state (Golgi cells are not explicitly modelled;
+        # their net effect is approximated as proportional self-inhibition of the
+        # granule layer derived from the previous step's mean firing rate).
+        # Biology: Golgi cells fire at 5-10 Hz and provide tonic GABA-A inhibition
+        # to granule cell dendrites, enforcing <5% population sparsity.
+        self._prev_granule_rate: float = 0.0
+
         # Ensure all tensors are on the correct device
         self.to(self.device)
 
@@ -284,18 +280,23 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             filter_by_target_population=CerebellumPopulation.GRANULE,
         ).g_ampa
 
-        # Add baseline noise for spontaneous activity (biology: granule cells have ~5Hz baseline)
-        # Noise represents stochastic miniature EPSPs from spontaneous vesicle release (conductance, not current)
-        if cfg.baseline_noise_conductance_enabled:
-            noise = torch.randn(self.granule_size, device=self.device) * 0.007
-            mossy_fiber_conductances = mossy_fiber_conductances + noise
-
         g_ampa, g_nmda = split_excitatory_conductance(mossy_fiber_conductances, nmda_ratio=0.3)
+
+        # Golgi-cell feedback inhibition (one-step causal delay — no circular dependency).
+        # Real Golgi cells receive excitation from mossy fibres and parallel fibres,
+        # then inhibit granule cell dendrites via GABA-A to enforce sparse coding.
+        # We approximate this as: g_inh = prev_granule_rate × golgi_gain.
+        # golgi_gain=2.0 reduces 26 Hz (uncontrolled) to ~3-5 Hz (biological target).
+        golgi_g_inh = torch.full(
+            (self.granule_size,),
+            self._prev_granule_rate * 2.0,
+            device=self.device,
+        )
 
         granule_spikes, _ = self.granule_neurons.forward(
             g_ampa_input=ConductanceTensor(g_ampa),
             g_nmda_input=ConductanceTensor(g_nmda),
-            g_gaba_a_input=None,  # TODO: No inhibition for now (future: Golgi cells)
+            g_gaba_a_input=ConductanceTensor(golgi_g_inh),
             g_gaba_b_input=None,
         )
 
@@ -313,6 +314,11 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             sparse_spikes[top_k_idx] = True
             granule_spikes = sparse_spikes
 
+        # Update Golgi feedback state for next timestep.
+        # Uses the final (post-top-k) population rate so the inhibitory gain
+        # tracks the actual number of active parallel fibres.
+        self._prev_granule_rate = granule_spikes.float().mean().item()
+
         # Create mossy fiber approximation by downsampling granule spikes to mossy fiber dimensionality
         # TODO: In the full implementation, mossy fiber collaterals would provide direct input to DCN,
         # separate from granule layer. For now, we use a downsampled version of granule spikes as a proxy
@@ -325,36 +331,25 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # =====================================================================
         # IO neurons generate climbing fiber spikes, synchronized via gap junctions
         # Error signal drives IO activity (high error → depolarization → spike)
-        # For now, use spontaneous activity (~1 Hz baseline)
         # TODO: Add error-driven input based on motor prediction errors
 
-        # Apply gap junction coupling to IO neurons (if they have been initialized)
-        if self.io_neurons.membrane is not None:
-            g_gap_io, E_gap_io = self.gap_junctions_io.forward(self.io_neurons.membrane)
+        # Apply gap junction coupling to IO neurons
+        g_gap_io, E_gap_io = self.gap_junctions_io.forward(self.io_neurons.V_soma)
 
-            # Define additional conductances hook for IO neurons
-            def io_get_additional_conductances():
-                return [(g_gap_io, E_gap_io)]
+        # Define additional conductances hook for IO neurons
+        def io_get_additional_conductances():
+            return [(g_gap_io, E_gap_io)]
 
-            self.io_neurons._get_additional_conductances = io_get_additional_conductances
+        self.io_neurons._get_additional_conductances = io_get_additional_conductances
 
-        # Update IO neurons (spontaneous activity + gap junction synchronization)
-        # Integrate any external error-signal inputs projecting to INFERIOR_OLIVE,
-        # then add a small baseline depolarizing conductance for ~1 Hz spontaneous firing.
         io_external = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=self.purkinje_size,
             filter_by_target_population=CerebellumPopulation.INFERIOR_OLIVE,
         )
-        io_exc = io_external.g_ampa  # [purkinje_size] — external error drive
-        if cfg.baseline_noise_conductance_enabled:
-            baseline_drive = 0.004  # Small baseline conductance for ~1 Hz spontaneous firing
-            io_g_ampa = ConductanceTensor(io_exc + baseline_drive)
-        else:
-            io_g_ampa = ConductanceTensor(io_exc) if io_exc.any() else None
 
         climbing_fiber_spikes, _ = self.io_neurons.forward(
-            g_ampa_input=io_g_ampa,
+            g_ampa_input=ConductanceTensor(io_external.g_ampa),
             g_nmda_input=None,
             g_gaba_a_input=None,
             g_gaba_b_input=None,

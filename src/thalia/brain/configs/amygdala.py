@@ -41,8 +41,8 @@ class BasolateralAmygdalaConfig(NeuralRegionConfig):
     """Membrane time constant for SOM interneurons (moderate, dendritic inhibition)."""
 
     # Excitability
-    v_threshold_principal: float = 0.9
-    """Firing threshold for principal neurons (slightly below standard)."""
+    v_threshold_principal: float = 1.2
+    """Firing threshold for principal neurons (raised to prevent runaway excitation at baseline)."""
 
     v_threshold_pv: float = 1.5
     """High threshold for PV interneurons to prevent hyperactivity."""

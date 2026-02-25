@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from .brain_activity_analyzer import (
-    BrainActivityAnalyzer,
-    BrainActivityReport,
+from .diagnostics_recorder import (
+    DiagnosticsConfig,
+    DiagnosticsRecorder,
+    DiagnosticsReport,
 )
 
 __all__ = [
-    # Brain activity analysis
-    "BrainActivityAnalyzer",
-    "BrainActivityReport",
+    "DiagnosticsConfig",
+    "DiagnosticsRecorder",
+    "DiagnosticsReport",
 ]

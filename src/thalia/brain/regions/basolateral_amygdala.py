@@ -22,6 +22,7 @@ from thalia.components import (
     TwoCompartmentLIFConfig,
     WeightInitializer,
 )
+from thalia.components.synapses.stp import STPConfig, STPType
 from thalia.learning import STDPConfig, STDPStrategy
 from thalia.typing import (
     ConductanceTensor,
@@ -86,11 +87,9 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             config=TwoCompartmentLIFConfig(
                 region_name=self.region_name,
                 population_name=BLAPopulation.PRINCIPAL,
-                device=self.device,
                 tau_mem=config.tau_mem_principal,
                 v_threshold=config.v_threshold_principal,
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=config.tau_ref,
                 g_L=0.05,
                 E_L=0.0,
@@ -98,9 +97,9 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 E_I=-0.5,
                 tau_E=7.0,      # Moderate AMPA (slightly slower for integration)
                 tau_I=12.0,     # GABA_A for PV/SOM inhibition
-                adapt_increment=0.05,  # Mild adaptation (principal cells spike-adapt)
-                tau_adapt=150.0,
-                noise_std=0.04,
+                adapt_increment=0.30,  # Strong adaptation — prevents runaway at 54 Hz; equivalent to Ca²⁺-activated K⁺
+                tau_adapt=200.0,       # Slower decay (200 ms) to maintain adaptation during burst
+                noise_std=0.02,        # Reduced noise; high noise was driving extra spikes
                 # Two-compartment dendritic parameters
                 g_c=0.05,          # Somato-dendritic coupling conductance
                 C_d=0.5,           # Dendritic membrane capacitance
@@ -110,6 +109,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 g_Ca_spike=0.30,   # Ca2+ spike conductance
                 tau_Ca_ms=20.0,    # Ca2+ decay time (synaptogenesis window)
             ),
+            device=self.device,
         )
 
         # PV interneurons: fast-spiking, feedforward fear gating
@@ -128,11 +128,9 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             config=ConductanceLIFConfig(
                 region_name=self.region_name,
                 population_name=BLAPopulation.SOM,
-                device=self.device,
                 tau_mem=config.tau_mem_som,
                 v_threshold=1.1,   # Slightly harder to recruit
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=5.0,
                 g_L=0.06,
                 E_L=0.0,
@@ -144,6 +142,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 tau_adapt=200.0,
                 noise_std=0.03,
             ),
+            device=self.device,
         )
 
         # =====================================================================
@@ -152,6 +151,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
 
         # Principal → PV (feedforward excitation of PV → rapid feedback inhibition)
         # Biology: Principal axon collaterals excite local PV interneurons
+        # weight_scale reduced 4× (0.002→0.0005): principal at 2.77% was driving PV to 18%
         self._add_internal_connection(
             source_population=BLAPopulation.PRINCIPAL,
             target_population=BLAPopulation.PV,
@@ -159,11 +159,11 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 n_input=self.principal_size,
                 n_output=self.pv_size,
                 connectivity=0.4,
-                weight_scale=0.002,
+                weight_scale=0.0005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.AMPA,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING),
         )
 
         # PV → Principal (fast feedforward inhibition)
@@ -175,11 +175,11 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 n_input=self.pv_size,
                 n_output=self.principal_size,
                 connectivity=0.5,
-                weight_scale=0.003,
+                weight_scale=0.016,  # Doubled (0.008→0.016): feedback inhibition must overcome runaway
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING),
         )
 
         # Principal → SOM (slower recurrent excitation of SOM interneurons)
@@ -194,8 +194,8 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 weight_scale=0.0015,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.AMPA,
+            stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
         )
 
         # SOM → Principal (dendritic inhibition: extinction gating)
@@ -210,8 +210,8 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 weight_scale=0.002,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING),
         )
 
         # =====================================================================
@@ -244,6 +244,12 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self._register_neuron_population(BLAPopulation.PV, self.pv_neurons, polarity=PopulationPolarity.INHIBITORY)
         self._register_neuron_population(BLAPopulation.SOM, self.som_neurons, polarity=PopulationPolarity.INHIBITORY)
 
+        # Homeostasis for principal cells: diagnostics showed g_L_scale stuck at 1.000
+        # (never adapted) while principal fired at 27 Hz despite target 1-5 Hz.
+        # The missing registration means the homeostatic controller was never created;
+        # all other pyramidal populations have this call (see cortical_column.py).
+        self._register_homeostasis(BLAPopulation.PRINCIPAL, self.principal_size, target_firing_rate=0.003)
+
         # Ensure all tensors are on the correct device
         self.to(self.device)
 
@@ -269,7 +275,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         da_boost = 0.0
         if da_signal is not None:
             da_rate = da_signal.float().mean().item()
-            da_boost = da_rate * 0.5  # Moderate DA → excitability boost
+            da_boost = da_rate * 0.1  # Reduced DA gain (0.5→0.1): 20 Hz VTA was adding +0.01 continuous boost
 
         # =====================================================================
         # PRINCIPAL NEURONS

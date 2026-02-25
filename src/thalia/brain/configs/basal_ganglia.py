@@ -24,15 +24,7 @@ class GlobusPallidusExternaConfig(NeuralRegionConfig):
     """
 
     baseline_drive: float = 0.007
-    """Tonic drive conductance for ~48 Hz prototypic baseline firing.
-
-    Calibrated with ConductanceLIF (tau_mem=15ms, threshold=1.0, g_L=0.10) using
-    the AMPA/NMDA split (nmda_ratio=0.05) as done in region.forward():
-    g=0.007 → 47.5 Hz, g=0.0075 → 55 Hz. The NMDA component (tau_nmda=100ms)
-    accumulates to ss_g_NMDA ≈ 0.05 × g × 100.5, contributing as much as AMPA.
-    Previous calibration (g=0.011) was done with pure AMPA, underestimating
-    the NMDA contribution and causing ~80 Hz overshoot in the connected brain.
-    """
+    """Tonic drive conductance for ~48 Hz prototypic baseline firing."""
 
     tau_mem: float = 15.0
     """Membrane time constant (10-20ms typical for GPe neurons)."""
@@ -60,8 +52,8 @@ class LateralHabenulaConfig(NeuralRegionConfig):
     - Glutamatergic principal neurons
     """
 
-    baseline_drive: float = 0.001
-    """Low tonic drive conductance (LHb is mostly silent at baseline)."""
+    baseline_drive: float = 0.0035
+    """Tonic drive conductance (LHb is mostly silent at baseline; modulated by SNr)."""
 
     tau_mem: float = 20.0
     """Membrane time constant."""
@@ -88,8 +80,8 @@ class RostromedialTegmentumConfig(NeuralRegionConfig):
     - Moderate tonic baseline activity
     """
 
-    baseline_drive: float = 0.003
-    """Tonic drive conductance for moderate baseline activity."""
+    baseline_drive: float = 0.006
+    """Tonic drive conductance for baseline activity; ensures RMTg responds to LHb."""
 
     tau_mem: float = 15.0
     """Membrane time constant."""
@@ -126,11 +118,13 @@ class StriatumConfig(NeuralRegionConfig):
     # For striatum: Maintain COMBINED D1+D2 rate, not independent rates
     # Biology: D1 and D2 naturally balance via competition and FSI inhibition
     # BIOLOGY: Homeostatic plasticity operates on minutes-to-hours timescale
-    # Increased tau from 1.5s to 30s (should be hours, but 30s for testing)
-    # Reduced learning rate 10x to prevent rapid changes
-    target_firing_rate: float = 0.08  # 8% target per pathway (16% combined for D1+D2)
-    gain_learning_rate: float = 0.0004  # REDUCED 10x: slow homeostatic adaptation
-    gain_tau_ms: float = 30000.0  # INCREASED 20x: 30s averaging window (biological: minutes to hours)
+    gain_learning_rate: float = 0.0004
+    gain_tau_ms: float = 30000.0  # (should be hours, but 30s for testing
+
+    # =========================================================================
+    # LEARNING RATES
+    # =========================================================================
+    learning_rate: float = 0.0001  # Striatum three-factor learning rate (dopamine-gated plasticity)
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (for MSN neurons)
@@ -169,14 +163,6 @@ class StriatumConfig(NeuralRegionConfig):
     gap_junction_max_neighbors: int = 10  # Biological: 4-12 neighbors
 
     # =========================================================================
-    # LEARNING RATES
-    # =========================================================================
-    # Striatum three-factor learning rate (dopamine-gated plasticity)
-    # NOTE: With eligibility trace fix (no double-scaling), this is the actual learning rate
-    # Biological range: 0.0001-0.001 for stable opponent pathway dynamics
-    learning_rate: float = 0.01  # 10× increase from 0.001 for faster weight changes
-
-    # =========================================================================
     # NEUROMODULATION: TONIC DOPAMINE
     # =========================================================================
     tonic_dopamine: float = 0.3
@@ -200,11 +186,26 @@ class StriatumConfig(NeuralRegionConfig):
     # =========================================================================
     # TAN (TONICALLY ACTIVE NEURONS) PAUSE DYNAMICS
     # =========================================================================
-    # Biology: TANs pause for ~300 ms on coincident cortical + thalamic bursts
-    # (Aosaki et al. 1994). The pause is mediated by mAChR autoreceptors (M2/M4)
-    # and triggers the corticostriatal plasticity window.
-    tan_pause_threshold: float = 0.05   # Mean g_ampa per TAN neuron that signals a burst
-    tan_pause_strength: float = 0.20    # Inhibitory g_gaba_a injected per TAN during pause
+    # Biology: TANs pause for ~300 ms on coincident cortical + thalamic bursts.
+    # The pause is mediated by mAChR autoreceptors (M2/M4) and triggers the
+    # corticostriatal plasticity window.
+    tan_baseline_drive:  float = 0.001  # Tonic excitatory conductance for TAN intrinsic pacemaking.
+    tan_pause_threshold: float = 0.050  # Mean g_ampa per TAN neuron that signals a burst
+    tan_pause_strength:  float = 0.200  # Inhibitory g_gaba_a injected per TAN during pause
+
+    # =========================================================================
+    # FSI (FAST-SPIKING INTERNEURONS) PARAMETERS
+    # =========================================================================
+    fsi_min_neurons: int = 30
+    """Minimum absolute FSI count regardless of MSN population size.
+    Biology: FSI are ~2% of MSNs; at small simulation scales (200-400 MSNs),
+    2% = 4-8 neurons — too few for a reliable gap-junction small-world topology
+    and prone to all-or-nothing collapse (one silent FSI silences entire feedforward
+    inhibition). 30 neurons provides a minimum viable network. The 2% formula takes
+    over at >1500 MSNs."""
+
+    fsi_baseline_drive: float = 0.003
+    """Tonic excitatory conductance seed for FSI (PV+ fast-spiking interneurons)."""
 
 
 @dataclass
@@ -223,16 +224,7 @@ class SubstantiaNigraConfig(NeuralRegionConfig):
     """
 
     baseline_drive: float = 0.015
-    """Tonic drive conductance for ~62 Hz baseline tonic firing.
-
-    Biological SNr neurons fire tonically at 50-70 Hz due to intrinsic pacemaker
-    currents (persistent Na+, T-type Ca2+). Calibrated with AMPA/NMDA split
-    (nmda_ratio=0.01) matching region.forward():
-    ConductanceLIF (tau_mem=15ms, v_threshold=1.25, g_L=0.10): g=0.015 → 62.5 Hz.
-    The higher v_threshold (1.25 vs 1.0) requires higher baseline to achieve
-    tonic firing (~60-80 Hz target range). In connected network, STN excitation
-    will push SNr toward 70-80 Hz. D1 inhibition suppresses to ~30-50 Hz for Go.
-    """
+    """Tonic drive conductance for ~62 Hz baseline tonic firing."""
 
     tau_mem: float = 15.0
     """Membrane time constant for realistic integration (10-20ms typical for SNr)."""
@@ -273,10 +265,7 @@ class SubstantiaNigraCompactaConfig(NeuralRegionConfig):
     """
 
     baseline_drive: float = 0.0016
-    """Tonic excitatory baseline conductance for DA neurons.
-
-    Same calibration as VTA: ~4-6 Hz tonic pacemaking.
-    """
+    """Tonic excitatory baseline conductance for DA neurons."""
 
     tau_mem: float = 20.0
     """DA neuron membrane time constant in ms."""
@@ -291,11 +280,7 @@ class SubstantiaNigraCompactaConfig(NeuralRegionConfig):
     """DA neuron membrane voltage noise standard deviation."""
 
     adapt_increment: float = 0.013
-    """Spike-triggered adaptation conductance increment (slow AHP).
-
-    Each spike adds this to the slow K+ adaptation conductance.
-    Decays with tau_adapt. Shared calibration with VTA DA neurons.
-    """
+    """Spike-triggered adaptation conductance increment (slow AHP)."""
 
     tau_adapt: float = 300.0
     """Adaptation conductance time constant in ms (~300ms for DA pacemakers)."""
@@ -316,8 +301,8 @@ class SubthalamicNucleusConfig(NeuralRegionConfig):
     - Projects excitatory output to SNr and back to GPe
     """
 
-    baseline_drive: float = 0.001
-    """Tonic drive conductance for ~20 Hz autonomous pacemaker baseline."""
+    baseline_drive: float = 0.018
+    """Tonic drive conductance for autonomous pacemaker baseline."""
 
     i_h_conductance: float = 0.0006
     """HCN channel conductance supporting autonomous pacemaking."""
@@ -363,15 +348,10 @@ class VTAConfig(NeuralRegionConfig):
     """Enable adaptive RPE normalization to prevent saturation."""
 
     # -------------------------------------------------------------------------
-    # ConductanceLIF DA neuron parameters (calibrated for 4-6 Hz tonic firing)
+    # ConductanceLIF DA neuron parameters
     # -------------------------------------------------------------------------
-    baseline_drive: float = 0.0016
-    """Tonic excitatory baseline conductance for DA neurons.
-
-    Above-threshold drive balanced by spike-frequency adaptation (adapt_increment)
-    to produce biologically accurate 4-6 Hz tonic pacemaking.
-    Calibrated value: g=0.0016, adapt_inc=0.013 → 5 Hz.
-    """
+    baseline_drive: float = 0.0052
+    """Tonic excitatory baseline conductance for DA neurons."""
 
     tau_mem: float = 20.0
     """DA neuron membrane time constant in ms."""
@@ -389,7 +369,7 @@ class VTAConfig(NeuralRegionConfig):
     """Spike-triggered adaptation conductance increment (mimics I_KCA slow AHP).
 
     Each spike adds this much to the slow K+ adaptation conductance.
-    Decays with tau_adapt. Tuned to reduce DA firing from ~18 Hz → 5 Hz.
+    Decays with tau_adapt.
     """
 
     tau_adapt: float = 300.0
@@ -413,20 +393,11 @@ class VTAConfig(NeuralRegionConfig):
     #   2. Faster spike-frequency adaptation (broader dynamic range)
     #   3. Respond more to stress/aversive stimuli, less to reward per se
     # -------------------------------------------------------------------------
-    mesocortical_baseline_drive: float = 0.0022
-    """Tonic baseline conductance for mesocortical DA neurons.
-
-    Higher than mesolimbic (0.0016) because absence of D2 autoreceptor feedback
-    allows higher tonic firing (~7-9 Hz vs 4-6 Hz for mesolimbic).
-    Calibrated: g=0.0022, adapt_inc=0.018 → ~8 Hz.
-    """
+    mesocortical_baseline_drive: float = 0.0055
+    """Tonic baseline conductance for mesocortical DA neurons."""
 
     mesocortical_adapt_increment: float = 0.018
-    """Adaptation increment for mesocortical DA neurons.
-
-    Slightly larger than mesolimbic (0.013) reflecting broader dynamic range
-    and faster adaptation to tonic bursting seen in mesocortical neurons.
-    """
+    """Adaptation increment for mesocortical DA neurons."""
 
     # -------------------------------------------------------------------------
     # Full TD-learning: V(s') — next-state value estimate
@@ -447,8 +418,8 @@ class VTAConfig(NeuralRegionConfig):
     da_ramp_enabled: bool = True
     """Enable slowly-building anticipatory DA ramp before expected rewards.
 
-    The ramp models the "dopamine ramp" observed in primate recording (Howe
-    et al. 2013, Schultz 2016): tonic DA rises monotonically during an approach
+    The ramp models the "dopamine ramp" observed in primate recording:
+    tonic DA rises monotonically during an approach
     to reward even before the reward is received.  This provides additional
     temporal credit assignment beyond the eligibility trace.
 
@@ -462,9 +433,14 @@ class VTAConfig(NeuralRegionConfig):
     Biological range: 200–2000 ms depending on trial duration.
     """
 
-    da_ramp_gain: float = 0.00015
+    da_ramp_gain: float = 0.0
     """Per-timestep increment added to the DA ramp signal each step without reward.
 
     Scales with dt_ms in practice; keep small to avoid overwhelming tonic drive.
     The mesocortical ramp is weighted at 50% of the mesolimbic value.
+
+    NOTE: Set to 0.0 (disabled) because at 1ms dt the ramp builds to a steady-state
+    of gain × tau_ms = 0.00015 × 500 = 0.075, which is ~47× the baseline_drive
+    (0.0016) and causes VTA to fire at 26% instead of 4-6 Hz.  The ramp needs
+    careful recalibration against observed reward schedules before re-enabling.
     """

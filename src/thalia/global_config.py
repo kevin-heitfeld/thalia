@@ -21,7 +21,8 @@ class GlobalConfig:
     HOMEOSTASIS_DISABLED: bool = False  # Set to True to disable homeostatic plasticity (intrinsic excitability, threshold adaptation, synaptic scaling)
     """Global homeostatic plasticity enable flag."""
 
-    LEARNING_DISABLED: bool = False  # Set to True to disable all synaptic plasticity
+    # TODO: Re-enable learning after testing intrinsic excitability alone
+    LEARNING_DISABLED: bool = True  # Set to True to disable all synaptic plasticity
     """Global learning/plasticity enable flag."""
 
     NEUROMODULATION_DISABLED: bool = False  # Set to True to disable all neuromodulator effects (DA, NE, ACh)

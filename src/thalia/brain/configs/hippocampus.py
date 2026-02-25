@@ -76,7 +76,7 @@ class EntorhinalCortexConfig(NeuralRegionConfig):
     ec_ii_adapt_tau_ms: float = 100.0
     """EC_II adaptation decay time constant (ms)."""
 
-    ec_ii_tonic_drive: float = 0.02
+    ec_ii_tonic_drive: float = 0.005
     """Background excitatory conductance to EC_II (maintains low tonic activity).
 
     Models the persistent depolarisation from layer I inputs and recurrent
@@ -105,7 +105,7 @@ class EntorhinalCortexConfig(NeuralRegionConfig):
     ec_iii_adapt_tau_ms: float = 80.0
     """EC_III adaptation decay time constant (ms)."""
 
-    ec_iii_tonic_drive: float = 0.015
+    ec_iii_tonic_drive: float = 0.005
     """Background excitatory conductance to EC_III (lower than EC_II;
     time-cell activity is sparser).
     """
@@ -149,24 +149,6 @@ class HippocampusConfig(NeuralRegionConfig):
     """
 
     # =========================================================================
-    # CA3 RECURRENT BISTABILITY
-    # =========================================================================
-    # CA3 Bistable Neuron Parameters
-    # Real CA3 pyramidal neurons have intrinsic bistability via I_NaP (persistent
-    # sodium) and I_CAN (calcium-activated nonspecific cation) currents. These
-    # allow neurons to maintain firing without continuous external input.
-    #
-    # We model this with a "persistent activity" trace that:
-    # 1. Accumulates when a neuron fires (like Ca²⁺ buildup activating I_CAN)
-    # 2. Decays slowly (τ ~100-200ms, like Ca²⁺ clearance)
-    # 3. Provides additional input current (positive feedback)
-    #
-    # This creates bistability: once a neuron starts firing, the persistent
-    # activity helps keep it firing, stabilizing attractor states.
-    ca3_persistent_tau: float = 300.0  # Decay time constant (ms) - very slow decay
-    ca3_persistent_gain: float = 0.0
-
-    # =========================================================================
     # CONSOLIDATION
     # =========================================================================
     # Biological reality: Memory consolidation operates over multiple timescales
@@ -187,7 +169,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # FEEDFORWARD INHIBITION (FFI)
     # =========================================================================
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
-    ffi_strength: float = 0.1  # Moderate strength to control CA3 hyperactivity
+    ffi_strength: float = 0.05  # Halved (0.1→0.05): FFI was over-gating already-silent CA3/CA1
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
     # =========================================================================
@@ -196,7 +178,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # Real hippocampus has extrasynaptic GABA_A receptors (α5 subunit) that
     # provide continuous background inhibition from GABA spillover.
     # This prevents runaway excitation even when phasic inhibition fails.
-    tonic_inhibition: float = 0.01  # Constant background GABA conductance (normalized)
+    tonic_inhibition: float = 0.0008  # Reduced (0.002→0.0008): was creating an inhibitory floor that blocked sub-threshold CA3/CA1
 
     # =========================================================================
     # GAP JUNCTIONS (Electrical Synapses)
@@ -221,8 +203,6 @@ class HippocampusConfig(NeuralRegionConfig):
     # =========================================================================
     # HOMEOSTATIC INTRINSIC PLASTICITY
     # =========================================================================
-    # Adaptive gain control to maintain target firing rates
-    target_firing_rate: float = 0.15  # 15% target for hippocampal neurons (increased for learning)
     gain_learning_rate: float = 0.0001
     gain_tau_ms: float = 1500.0  # 1.5s averaging window (slower than cortex)
 
@@ -235,7 +215,6 @@ class HippocampusConfig(NeuralRegionConfig):
     # LEARNING RATES
     # =========================================================================
     learning_rate: float = 0.1  # Fast one-shot learning for CA3 recurrent
-    ca2_ca1_learning_rate: float = 0.005  # Moderate CA2→CA1 (social context to output)
 
     # =========================================================================
     # NMDA RECEPTOR COINCIDENCE DETECTION
@@ -247,9 +226,9 @@ class HippocampusConfig(NeuralRegionConfig):
     # With tau=50ms and 15 test timesteps, the trace reaches ~40% of equilibrium,
     # so threshold=0.4 ensures only neurons with above-average CA3 input participate.
     nmda_tau: float = 50.0  # NMDA time constant (ms) - slow kinetics
-    nmda_threshold: float = 0.4  # Threshold tuned for typical test duration
+    nmda_threshold: float = 0.4
     nmda_steepness: float = 12.0  # Sharp discrimination above threshold
-    ampa_ratio: float = 0.05  # Minimal ungated response (discrimination comes from NMDA)
+    ampa_ratio: float = 0.20  # Raised (0.05→0.20): with CA3 silent the NMDA gate is closed; AMPA enables CA1 to fire first
 
     # =========================================================================
     # SPIKE-FREQUENCY ADAPTATION (SFA)
@@ -258,7 +237,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # spikes activates K⁺ channels (I_AHP) that hyperpolarize the neuron.
     # This prevents the same neurons from dominating activity.
     # Inherited from base with hippocampus-specific override:
-    adapt_increment: float = 0.75  # DRASTICALLY increased from 0.5 to 0.75 (50% stronger) to suppress hyperactivity
+    adapt_increment: float = 0.25  # Reduced from over-suppressing 0.75 → biologically realistic AHP (0.20-0.30 range)
     # adapt_tau: 100.0 (use base default)
 
     # =========================================================================
@@ -301,43 +280,6 @@ class MedialSeptumConfig(NeuralRegionConfig):
     - Two phase-locked populations (ACh at 0°, GABA at 180°)
     - Pulsed output (not sinusoidal)
     - Frequency modulated by neuromodulators
-    """
-
-    # =========================================================================
-    # PACEMAKER DYNAMICS
-    # =========================================================================
-    base_frequency_hz: float = 8.0
-    """Base theta frequency in Hz. Modulated by ACh, NE, DA (range: 4-10 Hz)."""
-
-    burst_duty_cycle: float = 0.08
-    """Fraction of cycle spent in burst phase (vs inter-burst silence).
-
-    CRITICAL: Set to 0.08 for NARROW burst windows.
-    - At 8 Hz (125ms period), burst phase = 125 * 0.08 = 10ms
-    - Inter-burst silence = 125 * 0.92 = 115ms
-    - 10ms burst window allows 2 spikes with 5ms refractory
-    - Narrow window prevents early/late firings outside pacemaker rhythm
-    """
-
-    burst_amplitude: float = 0.025
-    """Peak drive conductance during burst (normalized by g_L).
-
-    CRITICAL: Minimal supra-threshold value to trigger brief bursts.
-    - Must overcome threshold (~1.2-1.3) but not create sustained firing
-    - Value 0.025 creates just enough drive for 2-3 spikes
-    - Adaptation accumulates quickly to terminate burst
-    - Results in clean 8 Hz rhythm with short intra-burst intervals
-    """
-
-    inter_burst_amplitude: float = 0.001
-    """Baseline drive conductance between bursts (subthreshold).
-
-    CRITICAL: Reduced to 0.001 (near zero) to ensure complete silence.
-    During inter-burst phase:
-    - Membrane potential decays back to rest
-    - Adaptation variables decay to baseline
-    - Neurons are prepared for next burst
-    Should be well below threshold (< 0.1) to prevent spontaneous firing.
     """
 
     # =========================================================================
@@ -400,7 +342,7 @@ class MedialSeptumConfig(NeuralRegionConfig):
     """ACh neuron reset potential after spike."""
 
     ach_adaptation_tau: float = 80.0
-    """ACh adaptation time constant (ms). INCREASED for burst termination.
+    """ACh adaptation time constant (ms).
 
     Critical: Must balance two requirements:
     1. Persist through 25ms burst duration to accumulate and terminate firing
@@ -413,14 +355,7 @@ class MedialSeptumConfig(NeuralRegionConfig):
     """
 
     ach_adaptation_increment: float = 0.40
-    """ACh adaptation increment per spike.
-
-    INCREASED to 0.40 for rapid burst termination.
-    - Each spike adds 0.40 to adaptation current
-    - After 2-3 spikes: adaptation ~ 0.80-1.20, strongly suppressing firing
-    - Burst self-terminates quickly, then adaptation decays during inter-burst
-    - Creates clean 8 Hz rhythm with brief (~10-15ms) bursts
-    """
+    """ACh adaptation increment per spike."""
 
     # =========================================================================
     # GABAERGIC NEURON PROPERTIES
@@ -438,4 +373,4 @@ class MedialSeptumConfig(NeuralRegionConfig):
     """GABA adaptation time constant (ms). Similar to ACh for matched burst dynamics."""
 
     gaba_adaptation_increment: float = 0.40
-    """GABA adaptation increment per spike. INCREASED for rapid burst termination."""
+    """GABA adaptation increment per spike."""

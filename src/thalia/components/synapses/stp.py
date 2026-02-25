@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -355,45 +355,339 @@ CORTICOSTRIATAL_PRESET = STPPreset(
 
 THALAMO_STRIATAL_PRESET = STPPreset(
     name="Thalamostriatal (Thalamus→Striatum)",
-    U=0.25,
-    tau_u=300.0,
-    tau_x=400.0,
+    U=0.12,
+    tau_u=500.0,
+    tau_x=200.0,
     description=(
-        "Thalamic to striatal connections. "
-        "Weak facilitation. "
-        "Provides direct sensory and motivational input. "
-        "Complements cortical input."
+        "Thalamic intralaminar (CL/Pf) to striatal MSN connections. "
+        "True short-term facilitation: low baseline release probability, "
+        "very long facilitation time constant. "
+        "Raju et al. (2008): thalamostriatal synapses from caudal "
+        "intralaminar nuclei facilitate strongly with burst activity, "
+        "unlike corticostriatal synapses. "
+        "Provides direct sensory and motivational input; bursting thalamic "
+        "responses recruit increasing striatal drive. "
+        "Complements the depressing corticostriatal input."
     ),
 )
 
+
 # =============================================================================
-# PRESET REGISTRY
+# PERFORANT PATH / CORTICAL-HIPPOCAMPAL PRESETS
 # =============================================================================
 
-STP_PRESETS: Dict[str, STPPreset] = {
-    # Hippocampal pathways
-    "mossy_fiber": MOSSY_FIBER_PRESET,
-    "schaffer_collateral": SCHAFFER_COLLATERAL_PRESET,
-    # Striatal pathways
-    "corticostriatal": CORTICOSTRIATAL_PRESET,
-    "thalamostriatal": THALAMO_STRIATAL_PRESET,
-}
+PERFORANT_PATH_PRESET = STPPreset(
+    name="Perforant Path (EC→DG / EC→CA3)",
+    U=0.35,
+    tau_u=50.0,
+    tau_x=600.0,
+    description=(
+        "Entorhinal cortex perforant path synapses onto dentate granule cells "
+        "and CA3 pyramidal cells (stratum lacunosum-moleculare). "
+        "Moderate short-term depression: medium-high utilisation with fast "
+        "facilitation decay and slow vesicle recovery. "
+        "McNaughton (1980); Bortolotto et al. (2003): perforant path EPSPs "
+        "depress modestly at theta frequencies, unlike the strong facilitation "
+        "of true mossy fiber (DG→CA3) synapses. "
+        "Responds reliably to sparse entorhinal activity while attenuating "
+        "prolonged high-frequency bursts."
+    ),
+)
+
+TEMPOROAMMONIC_PRESET = STPPreset(
+    name="Temporoammonic Path (EC_III→CA1)",
+    U=0.45,
+    tau_u=40.0,
+    tau_x=650.0,
+    description=(
+        "Entorhinal cortex layer III direct projection to CA1 distal apical "
+        "dendrites (temporoammonic / perforant path to CA1). "
+        "Moderate-strong short-term depression. "
+        "Empfindk & Bhatt 2000; Otmakhova et al. 2002: EC_III→CA1 EPSPs "
+        "depress faster than EC_II→DG, acting as a high-pass novelty filter. "
+        "Strong initial response to new context patterns that fades rapidly "
+        "with sustained input, emphasising mismatch detection."
+    ),
+)
 
 
-def get_stp_config(pathway_type: str) -> STPConfig:
-    """Get STPConfig for a specific biological pathway.
+# =============================================================================
+# THALAMOCORTICAL PRESET
+# =============================================================================
 
-    Args:
-        pathway_type: Name of pathway preset
+THALAMOCORTICAL_PRESET = STPPreset(
+    name="Thalamocortical (Thalamus→Cortex L4)",
+    U=0.45,
+    tau_u=20.0,
+    tau_x=700.0,
+    description=(
+        "Thalamic relay neuron synapses onto cortical layer 4 spiny stellate "
+        "and pyramidal cells. "
+        "Strong short-term depression: high initial release probability, very "
+        "fast facilitation decay, slow vesicle recovery. "
+        "Gil et al. (1997); Stratford et al. (1996); Bruno & Sakmann (2006): "
+        "thalamocortical EPSPs depress by ~50% after the 2nd spike at 10 Hz. "
+        "Acts as a temporal high-pass filter that privileges the first volley "
+        "of thalamic activity — critical for novelty detection and the "
+        "transient burst that gates L4 responses to stimulus onset."
+    ),
+)
 
-    Returns:
-        Configured STPConfig instance
 
-    Raises:
-        KeyError: If pathway_type is not recognized
-    """
-    if pathway_type not in STP_PRESETS:
-        available = ", ".join(STP_PRESETS.keys())
-        raise KeyError(f"Unknown pathway_type: {pathway_type}. " f"Available presets: {available}")
+# =============================================================================
+# INTRA-CORTICAL PRESETS
+# =============================================================================
 
-    return STP_PRESETS[pathway_type].configure()
+CORTICAL_FF_PRESET = STPPreset(
+    name="Cortical Feedforward (L4→L2/3, L2/3→L5)",
+    U=0.50,
+    tau_u=25.0,
+    tau_x=600.0,
+    description=(
+        "Cortical feedforward connections between excitatory populations: "
+        "L4 spiny stellate → L2/3 pyramidal, and L2/3 → L5 pyramidal. "
+        "Moderate short-term depression. "
+        "Reyes & Sakmann (1999); Thomson et al. (2002): L4→L2/3 connections "
+        "show reliable but depressing EPSPs. "
+        "Limits sustained runaway activation in the feedforward cascade and "
+        "implements gain normalisation across cortical layers."
+    ),
+)
+
+CORTICAL_RECURRENT_PRESET = STPPreset(
+    name="Cortical Recurrent (L2/3→L2/3)",
+    U=0.12,
+    tau_u=600.0,
+    tau_x=150.0,
+    description=(
+        "Layer 2/3 pyramidal-to-pyramidal recurrent connections. "
+        "Strong short-term facilitation: very low baseline release probability, "
+        "very long facilitation time constant, fast recovery. "
+        "Markram et al. (1998): the canonical facilitating synapse — the "
+        "prototypical EPSP-E type. Burst-coding: weak baseline, builds up "
+        "strongly during sustained activity. "
+        "Implements attractor dynamics, working memory maintenance, and "
+        "pattern completion in supragranular cortex."
+    ),
+)
+
+
+# =============================================================================
+# INTRA-HIPPOCAMPAL PRESET
+# =============================================================================
+
+CA3_RECURRENT_PRESET = STPPreset(
+    name="CA3 Recurrent Collateral (CA3→CA3)",
+    U=0.50,
+    tau_u=30.0,
+    tau_x=500.0,
+    description=(
+        "CA3 recurrent Schaffer-like collateral connections. "
+        "Moderate-strong short-term depression. "
+        "Dobrunz & Stevens (1999); Fioravante & Regehr (2011): CA3 recurrent "
+        "collaterals depress strongly at theta frequencies (4-10 Hz), acting "
+        "as a high-pass filter that limits runaway excitation during pattern "
+        "completion. "
+        "Depression prevents attractor lock-up and ensures CA3 responds "
+        "transiently to each new pattern rather than maintaining spurious "
+        "sustained activity."
+    ),
+)
+
+
+# =============================================================================
+# STRIATAL INTERNEURON PRESET
+# =============================================================================
+
+FSI_MSN_PRESET = STPPreset(
+    name="FSI→MSN (Striatal Fast-Spiking Interneuron→Medium Spiny Neuron)",
+    U=0.65,
+    tau_u=15.0,
+    tau_x=550.0,
+    description=(
+        "Parvalbumin-positive fast-spiking interneuron (FSI) to medium spiny "
+        "neuron (MSN / D1 or D2) GABAergic connections in striatum. "
+        "Strong short-term depression: high initial release probability, very "
+        "fast facilitation decay, slow vesicle recovery. "
+        "Planert et al. (2010): FSI→MSN synapses are strongly depressing — "
+        "a large initial IPSP is followed by rapid attenuation. "
+        "This limits the duration of FSI-mediated inhibition, ensuring that "
+        "feedforward inhibition is transient and does not permanently suppress "
+        "MSN responses during sustained FSI firing."
+    ),
+)
+
+
+# =============================================================================
+# PV BASKET CELL PRESET (hippocampus / cortex interneuron inhibition)
+# =============================================================================
+
+PV_BASKET_PRESET = STPPreset(
+    name="PV Basket Cell (interneuron→pyramidal GABA_A)",
+    U=0.55,
+    tau_u=15.0,
+    tau_x=500.0,
+    description=(
+        "Parvalbumin-positive basket cell GABAergic synapses onto pyramidal "
+        "and granule cell somata in hippocampus and cortex. "
+        "Strong short-term depression: high release probability, very fast "
+        "facilitation decay, slow vesicle recovery. "
+        "Hefft & Jonas (2005): CA3 PV basket cell → granule cell IPSPs "
+        "depress strongly with repetitive firing at theta frequencies. "
+        "Also applies to CA1 PV basket cells and cortical PV axonal inhibition. "
+        "Transient somatic shunting on the first IPSP; rapid fatigue ensures "
+        "that sustained PV activity does not chronically silence targets."
+    ),
+)
+
+
+# =============================================================================
+# MSN LATERAL INHIBITION PRESET (striatum MSN→MSN)
+# =============================================================================
+
+MSN_LATERAL_PRESET = STPPreset(
+    name="MSN Lateral Inhibition (MSN→MSN GABAergic collateral)",
+    U=0.35,
+    tau_u=20.0,
+    tau_x=600.0,
+    description=(
+        "Medium spiny neuron (MSN) GABAergic axon collateral inhibition onto "
+        "other MSNs (D1→D1, D2→D2, and cross-pathway D1↔D2). "
+        "Moderate short-term depression: medium release probability, fast "
+        "facilitation decay, slow vesicle recovery. "
+        "Venance et al. (2004); Taverna et al. (2008): MSN→MSN IPSPs depress "
+        "with repetitive stimulation at striatal firing rates (1-20 Hz). "
+        "Depression limits the duration of lateral competition, preventing "
+        "winner-take-all dynamics from permanently locking out alternatives "
+        "and enabling action switching on sub-second timescales."
+    ),
+)
+
+
+# =============================================================================
+# PONTOCEREBELLAR MOSSY FIBER PRESET (cortex/pons→granule cell)
+# =============================================================================
+
+PONTOCEREBELLAR_PRESET = STPPreset(
+    name="Pontocerebellar Mossy Fiber (Pons/Cortex→Granule Cell)",
+    U=0.10,
+    tau_u=500.0,
+    tau_x=100.0,
+    description=(
+        "Pontocerebellar mossy fiber synapses onto cerebellar granule cells "
+        "at the glomerulus (excitatory driving input from neocortex via "
+        "pontine nuclei). "
+        "Strong short-term facilitation: very low baseline release probability, "
+        "long facilitation time constant, very fast recovery. "
+        "Silver et al. (1998): mossy fiber → granule cell EPSCs facilitate "
+        "strongly with burst activity, consistent with low initial Pr. "
+        "Sola et al. (2004): pontocerebellar pathway facilitates reliably "
+        "at 50-100 Hz, enabling motor-command bursts to recruit granule cells "
+        "that are otherwise silenced by tonic Golgi inhibition."
+    ),
+)
+
+
+# =============================================================================
+# CORTICOTHALAMIC TYPE-II PRESET (L6b/CT→relay, facilitating)
+# =============================================================================
+
+CORTICOTHALAMIC_L6B_PRESET = STPPreset(
+    name="Corticothalamic Type-II (L6b→Thalamic Relay, facilitating)",
+    U=0.08,
+    tau_u=800.0,
+    tau_x=150.0,
+    description=(
+        "Type-II corticothalamic (CT) feedback synapses from cortical layer 6b "
+        "pyramidal cells onto thalamic relay neurons (driver-like CT feedback; "
+        "terminates in proximal dendrites). "
+        "Very strong facilitation: very low baseline Pr, extremely long "
+        "facilitation time constant, fast recovery. "
+        "Jurgens et al. (2012); Reichova & Sherman (2004): type-II CT→TC "
+        "synapses are among the most strongly facilitating in the brain "
+        "(>10-fold increase with 40 Hz trains), in contrast to the "
+        "depressing type-I CT (L6a→TRN) pathway. "
+        "Selective gain amplifier: only sustained, high-frequency L6b bursts "
+        "meaningfully drive relay neurons, ensuring that only confident "
+        "top-down predictions override sensory-driven activity."
+    ),
+)
+
+
+# =============================================================================
+# STRIATOPALLIDAL / STRIATONIGRAL PATHWAY PRESET
+# =============================================================================
+
+STRIATOPALLIDAL_PRESET = STPPreset(
+    name="Striatopallidal / Striatonigral (MSN→GPe / MSN→SNr)",
+    U=0.45,
+    tau_u=25.0,
+    tau_x=500.0,
+    description=(
+        "GABAergic axon collateral synapses from striatal medium spiny neurons "
+        "onto basal ganglia output nuclei: D2-MSN→GPe (indirect pathway) and "
+        "D1-MSN→SNr (direct pathway). "
+        "Moderate-strong short-term depression: medium-high release probability, "
+        "fast facilitation decay, slow vesicle recovery. "
+        "Connelly et al. (2010): striatopallidal IPSCs at GPe neurons depress "
+        "reliably at physiologically relevant MSN firing rates (2-20 Hz). "
+        "Gage et al. (2010): striatonigral IPSCs at SNr show similar depression. "
+        "Depression prevents tonic high-frequency MSN barrages from permanently "
+        "silencing GPe/SNr; actions can be re-gated after brief depolarization."
+    ),
+)
+
+
+# =============================================================================
+# CORTICOFUGAL PRESET (L5 / L6 → subcortical targets)
+# =============================================================================
+
+CORTICOFUGAL_PRESET = STPPreset(
+    name="Corticofugal (L5/L6→Subcortical Targets)",
+    U=0.50,
+    tau_u=20.0,
+    tau_x=700.0,
+    description=(
+        "Corticofugal synapses from cortical layer 5 or 6 pyramidal cells onto "
+        "subcortical targets: amygdala, brainstem nuclei (LC, RMTg, DRN), "
+        "entorhinal cortex, subthalamic nucleus (hyperdirect), and neuromodulatory "
+        "nuclei (NB, LC). "
+        "Moderate-to-strong short-term depression: medium release probability, "
+        "very fast facilitation decay (short residual Ca2+ at distal axon "
+        "terminals), slow vesicle recovery. "
+        "Bhattacharyya et al. (2009); Shu et al. (2006): corticofugal terminals "
+        "from L5 thick-tufted pyramidal cells depress rapidly at physiological "
+        "firing rates.  The fast tau_f (20ms) ensures each spike is effectively "
+        "independent — appropriate for the sparse, irregular firing of deep-layer "
+        "output neurons. "
+        "Biologically distinct from CORTICAL_FF (which targets cortical "
+        "superficial layers with slightly slower recovery), but shares strong "
+        "STD as the dominant dynamic."
+    ),
+)
+
+
+# =============================================================================
+# LHb → RMTg FACILITATING PRESET
+# =============================================================================
+
+LHB_RMTG_PRESET = STPPreset(
+    name="LHb→RMTg (Lateral Habenula → Rostromedial Tegmentum, facilitating)",
+    U=0.15,
+    tau_u=250.0,
+    tau_x=200.0,
+    description=(
+        "Glutamatergic synapses from lateral habenula principal neurons onto "
+        "rostromedial tegmentum (RMTg / tail of VTA) GABAergic neurons. "
+        "Short-term facilitation: low baseline release probability, long "
+        "facilitation time constant, fast depression recovery. "
+        "Hong et al. (2011, Nature): LHb principal neurons burst at "
+        "20-100 Hz during negative prediction error events; these bursts "
+        "recruit RMTg with progressively growing EPSP amplitude — a clear "
+        "facilitating synapse.  The facilitation ensures that brief LHb "
+        "volleys (1-2 spikes) barely reach RMTg, while sustained bursts "
+        "reliably drive the GABAergic DA-pause.  This provides a biologically "
+        "tuned temporal window: only genuine aversive-PE bursts (>5 spikes) "
+        "produce a significant dopamine pause."
+    ),
+)

@@ -31,22 +31,29 @@ Inhibitory Cell Types (based on cortical interneuron literature):
    - Medium dynamics: tau_mem ~10ms
    - Enable selective disinhibition
 
-4. **5-HT3aR+ Interneurons (10% of inhibitory neurons)**
-   - Mixed properties
-   - Simplified in this implementation
+4. **L1 Neurogliaform (NGC) Cells (10% of inhibitory neurons)**
+   - Layer 1 interneurons with extremely dense local axonal clouds ("cottonball" morphology)
+   - Diffuse, widespread GABA_A + GABA_B inhibition of L2/3 apical tuft dendrites
+   - Primary recipients of long-range top-down feedback axons (terminate in L1)
+   - Modulated by acetylcholine (M1 muscarinic — METABOTROPIC, slow: tau ~200ms)
+   - Slow dynamics: tau_mem ~15ms, moderate adaptation
+   - Gate whether top-down feedback reaches L2/3 dendrites
 
-Connectivity Patterns (based on Pfeffer et al. 2013, Pi et al. 2013):
-=====================================================================
+Connectivity Patterns:
+======================================================================================
 
 Excitatory → Inhibitory:
 - Pyramidal → PV: Strong, reliable (P=0.5)
 - Pyramidal → SST: Moderate (P=0.3)
 - Pyramidal → VIP: Strong, specific (P=0.4)
+- Pyramidal → NGC: Weak, local collaterals (P=0.2)
+- Long-range → NGC: Moderate, via L1 feedback axons (P=0.3)
 
 Inhibitory → Excitatory:
 - PV → Pyramidal: Strong, perisomatic (P=0.6)
 - SST → Pyramidal: Moderate, dendritic (P=0.4)
 - VIP → Pyramidal: Weak/absent (P=0.05)
+- NGC → Pyramidal: Small, diffuse GABA_A on apical tuft (P=0.5)
 
 Inhibitory → Inhibitory:
 - PV → PV: Weak lateral (P=0.3)
@@ -95,6 +102,8 @@ class CorticalInhibitoryNetwork(nn.Module):
         population_name: PopulationName,
         pyr_size: int,
         total_inhib_fraction: float,
+        expected_pyr_rate_hz: float = 3.0,
+        pv_adapt_increment: float = 0.0,
         dt_ms: float = GlobalConfig.DEFAULT_DT_MS,
         device: str = "cpu",
     ):
@@ -105,6 +114,14 @@ class CorticalInhibitoryNetwork(nn.Module):
             population_name: Layer name (e.g., 'L23', 'L4') for RNG seeding
             pyr_size: Number of pyramidal neurons in this layer
             total_inhib_fraction: Fraction of pyramidal count (e.g. 0.25 = 20% of total)
+            expected_pyr_rate_hz: Expected steady-state pyramidal firing rate (Hz).
+                Used to calibrate E→I weights so PV and SST neurons fire in their
+                biological range under realistic cortical activity.  Pass the
+                layer-specific rate observed (or expected) from diagnostics.
+            pv_adapt_increment: Spike-frequency adaptation increment for PV neurons.
+                Default 0.0 (non-adapting fast-spiking, biologically canonical).
+                L4 passes ~0.10 to prevent runaway firing when L4_pyr drive exceeds
+                the w_pyr_pv design rate—a pragmatic rate-limiting brake.
             device: Torch device
             dt_ms: Simulation timestep in milliseconds
         """
@@ -118,14 +135,18 @@ class CorticalInhibitoryNetwork(nn.Module):
         total_inhib = max(int(pyr_size * total_inhib_fraction), 10)
 
         # Divide into subtypes (based on cortical distributions)
-        self.pv_size = max(int(total_inhib * 0.40), 4)  # 40% - basket cells
+        self.pv_size  = max(int(total_inhib * 0.40), 4)  # 40% - basket cells
         self.sst_size = max(int(total_inhib * 0.30), 3)  # 30% - Martinotti
         self.vip_size = max(int(total_inhib * 0.20), 2)  # 20% - disinhibitory
-        self.other_size = total_inhib - (self.pv_size + self.sst_size + self.vip_size)
+        self.ngc_size = max(int(total_inhib * 0.10), 2)  # 10% - L1 neurogliaform
+        self.other_size = total_inhib - (self.pv_size + self.sst_size + self.vip_size + self.ngc_size)
 
         # PV+ Basket Cells (fast-spiking)
         # Use fast_spiking factory (already has tau_mem=8ms, heterogeneous)
-        # Override for slightly faster dynamics (5ms mean) and no adaptation
+        # Override for slightly faster dynamics (5ms mean).
+        # pv_adapt_increment is 0.0 by default (non-adapting fast-spiking), but L4
+        # passes a non-zero value to prevent overdrive when L4_pyr fires at 1-2 Hz
+        # with w_pyr_pv calibrated at a lower expected rate.
         self.pv_neurons = NeuronFactory.create_fast_spiking_neurons(
             region_name=region_name,
             population_name=f"{population_name}_pv",
@@ -133,7 +154,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             device=self.device,
             tau_mem=5.0,
             v_threshold=0.9,
-            adapt_increment=0.0,
+            adapt_increment=pv_adapt_increment,
         )
 
         # SST+ Martinotti Cells (regular-spiking)
@@ -162,36 +183,96 @@ class CorticalInhibitoryNetwork(nn.Module):
             tau_adapt=70.0,
         )
 
+        # L1 Neurogliaform (NGC) cells
+        # Slow, regular-spiking with moderate adaptation.
+        # tau_mem=15ms matches real NGC (Jiang et al. 2015 Table S3: ~12-18ms).
+        # v_threshold=1.0 keeps them below spontaneous threshold; they fire only
+        # when recruited by genuine top-down or local pyramidal drive.
+        self.ngc_neurons = NeuronFactory.create_pyramidal_neurons(
+            region_name=region_name,
+            population_name=f"{population_name}_ngc",
+            n_neurons=self.ngc_size,
+            device=self.device,
+            tau_mem=15.0,
+            v_threshold=1.0,
+            adapt_increment=0.03,
+            tau_adapt=100.0,
+        )
+
         # =====================================================================
         # EXCITATORY → INHIBITORY (E→I)
         # =====================================================================
-        # Pyr → PV (moderate - drives fast inhibition without over-suppression)
+        # FAN-IN NORMALISATION
+        # Different cortical layers have very different pyramidal population sizes.
+        # Without normalisation large layers (L23, L6b) drive PV/VIP far harder than small ones.
+        #
+        # The biologically meaningful quantity is the TOTAL DRIVE each inhibitory
+        # neuron receives, summed across all its inputs:
+        #   total_drive = pyr_size × connectivity × mean_weight
+        # This should be constant regardless of layer size.  Rearranging:
+        #   mean_weight = total_drive / (pyr_size × connectivity)
+
+        # Pyr → PV: target total weight per PV cell.
+        _g_L_pv    = 0.10   # fast-spiking factory
+        _tau_E_pv  = 3.0    # fast-spiking factory AMPA time constant
+        _E_E       = 3.0    # normalised reversal potential
+        _v_inf_pv  = 0.95   # slightly above threshold 0.9
+        _g_E_pv_needed = _v_inf_pv * _g_L_pv / (_E_E - _v_inf_pv)
+        _rate_spk_ms   = max(expected_pyr_rate_hz, 0.1) / 1000.0    # avoid division by zero
+        _PV_TOTAL  = _g_E_pv_needed / (_rate_spk_ms * _tau_E_pv)
+        _pv_connectivity = 0.5
+        _pv_mean   = _PV_TOTAL / (self.pyr_size * _pv_connectivity)
         self.w_pyr_pv = WeightInitializer.sparse_gaussian(
             n_input=self.pyr_size,
             n_output=self.pv_size,
-            connectivity=0.5,
-            mean=0.008,
-            std=0.003,
+            connectivity=_pv_connectivity,
+            mean=_pv_mean,
+            std=_pv_mean * 0.375,
             device=device,
         )
 
-        # Pyr → SST (weak to moderate - drives dendritic inhibition)
+        # Pyr → SST: target total weight per SST cell.
+        _g_L_sst    = 0.05   # pyramidal factory
+        _tau_E_sst  = 5.0    # pyramidal factory AMPA time constant
+        _v_inf_sst  = 1.05   # slightly above threshold 1.0
+        _g_E_sst_needed = _v_inf_sst * _g_L_sst / (_E_E - _v_inf_sst)
+        _SST_TOTAL = _g_E_sst_needed / (_rate_spk_ms * _tau_E_sst)
+        _sst_connectivity = 0.3
+        _sst_mean  = _SST_TOTAL / (self.pyr_size * _sst_connectivity)
         self.w_pyr_sst = WeightInitializer.sparse_gaussian(
             n_input=self.pyr_size,
             n_output=self.sst_size,
-            connectivity=0.3,
-            mean=0.005,
-            std=0.003,
+            connectivity=_sst_connectivity,
+            mean=_sst_mean,
+            std=_sst_mean * 0.6,
             device=device,
         )
 
-        # Pyr → VIP (strong, specific - drives disinhibition)
+        # Pyr → VIP: target total weight per VIP cell ≈ 0.9 (AMPA-only)
+        _VIP_TOTAL = 0.9
+        _vip_connectivity = 0.4
+        _vip_mean  = _VIP_TOTAL / (self.pyr_size * _vip_connectivity)
         self.w_pyr_vip = WeightInitializer.sparse_gaussian(
             n_input=self.pyr_size,
             n_output=self.vip_size,
-            connectivity=0.4,
-            mean=0.015,
-            std=0.003,
+            connectivity=_vip_connectivity,
+            mean=_vip_mean,
+            std=_vip_mean * 0.2,
+            device=device,
+        )
+
+        # Pyr → NGC: weak local collateral excitation (P=0.2)
+        # NGC cells receive recurrent excitation from L2/3 pyramidal collaterals.
+        # Drive is intentionally weak — NGC fires only when both local activity AND
+        # top-down input coincide (coincidence-detection role).
+        _ngc_connectivity = 0.2
+        _ngc_mean = 0.4 / (self.pyr_size * _ngc_connectivity)  # target total drive ≈ 0.4
+        self.w_pyr_ngc = WeightInitializer.sparse_gaussian(
+            n_input=self.pyr_size,
+            n_output=self.ngc_size,
+            connectivity=_ngc_connectivity,
+            mean=_ngc_mean,
+            std=_ngc_mean * 0.3,
             device=device,
         )
 
@@ -199,12 +280,15 @@ class CorticalInhibitoryNetwork(nn.Module):
         # INHIBITORY → EXCITATORY (I→E)
         # =====================================================================
         # PV → Pyr (perisomatic inhibition - gamma gating)
+        # Reverted 0.006 → 0.003: the 0.006 overcorrection combined with L4 v_threshold=1.8
+        # made L4_pyr completely un-fireable. With corrected L4 threshold=1.1 and PV at
+        # 30-60 Hz, mean=0.003 provides adequate perisomatic inhibition for gamma gating.
         self.w_pv_pyr = WeightInitializer.sparse_gaussian(
             n_input=self.pv_size,
             n_output=self.pyr_size,
             connectivity=0.6,
             mean=0.003,
-            std=0.001,
+            std=0.002,
             device=device,
         )
 
@@ -225,6 +309,20 @@ class CorticalInhibitoryNetwork(nn.Module):
             connectivity=0.05,
             mean=0.002,
             std=0.001,
+            device=device,
+        )
+
+        # NGC → Pyr: diffuse weak GABA_A on apical tuft dendrites (P=0.5)
+        # Biology: NGC axons spread like a "cottonball" covering ~50% of local
+        # pyramidal apical tufts with weak GABA_A conductances (Jiang et al. 2015).
+        # This gates the DEGREE to which top-down feedback modulates the pyramidal
+        # apical compartment — not a strong driver of somatic inhibition.
+        self.w_ngc_pyr = WeightInitializer.sparse_gaussian(
+            n_input=self.ngc_size,
+            n_output=self.pyr_size,
+            connectivity=0.5,
+            mean=0.0008,
+            std=0.0004,
             device=device,
         )
 
@@ -291,12 +389,15 @@ class CorticalInhibitoryNetwork(nn.Module):
         # into VIP space, implementing the attentional disinhibitory gate:
         #   top-down input → VIP fires → SST suppressed → apical disinhibition
         # Reference: Zhang et al. 2014, Pi et al. 2013
+        # Weight reduced from 0.012 → 0.004 → 0.001: the previous values drove non-L4
+        # VIP into saturation at 107-186 Hz. At mean=0.001 long-range inputs produce
+        # moderate VIP activity in the 2-20 Hz biological range during sustained input.
         self.w_lr_vip = WeightInitializer.sparse_gaussian(
             n_input=self.pyr_size,
             n_output=self.vip_size,
             connectivity=0.4,
-            mean=0.012,
-            std=0.004,
+            mean=0.001,
+            std=0.0005,
             device=device,
         )
 
@@ -313,6 +414,48 @@ class CorticalInhibitoryNetwork(nn.Module):
             tau_rise_ms=2.0,
             tau_decay_ms=20.0,
             spike_amplitude=0.15,
+            device=device,
+        )
+
+        # =====================================================================
+        # NGC LONG-RANGE INPUT MATRIX
+        # =====================================================================
+        # Biology: L1 NGC cells are the primary cortical recipients of long-range
+        # top-down axons whose terminals arborise in L1 (Cauller 1995; Felleman &
+        # Van Essen 1991).  These are the axons from PFC, association cortex, and
+        # higher-order thalamus that deliver predictive / attentional signals.
+        #
+        # Circuit: top-down AMPA → NGC excitation → NGC → GABA_A on pyramidal
+        #   apical tuft → controlled gating of whether feedback reaches the
+        #   pyramidal soma via the apical Ca²⁺ spike.  High ACh (M1 muscarinic)
+        #   boosts NGC recruitment → tighter feedback gating during attention.
+        #
+        # Weight uses the same pyr-space indexing as w_lr_vip because long-range
+        # axons innervate both L1 (NGC) and L2/3 (VIP) proportionally.
+        self.w_lr_ngc = WeightInitializer.sparse_gaussian(
+            n_input=self.pyr_size,
+            n_output=self.ngc_size,
+            connectivity=0.3,
+            mean=0.0008,
+            std=0.0004,
+            device=device,
+        )
+
+        # =====================================================================
+        # MUSCARINIC ACh RECEPTOR ON NGC (M1 subtype, metabotropic)
+        # =====================================================================
+        # Biology: L1 NGC cells express M1 muscarinic ACh receptors (Abs et al.
+        # 2018).  Unlike the nicotinic alpha4beta2 on VIP cells (fast, ionotropic),
+        # muscarinic M1 is METABOTROPIC: tau_rise ~15ms, tau_decay ~200ms.
+        # The slow decay sustains NGC activation for hundreds of milliseconds after
+        # a cholinergic volley — matching the sustained attention window.
+        # Net effect: ACh burst → slow NGC depolarisation → NGC fires with delay
+        #   → GABA_A gate on apical tuft opens → feedback gating adjusts.
+        self.ach_muscarinic_ngc = NeuromodulatorReceptor(
+            n_receptors=self.ngc_size,
+            tau_rise_ms=15.0,
+            tau_decay_ms=200.0,
+            spike_amplitude=0.10,
             device=device,
         )
 
@@ -351,8 +494,9 @@ class CorticalInhibitoryNetwork(nn.Module):
             feedforward_excitation: Direct excitation to PV cells [pv_size] for feedforward
                 inhibition (e.g., thalamic afferents driving PV directly).
             long_range_excitation: Top-down / long-range corticocortical input projected
-                into this layer's pyramidal space [pyr_size].  Used to drive VIP cells
-                (via ``w_lr_vip``) which in turn disinhibit pyramidal apical dendrites.
+                into this layer's pyramidal space [pyr_size].  Routed to:
+                (1) VIP cells via ``w_lr_vip`` — disinhibitory attention gate, and
+                (2) NGC cells via ``w_lr_ngc`` — L1 feedback filter on apical tuft.
             ach_spikes: Raw ACh spike tensor from the nucleus basalis (or None if
                 neuromodulation is disabled).  Processed by the nicotinic alpha4beta2
                 receptor on VIP cells, producing fast (tau ~20 ms) ionotropic excitation.
@@ -384,12 +528,13 @@ class CorticalInhibitoryNetwork(nn.Module):
             # external_excitation already contains thalamic input, so we'd double-count
             pv_exc = pv_exc_from_pyr + feedforward_excitation  # Direct thalamic drive only
         else:
-            # Fallback: use external excitation if no feedforward provided (old behavior)
-            pv_exc_external = torch.matmul(
-                self.w_pyr_pv,
-                external_excitation / (1.0 + external_excitation.sum() * 0.01)
-            )
-            pv_exc = pv_exc_from_pyr + pv_exc_external
+            # No thalamic feedforward available (layers other than L4):
+            # PV cells are driven exclusively by local pyramidal recurrent activity.
+            # Do NOT route external_excitation through w_pyr_pv — that matrix maps
+            # pyr_size → pv_size, but external_excitation is a conductance vector
+            # (not spikes), so multiplying it produces an always-on, unbounded drive
+            # that saturates PV cells at ~400 Hz.
+            pv_exc = pv_exc_from_pyr
 
         # SST cells: Driven by pyramidal activity
         sst_exc_from_pyr = torch.matmul(self.w_pyr_sst, pyr_spikes_float)
@@ -415,6 +560,18 @@ class CorticalInhibitoryNetwork(nn.Module):
         ach_nicotinic_drive = self.ach_nicotinic_vip.update(ach_spikes)  # [vip_size]
         vip_exc = vip_exc_from_pyr + vip_lr_drive + ach_nicotinic_drive * 0.25
 
+        # NGC cells: driven by pyramidal collaterals + long-range top-down + muscarinic ACh
+        # Biology: NGC fires on coincidence of (a) local L2/3 recurrent activity and
+        # (b) top-down input arriving in L1.  When both are present, NGC provides a
+        # controlled GABA_A gate on the pyramidal apical tuft.
+        ngc_exc_from_pyr = torch.matmul(self.w_pyr_ngc, pyr_spikes_float)
+        if long_range_excitation is not None:
+            ngc_lr_drive = torch.matmul(self.w_lr_ngc, long_range_excitation)
+        else:
+            ngc_lr_drive = torch.zeros(self.ngc_size, device=device)
+        ach_muscarinic_drive = self.ach_muscarinic_ngc.update(ach_spikes)  # [ngc_size]
+        ngc_exc = ngc_exc_from_pyr + ngc_lr_drive + ach_muscarinic_drive * 0.20
+
         # =====================================================================
         # COMPUTE INHIBITION TO INHIBITORY POPULATIONS (I→I)
         # =====================================================================
@@ -425,6 +582,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             self._pv_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.bool, device=device)
             self._sst_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.sst_size, dtype=torch.bool, device=device)
             self._vip_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.vip_size, dtype=torch.bool, device=device)
+            self._ngc_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.ngc_size, dtype=torch.bool, device=device)
             self._pv_membrane_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.float32, device=device)
 
         prev_pv = self._pv_spike_buffer.read(delay=1).float()
@@ -444,6 +602,9 @@ class CorticalInhibitoryNetwork(nn.Module):
 
         # VIP inhibition: minimal (VIP cells are not strongly targeted)
         vip_inh = torch.zeros(self.vip_size, device=device)
+
+        # NGC inhibition: NGC cells are not meaningfully targeted by other inhibitory types
+        ngc_inh = torch.zeros(self.ngc_size, device=device)
 
         # =====================================================================
         # GAP JUNCTION COUPLING (PV cells only)
@@ -465,8 +626,15 @@ class CorticalInhibitoryNetwork(nn.Module):
         # =====================================================================
         # Split excitatory conductance: 70% AMPA (fast), 30% NMDA (slow)
 
-        # PV cells (fast-spiking)
-        pv_g_ampa, pv_g_nmda = split_excitatory_conductance(pv_exc, nmda_ratio=0.3)
+        # Cortical interneurons (PV, SST, VIP) are AMPA-dominated: they express NMDA receptors
+        # at much lower density than pyramidal cells and their thin dendrites show minimal
+        # voltage-dependent NMDA unblocking.  Using nmda_ratio=0.3 with tau_nmda=100ms creates
+        # g_NMDA_ss = input_per_step × 100, a runaway NMDA attractor that saturates all three
+        # cell types at 240-400 Hz regardless of pyramidal firing rate.  Setting nmda_ratio=0.0
+        # removes this artefact; AMPA alone provides the biologically correct drive.
+
+        # PV cells (fast-spiking, AMPA only)
+        pv_g_ampa, pv_g_nmda = split_excitatory_conductance(pv_exc, nmda_ratio=0.0)
         pv_spikes, pv_membrane = self.pv_neurons.forward(
             g_ampa_input=ConductanceTensor(pv_g_ampa),
             g_nmda_input=ConductanceTensor(pv_g_nmda),
@@ -474,8 +642,8 @@ class CorticalInhibitoryNetwork(nn.Module):
             g_gaba_b_input=None,
         )
 
-        # SST cells (regular-spiking)
-        sst_g_ampa, sst_g_nmda = split_excitatory_conductance(sst_exc, nmda_ratio=0.3)
+        # SST cells (regular-spiking, AMPA only)
+        sst_g_ampa, sst_g_nmda = split_excitatory_conductance(sst_exc, nmda_ratio=0.0)
         sst_spikes, sst_membrane = self.sst_neurons.forward(
             g_ampa_input=ConductanceTensor(sst_g_ampa),
             g_nmda_input=ConductanceTensor(sst_g_nmda),
@@ -483,8 +651,8 @@ class CorticalInhibitoryNetwork(nn.Module):
             g_gaba_b_input=None,
         )
 
-        # VIP cells (disinhibitory)
-        vip_g_ampa, vip_g_nmda = split_excitatory_conductance(vip_exc, nmda_ratio=0.3)
+        # VIP cells (disinhibitory, AMPA only)
+        vip_g_ampa, vip_g_nmda = split_excitatory_conductance(vip_exc, nmda_ratio=0.0)
         vip_spikes, vip_membrane = self.vip_neurons.forward(
             g_ampa_input=ConductanceTensor(vip_g_ampa),
             g_nmda_input=ConductanceTensor(vip_g_nmda),
@@ -492,10 +660,22 @@ class CorticalInhibitoryNetwork(nn.Module):
             g_gaba_b_input=None,
         )
 
+        # NGC cells (slow, regular-spiking, AMPA only)
+        # Uses AMPA-only drive (same reasoning as other cortical interneurons: no NMDA
+        # runaway attractor).  Slow tau_mem and adaptation produce sparse, sustained firing.
+        ngc_g_ampa, ngc_g_nmda = split_excitatory_conductance(ngc_exc, nmda_ratio=0.0)
+        ngc_spikes, ngc_membrane = self.ngc_neurons.forward(
+            g_ampa_input=ConductanceTensor(ngc_g_ampa),
+            g_nmda_input=ConductanceTensor(ngc_g_nmda),
+            g_gaba_a_input=ConductanceTensor(ngc_inh),
+            g_gaba_b_input=None,
+        )
+
         # Store for next timestep using CircularDelayBuffer
         self._pv_spike_buffer.write(pv_spikes)
         self._sst_spike_buffer.write(sst_spikes)
         self._vip_spike_buffer.write(vip_spikes)
+        self._ngc_spike_buffer.write(ngc_spikes)
         self._pv_membrane_buffer.write(pv_membrane)
 
         # =====================================================================
@@ -511,15 +691,24 @@ class CorticalInhibitoryNetwork(nn.Module):
         # VIP → Pyr (minimal direct effect)
         vip_to_pyr = torch.matmul(self.w_vip_pyr, vip_spikes.float())
 
+        # NGC → Pyr (diffuse weak GABA_A on apical tuft)
+        # Biology: NGC axons arborise widely across L1 providing a gentle, spatially
+        # diffuse inhibitory gate on pyramidal apical tufts (Jiang et al. 2015).
+        # Weight 0.12 keeps the effect sub-threshold on its own; it only tips the balance
+        # when combined with SST dendritic inhibition during high attention states.
+        ngc_to_pyr = torch.matmul(self.w_ngc_pyr, ngc_spikes.float())
+
         # Total inhibition (weighted combination)
         # PV provides strongest, fastest inhibition (gamma gating)
         # SST provides slower, dendritic modulation
+        # NGC provides diffuse L1 apical gating (feedback filter)
         # NOTE: These are ADDITIONAL to baseline inhibition (50% in cortex.py L4)
         # With threshold 2.0, PV needs to be strong to counteract drive
         total_inhibition = (
             perisomatic_inhibition * 1.0 +  # Strong PV inhibition (threshold 2.0 compensates)
             dendritic_inhibition * 0.3 +    # SST provides modulatory inhibition
-            vip_to_pyr * 0.05               # VIP has minimal direct effect
+            vip_to_pyr * 0.05 +             # VIP has minimal direct effect
+            ngc_to_pyr * 0.12               # NGC: diffuse apical gating (weak but widespread)
         )
 
         return {
@@ -527,11 +716,13 @@ class CorticalInhibitoryNetwork(nn.Module):
             "pv_spikes": pv_spikes,
             "sst_spikes": sst_spikes,
             "vip_spikes": vip_spikes,
+            "ngc_spikes": ngc_spikes,
             "perisomatic_inhibition": perisomatic_inhibition,
             "dendritic_inhibition": dendritic_inhibition,
             "pv_membrane": pv_membrane,
             "sst_membrane": sst_membrane,
             "vip_membrane": vip_membrane,
+            "ngc_membrane": ngc_membrane,
         }
 
     # =========================================================================
@@ -544,3 +735,4 @@ class CorticalInhibitoryNetwork(nn.Module):
         self.pv_neurons.update_temporal_parameters(dt_ms)
         self.sst_neurons.update_temporal_parameters(dt_ms)
         self.vip_neurons.update_temporal_parameters(dt_ms)
+        self.ngc_neurons.update_temporal_parameters(dt_ms)

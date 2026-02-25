@@ -19,64 +19,6 @@ import torch
 
 
 # =============================================================================
-# RECEPTOR TYPES
-# =============================================================================
-
-
-class ReceptorType(StrEnum):
-    """Synaptic receptor type, encoding both neurotransmitter identity and polarity.
-
-    Using an explicit receptor type rather than a bare ``is_inhibitory`` boolean:
-    - Accurately represents biophysical receptor diversity (AMPA vs NMDA kinetics,
-      GABA_A fast shunting vs GABA_B slow metabotropic)
-    - Enforces Dale's Law at the type level: excitatory populations can only
-      create ``AMPA`` or ``NMDA`` synapses; inhibitory populations only ``GABA_A``
-      or ``GABA_B``
-    - Allows downstream code to apply receptor-appropriate conductance kinetics
-
-    In the current implementation AMPA and NMDA are summed (split via
-    ``split_excitatory_conductance``) by each region's ``forward()``; the receptor
-    type here records which biological pathway the conductance belongs to.
-    """
-
-    AMPA = "ampa"       # Fast excitatory (glutamatergic)
-    NMDA = "nmda"       # Slow excitatory, voltage-gated (glutamatergic)
-    GABA_A = "gaba_a"   # Fast inhibitory (GABAergic, ionotropic Cl⁻)
-    GABA_B = "gaba_b"   # Slow inhibitory (GABAergic, metabotropic K⁺)
-
-    @property
-    def is_inhibitory(self) -> bool:
-        """True for GABAergic (inhibitory) receptor types."""
-        return self in (ReceptorType.GABA_A, ReceptorType.GABA_B)
-
-    @property
-    def is_excitatory(self) -> bool:
-        """True for glutamatergic (excitatory) receptor types."""
-        return self in (ReceptorType.AMPA, ReceptorType.NMDA)
-
-
-# =============================================================================
-# POPULATION POLARITY
-# =============================================================================
-
-
-class PopulationPolarity(StrEnum):
-    """Intrinsic neurotransmitter polarity of a neuron population.
-
-    Used to enforce Dale's Law at connection registration time: an EXCITATORY
-    population must only form AMPA/NMDA synapses; an INHIBITORY population
-    must only form GABA_A/GABA_B synapses.
-
-    ``ANY`` disables enforcement (used for external inputs or populations whose
-    polarity is not yet specified).
-    """
-
-    EXCITATORY = "excitatory"   # Glutamatergic (pyramidal, stellate, granule, etc.)
-    INHIBITORY = "inhibitory"   # GABAergic (FSI, SST, VIP, OLM, MSN, etc.)
-    ANY = "any"                 # No enforcement (external inputs, mixed)
-
-
-# =============================================================================
 # TENSOR TYPES
 # =============================================================================
 
@@ -115,7 +57,7 @@ Physics: I_gap[i] = g_gap × (E_eff[i] - V[i])
 
 
 # =============================================================================
-# BRAIN INPUT/OUTPUT TYPES
+# BRAIN REGION AND POPULATION TYPES
 # =============================================================================
 
 
@@ -131,15 +73,117 @@ PopulationSizes = Dict[PopulationName, int]
 """Mapping of population names to their population sizes."""
 
 
+RegionSizes = Dict[RegionName, PopulationSizes]
+"""Mapping of region names to their population size dicts."""
+
+
+# =============================================================================
+# NEUROMODULATOR TYPES
+# =============================================================================
+
+
+NeuromodulatorType = Literal["da", "da_mesolimbic", "da_mesocortical", "da_nigrostriatal", "ne", "ach", "ach_septal", "5ht"]
+"""Type of neuromodulator for volume transmission signaling.
+
+Neuromodulators use diffuse broadcast rather than point-to-point synaptic connections:
+- 'da': Legacy combined DA key (avoid; use pathway-specific keys)
+- 'da_mesolimbic': Mesolimbic DA (VTA → ventral striatum, hippocampus, amygdala)
+- 'da_mesocortical': Mesocortical DA (VTA → PFC, prefrontal areas)
+- 'da_nigrostriatal': Nigrostriatal DA (SNc → dorsal striatum, motor learning)
+- 'ne': Norepinephrine (from locus coeruleus)
+- 'ach': Acetylcholine (from nucleus basalis — cortical attention)
+- 'ach_septal': Acetylcholine (from medial septum — hippocampal theta)
+- '5ht': Serotonin (from raphe nuclei) - future support
+"""
+
+
+class NeuromodulatorSource(Protocol):
+    """Protocol marking a NeuralRegion as a neuromodulator volume-transmission source.
+
+    Any region that produces neuromodulator signals (DA, NE, ACh, 5-HT) should
+    declare this class variable.  The dict maps neuromodulator type strings
+    (``"da"``, ``"ne"``, ``"ach"``) to the name of the source population within
+    that region whose spike output represents the modulator signal.
+
+    Example::
+
+        class VTARegion(NeuralRegion[VTAConfig]):
+            neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]] = {'da': 'da'}
+
+    Runtime detection uses ``hasattr(region, 'neuromodulator_outputs')`` rather
+    than ``isinstance`` because ``ClassVar`` members are invisible to Python's
+    ``runtime_checkable`` Protocol machinery.
+    """
+    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]]
+
+
+NeuromodulatorInput = Dict[NeuromodulatorType, Optional[torch.Tensor]]
+"""Mapping of neuromodulator types to their spike tensors for broadcast signaling.
+
+Unlike synaptic connections (SynapticInput), neuromodulators are broadcast to all regions
+and processed by receptors. Regions ignore neuromodulators they don't use.
+"""
+
+
+# =============================================================================
+# RECEPTOR TYPES
+# =============================================================================
+
+
+class ReceptorType(StrEnum):
+    """Synaptic receptor type, encoding both neurotransmitter identity and polarity.
+
+    - Accurately represents biophysical receptor diversity (AMPA vs NMDA kinetics,
+      GABA_A fast shunting vs GABA_B slow metabotropic)
+    - Enforces Dale's Law at the type level: excitatory populations can only
+      create ``AMPA`` or ``NMDA`` synapses; inhibitory populations only ``GABA_A``
+      or ``GABA_B``
+    - Allows downstream code to apply receptor-appropriate conductance kinetics
+    """
+
+    AMPA = "ampa"       # Fast excitatory (glutamatergic)
+    NMDA = "nmda"       # Slow excitatory, voltage-gated (glutamatergic)
+    GABA_A = "gaba_a"   # Fast inhibitory (GABAergic, ionotropic Cl⁻)
+    GABA_B = "gaba_b"   # Slow inhibitory (GABAergic, metabotropic K⁺)
+
+    @property
+    def is_inhibitory(self) -> bool:
+        """True for GABAergic (inhibitory) receptor types."""
+        return self in (ReceptorType.GABA_A, ReceptorType.GABA_B)
+
+    @property
+    def is_excitatory(self) -> bool:
+        """True for glutamatergic (excitatory) receptor types."""
+        return self in (ReceptorType.AMPA, ReceptorType.NMDA)
+
+
+class PopulationPolarity(StrEnum):
+    """Intrinsic neurotransmitter polarity of a neuron population.
+
+    Used to enforce Dale's Law at connection registration time: an EXCITATORY
+    population must only form AMPA/NMDA synapses; an INHIBITORY population
+    must only form GABA_A/GABA_B synapses.
+
+    ``ANY`` disables enforcement (used for external inputs or populations whose
+    polarity is not yet specified).
+    """
+
+    EXCITATORY = "excitatory"   # Glutamatergic (pyramidal, stellate, granule, etc.)
+    INHIBITORY = "inhibitory"   # GABAergic (FSI, SST, VIP, OLM, MSN, etc.)
+    ANY = "any"                 # No enforcement (external inputs, mixed)
+
+
+# =============================================================================
+# SYNAPTIC CONNECTION TYPES
+# =============================================================================
+
+
 @dataclass(frozen=True)
 class SynapseId:
     """Unique identifier for a synaptic connection.
 
     Encodes the full routing key (source region/population → target
     region/population) plus the receptor type at the post-synaptic terminal.
-
-    **Receptor type replaces the old ``is_inhibitory: bool`` flag (P1-04).**
-    Using :class:`ReceptorType` rather than a bare boolean:
 
     - Accurately captures biophysical receptor diversity
     - Enforces Dale's Law: check ``receptor_type.is_inhibitory`` against the
@@ -173,20 +217,6 @@ class SynapseId:
                 raise ValueError(
                     f"{field_name} cannot contain '{self._SEP}' or '.' character: {value}"
                 )
-
-    # ------------------------------------------------------------------
-    # Polarity convenience (backward-compatible property)
-    # ------------------------------------------------------------------
-
-    @property
-    def is_inhibitory(self) -> bool:
-        """True when ``receptor_type`` is ``GABA_A`` or ``GABA_B``."""
-        return self.receptor_type.is_inhibitory
-
-    @property
-    def is_excitatory(self) -> bool:
-        """True when ``receptor_type`` is ``AMPA`` or ``NMDA``."""
-        return self.receptor_type.is_excitatory
 
     def __str__(self) -> str:
         return (
@@ -294,49 +324,6 @@ class SynapseId:
             target_population=ThalamusPopulation.RELAY,
             receptor_type=ReceptorType.AMPA,
         )
-
-
-NeuromodulatorType = Literal["da", "da_mesolimbic", "da_mesocortical", "da_nigrostriatal", "ne", "ach", "ach_septal", "5ht"]
-"""Type of neuromodulator for volume transmission signaling.
-
-Neuromodulators use diffuse broadcast rather than point-to-point synaptic connections:
-- 'da': Legacy combined DA key (avoid; use pathway-specific keys)
-- 'da_mesolimbic': Mesolimbic DA (VTA → ventral striatum, hippocampus, amygdala)
-- 'da_mesocortical': Mesocortical DA (VTA → PFC, prefrontal areas)
-- 'da_nigrostriatal': Nigrostriatal DA (SNc → dorsal striatum, motor learning)
-- 'ne': Norepinephrine (from locus coeruleus)
-- 'ach': Acetylcholine (from nucleus basalis — cortical attention)
-- 'ach_septal': Acetylcholine (from medial septum — hippocampal theta)
-- '5ht': Serotonin (from raphe nuclei) - future support
-"""
-
-
-class NeuromodulatorSource(Protocol):
-    """Protocol marking a NeuralRegion as a neuromodulator volume-transmission source.
-
-    Any region that produces neuromodulator signals (DA, NE, ACh, 5-HT) should
-    declare this class variable.  The dict maps neuromodulator type strings
-    (``"da"``, ``"ne"``, ``"ach"``) to the name of the source population within
-    that region whose spike output represents the modulator signal.
-
-    Example::
-
-        class VTARegion(NeuralRegion[VTAConfig]):
-            neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]] = {'da': 'da'}
-
-    Runtime detection uses ``hasattr(region, 'neuromodulator_outputs')`` rather
-    than ``isinstance`` because ``ClassVar`` members are invisible to Python's
-    ``runtime_checkable`` Protocol machinery.
-    """
-    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]]
-
-
-NeuromodulatorInput = Dict[NeuromodulatorType, Optional[torch.Tensor]]
-"""Mapping of neuromodulator types to their spike tensors for broadcast signaling.
-
-Unlike synaptic connections (SynapticInput), neuromodulators are broadcast to all regions
-and processed by receptors. Regions ignore neuromodulators they don't use.
-"""
 
 
 SynapticInput = Dict[SynapseId, torch.Tensor]

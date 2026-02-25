@@ -158,13 +158,16 @@ class ThreeFactorConfig(LearningConfig):
 
 
 @dataclass
-class D1STDPConfig(LearningConfig):
-    """Configuration for D1 MSN three-factor STDP.
+class D1D2STDPConfig(LearningConfig):
+    """Configuration for D1/D2 MSN three-factor STDP.
 
     Multi-timescale eligibility traces for striatal corticostriatal plasticity.
     Biology (Yagishita 2014): Fast traces (~500 ms) capture immediate coincidences;
     slow traces (~60 s) consolidate tags for delayed reward credit assignment.
+    The dopamine signal is inverted inside :class:`D2STDPStrategy` to reflect
+    Gi-coupled D2 receptor physiology
     D1 receptors (Gs-coupled): DA+ → LTP, DA- → LTD.
+    D2 receptors (Gi-coupled): DA+ → LTD, DA- → LTP.
     """
 
     fast_eligibility_tau_ms: float = 500.0    # Fast trace decay (~500 ms)
@@ -180,16 +183,10 @@ class D1STDPConfig(LearningConfig):
             raise ConfigurationError(f"slow_eligibility_tau_ms must be > 0, got {self.slow_eligibility_tau_ms}")
         if not (0.0 < self.eligibility_consolidation_rate <= 1.0):
             raise ConfigurationError(f"eligibility_consolidation_rate must be in (0, 1], got {self.eligibility_consolidation_rate}")
-
-
-@dataclass
-class D2STDPConfig(D1STDPConfig):
-    """Configuration for D2 MSN three-factor STDP.
-
-    Identical fields to :class:`D1STDPConfig`; the dopamine signal is inverted
-    inside :class:`D2STDPStrategy` to reflect Gi-coupled D2 receptor physiology
-    (DA+ → LTD, DA- → LTP).
-    """
+        if not (0.0 <= self.slow_trace_weight <= 1.0):
+            raise ConfigurationError(f"slow_trace_weight must be in [0, 1], got {self.slow_trace_weight}")
+        if self.slow_trace_weight == 1.0:
+            raise ConfigurationError("slow_trace_weight cannot be 1.0 (would ignore fast trace), got 1.0")
 
 
 @dataclass
@@ -894,10 +891,10 @@ class D1STDPStrategy(LearningStrategy):
     three-factor rule.
 
     Args:
-        config: :class:`D1STDPConfig` (or subclass) instance.
+        config: :class:`D1D2STDPConfig` instance.
     """
 
-    def __init__(self, config: D1STDPConfig) -> None:
+    def __init__(self, config: D1D2STDPConfig) -> None:
         super().__init__(config)
         self._fast_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.fast_eligibility_tau_ms)
         self._slow_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.slow_eligibility_tau_ms)
@@ -991,7 +988,7 @@ class D2STDPStrategy(D1STDPStrategy):
     physiology (DA+ → LTD, DA- → LTP).
 
     Args:
-        config: :class:`D2STDPConfig` (or :class:`D1STDPConfig`) instance.
+        config: :class:`D1D2STDPConfig` instance.
     """
 
     def compute_update(

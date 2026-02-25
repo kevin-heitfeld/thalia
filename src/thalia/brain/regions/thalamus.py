@@ -64,12 +64,13 @@ Architecture Pattern:
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import torch
 
 from thalia.brain.configs import ThalamusConfig
 from thalia.components import (
+    ConductanceScaledSpec,
     GapJunctionConfig,
     GapJunctionCoupling,
     NeuromodulatorReceptor,
@@ -171,7 +172,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
 
         # Homeostatic plasticity: track firing rates for gain adaptation
         # Neuron registered below; looked up lazily in _update_homeostasis().
-        self._register_homeostasis(ThalamusPopulation.RELAY, self.relay_size)
+        self._register_homeostasis(ThalamusPopulation.RELAY, self.relay_size, target_firing_rate=0.08)
 
         # =====================================================================
         # SYNAPTIC WEIGHTS
@@ -188,26 +189,41 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 weight_scale=0.005,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.AMPA,
+            stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
         )
 
         # =====================================================================
-        # TRN RECURRENT INHIBITION
+        # TRN LATERAL INHIBITION (winner-take-all across sensory streams)
         # =====================================================================
-        # TRN → TRN (recurrent inhibition for oscillations)
+        # TRN → TRN (lateral inhibition — the "searchlight spotlight" mechanism)
+        #
+        # Biology (Pinault & Deschênes 1998; Crabtree et al. 1998):
+        # Each TRN sector receives from one thalamic nucleus and projects lateral
+        # GABA_A inhibition onto TRN neurons representing *other* nuclei (and also
+        # locally). When one sensory stream (e.g. visual) strongly drives relay
+        # neurons → those relay collaterals excite the visual TRN sector → that
+        # TRN sector laterally inhibits the auditory TRN sector → auditory relay
+        # is disinhibited proportionally less → winner-take-all across modalities.
+        #
+        # Parameters:
+        #   connectivity 0.15: Each TRN cell contacts ~15% of peers (real ~10-20%)
+        #   mean=0.005: Moderate GABA_A weight; must overcome relay→TRN excitation
+        #     in the losing stream but not completely silence it (soft competition)
+        #   no_autapses: each neuron cannot inhibit itself (Dale's Law corollary)
         self._add_internal_connection(
             source_population=ThalamusPopulation.TRN,
             target_population=ThalamusPopulation.TRN,
-            weights=WeightInitializer.sparse_random_no_autapses(
+            weights=WeightInitializer.sparse_gaussian_no_autapses(
                 n_input=self.trn_size,
                 n_output=self.trn_size,
-                connectivity=0.01,
-                weight_scale=0.0003,
+                connectivity=0.15,
+                mean=0.005,
+                std=0.002,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
         )
 
         # TRN recurrent delay buffer (prevents instant feedback oscillations)
@@ -293,9 +309,11 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
 
         Must be called after all add_input_source() calls complete.
         """
-        # Create gap junctions using TRN→TRN recurrent weights as proximity proxy.
-        # We use the TRN-internal recurrent synapse weights to estimate which
-        # TRN neurons are functionally adjacent (share inhibitory connectivity).
+        # Create gap junctions using TRN→TRN lateral inhibition weights as proximity proxy.
+        # TRN neurons that share lateral inhibitory connectivity are the same anatomical
+        # neighbors that are coupled by gap junctions — so the lateral weight matrix is
+        # the correct adjacency structure for electrical coupling (stronger lateral GABA_A
+        # connectivity → higher probability of gap junction coupling).
         # This replaces the old lazy input_to_trn approach which bypassed SynapseId.
         if self.gap_junctions is None:
             trn_recurrent_synapse = SynapseId(
@@ -336,8 +354,8 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 std=0.001,
                 device=self.device,
             ),
-            stp_config=None,
             receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
         )
 
     # =========================================================================
@@ -349,7 +367,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         synapse_id: SynapseId,
         n_input: int,
         connectivity: float,
-        weight_scale: float,
+        weight_scale: Union[float, ConductanceScaledSpec],
         *,
         stp_config: Optional[STPConfig] = None,
     ) -> None:
@@ -372,9 +390,15 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                     stp_config = STPConfig.from_type(STPType.DEPRESSING_MODERATE)
 
             elif synapse_id.target_population == ThalamusPopulation.TRN:
-                # All inputs → TRN facilitation (including sensory collateral)
-                # Ensures TRN can be recruited by weak inputs for effective gating
-                stp_config = STPConfig.from_type(STPType.FACILITATING_STRONG)
+                # Type-I corticothalamic (L6a→TRN) and ascending sensory collaterals
+                # are both DEPRESSING — in contrast to the facilitating type-II CT
+                # (L6b→relay, CORTICOTHALAMIC_L6B_PRESET).
+                # Crandall et al. (2015, Neuron); Cruikshank et al. (2010):
+                # type-I CT→TRN EPSPs depress by >60% at 40 Hz.
+                # This means TRN is strongly recruited by initial stimulus onset
+                # volleys but desensitises to sustained thalamic relay activity —
+                # preventing over-suppression during steady-state sensory input.
+                stp_config = STPConfig.from_type(STPType.DEPRESSING_MODERATE)
 
         super().add_input_source(synapse_id, n_input, connectivity, weight_scale, stp_config=stp_config)
 
@@ -389,15 +413,37 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 receptor_type=ReceptorType.AMPA,
             )
             if sensory_trn_synapse not in self.synaptic_weights:
-                self._add_synaptic_weights(
-                    sensory_trn_synapse,
-                    WeightInitializer.sparse_random(
+                if isinstance(weight_scale, ConductanceScaledSpec):
+                    # TRN params: g_L=0.10, tau_E=4ms, v_threshold=1.6.
+                    # Use source_rate_hz from relay spec; drive TRN strongly
+                    # (feedforward inhibition must fire reliably on sensory burst).
+                    trn_weights = WeightInitializer.conductance_scaled(
+                        n_input=n_input,
+                        n_output=self.trn_size,
+                        connectivity=0.3,
+                        source_rate_hz=weight_scale.source_rate_hz,
+                        target_g_L=0.10,
+                        target_tau_E_ms=4.0,
+                        target_v_inf=1.65,
+                        fraction_of_drive=0.80,
+                        device=self.device,
+                    )
+                else:
+                    trn_weights = WeightInitializer.sparse_random(
                         n_input=n_input,
                         n_output=self.trn_size,
                         connectivity=0.3,
                         weight_scale=weight_scale,  # Match sensory→relay scale
                         device=self.device,
                     )
+                self._add_synaptic_weights(sensory_trn_synapse, trn_weights)
+                self._add_stp_module(
+                    synapse_id=sensory_trn_synapse,
+                    n_pre=n_input,
+                    n_post=self.trn_size,
+                    # Sensory ascending collaterals → TRN are depressing
+                    # (retinogeniculate collaterals, Chen et al. 2002)
+                    config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
                 )
 
     # =========================================================================
@@ -553,22 +599,27 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             n_neurons=self.trn_size,
         ).g_ampa
 
-        # TRN recurrent inhibition with configurable delay (prevents instant feedback oscillations)
-        # ACh modulation of TRN recurrent inhibition (McCormick & Prince 1986):
-        # High ACh (wakefulness): Suppress TRN oscillations → tonic relay mode
-        # Low ACh (sleep): Enable TRN spindles → burst mode, sensory disconnection
+        # TRN lateral inhibition (winner-take-all across sensory streams)
+        # ACh suppresses TRN lateral inhibition (McCormick & Prince 1986):
+        # High ACh (wakefulness): Reduces TRN→TRN strength → softer competition →
+        #   all streams pass (broadened attentional spotlight)
+        # Low ACh (sleep/drowsy): Full TRN lateral inhibition → sharp winner-take-all →
+        #   one sensory stream dominates (narrow spatial attention / spindle grouping)
         ach_level = self._ach_concentration_trn.mean().item()
         ach_recurrent_modulation = compute_ach_recurrent_suppression(ach_level)
 
-        trn_recurrent_synapse = SynapseId(
+        trn_lateral_synapse = SynapseId(
             source_region=self.region_name,
             source_population=ThalamusPopulation.TRN,
             target_region=self.region_name,
             target_population=ThalamusPopulation.TRN,
             receptor_type=ReceptorType.GABA_A,
         )
+        # Read delayed TRN spikes (1-step causally delayed via _trn_recurrent_buffer).
+        # Each TRN neuron's spikes at t-delay inhibit its lateral peers at t,
+        # implementing competition across sensory sectors.
         trn_inhibition = self._integrate_synaptic_inputs_at_dendrites(
-            {trn_recurrent_synapse: self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)},
+            {trn_lateral_synapse: self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)},
             n_neurons=self.trn_size,
         ).g_gaba_a * ach_recurrent_modulation
 
@@ -578,12 +629,12 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # This correctly models I_gap = g × (E_neighbor_avg - V) in conductance-based framework
         trn_gap_conductance = torch.zeros(self.trn_size, device=self.device)
         trn_gap_reversal = torch.zeros(self.trn_size, device=self.device)
-        if self.gap_junctions is not None and self.trn_neurons.membrane is not None:
+        if self.gap_junctions is not None:
             # Gap junctions return (g_total, E_effective) where:
             # - g_total: Sum of gap junction conductances for each neuron
             # - E_effective: Weighted average of neighbor voltages (dynamic reversal)
             # Physics: I_gap = g × (E_eff - V), where E_eff = weighted_avg(neighbor_voltages)
-            trn_gap_conductance, trn_gap_reversal = self.gap_junctions.forward(self.trn_neurons.membrane)
+            trn_gap_conductance, trn_gap_reversal = self.gap_junctions.forward(self.trn_neurons.V_soma)
 
         # Split excitatory conductance into AMPA (fast) and NMDA (slow)
         trn_g_ampa, trn_g_nmda = split_excitatory_conductance(trn_excitation, nmda_ratio=0.2)

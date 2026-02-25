@@ -92,49 +92,45 @@ class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
         self.prototypic_size = population_sizes[GPePopulation.PROTOTYPIC]
 
         # Prototypic neurons: ~75% of GPe, ~50 Hz tonic, project to STN + SNr
-        prototypic_config = ConductanceLIFConfig(
-            region_name=self.region_name,
-            population_name=GPePopulation.PROTOTYPIC,
-            device=self.device,
-            tau_mem=self.config.tau_mem,
-            v_threshold=self.config.v_threshold,
-            v_reset=0.0,
-            v_rest=0.0,
-            tau_ref=self.config.tau_ref,
-            g_L=0.10,
-            E_L=0.0,
-            E_E=3.0,
-            E_I=-0.5,
-            tau_E=5.0,
-            tau_I=10.0,
-            noise_std=0.007 if self.config.baseline_noise_conductance_enabled else 0.0,
-        )
         self.prototypic_neurons = ConductanceLIF(
             n_neurons=self.prototypic_size,
-            config=prototypic_config,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=GPePopulation.PROTOTYPIC,
+                tau_mem=self.config.tau_mem,
+                v_threshold=self.config.v_threshold,
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=0.007,
+            ),
+            device=self.device,
         )
 
         # Arkypallidal neurons: ~25% of GPe, project back to striatum
-        arkypallidal_config = ConductanceLIFConfig(
-            region_name=self.region_name,
-            population_name=GPePopulation.ARKYPALLIDAL,
-            device=self.device,
-            tau_mem=self.config.tau_mem,
-            v_threshold=self.config.v_threshold,
-            v_reset=0.0,
-            v_rest=0.0,
-            tau_ref=self.config.tau_ref,
-            g_L=0.10,
-            E_L=0.0,
-            E_E=3.0,
-            E_I=-0.5,
-            tau_E=5.0,
-            tau_I=10.0,
-            noise_std=0.005 if self.config.baseline_noise_conductance_enabled else 0.0,
-        )
         self.arkypallidal_neurons = ConductanceLIF(
             n_neurons=self.arkypallidal_size,
-            config=arkypallidal_config,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=GPePopulation.ARKYPALLIDAL,
+                tau_mem=self.config.tau_mem,
+                v_threshold=self.config.v_threshold,
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=0.005,
+            ),
+            device=self.device,
         )
 
         # Tonic drive for baseline firing (~50 Hz for prototypic)

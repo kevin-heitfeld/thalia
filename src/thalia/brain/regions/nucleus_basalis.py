@@ -18,6 +18,7 @@ from thalia.components import (
     AcetylcholineNeuronConfig,
 )
 from thalia.typing import (
+    ConductanceTensor,
     NeuromodulatorInput,
     NeuromodulatorType,
     PopulationName,
@@ -68,11 +69,9 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
             config=AcetylcholineNeuronConfig(
                 region_name=self.region_name,
                 population_name=NucleusBasalisPopulation.ACH,
-                device=self.device,
                 prediction_error_to_current_gain=self.config.pe_gain,
-                i_h_conductance=AcetylcholineNeuronConfig.i_h_conductance if self.config.baseline_noise_conductance_enabled else 0.0,
-                noise_std=AcetylcholineNeuronConfig.noise_std if self.config.baseline_noise_conductance_enabled else 0.0,
             ),
+            device=self.device,
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
@@ -136,19 +135,22 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
         # Update ACh neurons with PE drive
         # High |PE| → depolarization → fast burst (10-20 Hz for 50-100ms)
         # ACh responds to magnitude, not sign (|PE|)
+        # Apply GABA feedback from the previous timestep (closes homeostatic loop).
+        gaba_feedback = self._get_gaba_feedback_conductance(self.ach_neurons_size, gain=0.01)
         ach_spikes, _ = self.ach_neurons.forward(
             g_ampa_input=None,    # No direct excitatory input; drive is via prediction error modulation
             g_nmda_input=None,    # NMDA not used for ACh neurons
-            g_gaba_a_input=None,  # No direct inhibitory input; homeostasis via interneurons
+            g_gaba_a_input=ConductanceTensor(gaba_feedback),
             g_gaba_b_input=None,  # No GABA_B for fast ACh bursting
             prediction_error_drive=prediction_error,
         )
         # Update GABA interneurons (homeostatic control)
         ach_activity = ach_spikes.float().mean().item()
-        self._step_gaba_interneurons(ach_activity)
+        gaba_spikes = self._step_gaba_interneurons(ach_activity)
 
         region_outputs: RegionOutput = {
             NucleusBasalisPopulation.ACH: ach_spikes,
+            NucleusBasalisPopulation.GABA: gaba_spikes,
         }
 
         return self._post_forward(region_outputs)
@@ -239,16 +241,17 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
     def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
         """Compute drive for GABAergic interneurons.
 
-        NB uses stronger feedback (1.2×) and higher baseline (0.4) than the
-        default, reflecting robust homeostatic control of ACh burst duration.
+        No tonic baseline: GABA only fires proportionally when ACh overshoots
+        its target (gain=2.0).  The previous baseline=0.4 saturated GABA at
+        ~420 Hz which completely silenced ACh neurons via feedback.
 
         Returns:
             Drive conductance for GABA neurons [gaba_neurons_size]
         """
-        # Tonic baseline conductance
-        baseline = 0.4 if self.config.baseline_noise_conductance_enabled else 0.0
+        # Tonic baseline REMOVED: a constant 0.4 drive pushes GABA neurons to V*=2.67
+        # (threshold=0.9), saturating them at ~420 Hz and fully silencing ACh neurons
+        # via massive GABA feedback. GABA should only fire when ACh overshoots its
+        # target. Match the base-class convention: gain 2.0, no baseline.
+        feedback = primary_activity * 2.0  # Proportional feedback, no tonic component
 
-        # Increase during ACh bursts (negative feedback)
-        feedback = primary_activity * 1.2  # CONDUCTANCE: strong feedback
-
-        return torch.full((self.gaba_neurons_size,), baseline + feedback, device=self.device)
+        return torch.full((self.gaba_neurons_size,), feedback, device=self.device)

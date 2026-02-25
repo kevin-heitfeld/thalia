@@ -23,7 +23,6 @@ class ThalamusConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    target_firing_rate: float = 0.08  # Target firing rate for homeostatic plasticity
     gain_learning_rate: float = 0.0001  # Let conductance scales work first
     gain_tau_ms: float = 10000.0  # Very slow adaptation
 

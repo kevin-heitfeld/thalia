@@ -28,7 +28,6 @@ class CortexConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    target_firing_rate: float = 0.03
     gain_learning_rate: float = 0.004
     gain_tau_ms: float = 2000.0
 
@@ -46,7 +45,7 @@ class CortexConfig(NeuralRegionConfig):
     # This is how the cortex naturally "clears" old representations when new input arrives
     # Always enabled (fundamental cortical mechanism)
     ffi_threshold: float = 0.3  # Input change threshold to trigger FFI
-    ffi_strength: float = 0.18  # INCREASED from 0.12 to break 1 Hz cortical synchrony
+    ffi_strength: float = 0.18
     # Stronger FFI makes cortex more stimulus-driven and less self-sustaining
     ffi_tau: float = 5.0  # FFI decay time constant (ms)
 
@@ -56,9 +55,8 @@ class CortexConfig(NeuralRegionConfig):
     # Basket cells and chandelier cells in L2/3 have dense gap junction networks
     # Critical for cortical gamma oscillations (30-80 Hz) and precise spike timing
     # ~70-80% of cortical gap junctions are interneuron-interneuron
-    # INCREASED: Gap junctions are the PRIMARY mechanism for emergent gamma (PING)
-    gap_junction_strength: float = 0.25  # INCREASED from 0.12 for stronger gamma synchronization
-    gap_junction_threshold: float = 0.20  # REDUCED from 0.25 for easier activation
+    gap_junction_strength: float = 0.25
+    gap_junction_threshold: float = 0.20
     gap_junction_max_neighbors: int = 8
 
     # =========================================================================
@@ -83,32 +81,34 @@ class CortexConfig(NeuralRegionConfig):
         default_factory=lambda: {
             CortexLayer.L23: {
                 "tau_mem": 20.0,          # Moderate integration for association
-                "v_threshold": 1.8,       # INCREASED from 1.5 to reduce hyperactivity (25.3% → 5-10%)
+                "v_threshold": 1.8,       # High threshold for selective integration
                 "adapt_increment": 0.45,  # VERY STRONG adaptation (prevents runaway recurrence)
                 "tau_adapt": 150.0,       # Medium-slow decay (100-200ms biological)
             },
             CortexLayer.L4: {
                 "tau_mem": 10.0,          # Fast integration for sensory input
-                "v_threshold": 2.5,       # INCREASED to 2.5 to achieve target 1-3% FR (was 5.04%)
-                "adapt_increment": 0.35,  # INCREASED to 0.35 for stronger spike frequency adaptation
+                "v_threshold": 0.65,      # Lowered 1.1→0.65: thalamus at 30 Hz with STP eff=0.029
+                                          # gives V_inf≈0.70; threshold must be below achievable V_inf.
+                                          # adapt_increment=0.20, tau_adapt=80ms → ~3 Hz steady-state
+                "adapt_increment": 0.20,  # Moderate adaptation to prevent overfiring from strong input
                 "tau_adapt": 80.0,        # Fast decay (50-100ms biological)
             },
             CortexLayer.L5: {
                 "tau_mem": 30.0,          # Slow integration for output generation
-                "v_threshold": 1.2,       # INCREASED from 0.9 to reduce hyperactivity (19% → 5-10%)
-                "adapt_increment": 0.20,  # INCREASED from 0.10 for stronger adaptation
+                "v_threshold": 1.2,       # Moderate-high threshold for reliable output (not too easily driven)
+                "adapt_increment": 0.20,  # Moderate adaptation to enable burst firing without runaway activity
                 "tau_adapt": 120.0,       # Medium decay (80-150ms biological)
             },
             CortexLayer.L6A: {
                 "tau_mem": 15.0,          # Fast for TRN feedback (low gamma)
-                "v_threshold": 1.0,       # Standard for attention gating
-                "adapt_increment": 0.08,  # Light adaptation for feedback
+                "v_threshold": 1.4,       # Higher threshold to prevent excessive feedback excitation (calibrated for stable low gamma)
+                "adapt_increment": 0.18,  # Moderate adaptation to support feedback dynamics without runaway activity
                 "tau_adapt": 100.0,       # Medium-fast decay (80-120ms biological)
             },
             CortexLayer.L6B: {
                 "tau_mem": 25.0,          # Moderate for relay feedback (high gamma)
-                "v_threshold": 0.9,       # Lower for fast gain modulation
-                "adapt_increment": 0.12,  # Moderate adaptation for gain control
+                "v_threshold": 1.1,       # Lower threshold to allow fast modulation of L4 (calibrated for stable high gamma)
+                "adapt_increment": 0.22,  # Moderate adaptation to support relay dynamics without runaway activity
                 "tau_adapt": 100.0,       # Medium-fast decay (80-120ms biological)
             },
         }
@@ -242,6 +242,12 @@ class PrefrontalConfig(NeuralRegionConfig):
     d2_da_gain: float = 0.3  # DA suppression for D2 neurons (inhibitory, 1.0 - gain*DA)
 
     # =========================================================================
+    # TONIC DRIVE
+    # =========================================================================
+    baseline_drive: float = 0.006
+    """Tonic excitatory baseline conductance for executive neurons."""
+
+    # =========================================================================
     # GAP JUNCTIONS
     # =========================================================================
     gap_junction_strength: float = 0.1  # Moderate coupling for TRN synchronization (enables 8-13 Hz alpha from Relay↔TRN loops)
@@ -252,10 +258,6 @@ class PrefrontalConfig(NeuralRegionConfig):
     # HOMEOSTATIC INTRINSIC PLASTICITY
     # =========================================================================
     # Adaptive gain control to maintain target firing rates
-    # CRITICAL FIX: PFC needs HIGHER baseline firing (7-10%) for working memory maintenance.
-    # Setting target too low (5%) caused homeostatic collapse: activity 7% → gain reduced
-    # → activity drops → gain reduced further → -84% collapse in 100ms.
-    target_firing_rate: float = 0.10  # 10% target (working memory needs sustained activity)
     gain_learning_rate: float = 0.001  # Very slow adaptation (was 0.004, caused collapse)
     gain_tau_ms: float = 5000.0  # 5s averaging window (very slow for WM stability)
 

@@ -76,8 +76,6 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         self._gaba_population_name: PopulationName = gaba_population_name
         self.gaba_neurons_size: int = gaba_size
 
-        from thalia.components import ConductanceLIF  # imported lazily to avoid cycles
-
         self.gaba_neurons = NeuronFactory.create(
             region_name=self.region_name,
             population_name=gaba_population_name,
@@ -89,6 +87,13 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
             gaba_population_name,
             self.gaba_neurons,
             polarity=PopulationPolarity.INHIBITORY,
+        )
+        # Delay buffer: GABA spikes from the previous timestep, used as:
+        #   (a) inhibitory feedback to primary neurons next step
+        #   (b) self-inhibition within the GABA pool
+        # Initialised to zeros (silent at t=0).
+        self._prev_gaba_spikes: torch.Tensor = torch.zeros(
+            gaba_size, dtype=torch.bool, device=self.device
         )
 
     # ------------------------------------------------------------------
@@ -110,17 +115,30 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         Returns:
             Drive conductance tensor of shape ``[gaba_neurons_size]``.
         """
-        baseline = 0.3 if self.config.baseline_noise_conductance_enabled else 0.0
+        # No tonic baseline: a constant 0.3 drive saturates fast-spiking GABA
+        # neurons at ~400 Hz (V* = 2.25, far above threshold 0.9), which then
+        # completely silences primary neurons through feedback.  GABA should only
+        # fire proportionally when the primary population overshoots its target.
+        # Gain 2.0 keeps GABA below threshold at normal primary rates (<10 Hz)
+        # but drives it strongly when the primary runs away (>50 Hz).
         return torch.full(
             (self.gaba_neurons_size,),
-            baseline + primary_activity * 0.8,
+            primary_activity * 2.0,
             device=self.device,
         )
 
     def _step_gaba_interneurons(self, primary_activity: float) -> torch.Tensor:
         """Advance GABA interneurons one timestep and return their spikes.
 
-        Call at the end of the subclass ``forward()`` after the primary
+        The GABA pool receives excitatory drive proportional to the primary
+        population's activity.  The pool also receives self-inhibition from its
+        own spikes at the previous timestep, preventing runaway saturation.
+
+        The returned spikes are stored in ``_prev_gaba_spikes`` for use on the
+        **next** call to this method and as inhibitory feedback to the primary
+        population via ``_get_gaba_feedback_conductance()``.
+
+        Call at the end of the subclass ``forward()`` **after** the primary
         population(s) have been stepped.
 
         Args:
@@ -132,10 +150,45 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         """
         gaba_drive = self._compute_gaba_drive(primary_activity)
         gaba_g_ampa, gaba_g_nmda = split_excitatory_conductance(gaba_drive, nmda_ratio=0.3)
+
+        # Self-inhibition: GABA neurons inhibit each other (recurrent lateral inh.)
+        # Uses mean activity of the pool rather than a full weight matrix —
+        # equivalent to uniform all-to-all inhibition with unit weight.
+        prev_gaba_rate = self._prev_gaba_spikes.float().mean().item()
+        gaba_self_inh = torch.full(
+            (self.gaba_neurons_size,),
+            prev_gaba_rate * 0.5,   # moderate self-inhibition to prevent saturation
+            device=self.device,
+        )
+
         gaba_spikes, _ = self.gaba_neurons.forward(
             g_ampa_input=ConductanceTensor(gaba_g_ampa),
             g_nmda_input=ConductanceTensor(gaba_g_nmda),
-            g_gaba_a_input=None,
+            g_gaba_a_input=ConductanceTensor(gaba_self_inh),
             g_gaba_b_input=None,
         )
+        # Store for next timestep (used by _get_gaba_feedback_conductance)
+        self._prev_gaba_spikes = gaba_spikes
         return gaba_spikes
+
+    def _get_gaba_feedback_conductance(self, primary_size: int, gain: float) -> torch.Tensor:
+        """Return a GABA-A conductance tensor to apply to the primary population.
+
+        Uses the spikes from the **previous** timestep so there are no circular
+        dependencies within a single forward pass.  The inhibitory conductance is
+        broadcast uniformly to all primary neurons (models diffuse volume
+        transmission from the local GABA pool).
+
+        Args:
+            primary_size: Number of primary neurons to inhibit.
+            gain:         Scaling factor (conductance units per spike fraction).
+
+        Returns:
+            Float tensor of shape ``[primary_size]``.
+        """
+        prev_gaba_rate = self._prev_gaba_spikes.float().mean().item()
+        return torch.full(
+            (primary_size,),
+            prev_gaba_rate * gain,
+            device=self.device,
+        )

@@ -40,10 +40,8 @@ class NeuralRegionConfig:
     # =========================================================================
     # Adaptive gain control to maintain target firing rates (Turrigiano 2008)
     # Biological basis: Intrinsic plasticity (ion channel remodeling)
-    gain_learning_rate: float = 0.02  # INCREASED from 0.005 to respond faster to activity collapse
-    target_firing_rate: float = 0.05  # Target firing rate for homeostatic plasticity
+    gain_learning_rate: float = 0.02  # Learning rate for gain adaptation (0 = disabled)
     gain_tau_ms: float = 2000.0  # Time constant for firing rate averaging
-    baseline_noise_conductance_enabled: bool = True  # Stochastic synaptic background (miniature EPSPs)
 
     # =========================================================================
     # ADAPTIVE THRESHOLD PLASTICITY (complementary to gain adaptation)
@@ -85,12 +83,6 @@ class NeuralRegionConfig:
     """Maximum gap junction neighbors per neuron."""
 
     # =========================================================================
-    # HETEROSYNAPTIC COMPETITION
-    # =========================================================================
-    heterosynaptic_ratio: float = 0.3
-    """Fraction of LTD applied to non-active synapses during learning (0-1)."""
-
-    # =========================================================================
     # HOMEOSTATIC PLASTICITY
     # =========================================================================
     activity_target: float = 0.1
@@ -121,8 +113,6 @@ class NeuralRegionConfig:
             raise ConfigurationError(f"gain_learning_rate must be >= 0, got {self.gain_learning_rate}")
         if self.gain_tau_ms <= 0:
             raise ConfigurationError(f"gain_tau_ms must be > 0, got {self.gain_tau_ms}")
-        if self.target_firing_rate < 0:
-            raise ConfigurationError(f"target_firing_rate must be >= 0, got {self.target_firing_rate}")
         if self.threshold_learning_rate < 0:
             raise ConfigurationError(f"threshold_learning_rate must be >= 0, got {self.threshold_learning_rate}")
         if self.threshold_min < 0:
@@ -139,8 +129,6 @@ class NeuralRegionConfig:
             raise ConfigurationError(f"gap_junction_strength must be >= 0, got {self.gap_junction_strength}")
         if self.gap_junction_max_neighbors < 0:
             raise ConfigurationError(f"gap_junction_max_neighbors must be >= 0, got {self.gap_junction_max_neighbors}")
-        if not (0.0 <= self.heterosynaptic_ratio <= 1.0):
-            raise ConfigurationError(f"heterosynaptic_ratio must be in [0, 1], got {self.heterosynaptic_ratio}")
         if not (0.0 <= self.activity_target <= 1.0):
             raise ConfigurationError(f"activity_target must be in [0, 1], got {self.activity_target}")
         if self.adapt_tau <= 0:

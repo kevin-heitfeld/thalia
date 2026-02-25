@@ -147,11 +147,9 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
             config=ConductanceLIFConfig(
                 region_name=region_name,
                 population_name=VTAPopulation.DA_MESOLIMBIC,
-                device=self.device,
                 tau_mem=config.tau_mem,
                 v_threshold=1.0,
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=config.tau_ref,
                 g_L=config.g_L,
                 E_L=0.0,
@@ -171,6 +169,7 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
                 k_h=0.08,
                 tau_h_ms=150.0,  # Slow activation (~150ms, Neuhoff et al. 2002)
             ),
+            device=self.device,
         )
 
         # -----------------------------------------------------------------------
@@ -185,11 +184,9 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
             config=ConductanceLIFConfig(
                 region_name=region_name,
                 population_name=VTAPopulation.DA_MESOCORTICAL,
-                device=self.device,
                 tau_mem=config.tau_mem,
                 v_threshold=1.0,
                 v_reset=0.0,
-                v_rest=0.0,
                 tau_ref=config.tau_ref,
                 g_L=config.g_L,
                 E_L=0.0,
@@ -209,6 +206,7 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
                 k_h=0.08,
                 tau_h_ms=150.0,
             ),
+            device=self.device,
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
@@ -370,7 +368,10 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         if ramp > 0.0:
             ml_baseline = ml_baseline + ramp
 
-        ml_g_ampa, ml_g_nmda = split_excitatory_conductance(ml_baseline, nmda_ratio=0.30)
+        # Use 5% NMDA for the tonic baseline scalar drive.
+        # nmda_ratio=0.10 caused NMDA accumulation: g_nmda_ss = 0.060 (75% of g_L=0.08) → 20 Hz.
+        # nmda_ratio=0.05: g_nmda_ss ≈ 0.030 → V_inf ≈ 0.89 < threshold 1.0 → noise-driven 4-7 Hz.
+        ml_g_ampa, ml_g_nmda = split_excitatory_conductance(ml_baseline, nmda_ratio=0.05)
 
         # RMTg inhibition targeting mesolimbic neurons specifically
         rmtg_ml = self._integrate_synaptic_inputs_at_dendrites(
@@ -413,7 +414,8 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         if ramp > 0.0:
             mc_baseline = mc_baseline + ramp * 0.5
 
-        mc_g_ampa, mc_g_nmda = split_excitatory_conductance(mc_baseline, nmda_ratio=0.30)
+        # 5% NMDA for mesocortical baseline drive (same reasoning as mesolimbic).
+        mc_g_ampa, mc_g_nmda = split_excitatory_conductance(mc_baseline, nmda_ratio=0.05)
 
         # RMTg inhibition targeting mesocortical neurons specifically
         rmtg_mc = self._integrate_synaptic_inputs_at_dendrites(
@@ -446,16 +448,19 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         return self._post_forward(region_outputs)
 
     def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
-        """VTA GABA drive: fixed 0.5 baseline + 1.0× average DA feedback.
+        """VTA GABA drive: tonic baseline + small DA autoinhibition term."""
+        return torch.full((self.gaba_neurons_size,), 0.004 + primary_activity * 0.05, device=self.device)
 
-        VTA uses a higher baseline (0.5) than the default (0.3) reflecting the
-        spontaneously active GABAergic interneurons observed in VTA (Margolis
-        et al. 2012). The baseline is not gated by
-        ``baseline_noise_conductance_enabled``; it is always present.
-        """
-        return torch.full(
-            (self.gaba_neurons_size,), 0.5 + primary_activity, device=self.device
+    def _step_gaba_interneurons(self, primary_activity: float) -> torch.Tensor:
+        """Override to use AMPA-only drive for VTA GABA interneurons."""
+        gaba_drive = self._compute_gaba_drive(primary_activity)
+        gaba_spikes, _ = self.gaba_neurons.forward(
+            g_ampa_input=ConductanceTensor(gaba_drive),
+            g_nmda_input=None,
+            g_gaba_a_input=None,
+            g_gaba_b_input=None,
         )
+        return gaba_spikes
 
     def _decode_reward(self, reward_spikes: Optional[torch.Tensor]) -> float:
         """Decode reward value from population spike pattern.

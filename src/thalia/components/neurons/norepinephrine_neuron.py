@@ -27,7 +27,7 @@ uncertainty and arousal through long, synchronized bursts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
@@ -45,38 +45,32 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     - Gap junction coupling (electrical synapses)
     - SK calcium-activated K+ channels (adaptation)
     - Uncertainty-driven burst modulation
-
-    Biological parameters based on:
-    - Aston-Jones & Cohen (2005): LC-NE system electrophysiology
-    - Berridge & Waterhouse (2003): LC neuron properties
-    - Sara & Bouret (2012): Phasic vs tonic NE modes
     """
-
-    # Membrane properties (similar to DA neurons)
-    tau_mem: float = 18.0  # Slightly slower than DA neurons
-    v_rest: float = 0.0
+    # =========================================================================
+    # Membrane properties
+    # =========================================================================
+    tau_mem: Union[float, torch.Tensor] = 18.0  # Slightly slower than DA neurons
     v_reset: float = -0.12  # Slightly deeper hyperpolarization
-    v_threshold: float = 1.0
+    v_threshold: Union[float, torch.Tensor] = 1.0
     tau_ref: float = 2.5  # Slightly longer refractory period
+    g_L: float = 0.056  # Leak conductance
 
-    # Leak conductance (tuned for lower tonic firing)
-    g_L: float = 0.056  # tau_m = C_m/g_L = 18ms
+    # =========================================================================
+    # Noise
+    # =========================================================================
+    noise_std: float = 0.08
 
-    # Reversal potentials
-    E_L: float = 0.0
-    E_E: float = 3.0
-    E_I: float = -0.5
-
-    # Synaptic time constants
-    tau_E: float = 5.0
-    tau_I: float = 10.0
-
+    # =========================================================================
+    # I_h (HCN) pacemaker current parameters
+    # =========================================================================
     # I_h pacemaking current (HCN channels) - WEAKER than DA
     # Lower conductance → lower baseline firing rate (1-3 Hz vs 4-5 Hz)
-    # Increased from 0.12 to 0.20 for reliable 1-3 Hz baseline (was causing silence)
     i_h_conductance: float = 0.20  # Boosted for reliable tonic firing
     i_h_reversal: float = 0.75
 
+    # =========================================================================
+    # Gap junction parameters (for interneuron coupling)
+    # =========================================================================
     # Gap junction coupling (electrical synapses)
     # LC neurons are densely coupled via gap junctions → synchronized bursts
     gap_junction_strength: float = 0.05  # Coupling strength
@@ -88,7 +82,9 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     gap_junction_v_activation: float = 0.7  # Activation threshold (70% of spike threshold)
     gap_junction_v_slope: float = 0.1  # Sigmoid slope (sharpness of gating)
 
+    # =========================================================================
     # SK calcium-activated K+ channels (spike-frequency adaptation)
+    # =========================================================================
     sk_conductance: float = 0.025  # Slightly stronger than DA (longer bursts)
     sk_reversal: float = -0.5
     ca_decay: float = 0.93  # Slower calcium decay (longer burst duration)
@@ -102,10 +98,6 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # Disable adaptation from base class (we use SK instead)
     adapt_increment: float = 0.0
 
-    # Noise for biological realism and tonic firing
-    # Increased from 0.05 to 0.08 to ensure reliable 1-3 Hz baseline
-    noise_std: float = 0.08  # Boosted for reliable stochastic firing
-
 
 class NorepinephrineNeuron(ConductanceLIF):
     """Norepinephrine neuron with gap junction coupling and long bursts.
@@ -118,7 +110,7 @@ class NorepinephrineNeuron(ConductanceLIF):
     5. Return to baseline after burst
     """
 
-    def __init__(self, n_neurons: int, config: NorepinephrineNeuronConfig):
+    def __init__(self, n_neurons: int, config: NorepinephrineNeuronConfig, device: str = "cpu"):
         """Initialize norepinephrine neuron population.
 
         Args:
@@ -126,18 +118,18 @@ class NorepinephrineNeuron(ConductanceLIF):
             config: Configuration with pacemaking and gap junction parameters
             device: PyTorch device for tensor allocation
         """
-        super().__init__(n_neurons, config)
+        super().__init__(n_neurons, config, device)
 
         # SK channel state (calcium-activated K+ for adaptation)
-        self.ca_concentration = torch.zeros(n_neurons, device=self.device)
-        self.sk_activation = torch.zeros(n_neurons, device=self.device)
+        self.ca_concentration = torch.zeros(n_neurons, device=device)
+        self.sk_activation = torch.zeros(n_neurons, device=device)
 
         # Gap junction coupling matrix (electrical synapses)
         # LC neurons within proximity are electrically coupled
         self.gap_junction_matrix = self._create_gap_junction_matrix(n_neurons, config)
 
         # Initialize with varied phases (prevent artificial synchronization at start)
-        self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.3
+        self.v_mem = torch.rand(n_neurons, device=device) * config.v_threshold * 0.3
 
         # Store current uncertainty for conductance calculation
         self._current_uncertainty = 0.0
@@ -155,13 +147,15 @@ class NorepinephrineNeuron(ConductanceLIF):
         Returns:
             Sparse coupling matrix [n_neurons, n_neurons]
         """
+        device = self.V_soma.device
+
         # Create sparse local connectivity (neurons coupled to nearby neighbors)
-        matrix = torch.zeros(n_neurons, n_neurons, device=self.device)
+        matrix = torch.zeros(n_neurons, n_neurons, device=device)
 
         # For each neuron, couple to neighbors within radius
         for i in range(n_neurons):
             # Compute distance to other neurons (1D topology for simplicity)
-            distances = torch.abs(torch.arange(n_neurons, device=self.device) - i)
+            distances = torch.abs(torch.arange(n_neurons, device=device) - i)
 
             # Couple to neurons within radius
             coupled = distances <= config.gap_junction_neighbor_radius
@@ -214,39 +208,38 @@ class NorepinephrineNeuron(ConductanceLIF):
         g_gap_total: Optional[ConductanceTensor] = None
         E_gap_effective: Optional[GapJunctionReversal] = None
 
-        if self.gap_junction_matrix is not None and self.gap_junction_matrix.sum() > 1e-6:
-            # Voltage-dependent activation: sigmoid function of membrane potential
-            # Activation increases as neurons approach threshold
-            # - Below 0.7 × threshold: weak/no coupling (independent pacemaking)
-            # - Above 0.7 × threshold: strong coupling (burst synchronization)
-            v_activation = self.config.gap_junction_v_activation
-            v_slope = self.config.gap_junction_v_slope
-            gap_activation = torch.sigmoid((self.v_mem - v_activation) / v_slope)
+        # Voltage-dependent activation: sigmoid function of membrane potential
+        # Activation increases as neurons approach threshold
+        # - Below 0.7 × threshold: weak/no coupling (independent pacemaking)
+        # - Above 0.7 × threshold: strong coupling (burst synchronization)
+        v_activation = self.config.gap_junction_v_activation
+        v_slope = self.config.gap_junction_v_slope
+        gap_activation = torch.sigmoid((self.v_mem - v_activation) / v_slope)
 
-            # Apply voltage-dependent gating to gap junction matrix
-            # Both pre and post neurons must be depolarized for strong coupling
-            # Use geometric mean of activations: sqrt(act_i × act_j)
-            gap_activation_matrix = torch.sqrt(
-                gap_activation.unsqueeze(1) * gap_activation.unsqueeze(0)
-            )
+        # Apply voltage-dependent gating to gap junction matrix
+        # Both pre and post neurons must be depolarized for strong coupling
+        # Use geometric mean of activations: sqrt(act_i × act_j)
+        gap_activation_matrix = torch.sqrt(
+            gap_activation.unsqueeze(1) * gap_activation.unsqueeze(0)
+        )
 
-            # Modulate gap junction strength by voltage activation
-            g_gap_matrix = self.gap_junction_matrix * gap_activation_matrix
+        # Modulate gap junction strength by voltage activation
+        g_gap_matrix = self.gap_junction_matrix * gap_activation_matrix
 
-            # Total gap conductance per neuron (voltage-gated)
-            g_gap_total_raw = g_gap_matrix.sum(dim=1)
+        # Total gap conductance per neuron (voltage-gated)
+        g_gap_total_raw = g_gap_matrix.sum(dim=1)
 
-            # Effective reversal = weighted average of neighbor voltages
-            # Only compute if g_gap_total > 0 to avoid division by zero
-            mask = g_gap_total_raw > 1e-6
-            if mask.any():
-                E_gap_effective_raw = torch.zeros(self.n_neurons, device=self.device)
-                neighbor_weighted_v = torch.matmul(g_gap_matrix, self.v_mem)
-                E_gap_effective_raw[mask] = neighbor_weighted_v[mask] / g_gap_total_raw[mask]
+        # Effective reversal = weighted average of neighbor voltages
+        # Only compute if g_gap_total > 0 to avoid division by zero
+        mask = g_gap_total_raw > 1e-6
+        if mask.any():
+            E_gap_effective_raw = torch.zeros(self.n_neurons, device=self.V_soma.device)
+            neighbor_weighted_v = torch.matmul(g_gap_matrix, self.v_mem)
+            E_gap_effective_raw[mask] = neighbor_weighted_v[mask] / g_gap_total_raw[mask]
 
-                # Only pass gap junctions if non-zero
-                g_gap_total = ConductanceTensor(g_gap_total_raw)
-                E_gap_effective = GapJunctionReversal(E_gap_effective_raw)
+            # Only pass gap junctions if non-zero
+            g_gap_total = ConductanceTensor(g_gap_total_raw)
+            E_gap_effective = GapJunctionReversal(E_gap_effective_raw)
 
         # Call parent's forward with gap junction conductances
         spikes, _ = super().forward(
@@ -272,7 +265,7 @@ class NorepinephrineNeuron(ConductanceLIF):
         # Store spikes for diagnostic access
         self.spikes = spikes
 
-        return spikes, self.membrane
+        return spikes, self.V_soma
 
     def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
         """Compute I_h and SK conductances.
@@ -283,10 +276,8 @@ class NorepinephrineNeuron(ConductanceLIF):
             List of (conductance, reversal) tuples
         """
         # I_h pacemaker (modulated by uncertainty)
-        uncertainty = getattr(self, '_current_uncertainty', 0.0)
-        g_ih_base = self.config.i_h_conductance
-        g_ih_modulated = g_ih_base * (1.0 + 0.4 * uncertainty)  # Uncertainty boosts I_h
-        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.device)
+        g_ih_modulated = self.config.i_h_conductance * (1.0 + 0.4 * self._current_uncertainty)
+        g_ih = torch.full((self.n_neurons,), max(0.0, g_ih_modulated), device=self.V_soma.device)
 
         # SK adaptation
         g_sk = self.config.sk_conductance * self.sk_activation

@@ -18,6 +18,7 @@ from thalia.components import (
     NorepinephrineNeuronConfig,
 )
 from thalia.typing import (
+    ConductanceTensor,
     NeuromodulatorInput,
     NeuromodulatorType,
     PopulationName,
@@ -62,13 +63,11 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
             config=NorepinephrineNeuronConfig(
                 region_name=self.region_name,
                 population_name=LocusCoeruleusPopulation.NE,
-                device=self.device,
                 uncertainty_to_current_gain=self.config.uncertainty_gain,
                 gap_junction_strength=self.config.gap_junction_strength,
                 gap_junction_neighbor_radius=self.config.gap_junction_radius,
-                i_h_conductance=NorepinephrineNeuronConfig.i_h_conductance if self.config.baseline_noise_conductance_enabled else 0.0,
-                noise_std=NorepinephrineNeuronConfig.noise_std if self.config.baseline_noise_conductance_enabled else 0.0,
             ),
+            device=self.device,
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
@@ -143,22 +142,45 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
         # Update NE neurons with uncertainty drive
         # High uncertainty → depolarization → synchronized burst
         # Gap junctions → population synchronization
+        # Apply GABA feedback from the previous timestep (closes homeostatic loop).
+        gaba_feedback = self._get_gaba_feedback_conductance(self.ne_neurons_size, gain=0.01)
         ne_spikes, _ = self.ne_neurons.forward(
             g_ampa_input=None,  # No direct AMPA input to NE neurons (modulated by uncertainty drive instead)
             g_nmda_input=None,  # NE neurons do not receive NMDA input
-            g_gaba_a_input=None,  # No direct GABA input to NE neurons (inhibition via gap junctions and interneurons)
+            g_gaba_a_input=ConductanceTensor(gaba_feedback),
             g_gaba_b_input=None,
             uncertainty_drive=uncertainty,
         )
         # Update GABA interneurons (homeostatic control)
         ne_activity = ne_spikes.float().mean().item()
-        self._step_gaba_interneurons(ne_activity)
+        gaba_spikes = self._step_gaba_interneurons(ne_activity)
 
         region_outputs: RegionOutput = {
             LocusCoeruleusPopulation.NE: ne_spikes,
+            LocusCoeruleusPopulation.GABA: gaba_spikes,
         }
 
         return self._post_forward(region_outputs)
+
+    def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
+        """LC GABA drive: tonic baseline + NE activity proportional term."""
+        return torch.full(
+            (self.gaba_neurons_size,),
+            0.010 + primary_activity * 0.5,
+            device=self.device,
+        )
+
+    def _step_gaba_interneurons(self, primary_activity: float) -> torch.Tensor:
+        """Override to use AMPA-only drive for LC GABA interneurons."""
+        gaba_drive = self._compute_gaba_drive(primary_activity)
+        gaba_spikes, _ = self.gaba_neurons.forward(
+            g_ampa_input=ConductanceTensor(gaba_drive),
+            g_nmda_input=None,
+            g_gaba_a_input=None,
+            g_gaba_b_input=None,
+        )
+        self._prev_gaba_spikes = gaba_spikes
+        return gaba_spikes
 
     def _compute_uncertainty(
         self,

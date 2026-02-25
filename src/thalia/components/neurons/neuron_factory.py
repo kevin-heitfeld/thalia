@@ -174,7 +174,6 @@ class NeuronFactory:
         config_params = {
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
             "tau_mem": tau_mem_heterogeneous,  # Per-neuron heterogeneity
             "g_L": 0.05,
             "tau_E": 5.0,
@@ -186,7 +185,7 @@ class NeuronFactory:
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
     @staticmethod
@@ -218,7 +217,6 @@ class NeuronFactory:
         config_params = {
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
             "v_threshold": 0.8,  # LOWERED from 1.0 to allow T-channel bursts to trigger spikes
             "v_reset": 0.0,
             "E_L": 0.0,
@@ -250,7 +248,7 @@ class NeuronFactory:
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
     @staticmethod
@@ -282,17 +280,16 @@ class NeuronFactory:
         config_params = {
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
-            "v_threshold": 1.6,  # DRASTICALLY INCREASED from 1.0→1.4→1.6 to reduce hyperactivity (18% → 5-15%)
+            "v_threshold": 1.6,
             "v_reset": 0.0,
             "E_L": 0.0,
             "E_E": 3.0,
             "E_I": -0.5,
-            "g_L": 0.10,  # INCREASED from 0.06 for faster return to baseline (reduces integration)
+            "g_L": 0.10,
             "tau_mem": 12.0,  # Faster membrane for attentional gating
             "tau_E": 4.0,  # Fast excitatory (from relay/cortex)
             "tau_I": 6.0,  # Fast inhibitory (recurrent TRN)
-            "adapt_increment": 0.25,  # Strong adaptation to prevent sustained firing (28% FR → 5-15%)
+            "adapt_increment": 0.25,  # Strong adaptation to prevent sustained firing
             "tau_adapt": 80.0,  # Medium-slow decay to persist across multiple input events
             # T-type Ca²⁺ channels for stronger pacemaker activity (8-12 Hz alpha)
             "enable_t_channels": True,
@@ -304,7 +301,7 @@ class NeuronFactory:
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
     @staticmethod
@@ -364,8 +361,6 @@ class NeuronFactory:
         config_params = {
             "region_name": region_name,
             "population_name": population_name,
-            "rng_seed": overrides.pop("rng_seed", None),
-            "device": device,
             "tau_E": 5.0,  # Fast AMPA (standard for all layers)
             "tau_I": 10.0,  # Slower GABA_A (standard for all layers)
             "E_E": 3.0,  # Excitatory reversal potential
@@ -379,7 +374,7 @@ class NeuronFactory:
         config_params.update(overrides)
 
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
     @staticmethod
@@ -428,7 +423,7 @@ class NeuronFactory:
         # With tau_mem=8ms + tau_ref=3.5ms → ~87 Hz (gamma range)
         # Allow override if tau_mem is explicitly provided (e.g., for uniform fast dynamics)
         if "tau_mem" not in overrides:
-            tau_mem_mean = 8.0  # Increased to prevent ultra-fast spiking
+            tau_mem_mean = 8.0
             tau_mem_std = 1.2   # ~15% CV (biological: 15-30%)
             tau_mem_heterogeneous = torch.normal(
                 mean=tau_mem_mean,
@@ -442,7 +437,6 @@ class NeuronFactory:
         config_params = {
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
             "tau_mem": tau_mem_heterogeneous,  # Per-neuron tensor for desynchronization!
             "v_threshold": 1.0,
             "v_reset": 0.0,
@@ -451,12 +445,12 @@ class NeuronFactory:
             "E_I": -0.5,
             "tau_E": 3.0,  # Fast AMPA (2-4ms biological range)
             "tau_I": 3.0,  # Fast GABA_A (2-4ms for gamma)
-            "tau_ref": 2.5,  # Slightly increased from 2.0 for more variability with 60% CV
+            "tau_ref": 2.5,
             "g_L": 0.10,  # High leak conductance for fast decay
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
     @staticmethod
@@ -498,7 +492,6 @@ class NeuronFactory:
         config_params = {
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
             "v_threshold": 1.0,
             "v_reset": 0.0,
             "E_L": 0.0,
@@ -508,12 +501,15 @@ class NeuronFactory:
             "tau_I": 10.0,
             "tau_ref": 2.0,
             "tau_mem": 20.0,
-            "tau_adapt": 100.0,
-            "adapt_increment": 0.1,
+            "tau_adapt": 200.0,  # Raised (100→200 ms): slower adaptation decay to sustain resistance
+            "adapt_increment": 0.30,  # Raised (0.1→0.30): MSNs need strong adaptation vs thalamic overflow
+            # MSNs are silent at rest (up-state transitions require >100 corticostriatal
+            # inputs). Default noise_std=0.08 caused noise-driven ~10 Hz via NMDA accumulation.
+            "noise_std": 0.005,
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
     @staticmethod
@@ -561,7 +557,6 @@ class NeuronFactory:
             # RNG configuration for independent noise streams
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
             "v_threshold": 1.0,
             "v_reset": 0.0,
             "E_L": 0.0,
@@ -571,12 +566,15 @@ class NeuronFactory:
             "tau_I": 10.0,
             "tau_ref": 2.0,
             "tau_mem": 20.0,
-            "tau_adapt": 100.0,
-            "adapt_increment": 0.1,
+            "tau_adapt": 200.0,  # Raised (100→200 ms): slower adaptation decay to sustain resistance
+            "adapt_increment": 0.30,  # Raised (0.1→0.30): MSNs need strong adaptation vs thalamic overflow
+            # MSNs are silent at rest (up-state transitions require >100 corticostriatal
+            # inputs). Default noise_std=0.08 caused noise-driven ~10 Hz via NMDA accumulation.
+            "noise_std": 0.005,
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
-        neurons = ConductanceLIF(n_neurons=n_neurons, config=config)
+        neurons = ConductanceLIF(n_neurons=n_neurons, config=config, device=device)
         return neurons
 
 
@@ -629,7 +627,6 @@ class NeuronFactory:
         config_params: dict[str, Any] = {
             "region_name": region_name,
             "population_name": population_name,
-            "device": device,
             "tau_mem": tau_mem,
             "g_L": 0.05,
             "tau_E": 5.0,
@@ -649,7 +646,7 @@ class NeuronFactory:
         }
         config_params.update(overrides)
         config = TwoCompartmentLIFConfig(**config_params)
-        return TwoCompartmentLIF(n_neurons=n_neurons, config=config)
+        return TwoCompartmentLIF(n_neurons=n_neurons, config=config, device=device)
 
 
 # Register standard neuron types

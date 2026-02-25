@@ -38,7 +38,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
@@ -62,50 +62,54 @@ class SerotoninNeuronConfig(ConductanceLIFConfig):
     - Haj-Dahmane & Shen (2005): 5-HT1A autoreceptor kinetics
     - Jacobs & Azmitia (1992): Raphe physiology
     """
-
     # =========================================================================
-    # MEMBRANE PROPERTIES
+    # Membrane properties
     # =========================================================================
-    tau_mem: float = 15.0  # Intermediate membrane time constant
-    v_rest: float = 0.0
+    tau_mem: Union[float, torch.Tensor] = 15.0  # Intermediate membrane time constant
     v_reset: float = -0.10   # Moderate hyperpolarization reset
-    v_threshold: float = 1.0
+    v_threshold: Union[float, torch.Tensor] = 1.0
     tau_ref: float = 2.0    # Moderate refractory period
-
-    # Leak conductance (tuned for 2-4 Hz tonic firing)
-    g_L: float = 0.067       # tau_m = C_m/g_L ≈ 15 ms
+    g_L: float = 0.067  # Leak conductance
 
     # =========================================================================
-    # REVERSAL POTENTIALS
+    # Noise
     # =========================================================================
-    E_L: float = 0.0
-    E_E: float = 3.0
-    E_I: float = -0.5
+    noise_std: float = 0.075
+    """Intrinsic noise for realistic stochastic tonic firing."""
 
     # =========================================================================
-    # SYNAPTIC TIME CONSTANTS
+    # I_h (HCN) pacemaker current parameters
     # =========================================================================
-    tau_E: float = 5.0       # Moderate excitation
-    tau_I: float = 10.0
-
-    # =========================================================================
-    # I_H PACEMAKING CURRENT (HCN CHANNELS)
-    # =========================================================================
-    # Between LC (0.20) and NB/VTA levels — gives 2-4 Hz reliable baseline.
-    # Boosts from I_h are used here, similar to NE neuron fix for reliable tonic firing.
     i_h_conductance: float = 0.30
     i_h_reversal: float = 0.76
 
     # =========================================================================
-    # 5-HT1A AUTORECEPTOR (GIRK K+ CHANNEL)
+    # SK calcium-activated K+ channels (spike-frequency adaptation)
     # =========================================================================
-    # 5-HT1A somatodendritic autoreceptors: Gi-coupled → GIRK channels → K+ efflux
+    sk_conductance: float = 0.028   # Moderate adaptation
+    sk_reversal: float = -0.5
+    ca_decay: float = 0.91          # Moderate calcium decay
+    ca_influx_per_spike: float = 0.18
+
+    # =========================================================================
+    # Serotonin drive modulation parameters
+    # =========================================================================
+    serotonin_drive_gain: float = 20.0
+    """Gain converting external serotonin drive scalar to I_h modulation.
+
+    Positive drive → increased I_h → burst above baseline.
+    Negative drive (from LHb punishment) → decreased I_h → pause.
+    """
+
+    # Disable base-class adaptation (we use SK instead)
+    adapt_increment: float = 0.0
+
+    # =========================================================================
+    # 5-HT1A somatodendritic autoreceptor parameters
+    # =========================================================================
+    # Gi-coupled → GIRK channels → K+ efflux
     # This produces slow, graded self-inhibition proportional to recent firing.
     # Kinetics: GPCR coupling time constant ~200ms (slow)
-    #
-    # Biology refs:
-    # - Haj-Dahmane & Shen (2005): τ_autoreceptor ~150-250 ms for 5-HT1A
-    # - Sprouse & Aghajanian (1987): GIRK current in DRN neurons
     autoreceptor_conductance: float = 0.06
     """GIRK (K+) conductance per unit autoreceptor activation.
 
@@ -121,36 +125,7 @@ class SerotoninNeuronConfig(ConductanceLIFConfig):
     """Fraction of spiking activity that drives autoreceptor signal.
 
     Higher values → faster / stronger autoreceptor saturation.
-    Tuned so that tonic 2-4 Hz yields a stable partial self-inhibition (~0.15-0.25
-    autoreceptor activation), keeping neurons below saturation.
     """
-
-    # =========================================================================
-    # SK CALCIUM-ACTIVATED K+ CHANNELS (SPIKE-FREQUENCY ADAPTATION)
-    # =========================================================================
-    sk_conductance: float = 0.028   # Moderate adaptation
-    sk_reversal: float = -0.5
-    ca_decay: float = 0.91          # Moderate calcium decay
-    ca_influx_per_spike: float = 0.18
-
-    # =========================================================================
-    # SEROTONIN DRIVE MODULATION
-    # =========================================================================
-    serotonin_drive_gain: float = 20.0
-    """Gain converting external serotonin drive scalar to I_h modulation.
-
-    Positive drive → increased I_h → burst above baseline.
-    Negative drive (from LHb punishment) → decreased I_h → pause.
-    """
-
-    # Disable base-class adaptation (we use SK instead)
-    adapt_increment: float = 0.0
-
-    # =========================================================================
-    # NOISE
-    # =========================================================================
-    noise_std: float = 0.075
-    """Intrinsic noise for realistic stochastic tonic firing."""
 
 
 class SerotoninNeuron(ConductanceLIF):
@@ -164,28 +139,28 @@ class SerotoninNeuron(ConductanceLIF):
     5. No gap junction coupling (unlike LC)
     """
 
-    def __init__(self, n_neurons: int, config: SerotoninNeuronConfig):
+    def __init__(self, n_neurons: int, config: SerotoninNeuronConfig, device: str = "cpu"):
         """Initialise serotonin neuron population.
 
         Args:
             n_neurons: Number of 5-HT neurons (~100,000-200,000 in human DRN)
             config: Configuration with pacemaking and autoreceptor parameters
         """
-        super().__init__(n_neurons, config)
+        super().__init__(n_neurons, config, device)
 
-        # ── Autoreceptor signal (slow 5-HT1A / GIRK) ───────────────────────
+        # Autoreceptor signal (slow 5-HT1A / GIRK)
         # Cumulative 5-HT1A activation; decays with autoreceptor_tau_ms
-        self._autoreceptor_signal = torch.zeros(n_neurons, device=self.device)
+        self._autoreceptor_signal = torch.zeros(n_neurons, device=device)
 
-        # ── SK channel state ────────────────────────────────────────────────
-        self.ca_concentration = torch.zeros(n_neurons, device=self.device)
-        self.sk_activation = torch.zeros(n_neurons, device=self.device)
-
-        # ── Drive cache ─────────────────────────────────────────────────────
-        self._current_drive: float = 0.0
+        # SK channel state
+        self.ca_concentration = torch.zeros(n_neurons, device=device)
+        self.sk_activation = torch.zeros(n_neurons, device=device)
 
         # Initialise with staggered phases to prevent artificial synchrony
-        self.v_mem = torch.rand(n_neurons, device=self.device) * config.v_threshold * 0.35
+        self.v_mem = torch.rand(n_neurons, device=device) * config.v_threshold * 0.35
+
+        # Drive cache
+        self._current_drive: float = 0.0
 
     @torch.no_grad()
     def forward(
@@ -221,12 +196,12 @@ class SerotoninNeuron(ConductanceLIF):
             g_gaba_b_input=g_gaba_b_input,
         )
 
-        # ── Update SK calcium / adaptation ───────────────────────────────────
+        # Update SK calcium / adaptation
         self.ca_concentration += spikes.float() * self.config.ca_influx_per_spike
         self.ca_concentration *= self.config.ca_decay
         self.sk_activation = self.ca_concentration / (self.ca_concentration + 0.3)
 
-        # ── Update 5-HT1A autoreceptor signal ────────────────────────────────
+        # Update 5-HT1A autoreceptor signal
         # Each spike increments the slow autoreceptor accumulator
         dt_ms: float = getattr(self, '_dt_ms', 1.0)
         alpha_auto = dt_ms / self.config.autoreceptor_tau_ms
@@ -234,8 +209,10 @@ class SerotoninNeuron(ConductanceLIF):
         self._autoreceptor_signal -= self._autoreceptor_signal * alpha_auto
         self._autoreceptor_signal.clamp_(min=0.0, max=1.0)
 
+        # Store spikes for diagnostic access
         self.spikes = spikes
-        return spikes, self.membrane
+
+        return spikes, self.V_soma
 
     def _get_additional_conductances(self) -> list[tuple[torch.Tensor, float]]:
         """Compute I_h, SK, and 5-HT1A autoreceptor conductances.
@@ -251,7 +228,7 @@ class SerotoninNeuron(ConductanceLIF):
         g_ih_base = self.config.i_h_conductance
         # Clamp so drive cannot fully silence I_h (biology: min ~0.1x baseline)
         g_ih_modulated = g_ih_base * max(0.1, 1.0 + 0.7 * drive)
-        g_ih = torch.full((self.n_neurons,), g_ih_modulated, device=self.device)
+        g_ih = torch.full((self.n_neurons,), g_ih_modulated, device=self.V_soma.device)
 
         # SK adaptation
         g_sk = self.config.sk_conductance * self.sk_activation
