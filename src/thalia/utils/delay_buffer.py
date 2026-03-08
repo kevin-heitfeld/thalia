@@ -13,8 +13,12 @@ Biological Motivation:
 
 from __future__ import annotations
 
+from typing import Union
+
 import torch
 import torch.nn as nn
+
+from thalia import GlobalConfig
 
 
 class CircularDelayBuffer(nn.Module):
@@ -40,7 +44,7 @@ class CircularDelayBuffer(nn.Module):
         self,
         max_delay: int,
         size: int,
-        device: str = "cpu",
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
         dtype: torch.dtype = torch.bool,
     ):
         if max_delay < 0:
@@ -232,7 +236,7 @@ class HeterogeneousDelayBuffer(nn.Module):
         self,
         delays: torch.Tensor,
         size: int,
-        device: str = "cpu",
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
         dtype: torch.dtype = torch.bool,
     ):
         if delays.shape[0] != size:

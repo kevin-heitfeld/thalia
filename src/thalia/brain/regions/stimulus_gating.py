@@ -52,11 +52,11 @@ class StimulusGating(nn.Module):
     def __init__(
         self,
         n_neurons: int,
-        device: Union[str, torch.device] = "cpu",
-        threshold: float = 0.3,
-        max_inhibition: float = 5.0,
-        decay_rate: float = 0.8,
-        steepness: float = 10.0,
+        threshold: float,
+        max_inhibition: float,
+        decay_rate: float,
+        steepness: float,
+        device: Union[str, torch.device],
     ):
         """
         Initialize stimulus gating.

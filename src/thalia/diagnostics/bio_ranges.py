@@ -1,0 +1,574 @@
+"""Biological reference firing-rate ranges, E/I thresholds, and spectral band definitions.
+
+All region specifications are unified in ``REGION_SPECS`` (a list of :class:`RegionSpec`
+entries).  The three public functions ``bio_range``, ``ei_ratio_thresholds``, and
+``expected_dominant_band`` retain their original signatures — the internal representation
+change is transparent to callers.
+
+Matching is case-insensitive substring containment; the longest matching
+pattern wins (``REGION_SPECS`` is sorted by specificity at module load time
+so ordering within the list does not matter for correctness).
+
+This module is intentionally free of simulation dependencies so that it can be
+imported by ``RegionTestRunner``, notebooks, and any other tool that needs
+ground-truth biological ranges without pulling in the full recorder.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Sentinel: RegionSpec entry does not address an attribute.
+# Test with ``spec.dominant_band is _UNSET``.
+# ---------------------------------------------------------------------------
+_UNSET: Any = object()
+
+
+@dataclass
+class RegionSpec:
+    """Unified biological specification for a region / population combination.
+
+    ``region`` and ``population`` are case-insensitive substring patterns;
+    ``""`` matches any string.  ``REGION_SPECS`` is sorted by
+    ``(len(region), len(population))`` descending at module load time, so the
+    longest (most-specific) pattern always wins regardless of declaration order.
+
+    ``fr_range``: ``(min_hz, max_hz)``  — ``None`` = no FR expectation for this entry.
+
+    ``ei_thresholds``: ``(crit_low, warn_low, warn_high, crit_high)`` —
+    ``None`` = not addressed by this entry.  Set ``skip_ei_check=True`` to
+    explicitly suppress the E/I check for a region.
+
+    ``dominant_band``:
+
+    * ``_UNSET`` (default) — this entry does not address dominant band
+    * ``None`` — explicitly no expectation / skip check
+    * a band name like ``"theta"`` — expected dominant EEG band
+    """
+
+    region: str
+    population: str = ""
+    fr_range: Optional[Tuple[float, float]] = None
+    ei_thresholds: Optional[Tuple[float, float, float, float]] = None
+    skip_ei_check: bool = False
+    dominant_band: Any = field(default=_UNSET)
+    # True  = adapting cell type (pyr/relay/MSN/principal): expect SFA index > 1.3.
+    # False = non-adapting cell type (PV/FSI/TAN): expect SFA index ≈ 1.0.
+    # None  = this entry does not address adaptation (lookup skips it).
+    adaptation_expected: Optional[bool] = None
+    # Expected range for the firing-rate autocorrelation time constant τ_int (ms).
+    # PFC: 100–400 ms (Murray et al. 2014); primary sensory: 20–50 ms.
+    # None = no expectation for this region.
+    integration_tau_ms: Optional[Tuple[float, float]] = None
+
+# =============================================================================
+# UNIFIED REGION SPECIFICATIONS
+# =============================================================================
+
+REGION_SPECS: List[RegionSpec] = [
+
+    # -----------------------------------------------------------------------
+    # Override entries: region-specific population FR ranges that shadow
+    # the generic population-only patterns below.
+    # -----------------------------------------------------------------------
+
+    # cortex_sensory L2/3 fires 5–15 Hz during sensory processing (Sakata & Harris 2009);
+    # the generic "" l23_pyr entry below covers all other cortical regions at 0.1–3 Hz.
+    RegionSpec(region="cortex_sensory", population="l23_pyr",              fr_range=(0.1,  15.0),  adaptation_expected=True),
+
+    # Hippocampal DG inhibitory subtypes: receive direct EC input and fire 2–5 Hz
+    # despite sparse principal activity.  floor=0 prevents false CRITICAL.
+    # Must precede the generic "dg" and "ca2" patterns.
+    RegionSpec(region="hippocampus",    population="dg_inhibitory_olm",          fr_range=(0.0,  5.0)),
+    RegionSpec(region="hippocampus",    population="dg_inhibitory_bistratified",  fr_range=(0.0,  5.0),  adaptation_expected=True),
+    # CA2 has only 3 OLM and 2 bistratified neurons; stochastic silence is expected.
+    RegionSpec(region="hippocampus",    population="ca2_inhibitory_olm",          fr_range=(0.0,  5.0)),
+    RegionSpec(region="hippocampus",    population="ca2_inhibitory_bistratified",  fr_range=(0.0,  5.0),  adaptation_expected=True),
+
+    # -----------------------------------------------------------------------
+    # Population-only patterns (region="" → matches any region).
+    # These apply wherever a more-specific entry above did not match first.
+    # -----------------------------------------------------------------------
+
+    # Cerebellum
+    RegionSpec(region="",  population="purkinje",        fr_range=(40.0, 100.0)),
+    RegionSpec(region="",  population="inferior_olive",  fr_range=(0.3,    3.0)),
+    RegionSpec(region="",  population="dcn",             fr_range=(10.0, 100.0)),
+    # Cortical pyramidal layers
+    RegionSpec(region="",  population="l23_pyr",         fr_range=(0.1,   3.0),   adaptation_expected=True),
+    RegionSpec(region="",  population="l4_sst_pred",     fr_range=(5.0,  25.0)),
+    RegionSpec(region="",  population="l4_pyr",          fr_range=(1.0,  10.0),   adaptation_expected=True),
+    RegionSpec(region="",  population="l5_pyr",          fr_range=(2.0,  15.0),   adaptation_expected=True),
+    RegionSpec(region="",  population="l6a_pyr",         fr_range=(1.0,   8.0),   adaptation_expected=True),
+    RegionSpec(region="",  population="l6b_pyr",         fr_range=(1.0,   8.0),   adaptation_expected=True),
+    # Cortical interneurons
+    RegionSpec(region="",  population="_pv",             fr_range=(10.0,  70.0),  adaptation_expected=False),
+    RegionSpec(region="",  population="_sst",            fr_range=(5.0,   25.0)),
+    # VIP: 20–50 Hz in active states (Dipoppa et al. 2018); 30 Hz ceiling for motor cortex.
+    RegionSpec(region="",  population="_vip",            fr_range=(2.0,   30.0)),
+
+    # -----------------------------------------------------------------------
+    # Cerebellum  (granule is region-specific; others use population-only above)
+    # -----------------------------------------------------------------------
+    RegionSpec(region="cerebellum",  population="granule",  fr_range=(0.1, 5.0),  adaptation_expected=True),
+    RegionSpec(region="cerebellum",  skip_ei_check=True,    dominant_band="gamma"),
+
+    # Inferior olive EI skip (FR covered by population-only entry above)
+    RegionSpec(region="inferior_olive",  skip_ei_check=True),
+
+    # -----------------------------------------------------------------------
+    # Thalamus
+    # -----------------------------------------------------------------------
+    RegionSpec(region="thalamus",  population="relay",  fr_range=(5.0,  40.0),  adaptation_expected=True),
+    RegionSpec(region="thalamus",  population="trn",    fr_range=(5.0,  80.0)),
+    # Thalamus dominant band is sigma (sleep spindles, 11–15 Hz) under
+    # slow-wave / low-drive conditions.  Alpha is the resting-eyes-closed
+    # equivalent but the TRN–relay spindle mechanism sits firmly in sigma.
+    RegionSpec(region="thalamus",  dominant_band="sigma"),
+
+    # -----------------------------------------------------------------------
+    # Cortex
+    # -----------------------------------------------------------------------
+    RegionSpec(region="cortex_sensory",  dominant_band="gamma",  integration_tau_ms=(20.0,  50.0)),
+    RegionSpec(region="cortex_motor",    dominant_band="beta",   integration_tau_ms=(40.0, 150.0)),
+    RegionSpec(region="prefrontal",      dominant_band="beta",   integration_tau_ms=(100.0, 400.0)),
+
+    # -----------------------------------------------------------------------
+    # Hippocampus
+    # -----------------------------------------------------------------------
+    RegionSpec(region="hippocampus",  population="dg",          fr_range=(0.1,  1.0)),
+    RegionSpec(region="hippocampus",  population="ca3",           fr_range=(1.0,  5.0),  adaptation_expected=True),
+    RegionSpec(region="hippocampus",  population="ca2",           fr_range=(1.0,  5.0)),
+    RegionSpec(region="hippocampus",  population="ca1",           fr_range=(1.0,  5.0),  adaptation_expected=True),
+    RegionSpec(region="hippocampus",  population="_olm",          fr_range=(5.0, 15.0)),
+    RegionSpec(region="hippocampus",  population="_bistratified", fr_range=(5.0, 20.0),  adaptation_expected=True),
+    RegionSpec(region="hippocampus",  dominant_band="theta",  integration_tau_ms=(30.0, 80.0)),   # Bhattacharya et al. 2017 (exploration range)
+
+    # -----------------------------------------------------------------------
+    # Entorhinal cortex  (layer-specific ranges + theta expectation)
+    # -----------------------------------------------------------------------
+    # EC II stellate/grid cells fire 3–15 Hz (Hafting et al. 2005);
+    # EC III fan cells 1–10 Hz; EC V projection cells 1–8 Hz.
+    # Layer-specific entries must precede the region-wide catch-all.
+    RegionSpec(region="entorhinal",  population="ec_ii",  fr_range=(3.0, 15.0)),
+    RegionSpec(region="entorhinal",  population="ec_iii", fr_range=(1.0, 10.0)),
+    RegionSpec(region="entorhinal",  population="ec_v",   fr_range=(1.0,  8.0)),
+    RegionSpec(region="entorhinal",  fr_range=(1.0, 10.0),  dominant_band="theta",  integration_tau_ms=(50.0, 150.0)),
+
+    # -----------------------------------------------------------------------
+    # Striatum
+    # -----------------------------------------------------------------------
+    RegionSpec(region="striatum",  population="d1",   fr_range=(0.1,  5.0),   adaptation_expected=True),
+    RegionSpec(region="striatum",  population="d2",   fr_range=(0.1,  5.0),   adaptation_expected=True),
+    RegionSpec(region="striatum",  population="fsi",  fr_range=(10.0, 50.0),  adaptation_expected=False),
+    RegionSpec(region="striatum",  population="tan",  fr_range=(5.0,  10.0),  adaptation_expected=False),
+    RegionSpec(region="striatum",  ei_thresholds=(0.002, 0.01, 2.0, 8.0),  dominant_band="beta",  integration_tau_ms=(10.0, 50.0)),   # MSN up-state gated window
+
+    # -----------------------------------------------------------------------
+    # Basal ganglia
+    # -----------------------------------------------------------------------
+    # GPe entries (globus_pallidus_interna is longer → sorted before globus_pallidus).
+    RegionSpec(region="globus_pallidus_interna",  population="principal",    fr_range=(50.0, 100.0)),  # SNr-like tonic high-rate (Yelnik et al. 2007)
+    RegionSpec(region="globus_pallidus_interna",  population="border_cells", fr_range=(20.0,  50.0)),  # border / edge cells
+    RegionSpec(region="globus_pallidus",  population="prototypic",    fr_range=(30.0, 80.0)),
+    RegionSpec(region="globus_pallidus",  population="arkypallidal",  fr_range=(5.0,  20.0)),
+    RegionSpec(region="globus_pallidus",  ei_thresholds=(0.002, 0.01, 4.0, 12.0),  dominant_band="beta"),
+    RegionSpec(region="subthalamic",      population="stn",           fr_range=(10.0, 40.0)),
+    RegionSpec(region="subthalamic",      dominant_band="beta"),
+
+    # -----------------------------------------------------------------------
+    # Substantia nigra  (SNr feedback + SNc DA)
+    # -----------------------------------------------------------------------
+    # "vta_feedback" was a mislabel — SNr is not VTA.  Keep a legacy alias so
+    # existing networks that use the old pop name still get a range; add the
+    # canonical names too.
+    RegionSpec(region="substantia_nigra",  population="snr",          fr_range=(30.0, 80.0)),  # SNr GABAergic output
+    RegionSpec(region="substantia_nigra",  population="principal",    fr_range=(30.0, 80.0)),  # generic principal
+    RegionSpec(region="substantia_nigra",  population="vta_feedback", fr_range=(30.0, 80.0)),  # legacy alias
+    RegionSpec(region="substantia_nigra_compacta", population="da",            fr_range=(2.0,   8.0)),
+    # SNc / SNr (substantia_nigra_compacta is longer → sorted before substantia_nigra).
+    RegionSpec(region="substantia_nigra_compacta",  skip_ei_check=True,  dominant_band=None),
+    RegionSpec(region="substantia_nigra",            skip_ei_check=True,  dominant_band=None),
+
+    # -----------------------------------------------------------------------
+    # VTA
+    # -----------------------------------------------------------------------
+    RegionSpec(region="vta",  population="da_mesolimbic",   fr_range=(2.0, 8.0)),
+    RegionSpec(region="vta",  population="da_mesocortical",  fr_range=(2.0, 8.0)),
+    RegionSpec(region="vta",  skip_ei_check=True,  dominant_band=None),
+
+    # -----------------------------------------------------------------------
+    # Locus coeruleus  (norepinephrine)
+    # -----------------------------------------------------------------------
+    RegionSpec(region="locus_coeruleus",  population="ne",   fr_range=(1.0,  5.0)),
+    RegionSpec(region="locus_coeruleus",  population="gaba", fr_range=(5.0, 20.0)),  # LC interneurons (Aston-Jones & Cohen 2005)
+    RegionSpec(region="locus_coeruleus",  skip_ei_check=True,  dominant_band=None),
+
+    # -----------------------------------------------------------------------
+    # Dorsal raphe  (serotonin)
+    # -----------------------------------------------------------------------
+    RegionSpec(region="dorsal_raphe",  population="serotonin",  fr_range=(0.5, 3.0)),
+    RegionSpec(region="dorsal_raphe",  skip_ei_check=True,  dominant_band=None),
+
+    # -----------------------------------------------------------------------
+    # Nucleus basalis  (acetylcholine)
+    # -----------------------------------------------------------------------
+    RegionSpec(region="nucleus_basalis",  population="ach",  fr_range=(2.0, 15.0)),
+    RegionSpec(region="nucleus_basalis",  skip_ei_check=True,  dominant_band=None),
+
+    # -----------------------------------------------------------------------
+    # Medial septum  (GABA + ACh theta generator)
+    # -----------------------------------------------------------------------
+    RegionSpec(region="medial_septum",  population="gaba",  fr_range=(5.0, 15.0)),
+    RegionSpec(region="medial_septum",  population="ach",   fr_range=(5.0, 15.0)),
+    RegionSpec(region="medial_septum",  skip_ei_check=True,  dominant_band="theta"),
+
+    # -----------------------------------------------------------------------
+    # Limbic / other
+    # -----------------------------------------------------------------------
+    RegionSpec(region="basolateral_amygdala",  population="principal",  fr_range=(1.0,  5.0),  adaptation_expected=True),
+    RegionSpec(region="basolateral_amygdala",  dominant_band=None,  integration_tau_ms=(50.0, 200.0)),
+    # CeL and CeM (Ciocchi et al. 2010; Haubensak et al. 2010): 0.5–8 Hz at rest.
+    RegionSpec(region="central_amygdala",  population="lateral", fr_range=(0.5, 8.0)),
+    RegionSpec(region="central_amygdala",  population="medial",  fr_range=(0.5, 8.0)),
+    RegionSpec(region="lateral_habenula",      population="principal",  fr_range=(5.0, 20.0),  adaptation_expected=True),
+    RegionSpec(region="lateral_habenula",      skip_ei_check=True,  dominant_band=None),
+    RegionSpec(region="rostromedial",          population="gaba",       fr_range=(5.0, 30.0)),
+    RegionSpec(region="rostromedial",          skip_ei_check=True,  dominant_band=None),
+
+    # -----------------------------------------------------------------------
+    # Cortical L1 neurogliaform cells (Jiang et al. 2013): 5–25 Hz.
+    # Must precede the generic "gaba" catch-all below.
+    # -----------------------------------------------------------------------
+    RegionSpec(region="",  population="l1_ngc",  fr_range=(5.0, 25.0)),
+
+    # -----------------------------------------------------------------------
+    # Generic GABA interneurons  (must follow more-specific interneuron patterns)
+    # -----------------------------------------------------------------------
+    RegionSpec(region="",  population="gaba",  fr_range=(5.0, 40.0)),
+
+    # -----------------------------------------------------------------------
+    # Catch-all: balanced E/I, no dominant-band expectation
+    # -----------------------------------------------------------------------
+    RegionSpec(region="",  ei_thresholds=(0.05, 0.20, 3.5, 8.0),  dominant_band=None),
+]
+
+# Sort by (len(region), len(population)) descending so that longer (more-specific)
+# patterns are tried first.  Python's sort is stable, so ties preserve declaration
+# order — allowing deliberate same-length overrides if ever needed.
+REGION_SPECS.sort(key=lambda s: (len(s.region), len(s.population)), reverse=True)
+
+# Guard against duplicate (region, population) entries that would silently shadow
+# each other after sorting.  Raises AssertionError at import time so the mistake
+# is caught immediately rather than producing subtly wrong health-check results.
+_seen_keys: set[tuple[str, str]] = set()
+for _spec in REGION_SPECS:
+    _key = (_spec.region.lower(), _spec.population.lower())
+    assert _key not in _seen_keys, (
+        f"bio_ranges.py: duplicate RegionSpec entry ({_spec.region!r}, {_spec.population!r}) — "
+        f"remove one of the two entries to avoid silent shadowing"
+    )
+    _seen_keys.add(_key)
+del _seen_keys, _spec, _key
+
+# ---------------------------------------------------------------------------
+# Module-level lookup caches (keyed by lowercased region / population strings).
+# Populated lazily on first call; avoids lru_cache bookkeeping overhead and
+# removes the ambiguity of maxsize=None unbounded caches.
+# REGION_SPECS is fixed at module load time, so cached results never go stale.
+# ---------------------------------------------------------------------------
+_BIO_RANGE_CACHE:   Dict[Any, Optional[Any]] = {}  # (region_l, pop_l) -> Optional[Tuple[float, float]]
+_EI_CACHE:          Dict[str, Optional[Any]] = {}  # region_l -> Optional[Tuple[float, float, float, float]]
+_DOM_BAND_CACHE:    Dict[str, Optional[str]] = {}  # region_l -> Optional[str]
+_ADAPTATION_CACHE:  Dict[Any, Optional[bool]] = {} # (region_l, pop_l) -> Optional[bool]
+_TAU_CACHE:         Dict[str, Optional[Any]] = {}  # region_l -> Optional[Tuple[float, float]]
+
+# =============================================================================
+# EEG SPECTRAL BANDS
+# =============================================================================
+
+EEG_BANDS: Dict[str, Tuple[float, float]] = {
+    "delta": (0.5,   4.0),
+    "theta": (4.0,   8.0),
+    # Sigma (sleep spindles, 11–15 Hz, Steriade et al. 1993) is placed
+    # BEFORE alpha so the dominant-band classifier (first-match) correctly labels
+    # a spindle peak at e.g. 12 Hz as "sigma" rather than "alpha".
+    # Alpha power is still computed over the full 8–13 Hz biological range;
+    # the band ordering here only affects the peak-frequency → band-name mapping.
+    "sigma": (11.0, 15.0),
+    "alpha": (8.0,  13.0),
+    "beta":  (13.0, 30.0),
+    "gamma": (30.0, 100.0),
+}
+
+
+def freq_to_band(freq_hz: float) -> str:
+    """Return the :data:`EEG_BANDS` name whose half-open interval ``[f1, f2)``
+    contains *freq_hz*.  Falls back to ``"gamma"`` for frequencies above all
+    defined bands (mirrors the default assumed by the dominant-band classifier).
+
+    The ``sigma``-before-``alpha`` ordering in :data:`EEG_BANDS` is respected
+    automatically because this function iterates the dict in insertion order.
+    """
+    for band, (f1, f2) in EEG_BANDS.items():
+        if f1 <= freq_hz < f2:
+            return band
+    return "gamma"
+
+
+def bio_range(region: str, pop: str) -> Optional[Tuple[float, float]]:
+    """Return ``(min_hz, max_hz)`` for a population, or ``None`` if unknown.
+
+    Iterates ``REGION_SPECS`` (pre-sorted longest-first); the first entry where
+    ``spec.region`` is a *substring* of *region* (case-insensitive) **and**
+    ``spec.population`` is a *substring* of *pop* **and**
+    ``spec.fr_range is not None`` wins.
+
+    Results are cached in ``_BIO_RANGE_CACHE`` — ``REGION_SPECS`` is
+    fixed at runtime so the cache is always valid.
+    """
+    key = (region.lower(), pop.lower())
+    if key not in _BIO_RANGE_CACHE:
+        r, p = key
+        for spec in REGION_SPECS:
+            if spec.fr_range is not None and spec.region in r and spec.population in p:
+                _BIO_RANGE_CACHE[key] = spec.fr_range
+                break
+        else:
+            _BIO_RANGE_CACHE[key] = None
+    return _BIO_RANGE_CACHE[key]
+
+
+def ei_ratio_thresholds(region: str) -> Optional[Tuple[float, float, float, float]]:
+    """Return ``(crit_low, warn_low, warn_high, crit_high)`` for a region.
+
+    Returns ``None`` to indicate the E/I check should be skipped entirely
+    for this region (e.g. neuromodulatory nuclei).
+
+    Biological justification for region-specific thresholds:
+    - Striatal MSNs: rest near −80 mV (near GABA-A reversal); dense GABAergic
+      recurrent input — E/I ≈ 0.02–0.5 is normal.
+    - Globus pallidus: dominated by GABAergic striatal and STN input.
+    - Neuromodulatory nuclei (LC, DRN, NB, septum, VTA, SNc): thin or absent
+      recurrent inhibition — conductance ratio is not informative.
+    - Cerebellum / inferior olive: complex multi-compartment dynamics.
+
+    Iterates ``REGION_SPECS``; first entry where ``spec.skip_ei_check`` or
+    ``spec.ei_thresholds is not None`` **and** region matches wins.
+
+    Results are cached in ``_EI_CACHE`` — ``REGION_SPECS`` is fixed at runtime.
+    """
+    r = region.lower()
+    if r not in _EI_CACHE:
+        for spec in REGION_SPECS:
+            if spec.region in r and (spec.skip_ei_check or spec.ei_thresholds is not None):
+                _EI_CACHE[r] = None if spec.skip_ei_check else spec.ei_thresholds
+                break
+        else:
+            _EI_CACHE[r] = (0.05, 0.20, 3.5, 8.0)  # fallback (normally hit by catch-all entry)
+    return _EI_CACHE[r]
+
+
+def expected_dominant_band(region: str) -> Optional[str]:
+    """Return the expected dominant EEG band for *region*, or ``None`` to skip.
+
+    Iterates ``REGION_SPECS``; first entry where
+    ``spec.dominant_band is not _UNSET`` **and** region matches wins.
+    ``None`` means no expectation / skip the check.
+
+    Results are cached in ``_DOM_BAND_CACHE`` — ``REGION_SPECS`` is fixed at runtime.
+    """
+    r = region.lower()
+    if r not in _DOM_BAND_CACHE:
+        for spec in REGION_SPECS:
+            if spec.dominant_band is not _UNSET and spec.region in r:
+                _DOM_BAND_CACHE[r] = spec.dominant_band
+                break
+        else:
+            _DOM_BAND_CACHE[r] = None  # no expectation (normally reached via catch-all entry)
+    return _DOM_BAND_CACHE[r]
+
+
+def adaptation_expected_for(region: str, pop: str) -> Optional[bool]:
+    """Return whether SFA is expected for a population, or ``None`` if unknown.
+
+    ``True``  — adapting cell type (pyramidal, relay, MSN, principal): SFA index > 1.3 expected.
+    ``False`` — non-adapting cell type (PV / FSI / TAN): SFA index ≈ 1.0 expected.
+    ``None``  — no expectation encoded for this region / population combination.
+
+    Iterates ``REGION_SPECS``; the first entry where ``spec.adaptation_expected is not None``
+    **and** region / population patterns match wins.
+
+    Results are cached in ``_ADAPTATION_CACHE`` — ``REGION_SPECS`` is fixed at runtime.
+    """
+    key = (region.lower(), pop.lower())
+    if key not in _ADAPTATION_CACHE:
+        r, p = key
+        for spec in REGION_SPECS:
+            if spec.adaptation_expected is not None and spec.region in r and spec.population in p:
+                _ADAPTATION_CACHE[key] = spec.adaptation_expected
+                break
+        else:
+            _ADAPTATION_CACHE[key] = None
+    return _ADAPTATION_CACHE[key]
+
+
+def integration_tau_range(region: str) -> Optional[Tuple[float, float]]:
+    """Return the expected ``(tau_min_ms, tau_max_ms)`` FR autocorrelation range for *region*.
+
+    Iterates ``REGION_SPECS``; first entry where ``spec.integration_tau_ms is not None``
+    and region matches wins.  Returns ``None`` when no expectation is encoded.
+
+    Results are cached in ``_TAU_CACHE`` — ``REGION_SPECS`` is fixed at runtime.
+
+    References: Murray et al. 2014 (PFC); Wasmuht et al. 2018 (sensory hierarchy).
+    """
+    r = region.lower()
+    if r not in _TAU_CACHE:
+        for spec in REGION_SPECS:
+            if spec.integration_tau_ms is not None and spec.region in r:
+                _TAU_CACHE[r] = spec.integration_tau_ms
+                break
+        else:
+            _TAU_CACHE[r] = None
+    return _TAU_CACHE[r]
+
+
+# =============================================================================
+# NEUROMODULATOR TONIC CONCENTRATION RANGES  [normalized 0–1 activation]
+# =============================================================================
+# NeuromodulatorReceptor.concentration is bounded [0, 1]; these thresholds
+# describe healthy tonic (non-phasic) mean activation.  Values above warn_high
+# indicate near-saturation / receptor desensitisation; values below warn_low
+# indicate chronically inadequate neuromodulator release or clearance failure.
+#
+# Sources: Grace 1991 (DA), Descarries et al. 1997 (ACh), Mlinar et al. 2016
+# (5-HT), Berridge 2008 (NE).
+_NM_TONIC_RANGES: List[Tuple[str, float, float]] = [
+    # (mod_name_substring, warn_low, warn_high)
+    ("dopamine",        0.005, 0.65),
+    ("acetylcholine",   0.005, 0.75),
+    ("serotonin",       0.002, 0.60),
+    ("norepinephrine",  0.005, 0.65),
+]
+_NM_TONIC_DEFAULT: Tuple[float, float] = (0.005, 0.70)
+
+
+# =============================================================================
+# CROSS-REGIONAL COHERENCE HEALTH THRESHOLDS
+# =============================================================================
+# Each entry specifies an expected minimum coherence between two brain regions
+# for a given frequency band.  Region patterns are case-insensitive substrings
+# (same convention as ``REGION_SPECS``).
+#
+# Sources: Buzsáki 2002 (theta); Hafting et al. 2005 (grid cells);
+#          Siegel et al. 2011 (PFC–striatum beta); Womelsdorf et al. 2014 (gamma).
+
+
+@dataclass
+class CoherenceSpec:
+    """Expected minimum cross-regional coherence for a specific frequency band.
+
+    ``region_a`` and ``region_b`` are case-insensitive *substring* patterns
+    matched against region names in ``OscillatoryStats.region_order``.
+    """
+
+    region_a: str        # substring pattern for the first region
+    region_b: str        # substring pattern for the second region
+    band: str            # ``"theta"``, ``"beta"``, or ``"gamma"``
+    expected_min: float  # warn when computed coherence < expected_min
+    note: str            # context printed in the health-issue message
+
+
+COHERENCE_SPECS: List[CoherenceSpec] = [
+    # Theta (4–8 Hz): medial septum paces hippocampal theta via the
+    # septohippocampal pathway (Buzsáki 2002; Colom 2006).
+    CoherenceSpec(
+        "septum", "hippocampus", "theta", 0.40,
+        "medial septum drives hippocampal theta; low coherence indicates a broken "
+        "septohippocampal pathway (Buzsáki 2002)",
+    ),
+    # Theta (4–8 Hz): hippocampal→entorhinal theta coupling is required for
+    # grid-cell phase precession and spatial memory encoding (Hafting et al. 2005).
+    CoherenceSpec(
+        "hippocampus", "entorhinal", "theta", 0.20,
+        "hippocampus → entorhinal theta coupling; required for grid-cell phase "
+        "precession and spatial memory encoding (Hafting et al. 2005)",
+    ),
+    # Theta (4–8 Hz): hippocampus → prefrontal theta synchrony underlies spatial
+    # navigation and episodic memory retrieval (Jones & Wilson 2005; Hyman et al. 2010).
+    CoherenceSpec(
+        "hippocampus", "prefrontal", "theta", 0.15,
+        "hippocampus → prefrontal theta synchrony; required for spatial working "
+        "memory and episodic retrieval (Jones & Wilson 2005)",
+    ),
+    # Theta (4–8 Hz): thalamus → cortex theta coherence reflects sensory-gating
+    # and attentional routing during active waking (Saalmann et al. 2012).
+    CoherenceSpec(
+        "thalamus", "cortex", "theta", 0.20,
+        "thalamus → cortex theta coherence; required for attentional routing and "
+        "sensory gating during active waking (Saalmann et al. 2012)",
+    ),
+    # Beta (13–30 Hz): prefrontal–striatal synchrony underlies working-memory
+    # gating and action selection (Siegel et al. 2011; Howe et al. 2011).
+    CoherenceSpec(
+        "prefrontal", "striatum", "beta", 0.15,
+        "prefrontal → striatum beta synchrony; required for working-memory gating "
+        "and action selection (Siegel et al. 2011)",
+    ),
+    # Gamma (30–100 Hz): thalamocortical relay → sensory cortex gamma coherence
+    # is a signature of active sensory transmission and feature binding
+    # (Womelsdorf et al. 2014).  Only relevant under driven conditions.
+    CoherenceSpec(
+        "thalamus", "cortex_sensory", "gamma", 0.30,
+        "thalamus relay → sensory cortex gamma coherence; required for sensory "
+        "transmission and binding under driven conditions (Womelsdorf et al. 2014)",
+    ),
+]
+
+
+@dataclass
+class PACSpec:
+    """Phase–amplitude coupling specification for a region class and band pair.
+
+    ``region`` is a case-insensitive *substring* pattern matched against region
+    names.  ``phase_band`` and ``amp_band`` must be keys of :data:`EEG_BANDS`.
+
+    References
+    ----------
+    - Theta–gamma (hippocampus): Canolty et al. 2006; Lisman & Jensen 2013.
+    - Beta–gamma (motor cortex, striatum): Yanovsky et al. 2012; Crone et al. 2006.
+    """
+
+    region: str          # substring pattern for the target region
+    phase_band: str      # key into EEG_BANDS for the phase-providing signal
+    amp_band: str        # key into EEG_BANDS for the amplitude-modulated signal
+
+
+PAC_SPECS: List[PACSpec] = [
+    # Hippocampal theta–gamma: encodes spatial information and episodic memory
+    # via multiplexed phase coding (Lisman & Jensen 2013).
+    PACSpec(region="hippocampus", phase_band="theta", amp_band="gamma"),
+    # Motor-cortex beta–gamma: encodes movement initiation and motor preparation
+    # (Yanovsky et al. 2012; Crone et al. 2006).
+    PACSpec(region="cortex_motor", phase_band="beta", amp_band="gamma"),
+    # Striatal beta–gamma: encodes reinforcement context and action selection
+    # (Crone et al. 2006; van der Meer & Redish 2009).
+    PACSpec(region="striatum",    phase_band="beta", amp_band="gamma"),
+]
+
+
+def nm_tonic_range(mod_name: str) -> Tuple[float, float]:
+    """Return ``(warn_low, warn_high)`` tonic concentration bounds.
+
+    Uses case-insensitive substring matching on *mod_name* (the dotted module
+    path of the :class:`NeuromodulatorReceptor`).  Returns the default bounds
+    ``(0.005, 0.70)`` when no specific entry matches.
+    """
+    mn = mod_name.lower()
+    for key, low, high in _NM_TONIC_RANGES:
+        if key in mn:
+            return (low, high)
+    return _NM_TONIC_DEFAULT

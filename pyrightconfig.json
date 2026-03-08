@@ -49,5 +49,6 @@
   "reportOptionalCall": false,
   "reportOptionalIterable": false,
   "reportOptionalContextManager": false,
-  "reportUndefinedVariable": "warning"
+  "reportUndefinedVariable": "warning",
+  "reportCellVarDefinedInLoop": "none"
 }

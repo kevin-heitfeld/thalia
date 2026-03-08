@@ -10,7 +10,23 @@ from .neural_region import NeuralRegionConfig
 
 
 @dataclass
-class BasolateralAmygdalaConfig(NeuralRegionConfig):
+class AmygdalaNucleusConfig(NeuralRegionConfig):
+    """Shared configuration base for amygdala nuclei (BLA, CeA).
+
+    Captures biophysical parameters common across amygdala sub-regions.
+    """
+
+    tau_ref: float = 4.0
+    """Refractory period in ms (shared by BLA principal/SOM neurons and CeA neurons)."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.tau_ref <= 0:
+            raise ConfigurationError(f"tau_ref must be > 0, got {self.tau_ref}")
+
+
+@dataclass
+class BasolateralAmygdalaConfig(AmygdalaNucleusConfig):
     """Configuration for BLA (basolateral amygdala) region.
 
     The BLA is the primary site for fear conditioning and extinction learning.
@@ -47,9 +63,6 @@ class BasolateralAmygdalaConfig(NeuralRegionConfig):
     v_threshold_pv: float = 1.5
     """High threshold for PV interneurons to prevent hyperactivity."""
 
-    tau_ref: float = 4.0
-    """Refractory period in ms."""
-
     # Synaptic conductances
     baseline_drive: float = 0.0005
     """Tonic excitatory drive (very low - BLA is mostly silent at baseline)."""
@@ -72,14 +85,12 @@ class BasolateralAmygdalaConfig(NeuralRegionConfig):
             raise ConfigurationError(f"tau_mem_pv must be > 0, got {self.tau_mem_pv}")
         if self.tau_mem_som <= 0:
             raise ConfigurationError(f"tau_mem_som must be > 0, got {self.tau_mem_som}")
-        if self.tau_ref <= 0:
-            raise ConfigurationError(f"tau_ref must be > 0, got {self.tau_ref}")
         if self.baseline_drive < 0:
             raise ConfigurationError(f"baseline_drive must be >= 0, got {self.baseline_drive}")
 
 
 @dataclass
-class CentralAmygdalaConfig(NeuralRegionConfig):
+class CentralAmygdalaConfig(AmygdalaNucleusConfig):
     """Configuration for CeA (central amygdala) region.
 
     The CeA is the output nucleus of the amygdala, receiving BLA input and
@@ -105,9 +116,6 @@ class CentralAmygdalaConfig(NeuralRegionConfig):
 
     v_threshold: float = 1.0
     """Firing threshold."""
-
-    tau_ref: float = 4.0
-    """Refractory period (ms)."""
 
     baseline_drive_lateral: float = 0.0003
     """Tonic drive to CeL (mostly silent)."""

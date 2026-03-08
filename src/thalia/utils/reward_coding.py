@@ -12,14 +12,18 @@ Encoding scheme (same as old RewardEncoder):
 
 from __future__ import annotations
 
+from typing import Union
+
 import torch
+
+from thalia import GlobalConfig
 
 
 def generate_reward_spikes(
     reward: float,
     n_neurons: int,
     noise_scale: float = 0.1,
-    device: str | torch.device = "cpu",
+    device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
 ) -> torch.Tensor:
     """Encode a scalar reward value as a population-coded spike tensor.
 

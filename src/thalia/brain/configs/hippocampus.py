@@ -2,9 +2,103 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .neural_region import NeuralRegionConfig
+
+
+@dataclass
+class HippocampalLayerConfig:
+    v_threshold: float
+    adapt_increment: float
+    tau_adapt: float
+    total_inhib_fraction: float
+    v_threshold_olm: float
+    v_threshold_bistratified: float
+
+
+def get_default_dg_layer_config() -> HippocampalLayerConfig:
+    """Per-layer configuration for the Dentate Gyrus (pattern separation).
+
+    All threshold and adaptation parameters that were previously scattered as
+    magic literals in ``Hippocampus.__init__`` are collected here so they can
+    be swept and inspected without editing region code.
+    """
+    return HippocampalLayerConfig(
+        # Firing threshold for DG granule cells (normalised).
+        # High value enforces sparse activity (<1 Hz).  History: raised 0.9→1.6→1.8
+        # to drive population fraction toward the 2–5 % biological target.
+        v_threshold=1.8,
+        # Spike-frequency adaptation increment.  Strong to enforce sparsity (Ca²⁺-K⁺).
+        adapt_increment=0.30,
+        # Adaptation decay time constant (ms).  Slow to persist across pattern presentations.
+        tau_adapt=120.0,
+        # Fraction of DG pyramidal count allocated to inhibitory interneurons.
+        total_inhib_fraction=0.20,
+        # OLM cell firing threshold.  Tuned to ~0.3–0.8 Hz at sparse DG activity.
+        v_threshold_olm=1.00,
+        # Bistratified cell firing threshold.
+        v_threshold_bistratified=1.00,
+    )
+
+
+def get_default_ca3_layer_config() -> HippocampalLayerConfig:
+    """Per-layer configuration for CA3 (pattern completion / autoassociative memory)."""
+    return HippocampalLayerConfig(
+        # CA3 firing threshold (normalised).
+        # Lowered 1.0→0.50: EC_II drive reaches V_inf ≈ 0.53 at biological input rates
+        # with STP, so the threshold must be reachable from combined EC + DG input.
+        v_threshold=0.50,
+        # Spike-frequency adaptation increment.  Biological AHP range 0.20–0.30.
+        adapt_increment=0.25,
+        # Adaptation decay time constant (ms).
+        tau_adapt=100.0,
+        # Fraction of CA3 pyramidal count allocated to inhibitory interneurons.
+        total_inhib_fraction=0.25,
+        # OLM cell threshold.  Lower than DG because sparse CA3 firing (0.75–2 Hz)
+        # produces V_inf ≈ 0.18–0.45; DG-level thresholds are unreachable.
+        v_threshold_olm=0.35,
+        # Bistratified cell threshold.
+        v_threshold_bistratified=0.30,
+    )
+
+
+def get_default_ca2_layer_config() -> HippocampalLayerConfig:
+    """Per-layer configuration for CA2 (social / temporal context memory)."""
+    return HippocampalLayerConfig(
+        # CA2 firing threshold.  Slightly above CA3 for selectivity; reduced from 1.6
+        # which caused near-silence.
+        v_threshold=1.1,
+        # Moderate adaptation for temporal selectivity.
+        adapt_increment=0.25,
+        # Adaptation decay time constant (ms).
+        tau_adapt=100.0,
+        # Lighter inhibition than CA3; CA2 is a smaller, more tightly gated hub.
+        total_inhib_fraction=0.15,
+        # OLM cell threshold.
+        v_threshold_olm=0.35,
+        # Bistratified cell threshold.
+        v_threshold_bistratified=0.30,
+    )
+
+
+def get_default_ca1_layer_config() -> HippocampalLayerConfig:
+    """Per-layer configuration for CA1 (output / coincidence detection layer)."""
+    return HippocampalLayerConfig(
+        # CA1 firing threshold.  Lowered 0.50→0.30: EC_III V_inf ≈ 0.18 at STP-depleted
+        # 11 Hz; threshold must be reachable from combined EC_III + CA3 Schaffer + PFC drive.
+        v_threshold=0.30,
+        # Moderate adaptation to prevent runaway output activity.
+        adapt_increment=0.20,
+        # Faster adapt decay than CA3/CA2 for responsive output-layer dynamics.
+        tau_adapt=80.0,
+        # Stronger inhibition supports theta modulation and coincidence gating.
+        total_inhib_fraction=0.30,
+        # OLM cell threshold.
+        v_threshold_olm=0.35,
+        # Bistratified cell threshold.
+        v_threshold_bistratified=0.30,
+    )
 
 
 @dataclass
@@ -146,7 +240,27 @@ class HippocampusConfig(NeuralRegionConfig):
     """Configuration for hippocampus (trisynaptic circuit).
 
     The hippocampus has ~5x expansion from EC to DG, then compression back.
+
+    Per-layer neuron and inhibitory-network parameters are grouped into four
+    sub-configs (``dg``, ``ca3``, ``ca2``, ``ca1``) so individual thresholds
+    and adaptation constants can be swept or inspected without touching region
+    code.
     """
+
+    # =========================================================================
+    # PER-LAYER SUB-CONFIGS
+    # =========================================================================
+    dg:  HippocampalLayerConfig = field(default_factory=get_default_dg_layer_config)
+    """Dentate Gyrus neuron and inhibitory-network parameters."""
+
+    ca3: HippocampalLayerConfig = field(default_factory=get_default_ca3_layer_config)
+    """CA3 neuron and inhibitory-network parameters."""
+
+    ca2: HippocampalLayerConfig = field(default_factory=get_default_ca2_layer_config)
+    """CA2 neuron and inhibitory-network parameters."""
+
+    ca1: HippocampalLayerConfig = field(default_factory=get_default_ca1_layer_config)
+    """CA1 neuron and inhibitory-network parameters."""
 
     # =========================================================================
     # CONSOLIDATION
@@ -231,16 +345,6 @@ class HippocampusConfig(NeuralRegionConfig):
     ampa_ratio: float = 0.20  # Raised (0.05→0.20): with CA3 silent the NMDA gate is closed; AMPA enables CA1 to fire first
 
     # =========================================================================
-    # SPIKE-FREQUENCY ADAPTATION (SFA)
-    # =========================================================================
-    # Real CA3 pyramidal neurons show strong adaptation: Ca²⁺ influx during
-    # spikes activates K⁺ channels (I_AHP) that hyperpolarize the neuron.
-    # This prevents the same neurons from dominating activity.
-    # Inherited from base with hippocampus-specific override:
-    adapt_increment: float = 0.25  # Reduced from over-suppressing 0.75 → biologically realistic AHP (0.20-0.30 range)
-    # adapt_tau: 100.0 (use base default)
-
-    # =========================================================================
     # SPIKE-TIMING DEPENDENT PLASTICITY (STDP)
     # =========================================================================
     tau_plus_ms: float = 20.0  # LTP time constant (ms)
@@ -265,6 +369,45 @@ class HippocampusConfig(NeuralRegionConfig):
     ca3_to_ca2_delay_ms: float = 2.0   # CA3→CA2 axonal delay
     ca2_to_ca1_delay_ms: float = 2.0   # CA2→CA1 axonal delay
     ca3_to_ca1_delay_ms: float = 3.0   # CA3→CA1 axonal delay (Schaffer collaterals)
+
+    # =========================================================================
+    # SHARP-WAVE RIPPLE (SWR) REPLAY
+    # =========================================================================
+    # SWRs occur spontaneously during slow-wave sleep and quiet waking. They are
+    # characterised by synchronous CA3 population bursts (>5% cells in 1-5ms) that
+    # strongly drive CA1 via already-potentiated Schaffer collaterals, enabling
+    # rapid offline sequence replay essential for systems memory consolidation.
+    # References: Buzsaki 1989 (Neuroscience); Wilson & McNaughton 1994 (Science).
+    ripple_threshold: float = 0.05
+    """CA3 population firing rate (fraction) that triggers SWR onset.
+
+    A burst involving >5% of CA3 cells within a single timestep (1 ms) is
+    characteristic of a sharp-wave event.  Increase to 0.08 in denser networks.
+    """
+
+    ripple_duration_max_ms: float = 100.0
+    """Maximum duration (ms) of the SWR replay window.
+
+    Biologically SWRs last 50-150 ms.  The window is refreshed on each
+    high-rate CA3 timestep, so longer sustained bursts extend beyond this.
+    """
+
+    ripple_boost_factor: float = 1.5
+    """Multiplicative boost applied to the CA3→CA1 Schaffer collateral drive during
+    a detected sharp-wave ripple.
+
+    Range: 1.0 (disabled) – 2.5.  Default 1.5 produces a ~50% increase in CA1
+    excitability, sufficient to reliably cross threshold on previously-encoded
+    sequences without causing runaway activity.
+    """
+
+    ripple_replay_injection: float = 0.3
+    """Fraction of the captured CA3 onset pattern re-injected as excitatory
+    conductance during each timestep of the replay window.
+
+    Provides a depolarising bias that keeps the CA3 attractor active across
+    the SWR duration.  Range: 0.1 (subtle) – 0.5 (strong sustained replay).
+    """
 
 
 @dataclass
@@ -374,3 +517,75 @@ class MedialSeptumConfig(NeuralRegionConfig):
 
     gaba_adaptation_increment: float = 0.40
     """GABA adaptation increment per spike."""
+
+
+@dataclass
+class SubiculumConfig(NeuralRegionConfig):
+    """Configuration for the subiculum — hippocampal output gateway.
+
+    The subiculum is the principal output structure of the hippocampal formation,
+    positioned between CA1 and the entorhinal cortex.  It receives the bulk of
+    CA1 output (~75% of CA1 projections) and converts CA1 complex-spike bursts into
+    regular-spiking output distributed to entorhinal cortex, PFC, BLA, and
+    hypothalamus.
+
+    Distinct from CA1:
+    - Contains three physiological cell types (regular-spiking, burst-firing,
+      weak-burst), collapsed here into one population with heterogeneous parameters.
+    - Does NOT send back-projections to CA3 (unlike CA1).
+    - Has strong place-cell properties with different spatial scale than CA1.
+    - Generates theta-frequency bursts driven by CA1 Schaffer input.
+
+    Key features:
+    - Single PRINCIPAL population (excitatory pyramidal)
+    - Implicit PV basket-cell inhibition via lateral inhibition coefficient
+    - Receives CA1 input; outputs to EC_V, PFC L5, BLA PRINCIPAL
+
+    References:
+    - O'Mara et al. (2001): The subiculum: the heart of the hippocampal outflow
+    - Witter et al. (2000): Anatomical organisation of the parahippocampal-
+      hippocampal network
+    - Aggleton (2012): Multiple anatomical systems embedded within the primate
+      medial temporal lobe: implications for hippocampal function
+    """
+
+    tau_mem: float = 25.0
+    """Subicular pyramidal membrane time constant (ms).
+
+    Intermediate between CA1 (~20 ms) and EC_V (~30 ms), consistent with
+    their role as buffered output neurons.
+    """
+
+    v_threshold: float = 1.1
+    """Firing threshold (normalised).  Same as EC_II — subiculum is a relay
+    and should be easily driven by strong CA1 input.
+    """
+
+    adapt_increment: float = 0.10
+    """Spike-frequency adaptation increment (I_KCA).
+
+    Mild adaptation — subicular cells show burst-then-regular firing;
+    a small increment allows burst onset without full silencing.
+    """
+
+    tau_adapt: float = 150.0
+    """Adaptation decay time constant (ms).
+
+    Long time constant to sustain the regular-spiking mode across a
+    theta cycle (~125 ms).
+    """
+
+    tonic_drive: float = 0.003
+    """Background excitatory conductance (normalised).
+
+    Keeps cells slightly depolarised below threshold; subiculum is tonically
+    active during awake exploration at ~5-10 Hz.
+    """
+
+    lateral_inhibition_ratio: float = 0.70
+    """Implicit lateral inhibition: fraction of excitatory drive fed back as GABA_A.
+
+    Approximates PV basket-cell feedback (within ~1 ms at dt=1ms) to prevent
+    runaway synchronous bursting across the entire population.  Biological
+    range: 0.5–0.8 for hippocampal output structures.
+    """

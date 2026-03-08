@@ -60,6 +60,9 @@ from __future__ import annotations
 
 from .neural_region import NeuralRegion
 from .neuromodulator_source_region import NeuromodulatorSourceRegion
+from .basal_ganglia_output_nucleus import BasalGangliaOutputNucleus
+from .dopamine_pacemaker_base import DopaminePacemakerBase
+from .amygdala_nucleus import AmygdalaNucleus
 
 from .basolateral_amygdala import BasolateralAmygdala
 from .central_amygdala import CentralAmygdala
@@ -68,14 +71,16 @@ from .cortical_column import CorticalColumn
 from .dorsal_raphe import DorsalRapheNucleus
 from .entorhinal_cortex import EntorhinalCortex
 from .globus_pallidus_externa import GlobusPallidusExterna
+from .globus_pallidus_interna import GlobusPallidusInterna
 from .hippocampus import Hippocampus
 from .lateral_habenula import LateralHabenula
 from .locus_coeruleus import LocusCoeruleus
 from .medial_septum import MedialSeptum
 from .nucleus_basalis import NucleusBasalis
-from .prefrontal import Prefrontal
+from .prefrontal_cortex import PrefrontalCortex
 from .rostromedial_tegmentum import RostromedialTegmentum
 from .striatum import Striatum
+from .subiculum import Subiculum
 from .substantia_nigra import SubstantiaNigra
 from .substantia_nigra_compacta import SubstantiaNigraCompacta
 from .subthalamic_nucleus import SubthalamicNucleus
@@ -89,6 +94,9 @@ __all__ = [
     # Base Neural Region
     "NeuralRegion",
     "NeuromodulatorSourceRegion",
+    "BasalGangliaOutputNucleus",
+    "DopaminePacemakerBase",
+    "AmygdalaNucleus",
     # Regions
     "BasolateralAmygdala",
     "CentralAmygdala",
@@ -97,14 +105,16 @@ __all__ = [
     "DorsalRapheNucleus",
     "EntorhinalCortex",
     "GlobusPallidusExterna",
+    "GlobusPallidusInterna",
     "Hippocampus",
     "LateralHabenula",
     "LocusCoeruleus",
     "MedialSeptum",
     "NucleusBasalis",
-    "Prefrontal",
+    "PrefrontalCortex",
     "RostromedialTegmentum",
     "Striatum",
+    "Subiculum",
     "SubstantiaNigra",
     "SubstantiaNigraCompacta",
     "SubthalamicNucleus",

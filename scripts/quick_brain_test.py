@@ -2,14 +2,14 @@
 
 import sys
 import time
-from typing import Optional, cast
+from typing import Dict, Optional, cast
 
 import torch
 
-from thalia.brain import BrainBuilder, DynamicBrain
-from thalia.brain.regions.population_names import ExternalPopulation, ThalamusPopulation
-from thalia.components import ShortTermPlasticity, STPConfig
-from thalia.typing import BrainOutput, SynapseId, SynapticInput
+from thalia.brain import BrainBuilder, Brain
+from thalia.brain.regions.population_names import ExternalPopulation
+from thalia.brain.synapses import ShortTermPlasticity, STPConfig
+from thalia.typing import BrainOutput, RegionSizes, SynapseId, SynapticInput
 
 
 # NOTE: Enable line buffering for real-time output
@@ -18,9 +18,9 @@ sys.stdout.reconfigure(line_buffering=True)
 
 def main() -> None:
     # Override default population sizes for testing
-    external_reward_size: int = 10
+    external_reward_size: int = 36
     external_sensory_size: int = 42
-    default_overrides = {
+    default_overrides: Dict[str, RegionSizes] = {
         "population_sizes": {
             SynapseId._EXTERNAL_REGION_NAME: {
                 ExternalPopulation.REWARD: external_reward_size,
@@ -32,16 +32,8 @@ def main() -> None:
     # Create brain with default preset
     print("Creating brain...")
     start_time = time.time()
-    # TODO: brain: DynamicBrain = BrainBuilder.preset("default", overrides=default_overrides)
-    brain: DynamicBrain = BrainBuilder.preset("default")
+    brain: Brain = BrainBuilder.preset("default", **default_overrides)
     print(f"Brain created in {time.time() - start_time:.2f}s")
-
-    # TODO
-    # {
-    thalamus = brain.get_region_by_name("thalamus")
-    assert thalamus is not None, "Thalamus region not found in brain"
-    external_sensory_size = thalamus.get_population_size(ThalamusPopulation.RELAY)
-    # }
 
     print("=== Brain Regions ===")
     for region_name, region in brain.regions.items():

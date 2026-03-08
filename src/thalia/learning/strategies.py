@@ -1,4 +1,4 @@
-"""Learning Rule Strategies: Pluggable Learning Algorithms for Brain Components."""
+"""Learning Rule Strategies"""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from .eligibility_trace_manager import EligibilityTraceConfig, EligibilityTraceM
 class LearningConfig:
     """Base configuration for all learning strategies."""
 
-    device: str = "cpu"  # Device to run on: 'cpu', 'cuda', 'cuda:0', etc.
     seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
 
     learning_rate: float = 0.01
@@ -394,17 +393,17 @@ class STDPStrategy(LearningStrategy):
         Assigns trace_manager as an nn.Module child so .to(device) and
         state_dict() automatically include all trace tensors.
         """
-        cfg = self.config
+        config = self.config
 
         # Build a standalone EligibilityTraceConfig from our STDPConfig fields.
         # EligibilityTraceManager no longer requires STDPConfig directly —
         # any strategy can use it by providing the minimal config.
         trace_cfg = EligibilityTraceConfig(
-            tau_plus=cfg.tau_plus,
-            tau_minus=cfg.tau_minus,
-            eligibility_tau_ms=cfg.eligibility_tau_ms,
-            a_plus=cfg.a_plus,
-            a_minus=cfg.a_minus,
+            tau_plus=config.tau_plus,
+            tau_minus=config.tau_minus,
+            eligibility_tau_ms=config.eligibility_tau_ms,
+            a_plus=config.a_plus,
+            a_minus=config.a_minus,
         )
         # nn.Module child assignment registers it automatically
         self.trace_manager = EligibilityTraceManager(n_pre, n_post, trace_cfg, device)
@@ -414,7 +413,7 @@ class STDPStrategy(LearningStrategy):
         self.register_buffer("retrograde_signal", torch.zeros(n_post, device=device))
 
         self._firing_rate_decay = math.exp(-self._dt_ms / self._firing_rate_tau_ms)
-        self._retrograde_decay  = math.exp(-self._dt_ms / cfg.retrograde_tau_ms)
+        self._retrograde_decay  = math.exp(-self._dt_ms / config.retrograde_tau_ms)
 
     def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
         """Call setup() if not yet initialised or if synapse dimensions changed."""
@@ -458,7 +457,7 @@ class STDPStrategy(LearningStrategy):
         acetylcholine  = kwargs.get("acetylcholine", 0.0)
         norepinephrine = kwargs.get("norepinephrine", 0.0)
 
-        cfg = self.config
+        config = self.config
 
         # Update traces and compute LTP/LTD (EligibilityTraceManager is a registered submodule)
         self.trace_manager.update_traces(pre_spikes, post_spikes, self._dt_ms)
@@ -468,9 +467,9 @@ class STDPStrategy(LearningStrategy):
         self.firing_rates = self._firing_rate_decay * self.firing_rates + (1 - self._firing_rate_decay) * post_spikes.float()
 
         # Update retrograde signal (endocannabinoid-like)
-        if cfg.retrograde_enabled:
+        if config.retrograde_enabled:
             spike_contribution = post_spikes.float()
-            rate_scaling = (self.firing_rates / cfg.retrograde_threshold).clamp(0, 2.0)
+            rate_scaling = (self.firing_rates / config.retrograde_threshold).clamp(0, 2.0)
             weighted_contribution = spike_contribution * (0.5 + 0.5 * rate_scaling)
             self.retrograde_signal = (
                 self._retrograde_decay * self.retrograde_signal +
@@ -480,7 +479,7 @@ class STDPStrategy(LearningStrategy):
         # Apply retrograde signaling (endocannabinoid-like gating)
         # LTP is gated: only strong postsynaptic responses drive potentiation
         # LTD is enhanced: weak responses lead to depotentiation (extinction-like)
-        if cfg.retrograde_enabled:
+        if config.retrograde_enabled:
             # Retrograde signal represents "postsynaptic neuron cares about this"
             # Range [0, 1]: 0 = no recent strong activity, 1 = strong recent activity
             retro_gate = self.retrograde_signal.clamp(0, 1)  # [n_post]
@@ -488,15 +487,15 @@ class STDPStrategy(LearningStrategy):
             # LTP gating: require minimum retrograde signal
             # This prevents spurious correlations from driving potentiation
             # Only synapses that contribute to strong postsynaptic firing get strengthened
-            ltp_gate = ((retro_gate - cfg.retrograde_ltp_gate) /
-                       (1.0 - cfg.retrograde_ltp_gate)).clamp(0, 1)
+            ltp_gate = ((retro_gate - config.retrograde_ltp_gate) /
+                       (1.0 - config.retrograde_ltp_gate)).clamp(0, 1)
             if isinstance(ltp, torch.Tensor):
                 ltp = ltp * ltp_gate.unsqueeze(1)  # [n_post, n_pre]
 
             # LTD enhancement: low retrograde signal enhances depression
             # This implements extinction learning - connections that don't contribute
             # to strong responses get depressed
-            ltd_enhance = 1.0 + (1.0 - retro_gate) * (cfg.retrograde_ltd_enhance - 1.0)
+            ltd_enhance = 1.0 + (1.0 - retro_gate) * (config.retrograde_ltd_enhance - 1.0)
             if isinstance(ltd, torch.Tensor):
                 ltd = ltd * ltd_enhance.unsqueeze(1)  # [n_post, n_pre]
 
@@ -520,7 +519,7 @@ class STDPStrategy(LearningStrategy):
             # Uses tracked firing rate (EMA over 1 second) not instantaneous spikes
             # firing_rates is [n_post] 1D tensor, ltd is [n_post, n_pre] 2D tensor
 
-            ltd_threshold = cfg.activity_threshold
+            ltd_threshold = config.activity_threshold
             activity_mask = self.firing_rates >= ltd_threshold  # [n_post]
 
             # ADDITIONAL PROTECTION: Reduce LTD magnitude when LTP is actively occurring
@@ -654,11 +653,11 @@ class BCMStrategy(LearningStrategy):
         so the threshold tracks average activity, not single-timestep volatility.
         """
         assert hasattr(self, "theta"), "BCMStrategy.setup() must be called before _update_theta()"
-        cfg = self.config
-        r_p = self.firing_rates.pow(cfg.p)
+        config = self.config
+        r_p = self.firing_rates.pow(config.p)
         # In-place EMA to avoid triggering a new tensor allocation
         self.theta.mul_(self._decay_theta_val).add_(r_p, alpha=1.0 - self._decay_theta_val)
-        self.theta.clamp_(cfg.theta_min, cfg.theta_max)
+        self.theta.clamp_(config.theta_min, config.theta_max)
 
     def update_threshold(self, post_spikes: torch.Tensor) -> None:
         """Update sliding threshold (public API).
@@ -692,7 +691,7 @@ class BCMStrategy(LearningStrategy):
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
-        cfg = self.config
+        config = self.config
 
         # Update firing rate EMA (in-place)
         self.firing_rates.mul_(self._decay_firing_rate_val).add_(
@@ -703,19 +702,19 @@ class BCMStrategy(LearningStrategy):
         phi = self.compute_phi(post_spikes, self.firing_rates)  # [n_post]
 
         # Weight update: dw[j,i] = lr × pre[i] × φ[j]
-        dw = cfg.learning_rate * torch.outer(phi, pre_spikes.float())
+        dw = config.learning_rate * torch.outer(phi, pre_spikes.float())
 
         # Activity-dependent weight decay (biologically inspired)
         # - Full decay when post-synaptic neurons are active (use-dependent pruning)
         # Biology: Active synapses undergo turnover, silent synapses are preserved
-        if cfg.weight_decay > 0:
+        if config.weight_decay > 0:
             # Compute decay factor per neuron based on activity level
             # [n_post] -> decay_factor for each post-synaptic neuron
-            activity_ratio = (self.firing_rates / cfg.min_activity_for_decay).clamp(0.0, 1.0)
+            activity_ratio = (self.firing_rates / config.min_activity_for_decay).clamp(0.0, 1.0)
             # Interpolate: silent -> silent_decay_factor, active -> 1.0
-            effective_decay = cfg.silent_decay_factor + (1.0 - cfg.silent_decay_factor) * activity_ratio
+            effective_decay = config.silent_decay_factor + (1.0 - config.silent_decay_factor) * activity_ratio
             # Apply decay per neuron: dw[j, :] -= decay[j] * weights[j, :]
-            dw -= cfg.weight_decay * effective_decay.unsqueeze(1) * weights
+            dw -= config.weight_decay * effective_decay.unsqueeze(1) * weights
 
         # Update threshold using firing rate EMA
         self._update_theta()
@@ -765,13 +764,13 @@ class ThreeFactorStrategy(LearningStrategy):
         pattern here.  Only ``accumulate_eligibility()`` is used; the pre/post
         traces inside the manager are not read (they stay at zero).
         """
-        cfg = self.config
+        config = self.config
         trace_cfg = EligibilityTraceConfig(
             # Three-factor learning doesn't distinguish LTP/LTD trace timescales;
             # use eligibility_tau for both pre- and post-trace decay constants.
-            tau_plus=cfg.eligibility_tau,
-            tau_minus=cfg.eligibility_tau,
-            eligibility_tau_ms=cfg.eligibility_tau,
+            tau_plus=config.eligibility_tau,
+            tau_minus=config.eligibility_tau,
+            eligibility_tau_ms=config.eligibility_tau,
             a_plus=1.0,
             a_minus=0.0,  # LTD component not used; caller computes raw Hebbian
         )
@@ -854,7 +853,7 @@ class ThreeFactorStrategy(LearningStrategy):
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
-        cfg = self.config
+        config = self.config
 
         modulator: float = kwargs.get("modulator", 0.0)
 
@@ -862,7 +861,7 @@ class ThreeFactorStrategy(LearningStrategy):
         self.update_eligibility(pre_spikes, post_spikes)
 
         # Three-factor update — no internal clamping (_apply_learning() owns it)
-        dw = cfg.learning_rate * self.trace_manager.eligibility * modulator
+        dw = config.learning_rate * self.trace_manager.eligibility * modulator
         return weights + dw
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
@@ -945,7 +944,7 @@ class D1STDPStrategy(LearningStrategy):
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
-        cfg = self.config
+        config = self.config
         dopamine: Any = kwargs.get("dopamine", 0.0)
 
         # Hebbian outer product: [n_post, n_pre]
@@ -954,10 +953,10 @@ class D1STDPStrategy(LearningStrategy):
         # Multi-timescale trace update (in-place for efficiency)
         self.fast_trace.mul_(self._fast_decay).add_(eligibility_update)
         self.slow_trace.mul_(self._slow_decay).add_(
-            self.fast_trace * cfg.eligibility_consolidation_rate
+            self.fast_trace * config.eligibility_consolidation_rate
         )
 
-        combined = self.fast_trace + cfg.slow_trace_weight * self.slow_trace
+        combined = self.fast_trace + config.slow_trace_weight * self.slow_trace
 
         # DA modulation: broadcast [n_post] → [n_post, 1] or keep scalar
         if isinstance(dopamine, torch.Tensor):
@@ -965,7 +964,7 @@ class D1STDPStrategy(LearningStrategy):
         else:
             da = dopamine
 
-        weight_update = combined * da * cfg.learning_rate
+        weight_update = combined * da * config.learning_rate
         return weights + weight_update
 
     # ------------------------------------------------------------------
@@ -975,9 +974,9 @@ class D1STDPStrategy(LearningStrategy):
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Recompute decay scalars when the brain timestep changes."""
         super().update_temporal_parameters(dt_ms)
-        cfg = self.config
-        self._fast_decay = math.exp(-dt_ms / cfg.fast_eligibility_tau_ms)
-        self._slow_decay = math.exp(-dt_ms / cfg.slow_eligibility_tau_ms)
+        config = self.config
+        self._fast_decay = math.exp(-dt_ms / config.fast_eligibility_tau_ms)
+        self._slow_decay = math.exp(-dt_ms / config.slow_eligibility_tau_ms)
 
 
 class D2STDPStrategy(D1STDPStrategy):
@@ -1191,7 +1190,7 @@ class MaIStrategy(LearningStrategy):
         Returns:
             Updated weight matrix [n_purkinje, n_granule].
         """
-        cfg: MaIConfig = self.config  # type: ignore[assignment]
+        config: MaIConfig = self.config  # type: ignore[assignment]
 
         climbing_fiber_spikes: Optional[torch.Tensor] = kwargs.get("climbing_fiber_spikes")
         if climbing_fiber_spikes is None:
@@ -1205,11 +1204,11 @@ class MaIStrategy(LearningStrategy):
 
         # LTD: conjunctive PF + CF activation → depress synapse
         # outer(cf, pre): [n_purkinje, n_granule]
-        ltd_dw = cfg.ltd_rate * torch.outer(cf_f, pre_f)
+        ltd_dw = config.ltd_rate * torch.outer(cf_f, pre_f)
 
         # LTP: PF active, CF silent → slow normalizing potentiation
         no_cf = (1.0 - cf_f).clamp(min=0.0)   # [n_purkinje]
-        ltp_dw = cfg.ltp_rate * torch.outer(no_cf, pre_f)
+        ltp_dw = config.ltp_rate * torch.outer(no_cf, pre_f)
 
         return weights + (ltp_dw - ltd_dw)
 
@@ -1296,23 +1295,6 @@ class TagAndCaptureStrategy(LearningStrategy):
     * Local activity creates *tags* (weak molecular marks at active synapses).
     * Tags decay unless a modulatory signal (dopamine) arrives within a window.
     * Dopamine triggers protein synthesis that *captures* the tagged changes.
-
-    Usage::
-
-        strategy = TagAndCaptureStrategy(
-            base_strategy=ThreeFactorStrategy(ThreeFactorConfig(...)),
-            config=TagAndCaptureConfig(tag_decay=0.95, consolidation_lr_scale=0.5),
-        )
-
-        # Normal per-step learning (also updates tags as side effect):
-        region._add_learning_strategy(synapse_id, strategy)
-        region._apply_learning(synapse_id, pre, post, modulator=da_deviation)
-
-        # Read tag state for replay prioritisation:
-        replay_probs = strategy.tags.sum(dim=1)  # [n_post]
-
-        # Consolidate when dopamine is elevated:
-        new_weights = strategy.consolidate(da_level=0.8, weights=current_weights)
     """
 
     def __init__(self, base_strategy: LearningStrategy, config: TagAndCaptureConfig):
@@ -1391,14 +1373,14 @@ class TagAndCaptureStrategy(LearningStrategy):
         )
 
         # Update tags: decay → add new Hebbian coincidence (take max)
-        cfg: TagAndCaptureConfig = self.config  # type: ignore[assignment]
-        self.tags.mul_(cfg.tag_decay)
+        config: TagAndCaptureConfig = self.config  # type: ignore[assignment]
+        self.tags.mul_(config.tag_decay)
         pre_f = pre_spikes.float()
         post_f = post_spikes.float()
         if pre_f.any() and post_f.any():
             new_tags = torch.outer(post_f, pre_f)
-            if cfg.tag_threshold > 0.0:
-                new_tags = new_tags * (post_f.unsqueeze(1) >= cfg.tag_threshold).float()
+            if config.tag_threshold > 0.0:
+                new_tags = new_tags * (post_f.unsqueeze(1) >= config.tag_threshold).float()
             self.tags = torch.maximum(self.tags, new_tags)
 
         return new_weights
@@ -1428,12 +1410,12 @@ class TagAndCaptureStrategy(LearningStrategy):
             Updated weight matrix (NOT clamped — caller is responsible for
             applying ``clamp_weights`` with its own ``w_min``/``w_max``).
         """
-        cfg: TagAndCaptureConfig = self.config  # type: ignore[assignment]
-        if da_level <= cfg.consolidation_da_threshold:
+        config: TagAndCaptureConfig = self.config  # type: ignore[assignment]
+        if da_level <= config.consolidation_da_threshold:
             return weights
 
         base_lr = self.base_strategy.config.learning_rate
-        delta = base_lr * cfg.consolidation_lr_scale * da_level * self.tags
+        delta = base_lr * config.consolidation_lr_scale * da_level * self.tags
         return weights + delta
 
     # ------------------------------------------------------------------

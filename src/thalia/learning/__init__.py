@@ -6,9 +6,6 @@ from .eligibility_trace_manager import (
     EligibilityTraceConfig,
     EligibilityTraceManager,
 )
-from .intrinsic_plasticity import (
-    compute_excitability_modulation,
-)
 from .strategies import (
     LearningConfig,
     LearningStrategy,
@@ -34,8 +31,6 @@ __all__ = [
     # Eligibility Traces
     "EligibilityTraceConfig",
     "EligibilityTraceManager",
-    # Intrinsic Plasticity
-    "compute_excitability_modulation",
     # Learning Strategies
     "LearningConfig",
     "LearningStrategy",

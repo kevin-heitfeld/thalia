@@ -11,18 +11,19 @@ class GlobalConfig:
 
     This module centralizes global constants that affect the entire simulation,
     such as time conversion factors, global learning enable/disable flags, and
-    synaptic weight scaling. These constants can be imported and used across all
-    regions and components to ensure consistency.
+    synaptic weight scaling.
     """
 
-    DEFAULT_DT_MS = 1.0
+    DEFAULT_DEVICE: str = "cpu"  # Default device for tensors (can be overridden per brain/region)
+    """Default device for tensors (can be overridden per brain/region)."""
+
+    DEFAULT_DT_MS: float = 1.0
     """Default timestep in milliseconds (1.0 ms)."""
 
     HOMEOSTASIS_DISABLED: bool = False  # Set to True to disable homeostatic plasticity (intrinsic excitability, threshold adaptation, synaptic scaling)
     """Global homeostatic plasticity enable flag."""
 
-    # TODO: Re-enable learning after testing intrinsic excitability alone
-    LEARNING_DISABLED: bool = True  # Set to True to disable all synaptic plasticity
+    LEARNING_DISABLED: bool = False  # Set to True to disable all synaptic plasticity
     """Global learning/plasticity enable flag."""
 
     NEUROMODULATION_DISABLED: bool = False  # Set to True to disable all neuromodulator effects (DA, NE, ACh)

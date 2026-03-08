@@ -13,15 +13,13 @@ class BrainConfig:
     """Complete brain configuration for a single brain instance.
 
     Each brain instance is fully self-contained with
-    its own device, dt, oscillator frequencies, etc.
+    its own dt, oscillator frequencies, etc.
 
     This enables:
-    - Multiple independent brains with different devices (GPU vs CPU)
     - Different temporal resolutions per brain (dt_ms)
     - Different oscillator frequencies per brain
     """
 
-    device: str = "cpu"  # Device to run on: 'cpu', 'cuda', 'cuda:0', etc.
     seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
 
     # =========================================================================
@@ -48,7 +46,6 @@ class BrainConfig:
         """Return formatted summary of brain configuration."""
         lines = [
             "=== Brain Configuration ===",
-            f"  Device: {self.device}",
             f"  Data type: {self.dtype}",
             f"  Timestep: {self.dt_ms} ms",
             "",

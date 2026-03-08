@@ -63,14 +63,13 @@ VTA (dopamine) → Striatum (learning) → SNr (value) → VTA (RPE feedback)
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Union
 
 import torch
 
-from thalia.brain.configs import SubstantiaNigraConfig
-from thalia.components import ConductanceLIF, ConductanceLIFConfig
+from thalia import GlobalConfig
+from thalia.brain.configs import TonicPacemakerConfig, get_default_snr_config
 from thalia.typing import (
-    ConductanceTensor,
     NeuromodulatorInput,
     PopulationPolarity,
     PopulationSizes,
@@ -78,9 +77,8 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
-from .neural_region import NeuralRegion
+from .basal_ganglia_output_nucleus import BasalGangliaOutputNucleus
 from .population_names import SubstantiaNigraPopulation
 from .region_registry import register_region
 
@@ -91,9 +89,9 @@ from .region_registry import register_region
     description="Substantia nigra pars reticulata - basal ganglia output nucleus",
     version="1.0",
     author="Thalia Project",
-    config_class=SubstantiaNigraConfig,
+    config_class=get_default_snr_config,
 )
-class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
+class SubstantiaNigra(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
     """Substantia Nigra pars Reticulata - Basal Ganglia Output Nucleus.
 
     Tonically-active GABAergic neurons that:
@@ -121,41 +119,26 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: SubstantiaNigraConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    def __init__(
+        self,
+        config: TonicPacemakerConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         # Store input layer sizes as attributes for connection routing
         self.vta_feedback_size = population_sizes[SubstantiaNigraPopulation.VTA_FEEDBACK]
 
         # GABAergic output neurons (tonically active)
-        self.neurons = ConductanceLIF(
-            n_neurons=self.vta_feedback_size,
-            config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=SubstantiaNigraPopulation.VTA_FEEDBACK,
-                tau_mem=self.config.tau_mem,  # 15ms - realistic SNr membrane tau
-                v_threshold=self.config.v_threshold,  # 1.0 - standard threshold
-                v_reset=0.0,
-                tau_ref=self.config.tau_ref,  # 2.0ms - biological refractory period
-                g_L=0.10,  # Moderate leak (tau_m = C_m/g_L = 1.0/0.10 = 10ms effective)
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=5.0,  # AMPA-like kinetics
-                tau_I=10.0,  # GABA_A-like kinetics
-                noise_std=0.007,  # Membrane voltage noise
-            ),
-            device=self.device,
+        self.neurons = self._make_bg_neurons(
+            self.vta_feedback_size, SubstantiaNigraPopulation.VTA_FEEDBACK, noise_std=0.007
         )
 
-        # Tonic drive for baseline firing
-        self.baseline_drive = torch.full((self.vta_feedback_size,), config.baseline_drive, device=self.device)
-
-        # Track firing rate for value estimation
-        self._firing_rate_history: list[float] = []
-
-        # Store current output for diagnostics (initialized as None, updated in forward pass)
-        self._current_output: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        # Tonic drive for baseline firing (~50-70 Hz)
+        self.baseline_drive = self._make_tonic_baseline(self.vta_feedback_size)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -163,93 +146,25 @@ class SubstantiaNigra(NeuralRegion[SubstantiaNigraConfig]):
         self._register_neuron_population(SubstantiaNigraPopulation.VTA_FEEDBACK, self.neurons, polarity=PopulationPolarity.ANY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Update SNr neurons based on striatal input.
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Update SNr neurons based on striatal D1/D2 input and STN drive.
 
-        Note: neuromodulator_inputs is not used - SNr is a neuromodulator source region.
+        Uses nmda_ratio=0.01: near-soma synapses on SNr have minimal NMDA involvement.
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
-        dendrite = self._integrate_synaptic_inputs_at_dendrites(
+        vta_feedback_spikes = self._bg_step_single(
             synaptic_inputs,
-            n_neurons=self.vta_feedback_size,
-            filter_by_target_population=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            self.vta_feedback_size,
+            SubstantiaNigraPopulation.VTA_FEEDBACK,
+            self.neurons,
+            self.baseline_drive,
+            nmda_ratio=0.01,
         )
-
-        # Add baseline drive as excitatory conductance to maintain tonic firing (~50-70Hz)
-        g_exc_total = dendrite.g_ampa + self.baseline_drive
-        g_inh_total = dendrite.g_gaba_a
-
-        # Split excitatory conductance: 99% AMPA (fast), 1% NMDA (slow)
-        g_ampa, g_nmda = split_excitatory_conductance(g_exc_total, nmda_ratio=0.01)
-
-        # Update neurons using conductance-based dynamics
-        vta_feedback_spikes, vta_feedback_membrane = self.neurons.forward(
-            g_ampa_input=ConductanceTensor(g_ampa),
-            g_nmda_input=ConductanceTensor(g_nmda),
-            g_gaba_a_input=ConductanceTensor(g_inh_total),
-            g_gaba_b_input=None,
-        )
-
-        # Store current output for diagnostics (as tuple)
-        self._current_output = (vta_feedback_spikes, vta_feedback_membrane)
-
-        region_outputs: RegionOutput = {
+        return {
             SubstantiaNigraPopulation.VTA_FEEDBACK: vta_feedback_spikes,
         }
-
-        return self._post_forward(region_outputs)
-
-    # =========================================================================
-    # TEMPORAL PARAMETER MANAGEMENT
-    # =========================================================================
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes."""
-        super().update_temporal_parameters(dt_ms)
-        self.neurons.update_temporal_parameters(dt_ms)
-
-    # =========================================================================
-    # DIAGNOSTICS
-    # =========================================================================
-
-    def get_value_estimate(self) -> float:
-        """Compute state value estimate from SNr firing rate.
-
-        Biology: SNr firing rate inversely encodes state value
-        - High SNr rate (60+ Hz) = low value (action suppression)
-        - Low SNr rate (<30 Hz) = high value (action release)
-        - Baseline (50-60 Hz) = neutral value (~0.5)
-
-        Returns:
-            Value estimate in range [0, 1]
-        """
-        # Get current firing rate from stored output
-        if self._current_output is not None:
-            spikes = self._current_output[0]  # Extract spikes from tuple
-            spike_rate = spikes.float().mean().item()
-        else:
-            return 0.5  # Default neutral value
-
-        # Convert to Hz (spikes per second)
-        firing_rate_hz = spike_rate * (1000.0 / self.config.dt_ms)
-
-        # Map firing rate to value (inverse relationship)
-        # Baseline: 60 Hz → 0.5 value
-        # High: 80 Hz → 0.0 value (low state value)
-        # Low: 20 Hz → 1.0 value (high state value)
-
-        baseline_hz = 60.0
-        value = 1.0 - (firing_rate_hz / (2 * baseline_hz))
-
-        # Clamp to [0, 1]
-        value = max(0.0, min(1.0, value))
-
-        return value

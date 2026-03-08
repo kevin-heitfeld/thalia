@@ -2,18 +2,22 @@
 
 from .neural_region import NeuralRegionConfig
 from .amygdala import (
+    AmygdalaNucleusConfig,
     BasolateralAmygdalaConfig,
     CentralAmygdalaConfig,
 )
 from .basal_ganglia import (
-    GlobusPallidusExternaConfig,
-    LateralHabenulaConfig,
-    RostromedialTegmentumConfig,
+    TonicPacemakerConfig,
+    DopaminePacemakerConfig,
     StriatumConfig,
     SubstantiaNigraCompactaConfig,
-    SubstantiaNigraConfig,
-    SubthalamicNucleusConfig,
     VTAConfig,
+    get_default_gpe_config,
+    get_default_gpi_config,
+    get_default_lhb_config,
+    get_default_rmtg_config,
+    get_default_snr_config,
+    get_default_stn_config,
 )
 from .brainstem import (
     CerebellumConfig,
@@ -21,15 +25,19 @@ from .brainstem import (
     LocusCoeruleusConfig,
     NucleusBasalisConfig,
 )
-from .cortex import (
-    CortexLayer,
-    CortexConfig,
-    PrefrontalConfig,
+from .cortical_column import (
+    CorticalColumnConfig,
+    PrefrontalCortexConfig,
 )
 from .hippocampus import (
     EntorhinalCortexConfig,
     HippocampusConfig,
     MedialSeptumConfig,
+    SubiculumConfig,
+    get_default_dg_layer_config,
+    get_default_ca3_layer_config,
+    get_default_ca2_layer_config,
+    get_default_ca1_layer_config,
 )
 from .thalamus import ThalamusConfig
 from .brain import BrainConfig
@@ -39,30 +47,39 @@ __all__ = [
     # General region config
     "NeuralRegionConfig",
     # Amygdala configs
+    "AmygdalaNucleusConfig",
     "BasolateralAmygdalaConfig",
     "CentralAmygdalaConfig",
     # Basal ganglia configs
-    "GlobusPallidusExternaConfig",
-    "LateralHabenulaConfig",
-    "RostromedialTegmentumConfig",
+    "TonicPacemakerConfig",
+    "DopaminePacemakerConfig",
     "StriatumConfig",
     "SubstantiaNigraCompactaConfig",
-    "SubstantiaNigraConfig",
-    "SubthalamicNucleusConfig",
     "VTAConfig",
+    # Basal ganglia config factories
+    "get_default_gpe_config",
+    "get_default_gpi_config",
+    "get_default_lhb_config",
+    "get_default_rmtg_config",
+    "get_default_snr_config",
+    "get_default_stn_config",
     # Brainstem configs
     "CerebellumConfig",
     "DorsalRapheNucleusConfig",
     "LocusCoeruleusConfig",
     "NucleusBasalisConfig",
-    # Cortex configs
-    "CortexLayer",
-    "CortexConfig",
-    "PrefrontalConfig",
+    # Cortical column configs
+    "CorticalColumnConfig",
+    "PrefrontalCortexConfig",
     # Hippocampus configs
     "EntorhinalCortexConfig",
     "HippocampusConfig",
     "MedialSeptumConfig",
+    "SubiculumConfig",
+    "get_default_dg_layer_config",
+    "get_default_ca3_layer_config",
+    "get_default_ca2_layer_config",
+    "get_default_ca1_layer_config",
     # Thalamus config
     "ThalamusConfig",
     # Overall brain config

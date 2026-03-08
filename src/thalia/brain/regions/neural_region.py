@@ -28,16 +28,19 @@ import torch.nn as nn
 
 from thalia import GlobalConfig
 from thalia.brain.configs import NeuralRegionConfig
-from thalia.components import (
+from thalia.brain.neurons import (
     ConductanceLIF,
-    ConductanceScaledSpec,
     TwoCompartmentLIF,
+)
+from thalia.brain.synapses import (
+    ConductanceScaledSpec,
     STPConfig,
     ShortTermPlasticity,
     WeightInitializer,
 )
 from thalia.learning import LearningStrategy
 from thalia.typing import (
+    NeuromodulatorChannel,
     NeuromodulatorInput,
     PopulationName,
     PopulationPolarity,
@@ -100,6 +103,34 @@ class DendriteOutput(NamedTuple):
     g_gaba_b: torch.Tensor  # [n_neurons], non-negative
 
 
+class SynapseShape(NamedTuple):
+    """Convenience struct for synapse shape metadata.
+
+    Attributes:
+        n_output: Number of post-synaptic neurons (output dimension).
+        n_input: Number of pre-synaptic neurons (input dimension).
+    """
+
+    n_output: int
+    n_input: int
+
+
+class SynapseInfo(NamedTuple):
+    """Convenience struct for synapse metadata and parameters.
+
+    Attributes:
+        synapse_id: The SynapseId that indexes this synapse's weights and modules.
+        weights: The synaptic weight matrix [n_post, n_pre].
+        stp_module: Optional ShortTermPlasticity module for this synapse.
+        learning_strategy: Optional LearningStrategy module for this synapse.
+    """
+
+    synapse_id: SynapseId
+    weights: nn.Parameter
+    stp_module: Optional[ShortTermPlasticity] = None
+    learning_strategy: Optional[LearningStrategy] = None
+
+
 class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     """Base class for brain regions with biologically accurate synaptic inputs.
 
@@ -119,23 +150,18 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
     # Declared by subclasses that source neuromodulator volume-transmission signals.
     # Inherited from NeuromodulatorSource protocol check.
-    # neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]]
+    # neuromodulator_outputs: ClassVar[Dict[NeuromodulatorChannel, PopulationName]]
     # (defined on source regions only — not all regions produce neuromodulators)
     #
     # Declared by subclasses that *consume* neuromodulator channels in forward().
     # List the exact channel keys this region reads from NeuromodulatorInput.
     # NeuromodulatorHub.validate() raises at build time if any declared subscription
     # has no matching publisher, preventing silent signal loss.
-    neuromodulator_subscriptions: ClassVar[List[str]] = []
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = []
 
     # =========================================================================
     # PROPERTIES AND UTILS
     # =========================================================================
-
-    @property
-    def device(self) -> torch.device:
-        """Device where tensors are located."""
-        return torch.device(self.config.device)
 
     @property
     def dt_ms(self) -> float:
@@ -146,7 +172,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: ConfigT, population_sizes: PopulationSizes, region_name: RegionName):
+    def __init__(
+        self,
+        config: ConfigT,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
         """Initialize NeuralRegion with config and layer sizes."""
         super().__init__()
 
@@ -161,6 +194,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # Store config and region name
         self.config: ConfigT = config
         self.region_name: RegionName = region_name
+        self.device = torch.device(device)
 
         # Neuron populations within this region.
         # PopulationName is str so nn.ModuleDict works directly; subclasses keep
@@ -200,7 +234,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self._last_synaptic_inputs: SynapticInput = {}
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # NEURON POPULATION MANAGEMENT
@@ -269,6 +303,29 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             )
         return self.synaptic_weights[synapse_id]
 
+    def get_shape_for_synapse(self, synapse_id: SynapseId) -> SynapseShape:
+        """Convenience method to get the number of post-synaptic neurons for a given synapse."""
+        weights = self.get_synaptic_weights(synapse_id)
+        n_output, n_input = weights.shape
+        return SynapseShape(n_output=n_output, n_input=n_input)
+
+    def get_synapse_info(self, synapse_id: SynapseId) -> SynapseInfo:
+        """Convenience method to get all relevant info for a given synapse."""
+        if synapse_id not in self.synaptic_weights:
+            raise ValueError(
+                f"Synaptic weights for '{synapse_id}' not found in {self.__class__.__name__}. "
+                f"Registered sources: {list(self.synaptic_weights.keys())}"
+            )
+        weights = self.get_synaptic_weights(synapse_id)
+        stp_module = self.stp_modules[synapse_id] if synapse_id in self.stp_modules else None
+        learning_strategy = self._learning_strategies[synapse_id] if synapse_id in self._learning_strategies else None
+        return SynapseInfo(
+            synapse_id=synapse_id,
+            weights=weights,
+            stp_module=stp_module,
+            learning_strategy=learning_strategy,
+        )
+
     def _add_synaptic_weights(self, synapse_id: SynapseId, weights: torch.Tensor) -> None:
         """Add synaptic weights for a given input source, with validation."""
         if synapse_id.target_region != self.region_name:
@@ -285,6 +342,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         n_pre: int,
         n_post: int,
         config: STPConfig,
+        *,
+        device: Union[str, torch.device],
     ) -> None:
         """Add a Short-Term Plasticity (STP) module for a specific input source."""
         if synapse_id not in self.synaptic_weights:
@@ -294,7 +353,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             )
         if synapse_id in self.stp_modules:
             raise ValueError(f"STP module for '{synapse_id}' already exists in {self.__class__.__name__}")
-        self.stp_modules[synapse_id] = ShortTermPlasticity(n_pre, n_post, config).to(self.device)
+        self.stp_modules[synapse_id] = ShortTermPlasticity(n_pre, n_post, config).to(device)
 
     def _add_synapse(
         self,
@@ -304,6 +363,13 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         learning_strategy: Optional[LearningStrategy],
     ) -> None:
         """Add a new synaptic input source with weights, optional STP, and optional learning strategy."""
+        if synapse_id.target_region != self.region_name:
+            raise ValueError(
+                f"SynapseId target_region '{synapse_id.target_region}' does not match this region '{self.region_name}'."
+            )
+
+        device = weights.device
+
         self._add_synaptic_weights(synapse_id, weights)
 
         n_output, n_input = weights.shape
@@ -314,10 +380,11 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 n_pre=n_input,
                 n_post=n_output,
                 config=stp_config,
+                device=device,
             )
 
         if learning_strategy is not None:
-            self._add_learning_strategy(synapse_id, learning_strategy, n_pre=n_input, n_post=n_output)
+            self._add_learning_strategy(synapse_id, learning_strategy, n_pre=n_input, n_post=n_output, device=device)
 
     def _add_internal_connection(
         self,
@@ -393,6 +460,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         *,
         stp_config: Optional[STPConfig] = None,
         learning_strategy: Optional[LearningStrategy] = None,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ) -> None:
         """Add synaptic weights for a new input source.
 
@@ -401,17 +469,20 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             n_input: Number of pre-synaptic neurons.
             connectivity: Sparse connection probability (0–1).
             weight_scale: Either a plain float scale for
-                :meth:`~thalia.components.WeightInitializer.sparse_random`, or a
-                :class:`~thalia.components.ConductanceScaledSpec` for physics-based
+                :meth:`~thalia.brain.synapses.WeightInitializer.sparse_random`, or a
+                :class:`~thalia.brain.synapses.ConductanceScaledSpec` for physics-based
                 calibration via
-                :meth:`~thalia.components.WeightInitializer.conductance_scaled`.
+                :meth:`~thalia.brain.synapses.WeightInitializer.conductance_scaled`.
             stp_config: Optional short-term plasticity configuration.
             learning_strategy: Optional :class:`~thalia.learning.LearningStrategy`
                 registered atomically with the weight matrix.  Equivalent to
                 calling :meth:`_add_learning_strategy` immediately after this
                 call but keeps weight and strategy registration co-located.
         """
-
+        if synapse_id.target_region != self.region_name:
+            raise ValueError(
+                f"SynapseId target_region '{synapse_id.target_region}' does not match this region '{self.region_name}'."
+            )
         if n_input < 0:
             raise ValueError("Number of input neurons must be non-negative")
         if not (0.0 <= connectivity <= 1.0):
@@ -436,7 +507,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 target_v_inf=spec.target_v_inf,
                 fraction_of_drive=spec.fraction_of_drive,
                 stp_utilization_factor=spec.stp_utilization_factor,
-                device=self.device,
+                device=device,
             )
         else:
             weights = WeightInitializer.sparse_random(
@@ -444,7 +515,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 n_output=n_output,
                 connectivity=connectivity,
                 weight_scale=weight_scale,
-                device=self.device,
+                device=device,
             )
 
         self._add_synapse(
@@ -458,8 +529,22 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     # FORWARD PASS
     # =========================================================================
 
-    def _pre_forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> None:
-        """Pre-forward validation of inputs."""
+    @abstractmethod
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Perform a single simulation step for the region."""
+
+    @torch.no_grad()
+    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+        """Process synaptic and neuromodulatory inputs through the region and produce outputs.
+
+        Args:
+            synaptic_inputs: Point-to-point synaptic connections (Dict[SynapseId, torch.Tensor])
+            neuromodulator_inputs: Broadcast neuromodulatory signals (Dict[NeuromodulatorChannel, torch.Tensor]);
+                every published channel is always a tensor — zero tensor when the source was silent.
+
+        Returns:
+            RegionOutput: Dict mapping population names to their output spike tensors
+        """
         # Cache inputs so _post_forward can drive the automatic learning step.
         self._last_synaptic_inputs = synaptic_inputs
 
@@ -479,87 +564,52 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 )
 
         for neuromod_type, spikes in neuromodulator_inputs.items():
-            if spikes is not None:
-                validate_spike_tensor(spikes, tensor_name=f"neuromodulator_{neuromod_type}")
+            validate_spike_tensor(spikes, tensor_name=f"neuromodulator_{neuromod_type}")
 
-    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
-        """Return extra keyword arguments for the learning strategy of *synapse_id*.
+        region_outputs: RegionOutput = self._step(synaptic_inputs, neuromodulator_inputs)
 
-        Override in subclasses to supply neuromodulator concentrations or
-        region-specific learning-rate multipliers without repeating the
-        ``_apply_all_learning`` call in every ``forward()``.
-
-        The base implementation returns an empty dict, which is correct for
-        plain STDP with no neuromodulation.
-
-        Example override (dopamine + ACh gate)::
-
-            def _get_learning_kwargs(self, synapse_id):
-                return {
-                    "dopamine": self._da_concentration.mean().item(),
-                    "acetylcholine": 1.0 - self._ach_concentration.mean().item(),
-                }
-        """
-        return {}
-
-    def _post_forward(self, region_outputs: RegionOutput) -> RegionOutput:
-        """Post-forward: auto-apply learning for every registered external synapse.
-
-        Automatically calls :meth:`_apply_all_learning` using the synaptic inputs
-        cached by :meth:`_pre_forward` and the kwargs provided by
-        :meth:`_get_learning_kwargs`.  Regions that need custom logic simply override
-        ``_get_learning_kwargs``; they do **not** need to call
-        ``_apply_all_learning`` in their own ``forward()``.
-        """
         if not GlobalConfig.LEARNING_DISABLED:
             self._apply_all_learning(
                 self._last_synaptic_inputs,
                 region_outputs,
                 kwargs_provider=self._get_learning_kwargs,
             )
+
         return region_outputs
-
-    @torch.no_grad()
-    @abstractmethod
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Process synaptic and neuromodulatory inputs through the region and produce outputs.
-
-        Args:
-            synaptic_inputs: Point-to-point synaptic connections (Dict[SynapseId, torch.Tensor])
-            neuromodulator_inputs: Broadcast neuromodulatory signals (Dict[NeuromodulatorType, Optional[torch.Tensor]])
-
-        Returns:
-            RegionOutput: Dict mapping population names to their output spike tensors
-        """
 
     def _extract_neuromodulator(
         self,
         neuromodulator_inputs: NeuromodulatorInput,
-        *channel_names: str,
+        *channel_names: NeuromodulatorChannel,
     ) -> Optional[torch.Tensor]:
-        """Return the first non-``None`` tensor from *neuromodulator_inputs*.
+        """Return the tensor for the first channel key present in *neuromodulator_inputs*.
 
-        Channels are tried in the order they are listed.  Returns ``None`` when none
-        of the named channels have a non-None value.
+        Channels are tried in the order they are listed.  Returns ``None`` only when
+        none of the named keys exist in the dict at all (i.e., no region in the
+        current brain publishes that channel — caught at build time by
+        ``NeuromodulatorHub.validate()``).
+
+        Because ``NeuromodulatorHub`` now always emits a zero tensor for silent
+        channels, a non-``None`` return is also guaranteed for every subscribed
+        channel.  ``NeuromodulatorReceptor.update()`` handles zero tensors
+        correctly (immediate early-return / decay-only path).
 
         Prefer passing a **single** channel name that exactly matches the published
         channel (declared in the region's ``neuromodulator_subscriptions``).
-        Multi-key fallback is supported for backward compatibility but should be
-        avoided — use ``neuromodulator_subscriptions`` + ``NeuromodulatorHub.validate()``
-        to catch routing errors at build time.
+        Multi-key fallback is for forward-compat with brains that publish either
+        of two channel variants.
 
         Example::
 
-            da = self._extract_neuromodulator(nm, 'da_mesocortical')
+            da = self._extract_neuromodulator(nm, NeuromodulatorChannel.DA_MESOCORTICAL)
 
         Args:
             neuromodulator_inputs: The neuromodulator dict passed to ``forward()``.
             *channel_names: One or more keys to try in order.
         """
         for key in channel_names:
-            val = neuromodulator_inputs.get(key)
-            if val is not None:
-                return val
+            if key in neuromodulator_inputs:
+                return neuromodulator_inputs[key]
         return None
 
     def _integrate_synaptic_inputs_at_dendrites(
@@ -600,10 +650,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             Routing keys are used directly as synaptic weight keys.
             Region subclasses should initialize synaptic_weights with routing keys.
         """
-        g_ampa   = torch.zeros(n_neurons, device=self.device)
-        g_nmda   = torch.zeros(n_neurons, device=self.device)
-        g_gaba_a = torch.zeros(n_neurons, device=self.device)
-        g_gaba_b = torch.zeros(n_neurons, device=self.device)
+        device = self.device
+
+        g_ampa   = torch.zeros(n_neurons, device=device)
+        g_nmda   = torch.zeros(n_neurons, device=device)
+        g_gaba_a = torch.zeros(n_neurons, device=device)
+        g_gaba_b = torch.zeros(n_neurons, device=device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
             validate_spike_tensor(source_spikes, tensor_name=synapse_id)
@@ -667,6 +719,17 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             g_gaba_b=torch.clamp(g_gaba_b, min=0.0),
         )
 
+    def _integrate_single_synaptic_input(
+        self,
+        synapse_id: SynapseId,
+        source_spikes: torch.Tensor,
+    ) -> DendriteOutput:
+        """Integrate a single synaptic input source at the dendrites."""
+        return self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs={synapse_id: source_spikes},
+            n_neurons=self.get_shape_for_synapse(synapse_id).n_output,
+        )
+
     # =========================================================================
     # HOMEOSTATIC STATE REGISTRATION
     # =========================================================================
@@ -676,8 +739,9 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         population_name: PopulationName,
         n_neurons: int,
         *,
-        use_synaptic_scaling: bool = False,
         target_firing_rate: float,
+        use_synaptic_scaling: bool = True,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ) -> None:
         """Register homeostatic state tracking for a neuron population.
 
@@ -712,11 +776,11 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         fr_attr = f"{population_name}_firing_rate"
         ws_attr: Optional[str] = None
 
-        self.register_buffer(fr_attr, torch.zeros(n_neurons, device=self.device))
+        self.register_buffer(fr_attr, torch.zeros(n_neurons, device=device))
 
         if use_synaptic_scaling:
             ws_attr = f"{population_name}_weight_scale"
-            self.register_buffer(ws_attr, torch.ones(1, device=self.device))
+            self.register_buffer(ws_attr, torch.ones(1, device=device))
 
         self._homeostasis[population_name] = PopulationHomeostasisState(
             population_name=population_name,
@@ -872,22 +936,44 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     # LEARNING STRATEGY MANAGEMENT
     # =========================================================================
 
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        """Return extra keyword arguments for the learning strategy of *synapse_id*.
+
+        Override in subclasses to supply neuromodulator concentrations or
+        region-specific learning-rate multipliers without repeating the
+        ``_apply_all_learning`` call in every ``forward()``.
+
+        The base implementation returns an empty dict, which is correct for
+        plain STDP with no neuromodulation.
+
+        Example override (dopamine + ACh gate)::
+
+            def _get_learning_kwargs(self, synapse_id):
+                return {
+                    "dopamine": self._da_concentration.mean().item(),
+                    "acetylcholine": 1.0 - self._ach_concentration.mean().item(),
+                }
+        """
+        return {}
+
     def _add_learning_strategy(
         self,
         synapse_id: SynapseId,
         strategy: LearningStrategy,
         n_pre: Optional[int] = None,
         n_post: Optional[int] = None,
+        *,
+        device: Union[str, torch.device],
     ) -> None:
         """Register *strategy* for *synapse_id*, optionally calling setup() immediately.
 
         If *n_pre* and *n_post* are both provided the strategy is set up eagerly
-        (``strategy.setup(n_pre, n_post, self.device)``).  Otherwise setup is
+        (``strategy.setup(n_pre, n_post, device)``).  Otherwise setup is
         deferred until the first call to :meth:`_apply_learning`.
         """
         self._learning_strategies[synapse_id] = strategy
         if n_pre is not None and n_post is not None:
-            strategy.setup(n_pre, n_post, self.device)
+            strategy.setup(n_pre, n_post, device)
 
     def get_learning_strategy(self, synapse_id: SynapseId) -> Optional[LearningStrategy]:
         """Return the :class:`~thalia.learning.LearningStrategy` for *synapse_id*, or ``None``."""
@@ -895,8 +981,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         if strategy is not None:
             # Narrow the type from nn.Module → LearningStrategy via local import
             # (local import avoids potential circular-import issues at module load time)
-            from thalia.learning import LearningStrategy as _LS  # noqa: PLC0415
-            assert isinstance(strategy, _LS), f"Expected LearningStrategy for '{synapse_id}', got {type(strategy)}"
+            assert isinstance(strategy, LearningStrategy), f"Expected LearningStrategy for '{synapse_id}', got {type(strategy)}"
         return strategy
 
     def _apply_learning(
@@ -1013,6 +1098,9 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             dt_ms: New timestep in milliseconds
         """
         self.config.dt_ms = dt_ms
+
+        for neurons in self.neuron_populations.values():
+            neurons.update_temporal_parameters(dt_ms)
 
         for stp_module in self.stp_modules.values():
             stp_module.update_temporal_parameters(dt_ms)

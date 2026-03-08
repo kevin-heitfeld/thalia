@@ -47,10 +47,13 @@ These are essential for learning to avoid bad outcomes.
 
 from __future__ import annotations
 
+from typing import Union
+
 import torch
 
-from thalia.brain.configs import RostromedialTegmentumConfig
-from thalia.components import ConductanceLIF, ConductanceLIFConfig
+from thalia import GlobalConfig
+from thalia.brain.configs import TonicPacemakerConfig, get_default_rmtg_config
+from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -73,9 +76,9 @@ from .region_registry import register_region
     description="Rostromedial tegmental nucleus - dopamine pause mediator",
     version="1.0",
     author="Thalia Project",
-    config_class=RostromedialTegmentumConfig,
+    config_class=get_default_rmtg_config,
 )
-class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
+class RostromedialTegmentum(NeuralRegion[TonicPacemakerConfig]):
     """Rostromedial Tegmental Nucleus - Dopamine Pause Mediator.
 
     GABAergic neurons that receive LHb excitation and project inhibitory
@@ -91,8 +94,15 @@ class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
     - "gaba": GABAergic projection to VTA DA neurons (drives pause)
     """
 
-    def __init__(self, config: RostromedialTegmentumConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    def __init__(
+        self,
+        config: TonicPacemakerConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.gaba_size = population_sizes[RMTgPopulation.GABA]
 
@@ -114,13 +124,11 @@ class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
                 tau_I=10.0,
                 noise_std=0.005,
             ),
-            device=self.device,
+            device=device,
         )
 
         # Moderate baseline drive
-        self.baseline_drive = torch.full(
-            (self.gaba_size,), config.baseline_drive, device=self.device
-        )
+        self.baseline_drive = torch.full((self.gaba_size,), config.baseline_drive, device=device)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -128,13 +136,10 @@ class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
         self._register_neuron_population(RMTgPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Update RMTg from LHb excitation; output inhibits VTA DA neurons."""
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
         # =====================================================================
         # Integrate synaptic inputs at dendrites (all sources → GABA population)
         # LHb excitation drives RMTg to fire → inhibits VTA DA (pause)
@@ -162,9 +167,4 @@ class RostromedialTegmentum(NeuralRegion[RostromedialTegmentumConfig]):
             RMTgPopulation.GABA: gaba_spikes,
         }
 
-        return self._post_forward(region_outputs)
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes."""
-        super().update_temporal_parameters(dt_ms)
-        self.gaba_neurons.update_temporal_parameters(dt_ms)
+        return region_outputs

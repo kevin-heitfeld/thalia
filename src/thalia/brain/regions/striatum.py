@@ -40,23 +40,29 @@ Key Features:
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import StriatumConfig
-from thalia.components import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
+from thalia.brain.gap_junctions import (
     GapJunctionConfig,
     GapJunctionCoupling,
+)
+from thalia.brain.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
     NeuronFactory,
     NeuronType,
+)
+from thalia.brain.synapses import (
     WeightInitializer,
     NeuromodulatorReceptor,
+    NMReceptorType,
+    make_nm_receptor,
 )
-from thalia.components.synapses.stp import FSI_MSN_PRESET, MSN_LATERAL_PRESET
+from thalia.brain.synapses.stp import FSI_MSN_PRESET, MSN_LATERAL_PRESET
 from thalia.learning import (
     D1D2STDPConfig,
     D1STDPStrategy,
@@ -66,6 +72,8 @@ from thalia.typing import (
     ConductanceTensor,
     GapJunctionReversal,
     NeuromodulatorInput,
+    NeuromodulatorChannel,
+    PopulationName,
     PopulationPolarity,
     PopulationSizes,
     ReceptorType,
@@ -106,30 +114,39 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
     # Mesolimbic DA (VTA → ventral striatum) drives D1/D2 opponent learning.
     # NE from LC modulates the gain of burst responses and threshold adaptation.
-    neuromodulator_subscriptions: ClassVar[List[str]] = ['da_mesolimbic', 'ne']
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [
+        NeuromodulatorChannel.DA_MESOLIMBIC,
+        NeuromodulatorChannel.NE,
+        NeuromodulatorChannel.SHT,
+    ]
 
     # Striatum publishes local ACh from TANs (cholinergic interneurons) on a
     # dedicated 'ach_striatal' channel so downstream circuits (e.g., SNc, VTA DA
     # terminals) can detect striatal ACh tone independently from cortical NB ACh.
-    neuromodulator_outputs: ClassVar[Dict[str, str]] = {
-        'ach_striatal': StriatumPopulation.TAN,
+    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorChannel, PopulationName]] = {
+        NeuromodulatorChannel.ACH_STRIATAL: StriatumPopulation.TAN,
     }
 
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: StriatumConfig, population_sizes: PopulationSizes, region_name: RegionName):
+    def __init__(
+        self,
+        config: StriatumConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
         """Initialize Striatum with D1/D2 opponent pathways."""
-        super().__init__(config, population_sizes, region_name)
+        super().__init__(config, population_sizes, region_name, device=device)
 
         # =====================================================================
         # EXTRACT LAYER SIZES
         # =====================================================================
         self.d1_size = population_sizes[StriatumPopulation.D1]
         self.d2_size = population_sizes[StriatumPopulation.D2]
-        self.n_actions = population_sizes["n_actions"]
-        self.neurons_per_action = population_sizes["neurons_per_action"]
 
         total_msn_neurons = self.d1_size + self.d2_size
 
@@ -160,14 +177,14 @@ class Striatum(NeuralRegion[StriatumConfig]):
             population_name=StriatumPopulation.D1,
             neuron_type=NeuronType.MSN_D1,
             n_neurons=self.d1_size,
-            device=self.device,
+            device=device,
         )
         self.d2_neurons = NeuronFactory.create(
             region_name=self.region_name,
             population_name=StriatumPopulation.D2,
             neuron_type=NeuronType.MSN_D2,
             n_neurons=self.d2_size,
-            device=self.device,
+            device=device,
         )
 
         # =====================================================================
@@ -185,7 +202,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             region_name=self.region_name,
             population_name=StriatumPopulation.FSI,
             n_neurons=self.fsi_size,
-            device=self.device,
+            device=device,
             # v_threshold restored to 1.0 (standard): threshold=1.3 was a stopgap for
             # the old NMDA-driven 406 Hz saturation. NMDA is now disabled (nmda_ratio=0.0
             # in forward pass), so 1.3 is too high and prevents any firing on cortical input.
@@ -228,7 +245,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_output=self.fsi_size,
                 connectivity=0.3,
                 weight_scale=0.0005,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=None,
@@ -244,7 +261,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_output=self.fsi_size,
                 connectivity=0.3,
                 weight_scale=0.0005,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=None,
@@ -275,7 +292,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_output=self.d1_size,
                 connectivity=0.15,
                 weight_scale=0.015,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=FSI_MSN_PRESET.configure(),
@@ -292,7 +309,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_output=self.d2_size,
                 connectivity=0.15,
                 weight_scale=0.015,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=FSI_MSN_PRESET.configure(),
@@ -312,8 +329,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d1_size,
                 n_output=self.d1_size,
                 connectivity=0.4,
-                weight_scale=0.001,
-                device=self.device,
+                weight_scale=0.007,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=MSN_LATERAL_PRESET.configure(),
@@ -328,8 +345,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d2_size,
                 n_output=self.d2_size,
                 connectivity=0.4,
-                weight_scale=0.001,
-                device=self.device,
+                weight_scale=0.007,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=MSN_LATERAL_PRESET.configure(),
@@ -352,8 +369,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d1_size,
                 n_output=self.d2_size,
                 connectivity=0.1,
-                weight_scale=0.0005,
-                device=self.device,
+                weight_scale=0.003,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=MSN_LATERAL_PRESET.configure(),
@@ -367,8 +384,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d2_size,
                 n_output=self.d1_size,
                 connectivity=0.1,
-                weight_scale=0.0005,
-                device=self.device,
+                weight_scale=0.003,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=MSN_LATERAL_PRESET.configure(),
@@ -377,12 +394,14 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY (Adaptive Gain)
         # =====================================================================
-        # EMA tracking of firing rates (per pathway).
+        # EMA tracking of firing rates (per pathway) + synaptic scaling.
         # Buffer names produced by _register_homeostasis are d1_firing_rate /
         # d2_firing_rate, matching the direct accesses in forward().
         # Striatum uses a custom joint D1+D2 update rather than _update_homeostasis.
-        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.008)
-        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.008)
+        # use_synaptic_scaling=True: Turrigiano & Nelson (2004) — multiplicative
+        # upscaling of all afferent MSN weights when the population is chronically silent.
+        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.008, device=device)
+        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.008, device=device)
 
         # =====================================================================
         # D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
@@ -396,8 +415,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self._d1_delay_steps = int(self.config.d1_to_output_delay_ms / self.config.dt_ms)
         self._d2_delay_steps = int(self.config.d2_to_output_delay_ms / self.config.dt_ms)
 
-        self._d1_spike_buffer = CircularDelayBuffer(max_delay=self._d1_delay_steps, size=self.d1_size, device=self.device, dtype=torch.bool)
-        self._d2_spike_buffer = CircularDelayBuffer(max_delay=self._d2_delay_steps, size=self.d2_size, device=self.device, dtype=torch.bool)
+        self._d1_spike_buffer = CircularDelayBuffer(max_delay=self._d1_delay_steps, size=self.d1_size, device=device, dtype=torch.bool)
+        self._d2_spike_buffer = CircularDelayBuffer(max_delay=self._d2_delay_steps, size=self.d2_size, device=device, dtype=torch.bool)
 
         # =====================================================================
         # DOPAMINE RECEPTORS (Spiking DA from VTA)
@@ -410,27 +429,21 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # - DA decay time: ~200 ms (slow DAT reuptake)
         # Both pathways receive same DA spikes, but receptors have opposite effects.
 
-        # Create D1 and D2 DA receptors (both receive same VTA spikes)
-        self.da_receptor_d1 = NeuromodulatorReceptor(
-            n_receptors=self.d1_size,
-            tau_rise_ms=10.0,  # Fast release (ms)
-            tau_decay_ms=200.0,  # Slow reuptake via DAT (ms)
-            spike_amplitude=0.15,  # Moderate amplitude for summation
-            device=self.device,
+        # D1 receptor: Gs → cAMP → PKA cascade (τ_rise=500 ms, τ_decay=8 s).
+        # D2 receptor: Gi → GIRK / ↓cAMP (τ_rise=80 ms, τ_decay=500 ms).
+        # Kinetics are now canonical — capture the gate (D2) vs long-term bias (D1) distinction.
+        self.da_receptor_d1 = make_nm_receptor(
+            NMReceptorType.DA_D1, n_receptors=self.d1_size, dt_ms=self.dt_ms, device=device
         )
-        self.da_receptor_d2 = NeuromodulatorReceptor(
-            n_receptors=self.d2_size,
-            tau_rise_ms=10.0,
-            tau_decay_ms=200.0,
-            spike_amplitude=0.15,
-            device=self.device,
+        self.da_receptor_d2 = make_nm_receptor(
+            NMReceptorType.DA_D2, n_receptors=self.d2_size, dt_ms=self.dt_ms, device=device
         )
 
         # DA concentration state (updated each timestep from VTA spikes)
         self._da_concentration_d1: torch.Tensor
         self._da_concentration_d2: torch.Tensor
-        self.register_buffer("_da_concentration_d1", torch.zeros(self.d1_size, device=self.device))
-        self.register_buffer("_da_concentration_d2", torch.zeros(self.d2_size, device=self.device))
+        self.register_buffer("_da_concentration_d1", torch.zeros(self.d1_size, device=device))
+        self.register_buffer("_da_concentration_d2", torch.zeros(self.d2_size, device=device))
 
         # =====================================================================
         # NOREPINEPHRINE RECEPTORS (Spiking NE from LC)
@@ -443,26 +456,33 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # - NE decay time: ~150 ms (NET reuptake)
         # Both D1 and D2 MSNs receive NE modulation.
 
-        self.ne_receptor_d1 = NeuromodulatorReceptor(
-            n_receptors=self.d1_size,
-            tau_rise_ms=8.0,  # Fast release (ms)
-            tau_decay_ms=150.0,  # NET reuptake (ms)
-            spike_amplitude=0.12,  # Moderate amplitude
-            device=self.device,
+        # α1-adrenergic (Gq): moderate kinetics τ_rise=10 ms, τ_decay=150 ms.
+        self.ne_receptor_d1 = make_nm_receptor(
+            NMReceptorType.NE_ALPHA1, n_receptors=self.d1_size, dt_ms=self.dt_ms, device=device
         )
-        self.ne_receptor_d2 = NeuromodulatorReceptor(
-            n_receptors=self.d2_size,
-            tau_rise_ms=8.0,
-            tau_decay_ms=150.0,
-            spike_amplitude=0.12,
-            device=self.device,
+        self.ne_receptor_d2 = make_nm_receptor(
+            NMReceptorType.NE_ALPHA1, n_receptors=self.d2_size, dt_ms=self.dt_ms, device=device
         )
 
         # NE concentration state (updated from LC spikes)
         self._ne_concentration_d1: torch.Tensor
         self._ne_concentration_d2: torch.Tensor
-        self.register_buffer("_ne_concentration_d1", torch.zeros(self.d1_size, device=self.device))
-        self.register_buffer("_ne_concentration_d2", torch.zeros(self.d2_size, device=self.device))
+        self.register_buffer("_ne_concentration_d1", torch.zeros(self.d1_size, device=device))
+        self.register_buffer("_ne_concentration_d2", torch.zeros(self.d2_size, device=device))
+
+        # =====================================================================
+        # SEROTONIN RECEPTORS (5-HT2A/2B on D1-MSNs — from DRN)
+        # =====================================================================
+        # Biology: DRN projects dense 5-HT to dorsal striatum via 5-HT2A/2B receptors.
+        # On D1-MSNs: high 5-HT reduces reward salience and attenuates dopamine-gated
+        # LTP (patience effect; Boulougouris et al. 2008; Grahn et al. 2009).
+        # Kinetics: tau_rise ~5 ms (fast release), tau_decay ~80 ms (SERT reuptake).
+        # 5-HT2A/2B (Gq → PLC): τ_rise=8 ms, τ_decay=100 ms.
+        self.sht_receptor_d1 = make_nm_receptor(
+            NMReceptorType.SHT_2A, n_receptors=self.d1_size, dt_ms=self.dt_ms, device=device
+        )
+        self._sht_concentration_d1: torch.Tensor
+        self.register_buffer("_sht_concentration_d1", torch.zeros(self.d1_size, device=device))
 
         # =====================================================================
         # TAN (TONICALLY ACTIVE NEURONS) - Cholinergic Interneurons
@@ -495,19 +515,22 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 adapt_increment=0.20,  # Added adaptation to resist thalamic overflow (28 Hz → target 5-10 Hz)
                 tau_adapt=200.0,       # Slow AHP matching cholinergic neuron biophysics
             ),
-            device=self.device,
+            device=device,
         )
         # Tonic baseline drive for autonomous 5-10 Hz pacemaking.
         # TANs fire tonically without external drive (intrinsic pacemaking via I_h etc.),
         # approximated here as a constant excitatory conductance baseline.
-        self._tan_baseline = torch.full(
-            (self.tan_size,), self.config.tan_baseline_drive, device=self.device
+        # Registered as buffers so they move with .to(device) and are saved in state_dict.
+        self.register_buffer(
+            "_tan_baseline",
+            torch.full((self.tan_size,), self.config.tan_baseline_drive, device=device),
         )
 
         # Tonic baseline drive for FSI; provides minimal sub-threshold depolarisation so
         # cortical/thalamic bursts can push FSI above threshold. AMPA-only (NMDA disabled).
-        self._fsi_baseline = torch.full(
-            (self.fsi_size,), self.config.fsi_baseline_drive, device=self.device
+        self.register_buffer(
+            "_fsi_baseline",
+            torch.full((self.fsi_size,), self.config.fsi_baseline_drive, device=device),
         )
 
         # TAN → D1 inhibition (M2 receptor-mediated, widespread cholinergic inhibition)
@@ -519,7 +542,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_output=self.d1_size,
                 connectivity=0.5,
                 weight_scale=0.0005,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=None,
@@ -534,7 +557,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_output=self.d2_size,
                 connectivity=0.5,
                 weight_scale=0.0005,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=None,
@@ -556,22 +579,23 @@ class Striatum(NeuralRegion[StriatumConfig]):
             tau_rise_ms=5.0,
             tau_decay_ms=300.0,
             spike_amplitude=0.5,
-            device=self.device,
+            dt_ms=self.dt_ms,
+            device=device,
         )
-        self.register_buffer("_tan_ach_concentration", torch.zeros(self.tan_size, device=self.device))
+        self.register_buffer("_tan_ach_concentration", torch.zeros(self.tan_size, device=device))
         # Scalar inhibitory trace driving the TAN pause; decays with tau = 300 ms.
-        self.register_buffer("_tan_pause_trace", torch.zeros(1, device=self.device))
+        self.register_buffer("_tan_pause_trace", torch.zeros(1, device=device))
         # Pre-compute per-step decay factor (updated by update_temporal_parameters).
         self._tan_pause_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / 300.0)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # FSI GAP JUNCTION INITIALIZATION
     # =========================================================================
 
-    def _init_gap_junctions_fsi(self) -> None:
+    def _init_gap_junctions_fsi(self, device: Union[str, torch.device]) -> None:
         """Lazily initialize FSI gap junctions from the first registered FSI weight matrix.
 
         Called on the first forward pass once FSI synaptic weights have been registered
@@ -597,31 +621,29 @@ class Striatum(NeuralRegion[StriatumConfig]):
             n_neurons=self.fsi_size,
             afferent_weights=fsi_weights,
             config=gap_config_fsi,
-            device=self.device,
+            device=device,
         )
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Process input and select action using separate D1/D2 populations.
 
         Args:
             synaptic_inputs: Point-to-point synaptic connections from cortex, hippocampus, thalamus
             neuromodulator_inputs: Broadcast neuromodulatory signals (DA, NE, ACh)
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
-        cfg = self.config
+        device = self.device
+        config = self.config
 
         if not GlobalConfig.NEUROMODULATION_DISABLED:
             # =====================================================================
             # DOPAMINE RECEPTOR UPDATE (VTA Spikes → Concentration)
             # =====================================================================
             # Convert spiking DA from VTA to synaptic concentration for learning.
-            vta_da_spikes = self._extract_neuromodulator(neuromodulator_inputs, 'da_mesolimbic')
+            vta_da_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.DA_MESOLIMBIC)
             # Update D1 and D2 receptors (both receive same VTA spikes)
             self._da_concentration_d1 = self.da_receptor_d1.update(vta_da_spikes)
             self._da_concentration_d2 = self.da_receptor_d2.update(vta_da_spikes)
@@ -631,10 +653,17 @@ class Striatum(NeuralRegion[StriatumConfig]):
             # =====================================================================
             # Convert spiking NE from LC to synaptic concentration for gain modulation.
             # NE increases excitability and promotes exploration.
-            lc_ne_spikes = neuromodulator_inputs.get('ne', None)
+            lc_ne_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.NE)
             # Update D1 and D2 receptors (both receive same LC spikes)
             self._ne_concentration_d1 = self.ne_receptor_d1.update(lc_ne_spikes)
             self._ne_concentration_d2 = self.ne_receptor_d2.update(lc_ne_spikes)
+
+            # =====================================================================
+            # SEROTONIN RECEPTOR UPDATE (DRN Spikes → Concentration)
+            # =====================================================================
+            # 5-HT2A on D1-MSNs: patience gate that attenuates DA-gated D1 plasticity.
+            sht_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.SHT)
+            self._sht_concentration_d1 = self.sht_receptor_d1.update(sht_spikes)
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
@@ -660,7 +689,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
         # Lazy-initialize gap junctions on first forward pass (after weights have been registered)
         if self.gap_junctions_fsi is None:
-            self._init_gap_junctions_fsi()
+            self._init_gap_junctions_fsi(device=device)
 
         fsi_conductance = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs, self.fsi_size, filter_by_target_population=StriatumPopulation.FSI
@@ -868,22 +897,37 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Approximation: detect when mean TAN afferent conductance exceeds the
         # burst threshold; drive a slow inhibitory trace (tau = 300 ms) that
         # adds g_gaba_a to TANs and suppresses tonic firing during the pause.
-        tan_burst = (tan_conductance.mean() > cfg.tan_pause_threshold).float()
+        tan_burst = (tan_conductance.mean() > config.tan_pause_threshold).float()
         self._tan_pause_trace = (
             self._tan_pause_trace * self._tan_pause_decay
             + tan_burst * (1.0 - self._tan_pause_decay)
         )
         # Expand scalar pause trace to a per-neuron inhibitory conductance tensor
-        tan_g_pause = self._tan_pause_trace.expand(self.tan_size) * cfg.tan_pause_strength
+        tan_g_pause = self._tan_pause_trace.expand(self.tan_size) * config.tan_pause_strength
 
         # Add tonic baseline + synaptic AMPA (NMDA omitted: 100ms tau creates bistability
         # at sub-threshold V due to Mg2+ block; AMPA-only stable for slow pacemaking)
         tan_total_exc = self._tan_baseline.clone() + tan_conductance
+        # DA-mediated TAN pause via D2 autoreceptors (Straub et al. 2014;
+        # Aosaki et al. 1994). Phasic DA burst activates striatal D2Rs on TANs,
+        # coupling to GIRK channels → slow K⁺ outward current, approximated here as
+        # a GABA_B-like conductance proportional to excess DA above threshold.
+        # This creates the coincidence gate: DA burst + TAN pause occur simultaneously,
+        # opening the plasticity window for corticostriatal LTP.
+        tan_g_gaba_b: Optional[torch.Tensor] = None
+        if not GlobalConfig.NEUROMODULATION_DISABLED:
+            da_mean = self._da_concentration_d2.mean().item()
+            excess_da = max(0.0, da_mean - config.tan_da2_threshold)
+            if excess_da > 0.0:
+                tan_g_gaba_b = torch.full(
+                    (self.tan_size,), excess_da * config.tan_da2_pause_strength, device=device
+                )
+
         tan_spikes, _ = self.tan_neurons.forward(
             g_ampa_input=ConductanceTensor(tan_total_exc),
             g_nmda_input=None,
             g_gaba_a_input=ConductanceTensor(tan_g_pause),  # pause-driven inhibition
-            g_gaba_b_input=None,
+            g_gaba_b_input=ConductanceTensor(tan_g_gaba_b) if tan_g_gaba_b is not None else None,
         )
 
         # S3-3 / S3-5 — Track TAN ACh concentration for plasticity gating.
@@ -987,7 +1031,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
             # INTRINSIC EXCITABILITY: Modulate leak conductance for BOTH pathways
             # Inverse relationship: underactive → lower g_L
-            g_L_update = -cfg.gain_learning_rate * combined_rate_error
+            g_L_update = -config.gain_learning_rate * combined_rate_error
             self.d1_neurons.g_L_scale.data.add_(g_L_update).clamp_(min=0.1, max=2.0)
             self.d2_neurons.g_L_scale.data.add_(g_L_update).clamp_(min=0.1, max=2.0)
 
@@ -995,9 +1039,14 @@ class Striatum(NeuralRegion[StriatumConfig]):
             # Also use combined error to maintain balance
             # Adjust thresholds based on combined activity, not independently
             # Lower threshold when underactive, raise when overactive
-            threshold_update = -cfg.threshold_learning_rate * combined_rate_error
-            self.d1_neurons.adjust_thresholds(threshold_update, cfg.threshold_min, cfg.threshold_max)
-            self.d2_neurons.adjust_thresholds(threshold_update, cfg.threshold_min, cfg.threshold_max)
+            threshold_update = -config.threshold_learning_rate * combined_rate_error
+            self.d1_neurons.adjust_thresholds(threshold_update, config.threshold_min, config.threshold_max)
+            self.d2_neurons.adjust_thresholds(threshold_update, config.threshold_min, config.threshold_max)
+
+            # SYNAPTIC SCALING: Multiplicative upscaling of afferent weights targeting
+            # chronically silent MSN populations (Turrigiano & Nelson 2004).
+            self._apply_synaptic_scaling(StriatumPopulation.D1)
+            self._apply_synaptic_scaling(StriatumPopulation.D2)
 
         # =====================================================================
         # LEARNING: UPDATE ELIGIBILITY TRACES AND APPLY DOPAMINE-MODULATED PLASTICITY
@@ -1021,13 +1070,13 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
                     if strategy_class is not None:
                         strategy = strategy_class(D1D2STDPConfig(
-                            learning_rate=cfg.learning_rate,
-                            fast_eligibility_tau_ms=cfg.fast_eligibility_tau_ms,
-                            slow_eligibility_tau_ms=cfg.slow_eligibility_tau_ms,
-                            eligibility_consolidation_rate=cfg.eligibility_consolidation_rate,
-                            slow_trace_weight=cfg.slow_trace_weight,
+                            learning_rate=config.learning_rate,
+                            fast_eligibility_tau_ms=config.fast_eligibility_tau_ms,
+                            slow_eligibility_tau_ms=config.slow_eligibility_tau_ms,
+                            eligibility_consolidation_rate=config.eligibility_consolidation_rate,
+                            slow_trace_weight=config.slow_trace_weight,
                         ))
-                        self._add_learning_strategy(synapse_id, strategy)
+                        self._add_learning_strategy(synapse_id, strategy, device=device)
 
         # =====================================================================
         # UPDATE STATE BUFFERS FOR NEXT TIMESTEP
@@ -1037,14 +1086,18 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self._d1_spike_buffer.write_and_advance(d1_spikes)
         self._d2_spike_buffer.write_and_advance(d2_spikes)
 
-        return self._post_forward(region_outputs)
+        return region_outputs
 
     def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
         d1_da = self._da_concentration_d1.mean().item()
         d2_da = self._da_concentration_d2.mean().item()
         tan_gate = 1.0 - self._tan_ach_concentration.mean().item()
         if synapse_id.target_population == StriatumPopulation.D1:
-            return {"dopamine": d1_da, "acetylcholine": tan_gate}
+            # 5-HT2A: high serotonin attenuates DA-gated D1 plasticity (patience effect).
+            # Implementation: reduce the effective dopamine signal seen by the learning rule.
+            sht_d1 = self._sht_concentration_d1.mean().item()
+            patience_gate = 1.0 - 0.5 * sht_d1  # range [0.5, 1.0]
+            return {"dopamine": d1_da * patience_gate, "acetylcholine": tan_gate}
         if synapse_id.target_population == StriatumPopulation.D2:
             return {"dopamine": d2_da, "acetylcholine": tan_gate}
         return {}
@@ -1131,20 +1184,3 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 * (0.8 - self._recent_accuracy)
                 / 0.3
             )
-
-    # =========================================================================
-    # TEMPORAL PARAMETER MANAGEMENT
-    # =========================================================================
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes.
-
-        Propagates dt update to neurons, STP components, and learning strategies.
-
-        Args:
-            dt_ms: New simulation timestep in milliseconds
-        """
-        super().update_temporal_parameters(dt_ms)
-        self.d1_neurons.update_temporal_parameters(dt_ms)
-        self.d2_neurons.update_temporal_parameters(dt_ms)
-        self.fsi_neurons.update_temporal_parameters(dt_ms)

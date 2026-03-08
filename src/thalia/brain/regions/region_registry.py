@@ -9,8 +9,11 @@ and consistent region discovery.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
+import torch
+
+from thalia import GlobalConfig
 from thalia.brain.configs import NeuralRegionConfig
 from thalia.errors import ConfigurationError
 from thalia.typing import PopulationSizes, RegionName
@@ -27,7 +30,7 @@ class NeuralRegionRegistry:
     _registry: Dict[RegionName, Type[_NeuralRegion]] = {}
     _aliases: Dict[RegionName, RegionName] = {}
     _metadata: Dict[RegionName, Dict[str, Any]] = {}
-    _config_classes: Dict[RegionName, Optional[Type[NeuralRegionConfig]]] = {}
+    _config_classes: Dict[RegionName, Optional[Callable[[], NeuralRegionConfig]]] = {}
 
     @classmethod
     def register(
@@ -38,7 +41,7 @@ class NeuralRegionRegistry:
         description: str = "",
         version: str = "1.0",
         author: str = "",
-        config_class: Optional[Type[NeuralRegionConfig]] = None,
+        config_class: Optional[Callable[[], NeuralRegionConfig]] = None,
     ) -> Callable[[Type[_NeuralRegion]], Type[_NeuralRegion]]:
         """Decorator to register a region.
 
@@ -48,7 +51,7 @@ class NeuralRegionRegistry:
             description: Human-readable description
             version: Component version string
             author: Component author/maintainer
-            config_class: Optional config class for this region
+            config_class: Optional config class or factory function for this region
 
         Returns:
             Decorator function
@@ -56,18 +59,18 @@ class NeuralRegionRegistry:
         Raises:
             ValueError: If name already registered
         """
-        def decorator(component_class: Type[_NeuralRegion]) -> Type[_NeuralRegion]:
+        def decorator(region_class: Type[_NeuralRegion]) -> Type[_NeuralRegion]:
             # Check if already registered
             if name in cls._registry:
                 existing = cls._registry[name]
-                if existing != component_class:
+                if existing != region_class:
                     raise ConfigurationError(
                         f"Region name '{name}' already registered to {existing.__name__}"
                     )
-                return component_class  # Same class, already registered
+                return region_class  # Same class, already registered
 
             # Register primary name
-            cls._registry[name] = component_class
+            cls._registry[name] = region_class
 
             # Register aliases
             if aliases:
@@ -80,17 +83,17 @@ class NeuralRegionRegistry:
 
             # Store metadata
             cls._metadata[name] = {
-                "description": description or component_class.__doc__ or "",
+                "description": description or region_class.__doc__ or "",
                 "version": version,
                 "author": author,
-                "class": component_class.__name__,
-                "module": component_class.__module__,
+                "class": region_class.__name__,
+                "module": region_class.__module__,
             }
 
             # Store config class if provided
             cls._config_classes[name] = config_class
 
-            return component_class
+            return region_class
 
         return decorator
 
@@ -117,6 +120,7 @@ class NeuralRegionRegistry:
         config: NeuralRegionConfig,
         population_sizes: PopulationSizes,
         region_name: RegionName,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ) -> _NeuralRegion:
         """Create a region instance.
 
@@ -140,7 +144,12 @@ class NeuralRegionRegistry:
             raise ValueError(f"Region '{name}' not registered. Available regions: {available}")
 
         try:
-            return region_class(config=config, population_sizes=population_sizes, region_name=region_name)
+            return region_class(
+                config=config,
+                population_sizes=population_sizes,
+                region_name=region_name,
+                device=device,
+            )
 
         except TypeError as e:
             sig = inspect.signature(region_class.__init__)
@@ -181,14 +190,14 @@ class NeuralRegionRegistry:
         return cls._aliases.copy()
 
     @classmethod
-    def get_config_class(cls, name: RegionName) -> Optional[Type[NeuralRegionConfig]]:
-        """Get configuration class for a registered region.
+    def get_config_class(cls, name: RegionName) -> Optional[Callable[[], NeuralRegionConfig]]:
+        """Get configuration class or factory for a registered region.
 
         Args:
             name: Region name or alias
 
         Returns:
-            Config class if registered, None otherwise
+            Config class or factory function if registered, None otherwise
         """
         if name in cls._aliases:
             name = cls._aliases[name]
@@ -211,7 +220,7 @@ def register_region(
     description: str = "",
     version: str = "1.0",
     author: str = "",
-    config_class: Optional[Type[NeuralRegionConfig]] = None,
+    config_class: Optional[Callable[[], NeuralRegionConfig]] = None,
 ) -> Callable[[Type[_NeuralRegion]], Type[_NeuralRegion]]:
     """Shorthand for @NeuralRegionRegistry.register(name).
 
@@ -224,7 +233,7 @@ def register_region(
         description: Human-readable description
         version: Component version
         author: Component author
-        config_class: Optional config class for this region
+        config_class: Optional config class or factory function for this region
 
     Returns:
         Decorator function

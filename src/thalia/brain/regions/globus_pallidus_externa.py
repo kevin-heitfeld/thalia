@@ -39,12 +39,13 @@ Biological Background:
 
 from __future__ import annotations
 
+from typing import Union
+
 import torch
 
-from thalia.brain.configs import GlobusPallidusExternaConfig
-from thalia.components import ConductanceLIF, ConductanceLIFConfig
+from thalia import GlobalConfig
+from thalia.brain.configs import TonicPacemakerConfig, get_default_gpe_config
 from thalia.typing import (
-    ConductanceTensor,
     NeuromodulatorInput,
     PopulationPolarity,
     PopulationSizes,
@@ -52,9 +53,8 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
-from .neural_region import NeuralRegion
+from .basal_ganglia_output_nucleus import BasalGangliaOutputNucleus
 from .population_names import GPePopulation
 from .region_registry import register_region
 
@@ -65,9 +65,9 @@ from .region_registry import register_region
     description="Globus pallidus externa - basal ganglia indirect pathway hub",
     version="1.0",
     author="Thalia Project",
-    config_class=GlobusPallidusExternaConfig,
+    config_class=get_default_gpe_config,
 )
-class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
+class GlobusPallidusExterna(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
     """Globus Pallidus Externa - Indirect Pathway Hub.
 
     Contains prototypic neurons (→STN/SNr) and arkypallidal neurons (→striatum).
@@ -85,61 +85,34 @@ class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
     - "arkypallidal": Projects back to striatum (inhibitory, global suppression)
     """
 
-    def __init__(self, config: GlobusPallidusExternaConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    def __init__(
+        self,
+        config: TonicPacemakerConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.arkypallidal_size = population_sizes[GPePopulation.ARKYPALLIDAL]
         self.prototypic_size = population_sizes[GPePopulation.PROTOTYPIC]
 
         # Prototypic neurons: ~75% of GPe, ~50 Hz tonic, project to STN + SNr
-        self.prototypic_neurons = ConductanceLIF(
-            n_neurons=self.prototypic_size,
-            config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=GPePopulation.PROTOTYPIC,
-                tau_mem=self.config.tau_mem,
-                v_threshold=self.config.v_threshold,
-                v_reset=0.0,
-                tau_ref=self.config.tau_ref,
-                g_L=0.10,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=5.0,
-                tau_I=10.0,
-                noise_std=0.007,
-            ),
-            device=self.device,
+        self.prototypic_neurons = self._make_bg_neurons(
+            self.prototypic_size, GPePopulation.PROTOTYPIC, noise_std=0.007
         )
-
         # Arkypallidal neurons: ~25% of GPe, project back to striatum
-        self.arkypallidal_neurons = ConductanceLIF(
-            n_neurons=self.arkypallidal_size,
-            config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=GPePopulation.ARKYPALLIDAL,
-                tau_mem=self.config.tau_mem,
-                v_threshold=self.config.v_threshold,
-                v_reset=0.0,
-                tau_ref=self.config.tau_ref,
-                g_L=0.10,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=5.0,
-                tau_I=10.0,
-                noise_std=0.005,
-            ),
-            device=self.device,
+        self.arkypallidal_neurons = self._make_bg_neurons(
+            self.arkypallidal_size, GPePopulation.ARKYPALLIDAL, noise_std=0.005
         )
 
-        # Tonic drive for baseline firing (~50 Hz for prototypic)
-        self.prototypic_baseline = torch.full(
-            (self.prototypic_size,), config.baseline_drive, device=self.device
-        )
-        self.arkypallidal_baseline = torch.full(
-            (self.arkypallidal_size,), config.baseline_drive * 0.857, device=self.device
-        )
+        # Tonic drive: prototypic at full baseline; arkypallidal at 0.5× (sub-threshold at rest)
+        # STN excitation then drives arky to 5-20 Hz target. D2-MSN inhibition provides
+        # the restraint. Previous 0.857 factor gave g_E_ss≈0.052, V_inf≈1.03 → combined
+        # with STN input caused 46.9 Hz (run-06; target 5–20 Hz).
+        self.prototypic_baseline = self._make_tonic_baseline(self.prototypic_size)
+        self.arkypallidal_baseline = self._make_tonic_baseline(self.arkypallidal_size, factor=0.5)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -148,63 +121,19 @@ class GlobusPallidusExterna(NeuralRegion[GlobusPallidusExternaConfig]):
         self._register_neuron_population(GPePopulation.PROTOTYPIC, self.prototypic_neurons, polarity=PopulationPolarity.INHIBITORY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Update GPe neurons based on striatal D2 inhibition and STN excitation."""
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
-        # =====================================================================
-        # PROTOTYPIC NEURONS
-        # =====================================================================
-        proto_dendrite = self._integrate_synaptic_inputs_at_dendrites(
-            synaptic_inputs,
-            n_neurons=self.prototypic_size,
-            filter_by_target_population=GPePopulation.PROTOTYPIC,
+        prototypic_spikes = self._bg_step_single(
+            synaptic_inputs, self.prototypic_size, GPePopulation.PROTOTYPIC,
+            self.prototypic_neurons, self.prototypic_baseline,
         )
-        # D2-MSN inhibition reduces prototypic activity (indirect pathway)
-        # STN excitation provides GPe-STN feedback loop drive
-        g_exc_proto = self.prototypic_baseline.clone() + proto_dendrite.g_ampa
-        g_inh_proto = proto_dendrite.g_gaba_a
-
-        g_ampa_proto, g_nmda_proto = split_excitatory_conductance(g_exc_proto, nmda_ratio=0.05)
-        prototypic_spikes, _ = self.prototypic_neurons.forward(
-            g_ampa_input=ConductanceTensor(g_ampa_proto),
-            g_nmda_input=ConductanceTensor(g_nmda_proto),
-            g_gaba_a_input=ConductanceTensor(g_inh_proto),
-            g_gaba_b_input=None,
+        arkypallidal_spikes = self._bg_step_single(
+            synaptic_inputs, self.arkypallidal_size, GPePopulation.ARKYPALLIDAL,
+            self.arkypallidal_neurons, self.arkypallidal_baseline,
         )
-
-        # =====================================================================
-        # ARKYPALLIDAL NEURONS
-        # =====================================================================
-        arky_dendrite = self._integrate_synaptic_inputs_at_dendrites(
-            synaptic_inputs,
-            n_neurons=self.arkypallidal_size,
-            filter_by_target_population=GPePopulation.ARKYPALLIDAL,
-        )
-        # D2-MSN inhibition of arkypallidal as well
-        g_exc_arky = self.arkypallidal_baseline.clone() + arky_dendrite.g_ampa
-        g_inh_arky = arky_dendrite.g_gaba_a
-
-        g_ampa_arky, g_nmda_arky = split_excitatory_conductance(g_exc_arky, nmda_ratio=0.05)
-        arkypallidal_spikes, _ = self.arkypallidal_neurons.forward(
-            g_ampa_input=ConductanceTensor(g_ampa_arky),
-            g_nmda_input=ConductanceTensor(g_nmda_arky),
-            g_gaba_a_input=ConductanceTensor(g_inh_arky),
-            g_gaba_b_input=None,
-        )
-
-        region_outputs: RegionOutput = {
+        return {
             GPePopulation.ARKYPALLIDAL: arkypallidal_spikes,
             GPePopulation.PROTOTYPIC: prototypic_spikes,
         }
-
-        return self._post_forward(region_outputs)
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes."""
-        super().update_temporal_parameters(dt_ms)
-        self.prototypic_neurons.update_temporal_parameters(dt_ms)
-        self.arkypallidal_neurons.update_temporal_parameters(dt_ms)

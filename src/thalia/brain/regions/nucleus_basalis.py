@@ -8,19 +8,20 @@ in response to prediction errors and attention-grabbing events.
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import ClassVar, Dict, Optional, Union
 
 import torch
 
+from thalia import GlobalConfig
 from thalia.brain.configs import NucleusBasalisConfig
-from thalia.components import (
-    AcetylcholineNeuron,
+from thalia.brain.neurons import (
     AcetylcholineNeuronConfig,
+    AcetylcholineNeuron,
 )
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
-    NeuromodulatorType,
+    NeuromodulatorChannel,
     PopulationName,
     PopulationPolarity,
     PopulationSizes,
@@ -31,7 +32,7 @@ from thalia.typing import (
 from thalia.utils import CircularDelayBuffer
 
 from .neuromodulator_source_region import NeuromodulatorSourceRegion
-from .population_names import NucleusBasalisPopulation, PrefrontalPopulation
+from .population_names import CortexPopulation, NucleusBasalisPopulation
 from .region_registry import register_region
 
 
@@ -52,12 +53,19 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
     """
 
     # Declarative neuromodulator output registry.
-    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]] = {
-        'ach': NucleusBasalisPopulation.ACH,
+    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorChannel, PopulationName]] = {
+        NeuromodulatorChannel.ACH: NucleusBasalisPopulation.ACH,
     }
 
-    def __init__(self, config: NucleusBasalisConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    def __init__(
+        self,
+        config: NucleusBasalisConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         # Store sizes
         self.ach_neurons_size = population_sizes[NucleusBasalisPopulation.ACH]
@@ -71,7 +79,7 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
                 population_name=NucleusBasalisPopulation.ACH,
                 prediction_error_to_current_gain=self.config.pe_gain,
             ),
-            device=self.device,
+            device=device,
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
@@ -82,13 +90,7 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
             max_delay=10,  # Track last 10 timesteps for variance computation
             size=1,  # Single scalar value per timestep
             dtype=torch.float32,
-            device=self.device,
-        )
-        self._prediction_error_buffer = CircularDelayBuffer(
-            max_delay=1000,  # Track last 1000 timesteps for analysis
-            size=1,  # Single scalar value per timestep
-            dtype=torch.float32,
-            device=self.device,
+            device=device,
         )
 
         # Adaptive normalization
@@ -102,21 +104,18 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
         self._register_neuron_population(NucleusBasalisPopulation.ACH, self.ach_neurons, polarity=PopulationPolarity.ANY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute prediction error and drive acetylcholine neurons to burst.
 
         Note: neuromodulator_inputs is not used - NB is a neuromodulator source region.
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
         # Find PFC executive spikes via SynapseId (SynapticInput is Dict[SynapseId, Tensor])
         pfc_spikes: Optional[torch.Tensor] = None
         amygdala_spikes: Optional[torch.Tensor] = None
         for sid, spikes in synaptic_inputs.items():
-            if sid.source_region == "prefrontal" and sid.source_population == PrefrontalPopulation.EXECUTIVE:
+            if sid.source_region == "prefrontal_cortex" and sid.source_population == CortexPopulation.L5_PYR:
                 pfc_spikes = spikes
             elif sid.source_region == "basolateral_amygdala":
                 # BLA → NB: emotional salience / aversive surprise drives ACh bursts
@@ -128,9 +127,6 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
         # Normalize PE to prevent saturation
         if self.config.pe_normalization:
             prediction_error = self._normalize_pe(prediction_error)
-
-        # Track history for analysis using CircularDelayBuffer
-        self._prediction_error_buffer.write(torch.tensor([prediction_error], device=self.device))
 
         # Update ACh neurons with PE drive
         # High |PE| → depolarization → fast burst (10-20 Hz for 50-100ms)
@@ -153,7 +149,9 @@ class NucleusBasalis(NeuromodulatorSourceRegion[NucleusBasalisConfig]):
             NucleusBasalisPopulation.GABA: gaba_spikes,
         }
 
-        return self._post_forward(region_outputs)
+        self._pfc_activity_buffer.advance()
+
+        return region_outputs
 
     def _compute_prediction_error(
         self,

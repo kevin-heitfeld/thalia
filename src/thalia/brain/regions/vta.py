@@ -72,19 +72,17 @@ Current implementation:
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import ClassVar, Dict, List, Optional, Union
 
 import torch
 
+from thalia import GlobalConfig
 from thalia.brain.configs import VTAConfig
-from thalia.components import (
-    ConductanceLIFConfig,
-    ConductanceLIF,
-)
+from thalia.brain.synapses import NMReceptorType, make_nm_receptor
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
-    NeuromodulatorType,
+    NeuromodulatorChannel,
     PopulationName,
     PopulationPolarity,
     PopulationSizes,
@@ -95,7 +93,7 @@ from thalia.typing import (
 )
 from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
 
-from .neuromodulator_source_region import NeuromodulatorSourceRegion
+from .dopamine_pacemaker_base import DopaminePacemakerBase
 from .population_names import VTAPopulation
 from .region_registry import register_region
 
@@ -108,7 +106,7 @@ from .region_registry import register_region
     author="Thalia Project",
     config_class=VTAConfig,
 )
-class VTA(NeuromodulatorSourceRegion[VTAConfig]):
+class VTA(DopaminePacemakerBase[VTAConfig]):
     """Ventral Tegmental Area - Dopamine Reward Prediction Error System.
 
     Computes reward prediction errors (RPE) and broadcasts dopamine signals
@@ -122,13 +120,25 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
     # executive function/arousal).  These were previously both pointing to the same
     # 'da' population — now each maps to a distinct sub-population with different
     # biophysical properties and autoreceptor feedback.
-    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]] = {
-        'da_mesolimbic': VTAPopulation.DA_MESOLIMBIC,
-        'da_mesocortical': VTAPopulation.DA_MESOCORTICAL,
+    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorChannel, PopulationName]] = {
+        NeuromodulatorChannel.DA_MESOLIMBIC:   VTAPopulation.DA_MESOLIMBIC,
+        NeuromodulatorChannel.DA_MESOCORTICAL: VTAPopulation.DA_MESOCORTICAL,
     }
 
-    def __init__(self, config: VTAConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    # 5-HT1A receptors on VTA DA neurons: DRN serotonin attenuates phasic burst
+    # amplitude of mesolimbic DA neurons (inhibitory Gi-coupled hyperpolarisation).
+    # Mesocortical neurons are less sensitive (Gervais & Bhagya 2007).
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [NeuromodulatorChannel.SHT]
+
+    def __init__(
+        self,
+        config: VTAConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.da_mesolimbic_size = population_sizes[VTAPopulation.DA_MESOLIMBIC]
         self.da_mesocortical_size = population_sizes[VTAPopulation.DA_MESOCORTICAL]
@@ -140,36 +150,9 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         # Have D2 somatodendritic autoreceptors (Beckstead et al. 2004).
         # Tonic 4-6 Hz, burst to 15-20 Hz for positive RPE.
         # -----------------------------------------------------------------------
-        # I_h (HCN) contributes to the 4-6 Hz tonic rhythm and rebound after
-        # inhibitory pauses by RMTg (negative RPE pathway).
-        self.da_mesolimbic_neurons = ConductanceLIF(
-            n_neurons=self.da_mesolimbic_size,
-            config=ConductanceLIFConfig(
-                region_name=region_name,
-                population_name=VTAPopulation.DA_MESOLIMBIC,
-                tau_mem=config.tau_mem,
-                v_threshold=1.0,
-                v_reset=0.0,
-                tau_ref=config.tau_ref,
-                g_L=config.g_L,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=5.0,
-                tau_I=10.0,
-                noise_std=config.noise_std,
-                adapt_increment=config.adapt_increment,
-                tau_adapt=config.tau_adapt,
-                E_adapt=-0.5,
-                # I_h (HCN) pacemaker — voltage-dependent rebound after RMTg-driven pauses
-                enable_ih=True,
-                g_h_max=0.03,
-                E_h=-0.3,
-                V_half_h=-0.35,
-                k_h=0.08,
-                tau_h_ms=150.0,  # Slow activation (~150ms, Neuhoff et al. 2002)
-            ),
-            device=self.device,
+        self.da_mesolimbic_neurons = self._make_da_neurons(
+            self.da_mesolimbic_size,
+            VTAPopulation.DA_MESOLIMBIC,
         )
 
         # -----------------------------------------------------------------------
@@ -178,35 +161,12 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         # Lack somatodendritic D2 autoreceptors (Lammel et al. 2008) → higher
         # baseline firing (~7-9 Hz) and unattenuated burst responses.
         # Respond more to aversive/novel stimuli than to pure reward.
+        # Uses config.mesocortical_adapt_increment for faster adaptation.
         # -----------------------------------------------------------------------
-        self.da_mesocortical_neurons = ConductanceLIF(
-            n_neurons=self.da_mesocortical_size,
-            config=ConductanceLIFConfig(
-                region_name=region_name,
-                population_name=VTAPopulation.DA_MESOCORTICAL,
-                tau_mem=config.tau_mem,
-                v_threshold=1.0,
-                v_reset=0.0,
-                tau_ref=config.tau_ref,
-                g_L=config.g_L,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=5.0,
-                tau_I=10.0,
-                noise_std=config.noise_std,
-                adapt_increment=config.mesocortical_adapt_increment,  # Faster adaptation
-                tau_adapt=config.tau_adapt,
-                E_adapt=-0.5,
-                # I_h pacemaker — same kinetics as mesolimbic
-                enable_ih=True,
-                g_h_max=0.03,
-                E_h=-0.3,
-                V_half_h=-0.35,
-                k_h=0.08,
-                tau_h_ms=150.0,
-            ),
-            device=self.device,
+        self.da_mesocortical_neurons = self._make_da_neurons(
+            self.da_mesocortical_size,
+            VTAPopulation.DA_MESOCORTICAL,
+            adapt_increment=config.mesocortical_adapt_increment,
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
@@ -215,10 +175,7 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         # D2 somatodendritic autoreceptors — MESOLIMBIC ONLY
         # Exponential moving average of per-neuron DA firing rate (one-step lag).
         # Mesocortical neurons lack this feedback (Lammel et al. 2008).
-        self.register_buffer(
-            "_prev_mesolimbic_spike_rate",
-            torch.zeros(self.da_mesolimbic_size, device=self.device),
-        )
+        self.register_buffer("_prev_mesolimbic_spike_rate", torch.zeros(self.da_mesolimbic_size, device=device))
 
         # -----------------------------------------------------------------------
         # V(s') ring buffer — full TD error: δ = r + γ·V(s') − V(s)
@@ -229,7 +186,7 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         self._snr_rate_buffer = CircularDelayBuffer(
             max_delay=self._value_lag_steps,
             size=1,
-            device=self.device,
+            device=device,
             dtype=torch.float32,
         )
 
@@ -240,7 +197,7 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
         if config.da_ramp_enabled:
             self.register_buffer(
                 "_da_ramp_signal",
-                torch.zeros(1, device=self.device),
+                torch.zeros(1, device=device),
             )
 
         # Adaptive normalization state
@@ -249,16 +206,35 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
             self._rpe_count = 0
 
         # =====================================================================
+        # SEROTONIN RECEPTOR (5-HT1A on mesolimbic DA neurons — from DRN)
+        # =====================================================================
+        # Biology: DRN projects 5-HT to VTA DA neurons via 5-HT1A (inhibitory,
+        # Gi-coupled).  High 5-HT hyperpolarises DA neurons, attenuating phasic
+        # burst amplitude and reducing DA released into the mesolimbic pathway.
+        # Mesocortical neurons have weaker 5-HT1A expression (Gervais & Bhagya 2007).
+        # Kinetics: tau_rise ~10 ms, tau_decay ~200 ms (SERT reuptake).
+        # 5-HT1A (Gi → GIRK): inhibitory on DA-mesolimbic neurons.
+        # τ_rise=10 ms, τ_decay=500 ms (Gervais & Bhagya 2007).
+        self.sht_receptor = make_nm_receptor(
+            NMReceptorType.SHT_1A, n_receptors=self.da_mesolimbic_size, dt_ms=config.dt_ms, device=device,
+            amplitude_scale=1.33,  # Preserve legacy ~0.20 effective amplitude
+        )
+        self._sht_concentration: torch.Tensor
+        self.register_buffer(
+            "_sht_concentration",
+            torch.zeros(self.da_mesolimbic_size, device=device),
+        )
+
+        # =====================================================================
         # REGISTER NEURON POPULATIONS
         # =====================================================================
         self._register_neuron_population(VTAPopulation.DA_MESOLIMBIC, self.da_mesolimbic_neurons, polarity=PopulationPolarity.ANY)
         self._register_neuron_population(VTAPopulation.DA_MESOCORTICAL, self.da_mesocortical_neurons, polarity=PopulationPolarity.ANY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute full TD RPE and drive both DA sub-populations to burst/pause.
 
         Implements the canonical temporal-difference error:
@@ -277,7 +253,18 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
             synaptic_inputs: Reward signal, RMTg GABA pauses, optional SNr GABA_A
             neuromodulator_inputs: Not consumed (VTA is a neuromodulator source)
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
+        device = self.device
+        config = self.config
+
+        # =====================================================================
+        # SEROTONIN RECEPTOR UPDATE (DRN Spikes → 5-HT1A Concentration)
+        # =====================================================================
+        # Update before RPE computation so the attenuation factor is ready for
+        # both sub-populations in the same timestep.
+        if not GlobalConfig.NEUROMODULATION_DISABLED:
+            sht_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.SHT)
+            self._sht_concentration = self.sht_receptor.update(sht_spikes)
+        sht_level = self._sht_concentration.mean().item()
 
         # =====================================================================
         # DECODE REWARD AND COMPUTE RPE
@@ -309,7 +296,7 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
             V_s_prime = float(V_s_prime_tensor.item())
             # Now write current V(s) into buffer
             self._snr_rate_buffer.write(
-                torch.tensor([V_s], dtype=torch.float32, device=self.device)
+                torch.tensor([V_s], dtype=torch.float32, device=device)
             )
         else:
             V_s_prime = 0.0
@@ -326,12 +313,20 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
                 # Reward received: reset ramp (dopamine ramp collapses post-reward)
                 self._da_ramp_signal.fill_(0.0)
             else:
-                # No reward: build anticipatory ramp (bounded exponential rise)
-                decay = 1.0 - self.config.dt_ms / self.config.da_ramp_tau_ms
+                # No reward: build anticipatory ramp (bounded exponential rise).
+                # V(s')-scaled: ramp increments proportional to learned value anticipation.
+                # When striatum hasn't learned to predict reward (V_s_prime ≈ 0) the ramp
+                # stays flat; once it strongly predicts upcoming reward (V_s_prime → 1)
+                # the ramp builds at full rate.  This makes the ramp emerge from
+                # corticostriatal learning rather than being a fixed-clock timer.
+                # Biological basis: in Howe et al. 2013 ramp amplitude correlates with
+                # learned value; Hamid et al. 2016 shows DA ramp scales with Q(s).
+                decay = 1.0 - config.dt_ms / self.config.da_ramp_tau_ms
+                value_confidence = max(V_s_prime, 0.0)  # scaled by learned V(s')
                 self._da_ramp_signal.mul_(decay).add_(
                     torch.tensor(
-                        [self.config.da_ramp_gain * self.config.dt_ms],
-                        dtype=torch.float32, device=self.device,
+                        [self.config.da_ramp_gain * config.dt_ms * value_confidence],
+                        dtype=torch.float32, device=device,
                     )
                 )
             ramp = float(self._da_ramp_signal.item())
@@ -347,31 +342,41 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
 
         # =====================================================================
         # MESOLIMBIC DA NEURONS (reward/motivation channel)
-        # Baseline 4-6 Hz tonic; burst on positive RPE; D2 autoreceptor feedback.
+        # Tonic 4-6 Hz firing is driven by intrinsic I_h pacemaker (enable_ih=True).
+        # Phasic burst on positive RPE; pause via RMTg GABA on negative RPE.
+        # D2 autoreceptor feedback suppresses phasic burst amplitude.
         # =====================================================================
-        ml_baseline = torch.full((self.da_mesolimbic_size,), self.config.baseline_drive, device=self.device)
+        ml_phasic = torch.zeros(self.da_mesolimbic_size, device=device)
 
         if rpe_clipped > 0:
             rpe_exc = rpe_clipped * self.config.rpe_gain
             rpe_jitter = torch.clamp(
-                1.0 + torch.randn(self.da_mesolimbic_size, device=self.device) * 0.2,
+                1.0 + torch.randn(self.da_mesolimbic_size, device=device) * 0.2,
                 0.5, 1.5,
             )
-            ml_baseline = ml_baseline + rpe_exc * rpe_jitter
+            ml_phasic = ml_phasic + rpe_exc * rpe_jitter
 
         # D2 somatodendritic autoreceptors — mesolimbic only
         if self.config.d2_autoreceptor_gain > 0.0:
             autoreceptor_suppression = self.config.d2_autoreceptor_gain * self._prev_mesolimbic_spike_rate
-            ml_baseline = (ml_baseline * (1.0 - autoreceptor_suppression)).clamp(min=0.0)
+            ml_phasic = (ml_phasic * (1.0 - autoreceptor_suppression)).clamp(min=0.0)
 
         # Anticipatory DA ramp (mesolimbic: full ramp amplitude)
         if ramp > 0.0:
-            ml_baseline = ml_baseline + ramp
+            ml_phasic = ml_phasic + ramp
 
-        # Use 5% NMDA for the tonic baseline scalar drive.
-        # nmda_ratio=0.10 caused NMDA accumulation: g_nmda_ss = 0.060 (75% of g_L=0.08) → 20 Hz.
-        # nmda_ratio=0.05: g_nmda_ss ≈ 0.030 → V_inf ≈ 0.89 < threshold 1.0 → noise-driven 4-7 Hz.
-        ml_g_ampa, ml_g_nmda = split_excitatory_conductance(ml_baseline, nmda_ratio=0.05)
+        # 5-HT1A: attenuate mesolimbic DA burst amplitude under high serotonin.
+        # Biology: Gi-coupled hyperpolarisation reduces AP rate; max ~35% suppression.
+        if sht_level > 0.01:
+            ml_phasic = ml_phasic * (1.0 - 0.35 * sht_level)
+
+        # Add tonic baseline drive (mesolimbic pacemaker floor, ~5-6 Hz via
+        # adaptation-rebound mechanism — see VTAConfig.mesolimbic_baseline_drive).
+        ml_baseline = torch.full((self.da_mesolimbic_size,), config.mesolimbic_baseline_drive, device=device)
+        ml_phasic = ml_phasic + ml_baseline
+
+        # Phasic RPE/ramp conductance split: 5% NMDA to avoid steady-state accumulation.
+        ml_g_ampa, ml_g_nmda = split_excitatory_conductance(ml_phasic, nmda_ratio=0.05)
 
         # RMTg inhibition targeting mesolimbic neurons specifically
         rmtg_ml = self._integrate_synaptic_inputs_at_dendrites(
@@ -393,29 +398,36 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
 
         # =====================================================================
         # MESOCORTICAL DA NEURONS (executive/arousal channel)
-        # Baseline 7-9 Hz tonic; NO D2 autoreceptors; same RMTg pause pathway.
-        # Receive same RPE burst drive (salience/uncertainty signal to PFC).
+        # Tonic 7-9 Hz firing driven by intrinsic I_h pacemaker (enable_ih=True).
+        # NO D2 autoreceptors; same RPE burst drive and RMTg pause pathway.
         # =====================================================================
-        mc_baseline = torch.full(
-            (self.da_mesocortical_size,), self.config.mesocortical_baseline_drive, device=self.device
-        )
+        mc_phasic = torch.zeros(self.da_mesocortical_size, device=device)
 
         if rpe_clipped > 0:
             rpe_exc = rpe_clipped * self.config.rpe_gain
             rpe_jitter = torch.clamp(
-                1.0 + torch.randn(self.da_mesocortical_size, device=self.device) * 0.2,
+                1.0 + torch.randn(self.da_mesocortical_size, device=device) * 0.2,
                 0.5, 1.5,
             )
-            mc_baseline = mc_baseline + rpe_exc * rpe_jitter
+            mc_phasic = mc_phasic + rpe_exc * rpe_jitter
         # No D2 autoreceptor suppression for mesocortical neurons
 
         # Anticipatory DA ramp (mesocortical: 50% amplitude, models weaker ramp
         # in PFC-projecting neurons; less reward-driven than mesolimbic)
         if ramp > 0.0:
-            mc_baseline = mc_baseline + ramp * 0.5
+            mc_phasic = mc_phasic + ramp * 0.5
 
-        # 5% NMDA for mesocortical baseline drive (same reasoning as mesolimbic).
-        mc_g_ampa, mc_g_nmda = split_excitatory_conductance(mc_baseline, nmda_ratio=0.05)
+        # 5-HT1A: mesocortical DA neurons have weaker 5-HT1A expression (~15% attenuation).
+        if sht_level > 0.01:
+            mc_phasic = mc_phasic * (1.0 - 0.15 * sht_level)
+
+        # Add tonic baseline drive (mesocortical pacemaker floor, ~7-8 Hz via
+        # adaptation-rebound mechanism — see VTAConfig.mesocortical_baseline_drive).
+        mc_baseline = torch.full((self.da_mesocortical_size,), config.mesocortical_baseline_drive, device=device)
+        mc_phasic = mc_phasic + mc_baseline
+
+        # Phasic RPE/ramp conductance split: 5% NMDA to avoid steady-state accumulation.
+        mc_g_ampa, mc_g_nmda = split_excitatory_conductance(mc_phasic, nmda_ratio=0.05)
 
         # RMTg inhibition targeting mesocortical neurons specifically
         rmtg_mc = self._integrate_synaptic_inputs_at_dendrites(
@@ -445,22 +457,9 @@ class VTA(NeuromodulatorSourceRegion[VTAConfig]):
             VTAPopulation.GABA: gaba_spikes,
         }
 
-        return self._post_forward(region_outputs)
+        self._snr_rate_buffer.advance()
 
-    def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
-        """VTA GABA drive: tonic baseline + small DA autoinhibition term."""
-        return torch.full((self.gaba_neurons_size,), 0.004 + primary_activity * 0.05, device=self.device)
-
-    def _step_gaba_interneurons(self, primary_activity: float) -> torch.Tensor:
-        """Override to use AMPA-only drive for VTA GABA interneurons."""
-        gaba_drive = self._compute_gaba_drive(primary_activity)
-        gaba_spikes, _ = self.gaba_neurons.forward(
-            g_ampa_input=ConductanceTensor(gaba_drive),
-            g_nmda_input=None,
-            g_gaba_a_input=None,
-            g_gaba_b_input=None,
-        )
-        return gaba_spikes
+        return region_outputs
 
     def _decode_reward(self, reward_spikes: Optional[torch.Tensor]) -> float:
         """Decode reward value from population spike pattern.

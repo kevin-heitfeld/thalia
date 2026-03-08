@@ -53,19 +53,20 @@ References:
 
 from __future__ import annotations
 
-from typing import ClassVar, List
+from typing import ClassVar, List, Union
 
 import torch
 
+from thalia import GlobalConfig
 from thalia.brain.configs import CentralAmygdalaConfig
-from thalia.components import (
-    ConductanceLIF,
-    ConductanceLIFConfig,
+from thalia.brain.synapses import (
+    STPConfig,
+    STPType,
     WeightInitializer,
 )
-from thalia.components.synapses.stp import STPConfig, STPType
 from thalia.typing import (
     ConductanceTensor,
+    NeuromodulatorChannel,
     NeuromodulatorInput,
     PopulationPolarity,
     PopulationSizes,
@@ -77,7 +78,7 @@ from thalia.typing import (
 )
 from thalia.utils import split_excitatory_conductance
 
-from .neural_region import NeuralRegion
+from .amygdala_nucleus import AmygdalaNucleus
 from .population_names import CeAPopulation
 from .region_registry import register_region
 
@@ -90,7 +91,7 @@ from .region_registry import register_region
     author="Thalia Project",
     config_class=CentralAmygdalaConfig,
 )
-class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
+class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
     """Central Amygdala: fear output and autonomic response nucleus.
 
     Contains:
@@ -105,15 +106,22 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
     """
 
     # NE from LC modulates CeM arousal output gain (alpha-1 adrenoceptors on CeM neurons).
-    neuromodulator_subscriptions: ClassVar[List[str]] = ['ne']
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [NeuromodulatorChannel.NE]
 
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: CentralAmygdalaConfig, population_sizes: PopulationSizes, region_name: RegionName):
+    def __init__(
+        self,
+        config: CentralAmygdalaConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
         """Initialize CeA populations and internal connectivity."""
-        super().__init__(config, population_sizes, region_name)
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.lateral_size = population_sizes[CeAPopulation.LATERAL]
         self.medial_size = population_sizes[CeAPopulation.MEDIAL]
@@ -124,50 +132,26 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
 
         # CeL neurons (lateral CeA): integrative, GABAergic
         # Moderate activity; receives BLA principal input directly
-        self.lateral_neurons = ConductanceLIF(
-            n_neurons=self.lateral_size,
-            config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=CeAPopulation.LATERAL,
-                tau_mem=config.tau_mem,
-                v_threshold=config.v_threshold,
-                v_reset=0.0,
-                tau_ref=config.tau_ref,
-                g_L=0.06,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=6.0,
-                tau_I=12.0,
-                adapt_increment=0.06,
-                tau_adapt=120.0,
-                noise_std=0.03,
-            ),
-            device=self.device,
+        self.lateral_neurons = self._make_amygdala_neuron(
+            self.lateral_size,
+            CeAPopulation.LATERAL,
+            config.tau_mem,
+            config.v_threshold,
+            g_L=0.06,
+            adapt_increment=0.06,
+            tau_adapt=120.0,
         )
 
         # CeM neurons (medial CeA): output, projects to LC and LHb
         # More excitable than CeL; gated by CeL inhibition
-        self.medial_neurons = ConductanceLIF(
-            n_neurons=self.medial_size,
-            config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=CeAPopulation.MEDIAL,
-                tau_mem=config.tau_mem,
-                v_threshold=config.v_threshold * 0.9,  # Slightly easier to activate
-                v_reset=0.0,
-                tau_ref=config.tau_ref,
-                g_L=0.05,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=6.0,
-                tau_I=12.0,
-                adapt_increment=0.05,
-                tau_adapt=150.0,
-                noise_std=0.03,
-            ),
-            device=self.device,
+        self.medial_neurons = self._make_amygdala_neuron(
+            self.medial_size,
+            CeAPopulation.MEDIAL,
+            config.tau_mem,
+            config.v_threshold * 0.9,   # Slightly easier to activate
+            g_L=0.05,
+            adapt_increment=0.05,
+            tau_adapt=150.0,
         )
 
         # =====================================================================
@@ -186,7 +170,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
                 n_output=self.medial_size,
                 connectivity=0.4,
                 weight_scale=0.002,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig.from_type(STPType.DEPRESSING),
@@ -201,7 +185,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
                 n_output=self.lateral_size,
                 connectivity=0.2,
                 weight_scale=0.0015,
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig.from_type(STPType.DEPRESSING),
@@ -209,10 +193,10 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
 
         # Baseline drives
         self.baseline_drive_lateral = torch.full(
-            (self.lateral_size,), config.baseline_drive_lateral, device=self.device
+            (self.lateral_size,), config.baseline_drive_lateral, device=device
         )
         self.baseline_drive_medial = torch.full(
-            (self.medial_size,), config.baseline_drive_medial, device=self.device
+            (self.medial_size,), config.baseline_drive_medial, device=device
         )
 
         # =====================================================================
@@ -222,29 +206,24 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         self._register_neuron_population(CeAPopulation.MEDIAL, self.medial_neurons, polarity=PopulationPolarity.INHIBITORY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute CeA activity for one timestep.
 
         Args:
             synaptic_inputs: BLA principal and other inputs
             neuromodulator_inputs: NE from LC (arousal modulation)
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
-        cfg = self.config
-
         # =====================================================================
         # NE MODULATION (LC → CeA arousal state)
         # =====================================================================
         # NE increases CeA sensitivity during high arousal / stress
-        ne_signal = neuromodulator_inputs.get('ne', None)
+        ne_signal = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.NE)
         ne_boost = 0.0
         if ne_signal is not None:
             ne_rate = ne_signal.float().mean().item()
@@ -328,10 +307,4 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             CeAPopulation.MEDIAL: medial_spikes,
         }
 
-        return self._post_forward(region_outputs)
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Propagate temporal parameter update to neuron populations."""
-        super().update_temporal_parameters(dt_ms)
-        self.lateral_neurons.update_temporal_parameters(dt_ms)
-        self.medial_neurons.update_temporal_parameters(dt_ms)
+        return region_outputs

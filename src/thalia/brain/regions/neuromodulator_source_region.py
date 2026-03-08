@@ -35,7 +35,10 @@ from typing import Generic, TypeVar
 import torch
 
 from thalia.brain.configs import NeuralRegionConfig
-from thalia.components import NeuronFactory, NeuronType
+from thalia.brain.neurons import (
+    NeuronFactory,
+    NeuronType,
+)
 from thalia.typing import (
     ConductanceTensor,
     PopulationName,
@@ -54,25 +57,33 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
     Provides the shared primary-population + local-GABA-interneuron pattern.
     """
 
-    # ------------------------------------------------------------------
-    # Initialisation helpers
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # INITIALIZATION
+    # =========================================================================
 
-    def _init_gaba_interneurons(
-        self,
-        gaba_population_name: PopulationName,
-        gaba_size: int,
-    ) -> None:
-        """Construct and register the local GABA interneuron pool.
+    def _init_gaba_interneurons(self, gaba_population_name: PopulationName, gaba_size: int) -> None:
+        """Construct and register a local GABA interneuron pool.
 
-        Call this **once** from the subclass ``__init__``, after setting up the
-        primary population(s).
+        Creates fast-spiking (:attr:`NeuronType.FAST_SPIKING`) neurons and
+        registers them as an ``INHIBITORY`` population.  Results are stored on
+        ``self`` as:
+
+        * ``gaba_neurons``       — the neuron group
+        * ``gaba_neurons_size``  — integer count
+        * ``_gaba_population_name`` — the registered population key
+        * ``_prev_gaba_spikes``  — zero-initialised bool buffer (previous-step spikes)
+
+        Call once from a subclass ``__init__`` after the primary population(s)
+        have been created.  The stored ``_prev_gaba_spikes`` buffer is meant to
+        be updated each ``forward()`` call by the subclass.
 
         Args:
             gaba_population_name: Population enum member identifying GABA neurons
                                   (used for registration and weight routing).
             gaba_size:            Number of GABA neurons.
         """
+        device = self.device
+
         self._gaba_population_name: PopulationName = gaba_population_name
         self.gaba_neurons_size: int = gaba_size
 
@@ -81,7 +92,7 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
             population_name=gaba_population_name,
             neuron_type=NeuronType.FAST_SPIKING,
             n_neurons=gaba_size,
-            device=self.device,
+            device=device,
         )
         self._register_neuron_population(
             gaba_population_name,
@@ -92,13 +103,16 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         #   (a) inhibitory feedback to primary neurons next step
         #   (b) self-inhibition within the GABA pool
         # Initialised to zeros (silent at t=0).
-        self._prev_gaba_spikes: torch.Tensor = torch.zeros(
-            gaba_size, dtype=torch.bool, device=self.device
+        self._prev_gaba_spikes: torch.Tensor
+        self.register_buffer(
+            "_prev_gaba_spikes",
+            torch.zeros(gaba_size, dtype=torch.bool, device=device),
+            persistent=False,
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Forward helpers
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
         """Compute excitatory drive for GABA interneurons.
@@ -158,7 +172,7 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         gaba_self_inh = torch.full(
             (self.gaba_neurons_size,),
             prev_gaba_rate * 0.5,   # moderate self-inhibition to prevent saturation
-            device=self.device,
+            device=self._prev_gaba_spikes.device,
         )
 
         gaba_spikes, _ = self.gaba_neurons.forward(
@@ -190,5 +204,5 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         return torch.full(
             (primary_size,),
             prev_gaba_rate * gain,
-            device=self.device,
+            device=self._prev_gaba_spikes.device,
         )

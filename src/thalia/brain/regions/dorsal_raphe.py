@@ -52,19 +52,20 @@ Biological Background:
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import ClassVar, Dict, Optional, Union
 
 import torch
 
+from thalia import GlobalConfig
 from thalia.brain.configs import DorsalRapheNucleusConfig
-from thalia.components import (
-    SerotoninNeuron,
+from thalia.brain.neurons import (
     SerotoninNeuronConfig,
+    SerotoninNeuron,
 )
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
-    NeuromodulatorType,
+    NeuromodulatorChannel,
     PopulationName,
     PopulationPolarity,
     PopulationSizes,
@@ -104,8 +105,8 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
     """
 
     # Declare neuromodulator output channel
-    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]] = {
-        '5ht': DRNPopulation.SEROTONIN,
+    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorChannel, PopulationName]] = {
+        NeuromodulatorChannel.SHT: DRNPopulation.SEROTONIN,
     }
 
     def __init__(
@@ -113,8 +114,10 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         config: DorsalRapheNucleusConfig,
         population_sizes: PopulationSizes,
         region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ):
-        super().__init__(config, population_sizes, region_name)
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.serotonin_neurons_size = population_sizes[DRNPopulation.SEROTONIN]
         self.gaba_neurons_size = population_sizes[DRNPopulation.GABA]
@@ -127,7 +130,7 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
                 population_name=DRNPopulation.SEROTONIN,
                 serotonin_drive_gain=config.tonic_drive_gain * 20.0,
             ),
-            device=self.device,
+            device=device,
         )
 
         # ── Local GABAergic interneurons (homeostatic inhibition) ────────────
@@ -143,20 +146,11 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         # ====================================================================
         # REGISTER POPULATIONS
         # ====================================================================
-        self._register_neuron_population(
-            DRNPopulation.SEROTONIN,
-            self.serotonin_neurons,
-            polarity=PopulationPolarity.ANY,
-        )
+        self._register_neuron_population(DRNPopulation.SEROTONIN, self.serotonin_neurons, polarity=PopulationPolarity.ANY)
 
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(
-        self,
-        synaptic_inputs: SynapticInput,
-        neuromodulator_inputs: NeuromodulatorInput,
-    ) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Compute serotonin output from tonic drive and LHb punishment input.
 
         Args:
@@ -167,7 +161,7 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         Returns:
             RegionOutput with ``DRNPopulation.SEROTONIN`` spike tensor.
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
+        config = self.config
 
         # ── 1. Extract LHb punishment input ──────────────────────────────────
         lhb_spikes: Optional[torch.Tensor] = None
@@ -186,9 +180,9 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         # ── 2. Compute serotonin drive ─────────────────────────────────────
         # Positive baseline drive (encodes tonic state)
         # Subtracted by normalised LHb signal (punishment → pause)
-        raw_drive = self.config.tonic_drive_gain - lhb_rate * self.config.lhb_inhibition_gain
+        raw_drive = config.tonic_drive_gain - lhb_rate * config.lhb_inhibition_gain
 
-        if self.config.drive_normalization:
+        if config.drive_normalization:
             raw_drive = self._normalize_drive(raw_drive)
 
         # Clip drive to sensible range for I_h modulation
@@ -214,7 +208,8 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
             DRNPopulation.SEROTONIN: serotonin_spikes,
             DRNPopulation.GABA: gaba_spikes,
         }
-        return self._post_forward(region_outputs)
+
+        return region_outputs
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -237,7 +232,7 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         # overshoots its target. Match the base-class convention: gain 2.0, no baseline.
         feedback = primary_activity * 2.0
 
-        return torch.full((self.gaba_neurons_size,), feedback, device=self.device)
+        return torch.full((self.gaba_neurons_size,), feedback, device=self.gaba_neurons.device)
 
     def _normalize_drive(self, raw_drive: float) -> float:
         """Adaptive normalisation to prevent saturation / silence.
@@ -253,9 +248,3 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         # Normalise so that the mean drive stays near 0
         normalised = (raw_drive - self._avg_drive) / (abs(self._avg_drive) + 0.1)
         return float(normalised)
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Propagate timestep change to neuron populations and base class."""
-        super().update_temporal_parameters(dt_ms)
-        self.serotonin_neurons.update_temporal_parameters(dt_ms)
-        self.gaba_neurons.update_temporal_parameters(dt_ms)

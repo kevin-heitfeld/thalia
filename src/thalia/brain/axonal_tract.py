@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Union
 
 import torch
 import torch.nn as nn
@@ -44,28 +45,23 @@ class AxonalTract(nn.Module):
     :class:`ConnectionSpec`, keyed by its :class:`SynapseId`.
     """
 
-    @property
-    def device(self) -> torch.device:
-        """Device where tensors are located."""
-        return torch.device(self._device)
-
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, spec: AxonalTractSourceSpec, dt_ms: float, device: str):
+    def __init__(self, spec: AxonalTractSourceSpec, dt_ms: float, device: Union[str, torch.device]) -> None:
         """Initialize an axonal tract for a single source/target pair.
 
         Args:
             spec: Source specification (synapse_id, size, delay_ms, delay_std_ms).
             dt_ms: Simulation timestep in milliseconds.
-            device: PyTorch device string (e.g. ``"cpu"`` or ``"cuda:0"``).
+            device: Device for the delay buffer tensors.
         """
         super().__init__()
 
         self.spec = spec
         self.dt_ms = dt_ms
-        self._device = device
+        self.device = torch.device(device)
 
         # Create the delay buffer for this source.
         # Use heterogeneous delays when delay_std_ms > 0, uniform otherwise.
@@ -94,7 +90,7 @@ class AxonalTract(nn.Module):
                 dtype=torch.bool,
             )
 
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # SPIKE ROUTING
@@ -109,8 +105,9 @@ class AxonalTract(nn.Module):
         if isinstance(self._delay_buffer, HeterogeneousDelayBuffer):
             delayed_spikes = self._delay_buffer.read_heterogeneous()
         else:
+            assert isinstance(self._delay_buffer, CircularDelayBuffer)
             delay_steps = max(1, int(self.spec.delay_ms / self.dt_ms))
-            delayed_spikes = self._delay_buffer.read(delay_steps)  # type: ignore[attr-defined]
+            delayed_spikes = self._delay_buffer.read(delay_steps)
 
         return {self.spec.synapse_id: delayed_spikes}
 
@@ -123,7 +120,7 @@ class AxonalTract(nn.Module):
         """
         sid = self.spec.synapse_id
         population_outputs = source_outputs.get(sid.source_region, {})
-        spikes = population_outputs.get(sid.source_population)
+        spikes = population_outputs.get(sid.source_population, None)
 
         if spikes is not None:
             validate_spike_tensor(spikes)
@@ -132,9 +129,9 @@ class AxonalTract(nn.Module):
                     f"AxonalTract size mismatch for {sid}: "
                     f"expected {self.spec.size} neurons, got {spikes.shape[0]}."
                 )
-            self._delay_buffer.write(spikes)  # type: ignore[attr-defined]
+            self._delay_buffer.write(spikes)
 
-        self._delay_buffer.advance()  # type: ignore[attr-defined]
+        self._delay_buffer.advance()
 
     # =========================================================================
     # TEMPORAL PARAMETER MANAGEMENT
@@ -151,7 +148,7 @@ class AxonalTract(nn.Module):
         """
         old_dt_ms = self.dt_ms
         self.dt_ms = dt_ms
-        self._delay_buffer.resize_for_new_dt(  # type: ignore[attr-defined]
+        self._delay_buffer.resize_for_new_dt(
             new_dt_ms=dt_ms,
             delay_ms=self.spec.delay_ms,
             old_dt_ms=old_dt_ms,

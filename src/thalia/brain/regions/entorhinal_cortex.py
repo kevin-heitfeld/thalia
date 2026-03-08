@@ -46,14 +46,16 @@ Biological Background:
 
 from __future__ import annotations
 
-from typing import ClassVar, List
+from typing import ClassVar, List, Union
 
 import torch
 
+from thalia import GlobalConfig
 from thalia.brain.configs import EntorhinalCortexConfig
-from thalia.components import NeuronFactory
+from thalia.brain.neurons import NeuronFactory
 from thalia.typing import (
     ConductanceTensor,
+    NeuromodulatorChannel,
     NeuromodulatorInput,
     PopulationPolarity,
     PopulationSizes,
@@ -98,14 +100,16 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
     """
 
     # EC does not output neuromodulators; it is a structural relay region.
-    neuromodulator_subscriptions: ClassVar[List[str]] = []
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = []
 
     def __init__(
         self,
         config: EntorhinalCortexConfig,
         population_sizes: PopulationSizes,
         region_name: RegionName,
-    ) -> None:
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
         """Initialise entorhinal cortex populations.
 
         Args:
@@ -113,7 +117,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             population_sizes: Mapping of ``ECPopulation`` keys to neuron counts.
             region_name: Unique region name string (e.g. ``"entorhinal_cortex"``).
         """
-        super().__init__(config, population_sizes, region_name)
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.ec_ii_size: int = population_sizes[ECPopulation.EC_II]
         self.ec_iii_size: int = population_sizes[ECPopulation.EC_III]
@@ -127,7 +131,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             region_name=self.region_name,
             population_name=ECPopulation.EC_II,
             n_neurons=self.ec_ii_size,
-            device=self.device,
+            device=device,
             v_threshold=config.ec_ii_threshold,
             adapt_increment=config.ec_ii_adapt_increment,
             tau_adapt=config.ec_ii_adapt_tau_ms,
@@ -140,7 +144,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             region_name=self.region_name,
             population_name=ECPopulation.EC_III,
             n_neurons=self.ec_iii_size,
-            device=self.device,
+            device=device,
             v_threshold=config.ec_iii_threshold,
             adapt_increment=config.ec_iii_adapt_increment,
             tau_adapt=config.ec_iii_adapt_tau_ms,
@@ -153,7 +157,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             region_name=self.region_name,
             population_name=ECPopulation.EC_V,
             n_neurons=self.ec_v_size,
-            device=self.device,
+            device=device,
             v_threshold=config.ec_v_threshold,
             adapt_increment=config.ec_v_adapt_increment,
             tau_adapt=config.ec_v_adapt_tau_ms,
@@ -177,18 +181,13 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             polarity=PopulationPolarity.EXCITATORY,
         )
 
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # FORWARD
     # =========================================================================
 
-    @torch.no_grad()
-    def forward(
-        self,
-        synaptic_inputs: SynapticInput,
-        neuromodulator_inputs: NeuromodulatorInput,
-    ) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Route cortical → hippocampal and hippocampal → cortical signals.
 
         Processing order:
@@ -207,9 +206,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         Returns:
             ``RegionOutput`` mapping ``ECPopulation`` keys to boolean spike tensors.
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
-        cfg = self.config
+        config = self.config
 
         # ── 1. Integrate cortical → EC_II dendrites ──────────────────────────
         # All synaptic connections whose ``target_population == ECPopulation.EC_II``
@@ -221,7 +218,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         ).g_ampa
 
         # Add tonic baseline drive (sub-threshold depolarisation from layer I)
-        ec_ii_drive = ec_ii_raw + cfg.ec_ii_tonic_drive
+        ec_ii_drive = ec_ii_raw + config.ec_ii_tonic_drive
 
         ec_ii_drive = torch.nn.functional.relu(ec_ii_drive)  # Non-negative conductance
 
@@ -250,7 +247,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             filter_by_target_population=ECPopulation.EC_III,
         ).g_ampa
 
-        ec_iii_drive = ec_iii_raw + cfg.ec_iii_tonic_drive
+        ec_iii_drive = ec_iii_raw + config.ec_iii_tonic_drive
         ec_iii_drive = torch.nn.functional.relu(ec_iii_drive)
 
         # ── 4. Fire EC_III neurons ────────────────────────────────────────────
@@ -271,7 +268,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             filter_by_target_population=ECPopulation.EC_V,
         ).g_ampa
 
-        ec_v_drive = ec_v_raw + cfg.ec_v_tonic_drive
+        ec_v_drive = ec_v_raw + config.ec_v_tonic_drive
         ec_v_drive = torch.nn.functional.relu(ec_v_drive)
 
         # ── 6. Fire EC_V neurons ──────────────────────────────────────────────
@@ -292,15 +289,5 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             ECPopulation.EC_III: ec_iii_spikes,
             ECPopulation.EC_V: ec_v_spikes,
         }
-        return self._post_forward(region_outputs)
 
-    # =========================================================================
-    # TEMPORAL PARAMETER UPDATE
-    # =========================================================================
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Propagate timestep change to all neuron populations and base class."""
-        super().update_temporal_parameters(dt_ms)
-        self.ec_ii_neurons.update_temporal_parameters(dt_ms)
-        self.ec_iii_neurons.update_temporal_parameters(dt_ms)
-        self.ec_v_neurons.update_temporal_parameters(dt_ms)
+        return region_outputs

@@ -8,10 +8,13 @@ to the output nuclei (SNr and GPi).
 
 from __future__ import annotations
 
+from typing import Union
+
 import torch
 
-from thalia.brain.configs import SubthalamicNucleusConfig
-from thalia.components import ConductanceLIF, ConductanceLIFConfig
+from thalia import GlobalConfig
+from thalia.brain.configs import TonicPacemakerConfig, get_default_stn_config
+from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -32,17 +35,24 @@ from .region_registry import register_region
     description="Subthalamic nucleus - glutamatergic basal ganglia pacemaker",
     version="1.0",
     author="Thalia Project",
-    config_class=SubthalamicNucleusConfig,
+    config_class=get_default_stn_config,
 )
-class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
+class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
     """Subthalamic Nucleus - Glutamatergic Basal Ganglia Pacemaker.
 
     Autonomous ~20 Hz pacemaker neurons that receive hyperdirect cortical
     input and GPe inhibition, and project excitatory output to SNr and GPe.
     """
 
-    def __init__(self, config: SubthalamicNucleusConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    def __init__(
+        self,
+        config: TonicPacemakerConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.stn_size = population_sizes[STNPopulation.STN]
 
@@ -74,15 +84,17 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
                 k_h=0.10,      # Steep voltage-dependence
                 tau_h_ms=80.0, # Slightly faster than default for ~20 Hz pacemaking
             ),
-            device=self.device,
+            device=device,
         )
 
         # Baseline drive for autonomous pacemaking (tonic excitatory conductance)
         # I_h is now handled by enable_ih in the neuron config (voltage-dependent).
         # This scalar baseline provides the sustained low-level depolarisation needed
         # to keep STN neurons near threshold between I_h-driven rebounds.
-        self.baseline_drive = torch.full(
-            (self.stn_size,), self.config.baseline_drive, device=self.device
+        # Registered as a buffer so it moves with .to(device) and is saved in state_dict.
+        self.register_buffer(
+            "baseline_drive",
+            torch.full((self.stn_size,), self.config.baseline_drive, device=device),
         )
 
         # =====================================================================
@@ -91,13 +103,10 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
         self._register_neuron_population(STNPopulation.STN, self.stn_neurons)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Update STN neurons based on hyperdirect cortical and GPe inputs."""
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
         # =====================================================================
         # Compute conductances
         # Integrate all inputs targeting STN population
@@ -129,9 +138,4 @@ class SubthalamicNucleus(NeuralRegion[SubthalamicNucleusConfig]):
             STNPopulation.STN: stn_spikes,
         }
 
-        return self._post_forward(region_outputs)
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes."""
-        super().update_temporal_parameters(dt_ms)
-        self.stn_neurons.update_temporal_parameters(dt_ms)
+        return region_outputs

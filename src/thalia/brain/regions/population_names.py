@@ -6,6 +6,8 @@ from enum import StrEnum
 class ExternalPopulation(StrEnum):
     """Special population names for external inputs that don't belong to any specific region."""
 
+    # TODO: "novelty" shouldn't be a population of the "external" region
+    NOVELTY = "novelty"  # CA1 mismatch signal → VTA DA (Hippocampal-VTA loop, Lisman & Grace 2005)
     REWARD = "reward"
     SENSORY = "sensory"
 
@@ -48,12 +50,20 @@ class CerebellumPopulation(StrEnum):
 class CortexPopulation(StrEnum):
     """Cortical population names."""
 
+    # Layer 1: Neurogliaform cells (the only neurons actually residing in L1)
+    # Biology: NGC cells form a dense GABAergic network in L1 that inhibits the
+    # apical tufts of L2/3 and L5 pyramidal cells. They receive top-down axons
+    # from higher cortical areas and L2/3 apical collaterals.
+    # Ref: Jiang et al. 2013; Letzkus et al. 2011 (top-down disinhibitory circuit)
+    L1_NGC = "l1_ngc"
+
     L23 = "l23"
     L23_PYR = "l23_pyr"
     L23_INHIBITORY = "l23_inhibitory"
     L23_INHIBITORY_PV = "l23_inhibitory_pv"
     L23_INHIBITORY_SST = "l23_inhibitory_sst"
     L23_INHIBITORY_VIP = "l23_inhibitory_vip"
+    L23_INHIBITORY_NGC = "l23_inhibitory_ngc"
 
     L4 = "l4"
     L4_PYR = "l4_pyr"
@@ -61,6 +71,7 @@ class CortexPopulation(StrEnum):
     L4_INHIBITORY_PV = "l4_inhibitory_pv"
     L4_INHIBITORY_SST = "l4_inhibitory_sst"
     L4_INHIBITORY_VIP = "l4_inhibitory_vip"
+    L4_INHIBITORY_NGC = "l4_inhibitory_ngc"
     L4_SST_PRED = "l4_sst_pred"  # Dedicated prediction-error SST interneuron (L5→disynaptic→L4)
 
     L5 = "l5"
@@ -69,6 +80,7 @@ class CortexPopulation(StrEnum):
     L5_INHIBITORY_PV = "l5_inhibitory_pv"
     L5_INHIBITORY_SST = "l5_inhibitory_sst"
     L5_INHIBITORY_VIP = "l5_inhibitory_vip"
+    L5_INHIBITORY_NGC = "l5_inhibitory_ngc"
 
     L6 = "l6"
     L6_PYR = "l6_pyr"
@@ -76,6 +88,7 @@ class CortexPopulation(StrEnum):
     L6_INHIBITORY_PV = "l6_inhibitory_pv"
     L6_INHIBITORY_SST = "l6_inhibitory_sst"
     L6_INHIBITORY_VIP = "l6_inhibitory_vip"
+    L6_INHIBITORY_NGC = "l6_inhibitory_ngc"
 
     L6A = "l6a"
     L6A_PYR = "l6a_pyr"
@@ -83,6 +96,7 @@ class CortexPopulation(StrEnum):
     L6A_INHIBITORY_PV = "l6a_inhibitory_pv"
     L6A_INHIBITORY_SST = "l6a_inhibitory_sst"
     L6A_INHIBITORY_VIP = "l6a_inhibitory_vip"
+    L6A_INHIBITORY_NGC = "l6a_inhibitory_ngc"
 
     L6B = "l6b"
     L6B_PYR = "l6b_pyr"
@@ -90,7 +104,7 @@ class CortexPopulation(StrEnum):
     L6B_INHIBITORY_PV = "l6b_inhibitory_pv"
     L6B_INHIBITORY_SST = "l6b_inhibitory_sst"
     L6B_INHIBITORY_VIP = "l6b_inhibitory_vip"
-
+    L6B_INHIBITORY_NGC = "l6b_inhibitory_ngc"
 
 
 class DRNPopulation(StrEnum):
@@ -120,6 +134,19 @@ class GPePopulation(StrEnum):
 
     ARKYPALLIDAL = "arkypallidal"  # Projects back to striatum (global suppression)
     PROTOTYPIC = "prototypic"    # Projects to STN / SNr (canonical indirect pathway)
+
+
+class GPiPopulation(StrEnum):
+    """Globus pallidus interna (entopeduncular nucleus) population names.
+
+    The GPi is the principal GABAergic output nucleus of the basal ganglia for
+    motor and cognitive loops, running in parallel with SNr (which gates saccades
+    and VTA). GPi gates limb movement via VA/VL thalamus and cognitive processing
+    via MD thalamus.
+    """
+
+    PRINCIPAL = "principal"     # ~75%; GABAergic, ~60-80 Hz tonic, → Thalamus VA/VL/MD
+    BORDER_CELLS = "border_cells"  # ~25%; pause on unexpected reward; value-coding subset
 
 
 class HippocampusPopulation(StrEnum):
@@ -177,12 +204,6 @@ class NucleusBasalisPopulation(StrEnum):
     GABA = "gaba"
 
 
-class PrefrontalPopulation(StrEnum):
-    """Prefrontal population names."""
-
-    EXECUTIVE = "executive"
-
-
 class RMTgPopulation(StrEnum):
     """Rostromedial tegmental nucleus (tail of VTA / anti-reward centre) population names."""
 
@@ -209,6 +230,23 @@ class StriatumPopulation(StrEnum):
     D2 = "d2"
     FSI = "fsi"
     TAN = "tan"   # Tonically Active Neurons (cholinergic interneurons)
+
+
+class SubiculumPopulation(StrEnum):
+    """Subiculum population names.
+
+    The subiculum is the primary output gateway of the hippocampal formation.
+    It sits between CA1 and the entorhinal cortex and converts CA1 complex-spike
+    bursts into regular spiking output that targets EC, PFC, amygdala, and
+    hypothalamus.
+
+    PRINCIPAL: Subicular pyramidal cells (excitatory).  Three firing types are
+        found biologically (regular-spiking, burst-firing, weak-burst) but are
+        collapsed into a single population with heterogeneous ConductanceLIF
+        parameters so that the emergent population activity spans all three modes.
+    """
+
+    PRINCIPAL = "principal"
 
 
 class SubstantiaNigraPopulation(StrEnum):

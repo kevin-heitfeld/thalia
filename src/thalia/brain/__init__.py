@@ -1,4 +1,4 @@
-"""Neural Regions for Dynamic Brain Modeling."""
+"""Neural Regions for Brain Modeling."""
 
 from .axonal_tract import (
     AxonalTract,
@@ -6,9 +6,11 @@ from .axonal_tract import (
 )
 from .brain_builder import (
     BrainBuilder,
+    ConductanceBudgetEntry,
+    SourceContribution,
 )
 from .brain import (
-    DynamicBrain,
+    Brain,
 )
 from .neuromodulator_hub import (
     NeuromodulatorHub,
@@ -16,12 +18,11 @@ from .neuromodulator_hub import (
 from .configs import (
     BrainConfig,
     CerebellumConfig,
-    CortexConfig,
-    CortexLayer,
+    CorticalColumnConfig,
     HippocampusConfig,
     MedialSeptumConfig,
     NeuralRegionConfig,
-    PrefrontalConfig,
+    PrefrontalCortexConfig,
     StriatumConfig,
     ThalamusConfig,
 )
@@ -30,12 +31,16 @@ from .regions import (
     Cerebellum,
     CorticalColumn,
     Hippocampus,
-    Prefrontal,
+    PrefrontalCortex,
     Striatum,
     Thalamus,
     StimulusGating,
     NeuralRegionRegistry,
     register_region,
+)
+from .synapses import (
+    ConductanceScaledSpec,
+    STPConfig,
 )
 
 __all__ = [
@@ -45,12 +50,11 @@ __all__ = [
     # Configurations
     "BrainConfig",
     "CerebellumConfig",
-    "CortexConfig",
-    "CortexLayer",
+    "CorticalColumnConfig",
     "HippocampusConfig",
     "MedialSeptumConfig",
     "NeuralRegionConfig",
-    "PrefrontalConfig",
+    "PrefrontalCortexConfig",
     "StriatumConfig",
     "ThalamusConfig",
     # Regions
@@ -58,7 +62,7 @@ __all__ = [
     "Cerebellum",
     "CorticalColumn",
     "Hippocampus",
-    "Prefrontal",
+    "PrefrontalCortex",
     "Striatum",
     "Thalamus",
     "StimulusGating",
@@ -66,8 +70,13 @@ __all__ = [
     "register_region",
     # Brain Builder
     "BrainBuilder",
-    # Dynamic Brain
-    "DynamicBrain",
+    "ConductanceBudgetEntry",
+    "SourceContribution",
+    # Brain
+    "Brain",
     # Neuromodulator Hub
     "NeuromodulatorHub",
+    # Synapse Specs
+    "ConductanceScaledSpec",
+    "STPConfig",
 ]

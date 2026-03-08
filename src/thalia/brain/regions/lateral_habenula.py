@@ -47,10 +47,13 @@ The LHb→RMTg→VTA disynaptic pathway provides:
 
 from __future__ import annotations
 
+from typing import Union
+
 import torch
 
-from thalia.brain.configs import LateralHabenulaConfig
-from thalia.components import ConductanceLIF, ConductanceLIFConfig
+from thalia import GlobalConfig
+from thalia.brain.configs import TonicPacemakerConfig, get_default_lhb_config
+from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -73,9 +76,9 @@ from .region_registry import register_region
     description="Lateral habenula - aversive prediction error encoder",
     version="1.0",
     author="Thalia Project",
-    config_class=LateralHabenulaConfig,
+    config_class=get_default_lhb_config,
 )
-class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
+class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
     """Lateral Habenula - Aversive Prediction Error Encoder.
 
     Glutamatergic principal neurons that encode negative outcomes via
@@ -90,8 +93,15 @@ class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
     - "principal": Glutamatergic projection to RMTg GABA neurons
     """
 
-    def __init__(self, config: LateralHabenulaConfig, population_sizes: PopulationSizes, region_name: RegionName):
-        super().__init__(config, population_sizes, region_name)
+    def __init__(
+        self,
+        config: TonicPacemakerConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
+        super().__init__(config, population_sizes, region_name, device=device)
 
         self.principal_size = population_sizes[LHbPopulation.PRINCIPAL]
 
@@ -113,13 +123,11 @@ class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
                 tau_I=10.0,
                 noise_std=0.003,
             ),
-            device=self.device,
+            device=device,
         )
 
         # Low baseline drive (LHb is mostly quiet except during aversive events)
-        self.baseline_drive = torch.full(
-            (self.principal_size,), config.baseline_drive, device=self.device
-        )
+        self.baseline_drive = torch.full((self.principal_size,), config.baseline_drive, device=device)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -127,13 +135,10 @@ class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
         self._register_neuron_population(LHbPopulation.PRINCIPAL, self.principal_neurons, polarity=PopulationPolarity.EXCITATORY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Update LHb neurons from SNr input (high SNr = bad outcome = LHb excited)."""
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
         # =====================================================================
         # Integrate synaptic inputs at dendrites (all sources → PRINCIPAL)
         # High SNr activity → excites LHb (aversive outcome signal)
@@ -161,9 +166,4 @@ class LateralHabenula(NeuralRegion[LateralHabenulaConfig]):
             LHbPopulation.PRINCIPAL: principal_spikes,
         }
 
-        return self._post_forward(region_outputs)
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes."""
-        super().update_temporal_parameters(dt_ms)
-        self.principal_neurons.update_temporal_parameters(dt_ms)
+        return region_outputs

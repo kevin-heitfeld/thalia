@@ -120,7 +120,7 @@ class EligibilityTraceManager(nn.Module):
             n_output: Number of postsynaptic neurons
             config: ``EligibilityTraceConfig`` specifying time constants and
                 amplitudes.  Build one from any learning strategy config:
-                ``EligibilityTraceConfig(tau_plus=cfg.tau_plus, ...)``.
+                ``EligibilityTraceConfig(tau_plus=config.tau_plus, ...)``.
             device: Torch device
         """
         super().__init__()
@@ -217,7 +217,7 @@ class EligibilityTraceManager(nn.Module):
             Returns 0 (scalar) instead of zero tensor when no spikes occur,
             which broadcasts correctly in arithmetic operations.
         """
-        cfg = self.config
+        config = self.config
 
         # OPTIMIZATION: Check for any spikes before computing outer products
         # Avoid unnecessary computation when no spikes occur
@@ -229,7 +229,7 @@ class EligibilityTraceManager(nn.Module):
         if has_output_spikes:
             # OPTIMIZATION: Fuse float conversion with outer product
             output_float = output_spikes.float() if output_spikes.dtype == torch.bool else output_spikes
-            ltp = torch.outer(output_float, self.input_trace) * cfg.a_plus
+            ltp = torch.outer(output_float, self.input_trace) * config.a_plus
         else:
             ltp = 0
 
@@ -238,7 +238,7 @@ class EligibilityTraceManager(nn.Module):
         if has_input_spikes:
             # OPTIMIZATION: Fuse float conversion with outer product
             input_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
-            ltd = torch.outer(self.output_trace, input_float) * cfg.a_minus
+            ltd = torch.outer(self.output_trace, input_float) * config.a_minus
         else:
             ltd = 0
 

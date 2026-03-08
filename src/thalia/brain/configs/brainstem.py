@@ -47,6 +47,15 @@ class CerebellumConfig(NeuralRegionConfig):
     # - DCN integration (Purkinje sculpts tonic output)
 
     granule_connectivity: float = 0.03  # Fraction of granule cells active (3%)
+    golgi_ratio: float = 0.05
+    """Golgi-cell count as a fraction of the granule population.
+
+    Biology: roughly 1 Golgi cell per 5–10 granule cells (human cerebellum).
+    A value of 0.05 gives 500 Golgi cells for 10 000 granule cells.  Golgi
+    cells receive feedforward excitation from both mossy fibers and granule
+    cells, then provide broad GABA-A inhibition back to granule dendrites,
+    enforcing the <5% population sparsity required for pattern separation.
+    """
     purkinje_n_dendrites: int = 100  # Simplified dendritic compartments
 
     # =========================================================================
@@ -60,6 +69,30 @@ class CerebellumConfig(NeuralRegionConfig):
 
     mai_ltp_rate: float = 0.0001
     """Normalizing LTP rate when parallel fiber fires but climbing fiber is silent."""
+
+    # =========================================================================
+    # DCN TONIC BASELINE DRIVE
+    # =========================================================================
+    dcn_baseline_drive: float = 0.012
+    """Per-step AMPA conductance added to DCN neurons each timestep for intrinsic pacemaking.
+
+    Biology: DCN neurons are spontaneously active (40-60 Hz at rest) due to intrinsic
+    persistent sodium and HCN currents. This is approximated as a constant excitatory
+    conductance baseline that Purkinje inhibition then sculpts.
+
+    DCN params: tau_E=4ms, g_L=0.10, v_threshold=1.0.
+    g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
+           = 0.012 / (1 - exp(-1/4))
+           ≈ 0.012 / 0.221 ≈ 0.054
+
+    V_inf(baseline only) = (0.054 × 3.0) / (0.10 + 0.054) ≈ 1.05 (just above threshold).
+    Purkinje_ss inhibition at 83 Hz with STP eff=0.011 delivers negligible GABA → DCN
+    can fire tonically. Mossy collaterals add additional drive.
+    Target: 40-60 Hz tonic DCN firing rate.
+
+    Previous: no baseline_drive → DCN relied solely on mossy collaterals, which were
+    insufficient → DCN fired at only 3.7 Hz (run-06; target 10–100 Hz).
+    """
 
 
     # =========================================================================

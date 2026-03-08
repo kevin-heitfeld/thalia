@@ -47,18 +47,19 @@ Result: **Theta rhythm emerges from circuit dynamics, not hardcoded sinusoid**
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict
+from typing import ClassVar, Dict, Union
 
 import torch
 import numpy as np
 
+from thalia import GlobalConfig
 from thalia.brain.configs import MedialSeptumConfig
-from thalia.components import ConductanceLIF, ConductanceLIFConfig, WeightInitializer
-from thalia.components.synapses.stp import STPConfig, STPType
+from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.brain.synapses import STPConfig, STPType, WeightInitializer
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
-    NeuromodulatorType,
+    NeuromodulatorChannel,
     PopulationName,
     PopulationPolarity,
     PopulationSizes,
@@ -96,17 +97,24 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
     # Declarative neuromodulator output registry.
     # ACh from the septal cholinergic population modulates hippocampal CA1 via
     # muscarinic receptors (M1) — routed through NeuromodulatorHub, not AMPA.
-    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorType, PopulationName]] = {
-        'ach_septal': MedialSeptumPopulation.ACH,
+    neuromodulator_outputs: ClassVar[Dict[NeuromodulatorChannel, PopulationName]] = {
+        NeuromodulatorChannel.ACH_SEPTAL: MedialSeptumPopulation.ACH,
     }
 
     # =========================================================================
     # INITIALIZATION
     # =========================================================================
 
-    def __init__(self, config: MedialSeptumConfig, population_sizes: PopulationSizes, region_name: RegionName):
+    def __init__(
+        self,
+        config: MedialSeptumConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ):
         """Initialize medial septum with pacemaker neurons."""
-        super().__init__(config, population_sizes, region_name)
+        super().__init__(config, population_sizes, region_name, device=device)
 
         # Store sizes
         self.ach_size = population_sizes[MedialSeptumPopulation.ACH]
@@ -130,7 +138,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 adapt_increment=config.ach_adaptation_increment,
                 tau_ref=5.0,  # SHORT refractory (5ms) allows multiple spikes per burst
             ),
-            device=self.device,
+            device=device,
         )
 
         # GABAergic neurons (inhibit hippocampal interneurons)
@@ -157,7 +165,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 k_h=0.08,           # smooth activation curve
                 tau_h_ms=250.0,     # slower than thalamic (100ms) for theta-range timing
             ),
-            device=self.device,
+            device=device,
         )
 
         # =====================================================================
@@ -180,13 +188,13 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         self._i_nap_ach: torch.Tensor
         self.register_buffer(
             "_i_nap_ach",
-            torch.full((self.ach_size,), config.i_nap_conductance, device=self.device),
+            torch.full((self.ach_size,), config.i_nap_conductance, device=device),
         )
         # I_AHP : slow after-hyperpolarisation conductance (burst termination)
         self._i_ahp_ach: torch.Tensor
         self._i_ahp_gaba: torch.Tensor
-        self.register_buffer("_i_ahp_ach",  torch.zeros(self.ach_size,  device=self.device))
-        self.register_buffer("_i_ahp_gaba", torch.zeros(self.gaba_size, device=self.device))
+        self.register_buffer("_i_ahp_ach",  torch.zeros(self.ach_size,  device=device))
+        self.register_buffer("_i_ahp_gaba", torch.zeros(self.gaba_size, device=device))
         # I_h (HCN): now handled intrinsically by ConductanceLIF (enable_ih=True).
         # The manual _g_ih_gaba external conductance buffer has been removed.
 
@@ -205,7 +213,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 n_output=self.ach_size,
                 connectivity=1.0,  # Fully connected (sparse recurrence handled by small scale)
                 weight_scale=0.03 / np.sqrt(self.ach_size),
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.AMPA,
             # Cholinergic recurrent: weak facilitation for burst synchrony.
@@ -224,7 +232,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 n_output=self.gaba_size,
                 connectivity=1.0,  # Fully connected (sparse recurrence handled by small scale)
                 weight_scale=0.04 / np.sqrt(self.gaba_size),
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.AMPA,
             # GABA recurrent: moderate depression prevents sustained runaway.
@@ -245,7 +253,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 n_output=self.gaba_size,
                 connectivity=0.8,
                 weight_scale=0.04 / np.sqrt(self.ach_size),
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.AMPA,
             # ACh→GABA: depressing — ACh bursts initially activate GABA then
@@ -265,7 +273,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 n_output=self.ach_size,
                 connectivity=0.8,
                 weight_scale=0.06 / np.sqrt(self.gaba_size),
-                device=self.device,
+                device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             # GABA→ACh: PV-type depressing inhibition — strong initial hyperpolarisation
@@ -275,8 +283,8 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         )
 
         # Initialize state variables for spikes (for recurrent connections)
-        self._last_ach_spikes: torch.Tensor = torch.zeros(self.ach_size, dtype=torch.bool, device=self.device)
-        self._last_gaba_spikes: torch.Tensor = torch.zeros(self.gaba_size, dtype=torch.bool, device=self.device)
+        self._last_ach_spikes: torch.Tensor = torch.zeros(self.ach_size, dtype=torch.bool, device=device)
+        self._last_gaba_spikes: torch.Tensor = torch.zeros(self.gaba_size, dtype=torch.bool, device=device)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS
@@ -285,14 +293,13 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         self._register_neuron_population(MedialSeptumPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
         # Ensure all tensors are on the correct device
-        self.to(self.device)
+        self.to(device)
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
-    @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
         """Generate theta rhythm through intrinsic ionic currents and reciprocal connectivity.
 
         Biological oscillatory mechanism:
@@ -305,10 +312,8 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
 
         Neuromodulators read from actual broadcast inputs (not hardcoded).
         """
-        self._pre_forward(synaptic_inputs, neuromodulator_inputs)
-
-        cfg = self.config
-        dt_ms = cfg.dt_ms
+        device = self.device
+        config = self.config
 
         # =====================================================================
         # NEUROMODULATION
@@ -316,7 +321,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # Read spike-based neuromodulator broadcast; fallback to 0.5 (baseline)
         # when not connected to a source (DA/NE/ACh are all optional here).
         def _level(key: str) -> float:
-            t = neuromodulator_inputs.get(key)
+            t = self._extract_neuromodulator(neuromodulator_inputs, key)
             return float(t.float().mean()) if t is not None else 0.5
 
         ne_level  = _level("norepinephrine")
@@ -327,7 +332,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         #   NE  → +40% (arousal increases burst drive)
         #   ACh → +30% (cholinergic auto-facilitation)
         #   DA  → ±20% (motivational modulation)
-        i_nap_target = cfg.i_nap_conductance * (
+        i_nap_target = config.i_nap_conductance * (
             1.0
             + (ne_level  - 0.5) * 0.4
             + (ach_level - 0.5) * 0.3
@@ -338,13 +343,13 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # UPDATE IONIC CURRENTS
         # =====================================================================
         # I_NaP: slow tracking of modulated target (tau ~500ms)
-        alpha_nap = dt_ms / 500.0
+        alpha_nap = config.dt_ms / 500.0
         self._i_nap_ach.add_(alpha_nap * (i_nap_target - self._i_nap_ach))
 
         # I_AHP: exponential decay + spike-driven accumulation (per-neuron, g_inh)
-        decay_ahp = np.exp(-dt_ms / cfg.i_ahp_tau_ms)
-        self._i_ahp_ach.mul_(decay_ahp).add_(self._last_ach_spikes.float()  * cfg.i_ahp_increment)
-        self._i_ahp_gaba.mul_(decay_ahp).add_(self._last_gaba_spikes.float() * cfg.i_ahp_increment)
+        decay_ahp = np.exp(-config.dt_ms / config.i_ahp_tau_ms)
+        self._i_ahp_ach.mul_(decay_ahp).add_(self._last_ach_spikes.float()  * config.i_ahp_increment)
+        self._i_ahp_gaba.mul_(decay_ahp).add_(self._last_gaba_spikes.float() * config.i_ahp_increment)
 
         # I_h (HCN): handled intrinsically by ConductanceLIF (enable_ih=True in gaba_neurons.config).
         # The neuron model tracks the HCN activation gate h internally, so no external
@@ -410,7 +415,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             receptor_type=ReceptorType.AMPA,
         )
         ca1_feedback = synaptic_inputs.get(ca1_gaba_syn, None)
-        hippocampal_exc = torch.zeros(self.gaba_size, device=self.device)
+        hippocampal_exc = torch.zeros(self.gaba_size, device=device)
         if ca1_feedback is not None:
             hippocampal_exc = self.get_synaptic_weights(ca1_gaba_syn) @ ca1_feedback.float()
 
@@ -458,20 +463,4 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             MedialSeptumPopulation.GABA: gaba_spikes,
         }
 
-        return self._post_forward(region_outputs)
-
-    # =========================================================================
-    # TEMPORAL PARAMETER MANAGEMENT
-    # =========================================================================
-
-    def update_temporal_parameters(self, dt_ms: float) -> None:
-        """Update temporal parameters when brain timestep changes.
-
-        Args:
-            dt_ms: New simulation timestep in milliseconds
-        """
-        super().update_temporal_parameters(dt_ms)
-
-        # Update neurons
-        self.ach_neurons.update_temporal_parameters(dt_ms)
-        self.gaba_neurons.update_temporal_parameters(dt_ms)
+        return region_outputs

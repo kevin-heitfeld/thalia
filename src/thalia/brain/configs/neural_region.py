@@ -19,7 +19,6 @@ class NeuralRegionConfig:
     # =========================================================================
     # GENERAL PARAMETERS
     # =========================================================================
-    device: str = "cpu"  # Device to run on: 'cpu', 'cuda', 'cuda:0', etc.
     seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
     dt_ms: float = GlobalConfig.DEFAULT_DT_MS  # Simulation timestep in milliseconds.
 
