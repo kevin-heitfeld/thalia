@@ -181,20 +181,15 @@ class DiagnosticsConfig:
 
     # SFA health-check suppression.
     # The SFA index compares firing rate in the first 25 % vs last 25 % of the
-    # *recorded* window.  Two conditions make the index unreliable:
+    # *analysis* window (post-transient).  One condition makes the index unreliable
+    # even after the transient is excluded:
     #
-    # 1. Ramping input pattern (``_sensory_ramp``): a monotonically increasing
-    #    stimulus raises FR throughout the window so every population appears
-    #    adapted regardless of cellular SFA properties.  The index also reflects
-    #    stimulus dynamics rather than intrinsic adaptation.
+    # Ramping input pattern (``_sensory_ramp``): a monotonically increasing
+    # stimulus raises FR throughout the window so every population appears
+    # adapted regardless of cellular SFA properties.  The index reflects
+    # stimulus dynamics rather than intrinsic adaptation.
     #
-    # 2. No warmup with short recordings (warmup==0 and n_timesteps < 2000):
-    #    The network is in a transient state at recording start.  STP is being
-    #    depleted, homeostatic gains have not settled, and the early/late FR ratio
-    #    reflects onset dynamics rather than true spike-frequency adaptation.
-    #    With only ~250 timesteps per quarter the sample variance is also high.
-    #
-    # Set to True in either condition.  The driver sets it automatically.
+    # Set to True when using a ramp pattern.  The driver sets it automatically.
     skip_sfa_health_check: bool = False
     # Sensory input pattern: ``"random"``, ``"rhythmic"``, ``"none"`` …
     # Set by the driver before each ``recorder.analyze()`` call.  Empty = unknown.
@@ -678,6 +673,11 @@ class DiagnosticsReport:
     connectivity: ConnectivityStats
     homeostasis: HomeostaticStats
     health: HealthReport
+
+    # Number of steps detected as onset transient and excluded from steady-state
+    # analyses (population stats, binned rates, oscillations).  Set automatically
+    # by detect_transient_step() in analyze().  0 when T < 200 or detection fails.
+    transient_steps: int = 0
 
     # Neuromodulator receptor concentration trajectories (both modes):
     # key = "{region}/{receptor_attr}" → 1D float32 array, length = n_gain_steps

@@ -62,7 +62,7 @@ from thalia.brain.synapses import (
     NMReceptorType,
     make_nm_receptor,
 )
-from thalia.brain.synapses.stp import FSI_MSN_PRESET, MSN_LATERAL_PRESET
+from thalia.brain.synapses.stp import STPConfig
 from thalia.learning import (
     D1D2STDPConfig,
     D1STDPStrategy,
@@ -206,9 +206,15 @@ class Striatum(NeuralRegion[StriatumConfig]):
             # v_threshold restored to 1.0 (standard): threshold=1.3 was a stopgap for
             # the old NMDA-driven 406 Hz saturation. NMDA is now disabled (nmda_ratio=0.0
             # in forward pass), so 1.3 is too high and prevents any firing on cortical input.
-            # With 1.0 and 20× afferent weights, FSI fires at ~80-120 Hz on thalamic drive
-            # (fast-spiking tau_mem=5ms means FSI always fire fast once above threshold).
             v_threshold=1.0,
+            # Adaptation: limits FSI to ~14 Hz at biological corticostriatal drive.
+            # Without adaptation, FSI fires at 100-200 Hz when V_inf >> threshold (tau_mem=8ms,
+            # refractory-limited). With adapt_increment=0.10 and tau_adapt=50ms:
+            #   g_adapt_eq = (g_E*E_E − threshold*(g_L+g_E)) / (threshold+0.5) ≈ 0.069
+            #   rate_eq = g_adapt_eq / (incr*tau) = 0.069/(0.10*50) ≈ 14 Hz  (target 10-50 Hz)
+            adapt_increment=0.10,
+            tau_adapt=50.0,
+            E_adapt=-0.5,
         )
         self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None  # Lazily initialized on first forward pass
 
@@ -280,10 +286,6 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # FSI → D1 connections
         # ~15% connectivity to match ~18 FSI per MSN (18/120 ≈ 0.15)
         # CONDUCTANCE-BASED: Strong inhibition (4-10x stronger than MSN lateral)
-        # weight_scale raised from 0.001 → 0.005 → 0.015: diagnostics showed E/I = 12.0 for
-        # striatum with D1/D2 firing at 17 Hz; heavier transient IPSP needed to gate bursts.
-        # STP: FSI_MSN_PRESET — strong depression (Planert et al. 2010).
-        # Large initial IPSP fades rapidly; feedforward inhibition is transient.
         self._add_internal_connection(
             source_population=StriatumPopulation.FSI,
             target_population=StriatumPopulation.D1,
@@ -295,12 +297,11 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=FSI_MSN_PRESET.configure(),
+            stp_config=STPConfig(U=0.65, tau_d=550.0, tau_f=15.0),
         )
 
         # FSI → D2 connections (same structure)
         # CONDUCTANCE-BASED: Strong inhibition (matches D1)
-        # STP: FSI_MSN_PRESET — same strong depression as FSI→D1.
         self._add_internal_connection(
             source_population=StriatumPopulation.FSI,
             target_population=StriatumPopulation.D2,
@@ -312,7 +313,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=FSI_MSN_PRESET.configure(),
+            stp_config=STPConfig(U=0.65, tau_d=550.0, tau_f=15.0),
         )
 
         # =====================================================================
@@ -333,7 +334,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=MSN_LATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
         )
 
         # D2 → D2: Lateral inhibition for NoGo pathway
@@ -349,7 +350,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=MSN_LATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
         )
 
         # =====================================================================
@@ -373,7 +374,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=MSN_LATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
         )
 
         # D2 (NoGo) → D1 (Go): when NoGo pathway is activated it suppresses Go
@@ -388,7 +389,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=MSN_LATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
         )
 
         # =====================================================================
@@ -400,8 +401,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Striatum uses a custom joint D1+D2 update rather than _update_homeostasis.
         # use_synaptic_scaling=True: Turrigiano & Nelson (2004) — multiplicative
         # upscaling of all afferent MSN weights when the population is chronically silent.
-        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.008, device=device)
-        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.008, device=device)
+        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.002, device=device)  # Reduced 0.008→0.002: MSN biological spontaneous rate is 0.5-2 Hz at rest (no reward/action); 8 Hz is active-state rate causing homeostatic mismatch
+        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.002, device=device)  # Same: 2 Hz target reflects sparse baseline MSN activity (Mahon et al. 2006)
 
         # =====================================================================
         # D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
@@ -512,8 +513,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 E_E=3.0,
                 E_I=-0.5,
                 noise_std=0.005, # Reduced (0.01→0.005) to lower noise-driven jitter
-                adapt_increment=0.20,  # Added adaptation to resist thalamic overflow (28 Hz → target 5-10 Hz)
-                tau_adapt=200.0,       # Slow AHP matching cholinergic neuron biophysics
+                adapt_increment=0.015,  # Raised 0.010→0.015: at 12 Hz with 0.010, scale ×1.5 targets ~8 Hz (target 5-10 Hz)
+                tau_adapt=200.0,        # Slow AHP matching cholinergic neuron biophysics
             ),
             device=device,
         )

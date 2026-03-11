@@ -55,9 +55,10 @@ def get_default_ca3_layer_config() -> HippocampalLayerConfig:
         tau_adapt=100.0,
         # Fraction of CA3 pyramidal count allocated to inhibitory interneurons.
         total_inhib_fraction=0.25,
-        # OLM cell threshold.  Lower than DG because sparse CA3 firing (0.75–2 Hz)
-        # produces V_inf ≈ 0.18–0.45; DG-level thresholds are unreachable.
-        v_threshold_olm=0.35,
+        # OLM cell threshold.  Lowered 0.35→0.20: at 3 Hz CA3 pyrarmidal activity
+        # with Pyr→OLM w_max=0.030 and STP U=0.5 τ_d=700ms, V_inf ≈ 0.18–0.22;
+        # 0.35 was unreachable, 0.20 allows 5–15 Hz target.
+        v_threshold_olm=0.20,
         # Bistratified cell threshold.
         v_threshold_bistratified=0.30,
     )
@@ -66,11 +67,12 @@ def get_default_ca3_layer_config() -> HippocampalLayerConfig:
 def get_default_ca2_layer_config() -> HippocampalLayerConfig:
     """Per-layer configuration for CA2 (social / temporal context memory)."""
     return HippocampalLayerConfig(
-        # CA2 firing threshold.  Slightly above CA3 for selectivity; reduced from 1.6
-        # which caused near-silence.
-        v_threshold=1.1,
-        # Moderate adaptation for temporal selectivity.
-        adapt_increment=0.25,
+        # CA2 firing threshold. Lowered from 1.1 (near-silence) → 0.6 to
+        # reach 1–5 Hz target given weak CA3-only excitatory drive.
+        v_threshold=0.6,
+        # Reduced adaptation: 0.25 was too strong, suppressing near-silent
+        # population below 0.5 Hz. 0.05 allows 1–5 Hz range.
+        adapt_increment=0.05,
         # Adaptation decay time constant (ms).
         tau_adapt=100.0,
         # Lighter inhibition than CA3; CA2 is a smaller, more tightly gated hub.
@@ -94,8 +96,9 @@ def get_default_ca1_layer_config() -> HippocampalLayerConfig:
         tau_adapt=80.0,
         # Stronger inhibition supports theta modulation and coincidence gating.
         total_inhib_fraction=0.30,
-        # OLM cell threshold.
-        v_threshold_olm=0.35,
+        # OLM cell threshold.  Lowered 0.35→0.20 matching CA3 OLM analysis:
+        # CA1 pyr fires ~1–5 Hz with weak E drive; 0.35 was unreachable.
+        v_threshold_olm=0.20,
         # Bistratified cell threshold.
         v_threshold_bistratified=0.30,
     )
@@ -323,7 +326,10 @@ class HippocampusConfig(NeuralRegionConfig):
     # Adaptive threshold plasticity (complementary to gain adaptation)
     threshold_learning_rate: float = 0.02  # Moderate threshold adaptation
     threshold_min: float = 0.05  # Lower floor to allow more aggressive adaptation for under-firing
-    threshold_max: float = 1.5  # Allow some increase above default
+    threshold_max: float = 3.0  # Raised 1.5→3.0: DG granule cells have v_threshold=1.8 for sparsity
+    # but threshold_max=1.5 was CLAMPING DG threshold DOWN to 1.5, defeating the design.
+    # Root cause: homeostasis drives threshold toward target; if target<actual, threshold RISES.
+    # At threshold=1.5, DG still fires at 2.3 Hz (plateau reached). Need headroom above 1.8.
 
     # =========================================================================
     # LEARNING RATES

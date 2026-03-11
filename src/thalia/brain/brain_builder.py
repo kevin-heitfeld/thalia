@@ -380,15 +380,6 @@ class BrainBuilder:
         is sub-threshold and D1/D2 MSNs receive no lateral inhibition, causing the
         E/I ratio to blow up (observed: 54.9 during diagnostics).
 
-        Use ``stp_config`` to pass a source-appropriate short-term plasticity preset::
-
-            builder.connect_to_striatum(
-                "cortex_sensory", CortexPopulation.L5_PYR,
-                axonal_delay_ms=4.0, axonal_delay_std_ms=6.0,
-                connectivity=0.3, weight_scale=0.0001,
-                stp_config=CORTICOSTRIATAL_PRESET.configure(),
-            )
-
         Args:
             source_region: Name of the source region.
             source_population: Source population identifier.

@@ -98,9 +98,11 @@ class NeuromodulatorReceptor(nn.Module):
         self.alpha_decay = math.exp(-dt_ms / tau_decay_ms)
 
         # Transfer rate: fraction of the rising pool moved to the concentration
-        # pool each step.  Normalised to 0.5 per ms; clamped to 1.0 so a large
-        # dt never transfers more than the pool holds.
-        self.transfer_rate: float = min(1.0, 0.5 * dt_ms)
+        # pool each step.  Must equal (1 - alpha_decay) so that at steady state
+        # concentration_ss == rising_ss.  Using any larger value (e.g. 0.5 * dt)
+        # inflates the denominator ratio by ~4000× for slow receptors like DA_D1
+        # (tau_decay=8000 ms), saturating concentration to 1.0 for any firing rate.
+        self.transfer_rate: float = 1.0 - self.alpha_decay
 
         if device is not None:
             self.to(device)
@@ -120,8 +122,8 @@ class NeuromodulatorReceptor(nn.Module):
             Current concentration [n_receptors] in range [0, 1]
         """
         # Decay existing components
-        self.rising *= self.alpha_rise
-        self.concentration *= self.alpha_decay
+        self.rising.mul_(self.alpha_rise)
+        self.concentration.mul_(self.alpha_decay)
 
         # No input → just decay
         if neuromod_spikes is None or neuromod_spikes.sum() == 0:
@@ -138,12 +140,12 @@ class NeuromodulatorReceptor(nn.Module):
             spikes_float = torch.full((self.n_receptors,), spike_rate, device=device)
 
         # Fast release on spike arrival
-        self.rising += spikes_float * self.spike_amplitude
+        self.rising.add_(spikes_float, alpha=self.spike_amplitude)
 
         # Transfer from rising pool to concentration pool
         # (Models: release → diffusion → receptor binding)
         # transfer_rate is pre-scaled by dt_ms (set in __init__).
-        self.concentration += self.rising * self.transfer_rate
+        self.concentration.add_(self.rising, alpha=self.transfer_rate)
 
         # Enforce physiological bounds
         self.concentration.clamp_(0.0, 1.0)

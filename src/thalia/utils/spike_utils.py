@@ -12,9 +12,15 @@ from __future__ import annotations
 
 import torch
 
+from thalia import GlobalConfig
+
 
 def validate_spike_tensor(spikes: torch.Tensor, tensor_name: str = "<unspecified>") -> None:
-    """Validate that a tensor is a binary spike tensor (0s and 1s) .
+    """Validate that a tensor is a binary spike tensor (0s and 1s).
+
+    Only active when ``GlobalConfig.DEBUG`` is ``True``. Set that flag during
+    development/testing; leave it ``False`` (default) in production to avoid
+    the ``torch.all`` overhead on every hot-path call.
 
     Args:
         spikes: Tensor to validate
@@ -23,6 +29,9 @@ def validate_spike_tensor(spikes: torch.Tensor, tensor_name: str = "<unspecified
     Raises:
         ValueError: If the tensor is not binary (contains values other than 0 or 1)
     """
+    if not GlobalConfig.DEBUG:
+        return
+
     if not spikes.dim() == 1:
         raise ValueError(f"{tensor_name} must be a 1D tensor (ADR-005), got shape {spikes.shape}.")
 

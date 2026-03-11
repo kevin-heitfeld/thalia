@@ -116,70 +116,6 @@ def simulate(
 # =============================================================================
 
 
-def run_warmup(
-    brain: "Brain",
-    n_steps: int,
-    pattern: str,
-    *,
-    report_interval: int = 100,
-) -> None:
-    """Run *n_steps* warmup timesteps without recording and print a status summary.
-
-    Call this before :func:`run_sweep` or a recording loop to bring the network
-    to a homeostatic steady state.  After the loop completes a
-    ``[post-warmup]`` line is printed listing active and silent regions.
-
-    Parameters
-    ----------
-    brain:
-        The live ``Brain`` instance.
-    n_steps:
-        Number of warmup timesteps (must be > 0).
-    pattern:
-        Sensory input pattern key used during warmup.
-    report_interval:
-        Print a progress line every *report_interval* steps.
-    """
-    print(f"\n{'─'*80}")
-    print(f"WARMUP  {n_steps} timesteps  (pattern={pattern!r}, not recorded)")
-    print(f"{'─'*80}\n")
-    _warmup_spikes: Dict[str, int] = {}
-    elapsed = simulate(
-        brain, None, n_steps, pattern,
-        report_interval=report_interval, label="warmup",
-        spike_accumulator=_warmup_spikes,
-    )
-    print(f"  \u2713 Warmup complete: {elapsed:.2f} s")
-    _all_regions = list(brain.regions.keys())
-    _silent = [rn for rn in _all_regions if _warmup_spikes.get(rn, 0) == 0]
-    _n_active = len(_all_regions) - len(_silent)
-    # Per-region spike-count summary for instant calibration feedback.
-    # Sort active regions descending by count so the most-driven regions appear first.
-    _sorted_regions = sorted(
-        _all_regions,
-        key=lambda rn: _warmup_spikes.get(rn, 0),
-        reverse=True,
-    )
-    _col_width = max((len(rn) for rn in _all_regions), default=10)
-    if _silent:
-        print(
-            f"\n  [post-warmup]  active={_n_active}  silent={len(_silent)}"
-            f"\n  {'Region':<{_col_width}}  {'Spikes':>12}"
-        )
-        for _rn in _sorted_regions:
-            _cnt = _warmup_spikes.get(_rn, 0)
-            _note = "  \u2190 check connectivity before recording" if _cnt == 0 else ""
-            print(f"  {_rn:<{_col_width}}  {_cnt:>12,}{_note}")
-    else:
-        print(
-            f"\n  [post-warmup]  active={_n_active}  silent=0"
-            f"\n  {'Region':<{_col_width}}  {'Spikes':>12}"
-        )
-        for _rn in _sorted_regions:
-            _cnt = _warmup_spikes.get(_rn, 0)
-            print(f"  {_rn:<{_col_width}}  {_cnt:>12,}")
-
-
 def run_single(
     brain: "Brain",
     recorder: "DiagnosticsRecorder",
@@ -194,8 +130,8 @@ def run_single(
 ) -> DiagnosticsReport:
     """Simulate one recording pass, then analyse, report, optionally triage, save, and plot.
 
-    The caller is responsible for any warmup (:func:`run_warmup`) and for
-    resetting the recorder between passes (``recorder.reset()``).
+    The caller is responsible for resetting the recorder between passes
+    (``recorder.reset()``).
     """
     elapsed_sim = simulate(
         brain, recorder, timesteps, pattern,
@@ -331,18 +267,17 @@ def run_sweep(
     *,
     timesteps: int,
     output_dir: str,
-    warmup: int = 0,
-    warmup_pattern: str = "background",
     patterns: Sequence[str] = DEFAULT_SWEEP_PATTERNS,
     no_plots: bool = False,
     report_interval: int = 200,
     triage_fn: Optional[Callable[["Brain", DiagnosticsReport], None]] = None,
 ) -> Dict[str, DiagnosticsReport]:
-    """Run *patterns* in sequence from a shared warmup state.
+    """Run *patterns* in sequence and return per-pattern reports.
 
-    Each pattern is run for *timesteps* steps.  A shared warmup of *warmup*
-    steps is run first (if > 0) so all patterns start from the same
-    STP/homeostatic state rather than the STP-naïve cold state.
+    Each pattern is run for *timesteps* steps.  The network starts from its
+    current state (no shared warmup); onset transients are automatically
+    detected and excluded by the analyzer using
+    :func:`~.analysis.detect_transient_step`.
 
     Per-pattern reports are saved to ``<output_dir>/sweep_<pattern>/``.
     A cross-pattern JSON summary is written to ``<output_dir>/sweep_summary.json``.
@@ -360,10 +295,6 @@ def run_sweep(
         Number of simulation steps per pattern.
     output_dir:
         Root directory for all sweep outputs.
-    warmup:
-        Number of warmup steps before the first pattern.
-    warmup_pattern:
-        Input pattern used during the warmup phase.
     patterns:
         Ordered sequence of input-pattern keys to sweep over.
     no_plots:
@@ -381,10 +312,6 @@ def run_sweep(
         Map from pattern name to its :class:`DiagnosticsReport`.
     """
     sweep_reports: Dict[str, DiagnosticsReport] = {}
-
-    # Shared warmup — all patterns start from the same homeostatic state.
-    if warmup > 0:
-        run_warmup(brain, warmup, warmup_pattern, report_interval=100)
 
     for pat in patterns:
         print(f"\n{'═'*80}")

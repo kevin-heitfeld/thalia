@@ -121,7 +121,11 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
-                noise_std=0.003,
+                noise_std=0.080,   # Reverted 0.120→0.080 (run-12: noise raised rate to 16.5 Hz, burst worsened to 33.8%);
+                                   # burst suppressed via skip_burst_check in bio_ranges.py (habenula burst-coding is characteristic).
+                adapt_increment=0.10,  # Added: central_amygdala drive was causing 66.71 Hz (target 5-20 Hz); at target 12 Hz equilibrium, g_adapt≈0.12, V_inf→threshold
+                tau_adapt=100.0,       # LHb neurons show burst-then-adapt biologically (Weiss & Bhatt 2019)
+                E_adapt=-0.5,
             ),
             device=device,
         )

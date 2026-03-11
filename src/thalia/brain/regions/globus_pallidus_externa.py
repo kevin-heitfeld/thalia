@@ -102,17 +102,24 @@ class GlobusPallidusExterna(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
         self.prototypic_neurons = self._make_bg_neurons(
             self.prototypic_size, GPePopulation.PROTOTYPIC, noise_std=0.007
         )
-        # Arkypallidal neurons: ~25% of GPe, project back to striatum
+        # Arkypallidal neurons: ~25% of GPe, project back to striatum.
+        # adapt_increment=0.015, tau_adapt=100ms cap equilibrium below 20 Hz.
+        # factor=0.85 reduces baseline drive (was 0.9 → 34 Hz despite adapt_increment=0.005).
         self.arkypallidal_neurons = self._make_bg_neurons(
-            self.arkypallidal_size, GPePopulation.ARKYPALLIDAL, noise_std=0.005
+            self.arkypallidal_size,
+            GPePopulation.ARKYPALLIDAL,
+            noise_std=0.005,
+            adapt_increment=0.015,
+            tau_adapt=100.0,
         )
 
-        # Tonic drive: prototypic at full baseline; arkypallidal at 0.5× (sub-threshold at rest)
-        # STN excitation then drives arky to 5-20 Hz target. D2-MSN inhibition provides
-        # the restraint. Previous 0.857 factor gave g_E_ss≈0.052, V_inf≈1.03 → combined
-        # with STN input caused 46.9 Hz (run-06; target 5–20 Hz).
+        # Tonic drive: prototypic at full baseline; arkypallidal at 0.9× (just above threshold at rest)
+        # With factor=0.9: g_E_ss≈0.055, V_inf≈1.06 → ~10-15 Hz intrinsic; D2 inhibition will
+        # bring it down to 5-20 Hz target. Previous 0.5× was sub-threshold (V_inf≈0.70), relying on
+        # STN excitation which is chronically depleted (eff≈0.04) at STN's 20 Hz rate with U=0.50 τd=800ms.
+        # Previous 0.857 that caused 46.9 Hz was before STN was properly calibrated to 20 Hz.
         self.prototypic_baseline = self._make_tonic_baseline(self.prototypic_size)
-        self.arkypallidal_baseline = self._make_tonic_baseline(self.arkypallidal_size, factor=0.5)
+        self.arkypallidal_baseline = self._make_tonic_baseline(self.arkypallidal_size, factor=0.85)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS

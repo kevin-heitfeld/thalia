@@ -122,7 +122,8 @@ class RostromedialTegmentum(NeuralRegion[TonicPacemakerConfig]):
                 E_I=-0.5,
                 tau_E=4.0,   # Faster AMPA kinetics for precise timing
                 tau_I=10.0,
-                noise_std=0.005,
+                noise_std=0.090,   # Increased from 0.040 (ρ=0.76): LHb→RMTg broadcast is a strong common input;
+                                   # σ_noise must substantially exceed σ_common to break synchrony.
             ),
             device=device,
         )

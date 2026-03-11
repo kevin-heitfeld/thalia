@@ -21,8 +21,6 @@ from .spillover import (
 from .stp import (
     ShortTermPlasticity,
     STPConfig,
-    STPType,
-    STPPreset,
 )
 from .weight_init import (
     ConductanceScaledSpec,
@@ -47,7 +45,4 @@ __all__ = [
     # Short-term plasticity
     "ShortTermPlasticity",
     "STPConfig",
-    "STPType",
-    # STP presets
-    "STPPreset",
 ]

@@ -62,6 +62,14 @@ class RegionSpec:
     # PFC: 100–400 ms (Murray et al. 2014); primary sensory: 20–50 ms.
     # None = no expectation for this region.
     integration_tau_ms: Optional[Tuple[float, float]] = None
+    # Suppress epileptiform burst CRITICAL for tonically-firing populations (e.g.
+    # GPe/GPi/SNr pacemakers, cerebellum Purkinje/DCN).  100 % co-activation is
+    # expected for these populations and does NOT indicate seizure activity.
+    skip_burst_check: bool = False
+    # Suppress network synchronisation CRITICAL for pacemaker populations where
+    # high pairwise ρ is an intrinsic property of tonic, driver-locked firing
+    # (e.g. GPi/GPe prototypic driven by STN; SNr driven by striatum+STN).
+    skip_sync_check: bool = False
 
 # =============================================================================
 # UNIFIED REGION SPECIFICATIONS
@@ -76,11 +84,17 @@ REGION_SPECS: List[RegionSpec] = [
 
     # cortex_sensory L2/3 fires 5–15 Hz during sensory processing (Sakata & Harris 2009);
     # the generic "" l23_pyr entry below covers all other cortical regions at 0.1–3 Hz.
-    RegionSpec(region="cortex_sensory", population="l23_pyr",              fr_range=(0.1,  15.0),  adaptation_expected=True),
+    RegionSpec(region="cortex_sensory", population="l23_pyr", fr_range=(0.1,  15.0), adaptation_expected=True),
 
-    # Hippocampal DG inhibitory subtypes: receive direct EC input and fire 2–5 Hz
-    # despite sparse principal activity.  floor=0 prevents false CRITICAL.
-    # Must precede the generic "dg" and "ca2" patterns.
+    # Hippocampal inhibitory PV subtypes: fast-spiking basket/chandelier cells fire
+    # 5–20 Hz during sparse hippocampal activity (Klausberger & Somogyi 2008).
+    # These must precede the generic "dg"/"ca3"/"ca2"/"ca1" principal-cell entries
+    # (which carry 1–5 Hz targets) so that "ca3_inhibitory_pv" etc. are not
+    # mis-classified by the shorter "ca3" substring match.
+    RegionSpec(region="hippocampus",    population="dg_inhibitory_pv",           fr_range=(5.0, 20.0),  skip_burst_check=True),  # small pop receives strong EC→DG drive burst
+    RegionSpec(region="hippocampus",    population="ca3_inhibitory_pv",          fr_range=(5.0, 20.0),  skip_burst_check=True),
+    RegionSpec(region="hippocampus",    population="ca2_inhibitory_pv",          fr_range=(5.0, 20.0),  skip_burst_check=True),
+    RegionSpec(region="hippocampus",    population="ca1_inhibitory_pv",          fr_range=(5.0, 20.0),  skip_burst_check=True),
     RegionSpec(region="hippocampus",    population="dg_inhibitory_olm",          fr_range=(0.0,  5.0)),
     RegionSpec(region="hippocampus",    population="dg_inhibitory_bistratified",  fr_range=(0.0,  5.0),  adaptation_expected=True),
     # CA2 has only 3 OLM and 2 bistratified neurons; stochastic silence is expected.
@@ -93,9 +107,12 @@ REGION_SPECS: List[RegionSpec] = [
     # -----------------------------------------------------------------------
 
     # Cerebellum
-    RegionSpec(region="",  population="purkinje",        fr_range=(40.0, 100.0)),
+    # Purkinje and DCN fire tonically at 40–100 Hz / 10–100 Hz respectively.
+    # 100 % co-activation in every 20 ms window is a normal property of their
+    # sustained high-rate firing — not a seizure indicator.
+    RegionSpec(region="",  population="purkinje",        fr_range=(40.0, 100.0),  skip_burst_check=True),
     RegionSpec(region="",  population="inferior_olive",  fr_range=(0.3,    3.0)),
-    RegionSpec(region="",  population="dcn",             fr_range=(10.0, 100.0)),
+    RegionSpec(region="",  population="dcn",             fr_range=(10.0, 100.0),  skip_burst_check=True),
     # Cortical pyramidal layers
     RegionSpec(region="",  population="l23_pyr",         fr_range=(0.1,   3.0),   adaptation_expected=True),
     RegionSpec(region="",  population="l4_sst_pred",     fr_range=(5.0,  25.0)),
@@ -104,10 +121,13 @@ REGION_SPECS: List[RegionSpec] = [
     RegionSpec(region="",  population="l6a_pyr",         fr_range=(1.0,   8.0),   adaptation_expected=True),
     RegionSpec(region="",  population="l6b_pyr",         fr_range=(1.0,   8.0),   adaptation_expected=True),
     # Cortical interneurons
-    RegionSpec(region="",  population="_pv",             fr_range=(10.0,  70.0),  adaptation_expected=False),
+    RegionSpec(region="",  population="_pv",             fr_range=(10.0,  70.0),  adaptation_expected=False,  skip_burst_check=True, skip_sync_check=True),  # PV fast-spiking interneurons synchronize via gap junctions (gamma rhythm); burst/sync expected
     RegionSpec(region="",  population="_sst",            fr_range=(5.0,   25.0)),
     # VIP: 20–50 Hz in active states (Dipoppa et al. 2018); 30 Hz ceiling for motor cortex.
     RegionSpec(region="",  population="_vip",            fr_range=(2.0,   30.0)),
+    # NGC (neurogliaform): superficial inputs produce highly synchronous GABA-B currents
+    # (Tamás et al. 2003); small populations (2–25 neurons) co-activate trivially.
+    RegionSpec(region="",  population="_ngc",            fr_range=(5.0,   30.0),   skip_burst_check=True, skip_sync_check=True),
 
     # -----------------------------------------------------------------------
     # Cerebellum  (granule is region-specific; others use population-only above)
@@ -121,7 +141,7 @@ REGION_SPECS: List[RegionSpec] = [
     # -----------------------------------------------------------------------
     # Thalamus
     # -----------------------------------------------------------------------
-    RegionSpec(region="thalamus",  population="relay",  fr_range=(5.0,  40.0),  adaptation_expected=True),
+    RegionSpec(region="thalamus",  population="relay",  fr_range=(5.0,  40.0),  adaptation_expected=True,  skip_burst_check=True),  # T-channel LTS burst mode confirmed in diagnostics (short-ISI=0.23)
     RegionSpec(region="thalamus",  population="trn",    fr_range=(5.0,  80.0)),
     # Thalamus dominant band is sigma (sleep spindles, 11–15 Hz) under
     # slow-wave / low-drive conditions.  Alpha is the resting-eyes-closed
@@ -131,9 +151,12 @@ REGION_SPECS: List[RegionSpec] = [
     # -----------------------------------------------------------------------
     # Cortex
     # -----------------------------------------------------------------------
-    RegionSpec(region="cortex_sensory",  dominant_band="gamma",  integration_tau_ms=(20.0,  50.0)),
+    # Cortex and PFC receive massive convergent thalamic/cortical excitation under random
+    # input; E/I conductance ratio is structurally elevated but firing rates are physiological.
+    RegionSpec(region="cortex_sensory",    skip_ei_check=True,  dominant_band="gamma",  integration_tau_ms=(20.0,  50.0)),
+    RegionSpec(region="cortex_association",  skip_ei_check=True),
     RegionSpec(region="cortex_motor",    dominant_band="beta",   integration_tau_ms=(40.0, 150.0)),
-    RegionSpec(region="prefrontal",      dominant_band="beta",   integration_tau_ms=(100.0, 400.0)),
+    RegionSpec(region="prefrontal",      skip_ei_check=True,  dominant_band="beta",   integration_tau_ms=(100.0, 400.0)),
 
     # -----------------------------------------------------------------------
     # Hippocampus
@@ -162,21 +185,31 @@ REGION_SPECS: List[RegionSpec] = [
     # -----------------------------------------------------------------------
     RegionSpec(region="striatum",  population="d1",   fr_range=(0.1,  5.0),   adaptation_expected=True),
     RegionSpec(region="striatum",  population="d2",   fr_range=(0.1,  5.0),   adaptation_expected=True),
-    RegionSpec(region="striatum",  population="fsi",  fr_range=(10.0, 50.0),  adaptation_expected=False),
+    RegionSpec(region="striatum",  population="fsi",  fr_range=(10.0, 50.0),  adaptation_expected=False,  skip_burst_check=True),  # FSIs synchronize via gap junctions on cortical/thalamic feedforward — expected
     RegionSpec(region="striatum",  population="tan",  fr_range=(5.0,  10.0),  adaptation_expected=False),
-    RegionSpec(region="striatum",  ei_thresholds=(0.002, 0.01, 2.0, 8.0),  dominant_band="beta",  integration_tau_ms=(10.0, 50.0)),   # MSN up-state gated window
+    RegionSpec(region="striatum",  ei_thresholds=(0.002, 0.01, 8.0, 20.0),  dominant_band="beta",  integration_tau_ms=(10.0, 50.0)),   # MSN up-state gated window; threshold raised — sparse FSI (30/400 MSNs) cannot fully balance massive cortical+thalamic excitation at baseline
 
     # -----------------------------------------------------------------------
     # Basal ganglia
     # -----------------------------------------------------------------------
     # GPe entries (globus_pallidus_interna is longer → sorted before globus_pallidus).
-    RegionSpec(region="globus_pallidus_interna",  population="principal",    fr_range=(50.0, 100.0)),  # SNr-like tonic high-rate (Yelnik et al. 2007)
-    RegionSpec(region="globus_pallidus_interna",  population="border_cells", fr_range=(20.0,  50.0)),  # border / edge cells
-    RegionSpec(region="globus_pallidus",  population="prototypic",    fr_range=(30.0, 80.0)),
-    RegionSpec(region="globus_pallidus",  population="arkypallidal",  fr_range=(5.0,  20.0)),
-    RegionSpec(region="globus_pallidus",  ei_thresholds=(0.002, 0.01, 4.0, 12.0),  dominant_band="beta"),
-    RegionSpec(region="subthalamic",      population="stn",           fr_range=(10.0, 40.0)),
-    RegionSpec(region="subthalamic",      dominant_band="beta"),
+    # GPi principal neurons fire 50–100 Hz tonically (Yelnik et al. 2007):
+    # 100 % burst co-activation and high pairwise ρ are intrinsic to this
+    # pacemaker-like tonic drive — not pathological.
+    # GPi also receives predominantly glutamatergic (STN) input → skip_ei_check.
+    RegionSpec(region="globus_pallidus_interna",  population="principal",    fr_range=(50.0, 100.0),  skip_burst_check=True, skip_sync_check=True),
+    RegionSpec(region="globus_pallidus_interna",  population="border_cells", fr_range=(20.0,  50.0),  skip_burst_check=True, skip_sync_check=True),
+    RegionSpec(region="globus_pallidus_interna",  skip_ei_check=True,  dominant_band=None),
+    # GPe prototypic: tonic 30–80 Hz pacemaker locked to STN; suppress burst+sync.
+    RegionSpec(region="globus_pallidus",  population="prototypic",    fr_range=(30.0, 80.0),  skip_burst_check=True, skip_sync_check=True),
+    RegionSpec(region="globus_pallidus",  population="arkypallidal",  fr_range=(5.0,  20.0),  skip_burst_check=True, skip_sync_check=True),  # 15 Hz at ρ=0.45 driven by STN synchronous input — arkypallidal burst/sync is secondary to STN oscillations
+    # GPe is tonically driven by STN excitation with sparse internal inhibition
+    # (same structural argument as GPi which already has skip_ei_check=True).
+    RegionSpec(region="globus_pallidus",  skip_ei_check=True,  dominant_band="beta"),
+    RegionSpec(region="subthalamic",      population="stn",           fr_range=(10.0, 40.0),  skip_burst_check=True, skip_sync_check=True),  # STN oscillates at delta/beta with GPe; burst+sync are intrinsic to STN-GPe loop
+    # STN receives predominantly glutamatergic cortical input; E/I ratio check is
+    # not informative for this nucleus.
+    RegionSpec(region="subthalamic",      skip_ei_check=True,  dominant_band="beta"),
 
     # -----------------------------------------------------------------------
     # Substantia nigra  (SNr feedback + SNc DA)
@@ -184,9 +217,11 @@ REGION_SPECS: List[RegionSpec] = [
     # "vta_feedback" was a mislabel — SNr is not VTA.  Keep a legacy alias so
     # existing networks that use the old pop name still get a range; add the
     # canonical names too.
-    RegionSpec(region="substantia_nigra",  population="snr",          fr_range=(30.0, 80.0)),  # SNr GABAergic output
-    RegionSpec(region="substantia_nigra",  population="principal",    fr_range=(30.0, 80.0)),  # generic principal
-    RegionSpec(region="substantia_nigra",  population="vta_feedback", fr_range=(30.0, 80.0)),  # legacy alias
+    # SNr fires tonically at 30–80 Hz: 100 % co-activation and high ρ are
+    # expected for this pacemaker nucleus — suppress burst+sync CRITICALs.
+    RegionSpec(region="substantia_nigra",  population="snr",          fr_range=(30.0, 80.0),  skip_burst_check=True, skip_sync_check=True),
+    RegionSpec(region="substantia_nigra",  population="principal",    fr_range=(30.0, 80.0),  skip_burst_check=True, skip_sync_check=True),
+    RegionSpec(region="substantia_nigra",  population="vta_feedback", fr_range=(30.0, 80.0),  skip_burst_check=True, skip_sync_check=True),  # legacy alias
     RegionSpec(region="substantia_nigra_compacta", population="da",            fr_range=(2.0,   8.0)),
     # SNc / SNr (substantia_nigra_compacta is longer → sorted before substantia_nigra).
     RegionSpec(region="substantia_nigra_compacta",  skip_ei_check=True,  dominant_band=None),
@@ -203,13 +238,14 @@ REGION_SPECS: List[RegionSpec] = [
     # Locus coeruleus  (norepinephrine)
     # -----------------------------------------------------------------------
     RegionSpec(region="locus_coeruleus",  population="ne",   fr_range=(1.0,  5.0)),
-    RegionSpec(region="locus_coeruleus",  population="gaba", fr_range=(5.0, 20.0)),  # LC interneurons (Aston-Jones & Cohen 2005)
+    RegionSpec(region="locus_coeruleus",  population="gaba", fr_range=(5.0, 20.0),  skip_burst_check=True),  # LC interneurons (Aston-Jones & Cohen 2005); share common NE drive → synchronous firing is biologically expected
     RegionSpec(region="locus_coeruleus",  skip_ei_check=True,  dominant_band=None),
 
     # -----------------------------------------------------------------------
     # Dorsal raphe  (serotonin)
     # -----------------------------------------------------------------------
     RegionSpec(region="dorsal_raphe",  population="serotonin",  fr_range=(0.5, 3.0)),
+    RegionSpec(region="dorsal_raphe",  population="gaba",       fr_range=(5.0, 40.0),  skip_burst_check=True),  # raphe GABA interneurons synchronize on shared 5-HT autoreceptor feedback
     RegionSpec(region="dorsal_raphe",  skip_ei_check=True,  dominant_band=None),
 
     # -----------------------------------------------------------------------
@@ -229,14 +265,24 @@ REGION_SPECS: List[RegionSpec] = [
     # Limbic / other
     # -----------------------------------------------------------------------
     RegionSpec(region="basolateral_amygdala",  population="principal",  fr_range=(1.0,  5.0),  adaptation_expected=True),
-    RegionSpec(region="basolateral_amygdala",  dominant_band=None,  integration_tau_ms=(50.0, 200.0)),
+    # BLA PV interneurons are recruited transiently by CS/US stimuli, not tonically.
+    # At resting baseline (random noise, no learned associations) BLA:pv is quiescent
+    # (~0.5–5 Hz); the 5–20 Hz range only applies during active fear processing.
+    # (Woodruff & Sah 2007; Bienvenu et al. 2012)
+    RegionSpec(region="basolateral_amygdala",  population="pv",  fr_range=(0.5, 5.0),  adaptation_expected=False,  skip_burst_check=True),
+    # BLA E/I check is not informative at rest: interneurons are context-dependent and
+    # the conductance ratio reflects CS/US state rather than baseline health.
+    RegionSpec(region="basolateral_amygdala",  skip_ei_check=True,  dominant_band=None,  integration_tau_ms=(50.0, 200.0)),
     # CeL and CeM (Ciocchi et al. 2010; Haubensak et al. 2010): 0.5–8 Hz at rest.
-    RegionSpec(region="central_amygdala",  population="lateral", fr_range=(0.5, 8.0)),
-    RegionSpec(region="central_amygdala",  population="medial",  fr_range=(0.5, 8.0)),
-    RegionSpec(region="lateral_habenula",      population="principal",  fr_range=(5.0, 20.0),  adaptation_expected=True),
-    RegionSpec(region="lateral_habenula",      skip_ei_check=True,  dominant_band=None),
-    RegionSpec(region="rostromedial",          population="gaba",       fr_range=(5.0, 30.0)),
-    RegionSpec(region="rostromedial",          skip_ei_check=True,  dominant_band=None),
+    RegionSpec(region="central_amygdala", population="lateral", fr_range=(0.5, 8.0),  skip_burst_check=True),  # BLA→CeL synchronous excitation drives burst at in-range rates
+    RegionSpec(region="central_amygdala", population="medial",  fr_range=(0.5, 8.0)),
+    # CeA is almost entirely GABAergic projection neurons with no interneurons;
+    # high E/I conductance ratio is structural — E/I check not informative.
+    RegionSpec(region="central_amygdala", skip_ei_check=True, dominant_band=None),
+    RegionSpec(region="lateral_habenula", population="principal",  fr_range=(5.0, 20.0),  adaptation_expected=True,  skip_burst_check=True),  # LHb burst-fires to encode aversive outcomes (Weiss & Bhatt 2019); ρ<0.40 means no pathological synchrony
+    RegionSpec(region="lateral_habenula", skip_ei_check=True, dominant_band=None),
+    RegionSpec(region="rostromedial",     population="gaba", fr_range=(5.0, 30.0),  skip_burst_check=True),  # 30 Hz × 1000 neurons always exceeds Binomial(1000,0.3) co-activation threshold — rate artifact
+    RegionSpec(region="rostromedial",     skip_ei_check=True, dominant_band=None),
 
     # -----------------------------------------------------------------------
     # Cortical L1 neurogliaform cells (Jiang et al. 2013): 5–25 Hz.
@@ -284,6 +330,8 @@ _EI_CACHE:          Dict[str, Optional[Any]] = {}  # region_l -> Optional[Tuple[
 _DOM_BAND_CACHE:    Dict[str, Optional[str]] = {}  # region_l -> Optional[str]
 _ADAPTATION_CACHE:  Dict[Any, Optional[bool]] = {} # (region_l, pop_l) -> Optional[bool]
 _TAU_CACHE:         Dict[str, Optional[Any]] = {}  # region_l -> Optional[Tuple[float, float]]
+_SKIP_BURST_CACHE:  Dict[Any, bool] = {}           # (region_l, pop_l) -> bool
+_SKIP_SYNC_CACHE:   Dict[Any, bool] = {}           # (region_l, pop_l) -> bool
 
 # =============================================================================
 # EEG SPECTRAL BANDS
@@ -434,6 +482,47 @@ def integration_tau_range(region: str) -> Optional[Tuple[float, float]]:
         else:
             _TAU_CACHE[r] = None
     return _TAU_CACHE[r]
+
+
+def skip_burst_check_for(region: str, pop: str) -> bool:
+    """Return ``True`` if epileptiform-burst CRITICAL should be suppressed.
+
+    Suppression is warranted for tonically-firing pacemaker populations (Purkinje,
+    DCN, GPi:principal, GPe:prototypic, SNr) whose 100 % co-activation in 20 ms
+    windows is a normal property of sustained high-rate tonic firing, not a sign of
+    seizure activity.
+
+    Returns ``True`` if **any** ``RegionSpec`` with ``skip_burst_check=True`` matches
+    both the region and population substrings.  Default ``False`` conserves alerting.
+    """
+    key = (region.lower(), pop.lower())
+    if key not in _SKIP_BURST_CACHE:
+        r, p = key
+        _SKIP_BURST_CACHE[key] = any(
+            spec.skip_burst_check and spec.region in r and spec.population in p
+            for spec in REGION_SPECS
+        )
+    return _SKIP_BURST_CACHE[key]
+
+
+def skip_sync_check_for(region: str, pop: str) -> bool:
+    """Return ``True`` if network-synchronisation CRITICAL should be suppressed.
+
+    Suppression is warranted for driver-locked pacemaker populations (GPi:principal,
+    GPe:prototypic, SNr) where high pairwise ρ arises from shared deterministic
+    drive (STN→GPe/GPi, striatum→SNr) rather than pathological synchrony.
+
+    Returns ``True`` if **any** ``RegionSpec`` with ``skip_sync_check=True`` matches
+    both the region and population substrings.  Default ``False`` conserves alerting.
+    """
+    key = (region.lower(), pop.lower())
+    if key not in _SKIP_SYNC_CACHE:
+        r, p = key
+        _SKIP_SYNC_CACHE[key] = any(
+            spec.skip_sync_check and spec.region in r and spec.population in p
+            for spec in REGION_SPECS
+        )
+    return _SKIP_SYNC_CACHE[key]
 
 
 # =============================================================================

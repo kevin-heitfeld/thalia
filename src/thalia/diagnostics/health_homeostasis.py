@@ -119,7 +119,7 @@ def check_homeostasis(
                 continue  # still adapting — FR mismatch may resolve
 
             # Fetch the registered target rate from the brain object
-            region = rec.brain.regions.get(rn)
+            region = rec.brain.regions[rn] if rn in rec.brain.regions else None
             if region is None:
                 continue
             homeostasis_state = getattr(region, "_homeostasis", {}).get(pn)

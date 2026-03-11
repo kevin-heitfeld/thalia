@@ -114,8 +114,14 @@ class CentralAmygdalaConfig(AmygdalaNucleusConfig):
     tau_mem: float = 20.0
     """Membrane time constant (ms)."""
 
-    v_threshold: float = 1.0
-    """Firing threshold."""
+    v_threshold: float = 1.35
+    """Firing threshold.
+
+    Raised 1.0→1.25 (run-11: CeA lateral=13.2 Hz, medial=10.1 Hz vs target 0–8 Hz).
+    Raised 1.25→1.35 (run-12: CeA lateral=8.30 Hz still above 0–8 Hz target).
+    Higher threshold means cells need more synchronous input to fire, keeping
+    baseline rates within the biological 0.5–8 Hz range.
+    """
 
     baseline_drive_lateral: float = 0.0003
     """Tonic drive to CeL (mostly silent)."""

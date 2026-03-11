@@ -40,12 +40,7 @@ from thalia.brain.synapses import (
     make_nm_receptor,
     WeightInitializer,
 )
-from thalia.brain.synapses.stp import (
-    CA3_RECURRENT_PRESET,
-    MOSSY_FIBER_PRESET,
-    PV_BASKET_PRESET,
-    SCHAFFER_COLLATERAL_PRESET,
-)
+from thalia.brain.synapses.stp import STPConfig
 from thalia.learning import (
     TagAndCaptureConfig,
     TagAndCaptureStrategy,
@@ -525,12 +520,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # DG → CA3: Random but less sparse (mossy fibers)
         # Biology: "Detonator synapses" with powerful transmission.
-        # Weight scale raised 0.0001 → 0.003 (30Ã—): with MOSSY_FIBER_PRESET
-        # initial release probability U=0.01, the effective per-spike weight
-        # was ~1e-6 at rest – functionally silent.  Detonator synapses are
-        # among the strongest in the brain; the high base weight compensates
-        # for the low resting release probability and ensures CA3 responds
-        # to DG bursts once the facilitating STP builds during input epochs.
         self._add_internal_connection(
             source_population=HippocampusPopulation.DG,
             target_population=HippocampusPopulation.CA3,
@@ -542,20 +531,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            # Mossy Fibers (DG→CA3): Strong facilitation
-            stp_config=MOSSY_FIBER_PRESET.configure(),
+            stp_config=STPConfig(U=0.01, tau_d=200.0, tau_f=400.0),
         )
 
         # CA3 → CA3 RECURRENT: Autoassociative memory weights
         # Learning: One-shot Hebbian with fast/slow traces and heterosynaptic LTD
-        # Weight scale raised 0.00001 → 0.0005 (50Ã—): at 0.00001 the max weight
-        # was 0.00001 (diagnostics-confirmed), making pattern completion
-        # impossible.  CA3 recurrent collaterals are among the strongest
-        # synapses in hippocampus; this value allows autoassociative dynamics
-        # while remaining well below the runaway-excitation regime.
-        # STP: CA3_RECURRENT_PRESET – moderate-strong depression (Dobrunz &
-        # Stevens 1999; Fioravante & Regehr 2011). Depression at theta
-        # frequencies limits runaway excitation during pattern completion.
         self._add_internal_connection(
             source_population=HippocampusPopulation.CA3,
             target_population=HippocampusPopulation.CA3,
@@ -563,11 +543,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 n_input=self.ca3_size,
                 n_output=self.ca3_size,
                 connectivity=0.05,
-                weight_scale=0.0007,  # Raised (0.0005→0.0007): strengthen CA3 recurrent collaterals
+                weight_scale=0.0007,
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CA3_RECURRENT_PRESET.configure(),
+            stp_config=STPConfig(U=0.50, tau_d=500.0, tau_f=30.0),
         )
 
         # Create sparse local inhibition: each neuron inhibits nearby neurons
@@ -584,7 +564,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=PV_BASKET_PRESET.configure(),
+            stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
         )
 
         # Initialize CA2 lateral inhibition weights
@@ -599,7 +579,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=PV_BASKET_PRESET.configure(),
+            stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
         )
 
         # =====================================================================
@@ -614,18 +594,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 n_input=self.ca3_size,
                 n_output=self.ca2_size,
                 connectivity=0.3,
-                weight_scale=0.0006,
+                weight_scale=0.002,
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.5, tau_d=400.0, tau_f=400.0),
         )
 
         # CA2 → CA1: Output to decision layer
         # Provides temporal/social context to CA1 processing
-        # STP: SCHAFFER_COLLATERAL_PRESET – CA2→CA1 axons are Schaffer-like
-        # collaterals (moderate depression), not mossy fibers (Zhao et al. 2007;
-        # Lee et al. 2014). MOSSY_FIBER_PRESET was incorrect here.
         self._add_internal_connection(
             source_population=HippocampusPopulation.CA2,
             target_population=HippocampusPopulation.CA1,
@@ -637,7 +614,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
         )
 
         # CA3 → CA1: Feedforward (retrieved memory)
@@ -649,17 +626,17 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 n_input=self.ca3_size,
                 n_output=self.ca1_size,
                 connectivity=0.15,
-                weight_scale=0.0015,  # Raised (0.0008→0.0015): Schaffer collaterals must overcome tonic inhibition at CA1
+                weight_scale=0.0015,
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+            stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
         )
 
         # CA1 lateral inhibition for competition
         # Use sparse lateral inhibition (similar to CA3 basket cells)
         # Biologically: CA1 interneurons have local connectivity, not all-to-all
-        ca1_ca1_inhib_synapse = self._add_internal_connection(
+        _ca1_ca1_inhib_synapse = self._add_internal_connection(
             source_population=HippocampusPopulation.CA1,
             target_population=HippocampusPopulation.CA1,
             weights=WeightInitializer.sparse_random_no_autapses(
@@ -670,7 +647,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=PV_BASKET_PRESET.configure(),
+            stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
         )
 
         # =====================================================================
@@ -680,15 +657,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # participate in the standard STP, diagnostic, and learning-strategy
         # pipeline.  Weight values match those previously hard-coded inside
         # HippocampalInhibitoryNetwork (now a pure neuron container).
-        #
-        # STP assignments (literature):
-        #   Pyr→PV   AMPA:  PV_BASKET_PRESET   (strong depression, Geiger et al. 1997)
-        #   Pyr→OLM  AMPA:  SCHAFFER_COLLATERAL (moderate depression; no facilitating preset)
-        #   PV→Pyr   GABA_A: PV_BASKET_PRESET   (strong depression, Kraushaar & Jonas 2000)
-        #   PV→Pyr   GABA_B: None               (GABA_B recruits via spill-over; no vesicular STP)
-        #   OLM→Pyr  GABA_A: SCHAFFER_COLLATERAL (Cea-del Rio et al. 2011: moderate)
-        #   PV→PV    GABA_A: PV_BASKET_PRESET   (strong depression, Bennett & Bhatt 2012)
-        #   OLM→PV   GABA_A: SCHAFFER_COLLATERAL (Oliva et al. 2000: moderate)
         # =====================================================================
 
         # Pre-compute Pyr→PV weight maximums (biologically-constrained conductance budget)
@@ -756,31 +724,43 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 source_population=pyr_pop,
                 target_population=pv_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=pyr_size, n_output=n_pv,
-                    connectivity=0.5, w_min=0.0, w_max=pv_w_max_ei, device=device,
+                    n_input=pyr_size,
+                    n_output=n_pv,
+                    connectivity=0.5,
+                    w_min=0.0,
+                    w_max=pv_w_max_ei,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=PV_BASKET_PRESET.configure(),
+                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
             )
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=olm_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=pyr_size, n_output=n_olm,
-                    connectivity=0.3, w_min=0.0, w_max=0.015, device=device,
+                    n_input=pyr_size,
+                    n_output=n_olm,
+                    connectivity=0.3,
+                    w_min=0.0,
+                    w_max=0.030,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),  # closest to facilitating
+                stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
             )
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=bist_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=pyr_size, n_output=n_bist,
-                    connectivity=0.35, w_min=0.0, w_max=0.012, device=device,
+                    n_input=pyr_size,
+                    n_output=n_bist,
+                    connectivity=0.35,
+                    w_min=0.0,
+                    w_max=0.012,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=PV_BASKET_PRESET.configure(),
+                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
             )
 
             # ------------------------------------------------------------------
@@ -790,18 +770,26 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 source_population=pv_pop,
                 target_population=pyr_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=n_pv, n_output=pyr_size,
-                    connectivity=pv_ie, w_min=0.0, w_max=pv_ie_wmax, device=device,
+                    n_input=n_pv,
+                    n_output=pyr_size,
+                    connectivity=pv_ie,
+                    w_min=0.0,
+                    w_max=pv_ie_wmax,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=PV_BASKET_PRESET.configure(),
+                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
             )
             self._add_internal_connection(
                 source_population=pv_pop,
                 target_population=pyr_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=n_pv, n_output=pyr_size,
-                    connectivity=pv_ie, w_min=0.0, w_max=pv_ie_wmax * 0.15, device=device,
+                    n_input=n_pv,
+                    n_output=pyr_size,
+                    connectivity=pv_ie,
+                    w_min=0.0,
+                    w_max=pv_ie_wmax * 0.15,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.GABA_B,
                 stp_config=None,  # GABA_B recruits via spill-over; vesicular STP does not apply
@@ -810,21 +798,29 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 source_population=olm_pop,
                 target_population=pyr_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=n_olm, n_output=pyr_size,
-                    connectivity=0.5, w_min=0.0, w_max=0.001, device=device,
+                    n_input=n_olm,
+                    n_output=pyr_size,
+                    connectivity=0.5,
+                    w_min=0.0,
+                    w_max=0.001,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+                stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
             )
             self._add_internal_connection(
                 source_population=bist_pop,
                 target_population=pyr_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=n_bist, n_output=pyr_size,
-                    connectivity=0.55, w_min=0.0, w_max=0.002, device=device,
+                    n_input=n_bist,
+                    n_output=pyr_size,
+                    connectivity=0.55,
+                    w_min=0.0,
+                    w_max=0.002,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=PV_BASKET_PRESET.configure(),
+                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
             )
 
             # ------------------------------------------------------------------
@@ -834,21 +830,29 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 source_population=pv_pop,
                 target_population=pv_pop,
                 weights=WeightInitializer.sparse_uniform_no_autapses(
-                    n_input=n_pv, n_output=n_pv,
-                    connectivity=0.3, w_min=0.0, w_max=0.0005, device=device,
+                    n_input=n_pv,
+                    n_output=n_pv,
+                    connectivity=0.3,
+                    w_min=0.0,
+                    w_max=0.0005,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=PV_BASKET_PRESET.configure(),
+                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
             )
             self._add_internal_connection(
                 source_population=olm_pop,
                 target_population=pv_pop,
                 weights=WeightInitializer.sparse_uniform(
-                    n_input=n_olm, n_output=n_pv,
-                    connectivity=0.2, w_min=0.0, w_max=0.0004, device=device,
+                    n_input=n_olm,
+                    n_output=n_pv,
+                    connectivity=0.2,
+                    w_min=0.0,
+                    w_max=0.0004,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+                stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
             )
 
     # =========================================================================
@@ -918,11 +922,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             self._integrate_synaptic_inputs_at_dendrites(
                 synaptic_inputs={syn_pv_pv: prev_pv_spikes_buf.read(1)},
                 n_neurons=inhib_net.n_pv,
-            ).g_ampa
+            ).g_gaba_a
             + self._integrate_synaptic_inputs_at_dendrites(
                 synaptic_inputs={syn_olm_pv: prev_olm_spikes_buf.read(1)},
                 n_neurons=inhib_net.n_pv,
-            ).g_ampa
+            ).g_gaba_a
         )
 
         # ------------------------------------------------------------------
@@ -1203,15 +1207,14 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             self.region_name, HippocampusPopulation.CA3,
             receptor_type=ReceptorType.AMPA,
         )
-        dg_ca3_weights  = self.get_synaptic_weights(dg_ca3_synapse)
+        dg_ca3_weights = self.get_synaptic_weights(dg_ca3_synapse)
         ca3_ca3_weights = self.get_synaptic_weights(ca3_ca3_synapse)
 
         # DG mossy fiber input (with axonal delay + STP facilitation)
-        # Mossy fibers are FACILITATING – repeated DG spikes progressively enhance CA3.
-        dg_spikes_delayed      = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps)
+        dg_spikes_delayed = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps)
         dg_spikes_delayed_float = dg_spikes_delayed.float()
         stp_efficacy = self.stp_modules[dg_ca3_synapse].forward(dg_spikes_delayed_float)
-        ca3_from_dg  = torch.matmul(dg_ca3_weights * stp_efficacy.T, dg_spikes_delayed_float)
+        ca3_from_dg = torch.matmul(dg_ca3_weights, stp_efficacy * dg_spikes_delayed_float)
 
         # NOTE: ca3_input includes ALL external sources (EC, cortex, PFC, thalamus)
         # but NOT DG (computed above with STP).
@@ -1351,8 +1354,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_spikes_for_ca2      = self._ca3_ca2_buffer.read(self._ca3_ca2_delay_steps)
         ca3_spikes_for_ca2_float = ca3_spikes_for_ca2.float()
         stp_efficacy     = self.stp_modules[ca3_ca2_synapse].forward(ca3_spikes_for_ca2_float)
-        effective_w_ca3_ca2 = ca3_ca2_weights * stp_efficacy.T
-        ca2_from_ca3 = torch.matmul(effective_w_ca3_ca2, ca3_spikes_for_ca2_float)
+        ca2_from_ca3 = torch.matmul(ca3_ca2_weights, stp_efficacy * ca3_spikes_for_ca2_float)
 
         # CA2 lateral feedback inhibition (prevents runaway amplification)
         prev_ca2_spikes      = self._ca2_spike_buffer.read(1)
@@ -1439,8 +1441,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # CA3→CA1 Schaffer collateral (delayed + STP depressing)
         ca3_spikes_delayed = self._ca3_ca1_buffer.read(self._ca3_ca1_delay_steps)
         stp_efficacy = self.stp_modules[ca3_ca1_synapse].forward(ca3_spikes_delayed.float())
-        effective_w_ca3_ca1 = ca3_ca1_weights * stp_efficacy.T
-        ca1_from_ca3 = torch.matmul(effective_w_ca3_ca1, ca3_spikes_delayed.float())
+        ca1_from_ca3 = torch.matmul(ca3_ca1_weights, stp_efficacy * ca3_spikes_delayed.float())
 
         # SWR replay boost (offline memory consolidation via sharp-wave ripples)
         if self.ripple_detected:
@@ -1474,8 +1475,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca2_spikes_delayed      = self._ca2_ca1_buffer.read(self._ca2_ca1_delay_steps)
         ca2_spikes_delayed_float = ca2_spikes_delayed.float()
         stp_efficacy = self.stp_modules[ca2_ca1_synapse].forward(ca2_spikes_delayed_float)
-        effective_w_ca2_ca1 = ca2_ca1_weights * stp_efficacy.T
-        ca1_from_ca2 = torch.matmul(effective_w_ca2_ca1, ca2_spikes_delayed_float) * ffi_factor
+        ca1_from_ca2 = torch.matmul(ca2_ca1_weights, stp_efficacy * ca2_spikes_delayed_float) * ffi_factor
 
         # CA1 inhibitory network (OLM creates emergent encoding/retrieval separation)
         ca1_inhib_output = self._run_hippocampal_inhibitory(

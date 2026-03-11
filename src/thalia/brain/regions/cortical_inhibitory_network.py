@@ -146,7 +146,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             n_neurons=self.pv_size,
             device=device,
             tau_mem=5.0,
-            v_threshold=0.9,
+            v_threshold=0.75,  # Reduced 0.9→0.75: Pyr→PV STP depletes to eff≈0.21 at actual pyr rates (4-5 Hz), bringing V_inf from calibrated 0.93 fresh-STP down to ~0.81; threshold 0.75 ensures robust firing in steady-state
             adapt_increment=pv_adapt_increment,
         )
 
@@ -182,8 +182,12 @@ class CorticalInhibitoryNetwork(nn.Module):
         # v_threshold=0.75: at actual L23 Pyr rates of 2-5 Hz with ei_ngc_std=10/n_pyr
         # and no STP, V_inf ≈ 0.55-0.70 (subthreshold at 1.0). Lowering threshold
         # to 0.75 allows NGC to fire when driven by local pyramidal spikes.
-        # adapt_increment=0.03 + tau_adapt=100ms: moderately fast SFA self-regulates
-        # NGC to 5-25 Hz once recruited (Jiang et al. 2015; Wozny & Williams 2011).
+        # adapt_increment=0.25 + tau_adapt=100ms: SFA self-limits NGC to 5-25 Hz.
+        # The pyr→NGC weight has high-variance outliers (max 24× mean due to no STP
+        # cap), so a strong adapt_increment is required to prevent any single NGC
+        # neuron from bursting when receiving an above-mean weight from a pyramidal
+        # cell.  At design L23_pyr rate (3 Hz), V_inf ≈ 0.98 → R_ss ≈ 9 Hz. At
+        # 5 Hz pyr, V_inf ≈ 1.34 → R_ss ≈ 23 Hz.  (Jiang et al. 2015; Wozny 2011)
         self.ngc_neurons = NeuronFactory.create_pyramidal_neurons(
             region_name=region_name,
             population_name=f"{population_name}_ngc",
@@ -191,7 +195,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             device=device,
             tau_mem=15.0,
             v_threshold=0.75,
-            adapt_increment=0.03,
+            adapt_increment=0.25,
             tau_adapt=100.0,
         )
 
@@ -204,8 +208,9 @@ class CorticalInhibitoryNetwork(nn.Module):
         #
         # This class is a NEURON CONTAINER: it holds neurons, gap junctions,
         # long-range input transforms (w_lr_vip, w_lr_ngc), ACh receptors, and
-        # the spike/membrane state buffers needed for gap junction coupling and
-        # I→I conductance computation by the parent.
+        # the PV membrane-voltage buffer needed for gap junction coupling.
+        # I→I spike state buffers are owned by CorticalColumn (matching the
+        # hippocampal pattern) to eliminate cross-module private access.
 
         # =====================================================================
         # VIP LONG-RANGE INPUT MATRIX (external input transform, not registered)
@@ -265,15 +270,11 @@ class CorticalInhibitoryNetwork(nn.Module):
         )
 
         # =====================================================================
-        # SPIKE / MEMBRANE STATE BUFFERS
+        # MEMBRANE STATE BUFFER (PV gap junction coupling)
         # =====================================================================
-        # 1-step delay buffers for the previous timestep's inhibitory population
-        # spikes and PV membrane potential.  The parent reads these to compute
-        # I→I conductances using the registered weight matrices + STP modules.
-        self._pv_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.bool, device=device)
-        self._sst_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.sst_size, dtype=torch.bool, device=device)
-        self._vip_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.vip_size, dtype=torch.bool, device=device)
-        self._ngc_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.ngc_size, dtype=torch.bool, device=device)
+        # PV membrane voltage from the previous timestep is needed by the gap
+        # junction computation inside forward().  I→I spike state buffers live
+        # in CorticalColumn to avoid cross-module private access.
         self._pv_membrane_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.float32, device=device)
 
     # =========================================================================
@@ -305,7 +306,6 @@ class CorticalInhibitoryNetwork(nn.Module):
           - Optional thalamic feedforward drive directly to PV
           - Gap junction coupling (electrical, PV cells only)
           - Neuron integration (all four cell types)
-          - State buffer updates for next-step I→I computation
 
         Args:
             pv_g_exc: AMPA conductance to PV from Pyr (STP-matmul in parent) [pv_size].
@@ -402,12 +402,8 @@ class CorticalInhibitoryNetwork(nn.Module):
         )
 
         # ------------------------------------------------------------------
-        # Update state buffers for next-step I→I and gap junction
+        # Advance PV membrane buffer (gap junction state)
         # ------------------------------------------------------------------
-        self._pv_spike_buffer.write_and_advance(pv_spikes)
-        self._sst_spike_buffer.write_and_advance(sst_spikes)
-        self._vip_spike_buffer.write_and_advance(vip_spikes)
-        self._ngc_spike_buffer.write_and_advance(ngc_spikes)
         self._pv_membrane_buffer.write_and_advance(pv_membrane)
 
         return {

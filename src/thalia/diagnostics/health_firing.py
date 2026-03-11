@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from .bio_ranges import adaptation_expected_for
+from .bio_ranges import adaptation_expected_for, skip_burst_check_for, skip_sync_check_for
 from .diagnostics_types import (
     HealthCategory,
     HealthIssue,
@@ -288,8 +288,12 @@ def _check_synchrony_and_state(
         # During slow-wave (NREM) up-states, high burst co-activation is a
         # normal feature of the state — suppress the CRITICAL so that it does
         # not obscure genuine pathology in other patterns.
+        # Also suppress for tonically-firing pacemaker populations (GPi/GPe/SNr/
+        # cerebellum Purkinje+DCN) where 100 % co-activation is expected.
         if not np.isnan(ps.fraction_burst_events) and ps.fraction_burst_events > config.epileptiform_burst_threshold:
-            if _is_slow_wave:
+            if skip_burst_check_for(rn, pn):
+                pass  # tonic pacemaker — burst statistic is not meaningful
+            elif _is_slow_wave:
                 issues.append(HealthIssue(severity="info", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Burst co-activation (expected in slow_wave up-state): {rn}:{pn} "
@@ -304,8 +308,10 @@ def _check_synchrony_and_state(
                     )))
 
         # Pairwise correlation / AI-state check
+        # Skip the CRITICAL flag for pacemaker populations where high ρ arises
+        # from shared tonic drive rather than pathological network synchrony.
         if not np.isnan(ps.pairwise_correlation):
-            if ps.pairwise_correlation > config.pairwise_rho_critical:
+            if not skip_sync_check_for(rn, pn) and ps.pairwise_correlation > config.pairwise_rho_critical:
                 issues.append(HealthIssue(severity="critical", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"NETWORK SYNCHRONISATION: {rn}:{pn} "

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import numpy as np
 
@@ -23,6 +23,63 @@ if TYPE_CHECKING:
     from .diagnostics_recorder import DiagnosticsRecorder
 
 
+def detect_transient_step(rec: "DiagnosticsRecorder", T: int) -> int:
+    """Detect the end of the onset transient; return the first step to analyse.
+
+    Scans homeostatic gain trajectories for the earliest gain-sample index at
+    which ALL valid (non-NaN, non-zero) trajectories have changed by less than
+    2 % over a sliding backward window of 50 gain-sample points.  Converts to
+    a timestep index and returns it.
+
+    Falls back to 300 ms (≈ 5 × STP equilibration τ at 30 Hz thalamic drive)
+    when homeostasis is disabled or no valid gain trajectories exist.  This
+    covers the STP depletion transient even when gains are all constant.
+
+    The result is capped at T // 2 so the analysis window is never shorter
+    than half the recording.  Returns 0 when T < 200 (too short to detect).
+    """
+    if T < 200:
+        return 0
+
+    n_steps = rec._gain_sample_step
+    gi_steps = max(1, int(rec.config.gain_sample_interval_ms / rec.dt_ms))
+
+    # ── Primary: homeostatic gain settling ───────────────────────────────────
+    if n_steps >= 20:
+        window = min(50, n_steps // 4)
+        valid_indices: List[int] = []
+        for idx in range(rec._n_pops):
+            vals = rec._g_L_scale_history[:n_steps, idx]
+            clean = vals[~np.isnan(vals)]
+            if len(clean) > 0 and float(np.mean(np.abs(clean))) > 1e-6:
+                valid_indices.append(idx)
+
+        if valid_indices:
+            for g in range(window, n_steps):
+                settled = True
+                for idx in valid_indices:
+                    traj = rec._g_L_scale_history[g - window : g + 1, idx]
+                    valid = traj[~np.isnan(traj)]
+                    if len(valid) < max(4, window // 4):
+                        settled = False
+                        break
+                    half = len(valid) // 2
+                    past_mean = float(np.mean(valid[:half]))
+                    recent_mean = float(np.mean(valid[half:]))
+                    if (
+                        abs(past_mean) > 1e-6
+                        and abs(recent_mean - past_mean) / abs(past_mean) > 0.02
+                    ):
+                        settled = False
+                        break
+                if settled:
+                    t0 = min(g * gi_steps, T // 2)
+                    return t0
+
+    # ── Fallback: STP equilibration (300 ms ≈ 5 × τ_STP) ────────────────────
+    return min(int(300.0 / rec.dt_ms), T // 2)
+
+
 def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
     """Compute and return a complete :class:`DiagnosticsReport`.
 
@@ -30,10 +87,20 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
     """
     T = rec._n_recorded or rec.config.n_timesteps
 
-    # Population-level stats
+    # Detect and exclude the onset transient from steady-state analyses.
+    t0 = detect_transient_step(rec, T)
+    T_eff = T - t0
+    if t0 > 0:
+        print(
+            f"\n  [transient] Excluding first {t0} steps "
+            f"({t0 * rec.dt_ms:.0f} ms) as network onset transient.  "
+            f"Steady-state analyses use {T_eff} steps ({T_eff * rec.dt_ms:.0f} ms)."
+        )
+
+    # Population-level stats (computed on the post-transient window [t0:T])
     pop_stats: Dict[Tuple[str, str], PopulationStats] = {}
     for idx, (rn, pn) in enumerate(rec._pop_keys):
-        pop_stats[(rn, pn)] = compute_population_stats(rec, idx, T)
+        pop_stats[(rn, pn)] = compute_population_stats(rec, idx, T, t0)
 
     # Region-level stats
     region_stats: Dict[str, RegionStats] = {}
@@ -41,12 +108,13 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
         region_stats[rn] = compute_region_stats(rec, rn, pop_stats)
 
     # Binned population rates [n_bins, n_pops]: spikes / neuron per bin.
-    # Vectorized: reshape [n_bins*bin_steps, n_pops] → [n_bins, bin_steps, n_pops], sum time axis.
+    # Computed over [t0 : t0 + n_bins*bin_steps] so spectral analyses operate
+    # on the steady-state portion of the recording only.
     bin_steps = max(1, int(rec.config.rate_bin_ms / rec.dt_ms))
-    n_bins = T // bin_steps
+    n_bins = T_eff // bin_steps
     if n_bins > 0:
         pop_rate_binned = (
-            rec._pop_spike_counts[: n_bins * bin_steps]
+            rec._pop_spike_counts[t0 : t0 + n_bins * bin_steps]
             .reshape(n_bins, bin_steps, rec._n_pops)
             .sum(axis=1)
             .astype(np.float32)
@@ -73,6 +141,8 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
                     / total_neurons
                 )
 
+    # Raw buffer accesses in oscillatory sub-functions (pac, hfo, plv, etc.) use T
+    # (the full recording) so they can apply their own temporal filtering.
     oscillations = compute_oscillatory_stats(rec, pop_rate_binned, region_rate_binned, n_bins, T)
     connectivity = compute_connectivity_stats(rec, T)
     homeostasis = compute_homeostatic_stats(rec)
@@ -82,6 +152,7 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
         timestamp=time.time(),
         simulation_time_ms=T * rec.dt_ms,
         n_timesteps=T,
+        transient_steps=t0,
         mode=rec.config.mode,
         regions=region_stats,
         oscillations=oscillations,

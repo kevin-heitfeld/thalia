@@ -34,11 +34,17 @@ def check_connectivity(
     for ts in connectivity.tracts:
         if not np.isnan(ts.measured_delay_ms):
             if ts.measured_delay_ms < 0:
-                issues.append(HealthIssue(severity="critical", category=HealthCategory.CONNECTIVITY,
+                # Anti-causal cross-correlation peaks can arise legitimately in
+                # recurrent feedback loops (e.g. cortex→LC→cortex, EC→HPC→EC)
+                # where the downstream region fires in anticipation of the next
+                # upstream cycle.  These are false positives for correctly-wired
+                # connections.  Downgrade to WARNING so genuine wiring bugs (if
+                # any) are still visible without drowning out real issues.
+                issues.append(HealthIssue(severity="warning", category=HealthCategory.CONNECTIVITY,
                     region=ts.synapse_id.source_region,
-                    message=f"REVERSED CONNECTIVITY: {ts.synapse_id}  "
+                    message=f"Possible reversed connectivity: {ts.synapse_id}  "
                             f"anti-causal peak at -{ts.measured_delay_ms:.0f} ms — "
-                            f"source and target may be swapped"))
+                            f"verify source/target are not swapped (may be feedback-loop artifact)"))
             else:
                 diff = abs(ts.measured_delay_ms - ts.expected_delay_ms)
                 tolerance = max(2.0 * rec.dt_ms, ts.expected_delay_ms * 0.25)

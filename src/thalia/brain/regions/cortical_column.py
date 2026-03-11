@@ -64,13 +64,8 @@ from thalia.brain.synapses import (
     NeuromodulatorReceptor,
     NMReceptorType,
     make_nm_receptor,
-    WeightInitializer,
-)
-from thalia.brain.synapses.stp import (
     STPConfig,
-    STPType,
-    CORTICAL_FF_PRESET,
-    CORTICAL_RECURRENT_PRESET,
+    WeightInitializer,
 )
 from thalia.learning import (
     BCMConfig,
@@ -437,7 +432,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             population_name=CortexPopulation.L23_INHIBITORY,
             pyr_size=self.l23_pyr_size,
             total_inhib_fraction=0.25,
-            pv_adapt_increment=0.0,
+            pv_adapt_increment=0.10,  # Added: L23 PV was 102-203 Hz (target 10-70); matches L4 adapt that gives 27-31 Hz
             dt_ms=config.dt_ms,
             device=device,
         )
@@ -459,7 +454,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             population_name=CortexPopulation.L5_INHIBITORY,
             pyr_size=self.l5_pyr_size,
             total_inhib_fraction=0.25,
-            pv_adapt_increment=0.0,
+            pv_adapt_increment=0.10,  # Added: L5 PV was 200-270 Hz (target 10-70); matches L4 adapt that gives 27-31 Hz
             dt_ms=config.dt_ms,
             device=device,
         )
@@ -481,7 +476,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             population_name=CortexPopulation.L6B_INHIBITORY,
             pyr_size=self.l6b_pyr_size,
             total_inhib_fraction=0.25,
-            pv_adapt_increment=0.0,
+            pv_adapt_increment=0.10,  # Added: L6b PV was 130-178 Hz (target 10-70); matches L4 adapt that gives 27-31 Hz
             dt_ms=config.dt_ms,
             device=device,
         )
@@ -570,6 +565,28 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         self._l1_ngc_spike_buffer = CircularDelayBuffer(max_delay=1, size=self.l1_ngc_size, device=device, dtype=torch.bool)
 
         # =====================================================================
+        # INHIBITORY INTERNEURON SPIKE BUFFERS (I→I causal delay, 1 step)
+        # =====================================================================
+        # One PV/SST/VIP buffer set per cortical layer.  Owned here (not inside
+        # CorticalInhibitoryNetwork) to match the hippocampal pattern and remove
+        # cross-module private access in _run_cortical_inhibitory.
+        self._l23_pv_buf  = CircularDelayBuffer(max_delay=1, size=self.l23_inhibitory.pv_size,  dtype=torch.bool, device=device)
+        self._l23_sst_buf = CircularDelayBuffer(max_delay=1, size=self.l23_inhibitory.sst_size, dtype=torch.bool, device=device)
+        self._l23_vip_buf = CircularDelayBuffer(max_delay=1, size=self.l23_inhibitory.vip_size, dtype=torch.bool, device=device)
+        self._l4_pv_buf   = CircularDelayBuffer(max_delay=1, size=self.l4_inhibitory.pv_size,   dtype=torch.bool, device=device)
+        self._l4_sst_buf  = CircularDelayBuffer(max_delay=1, size=self.l4_inhibitory.sst_size,  dtype=torch.bool, device=device)
+        self._l4_vip_buf  = CircularDelayBuffer(max_delay=1, size=self.l4_inhibitory.vip_size,  dtype=torch.bool, device=device)
+        self._l5_pv_buf   = CircularDelayBuffer(max_delay=1, size=self.l5_inhibitory.pv_size,   dtype=torch.bool, device=device)
+        self._l5_sst_buf  = CircularDelayBuffer(max_delay=1, size=self.l5_inhibitory.sst_size,  dtype=torch.bool, device=device)
+        self._l5_vip_buf  = CircularDelayBuffer(max_delay=1, size=self.l5_inhibitory.vip_size,  dtype=torch.bool, device=device)
+        self._l6a_pv_buf  = CircularDelayBuffer(max_delay=1, size=self.l6a_inhibitory.pv_size,  dtype=torch.bool, device=device)
+        self._l6a_sst_buf = CircularDelayBuffer(max_delay=1, size=self.l6a_inhibitory.sst_size, dtype=torch.bool, device=device)
+        self._l6a_vip_buf = CircularDelayBuffer(max_delay=1, size=self.l6a_inhibitory.vip_size, dtype=torch.bool, device=device)
+        self._l6b_pv_buf  = CircularDelayBuffer(max_delay=1, size=self.l6b_inhibitory.pv_size,  dtype=torch.bool, device=device)
+        self._l6b_sst_buf = CircularDelayBuffer(max_delay=1, size=self.l6b_inhibitory.sst_size, dtype=torch.bool, device=device)
+        self._l6b_vip_buf = CircularDelayBuffer(max_delay=1, size=self.l6b_inhibitory.vip_size, dtype=torch.bool, device=device)
+
+        # =====================================================================
         # HOMEOSTATIC PLASTICITY (Intrinsic Excitability + Synaptic Scaling)
         # =====================================================================
         # Per-layer homeostatic state: firing-rate EMA + synaptic weight-scale
@@ -599,9 +616,6 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         l4_std = 0.5 / expected_active_l4    # L4 driving L2/3
 
         # L4 → L2/3: positive excitatory weights
-        # STP: CORTICAL_FF_PRESET — moderate depression (Reyes & Sakmann 1999;
-        # Thomson et al. 2002). Limits sustained runaway activation and
-        # implements gain normalisation as sparsely coded L4 activity ascends.
         self._add_internal_connection(
             source_population=CortexPopulation.L4_PYR,
             target_population=CortexPopulation.L23_PYR,
@@ -614,14 +628,11 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CORTICAL_FF_PRESET.configure(),
+            stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             learning_strategy=self.composite_l23,
         )
 
         # L2/3 → L5: positive excitatory weights
-        # STP: CORTICAL_FF_PRESET — moderate depression. Thomson & Bannister
-        # (2003) report L2/3→L5 can also be weakly facilitating; we use the
-        # same depressing preset as L4→L23 to prevent cascade runaway.
         self._add_internal_connection(
             source_population=CortexPopulation.L23_PYR,
             target_population=CortexPopulation.L5_PYR,
@@ -634,7 +645,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CORTICAL_FF_PRESET.configure(),
+            stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             learning_strategy=self.composite_l5,
         )
 
@@ -651,7 +662,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CORTICAL_FF_PRESET.configure(),
+            stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             learning_strategy=self.composite_l6a,
         )
 
@@ -668,7 +679,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CORTICAL_FF_PRESET.configure(),
+            stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             learning_strategy=self.composite_l6b,
         )
 
@@ -693,7 +704,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 n_output=self.l4_sst_pred_size,
                 connectivity=1.0,
                 mean=0.0,
-                std=0.0005,
+                std=0.004,
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
@@ -701,7 +712,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             # Reyes et al. (1998); Markram et al. (1998): E→SOM synapses are
             # the canonical EPSP-F type — enables prediction only during
             # sustained L5 activity, not transient spikes.
-            stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+            stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
         )
 
         # L4_SST_PRED → L4_PYR: Inhibitory prediction gate (anti-Hebbian).
@@ -721,7 +732,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             # SST→PYR inhibition is depressing: strong initial IPSP that fades
             # with repetitive SST firing. Silberberg & Markram (2007): SST-type
             # inhibitory synapses depress at dendritic targets.
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
             learning_strategy=PredictiveCodingStrategy(pred_cfg),
         )
 
@@ -742,7 +753,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             # L6 feedback inhibition is depressing: high initial suppression
             # of L4 that self-limits with sustained L6 activity.
             # Prevents permanent L4 silencing by the predictive circuit.
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
             learning_strategy=PredictiveCodingStrategy(pred_cfg),
         )
 
@@ -752,10 +763,6 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         # Biology: L2/3 pyramidal neurons have extensive recurrent connections
         # critical for attractor dynamics, working memory, and pattern completion.
         # These are the most plastic connections in cortex.
-        # STP: CORTICAL_RECURRENT_PRESET — strong facilitation (Markram et al.
-        # 1998: the canonical EPSP-E facilitating synapse). Very low baseline
-        # release probability builds up strongly during sustained activity,
-        # implementing attractor dynamics and working memory maintenance.
         self._add_internal_connection(
             source_population=CortexPopulation.L23_PYR,
             target_population=CortexPopulation.L23_PYR,
@@ -767,7 +774,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CORTICAL_RECURRENT_PRESET.configure(),
+            stp_config=STPConfig(U=0.12, tau_d=150.0, tau_f=600.0),
             learning_strategy=self.composite_l23,
         )
 
@@ -776,20 +783,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         # =====================================================================
         # All PV/SST/VIP/NGC weight matrices registered via _add_internal_connection
         # so they receive STP modulation, diagnostics tracking, and can accept
-        # learning strategies.  The biological scale multipliers from the old
-        # cortical_inhibitory_network.forward (PV ×1.0, SST ×0.3, VIP ×0.05,
-        # NGC ×0.12) are ABSORBED into the weight magnitudes below.
-        #
-        # STP biology:
-        #   Pyr→PV   CORTICAL_FF_PRESET     (depressing, Thomson et al. 2002)
-        #   Pyr→SST  FACILITATING_MODERATE  (class E→SOM facilitating, Markram 1998)
-        #   Pyr→VIP  CORTICAL_FF_PRESET     (depressing)
-        #   Pyr→NGC  CORTICAL_FF_PRESET     (depressing)
-        #   PV→Pyr   DEPRESSING             (fast fast-spiking IPSCs depress, Jonas 2004)
-        #   SST→Pyr  DEPRESSING             (Silberberg & Markram, 2007)
-        #   VIP→Pyr  None                   (minimal direct route, dynamic unimportant)
-        #   NGC→Pyr  None                   (GABA_A volume transmission, no vesicle STP)
-        #   I→I      CORTICAL_FF_PRESET     (interneuron→interneuron depressing)
+        # learning strategies.
 
         layer_defs = [
             # ( pyr_pop,                    pv_pop,                         sst_pop,                         vip_pop,                         ngc_pop,                         inhib_net,            pyr_size             )
@@ -810,28 +804,12 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             # E→I: each interneuron receives from a fraction of pyramidal cells.
             # Target ~30-50 Hz PV drive at expected 5-10 Hz pyramidal rate.
             # Formula: std = g_AMPA_needed / (n_pyr * conn * pyr_rate * tau_E * sqrt(2/pi))
-            # For g_L=0.08-0.10 interneurons firing at 20-50 Hz:
-            #   PV  (target 30-60 Hz, g_L≈0.10): std = 2.25 / n_pyr
-            #   SST (target 10-25 Hz, g_L≈0.07): std = 2.0  / n_pyr
-            #   VIP (target 10-30 Hz, g_L≈0.08): std = 0.60 / n_pyr  (kept)
-            #   NGC (target  5-25 Hz, g_L≈0.08): std = 4.0  / n_pyr
-            #
-            # NGC requires the largest increase (was 0.30/n_pyr, all silent):
-            # NGC have small local collateral connectivity (P≈0.2) and volume-
-            # transmission output; they need stronger per-connection drive.
-            #
-            # Previous values (0.75, 0.45, 0.60, 0.30)/n_pyr were calibrated
-            # for ~2 Hz pyramidal rate; at 5-10 Hz actual V_inf was 0.2-0.5×
-            # threshold, leaving PV/SST underactive and NGC completely silent.
-            ei_pv_std  = 2.25 / n_pyr   # Strong, reliable (P≈0.5)  — 3× increase
-            ei_sst_std = 2.0  / n_pyr   # Facilitating (P≈0.3)      — 4.4× increase
-            ei_vip_std = 0.60 / n_pyr   # Strong specific (P≈0.4)   — unchanged
-            ei_ngc_std = 10.0 / n_pyr   # Weak collaterals (P≈0.2)  — 2.5× increase from 4.0 (run-03: still silent)
+            ei_pv_std  = 40.0 / n_pyr
+            ei_sst_std = 10.0 / n_pyr  # Raised 6.0→10.0: SST at ~3–4 Hz (target 5–25 Hz) with 6.0
+            ei_vip_std = 0.60 / n_pyr
+            ei_ngc_std = 25.0 / n_pyr
 
             # I→E: perisomatic PV gives strong inhibition ~2 mS/cm²/spike.
-            # SST absorbed scale ×0.3:  0.002 × 0.3 = 0.0006
-            # VIP absorbed scale ×0.05: 0.002 × 0.05 = 0.0001
-            # NGC absorbed scale ×0.12: 0.002 × 0.12 = 0.00024
             ie_pv_std  = 0.002
             ie_sst_std = 0.0006
             ie_vip_std = 0.0001
@@ -841,47 +819,51 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             ii_std = 0.001
 
             # == E → I ========================================================
-            # Pyr → PV (depressing, strong, reliable)
+            # Pyr → PV (mildly depressing: Angulo et al 1999, Xiang et al 2002, Pyr→FS)
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=pv_pop,
                 weights=WeightInitializer.sparse_gaussian(
-                    n_input=n_pyr, n_output=n_pv,
-                    connectivity=0.5, mean=0.0, std=ei_pv_std, device=device,
+                    n_input=n_pyr,
+                    n_output=n_pv,
+                    connectivity=0.5,
+                    mean=0.0,
+                    std=ei_pv_std,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=CORTICAL_FF_PRESET.configure(),
+                stp_config=STPConfig(U=0.25, tau_d=150.0, tau_f=20.0),
             )
             # Pyr → SST (facilitating — Markram 1998 EPSP-F, Reyes et al. 1998)
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=sst_pop,
                 weights=WeightInitializer.sparse_gaussian(
-                    n_input=n_pyr, n_output=n_sst,
-                    connectivity=0.3, mean=0.0, std=ei_sst_std, device=device,
+                    n_input=n_pyr,
+                    n_output=n_sst,
+                    connectivity=0.3,
+                    mean=0.0,
+                    std=ei_sst_std,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+                stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
             )
             # Pyr → VIP (depressing)
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=vip_pop,
                 weights=WeightInitializer.sparse_gaussian(
-                    n_input=n_pyr, n_output=n_vip,
-                    connectivity=0.4, mean=0.0, std=ei_vip_std, device=device,
+                    n_input=n_pyr,
+                    n_output=n_vip,
+                    connectivity=0.4,
+                    mean=0.0,
+                    std=ei_vip_std,
+                    device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=CORTICAL_FF_PRESET.configure(),
+                stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             )
-            # Pyr → NGC (no STP: CORTICAL_FF_PRESET depressing STP at 2-6 Hz
-            # depletes to ~35-60% efficiency; V_inf is already marginal so
-            # any additional depression would silence NGC. Without STP, full
-            # weight is delivered at each spike. NGC v_threshold=0.75 allows
-            # firing once V_inf exceeds baseline. adapt_increment=0.03 +
-            # tau_adapt=100ms then self-regulates NGC to 5-25 Hz.
-            # Biology: NGC are late-spiking with minimal E→I depression
-            # compared to PV/VIP pathways (Wozny & Williams 2011).)
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=ngc_pop,
@@ -890,7 +872,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.2, mean=0.0, std=ei_ngc_std, device=device,
                 ),
                 receptor_type=ReceptorType.AMPA,
-                stp_config=None,  # No STP: even mild depression silences NGC at low (<5 Hz) pyr rates
+                stp_config=None,
             )
 
             # == I → E ========================================================
@@ -903,7 +885,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.6, mean=0.0, std=ie_pv_std, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=STPConfig.from_type(STPType.DEPRESSING),
+                stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
             )
             # SST → Pyr GABA_A (dendritic, depressing — Silberberg & Markram 2007)
             self._add_internal_connection(
@@ -914,7 +896,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.4, mean=0.0, std=ie_sst_std, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=STPConfig.from_type(STPType.DEPRESSING),
+                stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
             )
             # VIP → Pyr GABA_A (minimal direct effect; VIP role is disinhibitory)
             self._add_internal_connection(
@@ -949,7 +931,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.3, mean=0.0, std=ii_std, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=CORTICAL_FF_PRESET.configure(),
+                stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             )
             # PV → SST (suppresses SST → disinhibits Pyr apical tuft)
             self._add_internal_connection(
@@ -960,7 +942,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.3, mean=0.0, std=ii_std, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=CORTICAL_FF_PRESET.configure(),
+                stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             )
             # SST → PV (weak; SST can briefly suppress PV allowing burst propagation)
             self._add_internal_connection(
@@ -971,7 +953,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.2, mean=0.0, std=ii_std * 0.7, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=CORTICAL_RECURRENT_PRESET.configure(),
+                stp_config=STPConfig(U=0.12, tau_d=150.0, tau_f=600.0),
             )
             # VIP → PV (disinhibitory: VIP silence PV → releases pyramidal from peri-somatic inh)
             self._add_internal_connection(
@@ -982,7 +964,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.6, mean=0.0, std=ii_std, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=CORTICAL_FF_PRESET.configure(),
+                stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             )
             # VIP → SST (strong disinhibition: VIP→SST fires → SST silenced → apical disinhibition)
             self._add_internal_connection(
@@ -993,7 +975,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                     connectivity=0.7, mean=0.0, std=ii_std * 1.2, device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=CORTICAL_FF_PRESET.configure(),
+                stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
             )
 
         # =====================================================================
@@ -1027,7 +1009,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=CORTICAL_FF_PRESET.configure(),
+            stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
         )
 
         # (b) L1 NGC → L2/3 apical tuft (GABA_A; wide, diffuse coverage)
@@ -1088,6 +1070,15 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             self.l6b_inhibitory: (CortexPopulation.L6B_PYR, CortexPopulation.L6B_INHIBITORY_PV, CortexPopulation.L6B_INHIBITORY_SST, CortexPopulation.L6B_INHIBITORY_VIP, CortexPopulation.L6B_INHIBITORY_NGC),
         }
 
+        # Maps inhibitory_network → (pv_buf, sst_buf, vip_buf): I→I causal-step state
+        self._inhib_inh_bufs: Dict[CorticalInhibitoryNetwork, Tuple[CircularDelayBuffer, CircularDelayBuffer, CircularDelayBuffer]] = {
+            self.l23_inhibitory: (self._l23_pv_buf, self._l23_sst_buf, self._l23_vip_buf),
+            self.l4_inhibitory:  (self._l4_pv_buf,  self._l4_sst_buf,  self._l4_vip_buf),
+            self.l5_inhibitory:  (self._l5_pv_buf,  self._l5_sst_buf,  self._l5_vip_buf),
+            self.l6a_inhibitory: (self._l6a_pv_buf, self._l6a_sst_buf, self._l6a_vip_buf),
+            self.l6b_inhibitory: (self._l6b_pv_buf, self._l6b_sst_buf, self._l6b_vip_buf),
+        }
+
     # =========================================================================
     # CORTICAL LAYER PROCESSING HELPERS
     # =========================================================================
@@ -1136,46 +1127,37 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
               pv_membrane, sst_membrane, vip_membrane, ngc_membrane.
         """
         rn = self.region_name
-        prev_pyr_f = prev_pyr_spikes.float()
 
         def _syn(src: "PopulationName", tgt: "PopulationName", rxn: ReceptorType) -> SynapseId:
             return SynapseId(rn, src, rn, tgt, receptor_type=rxn)
 
-        def _matmul_stp(syn_id: SynapseId, pre_f: torch.Tensor) -> torch.Tensor:
-            """STP-modulated weight × pre_float → conductance."""
-            syn_info = self.get_synapse_info(syn_id)
-            if syn_info.stp_module is not None:
-                eff_w = syn_info.weights * syn_info.stp_module.forward(pre_f).T
-            else:
-                eff_w = syn_info.weights
-            return torch.matmul(eff_w, pre_f)
-
         # ------------------------------------------------------------------
         # E → I  (Pyr → interneurons via registered STP weights)
         # ------------------------------------------------------------------
-        pv_g_exc  = _matmul_stp(_syn(pyr_pop, pv_pop,  ReceptorType.AMPA), prev_pyr_f)
-        sst_g_exc = _matmul_stp(_syn(pyr_pop, sst_pop, ReceptorType.AMPA), prev_pyr_f)
-        vip_g_exc = _matmul_stp(_syn(pyr_pop, vip_pop, ReceptorType.AMPA), prev_pyr_f)
-        ngc_g_exc = _matmul_stp(_syn(pyr_pop, ngc_pop, ReceptorType.AMPA), prev_pyr_f)
+        pv_g_exc  = self._integrate_single_synaptic_input(_syn(pyr_pop, pv_pop,  ReceptorType.AMPA), prev_pyr_spikes).g_ampa
+        sst_g_exc = self._integrate_single_synaptic_input(_syn(pyr_pop, sst_pop, ReceptorType.AMPA), prev_pyr_spikes).g_ampa
+        vip_g_exc = self._integrate_single_synaptic_input(_syn(pyr_pop, vip_pop, ReceptorType.AMPA), prev_pyr_spikes).g_ampa
+        ngc_g_exc = self._integrate_single_synaptic_input(_syn(pyr_pop, ngc_pop, ReceptorType.AMPA), prev_pyr_spikes).g_ampa
 
         # ------------------------------------------------------------------
         # I → I  (from previous-step inhibitory spikes, via registered weights)
         # ------------------------------------------------------------------
-        prev_pv_f  = inhib_net._pv_spike_buffer.read(1).float()
-        prev_sst_f = inhib_net._sst_spike_buffer.read(1).float()
-        prev_vip_f = inhib_net._vip_spike_buffer.read(1).float()
+        pv_buf, sst_buf, vip_buf = self._inhib_inh_bufs[inhib_net]
+        prev_pv_spikes  = pv_buf.read(1)
+        prev_sst_spikes = sst_buf.read(1)
+        prev_vip_spikes = vip_buf.read(1)
 
-        # PV receives inhibition from PV (lateral), SST (weak), VIP (strong disinhibitory),
+        # PV receives inhibition from PV (lateral), SST (weak), VIP (strong disinhibitory).
         # SST receives from PV and VIP (disinhibitory).
         # (ngc is not a target of any registered I→I connections)
         pv_g_inh = (
-            _matmul_stp(_syn(pv_pop,  pv_pop, ReceptorType.GABA_A), prev_pv_f)
-            + _matmul_stp(_syn(sst_pop, pv_pop, ReceptorType.GABA_A), prev_sst_f)
-            + _matmul_stp(_syn(vip_pop, pv_pop, ReceptorType.GABA_A), prev_vip_f)
+            self._integrate_single_synaptic_input(_syn(pv_pop,  pv_pop,  ReceptorType.GABA_A), prev_pv_spikes).g_gaba_a
+            + self._integrate_single_synaptic_input(_syn(sst_pop, pv_pop, ReceptorType.GABA_A), prev_sst_spikes).g_gaba_a
+            + self._integrate_single_synaptic_input(_syn(vip_pop, pv_pop, ReceptorType.GABA_A), prev_vip_spikes).g_gaba_a
         )
         sst_g_inh = (
-            _matmul_stp(_syn(pv_pop,  sst_pop, ReceptorType.GABA_A), prev_pv_f)
-            + _matmul_stp(_syn(vip_pop, sst_pop, ReceptorType.GABA_A), prev_vip_f)
+            self._integrate_single_synaptic_input(_syn(pv_pop,  sst_pop, ReceptorType.GABA_A), prev_pv_spikes).g_gaba_a
+            + self._integrate_single_synaptic_input(_syn(vip_pop, sst_pop, ReceptorType.GABA_A), prev_vip_spikes).g_gaba_a
         )
         vip_g_inh = torch.zeros(inhib_net.vip_size, device=self.device)
         ngc_g_inh = torch.zeros(inhib_net.ngc_size, device=self.device)
@@ -1206,17 +1188,19 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         # The scale multipliers (PV ×1.0, SST ×0.3, VIP ×0.05, NGC ×0.12)
         # are absorbed into the weight std values in _init_synaptic_weights.
         # ------------------------------------------------------------------
-        pv_f  = pv_spikes.float()
-        sst_f = sst_spikes.float()
-        vip_f = vip_spikes.float()
-        ngc_f = ngc_spikes.float()
-
-        perisomatic_inhibition = _matmul_stp(_syn(pv_pop,  pyr_pop, ReceptorType.GABA_A), pv_f)
-        dendritic_inhibition   = _matmul_stp(_syn(sst_pop, pyr_pop, ReceptorType.GABA_A), sst_f)
-        vip_to_pyr             = _matmul_stp(_syn(vip_pop, pyr_pop, ReceptorType.GABA_A), vip_f)
-        ngc_to_pyr             = _matmul_stp(_syn(ngc_pop, pyr_pop, ReceptorType.GABA_A), ngc_f)
+        perisomatic_inhibition = self._integrate_single_synaptic_input(_syn(pv_pop,  pyr_pop, ReceptorType.GABA_A), pv_spikes).g_gaba_a
+        dendritic_inhibition   = self._integrate_single_synaptic_input(_syn(sst_pop, pyr_pop, ReceptorType.GABA_A), sst_spikes).g_gaba_a
+        vip_to_pyr             = self._integrate_single_synaptic_input(_syn(vip_pop, pyr_pop, ReceptorType.GABA_A), vip_spikes).g_gaba_a
+        ngc_to_pyr             = self._integrate_single_synaptic_input(_syn(ngc_pop, pyr_pop, ReceptorType.GABA_A), ngc_spikes).g_gaba_a
 
         total_inhibition = perisomatic_inhibition + dendritic_inhibition + vip_to_pyr + ngc_to_pyr
+
+        # ------------------------------------------------------------------
+        # Advance I→I spike state buffers (owned by CorticalColumn)
+        # ------------------------------------------------------------------
+        pv_buf.write_and_advance(pv_spikes)
+        sst_buf.write_and_advance(sst_spikes)
+        vip_buf.write_and_advance(vip_spikes)
 
         return {
             "total_inhibition":       total_inhibition,

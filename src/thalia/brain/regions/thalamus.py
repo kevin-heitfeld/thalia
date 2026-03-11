@@ -80,7 +80,6 @@ from thalia.brain.synapses import (
     NMReceptorType,
     make_nm_receptor,
     STPConfig,
-    STPType,
     WeightInitializer,
 )
 from thalia.learning import (
@@ -205,7 +204,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+            stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
         )
 
         # =====================================================================
@@ -238,7 +237,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
+            stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
         )
 
         # TRN recurrent delay buffer (prevents instant feedback oscillations)
@@ -369,7 +368,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
+            stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
         )
 
     # =========================================================================
@@ -403,18 +402,18 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                     # Sensory input → relay depression
                     # Filters repetitive stimuli, responds to novelty
                     # CRITICAL for attention capture and change detection
-                    stp_config = STPConfig.from_type(STPType.DEPRESSING_MODERATE)
+                    stp_config = STPConfig(U=0.4, tau_d=700.0, tau_f=30.0)
 
             elif synapse_id.target_population == ThalamusPopulation.TRN:
                 # Type-I corticothalamic (L6a→TRN) and ascending sensory collaterals
-                # are both DEPRESSING — in contrast to the facilitating type-II CT
-                # (L6b→relay, CORTICOTHALAMIC_L6B_PRESET).
+                # are both depressing — in contrast to the facilitating type-II CT
+                # (L6b→relay).
                 # Crandall et al. (2015, Neuron); Cruikshank et al. (2010):
                 # type-I CT→TRN EPSPs depress by >60% at 40 Hz.
                 # This means TRN is strongly recruited by initial stimulus onset
                 # volleys but desensitises to sustained thalamic relay activity —
                 # preventing over-suppression during steady-state sensory input.
-                stp_config = STPConfig.from_type(STPType.DEPRESSING_MODERATE)
+                stp_config = STPConfig(U=0.4, tau_d=700.0, tau_f=30.0)
 
         super().add_input_source(
             synapse_id,
@@ -464,10 +463,9 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 self._add_stp_module(
                     synapse_id=sensory_trn_synapse,
                     n_pre=n_input,
-                    n_post=self.trn_size,
                     # Sensory ascending collaterals → TRN are depressing
                     # (retinogeniculate collaterals, Chen et al. 2002)
-                    config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
+                    config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
                     device=device,
                 )
 
@@ -502,6 +500,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Internal connections (TRN→relay, relay→TRN, TRN→TRN) are integrated below
         # using _integrate_synaptic_inputs_at_dendrites with their respective delay buffers.
         relay_conductance = torch.zeros(self.relay_size, device=device)
+        relay_inhibition_external = torch.zeros(self.relay_size, device=device)  # GPi, SNr → relay GABA_A
         trn_conductance = torch.zeros(self.trn_size, device=device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
@@ -512,7 +511,14 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             if synapse_id.target_population == ThalamusPopulation.TRN:
                 trn_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes_float
             elif synapse_id.target_population == ThalamusPopulation.RELAY:
-                relay_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes_float
+                # IMPORTANT: route by receptor type — GABA_A/B from GPi/SNr must go to
+                # the inhibitory accumulator, not excitatory (bug fix: previously all
+                # external relay inputs were incorrectly lumped into relay_conductance
+                # which was then passed as AMPA excitation, causing GPi to excite relay).
+                if synapse_id.receptor_type in (ReceptorType.GABA_A, ReceptorType.GABA_B):
+                    relay_inhibition_external += self.get_synaptic_weights(synapse_id) @ source_spikes_float
+                else:
+                    relay_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes_float
 
             # Sensory inputs also project to TRN for feedforward inhibition (gating mechanism)
             if synapse_id.is_external_sensory_input():
@@ -547,7 +553,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         relay_inhibition = self._integrate_synaptic_inputs_at_dendrites(
             {trn_relay_synapse: self._trn_recurrent_buffer.read(1)},
             n_neurons=self.relay_size,
-        ).g_gaba_a
+        ).g_gaba_a + relay_inhibition_external
 
         # =====================================================================
         # RELAY NEURONS: Conductances → Relay

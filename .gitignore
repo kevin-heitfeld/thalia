@@ -7,7 +7,9 @@ __pycache__/
 
 # VS Code
 .vscode/
-*.code-workspace
+
+# Build artifacts
+src/**/_philox_build/
 
 # Unit test / coverage reports
 htmlcov/
