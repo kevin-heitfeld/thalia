@@ -462,7 +462,7 @@ def check_d1_d2_da_balance(
         if not matches_any(rn, STRIATAL_TAGS):
             continue
 
-        region = rec.brain.regions.get(rn)
+        region = rec.brain.regions[rn] if rn in rec.brain.regions else None
         if region is None:
             continue
 

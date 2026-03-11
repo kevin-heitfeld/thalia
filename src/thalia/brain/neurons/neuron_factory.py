@@ -501,11 +501,11 @@ class NeuronFactory:
             "tau_I": 10.0,
             "tau_ref": 2.0,
             "tau_mem": 20.0,
-            "tau_adapt": 200.0,  # Raised (100→200 ms): slower adaptation decay to sustain resistance
-            "adapt_increment": 0.30,  # Raised (0.1→0.30): MSNs need strong adaptation vs thalamic overflow
-            # MSNs are silent at rest (up-state transitions require >100 corticostriatal
-            # inputs). Default noise_std=0.08 caused noise-driven ~10 Hz via NMDA accumulation.
-            "noise_std": 0.005,
+            "tau_adapt": 200.0,
+            "adapt_increment": 0.15,  # Raised 0.10→0.15 (run-13: D1=5.55 Hz, D2=7.03 Hz vs target 0–5 Hz); stronger SFA reduces equilibrium rate by ~33%
+            # V_inf ≈ 0.93 at biological baseline rates → fluctuation-driven regime; noise_std=0.025 gives ~1σ
+            # barrier to threshold for sparse firing.  Previous 0.005 gave 5σ barrier (0 Hz) due to same NMDA fix.
+            "noise_std": 0.025,
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)
@@ -566,11 +566,11 @@ class NeuronFactory:
             "tau_I": 10.0,
             "tau_ref": 2.0,
             "tau_mem": 20.0,
-            "tau_adapt": 200.0,  # Raised (100→200 ms): slower adaptation decay to sustain resistance
-            "adapt_increment": 0.30,  # Raised (0.1→0.30): MSNs need strong adaptation vs thalamic overflow
-            # MSNs are silent at rest (up-state transitions require >100 corticostriatal
-            # inputs). Default noise_std=0.08 caused noise-driven ~10 Hz via NMDA accumulation.
-            "noise_std": 0.005,
+            "tau_adapt": 200.0,
+            "adapt_increment": 0.15,  # Raised 0.10→0.15 (run-13: D1=5.55 Hz, D2=7.03 Hz vs target 0–5 Hz); stronger SFA reduces equilibrium rate by ~33%
+            # V_inf ≈ 0.93 at biological baseline rates → fluctuation-driven regime; noise_std=0.025 gives ~1σ
+            # barrier to threshold for sparse firing.  Previous 0.005 gave 5σ barrier (0 Hz) due to same NMDA fix.
+            "noise_std": 0.025,
         }
         config_params.update(overrides)
         config = ConductanceLIFConfig(**config_params)

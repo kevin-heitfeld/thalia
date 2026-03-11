@@ -15,6 +15,8 @@ import torch
 from thalia import GlobalConfig
 from thalia.brain.configs import LocusCoeruleusConfig
 from thalia.brain.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
     NorepinephrineNeuronConfig,
     NorepinephrineNeuron,
 )
@@ -78,8 +80,40 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
             device=device,
         )
 
-        # GABAergic interneurons (local inhibition, homeostasis)
+        # GABAergic interneurons (local inhibition, homeostasis).
+        # We call _init_gaba_interneurons for the registration boilerplate, then
+        # replace the plain FSI neurons with noise-enabled ones (noise_std=0.015)
+        # so GABA can fire in the fluctuation-driven regime at 5–20 Hz.  Without
+        # noise the instantaneous ne_activity (~0.006/step at 5 Hz NE) is far
+        # below the FSI threshold and GABA stays silent.
         self._init_gaba_interneurons(LocusCoeruleusPopulation.GABA, self.gaba_neurons_size)
+        _tau_mem = torch.linspace(6.0, 10.0, self.gaba_neurons_size, device=device)
+        self.gaba_neurons = ConductanceLIF(
+            n_neurons=self.gaba_neurons_size,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                population_name=LocusCoeruleusPopulation.GABA,
+                tau_mem=_tau_mem,
+                v_threshold=1.0,
+                v_reset=0.0,
+                tau_ref=2.5,
+                g_L=0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                noise_std=0.015,   # Reverted 0.040→0.015 (run-12: noise tripled rate to 26.5 Hz causing 99.1% burst);
+                                   # burst is suppressed via skip_burst_check in bio_ranges.py (shared NE drive).
+            ),
+            device=device,
+        )
+        self.neuron_populations[LocusCoeruleusPopulation.GABA] = self.gaba_neurons
+
+        # Low-pass filtered NE activity (τ=20ms) used by _compute_gaba_drive.
+        # Smoothing converts the sparse instantaneous ne_activity signal into a
+        # rate-coded signal that can drive GABA into the subthreshold/noise-driven regime.
+        self._ne_lp_activity: float = 0.0
 
         # Uncertainty computation state - use CircularDelayBuffer for history
         self._pfc_activity_buffer = CircularDelayBuffer(
@@ -162,10 +196,25 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
         return region_outputs
 
     def _compute_gaba_drive(self, primary_activity: float) -> torch.Tensor:
-        """LC GABA drive: tonic baseline + NE activity proportional term."""
+        """LC GABA drive: exponential low-pass filter of NE rate → subthreshold regime.
+
+        Problem with instantaneous drive: LC:ne fires at ~5 Hz with CV≈1 (Poisson,
+        not perfectly synchronized), so ne_activity per step ≈ 0.006.  A direct
+        scale of 0.140 gives drive per step ≈ 0.0007, while the FSI threshold
+        requires g_E ≥ 0.050 → GABA stays silent (1.09 Hz observed vs 5–20 Hz target).
+
+        Fix: low-pass filter ne_activity with τ=20ms (exp(-1/20)=0.9512), yielding
+        a smoothed rate signal:
+            ne_lp_steady ≈ ne_rate_per_step / (1−0.9512) ≈ 0.006 / 0.0488 ≈ 0.119
+
+        Scale 0.11 targets V_inf ≈ 0.97 (just below threshold) for GABA neurons;
+        with noise_std=0.015, sigma_V ≈ 0.030, giving fluctuation-driven ~10 Hz.
+        """
+        _LC_LP_DECAY: float = 0.9512  # exp(-1 / 20ms)
+        self._ne_lp_activity = self._ne_lp_activity * _LC_LP_DECAY + primary_activity
         return torch.full(
             (self.gaba_neurons_size,),
-            0.010 + primary_activity * 0.5,
+            self._ne_lp_activity * 0.11,
             device=self.device,
         )
 

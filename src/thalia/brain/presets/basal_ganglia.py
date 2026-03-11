@@ -70,13 +70,7 @@ from thalia.brain.regions.population_names import (
     ThalamusPopulation,
     VTAPopulation,
 )
-from thalia.brain.synapses import ConductanceScaledSpec
-from thalia.brain.synapses.stp import (
-    LHB_RMTG_PRESET,
-    STRIATOPALLIDAL_PRESET,
-    STPConfig,
-    STPType,
-)
+from thalia.brain.synapses import ConductanceScaledSpec, STPConfig
 from thalia.typing import RegionSizes, ReceptorType, SynapseId
 
 if TYPE_CHECKING:
@@ -193,10 +187,10 @@ def _connect_direct_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=2.5,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=0.75,
         connectivity=0.6,
         weight_scale=0.0008,
-        stp_config=STRIATOPALLIDAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=500.0, tau_f=25.0),
     )
 
     # Striatum D1 → GPi PRINCIPAL: parallel direct pathway
@@ -210,10 +204,10 @@ def _connect_direct_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.6,
         weight_scale=0.0008,
-        stp_config=STRIATOPALLIDAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=500.0, tau_f=25.0),
     )
 
 
@@ -236,10 +230,10 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.5,
         weight_scale=0.002,
-        stp_config=STRIATOPALLIDAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=500.0, tau_f=25.0),
     )
 
     # Striatum D2 → GPe ARKYPALLIDAL (Mallet et al. 2012)
@@ -252,10 +246,10 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.4,
         weight_scale=0.002,
-        stp_config=STRIATOPALLIDAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=500.0, tau_f=25.0),
     )
 
     # GPe PROTOTYPIC → STN: inhibitory pacing (GABA_A)
@@ -268,14 +262,16 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.5,
         weight_scale=0.00017,
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # GPe PROTOTYPIC → STN: slow GABA_B component
     # Late-onset, long-duration STN suppression; critical for beta-band power.
+    # Weight calibrated to ~30% of GABA-A component (0.00017 × 0.29 ≈ 0.000050).
+    # Previous value 0.0000013 was 130× too small — diagnostics confirmed μ ≈ 0.
     builder.connect(
         synapse_id=SynapseId(
             source_region=gpe_name,
@@ -285,10 +281,10 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.GABA_B,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.4,
-        weight_scale=0.0000013,
-        stp_config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
+        weight_scale=0.000050,
+        stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
     )
 
     # STN → GPe PROTOTYPIC: excitatory feedback (closes GPe-STN oscillatory loop)
@@ -301,7 +297,7 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.5,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=20.0,
@@ -310,7 +306,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.05,
             fraction_of_drive=0.13,
         ),
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # STN → GPe ARKYPALLIDAL: closes STN-arky loop
@@ -323,7 +319,7 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=20.0,
@@ -332,7 +328,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.05,
             fraction_of_drive=0.08,
         ),
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # STN → SNr: excitatory indirect output
@@ -345,7 +341,7 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.5,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=20.0,
@@ -354,7 +350,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.10,
             fraction_of_drive=0.30,
         ),
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # STN → GPi PRINCIPAL: hyperdirect path reaches GPi too
@@ -367,7 +363,7 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.5,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=20.0,
@@ -376,7 +372,34 @@ def _connect_indirect_pathway(
             target_v_inf=1.10,
             fraction_of_drive=0.25,
         ),
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+    )
+
+    # STN → GPi BORDER_CELLS: value-coding border cells require excitatory drive.
+    # No excitatory input was wired here; without it they sit at V_inf ≈ 0.85
+    # (sub-threshold) from baseline drive alone and fire at 0 Hz.
+    # fraction_of_drive=0.10: conservative because STN currently bursts at ~78%
+    # (due to absent D1/D2 inhibition cascade). When BG is healthy this gives
+    # V_inf ≈ 1.0 at 20 Hz STN → border_cells fire tonically at design 30-80 Hz.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=stn_name,
+            source_population=STNPopulation.STN,
+            target_region=gpi_name,
+            target_population=GPiPopulation.BORDER_CELLS,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=5.0,
+        axonal_delay_std_ms=1.5,
+        connectivity=0.4,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=20.0,
+            target_g_L=0.10,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.10,
+            fraction_of_drive=0.10,
+        ),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # GPe PROTOTYPIC → SNr: pallido-nigral inhibitory bypass
@@ -389,10 +412,10 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.4,
         weight_scale=0.00024,
-        stp_config=STRIATOPALLIDAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=500.0, tau_f=25.0),
     )
 
     # GPe PROTOTYPIC → GPi PRINCIPAL: pallido-pallidal inhibitory pacing
@@ -405,10 +428,10 @@ def _connect_indirect_pathway(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=5.0,
+        axonal_delay_std_ms=0.9,
         connectivity=0.4,
         weight_scale=0.00020,
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
 
@@ -427,6 +450,8 @@ def _connect_anti_reward_pathway(
     # SNr → LHb: high SNr activity = bad outcome → LHb excited
     # source_rate_hz=70 Hz matches SNr tonic rate for correct weight calibration.
     # No STP: depressing STP at 70 Hz depletes to <5%, nullifying drive.
+    # fraction_of_drive raised 0.03→0.25: previous value computed w≈0.000014 per
+    # synapse (diagnostics: μ≈0, max=0.00001) — LHb received no meaningful drive.
     builder.connect(
         synapse_id=SynapseId(
             source_region=snr_name,
@@ -436,14 +461,14 @@ def _connect_anti_reward_pathway(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.5,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=70.0,
             target_g_L=0.08,
             target_tau_E_ms=5.0,
             target_v_inf=1.05,
-            fraction_of_drive=0.03,
+            fraction_of_drive=0.25,
         ),
         stp_config=None,
     )
@@ -459,16 +484,16 @@ def _connect_anti_reward_pathway(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.0,
-        axonal_delay_std_ms=3.0,
+        axonal_delay_std_ms=0.6,
         connectivity=0.6,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=20.0,
             target_g_L=0.10,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.20,
+            fraction_of_drive=0.40,
         ),
-        stp_config=LHB_RMTG_PRESET.configure(),
+        stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=250.0),
     )
 
 
@@ -493,10 +518,10 @@ def _connect_bg_output_to_thalamus(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=5.0,
+        axonal_delay_std_ms=0.9,
         connectivity=0.5,
-        weight_scale=0.00020,
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        weight_scale=0.0010,
+        stp_config=STPConfig(U=0.3, tau_d=400.0, tau_f=100.0),
     )
 
 
@@ -511,7 +536,9 @@ def _connect_bg_output_to_vta(
     SNr → VTA provides the V(s) signal for the full TD error δ = r + γV(s') − V(s).
     RMTg → VTA provides the GABAergic DA pause for negative RPE.
     """
-    # SNr → VTA DA_MESOLIMBIC: value-feedback (weak; decoded not integrated)
+    # SNr → VTA DA_MESOLIMBIC: tonic GABAergic suppression of DA cells.
+    # Weight raised 0.00001→0.0005: previous value was 50× too small (diagnostics:
+    # μ≈0, max=0.00001) — SNr provided no inhibitory gating of VTA DA cells.
     builder.connect(
         synapse_id=SynapseId(
             source_region=snr_name,
@@ -521,9 +548,9 @@ def _connect_bg_output_to_vta(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=1.5,
-        axonal_delay_std_ms=2.0,
+        axonal_delay_std_ms=0.5,
         connectivity=0.4,
-        weight_scale=0.00001,
+        weight_scale=0.0005,
     )
 
     # RMTg → VTA DA_MESOLIMBIC: GABAergic pause
@@ -536,10 +563,10 @@ def _connect_bg_output_to_vta(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=1.5,
-        axonal_delay_std_ms=2.0,
+        axonal_delay_std_ms=0.5,
         connectivity=0.7,
         weight_scale=0.0005,
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # RMTg → VTA DA_MESOCORTICAL: same pause, mesocortical sub-population
@@ -552,10 +579,10 @@ def _connect_bg_output_to_vta(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=1.5,
-        axonal_delay_std_ms=2.0,
+        axonal_delay_std_ms=0.5,
         connectivity=0.7,
         weight_scale=0.0005,
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
 

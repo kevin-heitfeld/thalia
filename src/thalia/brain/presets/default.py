@@ -34,19 +34,7 @@ from thalia.brain.regions.population_names import (
     ThalamusPopulation,
     VTAPopulation,
 )
-from thalia.brain.synapses import ConductanceScaledSpec
-from thalia.brain.synapses.stp import (
-    STPConfig,
-    STPType,
-    CORTICOFUGAL_PRESET,
-    CORTICOTHALAMIC_L6B_PRESET,
-    CORTICOSTRIATAL_PRESET,
-    CORTICAL_FF_PRESET,
-    PONTOCEREBELLAR_PRESET,
-    SCHAFFER_COLLATERAL_PRESET,
-    THALAMOCORTICAL_PRESET,
-    THALAMO_STRIATAL_PRESET,
-)
+from thalia.brain.synapses import ConductanceScaledSpec, STPConfig
 from thalia.typing import RegionSizes, ReceptorType, SynapseId
 
 if TYPE_CHECKING:
@@ -299,16 +287,6 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
     """
     # Thalamus → L4 Pyramidal: Main thalamocortical drive
     # Distance: ~2-3cm, conduction velocity: ~10-20 m/s → 2-3ms delay
-    # fraction_of_drive=0.85: relay must drive L4 past threshold without recurrent bootstrap.
-    # STP: THALAMOCORTICAL_PRESET — strong depression (Gil et al. 1997; Stratford et al. 1996).
-    # Thalamocortical EPSPs depress by ~50% at 10 Hz, privileging the stimulus-onset volley.
-    #
-    # STP: THALAMOCORTICAL — strong depression (Gil et al. 1997; Stratford et al. 1996).
-    # Auto-correction in _create_axonal_tract computes u_eff≈0.044 at 30 Hz and inflates
-    # weights so steady-state conductance equals the designed target.
-    # At onset (first volley, eff≈U=0.45): drive is ~10× steady-state → strong onset response.
-    # target_v_inf=0.70: L4 is sub-threshold at steady-state STP depletion (~3 Hz from noise);
-    # this is the intended behaviour — thalamic bursts drive perception, not baseline drive.
     builder.connect(
         synapse_id=SynapseId(
             source_region="thalamus",
@@ -318,7 +296,7 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.5,
-        axonal_delay_std_ms=5.0,
+        axonal_delay_std_ms=0.75,
         connectivity=0.7,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=30.0,
@@ -326,15 +304,13 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             target_tau_E_ms=5.0,
             target_v_inf=0.70,
             fraction_of_drive=0.85,
-            # stp_utilization_factor auto-computed from THALAMOCORTICAL STP at 30 Hz
         ),
-        stp_config=THALAMOCORTICAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=700.0, tau_f=20.0),
     )
 
     # Thalamus → L4 PV: Feedforward inhibition drive
-    # PV cells have lower thresholds; thalamus provides 20% of PV drive.
+    # PV cells have lower thresholds; thalamus provides 35% of PV drive.
     # Reduced from 0.80: 217 Hz PV at 0.80 silenced L4_pyr completely.
-    # STP: Same THALAMOCORTICAL_PRESET depression applies (Beierlein et al. 2003).
     builder.connect(
         synapse_id=SynapseId(
             source_region="thalamus",
@@ -344,16 +320,16 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.5,
-        axonal_delay_std_ms=5.0,
+        axonal_delay_std_ms=0.75,
         connectivity=0.7,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=20.0,
             target_g_L=0.10,
             target_tau_E_ms=3.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.20,
+            fraction_of_drive=0.35,
         ),
-        stp_config=THALAMOCORTICAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.20, tau_d=200.0, tau_f=20.0),
     )
 
     # CorticalColumn L6a → Thalamus TRN: Inhibitory attention modulation (type-I, slow)
@@ -367,7 +343,7 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=10.0,
-        axonal_delay_std_ms=15.0,
+        axonal_delay_std_ms=3.0,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -389,7 +365,7 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -398,7 +374,7 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             target_v_inf=0.85,
             fraction_of_drive=0.20,
         ),
-        stp_config=CORTICOTHALAMIC_L6B_PRESET.configure(),
+        stp_config=STPConfig(U=0.08, tau_d=150.0, tau_f=800.0),
     )
 
 
@@ -424,7 +400,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.0,
-        axonal_delay_std_ms=9.0,
+        axonal_delay_std_ms=1.8,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=10.0,
@@ -433,9 +409,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.40,
         ),
-        # Corticofugal L5→EC: strong depressing output synapse
-        # (Bhattacharyya et al. 2009).
-        stp_config=CORTICOFUGAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
     # Association cortex L2/3 → EC_II: semantic / multi-modal context → perforant path
@@ -448,7 +422,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.35,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -457,8 +431,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.35,
         ),
-        # Association L2/3→EC_II: cortical FF moderate depression.
-        stp_config=CORTICAL_FF_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Association cortex L2/3 → EC_III: temporal / semantic context → temporoammonic path
@@ -471,7 +444,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.30,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -480,8 +453,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.55,
         ),
-        # Association L2/3→EC_III: same cortical FF depression.
-        stp_config=CORTICAL_FF_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Internal MTL wiring: EC ↔ HPC afferents, HPC → EC back-projection,
@@ -499,7 +471,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.0,
-        axonal_delay_std_ms=9.0,
+        axonal_delay_std_ms=1.8,
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -522,7 +494,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=8.0,
-        axonal_delay_std_ms=12.0,
+        axonal_delay_std_ms=2.4,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=30.0,
@@ -531,9 +503,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             target_v_inf=0.90,
             fraction_of_drive=0.20,
         ),
-        # Thalamo-hippocampal (nucleus reuniens): thalamocortical-like depression
-        # (Bhattacharyya et al.; strong onset, then adapts).
-        stp_config=THALAMOCORTICAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=700.0, tau_f=20.0),
     )
 
 
@@ -548,6 +518,8 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
     * Striatum D1 → PFC: basal ganglia gating of working memory (via thalamus).
     * PFC ↔ Hippocampus: memory-guided decision making.
     * PFC → Sensory cortex L2/3: top-down attentional modulation.
+    * CA1 → PFC L5 apical: hippocampal context to PFC output-layer apical tufts.
+    * PFC L23 → Sensory L5 apical: top-down deep-layer FB to sensory output layer.
     """
     # Association → PFC: higher-level representations drive executive control
     # Distance: ~5-10cm → 10-15ms delay.
@@ -560,7 +532,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=12.5,
-        axonal_delay_std_ms=20.0,
+        axonal_delay_std_ms=3.75,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -570,7 +542,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             fraction_of_drive=0.50,
         ),
         # Corticofrontal feedforward: moderate depression (CORTICAL_FF).
-        stp_config=CORTICAL_FF_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Striatum D1 → PFC: BG gating of working memory (via MD/VA thalamic relay)
@@ -584,7 +556,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=17.5,
-        axonal_delay_std_ms=26.0,
+        axonal_delay_std_ms=5.25,
         connectivity=0.6,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=2.0,
@@ -596,7 +568,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
         # D1-MSN disinhibitory gate: encoded as AMPA but represents the net
         # suppressive effect transmitted via the direct pathway.  Striatopallidal-
         # like depression (moderate) prevents sustained BG gating.
-        stp_config=STPConfig.from_type(STPType.DEPRESSING),
+        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
     # PFC → Hippocampus CA1: top-down memory retrieval and schema application
@@ -610,7 +582,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=15.0,
-        axonal_delay_std_ms=22.5,
+        axonal_delay_std_ms=4.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -620,7 +592,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             fraction_of_drive=0.15,
         ),
         # PFC→CA1: corticofugal depressing top-down
-        stp_config=CORTICAL_FF_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Hippocampus CA1 → PFC: memory-guided decision making
@@ -634,7 +606,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=12.0,
-        axonal_delay_std_ms=18.0,
+        axonal_delay_std_ms=3.6,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -643,9 +615,35 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.15,
         ),
-        # CA1→PFC: hippocampo-prefrontal moderate depression
-        # (Schaffer collateral-like; Bhattacharyya et al.).
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
+    )
+
+    # Hippocampus CA1 → PFC L5: hippocampal context to PFC output-layer apical tufts
+    # CA1 in biology projects to BOTH L2/3 and L5/6 of PFC via the fornix
+    # (Thierry et al. 2000; Jay et al. 1992).  The L5 target provides apical dendritic
+    # input, gating subcortical output via coincidence detection in the two-compartment
+    # model.  PFC is the apex of the cortical hierarchy — hippocampus is the only
+    # major source of top-down context for PFC L5 apical compartment.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="hippocampus",
+            source_population=HippocampusPopulation.CA1,
+            target_region="prefrontal_cortex",
+            target_population=CortexPopulation.L5_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=12.0,
+        axonal_delay_std_ms=3.6,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=3.0,
+            target_g_L=0.02,
+            target_tau_E_ms=10.0,
+            target_v_inf=1.05,
+            fraction_of_drive=0.10,
+        ),
+        # CA1→PFC L5 apical: same Schaffer-collateral-like dynamics as L23 path.
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
     # PFC → Sensory cortex L2/3: top-down attention and cognitive control
@@ -660,7 +658,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=12.0,
-        axonal_delay_std_ms=18.0,
+        axonal_delay_std_ms=3.6,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -671,7 +669,34 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
         ),
         # PFC top-down to sensory L2/3: facilitating (canonical hierarchical FB
         # targets superficial layers; Wang et al. 2006 — UF-type).
-        stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
+    )
+
+    # PFC → Sensory cortex L5 apical: deep-layer top-down context to sensory output cells
+    # Canonical predictive-coding FB targets both L2/3 (suppression of prediction error)
+    # and L5 apical tufts (gain modulation of output layer).  L5 is the main
+    # subcortical projection layer; PFC gating here modulates what sensory signals
+    # reach thalamus, striatum and cerebellum.  (Larkum 2013; Bastos et al. 2012)
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="prefrontal_cortex",
+            source_population=CortexPopulation.L23_PYR,
+            target_region="cortex_sensory",
+            target_population=CortexPopulation.L5_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=12.0,
+        axonal_delay_std_ms=3.6,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=5.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.05,
+            fraction_of_drive=0.10,
+        ),
+        # PFC→sensory L5 apical: facilitating FB (same type as PFC→L23 pathway).
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
 
@@ -696,16 +721,16 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=25.0,
-        axonal_delay_std_ms=37.5,
+        axonal_delay_std_ms=7.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=10.0,
             target_g_L=0.05,
             target_tau_E_ms=2.5,
             target_v_inf=0.90,
-            fraction_of_drive=0.30,
+            fraction_of_drive=0.10,
         ),
-        stp_config=PONTOCEREBELLAR_PRESET.configure(),
+        stp_config=STPConfig(U=0.10, tau_d=100.0, tau_f=500.0),
     )
 
     # PFC → Cerebellum GRANULE: goal / context input (similar pathway length)
@@ -718,16 +743,16 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=25.0,
-        axonal_delay_std_ms=37.5,
+        axonal_delay_std_ms=7.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
             target_g_L=0.05,
             target_tau_E_ms=2.5,
             target_v_inf=0.90,
-            fraction_of_drive=0.25,
+            fraction_of_drive=0.08,  # Reduced 0.25→0.08: PFC→granule weight was 4× sensory weight (dominant driver); reduce to match sensory
         ),
-        stp_config=PONTOCEREBELLAR_PRESET.configure(),
+        stp_config=STPConfig(U=0.10, tau_d=100.0, tau_f=500.0),
     )
 
     # Cerebellum DCN → Sensory cortex L4 PYR: motor predictions (via VL/VA thalamus)
@@ -741,7 +766,7 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=17.5,
-        axonal_delay_std_ms=26.0,
+        axonal_delay_std_ms=5.25,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=50.0,
@@ -752,7 +777,7 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
         ),
         # DCN→cortex output: facilitating at baseline DCN rates
         # (Pugh & Raman 2006: DCN→VL thalamus facilitates at low firing rates).
-        stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
     # Cerebellum DCN → Sensory cortex L4 PV: feedforward inhibition for motor predictions
@@ -765,7 +790,7 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=17.5,
-        axonal_delay_std_ms=26.0,
+        axonal_delay_std_ms=5.25,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=50.0,
@@ -775,7 +800,7 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             fraction_of_drive=0.05,
         ),
         # Same DCN facilitating STP for PV feedforward.
-        stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
 
@@ -802,17 +827,16 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
         source_region="cortex_sensory",
         source_population=CortexPopulation.L5_PYR,
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=10.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.25,
-            # stp_utilization_factor auto-computed from CORTICOSTRIATAL STP at 10 Hz
+            fraction_of_drive=0.65,  # Increased 0.25→0.65: MSN D1/D2 at 0.5 Hz (target 8 Hz); source fires ~3 Hz vs 10 Hz design
         ),
-        stp_config=CORTICOSTRIATAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.4, tau_d=250.0, tau_f=150.0),
     )
 
     # Hippocampus CA1 → Striatum: hippocampostriatal pathway
@@ -820,17 +844,16 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
         source_region="hippocampus",
         source_population=HippocampusPopulation.CA1,
         axonal_delay_ms=8.5,
-        axonal_delay_std_ms=13.0,
+        axonal_delay_std_ms=2.55,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.13,
-            # stp_utilization_factor auto-computed from SCHAFFER_COLLATERAL STP at 3 Hz
+            fraction_of_drive=0.35,  # Increased 0.13→0.35: hippocampal CA1 also underfires; 2.7× boost
         ),
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
     # PFC → Striatum: prefrontal corticostriatal pathway
@@ -838,17 +861,16 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
         source_region="prefrontal_cortex",
         source_population=CortexPopulation.L5_PYR,
         axonal_delay_ms=15.0,
-        axonal_delay_std_ms=22.5,
+        axonal_delay_std_ms=4.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.21,
-            # stp_utilization_factor auto-computed from CORTICOSTRIATAL STP at 5 Hz
+            fraction_of_drive=0.55,  # Increased 0.21→0.55: PFC L5 underfires; 2.6× boost
         ),
-        stp_config=CORTICOSTRIATAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.4, tau_d=250.0, tau_f=150.0),
     )
 
     # Thalamus → Striatum: thalamostriatal pathway for habitual responses
@@ -859,17 +881,16 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
         source_region="thalamus",
         source_population=ThalamusPopulation.RELAY,
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=30.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.29,
-            # stp_utilization_factor auto-computed from THALAMO_STRIATAL STP at 30 Hz
+            fraction_of_drive=0.70,
         ),
-        stp_config=THALAMO_STRIATAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.12, tau_d=200.0, tau_f=500.0),
     )
 
     # Association cortex L5 → Striatum: goal-directed corticostriatal projection
@@ -878,17 +899,16 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
         source_region="cortex_association",
         source_population=CortexPopulation.L5_PYR,
         axonal_delay_ms=6.0,
-        axonal_delay_std_ms=9.0,
+        axonal_delay_std_ms=1.8,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=10.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.21,
-            # stp_utilization_factor auto-computed from CORTICOSTRIATAL STP at 10 Hz
+            fraction_of_drive=0.55,  # Increased 0.21→0.55: assoc cortex underfires; 2.6× boost
         ),
-        stp_config=CORTICOSTRIATAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.4, tau_d=250.0, tau_f=150.0),
     )
 
 
@@ -927,7 +947,7 @@ def _connect_basal_ganglia(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=10.0,
@@ -936,7 +956,7 @@ def _connect_basal_ganglia(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.30,
         ),
-        stp_config=CORTICAL_FF_PRESET.configure(),  # Hyperdirect L5→STN: corticofugal feedforward, depressing (Kita & Kita 2012)
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
 
@@ -954,6 +974,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
     * Association L6B → Sensory L2/3: feedback (FB) prediction.
     * Hippocampus CA1 → Association L2/3: episodic content to context.
     * PFC → Association L2/3: top-down executive modulation.
+    * PFC → Association L5 apical: deep-layer top-down to assoc output neurons.
     * Association L6A → Thalamus TRN: corticothalamic attention gating.
     """
     # Sensory L2/3 → Association L4: feedforward percept transfer
@@ -968,7 +989,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=7.5,
+        axonal_delay_std_ms=1.5,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=2.0,
@@ -977,7 +998,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             target_v_inf=0.85,
             fraction_of_drive=0.30,
         ),
-        stp_config=CORTICAL_FF_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Association L6B → Sensory L2/3: top-down prediction feedback
@@ -992,7 +1013,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=8.0,
-        axonal_delay_std_ms=12.0,
+        axonal_delay_std_ms=2.4,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1004,7 +1025,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
         # Association L6B→Sensory L2/3: canonical top-down FB from deep layer
         # to superficial layer.  L6B origin is type-II CT-like (facilitating);
         # Markov et al. (2014) show FB connections are broadly facilitating.
-        stp_config=CORTICOTHALAMIC_L6B_PRESET.configure(),
+        stp_config=STPConfig(U=0.08, tau_d=150.0, tau_f=800.0),
     )
 
     # Hippocampus CA1 → Association L2/3: retrieved episodic content to context
@@ -1018,7 +1039,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.5,
-        axonal_delay_std_ms=10.0,
+        axonal_delay_std_ms=1.95,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1028,7 +1049,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             fraction_of_drive=0.10,
         ),
         # CA1→Association L2/3: hippocampal output moderate depression.
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
     # PFC → Association L2/3: top-down executive modulation of higher representations
@@ -1041,7 +1062,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=12.0,
-        axonal_delay_std_ms=18.0,
+        axonal_delay_std_ms=3.6,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1051,7 +1072,34 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             fraction_of_drive=0.20,
         ),
         # PFC top-down to association L2/3: facilitating deep-layer FB.
-        stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
+    )
+
+    # PFC → Association L5 apical: deep-layer top-down context to assoc output neurons
+    # Complements the L2/3 target: while PFC→L2/3 suppresses prediction errors,
+    # PFC→L5 apical gates what association-cortex outputs reach subcortical targets
+    # (striatum, thalamus).  L5 apical coincidence detection (Larkum 2013) requires
+    # both L2/3 basal drive AND apical top-down input to produce burst firing.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region="prefrontal_cortex",
+            source_population=CortexPopulation.L23_PYR,
+            target_region="cortex_association",
+            target_population=CortexPopulation.L5_PYR,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=12.0,
+        axonal_delay_std_ms=3.6,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=5.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.05,
+            fraction_of_drive=0.12,
+        ),
+        # PFC→assoc L5 apical: facilitating FB projection (type-II; Markov et al. 2014).
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
     # Association L6A → Thalamus TRN: corticothalamic attention control
@@ -1065,7 +1113,7 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=12.0,
-        axonal_delay_std_ms=18.0,
+        axonal_delay_std_ms=3.6,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1104,7 +1152,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.5,
-        axonal_delay_std_ms=10.0,
+        axonal_delay_std_ms=1.95,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1113,7 +1161,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.20,
         ),
-        stp_config=CORTICAL_FF_PRESET.configure(),  # PFC→LC: cortical FF projection, depressing (Arnsten et al. 2012)
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Hippocampus CA1 → LC NE: novelty detection drives arousal
@@ -1128,7 +1176,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=10.0,
-        axonal_delay_std_ms=15.0,
+        axonal_delay_std_ms=3.0,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1137,7 +1185,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.10,
         ),
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),  # CA1→LC: hippocampal output, facilitating then depressing
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
     # --- Nucleus Basalis -------------------------------------------------------
@@ -1154,7 +1202,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.5,
-        axonal_delay_std_ms=10.0,
+        axonal_delay_std_ms=1.95,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1163,7 +1211,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.25,
         ),
-        stp_config=CORTICAL_FF_PRESET.configure(),  # PFC→NB: corticofugal, depressing feedforward
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # BLA PRINCIPAL → NB ACH: emotional salience drives ACh encoding-mode bursts
@@ -1171,8 +1219,6 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
     # High BLA activity → strong prediction error → NB bursts ACh.
     # (Zaborszky et al. 2015; Holland & Gallagher 1999)
     # Distance: ~2-4cm → 5-8ms delay.
-    # fraction_of_drive: 0.20 → 0.28 (NBM:ach at 1.72 Hz, target 2+ Hz; PFC contribution
-    # is low because PFC fires at 1.26 Hz vs 5.0 Hz design rate, so BLA must compensate)
     builder.connect(
         synapse_id=SynapseId(
             source_region="basolateral_amygdala",
@@ -1182,7 +1228,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.0,
-        axonal_delay_std_ms=9.0,
+        axonal_delay_std_ms=1.8,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1191,7 +1237,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.28,
         ),
-        stp_config=CORTICOFUGAL_PRESET.configure(),  # BLA→NB: amygdalofugal projection, L5-like corticofugal dynamics
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
     # --- Dorsal Raphe Nucleus --------------------------------------------------
@@ -1210,7 +1256,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.5,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1219,7 +1265,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.40,
         ),
-        stp_config=CORTICOFUGAL_PRESET.configure(),  # LHb→DRN: burst-driven habenular output, corticofugal-like dynamics
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
 
@@ -1247,18 +1293,15 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=8.0,
-        axonal_delay_std_ms=12.0,
+        axonal_delay_std_ms=2.4,
         connectivity=0.15,
         weight_scale=ConductanceScaledSpec(
-            source_rate_hz=6.0,   # Calibrated to actual cortex L5 rate (~6 Hz)
+            source_rate_hz=6.0,
             target_g_L=0.05,
             target_tau_E_ms=7.0,
-            target_v_inf=1.05,    # Reference V_inf; 0.35 fraction → sub-threshold total
+            target_v_inf=1.05,
             fraction_of_drive=0.35,
         ),
-        # Cortex→BLA: NO STP. Previous CORTICOFUGAL_PRESET at 10 Hz design rate depleted
-        # to ~12.5% at steady state → near-zero conductance to BLA. With no STP and
-        # fraction=0.35, this source delivers 35% of g_ss_total (V_inf=1.05 reference).
         stp_config=None,
     )
 
@@ -1275,18 +1318,15 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
-        axonal_delay_std_ms=8.0,
+        axonal_delay_std_ms=1.5,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
-            source_rate_hz=30.0,  # Thalamus fires at ~30 Hz (verified in diagnostics)
+            source_rate_hz=30.0,
             target_g_L=0.05,
             target_tau_E_ms=7.0,
-            target_v_inf=1.05,    # Reference V_inf; 0.40 fraction → sub-threshold total
+            target_v_inf=1.05,
             fraction_of_drive=0.40,
         ),
-        # Thalamus→BLA: NO STP. Previous THALAMOCORTICAL_PRESET at 30 Hz caused
-        # mean_x=0.05 (95% STP depletion) → efficacy=0.03, near-zero BLA drive.
-        # With no STP and fraction=0.40, thalamus delivers 40% of g_ss_total.
         stp_config=None,
     )
 
@@ -1302,20 +1342,15 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
-            source_rate_hz=2.0,   # Calibrated to actual CA1 rate (~2 Hz)
+            source_rate_hz=2.0,
             target_g_L=0.05,
             target_tau_E_ms=7.0,
-            target_v_inf=1.05,    # Reference V_inf; 0.15 fraction → minor boost
+            target_v_inf=1.05,
             fraction_of_drive=0.15,
         ),
-        # Hippocampus→BLA: NO STP. Previously SCHAFFER at ~2.2 Hz had moderate
-        # depletion (efficacy=0.39). Removing STP ensures full contextual drive.
-        # Cortex(0.35) + Thalamus(0.40) + Hippo(0.15) = 0.90 of g_ss_total
-        # → V_inf_BLA ≈ 0.979 (sub-threshold). Sparse firing @ 1-5 Hz from stochastic
-        # thalamic input fluctuations; PV interneurons keep rate in range.
         stp_config=None,
     )
 
@@ -1331,7 +1366,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=8.0,
-        axonal_delay_std_ms=12.0,
+        axonal_delay_std_ms=2.4,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -1340,9 +1375,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=1.0,
         ),
-        # PFC→SOM is facilitating: PYR→SOM synapses are the canonical EPSP-F
-        # type (Reyes et al. 1998; Kapfer et al. 2007).
-        stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
     # BLA PRINCIPAL → CeA LATERAL: core fear signal transmission
@@ -1357,7 +1390,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.5,
-        axonal_delay_std_ms=3.0,
+        axonal_delay_std_ms=0.75,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1366,8 +1399,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.60,
         ),
-        # BLA→CeL: corticofugal-like glutamatergic depressing projection.
-        stp_config=CORTICOFUGAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
     # BLA PRINCIPAL → CeA MEDIAL: direct projection (bypasses CeL gating)
@@ -1382,7 +1414,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.0,
+        axonal_delay_std_ms=0.9,
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1391,8 +1423,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=0.90,
             fraction_of_drive=0.45,
         ),
-        # BLA→CeM: same corticofugal-like depressing dynamics.
-        stp_config=CORTICOFUGAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
     # CeA MEDIAL → LC NE: fear-driven norepinephrine arousal
@@ -1407,7 +1438,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=7.0,
-        axonal_delay_std_ms=10.0,
+        axonal_delay_std_ms=2.1,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1416,8 +1447,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.20,
         ),
-        # CeM→LC: amygdalar corticofugal-like depressing projection.
-        stp_config=CORTICOFUGAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
     # CeA MEDIAL → LHb: aversive prediction error signal
@@ -1433,7 +1463,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.0,
-        axonal_delay_std_ms=8.0,
+        axonal_delay_std_ms=1.8,
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -1442,8 +1472,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.25,
         ),
-        # CeM→LHb: corticofugal-like depressing amygdalar projection.
-        stp_config=CORTICOFUGAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
 
 

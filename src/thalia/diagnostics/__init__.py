@@ -52,6 +52,16 @@ from .sweep import (
 from .triage import (
     run_triage,
 )
+from .rate_predictor import (
+    InputSpec,
+    RatePrediction,
+    predict_rate,
+)
+from .stp_calculator import (
+    STPResult,
+    stp_eq,
+    stp_table,
+)
 
 __all__ = [
     # Biological reference data
@@ -97,4 +107,12 @@ __all__ = [
     "plot_sweep_comparison",
     # Triage
     "run_triage",
+    # Analytical rate predictor
+    "InputSpec",
+    "RatePrediction",
+    "predict_rate",
+    # STP equilibrium calculator
+    "STPResult",
+    "stp_eq",
+    "stp_table",
 ]

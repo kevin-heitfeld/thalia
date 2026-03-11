@@ -63,12 +63,7 @@ from thalia.brain.regions.population_names import (
     SubiculumPopulation,
 )
 from thalia.brain.synapses import ConductanceScaledSpec
-from thalia.brain.synapses.stp import (
-    PERFORANT_PATH_PRESET,
-    PV_BASKET_PRESET,
-    SCHAFFER_COLLATERAL_PRESET,
-    TEMPOROAMMONIC_PRESET,
-)
+from thalia.brain.synapses.stp import STPConfig
 from thalia.typing import PopulationSizes, RegionSizes, ReceptorType, SynapseId
 
 if TYPE_CHECKING:
@@ -176,10 +171,10 @@ def _connect_septal_theta_loop(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=2.0,
-        axonal_delay_std_ms=3.0,
+        axonal_delay_std_ms=0.6,
         connectivity=0.15,
         weight_scale=0.0009,
-        stp_config=PV_BASKET_PRESET.configure(),
+        stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
     )
 
     # HPC CA1 → MS GABA: hippocampal feedback closure
@@ -194,7 +189,7 @@ def _connect_septal_theta_loop(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.0,
-        axonal_delay_std_ms=3.0,
+        axonal_delay_std_ms=0.6,
         connectivity=0.20,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -203,7 +198,7 @@ def _connect_septal_theta_loop(
             target_v_inf=1.05,
             fraction_of_drive=0.25,
         ),
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
 
@@ -230,7 +225,7 @@ def _connect_ec_to_hpc(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -239,7 +234,7 @@ def _connect_ec_to_hpc(
             target_v_inf=0.90,
             fraction_of_drive=0.75,
         ),
-        stp_config=PERFORANT_PATH_PRESET.configure(),
+        stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
     )
 
     # EC_II → HPC CA3: direct perforant path (stratum lacunosum-moleculare)
@@ -254,7 +249,7 @@ def _connect_ec_to_hpc(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.5,
-        axonal_delay_std_ms=5.0,
+        axonal_delay_std_ms=1.05,
         connectivity=0.20,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -263,7 +258,7 @@ def _connect_ec_to_hpc(
             target_v_inf=1.20,
             fraction_of_drive=0.65,
         ),
-        stp_config=PERFORANT_PATH_PRESET.configure(),
+        stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
     )
 
     # EC_III → HPC CA1: temporoammonic direct path (distal apical dendrites)
@@ -278,7 +273,7 @@ def _connect_ec_to_hpc(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=6.0,
+        axonal_delay_std_ms=1.2,
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -287,7 +282,7 @@ def _connect_ec_to_hpc(
             target_v_inf=1.15,
             fraction_of_drive=0.55,
         ),
-        stp_config=TEMPOROAMMONIC_PRESET.configure(),
+        stp_config=STPConfig(U=0.45, tau_d=650.0, tau_f=40.0),
     )
 
 
@@ -306,7 +301,7 @@ def _connect_hpc_to_ec_direct(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=4.5,
+        axonal_delay_std_ms=0.9,
         connectivity=0.30,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -315,8 +310,7 @@ def _connect_hpc_to_ec_direct(
             target_v_inf=1.05,
             fraction_of_drive=0.80,
         ),
-        # CA1 → EC_V: moderate depression (Jones 1993; Bhattacharyya 2009).
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
 
@@ -344,7 +338,7 @@ def _connect_hpc_via_subiculum(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=1.5,
-        axonal_delay_std_ms=2.0,
+        axonal_delay_std_ms=0.45,
         connectivity=0.40,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -353,8 +347,7 @@ def _connect_hpc_via_subiculum(
             target_v_inf=1.10,
             fraction_of_drive=0.85,
         ),
-        # CA1→Sub: Schaffer-collateral-like moderate depression.
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
     # Subiculum PRINCIPAL → EC_V: back-projection from hippocampal gateway
@@ -368,7 +361,7 @@ def _connect_hpc_via_subiculum(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.5,
-        axonal_delay_std_ms=3.5,
+        axonal_delay_std_ms=0.75,
         connectivity=0.35,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -377,8 +370,7 @@ def _connect_hpc_via_subiculum(
             target_v_inf=1.05,
             fraction_of_drive=0.80,
         ),
-        # Sub→EC_V: same moderate depression as CA1→EC_V.
-        stp_config=SCHAFFER_COLLATERAL_PRESET.configure(),
+        stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
 

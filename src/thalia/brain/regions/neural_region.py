@@ -226,6 +226,10 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # EMA alpha for firing rate tracking
         self._firing_rate_alpha: float = self.dt_ms / self.config.gain_tau_ms
 
+        # NOTE: Pre-allocated buffer caching by n_neurons was removed — it caused aliasing
+        # when two populations share the same size (e.g., D1 and D2 both at 200 neurons).
+        # The second call would clear the first call's result before it was consumed.
+
         # -----------------------------------------------------------------------
         # LEARNING CONTROL
         # -----------------------------------------------------------------------
@@ -340,7 +344,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self,
         synapse_id: SynapseId,
         n_pre: int,
-        n_post: int,
         config: STPConfig,
         *,
         device: Union[str, torch.device],
@@ -353,7 +356,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             )
         if synapse_id in self.stp_modules:
             raise ValueError(f"STP module for '{synapse_id}' already exists in {self.__class__.__name__}")
-        self.stp_modules[synapse_id] = ShortTermPlasticity(n_pre, n_post, config).to(device)
+        self.stp_modules[synapse_id] = ShortTermPlasticity(n_pre, config).to(device)
 
     def _add_synapse(
         self,
@@ -378,7 +381,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             self._add_stp_module(
                 synapse_id=synapse_id,
                 n_pre=n_input,
-                n_post=n_output,
                 config=stp_config,
                 device=device,
             )
@@ -652,6 +654,13 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         """
         device = self.device
 
+        # Cache module dicts once — avoids nn.Module.__getattr__ on every loop iteration
+        _weights_dict = self.synaptic_weights
+        _stp_dict     = self.stp_modules
+
+        # Fresh tensors each call: buffer caching was removed because sharing the same
+        # tensor across calls with equal n_neurons caused aliasing (the second call clears
+        # the first call's result before it is consumed by the caller).
         g_ampa   = torch.zeros(n_neurons, device=device)
         g_nmda   = torch.zeros(n_neurons, device=device)
         g_gaba_a = torch.zeros(n_neurons, device=device)
@@ -669,36 +678,28 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 continue
 
             # Validate that synaptic weights exist for this source
-            if synapse_id not in self.synaptic_weights:
+            if synapse_id not in _weights_dict:
                 raise ValueError(
                     f"Synaptic weights for input source '{synapse_id}' not found in {self.__class__.__name__}. "
-                    f"Registered sources: {list(self.synaptic_weights.keys())}"
+                    f"Registered sources: {list(_weights_dict.keys())}"
                 )
 
-            weights = self.synaptic_weights[synapse_id]
+            weights = _weights_dict[synapse_id]
             source_spikes_float = source_spikes.float()
 
             # OPTIONAL PER-SOURCE STP (SHORT-TERM PLASTICITY)
             # Models synaptic facilitation/depression (millisecond timescale)
             # Different sources can have different STP dynamics
-            if synapse_id in self.stp_modules:
-                # Get STP efficacy modulation for this source
-                stp_efficacy = self.stp_modules[synapse_id].forward(source_spikes_float)
-                # STP returns [n_pre, n_post]; weights are [n_post, n_pre].
-                # Transposing stp_efficacy to [n_post, n_pre] matches the weight layout
-                # for element-wise multiplication.
-                assert stp_efficacy.shape == (weights.shape[1], weights.shape[0]), (
-                    f"STP efficacy shape {tuple(stp_efficacy.shape)} does not match "
-                    f"expected (n_pre={weights.shape[1]}, n_post={weights.shape[0]}) "
-                    f"for synapse {synapse_id}.  Check ShortTermPlasticity.forward() "
-                    f"returns shape [n_pre, n_post]."
-                )
-                # Apply as multiplicative modulation of weights
-                weights = weights * stp_efficacy.T
-
-            # SYNAPTIC CONDUCTANCE CALCULATION
-            # Convert incoming spikes to conductance: g = W @ s
-            source_conductance = weights @ source_spikes_float
+            if synapse_id in _stp_dict:
+                # STP returns [n_pre] pre-spike efficacy u*x.
+                # Apply element-wise to spikes before matmul: W @ (efficacy * spikes)
+                # This avoids creating a [n_post, n_pre] intermediate weight matrix.
+                stp_efficacy = _stp_dict[synapse_id].forward(source_spikes_float)
+                source_conductance = weights @ (stp_efficacy * source_spikes_float)
+            else:
+                # SYNAPTIC CONDUCTANCE CALCULATION
+                # Convert incoming spikes to conductance: g = W @ s
+                source_conductance = weights @ source_spikes_float
 
             # Route by receptor type — four separate channels
             match synapse_id.receptor_type:
@@ -712,12 +713,11 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                     g_gaba_b += source_conductance
 
         # Clamp to non-negative (conductances cannot be negative!)
-        return DendriteOutput(
-            g_ampa=torch.clamp(g_ampa, min=0.0),
-            g_nmda=torch.clamp(g_nmda, min=0.0),
-            g_gaba_a=torch.clamp(g_gaba_a, min=0.0),
-            g_gaba_b=torch.clamp(g_gaba_b, min=0.0),
-        )
+        g_ampa.clamp_(min=0.0)
+        g_nmda.clamp_(min=0.0)
+        g_gaba_a.clamp_(min=0.0)
+        g_gaba_b.clamp_(min=0.0)
+        return DendriteOutput(g_ampa=g_ampa, g_nmda=g_nmda, g_gaba_a=g_gaba_a, g_gaba_b=g_gaba_b)
 
     def _integrate_single_synaptic_input(
         self,

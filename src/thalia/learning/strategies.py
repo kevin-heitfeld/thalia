@@ -459,22 +459,23 @@ class STDPStrategy(LearningStrategy):
 
         config = self.config
 
+        # Cache registered buffers once — avoids nn.Module.__getattr__ per access
+        firing_rates     = self.firing_rates
+        retrograde_signal = self.retrograde_signal
+
         # Update traces and compute LTP/LTD (EligibilityTraceManager is a registered submodule)
         self.trace_manager.update_traces(pre_spikes, post_spikes, self._dt_ms)
         ltp, ltd = self.trace_manager.compute_ltp_ltd_separate(pre_spikes, post_spikes)
 
         # Update firing rate tracking (EMA over spikes)
-        self.firing_rates = self._firing_rate_decay * self.firing_rates + (1 - self._firing_rate_decay) * post_spikes.float()
+        firing_rates.mul_(self._firing_rate_decay).add_(post_spikes.float(), alpha=1 - self._firing_rate_decay)
 
         # Update retrograde signal (endocannabinoid-like)
         if config.retrograde_enabled:
             spike_contribution = post_spikes.float()
-            rate_scaling = (self.firing_rates / config.retrograde_threshold).clamp(0, 2.0)
+            rate_scaling = (firing_rates / config.retrograde_threshold).clamp(0, 2.0)
             weighted_contribution = spike_contribution * (0.5 + 0.5 * rate_scaling)
-            self.retrograde_signal = (
-                self._retrograde_decay * self.retrograde_signal +
-                (1 - self._retrograde_decay) * weighted_contribution
-            )
+            retrograde_signal.mul_(self._retrograde_decay).add_(weighted_contribution, alpha=1 - self._retrograde_decay)
 
         # Apply retrograde signaling (endocannabinoid-like gating)
         # LTP is gated: only strong postsynaptic responses drive potentiation
@@ -482,7 +483,7 @@ class STDPStrategy(LearningStrategy):
         if config.retrograde_enabled:
             # Retrograde signal represents "postsynaptic neuron cares about this"
             # Range [0, 1]: 0 = no recent strong activity, 1 = strong recent activity
-            retro_gate = self.retrograde_signal.clamp(0, 1)  # [n_post]
+            retro_gate = retrograde_signal.clamp(0, 1)  # [n_post]
 
             # LTP gating: require minimum retrograde signal
             # This prevents spurious correlations from driving potentiation
@@ -495,7 +496,8 @@ class STDPStrategy(LearningStrategy):
             # LTD enhancement: low retrograde signal enhances depression
             # This implements extinction learning - connections that don't contribute
             # to strong responses get depressed
-            ltd_enhance = 1.0 + (1.0 - retro_gate) * (config.retrograde_ltd_enhance - 1.0)
+            # retro_gate no longer needed after ltp section; mutate in-place to avoid rsub
+            ltd_enhance = retro_gate.neg_().add_(1.0).mul_(config.retrograde_ltd_enhance - 1.0).add_(1.0)
             if isinstance(ltd, torch.Tensor):
                 ltd = ltd * ltd_enhance.unsqueeze(1)  # [n_post, n_pre]
 
@@ -520,7 +522,7 @@ class STDPStrategy(LearningStrategy):
             # firing_rates is [n_post] 1D tensor, ltd is [n_post, n_pre] 2D tensor
 
             ltd_threshold = config.activity_threshold
-            activity_mask = self.firing_rates >= ltd_threshold  # [n_post]
+            activity_mask = firing_rates >= ltd_threshold  # [n_post]
 
             # ADDITIONAL PROTECTION: Reduce LTD magnitude when LTP is actively occurring
             # This prevents the situation where sparse firing causes LTD to dominate even though
@@ -530,8 +532,8 @@ class STDPStrategy(LearningStrategy):
                 # Protect synapses with recent LTP by scaling down LTD proportionally
                 # If ltp > ltd, reduce ltd by the ratio (let potentiation win)
                 # This implements a "recent success" memory that prevents premature depression
-                ltp_protection = (ltp / (ltd + 1e-8)).clamp(0, 1)  # [n_post, n_pre], range [0, 1]
-                ltd = ltd * (1.0 - 0.5 * ltp_protection)  # Reduce LTD by up to 50% where LTP active
+                ltp_protection = (ltp / (ltd + 1e-8)).clamp_(0, 1)  # [n_post, n_pre], range [0, 1]
+                ltd = ltd * ltp_protection.mul_(-0.5).add_(1.0)  # Reduce LTD by up to 50% where LTP active
 
             # Expand mask to match ltd shape [n_post, n_pre]
             # Only allow LTD for neurons above threshold
@@ -1207,7 +1209,7 @@ class MaIStrategy(LearningStrategy):
         ltd_dw = config.ltd_rate * torch.outer(cf_f, pre_f)
 
         # LTP: PF active, CF silent → slow normalizing potentiation
-        no_cf = (1.0 - cf_f).clamp(min=0.0)   # [n_purkinje]
+        no_cf = cf_f.neg_().add_(1.0).clamp_(min=0.0)   # [n_purkinje]; cf_f free to mutate after ltd_dw
         ltp_dw = config.ltp_rate * torch.outer(no_cf, pre_f)
 
         return weights + (ltp_dw - ltd_dw)

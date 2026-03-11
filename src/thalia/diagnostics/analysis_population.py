@@ -130,20 +130,29 @@ def _compute_fr_stats(
     pop_idx: int,
     T: int,
     total_spikes: int,
+    spike_times_list: "Optional[List[List[int]]]" = None,
 ) -> _FrStatsResult:
-    """Compute per-neuron firing rates, histogram, and silent/hyperactive fractions."""
+    """Compute per-neuron firing rates, histogram, and silent/hyperactive fractions.
+
+    Parameters
+    ----------
+    spike_times_list:
+        Pre-filtered, t0-renormalized per-neuron spike-time lists (full mode).
+        When provided, per-neuron spike counts are derived from list lengths.
+        When ``None`` in stats mode, cumulative per-neuron counts are used and
+        scaled to match *total_spikes* (which already reflects the [t0:T] window).
+    """
     if total_spikes == 0:
         return _NAN_FR_RESULT
     rn, pn = rec._pop_keys[pop_idx]
     n_neurons = int(rec._pop_sizes[pop_idx])
     sim_s = T * rec.dt_ms / 1000.0
-    key = (rn, pn)
 
-    if rec.config.mode == "full" and key in rec._spike_times:
+    if rec.config.mode == "full" and spike_times_list is not None:
         spike_counts_per_neuron = np.array(
-            [len(times) for times in rec._spike_times[key]], dtype=np.float32
+            [len(times) for times in spike_times_list], dtype=np.float32
         )
-        # Account for neurons with no spikes
+        # Account for neurons with no spikes in the filtered window
         if len(spike_counts_per_neuron) < n_neurons:
             pad = np.zeros(n_neurons - len(spike_counts_per_neuron), dtype=np.float32)
             spike_counts_per_neuron = np.concatenate([spike_counts_per_neuron, pad])
@@ -151,9 +160,15 @@ def _compute_fr_stats(
         # Stats mode: use the per-neuron cumulative spike counts recorded during
         # simulation.  This correctly captures silent and hyperactive sub-populations
         # rather than assuming all neurons fire at the population average rate.
-        spike_counts_per_neuron = rec._per_neuron_spike_counts[pop_idx][:n_neurons].astype(
-            np.float32
-        )
+        # Stats mode: cumulative per-neuron counts scaled to match the
+        # [t0:T] spike total, preserving the per-neuron distribution shape
+        # while giving the correct mean FR for the analysis window.
+        raw_counts = rec._per_neuron_spike_counts[pop_idx][:n_neurons].astype(np.float32)
+        raw_total = float(raw_counts.sum())
+        if raw_total > 0 and total_spikes < raw_total:
+            spike_counts_per_neuron = raw_counts * (total_spikes / raw_total)
+        else:
+            spike_counts_per_neuron = raw_counts
 
     fr_per_neuron_hz = spike_counts_per_neuron / max(sim_s, 1e-9)
     mean_fr_hz = float(fr_per_neuron_hz.mean())
@@ -276,9 +291,10 @@ def _compute_fano_factor(
         return np.nan
 
     if is_full_mode and spike_times_list is not None:
-        n_sample_ff = min(50, n_neurons)
+        n_actual = len(spike_times_list)
+        n_sample_ff = min(50, n_actual)
         rng_ff = np.random.default_rng(seed=hash((rn, pn, "ff")) & 0xFFFFFFFF)
-        ff_sample_idxs = rng_ff.choice(n_neurons, size=n_sample_ff, replace=False)
+        ff_sample_idxs = rng_ff.choice(n_actual, size=n_sample_ff, replace=False)
         per_neuron_ff: List[float] = []
         for nidx in ff_sample_idxs:
             bins = np.zeros(n_ff_bins, dtype=np.float64)
@@ -334,9 +350,10 @@ def _compute_pairwise_correlation(
     if n_corr_bins < 2:
         return np.nan
 
-    n_sample = min(30, n_neurons)
+    n_actual = len(spike_times_list)
+    n_sample = min(30, n_actual)
     rng_pc = np.random.default_rng(seed=hash((rn, pn, "pc")) & 0xFFFFFFFF)
-    sample_idxs = rng_pc.choice(n_neurons, size=n_sample, replace=False)
+    sample_idxs = rng_pc.choice(n_actual, size=n_sample, replace=False)
     spike_mat = np.zeros((n_sample, n_corr_bins), dtype=np.float64)
     for i, nidx in enumerate(sample_idxs):
         for spike_t in spike_times_list[nidx]:
@@ -610,21 +627,40 @@ def _compute_voltage_bimodality(
 
 
 def compute_population_stats(
-    rec: "DiagnosticsRecorder", pop_idx: int, T: int
+    rec: "DiagnosticsRecorder", pop_idx: int, T: int, t0: int = 0
 ) -> PopulationStats:
-    """Compute all statistics for a single population by delegating to sub-functions."""
+    """Compute all statistics for a single population by delegating to sub-functions.
+
+    Parameters
+    ----------
+    t0:
+        First timestep of the analysis window (transient boundary).  All
+        spike-based statistics are computed on ``[t0:T]`` only.
+    """
     rn, pn = rec._pop_keys[pop_idx]
     n_neurons = int(rec._pop_sizes[pop_idx])
-    pop_counts_col = rec._pop_spike_counts[:T, pop_idx]
+    T_eff = T - t0
+    pop_counts_col = rec._pop_spike_counts[t0:T, pop_idx]
     total_spikes = int(pop_counts_col.sum())
     key = (rn, pn)
     is_full = rec.config.mode == "full"
-    spike_times_list: List[List[int]] | None = (
-        rec._spike_times.get(key) if is_full else None
-    )
+
+    # Pre-filter spike times to the analysis window [t0:T] and shift to
+    # 0-based indices within that window.  All sub-functions that consume
+    # spike times then work on a self-consistent [0:T_eff] index space.
+    spike_times_list: List[List[int]] | None = None
+    if is_full:
+        raw = rec._spike_times.get(key) or []
+        if t0 == 0:
+            spike_times_list = raw
+        else:
+            spike_times_list = [
+                [ts - t0 for ts in neuron_times if ts >= t0]
+                for neuron_times in raw
+            ]
 
     # Per-neuron firing rates and histogram
-    fr = _compute_fr_stats(rec, pop_idx, T, total_spikes)
+    fr = _compute_fr_stats(rec, pop_idx, T_eff, total_spikes, spike_times_list)
 
     # ISI statistics (full mode only)
     isi = (
@@ -636,7 +672,7 @@ def compute_population_stats(
     # Fano factor
     ff_bin_steps = max(1, int(50.0 / rec.dt_ms))
     _ff_value = _compute_fano_factor(
-        spike_times_list, pop_counts_col, n_neurons, T, ff_bin_steps, is_full,
+        spike_times_list, pop_counts_col, n_neurons, T_eff, ff_bin_steps, is_full,
         rn=rn, pn=pn,
     )
     per_neuron_ff = _ff_value if is_full else np.nan
@@ -645,7 +681,7 @@ def compute_population_stats(
     # Pairwise correlation (full mode, ≥ 2 neurons)
     pairwise_correlation = (
         _compute_pairwise_correlation(
-            spike_times_list, n_neurons, T,
+            spike_times_list, n_neurons, T_eff,
             corr_bin_steps=max(1, int(100.0 / rec.dt_ms)),
             rn=rn, pn=pn,
         )
@@ -655,29 +691,29 @@ def compute_population_stats(
 
     # Epileptiform burst events
     fraction_burst_events = _compute_burst_events(
-        pop_counts_col, n_neurons, T,
+        pop_counts_col, n_neurons, T_eff,
         burst_win_steps=max(1, int(20.0 / rec.dt_ms)),
         burst_coactivation_fraction=rec.config.thresholds.burst_coactivation_fraction,
     )
 
     # DA-style burst event rate (full mode)
     da_burst_events_per_s = (
-        _compute_da_burst_rate(spike_times_list, rec.dt_ms, T * rec.dt_ms)
+        _compute_da_burst_rate(spike_times_list, rec.dt_ms, T_eff * rec.dt_ms)
         if is_full and spike_times_list is not None
         else np.nan
     )
 
     # SFA index
-    sfa_index = _compute_sfa_index(pop_counts_col, n_neurons, T, rec.dt_ms)
+    sfa_index = _compute_sfa_index(pop_counts_col, n_neurons, T_eff, rec.dt_ms)
 
     # SFA time constant
     sfa_tau_ms = _compute_sfa_tau(
-        pop_counts_col, n_neurons, T, rec.dt_ms, rec.config.rate_bin_ms
+        pop_counts_col, n_neurons, T_eff, rec.dt_ms, rec.config.rate_bin_ms
     )
 
-    # Voltage bimodality (full mode only)
+    # Voltage bimodality (full mode only) — use [t0:T] voltage samples
     voltage_bimodality = (
-        _compute_voltage_bimodality(rec._voltages[:T, pop_idx, :])
+        _compute_voltage_bimodality(rec._voltages[t0:T, pop_idx, :])
         if is_full and rec._voltages is not None
         else np.nan
     )

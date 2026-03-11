@@ -28,7 +28,6 @@ from thalia.brain.synapses import (
     NMReceptorType,
     make_nm_receptor,
     STPConfig,
-    STPType,
     WeightInitializer,
 )
 from thalia.typing import (
@@ -349,9 +348,15 @@ class VectorizedPurkinjeLayer(nn.Module):
         soma_input = self.dendrite_voltage.sum(dim=1)
         calcium_modulation = 1.0 + 0.2 * self.dendrite_calcium.mean(dim=1)
         soma_conductance = (soma_input * calcium_modulation).clamp(min=0.0)
-        # Purkinje pacemaker drive (~60 Hz tonic via resurgent Na⁺ / P/Q-Ca²⁺).
-        # g_ampa_pacemaker = 0.030 → V_inf ~1.3 at threshold=1.0; homeostasis tunes rate.
-        _PURKINJE_PACEMAKER_G: float = 0.030
+        # Purkinje pacemaker drive (~47 Hz tonic via resurgent Na⁺ / P/Q-Ca²⁺).
+        # CORRECT CALIBRATION (tau_E=2ms impulse integration):
+        #   g_ampa_input is added as an impulse each step → g_E_ss = G_impulse / (1 - exp(-1/tau_E))
+        #   = G_impulse / 0.393.  Target g_E_ss = 0.070 for ~47 Hz:
+        #   V_inf = 0.070×3/(0.10+0.070) = 1.235; tau_eff = 2/0.170 = 11.76 ms;
+        #   t_thresh = -11.76×ln(1-1/1.235) = 19.5 ms; ISI = 21.5 ms → 46.5 Hz.
+        #   G_impulse = 0.070 × (1 - exp(-1/2)) = 0.070 × 0.393 = 0.0275 ≈ 0.028.
+        #   g_L homeostasis ±20%: g_L=0.08→51 Hz, g_L=0.12→43 Hz (within 40-100 Hz target).
+        _PURKINJE_PACEMAKER_G: float = 0.028
         soma_conductance = soma_conductance + _PURKINJE_PACEMAKER_G
         # NMDA omitted: dendritic tau=10ms + soma tau_E=2ms already amplify 11x;
         # adding NMDA (tau=50ms, ×25 additional) would grossly overdrive Purkinje.
@@ -475,12 +480,11 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 n_input=self.purkinje_size,
                 n_output=self.dcn_size,
                 connectivity=0.2,
-                weight_scale=0.0008,
+                weight_scale=0.002,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            # Biology: Strong Purkinje inhibition shows depression, preventing runaway inhibition
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.15, tau_d=60.0, tau_f=400.0),
         )
 
         # Mossy fiber → DCN (excitatory collaterals)
@@ -498,8 +502,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            # Biology: Mossy fiber collaterals show facilitation, reinforcing sustained input
-            stp_config=STPConfig.from_type(STPType.FACILITATING),
+            stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=200.0),
         )
 
         # DCN neurons (tonic firing, modulated by inhibition)

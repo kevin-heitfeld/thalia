@@ -55,7 +55,7 @@ import numpy as np
 from thalia import GlobalConfig
 from thalia.brain.configs import MedialSeptumConfig
 from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
-from thalia.brain.synapses import STPConfig, STPType, WeightInitializer
+from thalia.brain.synapses import STPConfig, WeightInitializer
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -219,7 +219,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             # Cholinergic recurrent: weak facilitation for burst synchrony.
             # Facilitating recurrence reinforces simultaneous bursting across
             # ACh neurons, sharpening the theta-cycle onset phase.
-            stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+            stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
         )
 
         # GABAergic neurons have stronger coupling (fast synchronization)
@@ -236,7 +236,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             # GABA recurrent: moderate depression prevents sustained runaway.
-            stp_config=STPConfig.from_type(STPType.DEPRESSING_MODERATE),
+            stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
         )
 
         # =====================================================================
@@ -260,7 +260,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             # depress so GABA does not sustain full suppression of ACh.
             # This enables oscillatory rebound: ACh fires → GABA activates
             # (depression builds) → less GABA → ACh recovers for next burst.
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # GABA → ACh (inhibitory): GABA feedback suppresses ACh burst
@@ -279,7 +279,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             # GABA→ACh: PV-type depressing inhibition — strong initial hyperpolarisation
             # that fades, allowing ACh to escape inhibition for the next burst cycle.
             # PV basket-like cells in medial septum (Freund & Antal 1988).
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # Initialize state variables for spikes (for recurrent connections)

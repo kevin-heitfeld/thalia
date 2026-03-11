@@ -23,7 +23,6 @@ from thalia.brain.synapses import (
     NMReceptorType,
     make_nm_receptor,
     STPConfig,
-    STPType,
     WeightInitializer,
 )
 from thalia.learning import STDPConfig, STDPStrategy
@@ -159,8 +158,10 @@ class BasolateralAmygdala(AmygdalaNucleus[BasolateralAmygdalaConfig]):
         # =====================================================================
 
         # Principal → PV (feedforward excitation of PV → rapid feedback inhibition)
-        # Biology: Principal axon collaterals excite local PV interneurons
-        # weight_scale reduced 4× (0.002→0.0005): principal at 2.77% was driving PV to 18%
+        # Biology: Principal axon collaterals excite local PV interneurons.
+        # BLA:pv is quiescent at rest (~0.5–5 Hz) — only recruited during CS/US events.
+        # At baseline with ~2 Hz principal drive, weight_scale=0.0005 yields ~0.9 Hz PV, which
+        # is appropriate for resting state (Woodruff & Sah 2007; Bienvenu et al. 2012).
         self._add_internal_connection(
             source_population=BLAPopulation.PRINCIPAL,
             target_population=BLAPopulation.PV,
@@ -172,7 +173,7 @@ class BasolateralAmygdala(AmygdalaNucleus[BasolateralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # PV → Principal (fast feedforward inhibition)
@@ -188,7 +189,7 @@ class BasolateralAmygdala(AmygdalaNucleus[BasolateralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # Principal → SOM (slower recurrent excitation of SOM interneurons)
@@ -204,7 +205,7 @@ class BasolateralAmygdala(AmygdalaNucleus[BasolateralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig.from_type(STPType.FACILITATING_MODERATE),
+            stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
         )
 
         # SOM → Principal (dendritic inhibition: extinction gating)
@@ -220,7 +221,7 @@ class BasolateralAmygdala(AmygdalaNucleus[BasolateralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # =====================================================================

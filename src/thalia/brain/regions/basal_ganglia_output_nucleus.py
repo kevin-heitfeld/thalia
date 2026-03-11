@@ -63,6 +63,9 @@ class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
         n_neurons: int,
         population_name: str,
         noise_std: float = 0.007,
+        adapt_increment: float = 0.0,
+        tau_adapt: float = 100.0,
+        E_adapt: float = -0.5,
     ) -> ConductanceLIF:
         """Create a standard BG output-nucleus ConductanceLIF population.
 
@@ -76,6 +79,11 @@ class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
             population_name: Stored in the neuron config (used for diagnostics).
             noise_std: Membrane voltage noise σ.  Prototypic / principal
                 populations typically use 0.007; secondary populations 0.005.
+            adapt_increment: Spike-frequency adaptation conductance increment per
+                spike (0.0 = disabled).  Use for populations that need rate-limiting
+                adaptation (e.g. arkypallidal: 0.005 gives ~12 Hz equilibrium).
+            tau_adapt: Adaptation decay time constant in ms.
+            E_adapt: Adaptation reversal potential (hyperpolarising, like slow K+).
 
         Returns:
             Initialized :class:`~thalia.brain.neurons.ConductanceLIF` placed on
@@ -94,9 +102,12 @@ class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
                 E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
+                E_adapt=E_adapt,
                 tau_E=5.0,
                 tau_I=10.0,
                 noise_std=noise_std,
+                adapt_increment=adapt_increment,
+                tau_adapt=tau_adapt,
             ),
             device=self.device,
         )

@@ -225,8 +225,13 @@ class SynapseId:
 
     _SEP: ClassVar[str] = "|"
 
+    # Cache of all SynapseId instances keyed by their serialised string.  Populated
+    # lazily by from_key(); eliminates repeated string splits and dataclass
+    # construction in the hot simulation loop.
+    _from_key_cache: ClassVar[dict[str, "SynapseId"]] = {}
+
     def __post_init__(self) -> None:
-        """Validate that none of the fields contain the separator character."""
+        """Validate fields and pre-compute the serialised key for fast to_key() calls."""
         for field_name, value in (
             ("source_region", self.source_region),
             ("source_population", self.source_population),
@@ -237,6 +242,19 @@ class SynapseId:
                 raise ValueError(
                     f"{field_name} cannot contain '{self._SEP}' or '.' character: {value}"
                 )
+
+        # Pre-compute the serialised form once; frozen dataclass requires object.__setattr__.
+        object.__setattr__(
+            self,
+            "_cached_key",
+            (
+                f"{self.source_region}{self._SEP}"
+                f"{self.source_population}{self._SEP}"
+                f"{self.target_region}{self._SEP}"
+                f"{self.target_population}{self._SEP}"
+                f"{self.receptor_type}"
+            ),
+        )
 
     def __str__(self) -> str:
         return (
@@ -255,28 +273,30 @@ class SynapseId:
             Stable pipe-delimited string, e.g.
             ``"thalamus|relay|cortex|l4_pyr|ampa"``
         """
-        return (
-            f"{self.source_region}{self._SEP}"
-            f"{self.source_population}{self._SEP}"
-            f"{self.target_region}{self._SEP}"
-            f"{self.target_population}{self._SEP}"
-            f"{self.receptor_type}"
-        )
+        return self._cached_key  # type: ignore[attr-defined]
 
     @classmethod
     def from_key(cls, key: str) -> "SynapseId":
         """Decode a pipe-delimited key back to a :class:`SynapseId`.
 
+        Results are cached at the class level so repeated iteration over the
+        same set of synaptic connections (the common hot-path case) never re-parses
+        strings or re-constructs dataclass instances.
+
         Args:
             key: String previously returned by :meth:`to_key`.
 
         Returns:
-            Reconstructed :class:`SynapseId` instance.
+            Reconstructed :class:`SynapseId` instance (possibly cached).
 
         Raises:
             ValueError: If *key* does not have the expected format or contains
                 an unknown receptor type string.
         """
+        cached = cls._from_key_cache.get(key)
+        if cached is not None:
+            return cached
+
         parts = key.split(cls._SEP)
         if len(parts) != 5:
             raise ValueError(
@@ -293,13 +313,15 @@ class SynapseId:
                 f"Valid values: {list(ReceptorType)}"
             ) from exc
 
-        return cls(
+        result = cls(
             source_region=src_r,
             source_population=src_p,
             target_region=tgt_r,
             target_population=tgt_p,
             receptor_type=rtype,
         )
+        cls._from_key_cache[key] = result
+        return result
 
     def is_external_reward_input(self) -> bool:
         """True when this synapse carries external reward input (from 'external' region)."""

@@ -121,11 +121,14 @@ class GlobusPallidusInterna(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
             self.border_cells_size, GPiPopulation.BORDER_CELLS, noise_std=0.005
         )
 
-        # Tonic drive: principal at full baseline (~60-80 Hz); border cells at 0.4×
-        # (sub-threshold at rest; V_inf ≈ 0.85 with g_L=0.10). Border cells are only
-        # recruited when STN excitation overwhelms direct-pathway inhibition.
+        # Tonic drive: principal at full baseline (~60-80 Hz); border cells at 0.65×
+        # With factor=0.65: g_E_ss≈0.047, V_inf≈0.95 → nearly sub-threshold; STN+D1 inhibitory balance gives ~35-45 Hz.
+        # Previous 0.8× gave V_inf≈1.09 → 64.6 Hz (run-13, target 20-50 Hz); reducing factor brings border cells
+        # to the lower half of the target range while principal neurons (factor=1.0) remain at ~100 Hz.
+        # Previous 0.4× was fully sub-threshold (V_inf≈0.67), relying on STN excitation which is
+        # chronically depleted (eff≈0.04) at STN's 20 Hz rate with U=0.50 τd=800ms.
         self.principal_baseline = self._make_tonic_baseline(self.principal_size)
-        self.border_cells_baseline = self._make_tonic_baseline(self.border_cells_size, factor=0.4)
+        self.border_cells_baseline = self._make_tonic_baseline(self.border_cells_size, factor=0.65)
 
         # =====================================================================
         # REGISTER NEURON POPULATIONS

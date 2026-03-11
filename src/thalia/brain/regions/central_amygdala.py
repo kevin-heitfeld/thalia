@@ -61,7 +61,6 @@ from thalia import GlobalConfig
 from thalia.brain.configs import CentralAmygdalaConfig
 from thalia.brain.synapses import (
     STPConfig,
-    STPType,
     WeightInitializer,
 )
 from thalia.typing import (
@@ -104,6 +103,11 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
                          (BLA also)
                          direct to CeM (bypass CeL)
     """
+
+    # Override: CeA receives dense shared BLA→CeA excitatory broadcast (2000-neuron source)
+    # that drives ρ>0.90 with the default 0.03.  Higher noise breaks the common-input
+    # synchrony while keeping individual firing rates within the biological range.
+    _AMY_NOISE_STD: float = 0.08
 
     # NE from LC modulates CeM arousal output gain (alpha-1 adrenoceptors on CeM neurons).
     neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [NeuromodulatorChannel.NE]
@@ -173,7 +177,7 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # CeL self-inhibition (lateral mutual inhibition: ON/OFF dynamics)
@@ -188,7 +192,7 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig.from_type(STPType.DEPRESSING),
+            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
         )
 
         # Baseline drives

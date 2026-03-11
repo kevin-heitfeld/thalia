@@ -312,6 +312,17 @@ class ConductanceLIF(nn.Module):
         self.register_buffer("E_L", torch.tensor(config.E_L, device=device))
         self.register_buffer("E_E", torch.tensor(config.E_E, device=device))
         self.register_buffer("E_I", torch.tensor(config.E_I, device=device))
+
+        # Precomputed NMDA block constants: B(v) = sigmoid(_nmda_a + _nmda_b * v)
+        # Equivalent to 1/(1 + mg_conc * exp(-0.062 * v_mv) / 3.57) but avoids
+        # 4 extra per-call tensor ops by folding the v_mv transform into two scalars.
+        _nmda_scale = 65.0 / (config.E_E - config.E_L)
+        _nmda_bias_mv = -config.E_L * _nmda_scale - 65.0
+        _nmda_C = config.mg_conc / 3.57 * math.exp(-0.062 * _nmda_bias_mv)
+        self._nmda_a: torch.Tensor
+        self._nmda_b: torch.Tensor
+        self.register_buffer("_nmda_a", torch.tensor(-math.log(_nmda_C), device=device), persistent=False)
+        self.register_buffer("_nmda_b", torch.tensor(0.062 * _nmda_scale, device=device), persistent=False)
         self.register_buffer("E_nmda", torch.tensor(config.E_nmda, device=device))
         self.register_buffer("E_GABA_B", torch.tensor(config.E_GABA_B, device=device))
         self.register_buffer("E_adapt", torch.tensor(config.E_adapt, device=device))
@@ -444,6 +455,8 @@ class ConductanceLIF(nn.Module):
         self.g_GABA_B: torch.Tensor = torch.zeros(self.n_neurons, device=device)  # GABA_B conductance (slow, K⁺)
         self.g_nmda: torch.Tensor = torch.zeros(self.n_neurons, device=device)    # NMDA conductance (slow excitation)
         self.g_adapt: torch.Tensor = torch.zeros(self.n_neurons, device=device)   # Adaptation conductance
+        # Pre-allocated zero tensor for None conductance inputs — avoids torch.zeros() allocation in forward
+        self.register_buffer("_zeros", torch.zeros(self.n_neurons, device=device), persistent=False)
 
         # =============================================================================
         # Per-neuron refractory period for desynchronization
@@ -497,18 +510,6 @@ class ConductanceLIF(nn.Module):
             self.h_T = 1.0 / (1.0 + torch.exp((v_init - config.V_half_h_T) / config.k_h_T))
         else:
             self._h_T_decay = None
-
-    def _next_uniform(self) -> torch.Tensor:
-        """Generate uniform random number in [0,1) for each neuron using Philox."""
-        u = rng.philox_uniform(self._neuron_seeds_scaled + self._rng_timestep)
-        self._rng_timestep += 1
-        return u
-
-    def _next_gaussian(self) -> torch.Tensor:
-        """Generate Gaussian random number (mean=0, std=1) for each neuron using Philox."""
-        g = rng.philox_gaussian(self._neuron_seeds_scaled + self._rng_timestep)
-        self._rng_timestep += 2  # philox_gaussian internally uses counters and counters+1
-        return g
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update decay factors for new timestep.
@@ -574,25 +575,11 @@ class ConductanceLIF(nn.Module):
     def _compute_nmda_block(self, v: VoltageTensor) -> torch.Tensor:
         """Voltage-dependent Mg²⁺ block of NMDA receptors (Jahr & Stevens 1990).
 
-        B(V) = 1 / (1 + [Mg²⁺]_o * exp(-0.062 * V_mV) / 3.57)
-
-        Converts normalized voltage to mV using the linear mapping that places
-        E_L (leak/rest) at −65 mV and E_E (AMPA reversal) at 0 mV:
-
-            v_mv = (v − E_L) / (E_E − E_L) * 65 − 65
-
-        At rest (v = E_L = 0.0, −65 mV):  B ≈ 0.06  (heavily blocked)
-        At threshold (v = 1.0, ~−43 mV):  B ≈ 0.19  (partially unblocked)
-        At AMPA reversal (v = E_E, 0 mV):  B ≈ 0.78  (mostly unblocked)
-
-        Args:
-            v: Membrane voltage in normalized units, shape [n_neurons].
-
-        Returns:
-            Mg²⁺ block factor in (0, 1], same shape as v.
+        B(V) = sigmoid(_nmda_a + _nmda_b * v)
+        Equivalent to 1/(1 + mg_conc * exp(-0.062 * v_mv) / 3.57)
+        with v_mv the linear V→mV mapping; constants precomputed at init.
         """
-        v_mv = (v - self.E_L) / (self.E_E - self.E_L) * 65.0 - 65.0
-        return 1.0 / (1.0 + self.config.mg_conc * torch.exp(-0.062 * v_mv) / 3.57)
+        return torch.sigmoid(self._nmda_a + self._nmda_b * v)
 
     @torch.no_grad()
     def forward(
@@ -657,10 +644,34 @@ class ConductanceLIF(nn.Module):
         config = self.config
         n_neurons = self.n_neurons
 
-        g_ampa_basal = _ensure(g_ampa_input, n_neurons, device)
-        g_nmda_basal = _ensure(g_nmda_input, n_neurons, device)
-        g_gaba_a_basal = _ensure(g_gaba_a_input, n_neurons, device)
-        g_gaba_b_basal = _ensure(g_gaba_b_input, n_neurons, device)
+        # Cache registered buffers once — avoids nn.Module.__getattr__ on each access
+        g_L          = self.g_L
+        g_L_scale    = self.g_L_scale
+        E_L          = self.E_L
+        E_E          = self.E_E
+        E_I          = self.E_I
+        E_nmda       = self.E_nmda
+        E_GABA_B     = self.E_GABA_B
+        E_adapt      = self.E_adapt
+        v_reset      = self.v_reset
+        v_threshold  = self.v_threshold
+        tau_ref      = self.tau_ref_per_neuron
+        _g_E_decay      = self._g_E_decay
+        _g_I_decay      = self._g_I_decay
+        _g_nmda_decay   = self._g_nmda_decay
+        _g_GABA_B_decay = self._g_GABA_B_decay
+        _adapt_decay    = self._adapt_decay
+        _V_soma_decay   = self._V_soma_decay
+        ou_noise     = self.ou_noise
+        _ou_decay    = self._ou_decay
+        _ou_std      = self._ou_std
+
+        # Use pre-allocated zero buffer instead of torch.zeros() per None input
+        _z = self._zeros
+        g_ampa_basal   = g_ampa_input   if g_ampa_input   is not None else _z
+        g_nmda_basal   = g_nmda_input   if g_nmda_input   is not None else _z
+        g_gaba_a_basal = g_gaba_a_input if g_gaba_a_input is not None else _z
+        g_gaba_b_basal = g_gaba_b_input if g_gaba_b_input is not None else _z
 
         # Validate gap junction inputs (both must be provided together)
         if g_gap_input is not None or E_gap_reversal is not None:
@@ -669,19 +680,19 @@ class ConductanceLIF(nn.Module):
             )
 
         # Basal conductances
-        self.g_E.mul_(self._g_E_decay).add_(g_ampa_basal).clamp_(min=0.0)
-        self.g_nmda.mul_(self._g_nmda_decay).add_(g_nmda_basal).clamp_(min=0.0)
-        self.g_I.mul_(self._g_I_decay).add_(g_gaba_a_basal).clamp_(min=0.0)
-        self.g_GABA_B.mul_(self._g_GABA_B_decay).add_(g_gaba_b_basal).clamp_(min=0.0)
+        self.g_E.mul_(_g_E_decay).add_(g_ampa_basal).clamp_(min=0.0)
+        self.g_nmda.mul_(_g_nmda_decay).add_(g_nmda_basal).clamp_(min=0.0)
+        self.g_I.mul_(_g_I_decay).add_(g_gaba_a_basal).clamp_(min=0.0)
+        self.g_GABA_B.mul_(_g_GABA_B_decay).add_(g_gaba_b_basal).clamp_(min=0.0)
 
         # Adaptation decay
-        self.g_adapt.mul_(self._adapt_decay)
+        self.g_adapt.mul_(_adapt_decay)
 
         # HOMEOSTATIC INTRINSIC EXCITABILITY: Apply per-neuron leak conductance scaling
         # Biology: Neurons modulate leak channel density (g_L) to control excitability
         # Lower g_L → higher input resistance (R = 1/g_L) → same input produces larger voltage deflection
         # This is the biologically correct way to implement homeostatic gain control
-        g_L_effective = self.g_L * self.g_L_scale  # [n_neurons]
+        g_L_effective = g_L * g_L_scale  # [n_neurons]
 
         # NMDA Mg²⁺ voltage-dependent unblock
         # Restores coincidence detection: NMDA only passes current when the postsynaptic
@@ -696,7 +707,7 @@ class ConductanceLIF(nn.Module):
         # mechanism described in Koch et al. (1983) and Jahr & Stevens (1990).
         # V_dend_est = V_soma + g_E * (E_E − V_soma) * dendrite_coupling_scale
         if config.dendrite_coupling_scale > 0.0:
-            local_ampa_drive = (self.g_E * (self.E_E - V_soma)).clamp(min=0.0)
+            local_ampa_drive = (self.g_E * (E_E - V_soma)).clamp(min=0.0)
             V_dend_est = V_soma + local_ampa_drive * config.dendrite_coupling_scale
         else:
             V_dend_est = V_soma
@@ -720,12 +731,12 @@ class ConductanceLIF(nn.Module):
         # Include voltage-gated NMDA contribution and GABA_B
         # Use effective leak conductance
         V_inf_numerator = (
-            g_L_effective * self.E_L
-            + self.g_E * self.E_E
-            + g_nmda_effective * self.E_nmda
-            + self.g_I * self.E_I
-            + self.g_GABA_B * self.E_GABA_B
-            + self.g_adapt * self.E_adapt
+            g_L_effective * E_L
+            + self.g_E * E_E
+            + g_nmda_effective * E_nmda
+            + self.g_I * E_I
+            + self.g_GABA_B * E_GABA_B
+            + self.g_adapt * E_adapt
         )
 
         # Add gap junction conductances (if provided)
@@ -746,7 +757,8 @@ class ConductanceLIF(nn.Module):
             # Exponential relaxation toward steady-state
             # h_T(t+dt) = h_T_inf + (h_T - h_T_inf) * exp(-dt/tau_h_T)
             if self.h_T is not None:
-                self.h_T = h_T_inf + (self.h_T - h_T_inf) * self._h_T_decay
+                # sub_(inf).mul_(decay).add_(inf): (h_T - inf)*decay + inf = h_T*decay + inf*(1-decay) ✓
+                self.h_T.sub_(h_T_inf).mul_(self._h_T_decay).add_(h_T_inf)
             else:
                 # Initialize if somehow missed earlier
                 self.h_T = h_T_inf
@@ -781,7 +793,7 @@ class ConductanceLIF(nn.Module):
 
             if self.h_gate is not None:
                 assert self._h_decay is not None, "I_h enabled but _h_decay not initialised; call update_temporal_parameters first"
-                self.h_gate = h_inf + (self.h_gate - h_inf) * self._h_decay
+                self.h_gate.sub_(h_inf).mul_(self._h_decay).add_(h_inf)
             else:
                 # Initialise at steady-state for resting voltage
                 self.h_gate = h_inf
@@ -810,44 +822,41 @@ class ConductanceLIF(nn.Module):
         # Fast neurons (small tau_mem) decay quickly, slow neurons (large tau_mem) integrate longer
         # Use effective g_L (homeostatic modulation affects time constant)
         # CORRECT: exp(-dt/tau * g_total/g_L) = exp(-dt/tau)^(g_total/g_L) = pow(_V_soma_decay, g_total/g_L)
-        V_soma_decay_effective = torch.pow(self._V_soma_decay, g_total / g_L_effective)
+        V_soma_decay_effective = torch.pow(_V_soma_decay, g_total / g_L_effective)
 
-        # Update membrane for non-refractory neurons
-        new_V_soma = V_soma_inf + (self.V_soma - V_soma_inf) * V_soma_decay_effective
+        # Update membrane for ALL neurons (including refractory).
+        # sub_(inf).mul_(decay).add_(inf): (V - inf)*decay + inf = V*decay + inf*(1-decay) ✓
+        self.V_soma.sub_(V_soma_inf).mul_(V_soma_decay_effective).add_(V_soma_inf)
 
         # Add noise (PER-NEURON independent noise)
         if config.noise_std > 0:
-            noise = self._next_gaussian()
+            noise = rng.philox_gaussian(self._neuron_seeds_scaled + self._rng_timestep)
+            self._rng_timestep += 2  # philox_gaussian internally uses counters and counters+1
             # Ornstein-Uhlenbeck (colored) noise: dx = -x/τ*dt + σ*sqrt(2/τ)*dW
             # Discrete: x(t+dt) = x(t)*exp(-dt/τ) + σ*sqrt(1-exp(-2*dt/τ))*randn()
-            self.ou_noise = self.ou_noise * self._ou_decay + self._ou_std * noise
-            new_V_soma = new_V_soma + self.ou_noise
+            ou_noise.mul_(_ou_decay).add_(noise * _ou_std)
+            self.V_soma.add_(ou_noise)
 
-        # Update membrane for ALL neurons (including refractory)
-        # Neurons continue integrating during refractory, they just can't spike
-        # This allows charge buildup during refractory period for fast re-spiking
-        self.V_soma = new_V_soma
-
-        # Refractory counter
-        self.refractory = (self.refractory - 1).clamp_(min=0)
+        # Refractory counter (in-place: no new tensor, no __setattr__)
+        self.refractory.sub_(1).clamp_(min=0)
         not_refractory = self.refractory == 0
 
         # Spike generation (bool for biological accuracy and memory efficiency)
         # Only allow spikes from non-refractory neurons
-        above_threshold = self.V_soma >= self.v_threshold
+        above_threshold = self.V_soma >= v_threshold
         spikes = above_threshold & not_refractory  # Can only spike if not refractory
 
         # Combined spike handling: reset membrane AND set refractory in one pass
         # This avoids creating intermediate tensors
         if spikes.any():
-            # Reset soma
-            self.V_soma = torch.where(spikes, self.v_reset, self.V_soma)
+            # Reset soma (copy_ avoids __setattr__ on nn.Module)
+            self.V_soma.copy_(torch.where(spikes, v_reset, self.V_soma))
             # Set refractory
-            ref_steps = (self.tau_ref_per_neuron / dt_ms).int()
-            self.refractory = torch.where(spikes, ref_steps, self.refractory)
+            ref_steps = (tau_ref / dt_ms).int()
+            self.refractory.copy_(torch.where(spikes, ref_steps, self.refractory))
             # Adaptation increment
             if config.adapt_increment > 0:
-                self.g_adapt = self.g_adapt + spikes.float() * config.adapt_increment
+                self.g_adapt.add_(spikes.float(), alpha=config.adapt_increment)
 
         return spikes, self.V_soma
 
@@ -988,6 +997,15 @@ class TwoCompartmentLIF(nn.Module):
         self.register_buffer("E_L",      torch.tensor(config.E_L,      device=device))
         self.register_buffer("E_E",      torch.tensor(config.E_E,      device=device))
         self.register_buffer("E_I",      torch.tensor(config.E_I,      device=device))
+
+        # Precomputed NMDA block constants (see ConductanceLIF for derivation)
+        _nmda_scale = 65.0 / (config.E_E - config.E_L)
+        _nmda_bias_mv = -config.E_L * _nmda_scale - 65.0
+        _nmda_C = config.mg_conc / 3.57 * math.exp(-0.062 * _nmda_bias_mv)
+        self._nmda_a: torch.Tensor
+        self._nmda_b: torch.Tensor
+        self.register_buffer("_nmda_a", torch.tensor(-math.log(_nmda_C), device=device), persistent=False)
+        self.register_buffer("_nmda_b", torch.tensor(0.062 * _nmda_scale, device=device), persistent=False)
         self.register_buffer("E_nmda",   torch.tensor(config.E_nmda,   device=device))
         self.register_buffer("E_GABA_B", torch.tensor(config.E_GABA_B, device=device))
         self.register_buffer("E_Ca",     torch.tensor(config.E_Ca,     device=device))
@@ -1140,18 +1158,6 @@ class TwoCompartmentLIF(nn.Module):
         self.register_buffer("_u_refractory_init", _u_r, persistent=False)  # Uniform [0,1) for refractory timer initialization
         self.refractory: Optional[torch.Tensor] = None  # Initialized on first forward pass based on tau_ref_per_neuron
 
-    def _next_uniform(self) -> torch.Tensor:
-        """Generate uniform random number in [0,1) for each neuron using Philox."""
-        u = rng.philox_uniform(self._neuron_seeds_scaled + self._rng_timestep)
-        self._rng_timestep += 1
-        return u
-
-    def _next_gaussian(self) -> torch.Tensor:
-        """Generate Gaussian random number (mean=0, std=1) for each neuron using Philox."""
-        g = rng.philox_gaussian(self._neuron_seeds_scaled + self._rng_timestep)
-        self._rng_timestep += 2  # philox_gaussian internally uses counters and counters+1
-        return g
-
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Recompute all conductance decay factors for a new timestep size."""
         self._dt_ms = dt_ms
@@ -1187,25 +1193,11 @@ class TwoCompartmentLIF(nn.Module):
     def _compute_nmda_block(self, v: VoltageTensor) -> torch.Tensor:
         """Voltage-dependent Mg²⁺ block of NMDA receptors (Jahr & Stevens 1990).
 
-        B(V) = 1 / (1 + [Mg²⁺]_o * exp(-0.062 * V_mV) / 3.57)
-
-        Converts normalized voltage to mV using the linear mapping that places
-        E_L (leak/rest) at −65 mV and E_E (AMPA reversal) at 0 mV:
-
-            v_mv = (v − E_L) / (E_E − E_L) * 65 − 65
-
-        At rest (v = E_L = 0.0, −65 mV):  B ≈ 0.06  (heavily blocked)
-        At threshold (v = 1.0, ~−43 mV):  B ≈ 0.19  (partially unblocked)
-        At AMPA reversal (v = E_E, 0 mV):  B ≈ 0.78  (mostly unblocked)
-
-        Args:
-            v: Membrane voltage in normalized units, shape [n_neurons].
-
-        Returns:
-            Mg²⁺ block factor in (0, 1], same shape as v.
+        B(V) = sigmoid(_nmda_a + _nmda_b * v)
+        Equivalent to 1/(1 + mg_conc * exp(-0.062 * v_mv) / 3.57)
+        with v_mv the linear V→mV mapping; constants precomputed at init.
         """
-        v_mv = (v - self.E_L) / (self.E_E - self.E_L) * 65.0 - 65.0
-        return 1.0 / (1.0 + self.config.mg_conc * torch.exp(-0.062 * v_mv) / 3.57)
+        return torch.sigmoid(self._nmda_a + self._nmda_b * v)
 
     @torch.no_grad()
     def forward(
@@ -1351,22 +1343,23 @@ class TwoCompartmentLIF(nn.Module):
 
         # OU noise on soma
         if config.noise_std > 0:
-            noise = self._next_gaussian()
-            self.ou_noise = self.ou_noise * self._ou_decay + self._ou_std * noise
+            noise = rng.philox_gaussian(self._neuron_seeds_scaled + self._rng_timestep)
+            self._rng_timestep += 2  # philox_gaussian internally uses counters and counters+1
+            self.ou_noise.mul_(self._ou_decay).add_(noise * self._ou_std)
             new_V_soma = new_V_soma + self.ou_noise
 
-        # Update voltages
-        self.V_soma = new_V_soma
-        self.V_dend = new_V_dend
+        # Update voltages (copy_ avoids __setattr__ on nn.Module)
+        self.V_soma.copy_(new_V_soma)
+        self.V_dend.copy_(new_V_dend)
 
         # Ca spike check (BEFORE spike check, so it can influence soma)
         # When dendritic voltage exceeds theta_Ca, trigger a regenerative Ca spike
         ca_spike = (self.V_dend >= config.theta_Ca)
         if ca_spike.any():
-            self.g_Ca = self.g_Ca + ca_spike.float() * config.g_Ca_spike
+            self.g_Ca.add_(ca_spike.float(), alpha=config.g_Ca_spike)
 
-        # Refractory counter
-        self.refractory = (self.refractory - 1).clamp_(min=0)
+        # Refractory counter (in-place)
+        self.refractory.sub_(1).clamp_(min=0)
         not_refractory = self.refractory == 0
 
         # Spike generation (somatic)
@@ -1374,17 +1367,17 @@ class TwoCompartmentLIF(nn.Module):
         spikes = above_threshold & not_refractory
 
         if spikes.any():
-            # Reset soma
-            self.V_soma = torch.where(spikes, self.v_reset, self.V_soma)
+            # Reset soma (copy_ avoids __setattr__ on nn.Module)
+            self.V_soma.copy_(torch.where(spikes, self.v_reset, self.V_soma))
             # Set refractory
             ref_steps = (self.tau_ref_per_neuron / dt_ms).int()
-            self.refractory = torch.where(spikes, ref_steps, self.refractory)
+            self.refractory.copy_(torch.where(spikes, ref_steps, self.refractory))
             # Adaptation increment
             if config.adapt_increment > 0:
-                self.g_adapt = self.g_adapt + spikes.float() * config.adapt_increment
+                self.g_adapt.add_(spikes.float(), alpha=config.adapt_increment)
             # BAP: retrograde depolarisation of dendrite
             # V_dend += bap_amplitude * (E_Ca − V_dend)
             bap_dv = config.bap_amplitude * (config.E_Ca - self.V_dend) * spikes.float()
-            self.V_dend = self.V_dend + bap_dv
+            self.V_dend.add_(bap_dv)
 
         return spikes, VoltageTensor(self.V_soma), VoltageTensor(self.V_dend)

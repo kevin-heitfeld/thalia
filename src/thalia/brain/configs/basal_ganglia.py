@@ -107,28 +107,6 @@ def get_default_lhb_config() -> TonicPacemakerConfig:
     - Excited by SNr output (high SNr → bad outcome signal)
     - Projects to RMTg to mediate dopamine pauses
     - Glutamatergic principal neurons
-
-    baseline_drive=0.007: Per-step AMPA conductance to LHb principal neurons.
-    IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.007 / 0.181 ≈ 0.039
-
-    Restored to 0.007 (run-04: 0.004 gave V_inf=0.648, far below threshold → 0.016 Hz).
-    At 0.007, g_E_ss≈0.039 gives V_inf≈0.977 (just below threshold, g_L=0.08).
-    LHb fires via noise + SNr excitation when SNr > ~40 Hz (aversive events).
-    At SNr=45 Hz (tonic), combined V_inf≈1.004 → ~14 Hz tonic (target 5–20 Hz).
-    At SNr < 40 Hz (reward suppresses SNr), LHb is quiet → correct biological gating.
-
-    In run-03: 0.007 + fraction_of_drive=0.60 gave 24.8 Hz (too high).
-    In run-04: 0.004 + fraction_of_drive=0.05 + DEPRESSING STP gave 0.016 Hz (too low).
-    Fix: restore 0.007 baseline + keep fraction_of_drive=0.05 but remove STP depletion.
-
-    Previous value 0.040 was 5.7× too large (treated as steady-state rather than
-    per-step), causing g_E_ss≈0.221, V_inf≈2.2 → ~250 Hz hyperactivity.
-
-    tau_mem=20.0: Longer than the default (15ms) — LHb principal cells are
-    glutamatergic with slower membrane integration than fast GABAergic pacemakers.
     """
     return TonicPacemakerConfig(baseline_drive=0.007, tau_mem=20.0)
 
@@ -259,9 +237,16 @@ class StriatumConfig(NeuralRegionConfig):
     # GAP JUNCTIONS
     # =========================================================================
     # Gap junction configuration for FSI networks
-    gap_junction_strength: float = 0.15  # Biological: 0.05-0.3
+    # CALIBRATION NOTE: g_gap_total = strength × max_neighbors must be << g_L (0.10)
+    # to avoid shunting excitation. With strength=0.15 × 10 neighbors = 1.5 >> g_L,
+    # the gap junction term dominated the V_inf denominator and drove FSI V_inf ≈ 0.13
+    # (below threshold=1.0), completely silencing all FSI.
+    # Fix: strength=0.005 × neighbors=4 → g_gap_total=0.02 << g_L=0.10 ✓
+    # Biology: striatal FSI gap junctions have g_gap ≈ 0.3 nS, at g_L ≈ 10–15 nS
+    # → g_gap/g_L ≈ 0.02-0.03. Our unitless ratio matches this.
+    gap_junction_strength: float = 0.005  # Reduced 0.15→0.005: g_gap_total=1.5 shunted FSI to V_inf≈0.13 (threshold=1.0)
     gap_junction_threshold: float = 0.25  # Neighborhood inference threshold
-    gap_junction_max_neighbors: int = 10  # Biological: 4-12 neighbors
+    gap_junction_max_neighbors: int = 4   # Reduced 10→4: g_gap_total=0.15×10=1.5 >> g_L=0.10; now 0.005×4=0.02 << g_L
 
     # =========================================================================
     # NEUROMODULATION: TONIC DOPAMINE
@@ -472,7 +457,7 @@ class VTAConfig(DopaminePacemakerConfig):
     # E_h for HCN channels (-45 mV biological) is ≈ +0.9 (between rest and
     # threshold in the E_L=0, E_E=3 scale).  This is fixed in vta.py.
     # -------------------------------------------------------------------------
-    mesolimbic_baseline_drive: float = 0.007
+    mesolimbic_baseline_drive: float = 0.005
     """Per-step AMPA conductance added to mesolimbic DA neurons each timestep.
 
     IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
@@ -494,7 +479,7 @@ class VTAConfig(DopaminePacemakerConfig):
     per-step), causing g_E_ss≈0.304, V_inf≈2.7 → ~147 Hz even with adaptation.
     """
 
-    mesocortical_baseline_drive: float = 0.009
+    mesocortical_baseline_drive: float = 0.007
     """Per-step AMPA conductance added to mesocortical DA neurons each timestep.
 
     IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
@@ -531,6 +516,16 @@ class VTAConfig(DopaminePacemakerConfig):
     #   2. Faster spike-frequency adaptation (broader dynamic range)
     #   3. Respond more to stress/aversive stimuli, less to reward per se
     # -------------------------------------------------------------------------
+    noise_std: float = 0.015
+    """DA neuron membrane noise standard deviation.
+
+    Overrides the DopaminePacemakerConfig default (0.002): VTA receives strong
+    common-input from SNr (74 Hz) and RMTg broadcasts, driving ρ=0.69 synchrony
+    in mesolimbic DA at the lower noise level.  0.015 provides enough independent
+    variation across the 1375+875 neurons to desynchronise without disrupting
+    tonic pacemaking.
+    """
+
     mesocortical_adapt_increment: float = 0.018
     """Adaptation increment for mesocortical DA neurons."""
 

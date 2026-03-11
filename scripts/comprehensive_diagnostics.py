@@ -27,7 +27,7 @@ from thalia.diagnostics import (
     run_sweep,
     run_triage,
 )
-from thalia.diagnostics.sweep import run_warmup, run_single, DEFAULT_SWEEP_PATTERNS
+from thalia.diagnostics.sweep import run_single, DEFAULT_SWEEP_PATTERNS
 
 matplotlib.use("Agg")
 
@@ -40,58 +40,22 @@ def parse_args() -> argparse.Namespace:
         description="Comprehensive Thalia brain diagnostics.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--timesteps", type=int, default=1000,
-        help="Number of simulation timesteps (1 step = dt_ms).",
-    )
-    parser.add_argument(
-        "--warmup", type=int, default=0,
-        help=(
-            "Number of warmup timesteps run before recording begins. "
-            "Allows STP and adaptation to reach near-equilibrium so the "
-            "measurement window reflects steady-state dynamics, not startup "
-            "transients. At dt=1ms and 30 Hz thalamic input the thalamocortical "
-            "STP effective time constant is ~67 ms; 300 ms ≈ 4.5τ. "
-            "WARNING: circuits without STP-compensated weights (BLA, LHb, "
-            "hippocampus) will be starved and appear silent with warmup>0."
-        ),
-    )
-    parser.add_argument(
-        "--warmup-pattern", type=str, default="background",
-        choices=list(SENSORY_PATTERNS),
-        help=(
-            "Input pattern used during the warmup phase. "
-            "Defaults to 'background' (low-rate Poisson broadcast to all regions) "
-            "which is a neutral drive that settles STP without biasing any "
-            "particular pathway.  In sweep mode this pattern is used for the "
-            "shared pre-sweep warmup; in single-run mode it is used instead of "
-            "--input-pattern so the warmup and recording phases can differ."
-        ),
-    )
-    parser.add_argument(
-        "--output-dir", type=str, default="data/diagnostics",
-        help="Directory for diagnostic outputs (JSON, NPZ, PNG).",
-    )
     _pattern_descriptions = {
-        "random":               "sparse Poisson to thalamus relay (~3%% neurons, 20%% prob).",
-        "rhythmic":             "8 Hz theta-burst to thalamus relay.",
-        "burst":               "single 50 ms synchronous burst at t=100 ms (30%% of relay).",
-        "sustained_burst":     "repeating 50 ms on / 450 ms off cycle to thalamus relay.",
-        "background":          "low-rate (≈2 Hz) Poisson to every external-input synapse in all regions.",
-        "none":                "no external input (spontaneous activity only).",
-        "gamma":               "sinusoidal 40 Hz drive (5–15%% relay per step) — tests thalamocortical gamma chain.",
+        "random":                "sparse Poisson to thalamus relay (~3%% neurons, 20%% prob).",
+        "rhythmic":              "8 Hz theta-burst to thalamus relay.",
+        "burst":                 "single 50 ms synchronous burst at t=100 ms (30%% of relay).",
+        "sustained_burst":       "repeating 50 ms on / 450 ms off cycle to thalamus relay.",
+        "background":            "low-rate (≈2 Hz) Poisson to every external-input synapse in all regions.",
+        "none":                  "no external input (spontaneous activity only).",
+        "gamma":                 "sinusoidal 40 Hz drive (5–15%% relay per step) — tests thalamocortical gamma chain.",
         "correlated_background": "half relay shares a common Poisson driver — tests common-input vs. local synchrony.",
-        "ramp":                "linearly ramping relay activation 0→30%% over --timesteps — tests rate coding and neural gain.",
-        "slow_wave":           "600 ms up/down cycle (up: 40 Hz relay, down: silence) — stress-tests cortical bistability and voltage bimodality.",
+        "ramp":                  "linearly ramping relay activation 0→30%% over --timesteps — tests rate coding and neural gain.",
+        "slow_wave":             "600 ms up/down cycle (up: 40 Hz relay, down: silence) — stress-tests cortical bistability and voltage bimodality.",
     }
     _pattern_help = "Sensory input pattern fed to the brain.\n" + "\n".join(
         f"  {k!r}: {v}" for k, v in _pattern_descriptions.items() if k in SENSORY_PATTERNS
     )
-    parser.add_argument(
-        "--input-pattern", type=str, default="random",
-        choices=list(SENSORY_PATTERNS),
-        help=_pattern_help,
-    )
+
     parser.add_argument(
         "--mode", type=str, default="full",
         choices=["full", "stats"],
@@ -102,8 +66,13 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--no-plots", action="store_true",
-        help="Skip matplotlib plot generation.",
+        "--timesteps", type=int, default=1500,
+        help="Number of simulation timesteps (1 step = dt_ms).",
+    )
+    parser.add_argument(
+        "--input-pattern", type=str, default="random",
+        choices=list(SENSORY_PATTERNS),
+        help=_pattern_help,
     )
     parser.add_argument(
         "--sweep", action="store_true",
@@ -131,6 +100,14 @@ def parse_args() -> argparse.Namespace:
             "and 200 for sweep mode.  Set to a large value (e.g. 99999) "
             "for quiet / CI runs."
         ),
+    )
+    parser.add_argument(
+        "--output-dir", type=str, default="data/diagnostics",
+        help="Directory for diagnostic outputs (JSON, NPZ, PNG).",
+    )
+    parser.add_argument(
+        "--no-plots", action="store_true",
+        help="Skip matplotlib plot generation.",
     )
 
     # Sampling / binning fidelity knobs
@@ -205,14 +182,6 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
 
-    # Warmup validation — the entire recording window would be consumed.
-    if args.warmup >= args.timesteps:
-        parser.error(
-            f"--warmup ({args.warmup}) must be strictly less than "
-            f"--timesteps ({args.timesteps}).  "
-            f"Increase --timesteps or reduce --warmup."
-        )
-
     # Avalanche analysis validation — too few events for a reliable fit.
     if args.compute_avalanches and args.timesteps < 2000:
         parser.error(
@@ -240,8 +209,6 @@ def main() -> None:
 
     print(f"\n  Run parameters:")
     print(f"    timesteps           : {args.timesteps}")
-    print(f"    warmup              : {args.warmup}")
-    print(f"    warmup-pattern      : {args.warmup_pattern}")
     print(f"    input-pattern       : {args.input_pattern}")
     print(f"    mode                : {args.mode}")
     print(f"    output-dir          : {args.output_dir}")
@@ -273,12 +240,10 @@ def main() -> None:
     print_synaptic_weights(brain, heading="INITIAL SYNAPTIC WEIGHTS")
 
     # ── Create recorder ───────────────────────────────────────────────────────
-    # SFA health check is unreliable when using a ramping input (FR rises
-    # monotonically regardless of cellular adaptation) or when warmup==0 with
-    # a short recording (transient onset dynamics dominate the early window).
-    _skip_sfa = (args.input_pattern == "ramp") or (
-        args.warmup == 0 and args.timesteps < 2000
-    )
+    # SFA health check is unreliable with a ramping input: FR rises monotonically
+    # so all populations appear adapted regardless of cellular SFA properties.
+    # Onset transients are handled automatically by detect_transient_step().
+    _skip_sfa = (args.input_pattern == "ramp")
     config = DiagnosticsConfig(
         n_timesteps=args.timesteps,
         dt_ms=brain.dt_ms,
@@ -293,14 +258,6 @@ def main() -> None:
         sensory_pattern=args.input_pattern,
     )
     recorder = DiagnosticsRecorder(brain, config)
-
-    if _skip_sfa and args.input_pattern != "ramp":
-        print(
-            f"\n  NOTE: SFA health checks suppressed (warmup={args.warmup}, "
-            f"timesteps={args.timesteps} < 2000).  "
-            "SFA results reflect network onset transients, not cellular adaptation.  "
-            "Re-run with --warmup ≥300 or --timesteps ≥2000 for reliable SFA."
-        )
 
     # Warn if voltage sample size is low relative to population sizes
     if config.voltage_sample_size < 20:
@@ -336,8 +293,6 @@ def main() -> None:
             brain, recorder,
             timesteps=args.timesteps,
             output_dir=args.output_dir,
-            warmup=args.warmup,
-            warmup_pattern=args.warmup_pattern,
             patterns=_sweep_patterns,
             no_plots=args.no_plots,
             report_interval=_sweep_report_interval,
@@ -345,10 +300,6 @@ def main() -> None:
         )
         print(f"\n{'═'*80}\nDONE (sweep)\n{'═'*80}\n")
         return
-
-    # ── Warmup (single-pattern mode only) ────────────────────────────────────
-    if args.warmup > 0:
-        run_warmup(brain, args.warmup, args.warmup_pattern, report_interval=100)
 
     # ── Single-run ────────────────────────────────────────────────────────────
     print(f"\n{'═'*80}")
