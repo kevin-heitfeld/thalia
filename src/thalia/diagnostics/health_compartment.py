@@ -26,8 +26,8 @@ def check_two_compartment_apical_basal(
     """Check that TwoCompartmentLIF apical compartments are receiving distinct drive.
 
     For populations that report a non-NaN ``mean_g_exc_apical`` (i.e.
-    :class:`~thalia.brain.neurons.TwoCompartmentLIF` populations recorded in
-    full mode), two conditions are checked:
+    :class:`~thalia.brain.neurons.TwoCompartmentLIF` populations), two conditions
+    are checked:
 
     **Apical compartment silent during active drive**
     When the basal compartment (``g_E`` / ``g_E_basal``) has measurable AMPA
@@ -46,7 +46,7 @@ def check_two_compartment_apical_basal(
 
     Only checked for populations in cortical / prefrontal regions where the
     apical/basal distinction is anatomically meaningful.  Silently skipped
-    when ``mean_g_exc_apical`` is NaN (stats mode or ConductanceLIF).
+    when ``mean_g_exc_apical`` is NaN (ConductanceLIF).
     """
     _NON_WAKING = frozenset({"none", "background", "slow_wave"})
     _WAKING_PATTERNS = frozenset(SENSORY_PATTERNS.keys()) - _NON_WAKING

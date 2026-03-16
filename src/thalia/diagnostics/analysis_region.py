@@ -20,13 +20,12 @@ def compute_ei_lag(
     sample lags from 0 to +30 samples (positive = inhibition lagging excitation).
 
     Returns ``(lag_ms, peak_xcorr)`` where lag_ms is the lag in milliseconds
-    at which the cross-correlation peaks.  Returns ``(NaN, NaN)`` in stats mode
-    or when conductance samples are unavailable.
+    at which the cross-correlation peaks.  Returns ``(NaN, NaN)`` in when
+    conductance samples are unavailable.
     """
     if (
-        rec.config.mode != "full"
-        or rec._g_exc_samples is None
-        or rec._g_inh_samples is None
+        rec._g_exc_samples is None or
+        rec._g_inh_samples is None
     ):
         return np.nan, np.nan
 
@@ -110,16 +109,15 @@ def extract_region_conductances(
     """Extract mean AMPA, NMDA, and GABA conductances for a region.
 
     Returns ``(mean_g_exc, mean_g_nmda, mean_g_inh, mean_g_gaba_a, mean_g_gaba_b)``
-    — all NaN in stats mode or when conductance samples are unavailable.
+    — all NaN when conductance samples are unavailable.
 
     Excitatory numerator = AMPA (g_E) + NMDA when available.
     Inhibitory denominator = GABA-A (g_I) + GABA-B when available.
     GABA-A and GABA-B are also returned separately for the §1.2 ratio check.
     """
     if (
-        rec.config.mode != "full"
-        or rec._g_exc_samples is None
-        or rec._g_inh_samples is None
+        rec._g_exc_samples is None or
+        rec._g_inh_samples is None
     ):
         return np.nan, np.nan, np.nan, np.nan, np.nan
 

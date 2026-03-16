@@ -142,7 +142,7 @@ def _check_isi_and_fano(
                             f"— mild irregularity; check climbing-fibre ratio"
                         )))
 
-        # CV₂ local irregularity check (full mode only)
+        # CV₂ local irregularity check
         if not np.isnan(ps.isi_cv2) and ps.total_spikes >= 6:
             if ps.isi_cv2 < config.isi_cv2_low_threshold:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
@@ -158,11 +158,9 @@ def _check_isi_and_fano(
                         f"CV₂={ps.isi_cv2:.2f} — locally bursty discharge pattern"
                     )))
 
-        # Fano Factor variability check (mode-dependent semantics and thresholds).
-        # Full mode  → per_neuron_ff: independent of between-neuron synchrony; Poisson ≈ 1.
-        # Stats mode → population_ff: scales as 1 + (N−1)·ρ; healthy AI-state FF ≈ 1 + (N−1)·0.01.
+        # Fano Factor variability check.
+        # per_neuron_ff: independent of between-neuron synchrony; Poisson ≈ 1.
         _ff_per = ps.per_neuron_ff
-        _ff_pop = ps.population_ff
         if not np.isnan(_ff_per) and ps.total_spikes >= 10:
             if _ff_per > 3.0:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
@@ -177,24 +175,6 @@ def _check_isi_and_fano(
                         f"Low Fano Factor: {rn}:{pn}  per-neuron FF={_ff_per:.2f} "
                         f"(Poisson≈1.0) — rigid pacemaker-like regularity; "
                         f"possible strong inhibitory entrainment"
-                    )))
-        if not np.isnan(_ff_pop) and ps.total_spikes >= 10:
-            # Threshold: warn when implied mean pairwise correlation > 10 %.
-            # FF_pop = 1 + (N−1)·ρ  →  threshold at ρ = 0.10.
-            n = max(1, ps.n_neurons)
-            ff_pop_high = max(3.0, 1.0 + (n - 1) * 0.10)
-            if _ff_pop > ff_pop_high:
-                issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
-                    message=(
-                        f"High population Fano Factor: {rn}:{pn}  population FF={_ff_pop:.2f} "
-                        f"(threshold {ff_pop_high:.1f} for N={n}, implies >10%% pairwise synchrony) — "
-                        f"check for synchronous population bursting"
-                    )))
-            elif _ff_pop < 0.3:
-                issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
-                    message=(
-                        f"Low population Fano Factor: {rn}:{pn}  population FF={_ff_pop:.2f} "
-                        f"— rigid pacemaker-like regularity at population level"
                     )))
 
         # Refractory period violation check — ISI < 2 ms is a spike-reset bug.
@@ -218,8 +198,13 @@ def _check_adaptation(
     for (rn, pn), ps in pop_stats.items():
         pop_key = f"{rn}:{pn}"
 
-        # SFA index check
-        if not np.isnan(ps.sfa_index) and ps.total_spikes >= 10:
+        # SFA index check.
+        # Require ≥ 30 spikes AND mean_fr_hz ≥ 5 Hz.  At low firing rates the
+        # ISI exceeds tau_adapt, so adaptation decays between spikes and SFA ≈ 1
+        # regardless of adapt_increment — the measurement is unreliable below
+        # 5 Hz in a 3-second simulation (< 15 spikes per neuron = only 2-3 ISI
+        # pairs to compare, too noisy).
+        if not np.isnan(ps.sfa_index) and ps.total_spikes >= 30 and ps.mean_fr_hz >= 5.0:
             _adaptation_exp = adaptation_expected_for(rn, pn)
             if _adaptation_exp is True and ps.sfa_index < 1.30:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
@@ -248,7 +233,7 @@ def _check_adaptation(
                     )))
 
         # SFA time-constant (τ) plausibility check
-        if not np.isnan(ps.sfa_tau_ms) and ps.total_spikes >= 20:
+        if not np.isnan(ps.sfa_tau_ms) and ps.total_spikes >= 30 and ps.mean_fr_hz >= 5.0:
             _adaptation_exp = adaptation_expected_for(rn, pn)
             if _adaptation_exp is True:
                 if ps.sfa_tau_ms < 20.0:
@@ -362,7 +347,7 @@ def _check_synchrony_and_state(
                         f"(>{config.fr_heterogeneity_high}) \u2014 extreme spike concentration in a minority of neurons"
                     )))
 
-        # Up/Down state detection (bimodality coefficient, full mode)
+        # Up/Down state detection (bimodality coefficient)
         if not np.isnan(ps.voltage_bimodality) and ps.voltage_bimodality > config.voltage_bimodality_threshold:
             _updown_region = matches_any(rn, UPDOWN_STATE_TAGS)
             if _updown_region:
@@ -373,27 +358,32 @@ def _check_synchrony_and_state(
                         f"up/down slow oscillations"
                     )))
             ud, dd = ps.up_state_duration_ms, ps.down_state_duration_ms
-            if not np.isnan(ud) and ud > 700.0:
-                issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
-                    message=(
-                        f"Prolonged up state: {rn}:{pn}  up_dur={ud:.0f} ms "
-                        f"(> 700 ms) \u2014 may indicate insufficient after-hyperpolarisation "
-                        f"or K\u207a channel blockade; healthy NREM up states: 300\u2013500 ms "
-                        f"(Steriade et al. 2001)"
-                    )))
-            elif not np.isnan(ud) and ud < 200.0:
-                issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
-                    message=(
-                        f"Up/Down timing: {rn}:{pn}  up_dur={ud:.0f} ms "
-                        f"(expected 200\u2013700 ms, Steriade et al. 2001)"
-                    )))
-            if not np.isnan(dd) and not (200.0 <= dd <= 700.0):
+            # Up/Down timing checks are only meaningful for regions where slow
+            # oscillations are biologically expected.  Durations < 20 ms are
+            # computational artefacts (oscillation-driven voltage fluctuations
+            # misclassified as state transitions) and are suppressed entirely.
+            if _updown_region and not np.isnan(ud) and ud > 20.0:
+                if ud > 700.0:
+                    issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
+                        message=(
+                            f"Prolonged up state: {rn}:{pn}  up_dur={ud:.0f} ms "
+                            f"(> 700 ms) \u2014 may indicate insufficient after-hyperpolarisation "
+                            f"or K\u207a channel blockade; healthy NREM up states: 300\u2013500 ms "
+                            f"(Steriade et al. 2001)"
+                        )))
+                elif ud < 200.0:
+                    issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
+                        message=(
+                            f"Up/Down timing: {rn}:{pn}  up_dur={ud:.0f} ms "
+                            f"(expected 200\u2013700 ms, Steriade et al. 2001)"
+                        )))
+            if _updown_region and not np.isnan(dd) and dd > 20.0 and not (200.0 <= dd <= 700.0):
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Up/Down timing: {rn}:{pn}  down_dur={dd:.0f} ms "
                         f"(expected 200\u2013700 ms, Steriade et al. 2001)"
                     )))
-            if not np.isnan(ud) and not np.isnan(dd) and dd > 0.0:
+            if _updown_region and not np.isnan(ud) and not np.isnan(dd) and dd > 20.0 and ud > 20.0:
                 ud_ratio = ud / dd
                 if ud_ratio > 4.0:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,

@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 import threading
 import warnings
-from typing import TYPE_CHECKING, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Tuple
 
 import torch
 
@@ -30,7 +30,8 @@ from thalia.brain.regions.population_names import ThalamusPopulation
 from thalia.typing import SynapseId, SynapticInput
 
 if TYPE_CHECKING:
-    from thalia.brain import Brain
+    from thalia.brain import Brain, NeuralRegion
+    from thalia.brain.configs import NeuralRegionConfig
 
 
 # Emitted at most once per process to avoid per-timestep noise.
@@ -46,8 +47,8 @@ _WARNED_NO_EXTERNAL_INPUT: bool = False
 
 
 def _get_relay_context(
-    brain: "Brain",
-) -> "Optional[tuple]":
+    brain: Brain,
+) -> Optional[Tuple[NeuralRegion[NeuralRegionConfig], int, torch.device]]:
     """Return ``(thalamus, relay_size, device)`` for relay spike construction.
 
     Returns ``None`` when no thalamus region is registered, allowing callers to

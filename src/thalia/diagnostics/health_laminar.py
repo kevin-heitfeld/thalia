@@ -36,11 +36,8 @@ def check_laminar_cascade(
       before or simultaneously with L4, suggesting runaway recurrent excitation
       or a missing L4 → L2/3 → L5 relay.
 
-    Full mode only.  Issues are not raised when latency data is absent (stats
-    mode, no thalamic volleys detected, or layer populations not present).
-
-    References: Thomson & Bannister 2003 *Cereb Cortex*;
-                Sakata & Harris 2009 *Neuron*.
+    Issues are not raised when latency data is absent (no thalamic volleys detected,
+    or layer populations not present).
     """
     for rn, lats in oscillations.laminar_cascade_latencies.items():
         l4  = lats.get("l4_lat_ms",  float("nan"))

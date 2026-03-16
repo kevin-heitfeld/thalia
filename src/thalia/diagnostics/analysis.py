@@ -210,7 +210,6 @@ def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
         simulation_time_ms=T * rec.dt_ms,
         n_timesteps=T,
         transient_steps=t0,
-        mode=rec.config.mode,
         regions=region_stats,
         oscillations=oscillations,
         connectivity=connectivity,
@@ -233,18 +232,17 @@ def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
             nm_levels[key] = rec._nm_concentration_history[:n_steps, nm_idx].copy()
         report.neuromodulator_levels = nm_levels
 
-    if rec.config.mode == "full":
-        assert rec._voltages is not None
-        assert rec._g_exc_samples is not None
-        assert rec._g_inh_samples is not None
-        report.raw_voltages = rec._voltages[:T].copy()
-        report.voltage_sample_times_ms = np.arange(T, dtype=np.float32) * rec.dt_ms
-        if rec._cond_sample_step > 0:
-            ci = rec.config.conductance_sample_interval_steps
-            report.conductance_sample_times_ms = (
-                np.arange(0, T, ci, dtype=np.float32) * rec.dt_ms
-            )[: rec._cond_sample_step]
-            report.raw_g_exc = rec._g_exc_samples[: rec._cond_sample_step].copy()
-            report.raw_g_inh = rec._g_inh_samples[: rec._cond_sample_step].copy()
+    assert rec._voltages is not None
+    assert rec._g_exc_samples is not None
+    assert rec._g_inh_samples is not None
+    report.raw_voltages = rec._voltages[:T].copy()
+    report.voltage_sample_times_ms = np.arange(T, dtype=np.float32) * rec.dt_ms
+    if rec._cond_sample_step > 0:
+        ci = rec.config.conductance_sample_interval_steps
+        report.conductance_sample_times_ms = (
+            np.arange(0, T, ci, dtype=np.float32) * rec.dt_ms
+        )[: rec._cond_sample_step]
+        report.raw_g_exc = rec._g_exc_samples[: rec._cond_sample_step].copy()
+        report.raw_g_inh = rec._g_inh_samples[: rec._cond_sample_step].copy()
 
     return report

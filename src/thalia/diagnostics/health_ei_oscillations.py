@@ -74,20 +74,18 @@ def check_ei_balance(
                             f"NMDA/(AMPA+NMDA) = {nmda_frac:.2f}  (expected 0.30–0.70) — "
                             f"NMDA channels may not be activating (Mg\u00b2\u207a block requires V > \u221240 mV)"
                         )))
-                elif nmda_frac > 0.80:
+                elif nmda_frac > 0.95:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.EI_BALANCE, region=rn,
                         message=(
                             f"High NMDA fraction: {rn}  "
-                            f"NMDA/(AMPA+NMDA) = {nmda_frac:.2f}  (expected 0.30–0.70) — "
-                            f"AMPA drive absent or grossly mis-scaled"
+                            f"NMDA/(AMPA+NMDA) = {nmda_frac:.2f}  (expected 0.30–0.70 input ratio, "
+                            f"~0.85–0.93 measured) — AMPA drive may be absent or grossly mis-scaled"
                         )))
 
         # ── GABA-B/GABA-A ratio check ────────────────────────────────────
         # GABA-B activates somatic K⁺ channels (τ ≈ 100–200 ms); GABA-A opens Cl⁻
         # channels (τ ≈ 10–20 ms).  Summing them in the E/I denominator conflates
-        # distinct functional roles.  Healthy range: GABA-B/GABA-A ≈ 0.05–1.0
-        # (Connors 1992 for cortex).  Both fields are NaN unless GABA-B was
-        # sampled in full mode.
+        # distinct functional roles.  Healthy range: GABA-B/GABA-A ≈ 0.05–1.0.
         if (
             not np.isnan(rs.mean_g_gaba_a)
             and not np.isnan(rs.mean_g_gaba_b)

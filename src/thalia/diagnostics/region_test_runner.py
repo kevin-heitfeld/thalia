@@ -401,8 +401,7 @@ class RegionTestRunner:
             )
 
         if recorder is not None:
-            if recorder.config.mode == "full":
-                recorder._build_spike_times()
+            recorder._build_spike_times()
             diag_report = analyze(recorder)
         else:
             diag_report = None

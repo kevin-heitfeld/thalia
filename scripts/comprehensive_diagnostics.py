@@ -19,19 +19,19 @@ from thalia.brain import BrainBuilder
 from thalia.diagnostics import (
     DiagnosticsConfig,
     DiagnosticsRecorder,
-    SENSORY_PATTERNS,
     print_brain_config,
     print_neuron_populations,
     print_synaptic_weights,
+    run_single,
     run_sweep,
-    run_triage,
+    DEFAULT_SWEEP_PATTERNS,
+    SENSORY_PATTERNS,
 )
-from thalia.diagnostics.sweep import run_single, DEFAULT_SWEEP_PATTERNS
 
 from scripts.compare_runs import compare
 from scripts.tee_writer import TeeWriter
 
-# ── Configure line buffering so progress prints appear immediately ─────────────
+# Configure line buffering so progress prints appear immediately
 sys.stdout.reconfigure(line_buffering=True)
 
 
@@ -49,7 +49,6 @@ def _run(args: argparse.Namespace, output_dir: str) -> None:
     print(f"\n  Run parameters:")
     print(f"    timesteps           : {args.timesteps}")
     print(f"    input-pattern       : {args.input_pattern}")
-    print(f"    mode                : {args.mode}")
     print(f"    output-dir          : {output_dir}")
     print(f"    plots               : {'no' if args.no_plots else 'yes'}")
     print(f"    sweep               : {args.sweep}")
@@ -87,7 +86,6 @@ def _run(args: argparse.Namespace, output_dir: str) -> None:
         config=DiagnosticsConfig(
             n_timesteps=args.timesteps,
             dt_ms=brain.dt_ms,
-            mode=args.mode,
             voltage_sample_size=args.voltage_sample_size,
             conductance_sample_size=args.conductance_sample_size,
             conductance_sample_interval_steps=args.conductance_sample_interval,
@@ -136,7 +134,6 @@ def _run(args: argparse.Namespace, output_dir: str) -> None:
             patterns=_sweep_patterns,
             no_plots=args.no_plots,
             report_interval=_sweep_report_interval,
-            triage_fn=run_triage if args.triage else None,
         )
         print(f"\n{'═'*80}\nDONE (sweep)\n{'═'*80}\n")
         return
@@ -145,7 +142,7 @@ def _run(args: argparse.Namespace, output_dir: str) -> None:
     print(f"\n{'═'*80}")
     print(
         f"RUNNING {args.timesteps} TIMESTEPS"
-        f"  input={args.input_pattern!r}  mode={args.mode!r}"
+        f"  input={args.input_pattern!r}"
     )
     print(f"{'═'*80}\n")
 
@@ -157,7 +154,6 @@ def _run(args: argparse.Namespace, output_dir: str) -> None:
         brain, recorder, args.input_pattern, args.timesteps, output_dir,
         report_interval=_single_report_interval,
         no_plots=args.no_plots,
-        triage_fn=run_triage if args.triage else None,
     )
     print_synaptic_weights(brain, heading="FINAL SYNAPTIC WEIGHTS")
 
@@ -232,15 +228,6 @@ def parse_args() -> argparse.Namespace:
 
     # Run configuration
     parser.add_argument(
-        "--mode", type=str, default="full",
-        choices=["full", "stats"],
-        help=(
-            "'full' records spike times, voltages, and conductances. "
-            "'stats' records only spike counts and gains (lighter, suitable "
-            "for long training-loop checks)."
-        ),
-    )
-    parser.add_argument(
         "--timesteps", type=int, default=1500,
         help="Number of simulation timesteps (1 step = dt_ms).",
     )
@@ -284,7 +271,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--voltage-sample-size", type=int, default=20,
         help=(
-            "Number of neurons sampled per population for voltage recording (full mode). "
+            "Number of neurons sampled per population for voltage recording. "
             "Increase for larger populations (>50 neurons) to get reliable per-neuron "
             "ISI and bimodality statistics.  Each extra neuron costs one float tensor "
             "row per timestep."
@@ -293,7 +280,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--conductance-sample-size", type=int, default=8,
         help=(
-            "Number of neurons sampled per population for conductance recording (full mode). "
+            "Number of neurons sampled per population for conductance recording. "
             "Increase alongside --voltage-sample-size for E/I-ratio accuracy."
         ),
     )
@@ -309,24 +296,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--conductance-sample-interval", type=int, default=1,
         help=(
-            "How often (every N timesteps) to snapshot conductance values in full mode. "
+            "How often (every N timesteps) to snapshot conductance values. "
             "1 samples every timestep (highest fidelity, highest memory). "
             "Increase to 5 or 10 for long runs (>5000 timesteps) with large brains "
             "to avoid excessive memory usage. The E/I ratio is computed as the mean "
             "over all samples taken."
-        ),
-    )
-
-    # Automatic failure triage
-    parser.add_argument(
-        "--triage", action="store_true",
-        help=(
-            "After the main diagnostic run, automatically isolate every CRITICAL-SILENT "
-            "region in a RegionTestRunner (single region, Poisson drive at 15 Hz) and "
-            "print its per-population firing rates.  This makes it immediately clear "
-            "whether silence is intrinsic to the region (still silent in isolation) or "
-            "caused by missing upstream drive in the full-brain context.  Ignored in "
-            "--sweep mode."
         ),
     )
 

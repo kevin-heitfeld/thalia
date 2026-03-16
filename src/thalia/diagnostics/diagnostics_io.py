@@ -100,8 +100,6 @@ def _print_region_section(report: DiagnosticsReport, detailed: bool) -> None:
                 ff_str = ""
                 if not np.isnan(ps.per_neuron_ff):
                     ff_str = f"  FF={ps.per_neuron_ff:.2f}"
-                elif not np.isnan(ps.population_ff):
-                    ff_str = f"  popFF={ps.population_ff:.2f}"
                 refrac_str = ""
                 if not np.isnan(ps.fraction_refractory_violations) and ps.fraction_refractory_violations > 0:
                     refrac_str = f"  \u26d4refrac={ps.fraction_refractory_violations * 100:.1f}%"
@@ -314,7 +312,6 @@ def print_report(report: DiagnosticsReport, detailed: bool = True) -> None:
     print("THALIA BRAIN DIAGNOSTICS REPORT")
     print(_sep())
     print(f"  Simulation time : {report.simulation_time_ms:.0f} ms  ({report.n_timesteps} timesteps)")
-    print(f"  Mode            : {report.mode}")
     print(f"  Regions         : {len(report.regions)}")
     n_total = sum(len(r.populations) for r in report.regions.values())
     print(f"  Populations     : {n_total}")
@@ -393,7 +390,7 @@ def save_snapshot(snapshot: RecorderSnapshot, path: str) -> None:
     for i, idx in enumerate(snapshot._c_sample_idx):
         arrays[f"_c_idx_{i}"] = idx
 
-    # ── Spike times (full mode) ─────────────────────────────────────────
+    # ── Spike times ─────────────────────────────────────────
     # Stored as flat (nidx, ts) pairs per population.
     for pop_idx, key in enumerate(snapshot._pop_keys):
         if key in snapshot._spike_times:
@@ -414,22 +411,21 @@ def save_snapshot(snapshot: RecorderSnapshot, path: str) -> None:
     arrays["_stp_efficacy_history"]  = snapshot._stp_efficacy_history[:n_gs]
     arrays["_nm_concentration_history"] = snapshot._nm_concentration_history[:n_gs]
 
-    # ── Full-mode state buffers ─────────────────────────────────────────
-    if snapshot.config.mode == "full":
-        if snapshot._voltages is not None:
-            arrays["_voltages"] = snapshot._voltages[: snapshot._n_recorded]
-        n_cs = snapshot._cond_sample_step
-        if n_cs > 0:
-            if snapshot._g_exc_samples is not None:
-                arrays["_g_exc_samples"]    = snapshot._g_exc_samples[:n_cs]
-            if snapshot._g_inh_samples is not None:
-                arrays["_g_inh_samples"]    = snapshot._g_inh_samples[:n_cs]
-            if snapshot._g_nmda_samples is not None:
-                arrays["_g_nmda_samples"]   = snapshot._g_nmda_samples[:n_cs]
-            if snapshot._g_gaba_b_samples is not None:
-                arrays["_g_gaba_b_samples"] = snapshot._g_gaba_b_samples[:n_cs]
-            if snapshot._g_apical_samples is not None:
-                arrays["_g_apical_samples"] = snapshot._g_apical_samples[:n_cs]
+    # ── State buffers ─────────────────────────────────────────
+    if snapshot._voltages is not None:
+        arrays["_voltages"] = snapshot._voltages[: snapshot._n_recorded]
+    n_cs = snapshot._cond_sample_step
+    if n_cs > 0:
+        if snapshot._g_exc_samples is not None:
+            arrays["_g_exc_samples"]    = snapshot._g_exc_samples[:n_cs]
+        if snapshot._g_inh_samples is not None:
+            arrays["_g_inh_samples"]    = snapshot._g_inh_samples[:n_cs]
+        if snapshot._g_nmda_samples is not None:
+            arrays["_g_nmda_samples"]   = snapshot._g_nmda_samples[:n_cs]
+        if snapshot._g_gaba_b_samples is not None:
+            arrays["_g_gaba_b_samples"] = snapshot._g_gaba_b_samples[:n_cs]
+        if snapshot._g_apical_samples is not None:
+            arrays["_g_apical_samples"] = snapshot._g_apical_samples[:n_cs]
 
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     np.savez_compressed(path, **arrays)
@@ -565,7 +561,7 @@ def load_snapshot(path: str) -> RecorderSnapshot:
     stp_efficacy_history: np.ndarray = data["_stp_efficacy_history"]
     nm_concentration_history: np.ndarray = data["_nm_concentration_history"]
 
-    # ── Full-mode state buffers ───────────────────────────────────────────
+    # ── State buffers ─────────────────────────────────────────
     voltages: Optional[np.ndarray] = (
         data["_voltages"] if "_voltages" in data else None
     )
@@ -655,7 +651,6 @@ def save_report(report: DiagnosticsReport, output_dir: str) -> None:
         "timestamp": report.timestamp,
         "simulation_time_ms": report.simulation_time_ms,
         "n_timesteps": report.n_timesteps,
-        "mode": report.mode,
         "is_healthy": report.health.is_healthy,
         "stability_score": _clean(report.health.stability_score),
         "critical_issues": report.health.critical_issues,

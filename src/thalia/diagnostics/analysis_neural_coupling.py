@@ -48,7 +48,7 @@ def compute_plv_theta_per_region(
 ) -> Tuple[Dict[str, float], Dict[str, bool]]:
     """Compute spike–theta PLV for CA1 pyramidal cells in each hippocampal region.
 
-    Full mode only; returns empty dicts in stats mode or when < 500 ms simulated.
+    Returns empty dicts when < 500 ms simulated.
 
     Reference signal for theta-phase extraction:
     The theta rhythm is driven by the medial septum (MS) GABAergic pacemaker.
@@ -63,7 +63,7 @@ def compute_plv_theta_per_region(
     """
     plv_theta: Dict[str, float] = {}
     plv_theta_used_fallback: Dict[str, bool] = {}
-    if rec.config.mode != "full" or T * rec.dt_ms < 500.0:
+    if T * rec.dt_ms < 500.0:
         return plv_theta, plv_theta_used_fallback
     fs_plv = 1000.0 / rec.dt_ms
     nyq_plv = fs_plv / 2.0
@@ -304,7 +304,7 @@ def compute_cerebellar_metrics(
             i for i, (r, p) in enumerate(rec._pop_keys)
             if r == rn_cb and "inferior_olive" in p.lower()
         ]
-        if io_idx and rec.config.mode == "full":
+        if io_idx:
             bin_steps_io = max(1, int(200.0 / rec.dt_ms))
             n_bins_io = T // bin_steps_io
             if n_bins_io >= 4 and len(io_idx) >= 2:
@@ -539,7 +539,7 @@ def compute_relay_burst_mode(
     1992).  A significant fraction (≥ 5 %) indicates active burst mode;
     near-zero indicates tonic Poisson-like firing.
 
-    Full mode only — requires per-neuron spike times from ``rec._spike_times``.
+    Requires per-neuron spike times from ``rec._spike_times``.
     Returns an empty dict when spike time data is unavailable.
 
     Returns:
@@ -743,7 +743,7 @@ def compute_laminar_cascade(
     Expected latency order (Thomson & Bannister 2003; Sakata & Harris 2009):
         L4 < L2/3 < L5
 
-    Full mode only — requires per-neuron spike times in ``rec._spike_times``.
+    Requires per-neuron spike times in ``rec._spike_times``.
     Returns an empty dict when spike time data or thalamic volleys are absent.
 
     Returns

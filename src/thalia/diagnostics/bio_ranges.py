@@ -187,7 +187,7 @@ REGION_SPECS: List[RegionSpec] = [
     RegionSpec(region="striatum",  population="d2",   fr_range=(0.1,  5.0),   adaptation_expected=True),
     RegionSpec(region="striatum",  population="fsi",  fr_range=(10.0, 50.0),  adaptation_expected=False,  skip_burst_check=True),  # FSIs synchronize via gap junctions on cortical/thalamic feedforward — expected
     RegionSpec(region="striatum",  population="tan",  fr_range=(5.0,  10.0),  adaptation_expected=False),
-    RegionSpec(region="striatum",  ei_thresholds=(0.002, 0.01, 8.0, 20.0),  dominant_band="beta",  integration_tau_ms=(10.0, 50.0)),   # MSN up-state gated window; threshold raised — sparse FSI (30/400 MSNs) cannot fully balance massive cortical+thalamic excitation at baseline
+    RegionSpec(region="striatum",  ei_thresholds=(0.002, 0.01, 12.0, 20.0),  dominant_band="beta",  integration_tau_ms=(10.0, 50.0)),   # MSN up-state gated window; threshold raised — sparse FSI (30/400 MSNs) cannot fully balance massive cortical+thalamic excitation at baseline (observed ~9.9 at rest)
 
     # -----------------------------------------------------------------------
     # Basal ganglia

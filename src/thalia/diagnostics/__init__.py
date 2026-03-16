@@ -73,14 +73,11 @@ from .stp_calculator import (
 from .sweep import (
     run_single,
     run_sweep,
-)
-from .triage import (
-    run_triage,
+    DEFAULT_SWEEP_PATTERNS,
 )
 
 __all__ = [
     # Biological reference data
-    "REGION_SPECS",
     "RegionSpec",
     "EEG_BANDS",
     "bio_range",
@@ -100,9 +97,9 @@ __all__ = [
     "RegionStats",
     # I/O helpers (report-only, no live brain state needed)
     "print_report",
+    "save_report",
     "save_snapshot",
     "load_snapshot",
-    "save_report",
     # Brain summary helpers
     "print_brain_config",
     "print_neuron_populations",
@@ -126,8 +123,7 @@ __all__ = [
     # Sweep mode
     "run_single",
     "run_sweep",
-    # Triage
-    "run_triage",
+    "DEFAULT_SWEEP_PATTERNS",
     # STP equilibrium calculator
     "STPResult",
     "stp_eq",

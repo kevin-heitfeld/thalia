@@ -248,7 +248,7 @@ def _connect_ec_to_hpc(
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=1.15,
-            fraction_of_drive=0.20,
+            fraction_of_drive=0.30,
         ),
         stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
     )

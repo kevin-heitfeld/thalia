@@ -29,7 +29,7 @@ def compute_connectivity_stats(rec: RecorderSnapshot, T: int) -> ConnectivitySta
         # Also scan the anti-causal (negative-lag) window to detect reversed connections.
         measured_delay_ms = np.nan
         anticausal_peak_ms = np.nan
-        if rec.config.mode == "full" and is_functional:
+        if is_functional:
             tgt_key = (synapse_id.target_region, synapse_id.target_population)
             tgt_idx = rec._pop_index.get(tgt_key)
             if tgt_idx is not None:

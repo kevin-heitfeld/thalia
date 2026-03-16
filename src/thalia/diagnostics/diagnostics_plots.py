@@ -252,9 +252,7 @@ def _unhealthiness(ps: PopulationStats) -> float:
     return score
 
 
-def _rank_populations_by_health(
-    report: DiagnosticsReport,
-) -> List[Tuple[str, str]]:
+def _rank_populations_by_health(report: DiagnosticsReport) -> List[Tuple[str, str]]:
     """Return all (region_name, pop_name) pairs sorted by unhealthiness descending.
 
     Unhealthy populations come first; ties broken by total spikes (more active first).
@@ -267,9 +265,7 @@ def _rank_populations_by_health(
     return [(rn, pn) for _, _, rn, pn in items]
 
 
-def _rank_regions_by_health(
-    report: DiagnosticsReport,
-) -> List[str]:
+def _rank_regions_by_health(report: DiagnosticsReport) -> List[str]:
     """Return region names sorted by worst population unhealthiness descending."""
     region_scores: Dict[str, float] = {}
     for rs in report.regions.values():
@@ -284,9 +280,9 @@ def _rank_regions_by_health(
 
 
 def plot_firing_rates(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """01 — Horizontal bar chart of mean firing rates per population."""
+    """Horizontal bar chart of mean firing rates per population."""
     fig, ax = plt.subplots(figsize=(cfg.timeline_width, min(cfg.max_fig_height, max(6, rec._n_pops * cfg.height_per_pop))))
     labels, values, colors = [], [], []
     for rn, rs in report.regions.items():
@@ -308,9 +304,9 @@ def plot_firing_rates(
 
 
 def plot_population_heatmap(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """02 — Population firing-rate heatmap over time."""
+    """Population firing-rate heatmap over time."""
     if report.pop_rate_binned is None:
         return
     pop_keys = rec._pop_keys
@@ -341,9 +337,9 @@ def plot_population_heatmap(
 
 
 def plot_region_spectra(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """03 — Per-region normalised band-power bar charts."""
+    """Per-region normalised band-power bar charts."""
     osc = report.oscillations
     n_plots = len(report.region_keys or [])
     if n_plots == 0:
@@ -376,9 +372,9 @@ def plot_region_spectra(
 
 
 def plot_coherence(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """04 / 04b / 04c — Cross-regional coherence matrices (theta, beta, gamma)."""
+    """Cross-regional coherence matrices (theta, beta, gamma)."""
     osc = report.oscillations
     n_r = len(osc.region_order)
     for band_label, coh_mat, fname in [
@@ -403,11 +399,9 @@ def plot_coherence(
 
 
 def plot_isi_distributions(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """05 — ISI histograms for a selection of key populations (full mode only)."""
-    if rec.config.mode != "full":
-        return
+    """ISI histograms for a selection of key populations."""
     # Prioritise unhealthy populations; only include those with spike time data.
     ranked = _rank_populations_by_health(report)
     key_pops = [(rn, pn) for rn, pn in ranked if (rn, pn) in rec._spike_times][:12]
@@ -443,9 +437,9 @@ def plot_isi_distributions(
 
 
 def plot_homeostatic_gains(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """06 — Homeostatic gain trajectories over time."""
+    """Homeostatic gain trajectories over time."""
     hs = report.homeostasis
     if not hs.gain_trajectories or len(hs.gain_sample_times_ms) <= 1:
         return
@@ -472,9 +466,9 @@ def plot_homeostatic_gains(
 
 
 def plot_stp_efficacy(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """06b — STP efficacy (x·u) trajectories per synapse over time."""
+    """STP efficacy (x·u) trajectories per synapse over time."""
     hs_stp = report.homeostasis.stp_efficacy_history
     if not hs_stp or len(report.homeostasis.gain_sample_times_ms) <= 1:
         return
@@ -500,10 +494,10 @@ def plot_stp_efficacy(
 
 
 def plot_voltage_traces(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """07 — Sample neuron voltage traces for key populations (full mode only)."""
-    if rec.config.mode != "full" or report.raw_voltages is None:
+    """Sample neuron voltage traces for key populations."""
+    if report.raw_voltages is None:
         return
 
     # Prioritise unhealthy populations; only include those with voltage data.
@@ -544,10 +538,10 @@ def plot_voltage_traces(
 
 
 def plot_spike_raster(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """08 — Spike raster plots for key regions (full mode only)."""
-    if rec.config.mode != "full" or not rec._spike_times:
+    """Spike raster plots for key regions."""
+    if not rec._spike_times:
         return
     # Prioritise regions with the unhealthiest populations.
     ranked_regions = _rank_regions_by_health(report)
@@ -601,10 +595,9 @@ def plot_spike_raster(
 def plot_ei_phase_portrait(
     rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
 ) -> None:
-    """09 — E/I conductance phase portraits for key populations (full mode only)."""
+    """E/I conductance phase portraits for key populations."""
     if (
-        rec.config.mode != "full"
-        or rec._g_exc_samples is None
+        rec._g_exc_samples is None
         or rec._g_inh_samples is None
     ):
         return
@@ -644,9 +637,9 @@ def plot_ei_phase_portrait(
 
 
 def plot_spectrograms(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """10 — Time-frequency spectrograms of population rates per region."""
+    """Time-frequency spectrograms of population rates per region."""
     n_steps = rec._n_recorded or rec.config.n_timesteps
     if n_steps <= 0 or rec._n_regions <= 0:
         return
@@ -701,9 +694,9 @@ def plot_spectrograms(
 
 
 def plot_neuromodulator_conc(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """11 — Neuromodulator receptor concentration trajectories over time."""
+    """Neuromodulator receptor concentration trajectories over time."""
     if not report.neuromodulator_levels:
         return
     t_ms = report.homeostasis.gain_sample_times_ms
@@ -738,12 +731,11 @@ def plot_neuromodulator_conc(
 
 
 def plot_apical_basal_conductance(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """12 — Apical vs. basal AMPA conductance per population (full mode, TwoCompartmentLIF only)."""
+    """Apical vs. basal AMPA conductance per population (TwoCompartmentLIF only)."""
     if (
-        rec.config.mode != "full"
-        or rec._g_apical_samples is None
+        rec._g_apical_samples is None
         or rec._g_exc_samples is None
         or rec._cond_sample_step == 0
     ):
@@ -788,10 +780,10 @@ def plot_apical_basal_conductance(
 
 
 def plot_voltage_distributions(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """13 — Per-population voltage distributions as violin plots (full mode only)."""
-    if rec.config.mode != "full" or report.raw_voltages is None:
+    """Per-population voltage distributions as violin plots."""
+    if report.raw_voltages is None:
         return
 
     pops_with_data: List[Tuple[str, str, int]] = []
@@ -844,9 +836,9 @@ def plot_voltage_distributions(
 
 
 def plot_neuromodulator_conc_by_region(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """14 — Neuromodulator receptor concentrations grouped by brain region."""
+    """Neuromodulator receptor concentrations grouped by brain region."""
     if not report.neuromodulator_levels:
         return
     t_ms = report.homeostasis.gain_sample_times_ms
@@ -900,22 +892,14 @@ def plot_neuromodulator_conc_by_region(
     print(f"  ✓ 14_neuromodulator_conc_by_region.png")
 
 
-# =============================================================================
-# 15 — FANO FACTOR SCALING
-# =============================================================================
-
-
 def plot_fano_scaling(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """15 — Fano factor vs bin width for top populations (full mode only).
+    """Fano factor vs bin width for top populations.
 
     A Poisson process yields FF=1 at all time scales (shown as dashed reference).
     Bursty or correlated activity shows FF increasing with bin width.
     """
-    if rec.config.mode != "full":
-        return
-
     # Collect populations with non-empty fano_scaling
     entries: list[tuple[str, str, list[tuple[float, float]]]] = []
     for rs in report.regions.values():
@@ -963,22 +947,14 @@ def plot_fano_scaling(
     print(f"  ✓ 15_fano_scaling.png")
 
 
-# =============================================================================
-# 16 — PAIRWISE CORRELATION HISTOGRAM
-# =============================================================================
-
-
 def plot_correlation_distribution(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """16 — Histogram of pairwise correlation coefficients (full mode only).
+    """Histogram of pairwise correlation coefficients.
 
     A healthy AI-state network should show a distribution peaked near zero.
     Epileptiform activity shifts the distribution toward positive values.
     """
-    if rec.config.mode != "full":
-        return
-
     # Collect populations with non-empty distributions
     entries: list[tuple[str, str, np.ndarray]] = []
     for rs in report.regions.values():
@@ -1025,22 +1001,14 @@ def plot_correlation_distribution(
     print(f"  ✓ 16_correlation_distribution.png")
 
 
-# =============================================================================
-# 17 — E/I LAG CROSS-CORRELATION
-# =============================================================================
-
-
 def plot_ei_lag(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """17 — E/I conductance lag per region as a bar chart (full mode only).
+    """E/I conductance lag per region as a bar chart.
 
     Shows the lag in ms at which the cross-correlation between excitatory and
     inhibitory conductance peaks, along with the peak correlation value.
     """
-    if rec.config.mode != "full":
-        return
-
     # Collect regions with valid E/I lag data
     regions: list[tuple[str, float, float]] = []
     for rn, rs in report.regions.items():
@@ -1081,22 +1049,14 @@ def plot_ei_lag(
     print(f"  ✓ 17_ei_lag.png")
 
 
-# =============================================================================
-# 18 — EFFECTIVE SYNAPTIC GAIN
-# =============================================================================
-
-
 def plot_effective_synaptic_gain(
-    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig
+    rec: RecorderSnapshot, report: DiagnosticsReport, output_dir: str, cfg: PlotConfig,
 ) -> None:
-    """18 — Effective synaptic gain per inter-region tract (full mode only).
+    """Effective synaptic gain per inter-region tract.
 
     Horizontal bar chart showing the Pearson correlation between pre- and post-
     region firing rates at the causal lag.  Healthy range is 0.05–0.60.
     """
-    if rec.config.mode != "full":
-        return
-
     gains = report.effective_synaptic_gain
     if not gains:
         return

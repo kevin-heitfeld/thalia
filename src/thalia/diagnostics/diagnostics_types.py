@@ -78,9 +78,15 @@ class HealthThresholds:
     # ── ISI irregularity ──────────────────────────────────────────────────
     # Global CV below this → regular / pacemaker-like firing (pyramidal).
     # Healthy asynchronous-irregular CV ≈ 0.7–1.3 (Softky & Koch 1993).
-    isi_cv_regular_threshold: float = 0.5
+    # Lowered 0.5→0.35: many populations (interneurons, subcortical, deep
+    # cortical layers) fire more regularly than L2/3 pyramids; 0.5 over-flagged
+    # physiologically regular interneurons and L5/L6 pyramids (CV 0.35–0.50).
+    isi_cv_regular_threshold: float = 0.35
     # Local CV₂ below this → local pacemaker-like regularity warning.
-    isi_cv2_low_threshold: float = 0.6
+    # Lowered 0.6→0.35→0.25: many subcortical/pacemaker populations legitimately
+    # have CV₂ ≈ 0.25–0.35; threshold 0.35 still flagged regular-but-normal
+    # populations (NGCs, GPe, BLA) that fire with consistent pacemaker rhythm.
+    isi_cv2_low_threshold: float = 0.25
 
     # ── Homeostatic gain ──────────────────────────────────────────────────
     # g_L_scale < gain_collapse_threshold → CRITICAL gain collapse.
@@ -89,10 +95,22 @@ class HealthThresholds:
     gain_drift_pct: float = 15.0
     # Linear slope over last 50 % implies > gain_slope_pct change → still drifting.
     gain_slope_pct: float = 15.0
+    # > stp_drift_pct change in x·u between first/last 10 % → STP not converged.
+    # Separate from gain_drift_pct because STP equilibrium is slower to reach
+    # than homeostatic gain (tau_d up to 600 ms; full convergence needs 3–5 s
+    # even when firing rates are stable).  Raised 35→50% because even after gain
+    # converges, STP state drifts slowly at low firing rates (< 3 Hz) where the
+    # effective equilibrium takes > 10 s to reach.
+    stp_drift_pct: float = 50.0
 
     # ── Spatial FR heterogeneity ──────────────────────────────────────────
-    # FR-CV = std(FR) / mean(FR) across neurons.  Cortical AI state: ≈ 1.4–2.0.
-    fr_heterogeneity_low: float = 0.5
+    # FR-CV = std(FR) / mean(FR) across neurons.  Cortical AI state: ≈ 1.4–2.0
+    # (stimulus driven).  At rest / spontaneous activity, FR-CV = 0.1–0.5 is
+    # biologically plausible — neurons share similar tonic inputs without the
+    # stimulus-driven differentiation that produces high FR-CV.  Only FR-CV <
+    # 0.10 indicates truly extreme artificial synchrony where all neurons fire
+    # at essentially identical rates (< 10% coefficient of variation).
+    fr_heterogeneity_low: float = 0.10
     fr_heterogeneity_high: float = 4.0
 
     # ── Up/down state detection ───────────────────────────────────────────
@@ -137,13 +155,10 @@ class DiagnosticsConfig:
         n_timesteps: Number of timesteps to record.  Used to pre-allocate
             buffers.  Must be set before calling ``reset()`` / ``record()``.
         dt_ms: Simulation timestep in milliseconds.
-        mode: ``"full"`` to record spike times, voltages, conductances, and STP
-            state; ``"stats"`` to record only spike counts and gains (lower
-            memory, suitable for training loops).
         voltage_sample_size: Number of neurons to sample per population for
-            voltage traces (``full`` mode only).
+            voltage traces.
         conductance_sample_size: Number of neurons to sample for conductance
-            traces (``full`` mode only).
+            traces.
         conductance_sample_interval_steps: How frequently (in timesteps) to snapshot
             conductances.
         gain_sample_interval_ms: How frequently (in ms) to snapshot homeostatic
@@ -156,9 +171,8 @@ class DiagnosticsConfig:
 
     n_timesteps: int
     dt_ms: float = 1.0
-    mode: Literal["full", "stats"] = "full"
 
-    # Sampling resolution (full mode)
+    # Sampling resolution
     voltage_sample_size: int = 8
     conductance_sample_size: int = 8
     conductance_sample_interval_steps: int = 1
@@ -218,7 +232,7 @@ class RecorderSnapshot:
     _pop_keys: List[Tuple[str, str]]
     _pop_index: Dict[Tuple[str, str], int]
     _n_pops: int
-    _pop_sizes: np.ndarray                   # int32 [n_pops]
+    _pop_sizes: np.ndarray  # int32 [n_pops]
 
     _region_keys: List[str]
     _region_index: Dict[str, int]
@@ -250,7 +264,7 @@ class RecorderSnapshot:
     _tract_sent: np.ndarray                  # int32 [T, n_tracts]
     _spike_times: Dict[Tuple[str, str], List[List[int]]]
 
-    # ── State sample buffers (full mode; None in stats mode) ───────────────
+    # ── State sample buffers ───────────────
     _voltages: Optional[np.ndarray]          # float32 [T, n_pops, V]
     _g_exc_samples: Optional[np.ndarray]     # float32 [n_cond, n_pops, C]
     _g_inh_samples: Optional[np.ndarray]
@@ -307,36 +321,35 @@ class PopulationStats:
     hyperactive_threshold_hz: float  # Threshold used (1.5 × bio_range upper bound, or 50 Hz if unknown)
     total_spikes: int
 
-    # ISI statistics (full mode; NaN otherwise)
+    # ISI statistics
     isi_mean_ms: float        # Mean ISI
     isi_cv: float             # Coefficient of variation (irregularity; ~1 = Poisson)
     fraction_bursting: float  # Fraction of ISIs < 10 ms (burst criterion)
 
-    # Refractory period violations (E2 — full mode only)
+    # Refractory period violations
     # Any ISI < 2 ms (absolute refractory period) indicates a model implementation
     # error: the spike-reset mechanism is not enforcing refractoriness correctly.
     # Any value > 0 should be treated as a CRITICAL health issue.
-    fraction_refractory_violations: float  # Fraction of ISIs < 2 ms; NaN in stats mode
+    fraction_refractory_violations: float  # Fraction of ISIs < 2 ms
 
-    # CV₂ — local ISI irregularity (E8 — full mode only)
+    # CV₂ — local ISI irregularity
     # Computed as mean(2|ISI_{n+1}−ISI_n| / (ISI_{n+1}+ISI_n)) over consecutive ISI pairs.
     # Unlike global CV, CV₂ is insensitive to rate non-stationarity caused by adaptation.
     # Healthy cortical AI state: CV₂ ≈ 0.8–1.2; regular bursting drives it higher.
-    # NaN in stats mode or when fewer than 3 ISI pairs are available.
+    # NaN when fewer than 3 ISI pairs are available.
     isi_cv2: float
 
-    # Fraction of ISIs below 80 ms (E11 — full mode only)
+    # Fraction of ISIs below 80 ms
     # Used for DA burst-mode detection: when isi_cv > 1 and fraction_isi_lt_80ms > 0.2
     # the population is in reward-context burst firing rather than tonic pacemaker mode.
-    # NaN in stats mode.
     fraction_isi_lt_80ms: float
 
-    # DA burst-event rate (E11 — full mode only)
+    # DA burst-event rate
     # Events are defined as ≥3 consecutive ISIs < 80 ms followed by a pause ISI > 200 ms.
-    # Rate is expressed per second of simulation.  NaN in stats mode.
+    # Rate is expressed per second of simulation.
     da_burst_events_per_s: float
 
-    # Spike-frequency adaptation index (E3 — both modes)
+    # Spike-frequency adaptation index
     # Ratio of mean FR in the first 25 % of the recording window to the mean FR
     # in the last 25 %.  sfa_index > 1 → adapting (expected for pyramidal cells,
     # relay neurons, MSNs); sfa_index ≈ 1 → non-adapting (PV, FSI, TAN).
@@ -346,17 +359,11 @@ class PopulationStats:
     # Variability / synchrony metrics
     # Two distinct Fano-factor fields reflecting their different semantics:
     #
-    # per_neuron_ff  (full mode only)  — mean of per-neuron var/mean spike count
+    # per_neuron_ff — mean of per-neuron var/mean spike count
     #     in 50 ms bins, averaged over up to 50 sampled neurons.  Unaffected by
-    #     between-neuron correlations (Poisson ≈ 1).  NaN in stats mode.
-    #
-    # population_ff  (stats mode only) — var/mean of total-population binned
-    #     spike counts.  Scales as FF_per_neuron + (N−1)·ρ, so a healthy
-    #     asynchronous network of N=400 neurons with ρ=0.01 yields FF≈5.0.
-    #     The high-FF health check uses a N-scaled threshold.  NaN in full mode.
+    #     between-neuron correlations (Poisson ≈ 1).
     per_neuron_ff: float
-    population_ff: float
-    pairwise_correlation: float  # Mean Pearson r across neuron pairs in 100 ms bins (full mode only)
+    pairwise_correlation: float  # Mean Pearson r across neuron pairs in 100 ms bins
     fraction_burst_events: float # Fraction of 20 ms windows where >30% of pop spikes (epilepsy marker)
 
     # Per-neuron FR histogram (for CDF plots)
@@ -375,17 +382,17 @@ class PopulationStats:
     #   "unknown" insufficient data
     network_state: str = "unknown"
 
-    # ── Up/Down State Detection (full mode) ────────────────────────────
+    # ── Up/Down State Detection ────────────────────────────
     # Sarle's bimodality coefficient BC = (skewness² + 1) / kurtosis applied to
     # the sampled voltage distribution.  BC > 0.555 → bimodal (likely up/down).
-    # NaN in stats mode or when fewer than 20 voltage samples are available.
+    # NaN when fewer than 20 voltage samples are available.
     voltage_bimodality: float = float("nan")
 
     # Mean duration of up-state and down-state epochs (ms).  Derived from
     # run-length analysis on the mean population voltage binarised at its grand
     # mean.  Healthy cortical slow oscillations: up ≈ 300–500 ms,
-    # down ≈ 200–400 ms (Steriade et al. 2001).  NaN in stats mode, when
-    # voltage_bimodality ≤ 0.555, or when insufficient voltage samples exist.
+    # down ≈ 200–400 ms.  NaN when voltage_bimodality ≤ 0.555,
+    # or when insufficient voltage samples exist.
     up_state_duration_ms: float = float("nan")
     down_state_duration_ms: float = float("nan")
 
@@ -398,26 +405,26 @@ class PopulationStats:
     # NaN when fit fails, fewer than 10 rate bins, or total_spikes < 20.
     sfa_tau_ms: float = float("nan")
 
-    # ── Two-compartment apical conductance (full mode, TwoCompartmentLIF only) ──
+    # ── Two-compartment apical conductance (TwoCompartmentLIF only) ──
     # Mean sampled g_E_apical conductance (AMPA, apical/distal dendrite).
-    # NaN for ConductanceLIF populations or in stats mode.
+    # NaN for ConductanceLIF populations.
     # Complementary to the basal AMPA captured in RegionStats.mean_g_exc.
     # A near-zero apical mean during a waking-state pattern indicates the
     # apical compartment is not being driven by top-down inputs.
     mean_g_exc_apical: float = float("nan")
 
-    # ── Fano factor scaling across bin widths (full mode only) ────────
+    # ── Fano factor scaling across bin widths ────────
     # List of (bin_ms, fano_factor) tuples at multiple time scales [10, 20, 50,
     # 100, 200, 500] ms.  A Poisson process yields FF≈1 at all scales; bursty
     # or correlated activity shows FF increasing with bin width.
-    # Empty list in stats mode or when < 50 total spikes.
+    # Empty list when < 50 total spikes.
     fano_scaling: List[Tuple[float, float]] = field(default_factory=list)
 
-    # ── Pairwise correlation distribution (full mode only) ────────────
+    # ── Pairwise correlation distribution ────────────
     # Full array of all sampled pairwise Pearson r values (up to C(30,2) pairs).
     # Used for histogram plotting to assess the shape of the correlation
     # distribution (should be peaked near zero for healthy AI state).
-    # None in stats mode, when < 2 neurons, or insufficient data.
+    # None when < 2 neurons, or insufficient data.
     pairwise_correlation_distribution: Optional[np.ndarray] = field(default=None, repr=False)
 
     @property
@@ -488,13 +495,13 @@ class RegionStats:
     d1_d2_competition_index_200ms: float = float("nan")
     d1_d2_competition_index_50ms: float = float("nan")
 
-    # ── E/I lag cross-correlation (full mode only) ────────────────────
+    # ── E/I lag cross-correlation ────────────────────
     # Peak cross-correlation between excitatory (AMPA) and inhibitory (GABA-A)
     # conductance time series, and the lag in ms at which it occurs.
     # Healthy cortex: inhibition tracks excitation with 1–5 ms lag (feedforward
     # inhibition) or 5–15 ms lag (feedback inhibition).  Near-zero lag suggests
     # common drive; negative lag or very long lag (>20 ms) indicates pathology.
-    # NaN in stats mode or when conductance samples are unavailable.
+    # NaN when conductance samples are unavailable.
     ei_lag_ms: float = float("nan")
     ei_xcorr_peak: float = float("nan")
 
@@ -593,7 +600,7 @@ class OscillatoryStats:
 
     # ── Phase-Locking Value (PLV) — hippocampal spike–theta coupling ──
     # |mean(exp(j·θ_spike))| where θ_spike is the instantaneous theta phase at
-    # each CA1 pyramidal spike.  Full mode only; NaN when < 10 spikes or fs low.
+    # each CA1 pyramidal spike.  NaN when < 10 spikes or fs low.
     # Healthy: CA1 pyramidal PLV ≈ 0.15–0.40; medial septum GABA PLV ≈ 0.50–0.80.
     plv_theta: Dict[str, float] = field(default_factory=dict)
     # True when the MS GABA reference was absent and the region's own spike train
@@ -650,7 +657,6 @@ class OscillatoryStats:
     # Per-region short-ISI fraction for relay populations.
     # Short ISI defined as < 15 ms (characteristic LTS burst doublets/triplets).
     # Key = region name; value = fraction of all relay-cell ISIs < 15 ms.
-    # Full mode only (requires per-neuron spike times).  Empty in stats mode.
     #
     # Burst mode: fraction ≥ 0.05 (≥ 5 % short ISIs → LTS active)
     # Tonic mode: fraction < 0.02 (< 2 % short ISIs → Poisson-like)
@@ -667,10 +673,7 @@ class OscillatoryStats:
     #   l5_lat_ms  — mean latency to first L5 pyramidal spike post-volley
     #   l6_lat_ms  — mean latency to first L6 pyramidal spike post-volley
     # Expected feedforward order: l4_lat_ms < l23_lat_ms < l5_lat_ms.
-    # Full mode only (requires per-neuron spike times and thalamic volleys).
     # Empty when no cortical or thalamic relay populations are present.
-    # References: Thomson & Bannister 2003 Cereb Cortex;
-    #             Sakata & Harris 2009 Neuron.
     laminar_cascade_latencies: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
 
@@ -684,10 +687,10 @@ class ConnectivityStats:
         spikes_sent: int
         transmission_ratio: float  # Fraction of timesteps source was active
         is_functional: bool
-        # Cross-correlation delay verification (full mode; NaN otherwise)
+        # Cross-correlation delay verification
         measured_delay_ms: float   # Peak lag of source→target cross-corr (causal window)
         expected_delay_ms: float   # From axonal tract spec
-        # Anti-causal peak (full mode): xcorr peak in the negative-lag window.
+        # Anti-causal peak: xcorr peak in the negative-lag window.
         # If this exceeds the causal peak, the connection is likely reversed.
         anticausal_peak_ms: float  # NaN when not computed
 
@@ -774,7 +777,6 @@ class DiagnosticsReport:
     timestamp: float
     simulation_time_ms: float
     n_timesteps: int
-    mode: Literal["full", "stats"]
 
     # Core data
     regions: Dict[RegionName, RegionStats]
@@ -792,7 +794,7 @@ class DiagnosticsReport:
     # key = "{region}/{receptor_attr}" → 1D float32 array, length = n_gain_steps
     neuromodulator_levels: Optional[Dict[str, np.ndarray]] = None
 
-    # Raw traces kept for plotting (populated only in "full" mode)
+    # Raw traces kept for plotting
     # shape: [T, n_pops] – spike counts per ms per population
     raw_spike_counts: Optional[np.ndarray] = None
     # shape: [T_cond, n_pops, sample_size] – sampled voltages

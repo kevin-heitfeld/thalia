@@ -169,7 +169,7 @@ def check_homeostasis(
             if abs(first_stp) < 1e-6:
                 continue
             drift_stp = abs(last_stp - first_stp) / abs(first_stp) * 100.0
-            if drift_stp > rec.config.thresholds.gain_drift_pct:
+            if drift_stp > rec.config.thresholds.stp_drift_pct:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.HOMEOSTASIS, region=rn,
                     message=f"STP not converged: {rn} [{syn_id}]  "
                             f"x\u00b7u drift={drift_stp:.1f}%  "

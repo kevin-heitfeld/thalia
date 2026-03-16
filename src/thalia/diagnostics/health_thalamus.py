@@ -118,9 +118,9 @@ def check_relay_burst_mode(
     - Under background / none / unknown patterns: burst mode is noted as
       ``info`` only (LTS may be expected during non-driven intervals).
 
-    This check only fires when spike time data was recorded (full mode) and
-    at least one relay region was found.  It emits an ``info``-level note
-    for tonic regions so the diagnostic report always shows the value.
+    This check only fires when spike time data was recorded and at least
+    one relay region was found.  It emits an ``info``-level note for tonic
+    regions so the diagnostic report always shows the value.
     """
     if not oscillations.relay_burst_mode:
         return

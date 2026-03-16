@@ -90,7 +90,10 @@ def check_basal_ganglia_pathway(
         # Only flag when D2 MSNs in the same brain are active (otherwise GPe
         # silence may simply reflect a basal-ganglia-free simulation).
         d2_nearby = bool(d2_active_regions)
-        if d2_nearby and fr < 20.0:
+        # Arkypallidal neurons (~25% of GPe) fire at 5–20 Hz physiologically
+        # (Abdi et al. 2015), not 30–80 Hz like prototypic neurons.  Skip them.
+        is_arkypallidal = "arkypallidal" in pn.lower()
+        if d2_nearby and not is_arkypallidal and fr < 20.0:
             pop_key = f"{rn}:{pn}"
             issues.append(HealthIssue(
                 severity="warning",

@@ -7,13 +7,6 @@ The recorder is completely decoupled from the simulation loop.  It never
 drives its own loop; instead, call ``record(t, inputs, outputs)`` once per
 timestep from whatever loop you own (training, evaluation, pre-training
 diagnostic run).
-
-Modes
-=====
-- ``"full"``  – records spike times, voltages, conductances, STP state.
-  Intended for short (≤10 s) pre/post-training diagnostic runs.
-- ``"stats"`` – records only population-level spike counts and homeostatic
-  gains.  Use this inside long training loops to keep memory overhead low.
 """
 
 from __future__ import annotations
@@ -26,7 +19,7 @@ import numpy as np
 import torch
 
 from thalia.brain.synapses import NeuromodulatorReceptor
-from thalia.typing import BrainOutput, SynapseId, SynapticInput
+from thalia.typing import BrainOutput, PopulationName, RegionName, SynapseId, SynapticInput
 
 from .diagnostics_types import DiagnosticsConfig, RecorderSnapshot
 
@@ -86,11 +79,12 @@ class DiagnosticsRecorder:
         self._g_apical_samples: Optional[np.ndarray] = None  # g_E_apical for TwoCompartmentLIF only
         self._nm_concentration_history: np.ndarray  # allocated in _allocate_buffers
 
-        self._pop_config_types: Dict[Tuple[str, str], str] = {}
+        self._pop_config_types: Dict[Tuple[RegionName, PopulationName], str] = {}
 
         self._build_index()
         self._print_memory_estimate()
         self._allocate_buffers()
+
         self._recording_started = False
         self._n_recorded = 0
 
@@ -101,11 +95,11 @@ class DiagnosticsRecorder:
     def _build_index(self) -> None:
         """Build ordered population and tract indices from the brain."""
         # Ordered list of (region_name, pop_name) tuples.
-        self._pop_keys: List[Tuple[str, str]] = []
+        self._pop_keys: List[Tuple[RegionName, PopulationName]] = []
         for region_name, region in self.brain.regions.items():
             for pop_name in region.neuron_populations.keys():
                 self._pop_keys.append((region_name, pop_name))
-        self._pop_index: Dict[Tuple[str, str], int] = {
+        self._pop_index: Dict[Tuple[RegionName, PopulationName], int] = {
             key: idx for idx, key in enumerate(self._pop_keys)
         }
         self._n_pops = len(self._pop_keys)
@@ -117,12 +111,12 @@ class DiagnosticsRecorder:
             self._pop_sizes[idx] = pop_obj.n_neurons
 
         # Ordered region names
-        self._region_keys: List[str] = list(self.brain.regions.keys())
-        self._region_index: Dict[str, int] = {k: i for i, k in enumerate(self._region_keys)}
+        self._region_keys: List[RegionName] = list(self.brain.regions.keys())
+        self._region_index: Dict[RegionName, int] = {k: i for i, k in enumerate(self._region_keys)}
         self._n_regions = len(self._region_keys)
 
         # Region → population indices
-        self._region_pop_indices: Dict[str, List[int]] = defaultdict(list)
+        self._region_pop_indices: Dict[RegionName, List[int]] = defaultdict(list)
         for idx, (rn, _) in enumerate(self._pop_keys):
             self._region_pop_indices[rn].append(idx)
 
@@ -134,7 +128,7 @@ class DiagnosticsRecorder:
         self._n_tracts = len(self._tract_keys)
 
         # STP modules — ordered list of (region, synapse_id) for trajectory sampling
-        self._stp_keys: List[Tuple[str, SynapseId]] = []
+        self._stp_keys: List[Tuple[RegionName, SynapseId]] = []
         self._stp_configs: List[Tuple[float, float, float]] = []
         for rn, region in self.brain.regions.items():
             for syn_id, stp_mod in region.stp_modules.items():
@@ -145,7 +139,7 @@ class DiagnosticsRecorder:
 
         # NeuromodulatorReceptor submodules — one entry per receptor instance
         # across all regions, identified by "region_name/module.attr.path".
-        self._nm_receptor_keys: List[Tuple[str, str]] = []  # (region_name, dotted_attr_path)
+        self._nm_receptor_keys: List[Tuple[RegionName, str]] = []  # (region_name, dotted_attr_path)
         for rn, region in self.brain.regions.items():
             for mod_name, mod in region.named_modules():
                 if isinstance(mod, NeuromodulatorReceptor) and mod_name:  # skip region itself (mod_name="")
@@ -154,7 +148,7 @@ class DiagnosticsRecorder:
 
         # Neuromodulator source populations — (region_name, pop_name_str) tuples for
         # the health check: "is any neuromodulator source firing?"
-        self._nm_source_pop_keys: List[Tuple[str, str]] = []
+        self._nm_source_pop_keys: List[Tuple[RegionName, PopulationName]] = []
         for rn, region in self.brain.regions.items():
             nm_outputs = getattr(region, "neuromodulator_outputs", None)
             if nm_outputs:
@@ -163,29 +157,28 @@ class DiagnosticsRecorder:
 
         # ── Static brain metadata captured once for snapshot serialisation ──────────
         # Population polarity (StrEnum → str so it is JSON-safe)
-        self._pop_polarities: Dict[Tuple[str, str], str] = {}
+        self._pop_polarities: Dict[Tuple[RegionName, PopulationName], str] = {}
         for rn, region in self.brain.regions.items():
-            pols = getattr(region, "_population_polarities", {})
+            pols = region._population_polarities
             for pn in region.neuron_populations.keys():
                 pol = pols.get(pn)
                 self._pop_polarities[(rn, pn)] = str(pol) if pol is not None else "any"
 
         # Axonal delay per tract (ms), same order as _tract_keys
         self._tract_delay_ms: List[float] = [
-            float(self.brain.axonal_tracts[sid].spec.delay_ms)
+            self.brain.axonal_tracts[sid].spec.delay_ms
             for sid in self._tract_keys
         ]
 
         # Homeostatic target firing rate (Hz) per population
-        self._homeostasis_target_hz: Dict[Tuple[str, str], float] = {}
+        self._homeostasis_target_hz: Dict[Tuple[RegionName, PopulationName], float] = {}
         for rn, region in self.brain.regions.items():
-            homeostasis = getattr(region, "_homeostasis", None) or {}
+            homeostasis = region._homeostasis
             for pn in region.neuron_populations.keys():
-                hs = homeostasis.get(pn)
+                hs = homeostasis.get(pn, None)
                 if hs is not None:
-                    rate = float(getattr(hs, "target_firing_rate", 0.0))
-                    if rate > 0:
-                        self._homeostasis_target_hz[(rn, pn)] = rate * 1000.0
+                    if hs.target_firing_rate > 0:
+                        self._homeostasis_target_hz[(rn, pn)] = hs.target_firing_rate * 1000.0
 
         # Fixed random neuron samples per population (seed=42 for reproducibility)
         rng = np.random.default_rng(seed=42)
@@ -229,13 +222,10 @@ class DiagnosticsRecorder:
             ("gain history", n_gain * P * B),
             ("STP history", n_gain * self._n_stp * B),
             ("NM history", n_gain * max(1, self._n_nm_receptors) * B),
+            ("voltages", T * P * V * B),
+            ("conductances (×5)", n_cond * P * C * B * 5),
+            ("spike flat buffers", 2 * max(64, T // 10) * P * B),
         ]
-        if self.config.mode == "full":
-            rows += [
-                ("voltages", T * P * V * B),
-                ("conductances (×5)", n_cond * P * C * B * 5),
-                ("spike flat buffers", 2 * max(64, T // 10) * P * B),
-            ]
 
         total_bytes = sum(b for _, b in rows)
         _MB = 1024 ** 2
@@ -249,7 +239,7 @@ class DiagnosticsRecorder:
 
         print(f"\n{'═'*80}")
         print(f"  DiagnosticsRecorder buffer estimate  "
-              f"(mode={self.config.mode!r}, T={T}, P={P}, R={R}):")
+              f"(T={T}, P={P}, R={R}):")
         print(f"{'═'*80}\n")
         for label, nbytes in rows:
             if nbytes > 0:
@@ -274,8 +264,6 @@ class DiagnosticsRecorder:
         self._pop_spike_counts = np.zeros((T, P), dtype=np.int32)
 
         # Per-neuron cumulative spike counts — accumulated in record() for every population.
-        # In stats mode this replaces the uniform-distribution approximation so that
-        # fraction_silent and fraction_hyperactive reflect actual per-neuron variation.
         # Memory cost: sum(n_neurons) × 4 bytes — negligible vs voltage buffers.
         self._per_neuron_spike_counts: List[np.ndarray] = [
             np.zeros(int(sz), dtype=np.int32) for sz in self._pop_sizes
@@ -291,38 +279,31 @@ class DiagnosticsRecorder:
         # Populated lazily in analyze() via _build_spike_times().
         self._spike_times: Dict[Tuple[str, str], List[List[int]]] = {}
 
-        if self.config.mode == "full":
-            # Flat spike-time accumulation buffers — avoids per-neuron Python loop
-            # in the hot path.  _spike_times is built once in analyze().
-            initial_cap = max(64, T // 10)
-            self._spike_flat_nidx: List[np.ndarray] = [
-                np.empty(initial_cap, dtype=np.int32) for _ in range(P)
-            ]
-            self._spike_flat_ts: List[np.ndarray] = [
-                np.empty(initial_cap, dtype=np.int32) for _ in range(P)
-            ]
-            self._spike_flat_n: np.ndarray = np.zeros(P, dtype=np.int64)
+        # Flat spike-time accumulation buffers — avoids per-neuron Python loop
+        # in the hot path.  _spike_times is built once in analyze().
+        initial_cap = max(64, T // 10)
+        self._spike_flat_nidx: List[np.ndarray] = [
+            np.empty(initial_cap, dtype=np.int32) for _ in range(P)
+        ]
+        self._spike_flat_ts: List[np.ndarray] = [
+            np.empty(initial_cap, dtype=np.int32) for _ in range(P)
+        ]
+        self._spike_flat_n: np.ndarray = np.zeros(P, dtype=np.int64)
 
     def _allocate_state_buffers(self, T: int, P: int, C: int, V: int) -> None:
-        """Allocate voltage and conductance sample buffers (full mode only)."""
-        if self.config.mode == "full":
-            # Voltage traces [T × P × V]
-            self._voltages = np.full((T, P, V), np.nan, dtype=np.float32)
+        """Allocate voltage and conductance sample buffers."""
+        # Voltage traces [T × P × V]
+        self._voltages = np.full((T, P, V), np.nan, dtype=np.float32)
 
-            # Conductance samples – every conductance_sample_interval_steps timesteps
-            ci = self.config.conductance_sample_interval_steps
-            n_cond = max(1, T // ci)
-            self._g_exc_samples  = np.full((n_cond, P, C), np.nan, dtype=np.float32)
-            self._g_inh_samples  = np.full((n_cond, P, C), np.nan, dtype=np.float32)
-            self._g_nmda_samples = np.full((n_cond, P, C), np.nan, dtype=np.float32)
-            self._g_gaba_b_samples = np.full((n_cond, P, C), np.nan, dtype=np.float32)
-            self._g_apical_samples = np.full((n_cond, P, C), np.nan, dtype=np.float32)
-            self._cond_sample_step = 0
-        else:
-            self._voltages = None
-            self._g_exc_samples = self._g_inh_samples = self._g_nmda_samples = self._g_gaba_b_samples = None
-            self._g_apical_samples = None
-            self._cond_sample_step = 0
+        # Conductance samples – every conductance_sample_interval_steps timesteps
+        ci = self.config.conductance_sample_interval_steps
+        n_cond = max(1, T // ci)
+        self._g_exc_samples  = np.full((n_cond, P, C), np.nan, dtype=np.float32)
+        self._g_inh_samples  = np.full((n_cond, P, C), np.nan, dtype=np.float32)
+        self._g_nmda_samples = np.full((n_cond, P, C), np.nan, dtype=np.float32)
+        self._g_gaba_b_samples = np.full((n_cond, P, C), np.nan, dtype=np.float32)
+        self._g_apical_samples = np.full((n_cond, P, C), np.nan, dtype=np.float32)
+        self._cond_sample_step = 0
 
     def _allocate_trajectory_buffers(self, T: int, P: int) -> None:
         """Allocate homeostatic gain, STP efficacy, and neuromodulator history buffers."""
@@ -359,24 +340,22 @@ class DiagnosticsRecorder:
         self._tract_sent.fill(0)
         self._spike_times.clear()
         self._pop_config_types.clear()
-        if self.config.mode == "full":
-            self._spike_flat_n.fill(0)
+        self._spike_flat_n.fill(0)
         self._gain_sample_times.clear()
         self._gain_sample_step = 0
-        if self.config.mode == "full":
-            if self._voltages is not None:
-                self._voltages.fill(np.nan)
-            if self._g_exc_samples is not None:
-                self._g_exc_samples.fill(np.nan)
-            if self._g_inh_samples is not None:
-                self._g_inh_samples.fill(np.nan)
-            if self._g_nmda_samples is not None:
-                self._g_nmda_samples.fill(np.nan)
-            if self._g_gaba_b_samples is not None:
-                self._g_gaba_b_samples.fill(np.nan)
-            if self._g_apical_samples is not None:
-                self._g_apical_samples.fill(np.nan)
-            self._cond_sample_step = 0
+        if self._voltages is not None:
+            self._voltages.fill(np.nan)
+        if self._g_exc_samples is not None:
+            self._g_exc_samples.fill(np.nan)
+        if self._g_inh_samples is not None:
+            self._g_inh_samples.fill(np.nan)
+        if self._g_nmda_samples is not None:
+            self._g_nmda_samples.fill(np.nan)
+        if self._g_gaba_b_samples is not None:
+            self._g_gaba_b_samples.fill(np.nan)
+        if self._g_apical_samples is not None:
+            self._g_apical_samples.fill(np.nan)
+        self._cond_sample_step = 0
         self._g_L_scale_history.fill(np.nan)
         self._stp_efficacy_history.fill(np.nan)
         self._nm_concentration_history.fill(np.nan)
@@ -426,26 +405,25 @@ class DiagnosticsRecorder:
 
                 if n_active > 0:
                     spike_arr = pop_spikes.cpu().numpy()
-                    if self.config.mode == "full":
-                        # Flat-buffer accumulation — one numpy slice per pop per step.
-                        # _spike_times is built from these buffers in analyze().
-                        nidx = np.where(spike_arr)[0].astype(np.int32)
-                        n_new = len(nidx)
-                        cnt = int(self._spike_flat_n[pop_idx])
-                        cap = len(self._spike_flat_nidx[pop_idx])
-                        if cnt + n_new > cap:
-                            new_cap = max(cnt + n_new, cap * 2)
-                            self._spike_flat_nidx[pop_idx] = np.resize(
-                                self._spike_flat_nidx[pop_idx], new_cap
-                            )
-                            self._spike_flat_ts[pop_idx] = np.resize(
-                                self._spike_flat_ts[pop_idx], new_cap
-                            )
-                        self._spike_flat_nidx[pop_idx][cnt:cnt + n_new] = nidx
-                        self._spike_flat_ts[pop_idx][cnt:cnt + n_new] = t
-                        self._spike_flat_n[pop_idx] = cnt + n_new
-                    # Per-neuron cumulative counts (both modes) — enables correct
-                    # fraction_silent / fraction_hyperactive even in stats mode.
+                    # Flat-buffer accumulation — one numpy slice per pop per step.
+                    # _spike_times is built from these buffers in analyze().
+                    nidx = np.where(spike_arr)[0].astype(np.int32)
+                    n_new = len(nidx)
+                    cnt = int(self._spike_flat_n[pop_idx])
+                    cap = len(self._spike_flat_nidx[pop_idx])
+                    if cnt + n_new > cap:
+                        new_cap = max(cnt + n_new, cap * 2)
+                        self._spike_flat_nidx[pop_idx] = np.resize(
+                            self._spike_flat_nidx[pop_idx], new_cap
+                        )
+                        self._spike_flat_ts[pop_idx] = np.resize(
+                            self._spike_flat_ts[pop_idx], new_cap
+                        )
+                    self._spike_flat_nidx[pop_idx][cnt:cnt + n_new] = nidx
+                    self._spike_flat_ts[pop_idx][cnt:cnt + n_new] = t
+                    self._spike_flat_n[pop_idx] = cnt + n_new
+                    # Per-neuron cumulative counts — enables correct
+                    # fraction_silent / fraction_hyperactive.
                     self._per_neuron_spike_counts[pop_idx] += spike_arr.astype(np.int32)
 
             if region_idx is not None:
@@ -464,11 +442,10 @@ class DiagnosticsRecorder:
         if t % gi_steps == 0:
             self._sample_gains(t)
 
-        if self.config.mode == "full":
-            self._sample_voltages(t)
-            ci = self.config.conductance_sample_interval_steps
-            if ci > 0 and t % ci == 0:
-                self._sample_conductances(t)
+        self._sample_voltages(t)
+        ci = self.config.conductance_sample_interval_steps
+        if ci > 0 and t % ci == 0:
+            self._sample_conductances(t)
 
         self._n_recorded = t + 1
 
@@ -514,7 +491,7 @@ class DiagnosticsRecorder:
     def _sample_voltages(self, timestep: int) -> None:
         """Sample membrane voltages for fixed neurons in each population."""
         if self._voltages is None:
-            raise ValueError("_voltages buffer not allocated (mode != 'full'?)")
+            raise ValueError("_voltages buffer not allocated")
         t = timestep
         if t >= self._voltages.shape[0]:
             return
@@ -533,7 +510,7 @@ class DiagnosticsRecorder:
 
     def _sample_conductances(self, timestep: int) -> None:
         """Sample g_E, g_I, g_nmda, g_gaba_b for fixed neurons."""
-        assert self._g_exc_samples is not None, "conductance buffers not allocated (mode != 'full'?)"
+        assert self._g_exc_samples is not None, "conductance buffers not allocated"
         assert self._g_inh_samples is not None
         assert self._g_nmda_samples is not None
         assert self._g_gaba_b_samples is not None
@@ -542,12 +519,13 @@ class DiagnosticsRecorder:
             return
 
         for idx, (rn, pn) in enumerate(self._pop_keys):
-            pop_obj = self.brain.regions[rn].neuron_populations[pn]
             c_idx = self._c_sample_idx[idx]
             if len(c_idx) == 0:
                 continue
 
             dev_idx = torch.from_numpy(c_idx).long()
+
+            pop_obj = self.brain.regions[rn].neuron_populations[pn]
 
             # ConductanceLIF: g_E / g_I / g_nmda
             # TwoCompartmentLIF: g_E_basal / g_I_basal / g_nmda_basal
@@ -667,7 +645,8 @@ class DiagnosticsRecorder:
             "uncertainty_to_current_gain", "serotonin_drive_gain",
         )
         for rn, pn in self._pop_keys:
-            pop = self.brain.regions[rn].neuron_populations[pn]
+            pop = self.brain.regions[rn].get_neuron_population(pn)
+            assert pop is not None
             cfg = pop.config
             def _scalar(v: object) -> float:
                 """Convert a scalar or per-neuron tensor to a single float."""
@@ -706,7 +685,8 @@ class DiagnosticsRecorder:
             result[(rn, pn)] = params
         # Store config type names separately (not float-valued)
         for rn, pn in self._pop_keys:
-            pop = self.brain.regions[rn].neuron_populations[pn]
+            pop = self.brain.regions[rn].get_neuron_population(pn)
+            assert pop is not None
             self._pop_config_types[(rn, pn)] = type(pop.config).__name__
         return result
 
@@ -721,9 +701,8 @@ class DiagnosticsRecorder:
         Call :meth:`RecorderSnapshot.save` on the returned object to persist it.
         Call :meth:`RecorderSnapshot.load` to reload and re-run analysis later.
         """
-        if self.config.mode == "full":
-            # Ensure spike times are populated before snapshotting.
-            self._build_spike_times()
+        # Ensure spike times are populated before snapshotting.
+        self._build_spike_times()
         return RecorderSnapshot(
             config=self.config,
             dt_ms=self.dt_ms,

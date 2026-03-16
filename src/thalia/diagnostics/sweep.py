@@ -119,10 +119,9 @@ def run_single(
     *,
     report_interval: int,
     no_plots: bool = False,
-    triage_fn: Optional[Callable[[Brain, DiagnosticsReport], None]] = None,
     detailed: bool = True,
 ) -> DiagnosticsReport:
-    """Simulate one recording pass, then analyse, report, optionally triage, save, and plot.
+    """Simulate one recording pass, then analyse, report, optionally save, and plot.
 
     The caller is responsible for resetting the recorder between passes
     (``recorder.reset()``).
@@ -157,9 +156,6 @@ def run_single(
     advice = compute_calibration_advice(recorder_snapshot, report, tuning)
     print_calibration_advice(advice)
 
-    if triage_fn is not None:
-        triage_fn(brain, report)
-
     print(f"\n{'\u2550'*80}")
     print(f"SAVING  \u2192  {output_dir}")
     print(f"{'\u2550'*80}\n")
@@ -184,7 +180,6 @@ def run_sweep(
     patterns: Sequence[str] = DEFAULT_SWEEP_PATTERNS,
     no_plots: bool = False,
     report_interval: int = 200,
-    triage_fn: Optional[Callable[[Brain, DiagnosticsReport], None]] = None,
 ) -> Dict[str, DiagnosticsReport]:
     """Run *patterns* in sequence and return per-pattern reports.
 
@@ -215,10 +210,6 @@ def run_sweep(
         If ``True``, skip per-pattern and comparison plot generation.
     report_interval:
         Print a progress line every *report_interval* steps.
-    triage_fn:
-        Optional ``(brain, report) -> None`` called after each pattern's
-        health report.  Pass the ``_run_triage`` function from
-        ``comprehensive_diagnostics.py`` to isolate silent regions per pattern.
 
     Returns
     -------
@@ -237,7 +228,6 @@ def run_sweep(
             brain, recorder, pat, timesteps, pat_dir,
             report_interval=report_interval,
             no_plots=no_plots,
-            triage_fn=triage_fn,
             detailed=False,
         )
         sweep_reports[pat] = report

@@ -17,6 +17,7 @@ class CorticalPopulationConfig:
     v_reset: float
     adapt_increment: float
     tau_adapt: float
+    noise_std: float = 0.08  # OU noise std; scale with threshold to maintain ~10% noise-to-threshold ratio
 
 
 @dataclass
@@ -145,6 +146,7 @@ class CorticalColumnConfig(NeuralRegionConfig):
                 v_reset=-0.15,         # AHP: 15% below E_L; enables visible SFA, prevents bursting
                 adapt_increment=1.5,   # Raised 1.0→1.5: PFC L23 at 3.89 Hz, need more adaptation to suppress recurrence
                 tau_adapt=150.0,       # Medium-slow decay (100-200ms biological)
+                noise_std=0.20,        # ~8% of v_threshold=2.5; drives AI-state irregularity (default 0.08 = 3.2% too quiet)
             ),
             CortexPopulation.L4_PYR: CorticalPopulationConfig(
                 tau_mem_ms=10.0,       # Fast integration for sensory input
@@ -154,6 +156,7 @@ class CorticalColumnConfig(NeuralRegionConfig):
                 v_reset=-0.10,         # AHP: mild for faithful fast relay
                 adapt_increment=0.20,  # Moderate adaptation to prevent overfiring from strong input
                 tau_adapt=80.0,        # Fast decay (50-100ms biological)
+                noise_std=0.08,        # 12% of v_threshold=0.65; default is appropriate here
             ),
             CortexPopulation.L5_PYR: CorticalPopulationConfig(
                 tau_mem_ms=30.0,       # Slow integration for output generation
@@ -161,6 +164,7 @@ class CorticalColumnConfig(NeuralRegionConfig):
                 v_reset=-0.12,         # AHP: moderate for output neurons
                 adapt_increment=0.20,  # Moderate adaptation to enable burst firing without runaway activity
                 tau_adapt=120.0,       # Medium decay (80-150ms biological)
+                noise_std=0.12,        # 10% of v_threshold=1.2; promotes AI-state irregularity
             ),
             CortexPopulation.L6A_PYR: CorticalPopulationConfig(
                 tau_mem_ms=15.0,       # Fast for TRN feedback (low gamma)
@@ -168,6 +172,7 @@ class CorticalColumnConfig(NeuralRegionConfig):
                 v_reset=-0.10,         # AHP: mild for feedback neurons
                 adapt_increment=0.25,  # Raised 0.18→0.25: at 2.9 Hz, g_adapt_ss=0.073 (1.45× g_L); L6A SFA=0.77-0.83 needs stronger adaptation
                 tau_adapt=100.0,       # Medium-fast decay (80-120ms biological)
+                noise_std=0.12,        # ~8.5% of v_threshold=1.4
             ),
             CortexPopulation.L6B_PYR: CorticalPopulationConfig(
                 tau_mem_ms=25.0,       # Moderate for relay feedback (high gamma)
@@ -175,6 +180,7 @@ class CorticalColumnConfig(NeuralRegionConfig):
                 v_reset=-0.10,         # AHP: mild for relay modulation
                 adapt_increment=0.22,  # Moderate adaptation to support relay dynamics without runaway activity
                 tau_adapt=100.0,       # Medium-fast decay (80-120ms biological)
+                noise_std=0.10,        # ~9% of v_threshold=1.1
             ),
 
             # =========================================================================
