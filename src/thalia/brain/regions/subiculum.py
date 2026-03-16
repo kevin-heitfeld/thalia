@@ -19,17 +19,17 @@ Biological Background:
 2. **Burst-firing** (~40 %): Initial Ca²⁺-driven doublet/triplet, then tonic
 3. **Weak-bursting** (~20 %): Single initial burst, then regular
 
-Heterogeneous `tau_mem` and `v_threshold` in `ConductanceLIF` naturally give
+Heterogeneous `tau_mem_ms` and `v_threshold` in `ConductanceLIF` naturally give
 rise to all three modes from a single population tensor.
 
 **Inputs:**
-- ``hippocampus / HippocampusPopulation.CA1``   — excitatory (Schaffer collateral relay)
+- ``hippocampus / HippocampusPopulation.CA1``    — excitatory (Schaffer collateral relay)
 - ``medial_septum / MedialSeptumPopulation.ACH`` — optional cholinergic modulation
 
 **Outputs (axonal targets):**
-- ``ECPopulation.EC_V``           — perforant path back-projection to neocortex
-- ``CortexPopulation.L5_PYR``     — direct hippocampal-to-PFC report (consolidation)
-- ``BLAPopulation.PRINCIPAL``     — contextual fear/safety signal to amygdala
+- ``EntorhinalCortexPopulation.EC_V`` — perforant path back-projection to neocortex
+- ``CortexPopulation.L5_PYR``         — direct hippocampal-to-PFC report (consolidation)
+- ``BLAPopulation.PRINCIPAL``         — contextual fear/safety signal to amygdala
 
 **Why Not Model Subicular Inhibitory Interneurons Explicitly?**
 PV basket cells in the subiculum (~15 % of the population) provide fast
@@ -38,17 +38,6 @@ feedback inhibition with a latency of ~1 ms.  At the simulation timestep
 effect as a lateral inhibition coefficient (`lateral_inhibition_ratio`) that
 scales the AMPA drive back as GABA_A input — identical to the pattern used
 in EntorhinalCortex.
-
-References:
-- O'Mara, S.M. et al. (2001). The subiculum: the heart of the hippocampal
-  outflow. Trends in Neurosciences, 24, 690-694.
-- Witter, M.P. et al. (2000). Anatomical organisation of the para-
-  hippocampal-hippocampal network. Ann. NY Acad. Sci., 911, 1-24.
-- Aggleton, J.P. (2012). Multiple anatomical systems embedded within the
-  primate medial temporal lobe.  Neuroscience & Biobehavioural Reviews.
-- Kim, Y. & Spruston, N. (2012). Target-specific output patterns are
-  predicted by the distribution of regular-spiking and bursting neurons in
-  the subiculum.  Hippocampus, 22, 693-706.
 """
 
 from __future__ import annotations
@@ -59,7 +48,15 @@ import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import SubiculumConfig
-from thalia.brain.neurons import NeuronFactory
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    ConductanceLIF,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    split_excitatory_conductance,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
@@ -70,7 +67,6 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
 from .neural_region import NeuralRegion
 from .population_names import SubiculumPopulation
@@ -81,9 +77,6 @@ from .region_registry import register_region
     "subiculum",
     aliases=["sub", "hippocampal_output"],
     description="Subiculum — hippocampal output gateway (CA1 → EC / PFC / BLA relay)",
-    version="1.0",
-    author="Thalia Project",
-    config_class=SubiculumConfig,
 )
 class Subiculum(NeuralRegion[SubiculumConfig]):
     """Subiculum — Hippocampal Output Gateway.
@@ -136,26 +129,24 @@ class Subiculum(NeuralRegion[SubiculumConfig]):
         self.principal_size: int = population_sizes[SubiculumPopulation.PRINCIPAL]
 
         # ── Principal population: heterogeneous LIF pyramidal neurons ─────────
-        # Burst-firing phenotype: modest adaptation increment + long tau_adapt
-        # allows an initial burst doublet before settling to regular-spiking mode.
-        # Heterogeneous tau_mem (default ±20 % spread in ConductanceLIF) naturally
-        # produces all three physiological subtypes (regular, burst, weak-burst).
-        self.principal_neurons = NeuronFactory.create_pyramidal_neurons(
-            region_name=self.region_name,
+        self.principal_neurons: ConductanceLIF
+        self.principal_neurons = self._create_and_register_neuron_population(
             population_name=SubiculumPopulation.PRINCIPAL,
             n_neurons=self.principal_size,
-            device=device,
-            v_threshold=config.v_threshold,
-            adapt_increment=config.adapt_increment,
-            tau_adapt=config.tau_adapt,
-            tau_mem=config.tau_mem,
-        )
-
-        # ── Register population ───────────────────────────────────────────────
-        self._register_neuron_population(
-            SubiculumPopulation.PRINCIPAL,
-            self.principal_neurons,
             polarity=PopulationPolarity.EXCITATORY,
+            config=ConductanceLIFConfig(
+                g_L=heterogeneous_g_L(0.05, self.principal_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=0.0,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                v_threshold=heterogeneous_v_threshold(config.v_threshold, self.principal_size, device),
+                adapt_increment=heterogeneous_adapt_increment(config.adapt_increment, self.principal_size, device),
+                tau_adapt=config.tau_adapt,
+                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.principal_size, device),
+            ),
         )
 
         self.to(device)

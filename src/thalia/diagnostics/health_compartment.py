@@ -15,11 +15,11 @@ from .region_tags import CORTICAL_TAGS, matches_any
 from .sensory_patterns import SENSORY_PATTERNS
 
 if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+    from .diagnostics_types import RecorderSnapshot
 
 
 def check_two_compartment_apical_basal(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
 ) -> None:

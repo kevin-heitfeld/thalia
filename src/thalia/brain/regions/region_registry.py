@@ -1,10 +1,4 @@
-"""
-Unified Component Registry for Brain Regions.
-
-This module provides a unified registration and factory system for all
-brain regions, enabling dynamic regioncreation, plugin architectures,
-and consistent region discovery.
-"""
+"""Unified registry for brain regions."""
 
 from __future__ import annotations
 
@@ -30,7 +24,6 @@ class NeuralRegionRegistry:
     _registry: Dict[RegionName, Type[_NeuralRegion]] = {}
     _aliases: Dict[RegionName, RegionName] = {}
     _metadata: Dict[RegionName, Dict[str, Any]] = {}
-    _config_classes: Dict[RegionName, Optional[Callable[[], NeuralRegionConfig]]] = {}
 
     @classmethod
     def register(
@@ -39,9 +32,6 @@ class NeuralRegionRegistry:
         *,
         aliases: Optional[List[RegionName]] = None,
         description: str = "",
-        version: str = "1.0",
-        author: str = "",
-        config_class: Optional[Callable[[], NeuralRegionConfig]] = None,
     ) -> Callable[[Type[_NeuralRegion]], Type[_NeuralRegion]]:
         """Decorator to register a region.
 
@@ -49,9 +39,6 @@ class NeuralRegionRegistry:
             name: Primary name for the region
             aliases: Optional list of alternative names
             description: Human-readable description
-            version: Component version string
-            author: Component author/maintainer
-            config_class: Optional config class or factory function for this region
 
         Returns:
             Decorator function
@@ -84,14 +71,9 @@ class NeuralRegionRegistry:
             # Store metadata
             cls._metadata[name] = {
                 "description": description or region_class.__doc__ or "",
-                "version": version,
-                "author": author,
                 "class": region_class.__name__,
                 "module": region_class.__module__,
             }
-
-            # Store config class if provided
-            cls._config_classes[name] = config_class
 
             return region_class
 
@@ -190,27 +172,11 @@ class NeuralRegionRegistry:
         return cls._aliases.copy()
 
     @classmethod
-    def get_config_class(cls, name: RegionName) -> Optional[Callable[[], NeuralRegionConfig]]:
-        """Get configuration class or factory for a registered region.
-
-        Args:
-            name: Region name or alias
-
-        Returns:
-            Config class or factory function if registered, None otherwise
-        """
-        if name in cls._aliases:
-            name = cls._aliases[name]
-
-        return cls._config_classes.get(name)
-
-    @classmethod
     def clear(cls) -> None:
         """Clear the registry (mainly for testing)."""
         cls._registry.clear()
         cls._aliases.clear()
         cls._metadata.clear()
-        cls._config_classes.clear()
 
 
 def register_region(
@@ -218,9 +184,6 @@ def register_region(
     *,
     aliases: Optional[List[RegionName]] = None,
     description: str = "",
-    version: str = "1.0",
-    author: str = "",
-    config_class: Optional[Callable[[], NeuralRegionConfig]] = None,
 ) -> Callable[[Type[_NeuralRegion]], Type[_NeuralRegion]]:
     """Shorthand for @NeuralRegionRegistry.register(name).
 
@@ -231,9 +194,6 @@ def register_region(
         name: Region name
         aliases: Optional list of alternative names
         description: Human-readable description
-        version: Component version
-        author: Component author
-        config_class: Optional config class or factory function for this region
 
     Returns:
         Decorator function
@@ -242,7 +202,4 @@ def register_region(
         name,
         aliases=aliases,
         description=description,
-        version=version,
-        author=author,
-        config_class=config_class,
     )

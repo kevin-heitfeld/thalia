@@ -20,8 +20,6 @@ class BrainConfig:
     - Different oscillator frequencies per brain
     """
 
-    seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
-
     # =========================================================================
     # TIMING
     # =========================================================================

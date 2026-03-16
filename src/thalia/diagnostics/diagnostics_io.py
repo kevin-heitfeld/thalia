@@ -1,20 +1,24 @@
 """
 Diagnostics I/O — text reporting and file saving.
-
-``print_report`` and ``save`` operate purely on a :class:`DiagnosticsReport`
-and produce human-readable console output or persisted files (JSON + NPZ).
-Neither function accesses live brain state.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Any, Dict
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from .diagnostics_types import DiagnosticsReport
+from thalia.typing import SynapseId
+
+from .diagnostics_types import (
+    DiagnosticsConfig,
+    DiagnosticsReport,
+    HealthThresholds,
+    RecorderSnapshot,
+)
 
 if TYPE_CHECKING:
     from thalia.brain import Brain
@@ -118,11 +122,16 @@ def _print_oscillations_section(report: DiagnosticsReport, detailed: bool) -> No
     print(f"\n{_sep('─')}")
     print("OSCILLATORY DYNAMICS")
     print(_sep('─'))
+
     osc = report.oscillations
+
     print(f"  Global dominant: {osc.global_dominant_freq_hz:.1f} Hz")
     if not np.isnan(osc.freq_resolution_hz):
         res_flag = "  ⚠" if osc.freq_resolution_hz > 1.0 else "   "
         print(f"{res_flag} Spectral frequency resolution: {osc.freq_resolution_hz:.2f} Hz")
+    else:
+        print("  Spectral frequency resolution: N/A (too few recorded spikes)")
+
     if not np.isnan(osc.avalanche_exponent):
         exp_flag = "  ⚠" if osc.avalanche_exponent > -1.0 or osc.avalanche_exponent < -2.5 else "   "
         sigma_str = (
@@ -141,6 +150,9 @@ def _print_oscillations_section(report: DiagnosticsReport, detailed: bool) -> No
             f"{sigma_str}"
             + (f"  (supercritical)" if sigma_flag.strip() == "⚠" else "")
         )
+    else:
+        print("  Avalanche exponent: N/A (too few avalanches detected)")
+
     print("  Global band power:")
     for band, pwr in osc.global_band_power.items():
         bar = "█" * int(pwr * 30)
@@ -316,11 +328,317 @@ def print_report(report: DiagnosticsReport, detailed: bool = True) -> None:
 
 
 # =============================================================================
-# FILE SAVE
+# SNAPSHOT SAVE/LOAD
 # =============================================================================
 
 
-def save(report: DiagnosticsReport, output_dir: str) -> None:
+def save_snapshot(snapshot: RecorderSnapshot, path: str) -> None:
+    """Save a RecorderSnapshot to disk for later re-loading and analysis."""
+    if not path.endswith(".npz"):
+        path = path + ".npz"
+
+    arrays: Dict[str, np.ndarray] = {}
+
+    # ── Config / metadata → JSON string ────────────────────────────────
+    cfg_dict = asdict(snapshot.config)
+    # HealthThresholds is a nested dataclass — asdict handles it recursively.
+
+    meta = {
+        "dt_ms": snapshot.dt_ms,
+        "config": cfg_dict,
+        "n_recorded": snapshot._n_recorded,
+        "gain_sample_step": snapshot._gain_sample_step,
+        "cond_sample_step": snapshot._cond_sample_step,
+        "gain_sample_times": snapshot._gain_sample_times,
+        # Index lists
+        "pop_keys": [[rn, pn] for rn, pn in snapshot._pop_keys],
+        "region_keys": snapshot._region_keys,
+        "region_pop_indices": {rn: v for rn, v in snapshot._region_pop_indices.items()},
+        "tract_keys": [sid.to_key() for sid in snapshot._tract_keys],
+        "stp_keys": [[rn, sid.to_key()] for rn, sid in snapshot._stp_keys],
+        "nm_receptor_keys": [[rn, path_] for rn, path_ in snapshot._nm_receptor_keys],
+        "nm_source_pop_keys": [[rn, pn] for rn, pn in snapshot._nm_source_pop_keys],
+        # Static brain metadata
+        "pop_polarities": [[rn, pn, pol] for (rn, pn), pol in snapshot._pop_polarities.items()],
+        "tract_delay_ms": snapshot._tract_delay_ms,
+        "homeostasis_target_hz": [[rn, pn, hz] for (rn, pn), hz in snapshot._homeostasis_target_hz.items()],
+        "stp_configs": [[U, tau_d, tau_f] for U, tau_d, tau_f in snapshot._stp_configs],
+        "stp_final_state": snapshot._stp_final_state,
+        # Weight stats per tract
+        "tract_weight_stats": snapshot._tract_weight_stats,
+        # Neuron params per population (tuple keys → list keys for JSON)
+        "pop_neuron_params": [
+            [rn, pn, params]
+            for (rn, pn), params in snapshot._pop_neuron_params.items()
+        ],
+    }
+    arrays["_meta"] = np.array(json.dumps(meta), dtype=object)
+
+    # ── Pop sizes ───────────────────────────────────────────────────────
+    arrays["_pop_sizes"] = snapshot._pop_sizes
+
+    # ── Spike count buffers ─────────────────────────────────────────────
+    arrays["_pop_spike_counts"]    = snapshot._pop_spike_counts[: snapshot._n_recorded]
+    arrays["_region_spike_counts"] = snapshot._region_spike_counts[: snapshot._n_recorded]
+    if snapshot._n_tracts > 0:
+        arrays["_tract_sent"] = snapshot._tract_sent[: snapshot._n_recorded]
+
+    # Per-neuron spike counts
+    for i, arr in enumerate(snapshot._per_neuron_spike_counts):
+        arrays[f"_per_neuron_{i}"] = arr
+
+    # ── Sample indices ──────────────────────────────────────────────────
+    for i, idx in enumerate(snapshot._v_sample_idx):
+        arrays[f"_v_idx_{i}"] = idx
+    for i, idx in enumerate(snapshot._c_sample_idx):
+        arrays[f"_c_idx_{i}"] = idx
+
+    # ── Spike times (full mode) ─────────────────────────────────────────
+    # Stored as flat (nidx, ts) pairs per population.
+    for pop_idx, key in enumerate(snapshot._pop_keys):
+        if key in snapshot._spike_times:
+            nested = snapshot._spike_times[key]
+            nidx_list: List[int] = []
+            ts_list: List[int] = []
+            for ni, times in enumerate(nested):
+                for t_val in times:
+                    nidx_list.append(ni)
+                    ts_list.append(t_val)
+            if nidx_list:
+                arrays[f"_st_nidx_{pop_idx}"] = np.array(nidx_list, dtype=np.int32)
+                arrays[f"_st_ts_{pop_idx}"]   = np.array(ts_list,   dtype=np.int32)
+
+    # ── Trajectory buffers ──────────────────────────────────────────────
+    n_gs = snapshot._gain_sample_step
+    arrays["_g_L_scale_history"]     = snapshot._g_L_scale_history[:n_gs]
+    arrays["_stp_efficacy_history"]  = snapshot._stp_efficacy_history[:n_gs]
+    arrays["_nm_concentration_history"] = snapshot._nm_concentration_history[:n_gs]
+
+    # ── Full-mode state buffers ─────────────────────────────────────────
+    if snapshot.config.mode == "full":
+        if snapshot._voltages is not None:
+            arrays["_voltages"] = snapshot._voltages[: snapshot._n_recorded]
+        n_cs = snapshot._cond_sample_step
+        if n_cs > 0:
+            if snapshot._g_exc_samples is not None:
+                arrays["_g_exc_samples"]    = snapshot._g_exc_samples[:n_cs]
+            if snapshot._g_inh_samples is not None:
+                arrays["_g_inh_samples"]    = snapshot._g_inh_samples[:n_cs]
+            if snapshot._g_nmda_samples is not None:
+                arrays["_g_nmda_samples"]   = snapshot._g_nmda_samples[:n_cs]
+            if snapshot._g_gaba_b_samples is not None:
+                arrays["_g_gaba_b_samples"] = snapshot._g_gaba_b_samples[:n_cs]
+            if snapshot._g_apical_samples is not None:
+                arrays["_g_apical_samples"] = snapshot._g_apical_samples[:n_cs]
+
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    np.savez_compressed(path, **arrays)
+    print(f"  ✓ Saved recorder snapshot → {path}")
+
+
+def load_snapshot(path: str) -> RecorderSnapshot:
+    """Load a snapshot previously saved with :meth:`save_snapshot`.
+
+    Args:
+        path: Path to the ``.npz`` file (the ``.npz`` suffix is appended
+                if absent).
+
+    Returns:
+        A fully reconstituted :class:`RecorderSnapshot`.
+    """
+    if not path.endswith(".npz"):
+        path = path + ".npz"
+
+    data = np.load(path, allow_pickle=True)
+    meta: dict = json.loads(str(data["_meta"].item()))
+
+    # ── Config ──────────────────────────────────────────────────────────
+    cfg_dict = meta["config"]
+    thresh_dict = cfg_dict.pop("thresholds", {})
+    thresholds = HealthThresholds(**thresh_dict)
+    config = DiagnosticsConfig(**cfg_dict, thresholds=thresholds)
+
+    dt_ms: float = float(meta["dt_ms"])
+    n_recorded: int = int(meta["n_recorded"])
+    gain_sample_step: int = int(meta["gain_sample_step"])
+    cond_sample_step: int = int(meta["cond_sample_step"])
+    gain_sample_times: List[int] = [int(x) for x in meta["gain_sample_times"]]
+
+    # ── Index ────────────────────────────────────────────────────────────
+    pop_keys: List[Tuple[str, str]] = [
+        (str(rn), str(pn)) for rn, pn in meta["pop_keys"]
+    ]
+    pop_index: Dict[Tuple[str, str], int] = {k: i for i, k in enumerate(pop_keys)}
+    n_pops = len(pop_keys)
+
+    pop_sizes: np.ndarray = data["_pop_sizes"]
+
+    region_keys: List[str] = [str(r) for r in meta["region_keys"]]
+    region_index: Dict[str, int] = {r: i for i, r in enumerate(region_keys)}
+    n_regions = len(region_keys)
+    region_pop_indices: Dict[str, List[int]] = {
+        str(rn): [int(x) for x in v]
+        for rn, v in meta["region_pop_indices"].items()
+    }
+
+    tract_keys: List[SynapseId] = [
+        SynapseId.from_key(k) for k in meta["tract_keys"]
+    ]
+    tract_index: Dict[SynapseId, int] = {k: i for i, k in enumerate(tract_keys)}
+    n_tracts = len(tract_keys)
+
+    stp_keys: List[Tuple[str, SynapseId]] = [
+        (str(rn), SynapseId.from_key(k)) for rn, k in meta["stp_keys"]
+    ]
+    nm_receptor_keys: List[Tuple[str, str]] = [
+        (str(rn), str(p)) for rn, p in meta["nm_receptor_keys"]
+    ]
+    n_nm_receptors = len(nm_receptor_keys)
+    nm_source_pop_keys: List[Tuple[str, str]] = [
+        (str(rn), str(pn)) for rn, pn in meta.get("nm_source_pop_keys", [])
+    ]
+
+    # ── Static brain metadata ────────────────────────────────────────────
+    pop_polarities: Dict[Tuple[str, str], str] = {
+        (str(rn), str(pn)): str(pol)
+        for rn, pn, pol in meta.get("pop_polarities", [])
+    }
+    tract_delay_ms: List[float] = [float(d) for d in meta.get("tract_delay_ms", [])]
+    homeostasis_target_hz: Dict[Tuple[str, str], float] = {
+        (str(rn), str(pn)): float(hz)
+        for rn, pn, hz in meta.get("homeostasis_target_hz", [])
+    }
+    stp_configs: List[Tuple[float, float, float]] = [
+        (float(U), float(tau_d), float(tau_f))
+        for U, tau_d, tau_f in meta.get("stp_configs", [])
+    ]
+    stp_final_state: Dict[str, Dict[str, float]] = {
+        str(k): {str(sk): float(sv) for sk, sv in v.items()}
+        for k, v in meta.get("stp_final_state", {}).items()
+    }
+    tract_weight_stats: Dict[str, Dict[str, float]] = {
+        str(k): {str(sk): float(sv) for sk, sv in v.items()}
+        for k, v in meta.get("tract_weight_stats", {}).items()
+    }
+    pop_neuron_params: Dict[Tuple[str, str], Dict[str, float]] = {
+        (str(rn), str(pn)): {str(pk): float(pv) for pk, pv in params.items()}
+        for rn, pn, params in meta.get("pop_neuron_params", [])
+    }
+
+    # ── Sample indices ───────────────────────────────────────────────────
+    v_sample_idx: List[np.ndarray] = [
+        data[f"_v_idx_{i}"] for i in range(n_pops)
+    ]
+    c_sample_idx: List[np.ndarray] = [
+        data[f"_c_idx_{i}"] for i in range(n_pops)
+    ]
+
+    # ── Spike buffers ────────────────────────────────────────────────────
+    pop_spike_counts: np.ndarray = data["_pop_spike_counts"]
+    region_spike_counts: np.ndarray = data["_region_spike_counts"]
+    tract_sent_raw = data["_tract_sent"] if n_tracts > 0 and "_tract_sent" in data else None
+    tract_sent: np.ndarray = (
+        tract_sent_raw if tract_sent_raw is not None
+        else np.zeros((n_recorded, 0), dtype=np.int32)
+    )
+
+    per_neuron_spike_counts: List[np.ndarray] = [
+        data[f"_per_neuron_{i}"] for i in range(n_pops)
+    ]
+
+    # ── Spike times ──────────────────────────────────────────────────────
+    spike_times: Dict[Tuple[str, str], List[List[int]]] = {}
+    for pop_idx, key in enumerate(pop_keys):
+        nidx_key = f"_st_nidx_{pop_idx}"
+        ts_key   = f"_st_ts_{pop_idx}"
+        if nidx_key in data:
+            nidx_arr = data[nidx_key]
+            ts_arr   = data[ts_key]
+            n_neurons_pop = int(pop_sizes[pop_idx])
+            nested: List[List[int]] = [[] for _ in range(n_neurons_pop)]
+            for ni_val, ts_val in zip(nidx_arr.tolist(), ts_arr.tolist()):
+                nested[int(ni_val)].append(int(ts_val))
+            spike_times[key] = nested
+
+    # ── Trajectory buffers ────────────────────────────────────────────────
+    g_L_scale_history: np.ndarray = data["_g_L_scale_history"]
+    stp_efficacy_history: np.ndarray = data["_stp_efficacy_history"]
+    nm_concentration_history: np.ndarray = data["_nm_concentration_history"]
+
+    # ── Full-mode state buffers ───────────────────────────────────────────
+    voltages: Optional[np.ndarray] = (
+        data["_voltages"] if "_voltages" in data else None
+    )
+    g_exc_samples: Optional[np.ndarray] = (
+        data["_g_exc_samples"] if "_g_exc_samples" in data else None
+    )
+    g_inh_samples: Optional[np.ndarray] = (
+        data["_g_inh_samples"] if "_g_inh_samples" in data else None
+    )
+    g_nmda_samples: Optional[np.ndarray] = (
+        data["_g_nmda_samples"] if "_g_nmda_samples" in data else None
+    )
+    g_gaba_b_samples: Optional[np.ndarray] = (
+        data["_g_gaba_b_samples"] if "_g_gaba_b_samples" in data else None
+    )
+    g_apical_samples: Optional[np.ndarray] = (
+        data["_g_apical_samples"] if "_g_apical_samples" in data else None
+    )
+
+    return RecorderSnapshot(
+        config=config,
+        dt_ms=dt_ms,
+        _pop_keys=pop_keys,
+        _pop_index=pop_index,
+        _n_pops=n_pops,
+        _pop_sizes=pop_sizes,
+        _region_keys=region_keys,
+        _region_index=region_index,
+        _n_regions=n_regions,
+        _region_pop_indices=region_pop_indices,
+        _tract_keys=tract_keys,
+        _tract_index=tract_index,
+        _n_tracts=n_tracts,
+        _stp_keys=stp_keys,
+        _nm_receptor_keys=nm_receptor_keys,
+        _n_nm_receptors=n_nm_receptors,
+        _nm_source_pop_keys=nm_source_pop_keys,
+        _v_sample_idx=v_sample_idx,
+        _c_sample_idx=c_sample_idx,
+        _n_recorded=n_recorded,
+        _gain_sample_step=gain_sample_step,
+        _cond_sample_step=cond_sample_step,
+        _gain_sample_times=gain_sample_times,
+        _pop_spike_counts=pop_spike_counts,
+        _per_neuron_spike_counts=per_neuron_spike_counts,
+        _region_spike_counts=region_spike_counts,
+        _tract_sent=tract_sent,
+        _spike_times=spike_times,
+        _voltages=voltages,
+        _g_exc_samples=g_exc_samples,
+        _g_inh_samples=g_inh_samples,
+        _g_nmda_samples=g_nmda_samples,
+        _g_gaba_b_samples=g_gaba_b_samples,
+        _g_apical_samples=g_apical_samples,
+        _g_L_scale_history=g_L_scale_history,
+        _stp_efficacy_history=stp_efficacy_history,
+        _nm_concentration_history=nm_concentration_history,
+        _pop_polarities=pop_polarities,
+        _tract_delay_ms=tract_delay_ms,
+        _homeostasis_target_hz=homeostasis_target_hz,
+        _stp_configs=stp_configs,
+        _stp_final_state=stp_final_state,
+        _tract_weight_stats=tract_weight_stats,
+        _pop_neuron_params=pop_neuron_params,
+    )
+
+
+# =============================================================================
+# REPORT SAVE/LOAD
+# =============================================================================
+
+
+def save_report(report: DiagnosticsReport, output_dir: str) -> None:
     """Save report summary (JSON) and raw traces (NPZ) to ``output_dir``."""
     os.makedirs(output_dir, exist_ok=True)
 

@@ -9,15 +9,10 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
-try:
-    import matplotlib
-    import matplotlib.pyplot as plt
+import matplotlib
+import matplotlib.pyplot as plt
 
-    # Use non-interactive backend
-    matplotlib.use("Agg")
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+matplotlib.use("Agg")  # Use non-interactive backend
 
 
 class EquationRenderer:
@@ -61,12 +56,6 @@ class EquationRenderer:
         fontsize : int, optional
             Font size for equations (default: 14)
         """
-        if not HAS_MATPLOTLIB:
-            raise ImportError(
-                "matplotlib is required for equation rendering. "
-                "Install with: pip install matplotlib"
-            )
-
         self.dpi = dpi
         self.fontsize = fontsize
 

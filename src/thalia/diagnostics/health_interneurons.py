@@ -16,11 +16,11 @@ from .diagnostics_types import (
 from .region_tags import CORTICAL_TAGS, matches_any
 
 if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+    from .diagnostics_types import RecorderSnapshot
 
 
 def check_interneuron_ratio(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check inhibitory interneuron neuron-count ratio in neocortical regions.
@@ -38,15 +38,16 @@ def check_interneuron_ratio(
     Reference: Tremblay et al. 2016, *Neuron* "GABAergic interneurons in the
     neocortex: from cellular properties to circuits".
     """
-    for rn, region in rec.brain.regions.items():
+    for rn in rec._region_keys:
         if not matches_any(rn, CORTICAL_TAGS):
             continue
         n_inhibitory = 0
         n_total = 0
-        for pn, pop_obj in region.neuron_populations.items():
-            n = int(pop_obj.n_neurons)
+        for pop_idx in rec._region_pop_indices[rn]:
+            _, pn = rec._pop_keys[pop_idx]
+            n = int(rec._pop_sizes[pop_idx])
             n_total += n
-            polarity = region._population_polarities.get(pn, PopulationPolarity.ANY)
+            polarity = rec._pop_polarities.get((rn, pn), PopulationPolarity.ANY)
             if polarity == PopulationPolarity.INHIBITORY:
                 n_inhibitory += n
         if n_total == 0:
@@ -79,7 +80,7 @@ def check_interneuron_ratio(
 
 
 def check_interneuron_subtype_balance(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check that cortical interneuron subtypes (PV, SST, VIP) are proportionally balanced.
@@ -103,16 +104,17 @@ def check_interneuron_subtype_balance(
 
     References: Tremblay, Lee & Bhatt 2016 *Neuron*; Jiang et al. 2015 *Cell*.
     """
-    for rn, region in rec.brain.regions.items():
+    for rn in rec._region_keys:
         if not matches_any(rn, CORTICAL_TAGS):
             continue
 
         pv_n = sst_n = vip_n = other_in_n = 0
-        for pn, pop_obj in region.neuron_populations.items():
-            polarity = region._population_polarities.get(pn, PopulationPolarity.ANY)
+        for pop_idx in rec._region_pop_indices[rn]:
+            _, pn = rec._pop_keys[pop_idx]
+            polarity = rec._pop_polarities.get((rn, pn), PopulationPolarity.ANY)
             if polarity != PopulationPolarity.INHIBITORY:
                 continue
-            n = int(pop_obj.n_neurons)
+            n = int(rec._pop_sizes[pop_idx])
             pn_l = pn.lower()
             if "pv" in pn_l or "parvalbumin" in pn_l:
                 pv_n += n
@@ -178,7 +180,7 @@ def check_interneuron_subtype_balance(
 
 
 def check_interneuron_fr_balance(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
 ) -> None:
@@ -210,7 +212,7 @@ def check_interneuron_fr_balance(
     T = rec._n_recorded or rec.config.n_timesteps
     n_bins = T // bin_steps
 
-    for rn, region in rec.brain.regions.items():
+    for rn in rec._region_keys:
         if not matches_any(rn, CORTICAL_TAGS):
             continue
 
@@ -219,12 +221,13 @@ def check_interneuron_fr_balance(
         # ------------------------------------------------------------------ #
         pv_fr_sum = pv_fr_n = 0.0
         pyr_fr_sum = pyr_fr_n = 0.0
-        for pn, pop_obj in region.neuron_populations.items():
+        for pop_idx in rec._region_pop_indices[rn]:
+            _, pn = rec._pop_keys[pop_idx]
             pn_l = pn.lower()
             ps = pop_stats.get((rn, pn))
             if ps is None:
                 continue
-            n = float(pop_obj.n_neurons)
+            n = float(rec._pop_sizes[pop_idx])
             if "pv" in pn_l or "parvalbumin" in pn_l:
                 pv_fr_sum += ps.mean_fr_hz * n
                 pv_fr_n   += n
@@ -261,12 +264,11 @@ def check_interneuron_fr_balance(
         sst_indices: List[int] = []
         vip_sizes: List[float] = []
         sst_sizes: List[float] = []
-        for pn, pop_obj in region.neuron_populations.items():
+        for pop_idx in rec._region_pop_indices[rn]:
+            _, pn = rec._pop_keys[pop_idx]
             pn_l = pn.lower()
-            idx = rec._pop_index.get((rn, pn))
-            if idx is None:
-                continue
-            n = float(pop_obj.n_neurons)
+            idx = pop_idx
+            n = float(rec._pop_sizes[pop_idx])
             if "vip" in pn_l:
                 vip_indices.append(idx)
                 vip_sizes.append(n)

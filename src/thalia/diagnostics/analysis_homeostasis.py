@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict
+from typing import Dict
 
 import numpy as np
-import torch
 
-from .diagnostics_types import HomeostaticStats
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+from .diagnostics_types import HomeostaticStats, RecorderSnapshot
 
 
-def compute_homeostatic_stats(rec: "DiagnosticsRecorder") -> HomeostaticStats:
+def compute_homeostatic_stats(rec: RecorderSnapshot) -> HomeostaticStats:
     """Summarise homeostatic gain trajectories, STP efficacy history, and STP final state."""
     n_steps = rec._gain_sample_step
     sample_times = np.array(rec._gain_sample_times, dtype=np.float32) * rec.dt_ms
@@ -31,20 +27,11 @@ def compute_homeostatic_stats(rec: "DiagnosticsRecorder") -> HomeostaticStats:
         if not np.all(np.isnan(vals)):
             stp_efficacy_hist[str(syn_id)] = vals.copy()
 
-    # STP final state snapshot
-    stp_final: Dict[str, Dict[str, float]] = {}
-    for region in rec.brain.regions.values():
-        if not hasattr(region, "stp_modules"):
-            continue
-        for syn_id, stp_mod in region.stp_modules.items():
-            if hasattr(stp_mod, "x") and hasattr(stp_mod, "u"):
-                key = str(syn_id)
-                with torch.no_grad():
-                    stp_final[key] = {
-                        "mean_x": float(stp_mod.x.mean().item()),
-                        "mean_u": float(stp_mod.u.mean().item()),
-                        "efficacy": float((stp_mod.x * stp_mod.u).mean().item()),
-                    }
+    # STP final state
+    if hasattr(rec, "_capture_stp_final_state"):
+        stp_final: Dict[str, Dict[str, float]] = rec._capture_stp_final_state()
+    else:
+        stp_final = dict(rec._stp_final_state)
 
     return HomeostaticStats(
         gain_trajectories=gain_trajectories,

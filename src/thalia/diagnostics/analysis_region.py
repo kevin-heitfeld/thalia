@@ -2,17 +2,89 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 
-from .diagnostics_types import PopulationStats, RegionStats
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+from .diagnostics_types import PopulationStats, RecorderSnapshot, RegionStats
 
 
-def _weighted_mean_fr(
+def compute_ei_lag(
+    rec: RecorderSnapshot,
+    region_name: str,
+) -> Tuple[float, float]:
+    """Cross-correlation between excitatory and inhibitory conductance traces.
+
+    Computes the Pearson cross-correlation between the mean AMPA (g_E) and
+    mean GABA-A (g_I) conductance time series across the region, at integer
+    sample lags from 0 to +30 samples (positive = inhibition lagging excitation).
+
+    Returns ``(lag_ms, peak_xcorr)`` where lag_ms is the lag in milliseconds
+    at which the cross-correlation peaks.  Returns ``(NaN, NaN)`` in stats mode
+    or when conductance samples are unavailable.
+    """
+    if (
+        rec.config.mode != "full"
+        or rec._g_exc_samples is None
+        or rec._g_inh_samples is None
+    ):
+        return np.nan, np.nan
+
+    p_indices = rec._region_pop_indices.get(region_name, [])
+    if not p_indices:
+        return np.nan, np.nan
+
+    cond_step = rec._cond_sample_step
+    if cond_step < 10:
+        return np.nan, np.nan
+
+    # Neuron-count-weighted mean conductance per time step
+    weights = np.array([float(rec._pop_sizes[pi]) for pi in p_indices], dtype=np.float64)
+    total_w = weights.sum()
+    if total_w < 1e-9:
+        return np.nan, np.nan
+
+    # Shape: [cond_step, n_pops_in_region, C] → mean over C → weighted mean over pops
+    exc_slab = rec._g_exc_samples[:cond_step][:, p_indices, :]  # [cond_step, n_pops, C]
+    inh_slab = rec._g_inh_samples[:cond_step][:, p_indices, :]
+
+    # Per-pop mean across sampled neurons → [cond_step, n_pops]
+    exc_pop = np.nanmean(exc_slab, axis=2)
+    inh_pop = np.nanmean(inh_slab, axis=2)
+
+    # Weighted mean across pops → [cond_step]
+    exc_trace = (exc_pop * weights[None, :]).sum(axis=1) / total_w
+    inh_trace = (inh_pop * weights[None, :]).sum(axis=1) / total_w
+
+    # Subtract means
+    exc_trace = exc_trace - exc_trace.mean()
+    inh_trace = inh_trace - inh_trace.mean()
+
+    exc_std = exc_trace.std()
+    inh_std = inh_trace.std()
+    if exc_std < 1e-12 or inh_std < 1e-12:
+        return np.nan, np.nan
+
+    # Cross-correlation at positive lags (inhibition lagging excitation)
+    cond_interval_ms = rec.config.conductance_sample_interval_steps * rec.dt_ms
+    max_lag_samples = min(30, cond_step // 3)  # up to 30 samples lag
+    best_lag = 0
+    best_xcorr = -np.inf
+    for lag in range(max_lag_samples + 1):
+        if lag == 0:
+            xcorr = float(np.mean(exc_trace * inh_trace))
+        else:
+            xcorr = float(np.mean(exc_trace[:-lag] * inh_trace[lag:]))
+        xcorr_norm = xcorr / (exc_std * inh_std)
+        if xcorr_norm > best_xcorr:
+            best_xcorr = xcorr_norm
+            best_lag = lag
+
+    lag_ms = best_lag * cond_interval_ms
+    return float(lag_ms), float(best_xcorr)
+
+
+def weighted_mean_fr(
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     rn: str,
 ) -> float:
@@ -31,8 +103,8 @@ def _weighted_mean_fr(
     return float((weights * rates).sum() / total) if total > 0 else 0.0
 
 
-def _extract_region_conductances(
-    rec: "DiagnosticsRecorder",
+def extract_region_conductances(
+    rec: RecorderSnapshot,
     region_name: str,
 ) -> Tuple[float, float, float, float, float]:
     """Extract mean AMPA, NMDA, and GABA conductances for a region.
@@ -99,7 +171,7 @@ def _extract_region_conductances(
 
 
 def compute_region_stats(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     region_name: str,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
 ) -> RegionStats:
@@ -113,13 +185,16 @@ def compute_region_stats(
     # small fast-firing interneurons.  An unweighted mean of a 400-neuron L4 pyr
     # population at 5 Hz and a 20-neuron PV population at 40 Hz would yield
     # 22.5 Hz — inflated by the population contributing only 5 % of neurons.
-    mean_fr = _weighted_mean_fr(pop_stats, region_name)
+    mean_fr = weighted_mean_fr(pop_stats, region_name)
     total_spikes = sum(p.total_spikes for p in pops.values())
 
     # E/I balance: mean conductances across sampled neurons in this region.
     # Excitatory numerator = AMPA (g_E) + NMDA (g_nmda) when available.
     # Inhibitory denominator = GABA-A (g_I) + GABA-B (g_gaba_b) when available.
-    mean_g_exc, mean_g_nmda, mean_g_inh, mean_g_gaba_a, mean_g_gaba_b = _extract_region_conductances(rec, region_name)
+    mean_g_exc, mean_g_nmda, mean_g_inh, mean_g_gaba_a, mean_g_gaba_b = extract_region_conductances(rec, region_name)
+
+    # --- E/I lag cross-correlation ------------------------------------
+    ei_lag_ms, ei_xcorr_peak = compute_ei_lag(rec, region_name)
 
     # --- D1/D2 competition index --------------------------------------
     # Pearson correlation between D1 and D2 MSN population rates.
@@ -162,6 +237,8 @@ def compute_region_stats(
         mean_g_inh=mean_g_inh,
         mean_g_gaba_a=mean_g_gaba_a,
         mean_g_gaba_b=mean_g_gaba_b,
+        ei_lag_ms=ei_lag_ms,
+        ei_xcorr_peak=ei_xcorr_peak,
         d1_d2_competition_index_200ms=d1_d2_competition_index_200ms,
         d1_d2_competition_index_50ms=d1_d2_competition_index_50ms,
     )

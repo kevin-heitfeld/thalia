@@ -10,34 +10,24 @@ from .basal_ganglia import (
     TonicPacemakerConfig,
     DopaminePacemakerConfig,
     StriatumConfig,
-    SubstantiaNigraCompactaConfig,
     VTAConfig,
-    get_default_gpe_config,
-    get_default_gpi_config,
-    get_default_lhb_config,
-    get_default_rmtg_config,
-    get_default_snr_config,
-    get_default_stn_config,
 )
 from .brainstem import (
     CerebellumConfig,
     DorsalRapheNucleusConfig,
     LocusCoeruleusConfig,
-    NucleusBasalisConfig,
 )
 from .cortical_column import (
     CorticalColumnConfig,
-    PrefrontalCortexConfig,
+    CorticalPopulationConfig,
 )
 from .hippocampus import (
     EntorhinalCortexConfig,
+    EntorhinalCortexPopulationConfig,
     HippocampusConfig,
+    HippocampalPopulationConfig,
     MedialSeptumConfig,
     SubiculumConfig,
-    get_default_dg_layer_config,
-    get_default_ca3_layer_config,
-    get_default_ca2_layer_config,
-    get_default_ca1_layer_config,
 )
 from .thalamus import ThalamusConfig
 from .brain import BrainConfig
@@ -54,32 +44,21 @@ __all__ = [
     "TonicPacemakerConfig",
     "DopaminePacemakerConfig",
     "StriatumConfig",
-    "SubstantiaNigraCompactaConfig",
     "VTAConfig",
-    # Basal ganglia config factories
-    "get_default_gpe_config",
-    "get_default_gpi_config",
-    "get_default_lhb_config",
-    "get_default_rmtg_config",
-    "get_default_snr_config",
-    "get_default_stn_config",
     # Brainstem configs
     "CerebellumConfig",
     "DorsalRapheNucleusConfig",
     "LocusCoeruleusConfig",
-    "NucleusBasalisConfig",
     # Cortical column configs
     "CorticalColumnConfig",
-    "PrefrontalCortexConfig",
+    "CorticalPopulationConfig",
     # Hippocampus configs
     "EntorhinalCortexConfig",
+    "EntorhinalCortexPopulationConfig",
     "HippocampusConfig",
+    "HippocampalPopulationConfig",
     "MedialSeptumConfig",
     "SubiculumConfig",
-    "get_default_dg_layer_config",
-    "get_default_ca3_layer_config",
-    "get_default_ca2_layer_config",
-    "get_default_ca1_layer_config",
     # Thalamus config
     "ThalamusConfig",
     # Overall brain config

@@ -12,7 +12,7 @@ import torch.nn as nn
 
 from thalia import GlobalConfig
 from thalia.errors import ConfigurationError
-from thalia.utils import validate_spike_tensor
+from thalia.utils import decay_float, validate_spike_tensor
 
 from .eligibility_trace_manager import EligibilityTraceConfig, EligibilityTraceManager
 
@@ -24,8 +24,6 @@ from .eligibility_trace_manager import EligibilityTraceConfig, EligibilityTraceM
 @dataclass
 class LearningConfig:
     """Base configuration for all learning strategies."""
-
-    seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
 
     learning_rate: float = 0.01
     """Base learning rate."""
@@ -376,8 +374,8 @@ class STDPStrategy(LearningStrategy):
 
         # Scalar caches for decay factors (populated in setup / update_temporal_parameters)
         self._firing_rate_tau_ms: float = 100.0
-        self._firing_rate_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / self._firing_rate_tau_ms)
-        self._retrograde_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.retrograde_tau_ms)
+        self._firing_rate_decay: float = decay_float(GlobalConfig.DEFAULT_DT_MS, self._firing_rate_tau_ms)
+        self._retrograde_decay: float = decay_float(GlobalConfig.DEFAULT_DT_MS, config.retrograde_tau_ms)
 
         # trace_manager is created as a proper nn.Module child in setup()
         # (not during __init__ because n_pre/n_post are not yet known)
@@ -393,7 +391,8 @@ class STDPStrategy(LearningStrategy):
         Assigns trace_manager as an nn.Module child so .to(device) and
         state_dict() automatically include all trace tensors.
         """
-        config = self.config
+        assert isinstance(self.config, STDPConfig)
+        config: STDPConfig = self.config
 
         # Build a standalone EligibilityTraceConfig from our STDPConfig fields.
         # EligibilityTraceManager no longer requires STDPConfig directly —
@@ -412,8 +411,8 @@ class STDPStrategy(LearningStrategy):
         self.register_buffer("firing_rates",      torch.zeros(n_post, device=device))
         self.register_buffer("retrograde_signal", torch.zeros(n_post, device=device))
 
-        self._firing_rate_decay = math.exp(-self._dt_ms / self._firing_rate_tau_ms)
-        self._retrograde_decay  = math.exp(-self._dt_ms / config.retrograde_tau_ms)
+        self._firing_rate_decay = decay_float(self._dt_ms, self._firing_rate_tau_ms)
+        self._retrograde_decay  = decay_float(self._dt_ms, config.retrograde_tau_ms)
 
     def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
         """Call setup() if not yet initialised or if synapse dimensions changed."""
@@ -448,6 +447,9 @@ class STDPStrategy(LearningStrategy):
                 - acetylcholine (float): ACh level (favors LTP/encoding)
                 - norepinephrine (float): NE level (inverted-U modulation)
         """
+        assert isinstance(self.config, STDPConfig)
+        config: STDPConfig = self.config
+
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
@@ -456,8 +458,6 @@ class STDPStrategy(LearningStrategy):
         dopamine       = kwargs.get("dopamine", 0.0)
         acetylcholine  = kwargs.get("acetylcholine", 0.0)
         norepinephrine = kwargs.get("norepinephrine", 0.0)
-
-        config = self.config
 
         # Cache registered buffers once — avoids nn.Module.__getattr__ per access
         firing_rates     = self.firing_rates
@@ -565,9 +565,11 @@ class STDPStrategy(LearningStrategy):
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update temporal parameters when brain timestep changes."""
         super().update_temporal_parameters(dt_ms)
+        assert isinstance(self.config, STDPConfig)
+        config: STDPConfig = self.config
         # Use true exponential decay (not linear 1-dt/tau which goes negative for dt>tau)
-        self._firing_rate_decay = math.exp(-dt_ms / self._firing_rate_tau_ms)
-        self._retrograde_decay  = math.exp(-dt_ms / self.config.retrograde_tau_ms)
+        self._firing_rate_decay = decay_float(dt_ms, self._firing_rate_tau_ms)
+        self._retrograde_decay  = decay_float(dt_ms, config.retrograde_tau_ms)
         # Propagate to trace_manager if already set up
         if hasattr(self, "trace_manager"):
             self.trace_manager.update_temporal_parameters(dt_ms)
@@ -593,8 +595,8 @@ class BCMStrategy(LearningStrategy):
         self._firing_rate_tau_ms: float = 100.0
 
         # Pre-compute decay scalars at default dt (refreshed in update_temporal_parameters)
-        self._decay_theta_val:        float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.tau_theta)
-        self._decay_firing_rate_val:  float = math.exp(-GlobalConfig.DEFAULT_DT_MS / self._firing_rate_tau_ms)
+        self._decay_theta_val:       float = decay_float(GlobalConfig.DEFAULT_DT_MS, config.tau_theta)
+        self._decay_firing_rate_val: float = decay_float(GlobalConfig.DEFAULT_DT_MS, self._firing_rate_tau_ms)
 
     # ------------------------------------------------------------------
     # Eager initialisation
@@ -605,7 +607,9 @@ class BCMStrategy(LearningStrategy):
 
         Must be called once (by BrainBuilder.build()) before compute_update().
         """
-        self.register_buffer("theta",        torch.full((n_post,), self.config.theta_init, device=device))
+        assert isinstance(self.config, BCMConfig)
+        config: BCMConfig = self.config
+        self.register_buffer("theta",        torch.full((n_post,), config.theta_init, device=device))
         self.register_buffer("firing_rates", torch.zeros(n_post, device=device))
 
     def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
@@ -636,13 +640,16 @@ class BCMStrategy(LearningStrategy):
         Returns:
             BCM modulation [n_post] (1D)
         """
+        assert isinstance(self.config, BCMConfig)
+        config: BCMConfig = self.config
+
         c = post_spikes.float()
         phi = c * (c - self.theta) / (self.theta + 1e-8)
 
         # FIRING-RATE-BASED LTD GATING: Block depression when firing rate is too low
         # Uses tracked firing rate (not instantaneous spikes) for stable gating
         depression_mask = phi < 0  # Where BCM would depress (c < theta)
-        barely_active = firing_rates < self.config.activity_threshold  # Low firing rate
+        barely_active = firing_rates < config.activity_threshold  # Low firing rate
         invalid_depression = depression_mask & barely_active
         phi = torch.where(invalid_depression, torch.zeros_like(phi), phi)
 
@@ -654,8 +661,11 @@ class BCMStrategy(LearningStrategy):
         Uses the per-neuron firing rate EMA rather than raw instantaneous spikes,
         so the threshold tracks average activity, not single-timestep volatility.
         """
+        assert isinstance(self.config, BCMConfig)
+        config: BCMConfig = self.config
+
         assert hasattr(self, "theta"), "BCMStrategy.setup() must be called before _update_theta()"
-        config = self.config
+
         r_p = self.firing_rates.pow(config.p)
         # In-place EMA to avoid triggering a new tensor allocation
         self.theta.mul_(self._decay_theta_val).add_(r_p, alpha=1.0 - self._decay_theta_val)
@@ -689,11 +699,12 @@ class BCMStrategy(LearningStrategy):
             pre_spikes: Presynaptic activity [n_pre] (1D)
             post_spikes: Postsynaptic activity [n_post] (1D)
         """
+        assert isinstance(self.config, BCMConfig)
+        config: BCMConfig = self.config
+
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
-
-        config = self.config
 
         # Update firing rate EMA (in-place)
         self.firing_rates.mul_(self._decay_firing_rate_val).add_(
@@ -731,8 +742,10 @@ class BCMStrategy(LearningStrategy):
             dt_ms: New simulation timestep in milliseconds
         """
         super().update_temporal_parameters(dt_ms)
-        self._decay_theta_val       = math.exp(-dt_ms / self.config.tau_theta)
-        self._decay_firing_rate_val = math.exp(-dt_ms / self._firing_rate_tau_ms)
+        assert isinstance(self.config, BCMConfig)
+        config: BCMConfig = self.config
+        self._decay_theta_val       = decay_float(dt_ms, config.tau_theta)
+        self._decay_firing_rate_val = decay_float(dt_ms, self._firing_rate_tau_ms)
 
 
 class ThreeFactorStrategy(LearningStrategy):
@@ -766,7 +779,9 @@ class ThreeFactorStrategy(LearningStrategy):
         pattern here.  Only ``accumulate_eligibility()`` is used; the pre/post
         traces inside the manager are not read (they stay at zero).
         """
-        config = self.config
+        assert isinstance(self.config, ThreeFactorConfig)
+        config: ThreeFactorConfig = self.config
+
         trace_cfg = EligibilityTraceConfig(
             # Three-factor learning doesn't distinguish LTP/LTD trace timescales;
             # use eligibility_tau for both pre- and post-trace decay constants.
@@ -851,11 +866,12 @@ class ThreeFactorStrategy(LearningStrategy):
         Returns:
             Updated weights
         """
+        assert isinstance(self.config, ThreeFactorConfig)
+        config: ThreeFactorConfig = self.config
+
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
-
-        config = self.config
 
         modulator: float = kwargs.get("modulator", 0.0)
 
@@ -897,8 +913,8 @@ class D1STDPStrategy(LearningStrategy):
 
     def __init__(self, config: D1D2STDPConfig) -> None:
         super().__init__(config)
-        self._fast_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.fast_eligibility_tau_ms)
-        self._slow_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / config.slow_eligibility_tau_ms)
+        self._fast_decay: float = decay_float(GlobalConfig.DEFAULT_DT_MS, config.fast_eligibility_tau_ms)
+        self._slow_decay: float = decay_float(GlobalConfig.DEFAULT_DT_MS, config.slow_eligibility_tau_ms)
 
     # ------------------------------------------------------------------
     # Eager / lazy setup
@@ -942,11 +958,13 @@ class D1STDPStrategy(LearningStrategy):
         Returns:
             Updated weight tensor (same shape as *weights*).
         """
+        assert isinstance(self.config, D1D2STDPConfig)
+        config: D1D2STDPConfig = self.config
+
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
-        config = self.config
         dopamine: Any = kwargs.get("dopamine", 0.0)
 
         # Hebbian outer product: [n_post, n_pre]
@@ -976,9 +994,10 @@ class D1STDPStrategy(LearningStrategy):
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Recompute decay scalars when the brain timestep changes."""
         super().update_temporal_parameters(dt_ms)
-        config = self.config
-        self._fast_decay = math.exp(-dt_ms / config.fast_eligibility_tau_ms)
-        self._slow_decay = math.exp(-dt_ms / config.slow_eligibility_tau_ms)
+        assert isinstance(self.config, D1D2STDPConfig)
+        config: D1D2STDPConfig = self.config
+        self._fast_decay = decay_float(dt_ms, config.fast_eligibility_tau_ms)
+        self._slow_decay = decay_float(dt_ms, config.slow_eligibility_tau_ms)
 
 
 class D2STDPStrategy(D1STDPStrategy):
@@ -1044,7 +1063,9 @@ class PredictiveCodingStrategy(LearningStrategy):
 
     def setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
         """Register the pre-spike ring buffer."""
-        delay = max(1, self.config.prediction_delay_steps)
+        assert isinstance(self.config, PredictiveCodingConfig)
+        config: PredictiveCodingConfig = self.config
+        delay = max(1, config.prediction_delay_steps)
         self.register_buffer(
             "pre_spike_buffer",
             torch.zeros(delay, n_pre, device=device),
@@ -1052,7 +1073,9 @@ class PredictiveCodingStrategy(LearningStrategy):
 
     def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
         """Call :meth:`setup` if not yet initialised or if *n_pre* changed."""
-        delay = max(1, self.config.prediction_delay_steps)
+        assert isinstance(self.config, PredictiveCodingConfig)
+        config: PredictiveCodingConfig = self.config
+        delay = max(1, config.prediction_delay_steps)
         if (
             not hasattr(self, "pre_spike_buffer")
             or self.pre_spike_buffer.shape != (delay, n_pre)
@@ -1086,12 +1109,15 @@ class PredictiveCodingStrategy(LearningStrategy):
         Returns:
             Updated weight tensor (same shape as *weights*).
         """
+        assert isinstance(self.config, PredictiveCodingConfig)
+        config: PredictiveCodingConfig = self.config
+
         n_pre = pre_spikes.shape[0]
         self.ensure_setup(n_pre, post_spikes.shape[0], pre_spikes.device)
         validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
         validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
-        lr: float = kwargs.get("learning_rate_override", self.config.learning_rate)
+        lr: float = kwargs.get("learning_rate_override", config.learning_rate)
 
         # Oldest slot in the ring buffer = most delayed pre-spikes
         delayed_pre = self.pre_spike_buffer[0]  # [n_pre]
@@ -1192,7 +1218,8 @@ class MaIStrategy(LearningStrategy):
         Returns:
             Updated weight matrix [n_purkinje, n_granule].
         """
-        config: MaIConfig = self.config  # type: ignore[assignment]
+        assert isinstance(self.config, MaIConfig)
+        config: MaIConfig = self.config
 
         climbing_fiber_spikes: Optional[torch.Tensor] = kwargs.get("climbing_fiber_spikes")
         if climbing_fiber_spikes is None:
@@ -1364,6 +1391,9 @@ class TagAndCaptureStrategy(LearningStrategy):
         Returns:
             Updated weight matrix (from base strategy; NOT clamped here).
         """
+        assert isinstance(self.config, TagAndCaptureConfig)
+        config: TagAndCaptureConfig = self.config
+
         n_pre = pre_spikes.shape[0]
         n_post = post_spikes.shape[0]
         device = pre_spikes.device
@@ -1375,7 +1405,6 @@ class TagAndCaptureStrategy(LearningStrategy):
         )
 
         # Update tags: decay → add new Hebbian coincidence (take max)
-        config: TagAndCaptureConfig = self.config  # type: ignore[assignment]
         self.tags.mul_(config.tag_decay)
         pre_f = pre_spikes.float()
         post_f = post_spikes.float()
@@ -1412,7 +1441,9 @@ class TagAndCaptureStrategy(LearningStrategy):
             Updated weight matrix (NOT clamped — caller is responsible for
             applying ``clamp_weights`` with its own ``w_min``/``w_max``).
         """
-        config: TagAndCaptureConfig = self.config  # type: ignore[assignment]
+        assert isinstance(self.config, TagAndCaptureConfig)
+        config: TagAndCaptureConfig = self.config
+
         if da_level <= config.consolidation_da_threshold:
             return weights
 

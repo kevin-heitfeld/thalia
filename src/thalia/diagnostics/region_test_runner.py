@@ -7,39 +7,24 @@ without needing to build and simulate the full brain.  Useful for:
 - Diagnosing silent or overactive populations before a full diagnostic run
 - Tuning individual region parameters (baseline_drive, weight_scale, etc.)
 - Verifying that a region fires in its target rate band given realistic inputs
-
-Usage::
-
-    runner = RegionTestRunner.from_preset("default", "cortex_sensory")
-    runner.add_poisson_input(
-        target_population="l4_pyr",
-        rate_hz=15.0,
-        n_input=100,
-        connectivity=0.20,
-        weight_scale=ConductanceScaledSpec(
-            source_rate_hz=15.0,
-            target_g_L=0.05,
-            target_v_inf=1.05,
-            fraction_of_drive=1.0,
-        ),
-    )
-    result = runner.run(duration_ms=1000, warmup_ms=500)
-    result.print()
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import torch
 
 from thalia.brain import (
+    BrainBuilder,
     BrainConfig,
     NeuralRegionConfig,
     NeuralRegionRegistry,
     ConductanceScaledSpec,
     STPConfig,
+    apply_stp_correction,
 )
 from thalia.typing import (
     NeuromodulatorInput,
@@ -48,7 +33,11 @@ from thalia.typing import (
     ReceptorType,
     RegionName,
     SynapseId,
+    SynapticInput,
 )
+
+from .analysis import analyze
+from .diagnostics_recorder import DiagnosticsRecorder
 
 if TYPE_CHECKING:
     from .diagnostics_types import DiagnosticsConfig, DiagnosticsReport
@@ -153,7 +142,7 @@ class RegionTestRunner:
         region_name: RegionName,
         population_sizes: PopulationSizes,
         *,
-        config: Optional[NeuralRegionConfig] = None,
+        config: NeuralRegionConfig,
         registry_name: Optional[RegionName] = None,
         dt_ms: float = 1.0,
     ) -> None:
@@ -163,8 +152,7 @@ class RegionTestRunner:
             region_name: Instance name for the region (also used by the registry
                 lookup when ``registry_name`` is not provided).
             population_sizes: Population size dict (matches the region's expected keys).
-            config: Optional region configuration.  When *None*, the registry's
-                default config class is instantiated with default parameters.
+            config: Region configuration.
             registry_name: Registry key for the region class.  Defaults to
                 ``region_name`` when not provided.
             dt_ms: Simulation timestep in milliseconds.
@@ -172,7 +160,7 @@ class RegionTestRunner:
         self.region_name: RegionName = region_name
         self.registry_name: RegionName = registry_name or region_name
         self.population_sizes: PopulationSizes = population_sizes
-        self.config: Optional[NeuralRegionConfig] = config
+        self.config: NeuralRegionConfig = config
         self.dt_ms: float = dt_ms
         self._poisson_inputs: List[PoissonInputSpec] = []
 
@@ -211,9 +199,6 @@ class RegionTestRunner:
         Raises:
             KeyError: If ``preset_name`` or ``region_name`` not found.
         """
-        # Import here to avoid circular import at module level.
-        from .brain_builder import BrainBuilder  # noqa: PLC0415
-
         builder = BrainBuilder.preset_builder(preset_name, brain_config)
 
         if region_name not in builder._region_specs:
@@ -312,27 +297,13 @@ class RegionTestRunner:
         Returns:
             :class:`RegionTestResult` with per-population firing rates, and
             optionally a :attr:`~RegionTestResult.diagnostics` report.
-
-        Raises:
-            ValueError: If the registry has no config class for the region type.
         """
-        from .brain_builder import _apply_stp_correction  # noqa: PLC0415
-
         # ── 1. Instantiate the region ────────────────────────────────────────
-        config_class = NeuralRegionRegistry.get_config_class(self.registry_name)
-        if config_class is None:
-            raise ValueError(
-                f"No config class registered for region type '{self.registry_name}'.  "
-                f"Ensure the region was decorated with @NeuralRegionRegistry.register("
-                f"config_class=...) and that the module has been imported."
-            )
-
-        config = self.config if self.config is not None else config_class()
-        config.dt_ms = self.dt_ms
+        self.config.dt_ms = self.dt_ms
 
         region = NeuralRegionRegistry.create(
             self.registry_name,
-            config=config,
+            config=self.config,
             population_sizes=self.population_sizes,
             region_name=self.region_name,
             device=device,
@@ -340,21 +311,21 @@ class RegionTestRunner:
 
         # ── 2. Register Poisson inputs ───────────────────────────────────────
         for inp in self._poisson_inputs:
-            corrected_ws = _apply_stp_correction(inp.weight_scale, inp.stp_config)
+            corrected_ws = apply_stp_correction(inp.weight_scale, inp.stp_config)
             region.add_input_source(
                 synapse_id=inp.synapse_id,
                 n_input=inp.n_input,
                 connectivity=inp.connectivity,
                 weight_scale=corrected_ws,
                 stp_config=inp.stp_config,
+                learning_strategy=None,
                 device=device,
             )
             # Pre-load STP state to steady state to avoid onset transient.
             if inp.stp_config is not None and isinstance(corrected_ws, ConductanceScaledSpec):
-                if inp.synapse_id in region.stp_modules:
-                    region.stp_modules[inp.synapse_id].initialize_to_steady_state(
-                        corrected_ws.source_rate_hz
-                    )
+                stp = region.get_stp_module(inp.synapse_id)
+                if stp is not None:
+                    stp.initialize_to_steady_state(corrected_ws.source_rate_hz)
 
         # Some regions need post-connection finalisation (e.g. gap junctions).
         if hasattr(region, "finalize_initialization"):
@@ -363,13 +334,10 @@ class RegionTestRunner:
         # ── 3. Optionally attach a DiagnosticsRecorder ───────────────────────
         recorder = None
         if diagnostics_config is not None:
-            from .diagnostics_recorder import DiagnosticsRecorder  # noqa: PLC0415
-
             n_meas_steps = int(duration_ms / self.dt_ms)
             diag_cfg = diagnostics_config
             # Override n_timesteps to match our measurement window.
             if diag_cfg.n_timesteps != n_meas_steps:
-                import copy  # noqa: PLC0415
                 diag_cfg = copy.replace(diag_cfg, n_timesteps=n_meas_steps)
 
             # Build a minimal Brain-compatible wrapper so DiagnosticsRecorder
@@ -380,7 +348,7 @@ class RegionTestRunner:
                     self.axonal_tracts: Dict[Any, Any] = {}
 
             fake_brain = _FakeBrain(self.region_name, region)
-            recorder = DiagnosticsRecorder(fake_brain, diag_cfg)  # type: ignore[arg-type]
+            recorder = DiagnosticsRecorder(fake_brain, diag_cfg)
 
         # ── 4. Simulate ──────────────────────────────────────────────────────
         total_steps   = int((warmup_ms + duration_ms) / self.dt_ms)
@@ -397,7 +365,7 @@ class RegionTestRunner:
 
         for step in range(total_steps):
             # Generate Poisson spikes: each neuron fires with prob = rate * dt
-            synaptic_inputs: Dict[SynapseId, torch.Tensor] = {
+            synaptic_inputs: SynapticInput = {
                 sid: torch.rand(n_in, device=device) < prob
                 for sid, prob, n_in in poisson_specs
             }
@@ -414,25 +382,30 @@ class RegionTestRunner:
                     spike_accum[key] += int(spikes_t.sum().item())
                 # Record into diagnostics if configured
                 if recorder is not None:
-                    recorder.record(meas_step, {self.region_name: region_output})
+                    recorder.record(meas_step, synaptic_inputs, {self.region_name: region_output})
 
         # ── 5. Compute rates ─────────────────────────────────────────────────
         measurement_ms = total_steps * self.dt_ms - warmup_ms
         rates:    Dict[str, float] = {}
         n_neurons: Dict[str, int]  = {}
 
-        for pop_key in spike_accum:
+        for pop_key, spikes_t in spike_accum.items():
             try:
                 n = region.get_population_size(pop_key)
             except (KeyError, ValueError):
                 n = 1  # Fallback — prevents division errors for unknown keys
             n_neurons[pop_key] = n
             rates[pop_key] = (
-                spike_accum[pop_key] / n / (measurement_ms / 1000.0)
+                spikes_t / n / (measurement_ms / 1000.0)
                 if n > 0 and measurement_ms > 0 else 0.0
             )
 
-        diag_report = recorder.analyze() if recorder is not None else None
+        if recorder is not None:
+            if recorder.config.mode == "full":
+                recorder._build_spike_times()
+            diag_report = analyze(recorder)
+        else:
+            diag_report = None
 
         return RegionTestResult(
             rates_hz=rates,

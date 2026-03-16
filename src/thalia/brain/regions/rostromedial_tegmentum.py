@@ -47,13 +47,19 @@ These are essential for learning to avoid bad outcomes.
 
 from __future__ import annotations
 
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import TonicPacemakerConfig, get_default_rmtg_config
-from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.brain.configs import TonicPacemakerConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_g_L,
+    split_excitatory_conductance,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -63,20 +69,19 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
 from .neural_region import NeuralRegion
 from .population_names import RMTgPopulation
 from .region_registry import register_region
+
+if TYPE_CHECKING:
+    from thalia.brain.neurons import ConductanceLIF
 
 
 @register_region(
     "rostromedial_tegmentum",
     aliases=["rmtg", "tvta"],
     description="Rostromedial tegmental nucleus - dopamine pause mediator",
-    version="1.0",
-    author="Thalia Project",
-    config_class=get_default_rmtg_config,
 )
 class RostromedialTegmentum(NeuralRegion[TonicPacemakerConfig]):
     """Rostromedial Tegmental Nucleus - Dopamine Pause Mediator.
@@ -107,34 +112,28 @@ class RostromedialTegmentum(NeuralRegion[TonicPacemakerConfig]):
         self.gaba_size = population_sizes[RMTgPopulation.GABA]
 
         # GABAergic neurons that inhibit VTA DA neurons
-        self.gaba_neurons = ConductanceLIF(
+        self.gaba_neurons: ConductanceLIF
+        self.gaba_neurons = self._create_and_register_neuron_population(
+            population_name=RMTgPopulation.GABA,
             n_neurons=self.gaba_size,
+            polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=RMTgPopulation.GABA,
-                tau_mem=self.config.tau_mem,
-                v_threshold=self.config.v_threshold,
+                tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.gaba_size, device),
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.gaba_size, device),
                 v_reset=0.0,
                 tau_ref=self.config.tau_ref,
-                g_L=0.10,
+                g_L=heterogeneous_g_L(0.10, self.gaba_size, device, cv=0.08),
                 E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
-                tau_E=4.0,   # Faster AMPA kinetics for precise timing
+                tau_E=4.0,
                 tau_I=10.0,
-                noise_std=0.090,   # Increased from 0.040 (ρ=0.76): LHb→RMTg broadcast is a strong common input;
-                                   # σ_noise must substantially exceed σ_common to break synchrony.
+                noise_std=0.090,
             ),
-            device=device,
         )
 
         # Moderate baseline drive
         self.baseline_drive = torch.full((self.gaba_size,), config.baseline_drive, device=device)
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(RMTgPopulation.GABA, self.gaba_neurons, polarity=PopulationPolarity.INHIBITORY)
 
         # Ensure all tensors are on the correct device
         self.to(device)

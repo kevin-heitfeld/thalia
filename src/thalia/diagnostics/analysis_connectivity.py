@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import List
 
 import numpy as np
 
-from .diagnostics_types import ConnectivityStats
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+from .diagnostics_types import ConnectivityStats, RecorderSnapshot
 
 
-def compute_connectivity_stats(rec: "DiagnosticsRecorder", T: int) -> ConnectivityStats:
+def compute_connectivity_stats(rec: RecorderSnapshot, T: int) -> ConnectivityStats:
     """Analyse axonal tract transmission and verify delays."""
     tracts: List[ConnectivityStats.TractStats] = []
 
@@ -26,8 +23,7 @@ def compute_connectivity_stats(rec: "DiagnosticsRecorder", T: int) -> Connectivi
         is_functional = total_sent > 0
 
         # Expected delay from tract spec
-        tract_obj = rec.brain.axonal_tracts[synapse_id]
-        expected_delay_ms = float(tract_obj.spec.delay_ms)
+        expected_delay_ms = rec._tract_delay_ms[tract_idx]
 
         # Measured delay: cross-correlation between source and target populations.
         # Also scan the anti-causal (negative-lag) window to detect reversed connections.

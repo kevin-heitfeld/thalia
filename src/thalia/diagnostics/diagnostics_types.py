@@ -16,6 +16,7 @@ import numpy as np
 
 from thalia.typing import PopulationName, RegionName, SynapseId
 
+
 # =============================================================================
 # HEALTH CATEGORY
 # =============================================================================
@@ -130,7 +131,7 @@ class HealthThresholds:
 
 @dataclass
 class DiagnosticsConfig:
-    """Configuration for the DiagnosticsRecorder.
+    """Diagnostics Configuration.
 
     Args:
         n_timesteps: Number of timesteps to record.  Used to pre-allocate
@@ -169,10 +170,9 @@ class DiagnosticsConfig:
     coherence_seed: int = 42  # RNG seed for random sampling of coherence pairs
 
     # Spike avalanche / criticality analysis
-    # When True, compute_oscillatory_stats fits a power-law exponent to the
-    # avalanche size distribution (Beggs & Plenz 2003).  Disabled by default
-    # because it adds O(T) work and requires ≥ 200 avalanche events for a
-    # reliable fit.
+    # When True, fits a power-law exponent to the avalanche size distribution
+    # (Beggs & Plenz 2003).  Auto-enabled when n_timesteps ≥ 2000 (enough
+    # events for a reliable fit).  The O(T) cost is negligible vs simulation.
     compute_avalanches: bool = False
     # Bin width (ms) for avalanche detection.  Beggs & Plenz (2003) recommend
     # ≈ mean inter-electrode delay (~3–4 ms).  Using dt (1 ms) fragments
@@ -199,6 +199,91 @@ class DiagnosticsConfig:
     # Health-check thresholds (biological constants).  Swap for strict/permissive
     # profiles without rebuilding the recorder or changing recording buffers.
     thresholds: HealthThresholds = field(default_factory=HealthThresholds)
+
+
+# =============================================================================
+# RECORDER SNAPSHOT
+# =============================================================================
+
+
+@dataclass
+class RecorderSnapshot:
+    """Complete, serialisable snapshot of a :class:`DiagnosticsRecorder`'s recorded state."""
+
+    # ── Config ─────────────────────────────────────────────────────────────
+    config: DiagnosticsConfig
+    dt_ms: float
+
+    # ── Index metadata ──────────────────────────────────────────────────────
+    _pop_keys: List[Tuple[str, str]]
+    _pop_index: Dict[Tuple[str, str], int]
+    _n_pops: int
+    _pop_sizes: np.ndarray                   # int32 [n_pops]
+
+    _region_keys: List[str]
+    _region_index: Dict[str, int]
+    _n_regions: int
+    _region_pop_indices: Dict[str, List[int]]
+
+    _tract_keys: List[SynapseId]
+    _tract_index: Dict[SynapseId, int]
+    _n_tracts: int
+
+    _stp_keys: List[Tuple[str, SynapseId]]
+    _nm_receptor_keys: List[Tuple[str, str]]
+    _n_nm_receptors: int
+    _nm_source_pop_keys: List[Tuple[str, str]]
+
+    _v_sample_idx: List[np.ndarray]
+    _c_sample_idx: List[np.ndarray]
+
+    # ── Recording counters ──────────────────────────────────────────────────
+    _n_recorded: int
+    _gain_sample_step: int
+    _cond_sample_step: int
+    _gain_sample_times: List[int]
+
+    # ── Spike buffers ───────────────────────────────────────────────────────
+    _pop_spike_counts: np.ndarray            # int32 [T, n_pops]
+    _per_neuron_spike_counts: List[np.ndarray]  # int32 [n_neurons] per pop
+    _region_spike_counts: np.ndarray         # int32 [T, n_regions]
+    _tract_sent: np.ndarray                  # int32 [T, n_tracts]
+    _spike_times: Dict[Tuple[str, str], List[List[int]]]
+
+    # ── State sample buffers (full mode; None in stats mode) ───────────────
+    _voltages: Optional[np.ndarray]          # float32 [T, n_pops, V]
+    _g_exc_samples: Optional[np.ndarray]     # float32 [n_cond, n_pops, C]
+    _g_inh_samples: Optional[np.ndarray]
+    _g_nmda_samples: Optional[np.ndarray]
+    _g_gaba_b_samples: Optional[np.ndarray]
+    _g_apical_samples: Optional[np.ndarray]
+
+    # ── Trajectory buffers ──────────────────────────────────────────────────
+    _g_L_scale_history: np.ndarray           # float32 [n_gain, n_pops]
+    _stp_efficacy_history: np.ndarray        # float32 [n_gain, n_stp]
+    _nm_concentration_history: np.ndarray    # float32 [n_gain, n_nm_receptors]
+
+    # ── Static brain metadata (snapshotted at recording time) ────────────────
+    # Population polarity: "excitatory" | "inhibitory" | "any" per (region, pop)
+    _pop_polarities: Dict[Tuple[str, str], str]
+    # Expected axonal delay (ms) per tract, indexed by tract_idx (same order as _tract_keys)
+    _tract_delay_ms: List[float]
+    # Homeostatic target firing rate (Hz) per population; absent = no homeostasis configured
+    _homeostasis_target_hz: Dict[Tuple[str, str], float]
+    # STP config (U, tau_d, tau_f) per stp_idx (same order as _stp_keys)
+    _stp_configs: List[Tuple[float, float, float]]
+    # STP state at end of recording: synapse_id_str → {"mean_x", "mean_u", "efficacy"}
+    _stp_final_state: Dict[str, Dict[str, float]]
+    # Per-tract weight stats: synapse_id_str → {"mean", "n_nonzero", "n_total"}
+    _tract_weight_stats: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    # Per-population neuron parameters for analytical rate prediction
+    # (region, pop) → {"g_L", "v_threshold", "v_reset", "E_L", "E_E", "E_I",
+    #                   "tau_E", "tau_I", "tau_ref", "adapt_increment", "tau_adapt",
+    #                   plus specialized: "i_h_conductance", "sk_conductance", etc.}
+    _pop_neuron_params: Dict[Tuple[str, str], Dict[str, float]] = field(default_factory=dict)
+    # Per-population config class name for type identification by calibration advisor
+    # (region, pop) → class name string (e.g. "NorepinephrineNeuronConfig")
+    _pop_config_types: Dict[Tuple[str, str], str] = field(default_factory=dict)
 
 
 # =============================================================================
@@ -321,6 +406,20 @@ class PopulationStats:
     # apical compartment is not being driven by top-down inputs.
     mean_g_exc_apical: float = float("nan")
 
+    # ── Fano factor scaling across bin widths (full mode only) ────────
+    # List of (bin_ms, fano_factor) tuples at multiple time scales [10, 20, 50,
+    # 100, 200, 500] ms.  A Poisson process yields FF≈1 at all scales; bursty
+    # or correlated activity shows FF increasing with bin width.
+    # Empty list in stats mode or when < 50 total spikes.
+    fano_scaling: List[Tuple[float, float]] = field(default_factory=list)
+
+    # ── Pairwise correlation distribution (full mode only) ────────────
+    # Full array of all sampled pairwise Pearson r values (up to C(30,2) pairs).
+    # Used for histogram plotting to assess the shape of the correlation
+    # distribution (should be peaked near zero for healthy AI state).
+    # None in stats mode, when < 2 neurons, or insufficient data.
+    pairwise_correlation_distribution: Optional[np.ndarray] = field(default=None, repr=False)
+
     @property
     def is_silent(self) -> bool:
         return self.fraction_silent > 0.99
@@ -388,6 +487,16 @@ class RegionStats:
     # The 50 ms measure catches this sub-second structure.
     d1_d2_competition_index_200ms: float = float("nan")
     d1_d2_competition_index_50ms: float = float("nan")
+
+    # ── E/I lag cross-correlation (full mode only) ────────────────────
+    # Peak cross-correlation between excitatory (AMPA) and inhibitory (GABA-A)
+    # conductance time series, and the lag in ms at which it occurs.
+    # Healthy cortex: inhibition tracks excitation with 1–5 ms lag (feedforward
+    # inhibition) or 5–15 ms lag (feedback inhibition).  Near-zero lag suggests
+    # common drive; negative lag or very long lag (>20 ms) indicates pathology.
+    # NaN in stats mode or when conductance samples are unavailable.
+    ei_lag_ms: float = float("nan")
+    ei_xcorr_peak: float = float("nan")
 
     @property
     def ei_ratio(self) -> float:
@@ -494,8 +603,8 @@ class OscillatoryStats:
     # ── Spike avalanche / criticality ─────────────────────────────────
     # Power-law exponent of the avalanche-size distribution (log-log slope).
     # Critical cortex: exponent ≈ −1.5.  Super-critical (epileptic) > −1;
-    # sub-critical (down-regulated) < −2.  NaN when compute_avalanches=False
-    # or fewer than 20 avalanche events were detected.
+    # sub-critical (down-regulated) < −2.  NaN when the run is too short
+    # (< 2000 timesteps) or fewer than 20 avalanche events were detected.
     avalanche_exponent: float = float("nan")
     avalanche_r2: float = float("nan")  # R² of the log-log linear fit
     # Branching ratio σ (Beggs & Plenz 2003): pooled ratio of total descendant
@@ -503,7 +612,7 @@ class OscillatoryStats:
     # σ ≈ 1.0 → critical (maximal information transfer)
     # σ < 1.0 → subcritical (exponential decay; dominant in healthy rest)
     # σ > 1.0 → supercritical (runaway, seizure-like)
-    # NaN when compute_avalanches=False or fewer than 4 active-bin pairs.
+    # NaN when the run is too short (< 2000 timesteps) or fewer than 4 active-bin pairs.
     avalanche_branching_ratio: float = float("nan")
 
     # ── Cerebellar timing metrics ─────────────────────────────────────
@@ -659,7 +768,7 @@ class HealthReport:
 
 @dataclass
 class DiagnosticsReport:
-    """Complete diagnostics report produced by DiagnosticsRecorder.analyze()."""
+    """Complete diagnostics report."""
 
     # Meta
     timestamp: float
@@ -702,3 +811,11 @@ class DiagnosticsReport:
     # Population and region index
     pop_keys: Optional[List[Tuple[str, str]]] = None
     region_keys: Optional[List[str]] = None
+
+    # ── Effective synaptic gain per tract ─────────────────────────────
+    # Estimated as Pearson correlation between pre-region and post-region
+    # binned firing rate time series at the causal lag matching the tract's
+    # axonal delay.  Keys are synapse_id strings (e.g. "PFC→striatum_dorsal").
+    # Healthy range: 0.05–0.60; values near 0 indicate ineffective connections;
+    # values > 0.8 suggest pathological synchrony.
+    effective_synaptic_gain: Optional[Dict[str, float]] = None

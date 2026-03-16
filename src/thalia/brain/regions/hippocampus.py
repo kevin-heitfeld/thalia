@@ -27,20 +27,30 @@ This implements the classic hippocampal trisynaptic circuit for episodic memory:
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import ClassVar, Dict, List, Optional, Union
 
 import torch
 import torch.nn.functional as F
 
 from thalia import GlobalConfig
-from thalia.brain.configs import HippocampusConfig
-from thalia.brain.neurons import NeuronFactory
+from thalia.brain.configs import HippocampusConfig, HippocampalPopulationConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    ConductanceLIF,
+    TwoCompartmentLIFConfig,
+    TwoCompartmentLIF,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    split_excitatory_conductance,
+)
 from thalia.brain.synapses import (
     NMReceptorType,
-    make_nm_receptor,
+    STPConfig,
     WeightInitializer,
+    make_neuromodulator_receptor,
 )
-from thalia.brain.synapses.stp import STPConfig
 from thalia.learning import (
     TagAndCaptureConfig,
     TagAndCaptureStrategy,
@@ -51,6 +61,7 @@ from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
     NeuromodulatorInput,
+    PopulationName,
     PopulationPolarity,
     PopulationSizes,
     ReceptorType,
@@ -64,7 +75,7 @@ from thalia.utils import (
     clamp_weights,
     compute_ach_recurrent_suppression,
     compute_ne_gain,
-    split_excitatory_conductance,
+    decay_tensor,
 )
 
 from .hippocampus_inhibitory_network import HippocampalInhibitoryNetwork
@@ -78,9 +89,6 @@ from .stimulus_gating import StimulusGating
     "hippocampus",
     aliases=["trisynaptic", "trisynaptic_hippocampus"],
     description="DG→CA3→CA1 trisynaptic circuit with theta-modulated encoding/retrieval and episodic memory",
-    version="1.0",
-    author="Thalia Project",
-    config_class=HippocampusConfig,
 )
 class Hippocampus(NeuralRegion[HippocampusConfig]):
     """Biologically-accurate hippocampus with DG→CA3→CA1 trisynaptic circuit."""
@@ -157,69 +165,142 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # HIPPOCAMPAL EXCITATORY NEURONS (LIF with adaptation for sparse coding)
         # =====================================================================
+        dg_overrides: HippocampalPopulationConfig = config.population_overrides[HippocampusPopulation.DG]
+        ca3_overrides: HippocampalPopulationConfig = config.population_overrides[HippocampusPopulation.CA3]
+        ca2_overrides: HippocampalPopulationConfig = config.population_overrides[HippocampusPopulation.CA2]
+        ca1_overrides: HippocampalPopulationConfig = config.population_overrides[HippocampusPopulation.CA1]
+
         # Create LIF neurons for each layer using factory functions
         # DG: Sparse coding requires high threshold
-        # v_threshold raised 0.9 → 1.6 → 1.8: at 0.9 fired 10 Hz; at 1.6 fired 2.9 Hz
-        # (run-06). Target is 0â€“1 Hz (sparse pattern separation). Only the highest-
-        # weighted tail neurons should fire; 1.8 further reduces the active fraction.
-        # Strong SFA (adapt_increment=0.30, tau_adapt=120ms) prevents sustained firing.
-        self.dg_neurons = NeuronFactory.create_pyramidal_neurons(
-            region_name=self.region_name,
+        self.dg_neurons: ConductanceLIF
+        self.dg_neurons = self._create_and_register_neuron_population(
             population_name=HippocampusPopulation.DG,
             n_neurons=self.dg_size,
-            device=device,
-            v_threshold=config.dg.v_threshold,
-            adapt_increment=config.dg.adapt_increment,
-            tau_adapt=config.dg.tau_adapt,
+            polarity=PopulationPolarity.EXCITATORY,
+            config=ConductanceLIFConfig(
+                g_L=heterogeneous_g_L(0.05, self.dg_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=-0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.dg_size, device=device),
+                v_threshold=heterogeneous_v_threshold(dg_overrides.v_threshold, self.dg_size, device),
+                adapt_increment=heterogeneous_adapt_increment(dg_overrides.adapt_increment, self.dg_size, device),
+                tau_adapt=dg_overrides.tau_adapt,
+                noise_std=0.04,
+            ),
         )
+
         # CA3 gets spike-frequency adaptation to prevent frozen attractors
         # Two-compartment: basal dendrites receive DG mossy fibers + recurrents;
         # apical compartment is available for future EC direct-path feedback.
-        self.ca3_neurons = NeuronFactory.create_pyramidal_two_compartment(
-            region_name=self.region_name,
+        self.ca3_neurons: TwoCompartmentLIF
+        self.ca3_neurons = self._create_and_register_neuron_population(
             population_name=HippocampusPopulation.CA3,
             n_neurons=self.ca3_size,
-            device=device,
-            v_threshold=config.ca3.v_threshold,
-            adapt_increment=config.ca3.adapt_increment,
-            tau_adapt=config.ca3.tau_adapt,
+            polarity=PopulationPolarity.EXCITATORY,
+            config=TwoCompartmentLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.ca3_size, device=device),
+                g_L=heterogeneous_g_L(0.05, self.ca3_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=-0.12,
+                v_threshold=heterogeneous_v_threshold(ca3_overrides.v_threshold, self.ca3_size, device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                g_c=0.05,
+                C_d=0.5,
+                g_L_d=0.03,
+                bap_amplitude=0.3,
+                theta_Ca=2.0,
+                g_Ca_spike=0.38,
+                tau_Ca_ms=20.0,
+                adapt_increment=heterogeneous_adapt_increment(ca3_overrides.adapt_increment, self.ca3_size, device),
+                tau_adapt=ca3_overrides.tau_adapt,
+            ),
         )
+
         # CA2: Social memory and temporal context - moderate threshold for selectivity
-        # Reduced from 1.6 (caused near-silence) → 1.1: slightly above CA3 (1.0) for selectivity
-        self.ca2_neurons = NeuronFactory.create_pyramidal_neurons(
-            region_name=self.region_name,
+        self.ca2_neurons: ConductanceLIF
+        self.ca2_neurons = self._create_and_register_neuron_population(
             population_name=HippocampusPopulation.CA2,
             n_neurons=self.ca2_size,
-            device=device,
-            v_threshold=config.ca2.v_threshold,
-            adapt_increment=config.ca2.adapt_increment,
-            tau_adapt=config.ca2.tau_adapt,
+            polarity=PopulationPolarity.EXCITATORY,
+            config=ConductanceLIFConfig(
+                g_L=heterogeneous_g_L(0.05, self.ca2_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=-0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.ca2_size, device=device),
+                v_threshold=heterogeneous_v_threshold(ca2_overrides.v_threshold, self.ca2_size, device),
+                adapt_increment=heterogeneous_adapt_increment(ca2_overrides.adapt_increment, self.ca2_size, device),
+                tau_adapt=ca2_overrides.tau_adapt,
+            ),
         )
+
         # CA1: Output layer – two-compartment pyramidal (CA3 Schaffer collateral basal, EC direct apical)
-        self.ca1_neurons = NeuronFactory.create_pyramidal_two_compartment(
-            region_name=self.region_name,
+        self.ca1_neurons: TwoCompartmentLIF
+        self.ca1_neurons = self._create_and_register_neuron_population(
             population_name=HippocampusPopulation.CA1,
             n_neurons=self.ca1_size,
-            device=device,
-            v_threshold=config.ca1.v_threshold,
-            adapt_increment=config.ca1.adapt_increment,
-            tau_adapt=config.ca1.tau_adapt,
+            polarity=PopulationPolarity.EXCITATORY,
+            config=TwoCompartmentLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.ca1_size, device=device),
+                g_L=heterogeneous_g_L(0.05, self.ca1_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=-0.12,
+                v_threshold=heterogeneous_v_threshold(ca1_overrides.v_threshold, self.ca1_size, device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                g_c=0.05,
+                C_d=0.5,
+                g_L_d=0.03,
+                bap_amplitude=0.3,
+                theta_Ca=2.0,
+                g_Ca_spike=0.30,
+                tau_Ca_ms=20.0,
+                adapt_increment=heterogeneous_adapt_increment(ca1_overrides.adapt_increment, self.ca1_size, device),
+                tau_adapt=ca1_overrides.tau_adapt,
+            ),
         )
 
         # =====================================================================
         # HIPPOCAMPAL INHIBITORY NETWORKS (with OLM cells for emergent theta)
         # =====================================================================
+        def _create_and_register_neurons(
+            population_name: PopulationName,
+            n_neurons: int,
+            polarity: PopulationPolarity,
+            config: ConductanceLIFConfig,
+        ) -> ConductanceLIF:
+            neurons = self._create_and_register_neuron_population(
+                population_name,
+                n_neurons,
+                polarity,
+                config,
+            )
+            assert isinstance(neurons, ConductanceLIF), "Expected ConductanceLIF neurons for excitatory populations"
+            return neurons
+
         # DG inhibitory network: Minimal inhibition for pattern separation
         # Moderate at 0.20 to prevent avalanches while maintaining sparse coding
         # v_threshold_bistratified=1.00: threshold 0.9 → 2.1 Hz (HIGH, target 0â€“1 Hz);
         # 1.10â€“1.30 → 0 Hz (stochastic silence in short windows); 1.00 aims for ~0.3â€“0.8 Hz.
         self.dg_inhibitory = HippocampalInhibitoryNetwork(
-            region_name=self.region_name,
             population_name=HippocampusPopulation.DG_INHIBITORY,
             pyr_size=self.dg_size,
-            total_inhib_fraction=config.dg.total_inhib_fraction,
-            v_threshold_olm=config.dg.v_threshold_olm,
-            v_threshold_bistratified=config.dg.v_threshold_bistratified,
+            total_inhib_fraction=dg_overrides.total_inhib_fraction,
+            v_threshold_olm=dg_overrides.v_threshold_olm,
+            v_threshold_bistratified=dg_overrides.v_threshold_bistratified,
+            _create_and_register_neurons_fn=_create_and_register_neurons,
             dt_ms=config.dt_ms,
             device=device,
         )
@@ -229,24 +310,24 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # OLM/bistratified thresholds lowered vs DG: at sparse CA3 firing (0.75â€“2 Hz) the
         # pyramidal→OLM V_infâ‰ˆ0.18â€“0.45; DG-level thresholds (1.0/0.9) are unreachable.
         self.ca3_inhibitory = HippocampalInhibitoryNetwork(
-            region_name=self.region_name,
             population_name=HippocampusPopulation.CA3_INHIBITORY,
             pyr_size=self.ca3_size,
-            total_inhib_fraction=config.ca3.total_inhib_fraction,
-            v_threshold_olm=config.ca3.v_threshold_olm,
-            v_threshold_bistratified=config.ca3.v_threshold_bistratified,
+            total_inhib_fraction=ca3_overrides.total_inhib_fraction,
+            v_threshold_olm=ca3_overrides.v_threshold_olm,
+            v_threshold_bistratified=ca3_overrides.v_threshold_bistratified,
+            _create_and_register_neurons_fn=_create_and_register_neurons,
             dt_ms=config.dt_ms,
             device=device,
         )
 
         # CA2 inhibitory network: Social/temporal context processing
         self.ca2_inhibitory = HippocampalInhibitoryNetwork(
-            region_name=self.region_name,
             population_name=HippocampusPopulation.CA2_INHIBITORY,
             pyr_size=self.ca2_size,
-            total_inhib_fraction=config.ca2.total_inhib_fraction,
-            v_threshold_olm=config.ca2.v_threshold_olm,
-            v_threshold_bistratified=config.ca2.v_threshold_bistratified,
+            total_inhib_fraction=ca2_overrides.total_inhib_fraction,
+            v_threshold_olm=ca2_overrides.v_threshold_olm,
+            v_threshold_bistratified=ca2_overrides.v_threshold_bistratified,
+            _create_and_register_neurons_fn=_create_and_register_neurons,
             dt_ms=config.dt_ms,
             device=device,
         )
@@ -254,12 +335,12 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # CA1 inhibitory network: PV, OLM, Bistratified cells
         # OLM cells phase-lock to septal GABA → emergent encoding/retrieval
         self.ca1_inhibitory = HippocampalInhibitoryNetwork(
-            region_name=self.region_name,
             population_name=HippocampusPopulation.CA1_INHIBITORY,
             pyr_size=self.ca1_size,
-            total_inhib_fraction=config.ca1.total_inhib_fraction,
-            v_threshold_olm=config.ca1.v_threshold_olm,
-            v_threshold_bistratified=config.ca1.v_threshold_bistratified,
+            total_inhib_fraction=ca1_overrides.total_inhib_fraction,
+            v_threshold_olm=ca1_overrides.v_threshold_olm,
+            v_threshold_bistratified=ca1_overrides.v_threshold_bistratified,
+            _create_and_register_neurons_fn=_create_and_register_neurons,
             dt_ms=config.dt_ms,
             device=device,
         )
@@ -288,23 +369,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self._ca3_spike_buffer = CircularDelayBuffer(1, self.ca3_size, device, torch.bool)
         self._ca2_spike_buffer = CircularDelayBuffer(1, self.ca2_size, device, torch.bool)
         self._ca1_spike_buffer = CircularDelayBuffer(1, self.ca1_size, device, torch.bool)
-
-        # Inhibitory population spike buffers (1-step delay for I→I conductances)
-        # The parent computes I→I conductances from t-1 inhibitory spikes using the
-        # registered pv_to_pv / olm_to_pv weight matrices (with STP), then passes
-        # the resulting GABA_A conductances into each inhibitory network's forward().
-        self._dg_pv_buffer = CircularDelayBuffer(1, self.dg_inhibitory.n_pv, device, torch.bool)
-        self._dg_olm_buffer = CircularDelayBuffer(1, self.dg_inhibitory.n_olm, device, torch.bool)
-        self._dg_bistratified_buffer = CircularDelayBuffer(1, self.dg_inhibitory.n_bistratified, device, torch.bool)
-        self._ca3_pv_buffer = CircularDelayBuffer(1, self.ca3_inhibitory.n_pv, device, torch.bool)
-        self._ca3_olm_buffer = CircularDelayBuffer(1, self.ca3_inhibitory.n_olm, device, torch.bool)
-        self._ca3_bistratified_buffer = CircularDelayBuffer(1, self.ca3_inhibitory.n_bistratified, device, torch.bool)
-        self._ca2_pv_buffer = CircularDelayBuffer(1, self.ca2_inhibitory.n_pv, device, torch.bool)
-        self._ca2_olm_buffer = CircularDelayBuffer(1, self.ca2_inhibitory.n_olm, device, torch.bool)
-        self._ca2_bistratified_buffer = CircularDelayBuffer(1, self.ca2_inhibitory.n_bistratified, device, torch.bool)
-        self._ca1_pv_buffer = CircularDelayBuffer(1, self.ca1_inhibitory.n_pv, device, torch.bool)
-        self._ca1_olm_buffer = CircularDelayBuffer(1, self.ca1_inhibitory.n_olm, device, torch.bool)
-        self._ca1_bistratified_buffer = CircularDelayBuffer(1, self.ca1_inhibitory.n_bistratified, device, torch.bool)
 
         # =====================================================================
         # INTER-LAYER AXONAL DELAYS (using CircularDelayBuffer utility)
@@ -363,14 +427,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY
         # =====================================================================
-        # Per-subregion homeostatic state (firing-rate EMA + synaptic scaling).
-        # Neurons registered below; looked up lazily in _update_homeostasis().
-        # use_synaptic_scaling=True: Turrigiano & Nelson (2004) – multiplicative
-        # upscaling of all afferent weights when the population is chronically silent.
-        self._register_homeostasis(HippocampusPopulation.DG,  self.dg_size,  target_firing_rate=0.001, device=device)  # <1 Hz (sparse pattern separator)
-        self._register_homeostasis(HippocampusPopulation.CA3, self.ca3_size, target_firing_rate=0.003, device=device)  # 1â€“5 Hz
-        self._register_homeostasis(HippocampusPopulation.CA2, self.ca2_size, target_firing_rate=0.003, device=device)  # 1â€“5 Hz
-        self._register_homeostasis(HippocampusPopulation.CA1, self.ca1_size, target_firing_rate=0.003, device=device)  # 1â€“5 Hz
+        self._register_homeostasis(HippocampusPopulation.DG,  self.dg_size,  target_firing_rate=0.001, device=device)
+        self._register_homeostasis(HippocampusPopulation.CA3, self.ca3_size, target_firing_rate=0.003, device=device)
+        self._register_homeostasis(HippocampusPopulation.CA2, self.ca2_size, target_firing_rate=0.003, device=device)
+        self._register_homeostasis(HippocampusPopulation.CA1, self.ca1_size, target_firing_rate=0.003, device=device)
 
         # =====================================================================
         # DOPAMINE RECEPTOR (minimal 10% VTA projection)
@@ -379,11 +439,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Primarily affects CA1 output and CA3 consolidation
         # Biological: VTA DA enhances LTP in novelty-detecting neurons
         total_neurons = self.dg_size + self.ca3_size + self.ca2_size + self.ca1_size
-        # D1 receptors dominate HPC (Otmakhova & Lisman 1996); D1 Gs/PKA cascade:
-        # Ï„_rise=500 ms, Ï„_decay=8000 ms – DA acts as a long-lasting novelty/LTP gate.
-        self.da_receptor = make_nm_receptor(
+        self.da_receptor = make_neuromodulator_receptor(
             NMReceptorType.DA_D1, n_receptors=total_neurons, dt_ms=self.dt_ms, device=device,
-            amplitude_scale=6.0,  # HPC receives dense DA; preserve legacy signal strength
+            amplitude_scale=6.0,
         )
         # Per-subregion DA concentration buffers (0.5 = tonic baseline)
         self._da_concentration_dg = torch.full((self.dg_size,), 0.5, device=device)
@@ -397,7 +455,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Hippocampus receives dense NE innervation from LC
         # NE modulates novelty detection and arousal-dependent memory formation
         # Î±1-adrenergic (Gq): arousal / novelty modulation, Ï„_rise=10 ms, Ï„_decay=150 ms.
-        self.ne_receptor = make_nm_receptor(
+        self.ne_receptor = make_neuromodulator_receptor(
             NMReceptorType.NE_ALPHA1, n_receptors=total_neurons, dt_ms=self.dt_ms, device=device
         )
         # Per-subregion NE concentration buffers
@@ -415,9 +473,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # - Low ACh → retrieval mode (enable pattern completion, consolidation)
         # NB projects via nicotinic nAChR (ionotropic, fast: Ï„_rise=3 ms, Ï„_decay=15 ms).
         # Controls encoding vs retrieval mode (Hasselmo 1999).
-        self.ach_receptor = make_nm_receptor(
+        self.ach_receptor = make_neuromodulator_receptor(
             NMReceptorType.ACH_NICOTINIC, n_receptors=total_neurons, dt_ms=self.dt_ms, device=device,
-            amplitude_scale=1.3,  # Preserve legacy ~0.2 effective amplitude
+            amplitude_scale=1.3,
         )
         # Per-subregion ACh concentration buffers
         self._ach_concentration_dg = torch.zeros(self.dg_size, device=device)
@@ -435,7 +493,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # Kinetics: Ï„_rise=20ms, Ï„_decay=300ms (much slower than nicotinic NB ACh)
         # Muscarinic M1 (Gq → PLC/IP3): slow cascade, Ï„_rise=100 ms, Ï„_decay=1500 ms.
         # Phase-locked to theta; boosts NMDA NR2B insertion in CA1 at encoding peaks.
-        self.ach_septal_receptor = make_nm_receptor(
+        self.ach_septal_receptor = make_neuromodulator_receptor(
             NMReceptorType.ACH_MUSCARINIC_M1, n_receptors=self.ca1_size, dt_ms=self.dt_ms, device=device
         )
         self._ach_septal_concentration_ca1 = torch.zeros(self.ca1_size, device=device)
@@ -448,7 +506,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # LTP during aversive / high-serotonin states (Barnes & Sharp 1999).
         # Kinetics: tau_rise ~8 ms, tau_decay ~100 ms (SERT reuptake).
         # 5-HT2C (Gq → PLC): fast metabotropic, Ï„_rise=8 ms, Ï„_decay=100 ms.
-        self.sht_receptor_ca3 = make_nm_receptor(
+        self.sht_receptor_ca3 = make_neuromodulator_receptor(
             NMReceptorType.SHT_2C, n_receptors=self.ca3_size, dt_ms=self.dt_ms, device=device
         )
         self._sht_concentration_ca3: torch.Tensor
@@ -483,30 +541,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             device=torch.device(device),
         )
 
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(HippocampusPopulation.DG, self.dg_neurons, polarity=PopulationPolarity.EXCITATORY)
-        self._register_neuron_population(HippocampusPopulation.CA3, self.ca3_neurons, polarity=PopulationPolarity.EXCITATORY)
-        self._register_neuron_population(HippocampusPopulation.CA2, self.ca2_neurons, polarity=PopulationPolarity.EXCITATORY)
-        self._register_neuron_population(HippocampusPopulation.CA1, self.ca1_neurons, polarity=PopulationPolarity.EXCITATORY)
-
-        self._register_neuron_population(HippocampusPopulation.DG_INHIBITORY_PV, self.dg_inhibitory.pv_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.DG_INHIBITORY_OLM, self.dg_inhibitory.olm_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.DG_INHIBITORY_BISTRATIFIED, self.dg_inhibitory.bistratified_neurons, polarity=PopulationPolarity.INHIBITORY)
-
-        self._register_neuron_population(HippocampusPopulation.CA3_INHIBITORY_PV, self.ca3_inhibitory.pv_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.CA3_INHIBITORY_OLM, self.ca3_inhibitory.olm_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.CA3_INHIBITORY_BISTRATIFIED, self.ca3_inhibitory.bistratified_neurons, polarity=PopulationPolarity.INHIBITORY)
-
-        self._register_neuron_population(HippocampusPopulation.CA2_INHIBITORY_PV, self.ca2_inhibitory.pv_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.CA2_INHIBITORY_OLM, self.ca2_inhibitory.olm_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.CA2_INHIBITORY_BISTRATIFIED, self.ca2_inhibitory.bistratified_neurons, polarity=PopulationPolarity.INHIBITORY)
-
-        self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_PV, self.ca1_inhibitory.pv_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_OLM, self.ca1_inhibitory.olm_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(HippocampusPopulation.CA1_INHIBITORY_BISTRATIFIED, self.ca1_inhibitory.bistratified_neurons, polarity=PopulationPolarity.INHIBITORY)
-
         # Ensure all tensors are on the correct device
         self.to(device)
 
@@ -519,7 +553,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # INTERNAL WEIGHTS
         # =====================================================================
         # DG → CA3: Random but less sparse (mossy fibers)
-        # Biology: "Detonator synapses" with powerful transmission.
+        # Biology: "Detonator synapses" with powerful one-shot transmission.
+        # U=0.15: mossy fibers are facilitating but start from moderate release
+        # probability (not near-zero like U=0.01 which causes chronic depletion
+        # x·u ≈ 0.013 — well below the functional threshold).  tau_f=100ms keeps
+        # facilitation within the DG burst window; tau_d=200ms sets recovery.
         self._add_internal_connection(
             source_population=HippocampusPopulation.DG,
             target_population=HippocampusPopulation.CA3,
@@ -531,11 +569,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig(U=0.01, tau_d=200.0, tau_f=400.0),
+            stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=100.0),
         )
 
         # CA3 → CA3 RECURRENT: Autoassociative memory weights
         # Learning: One-shot Hebbian with fast/slow traces and heterosynaptic LTD
+        # Weight reduced from 0.0007: CA3 burst-silence SFA=5.89 driven by
+        # recurrent excitation + Ca²⁺ dendritic spike positive feedback loop.
         self._add_internal_connection(
             source_population=HippocampusPopulation.CA3,
             target_population=HippocampusPopulation.CA3,
@@ -543,43 +583,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 n_input=self.ca3_size,
                 n_output=self.ca3_size,
                 connectivity=0.05,
-                weight_scale=0.0007,
+                weight_scale=0.0001,
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.50, tau_d=500.0, tau_f=30.0),
-        )
-
-        # Create sparse local inhibition: each neuron inhibits nearby neurons
-        # Biologically: basket cells have local axonal arbors (~200-300Î¼m radius)
-        # We approximate this with random sparse connectivity
-        self._add_internal_connection(
-            source_population=HippocampusPopulation.CA3,
-            target_population=HippocampusPopulation.CA3,
-            weights=WeightInitializer.sparse_random_no_autapses(
-                n_input=self.ca3_size,
-                n_output=self.ca3_size,
-                connectivity=0.2,
-                weight_scale=0.0001,
-                device=device,
-            ),
-            receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
-        )
-
-        # Initialize CA2 lateral inhibition weights
-        self._add_internal_connection(
-            source_population=HippocampusPopulation.CA2,
-            target_population=HippocampusPopulation.CA2,
-            weights=WeightInitializer.sparse_random_no_autapses(
-                n_input=self.ca2_size,
-                n_output=self.ca2_size,
-                connectivity=0.2,
-                weight_scale=0.0005,
-                device=device,
-            ),
-            receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
         )
 
         # =====================================================================
@@ -631,23 +639,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
-        )
-
-        # CA1 lateral inhibition for competition
-        # Use sparse lateral inhibition (similar to CA3 basket cells)
-        # Biologically: CA1 interneurons have local connectivity, not all-to-all
-        _ca1_ca1_inhib_synapse = self._add_internal_connection(
-            source_population=HippocampusPopulation.CA1,
-            target_population=HippocampusPopulation.CA1,
-            weights=WeightInitializer.sparse_random_no_autapses(
-                n_input=self.ca1_size,
-                n_output=self.ca1_size,
-                connectivity=0.2,
-                weight_scale=0.0005,
-                device=device,
-            ),
-            receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
         )
 
         # =====================================================================
@@ -778,7 +769,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                     device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
+                stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=15.0),
             )
             self._add_internal_connection(
                 source_population=pv_pop,
@@ -820,7 +811,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                     device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
+                stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=15.0),
             )
 
             # ------------------------------------------------------------------
@@ -838,7 +829,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                     device=device,
                 ),
                 receptor_type=ReceptorType.GABA_A,
-                stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
+                stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=15.0),
             )
             self._add_internal_connection(
                 source_population=olm_pop,
@@ -863,25 +854,20 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self,
         inhib_net: HippocampalInhibitoryNetwork,
         prev_pyr_spikes: torch.Tensor,
-        prev_pv_spikes_buf: CircularDelayBuffer,
-        prev_olm_spikes_buf: CircularDelayBuffer,
-        prev_bist_spikes_buf: CircularDelayBuffer,
         pyr_pop: str,
         pv_pop: str,
         olm_pop: str,
         bist_pop: str,
-        septal_gaba: Optional[torch.Tensor],
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, torch.Tensor]:
         """Compute one inhibitory network step using registered STP-weighted connections.
+
+        Previous-step inhibitory spikes for I→I connections are stored on the
+        ``inhib_net`` itself (``_prev_pv_spikes``, ``_prev_olm_spikes``, etc.).
 
         Args:
             inhib_net: The inhibitory network to run (neuron container + gap junctions).
             prev_pyr_spikes: Previous-step pyramidal spikes [pyr_size] for E→I drive.
-            prev_pv_spikes_buf: 1-step buffer of PV spikes for I→I OLM→PV computation.
-            prev_olm_spikes_buf: 1-step buffer of OLM spikes for I→I OLM→PV computation.
-            prev_bist_spikes_buf: 1-step buffer for bistratified spikes (currently unused in I→I).
             pyr_pop / pv_pop / olm_pop / bist_pop: Population names registered in this region.
-            septal_gaba: Optional septal GABA spike tensor [100] for OLM phase-locking.
 
         Returns:
             dict with keys: perisomatic_gaba_a, perisomatic_gaba_b, dendritic, olm_dendritic,
@@ -920,11 +906,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         pv_g_inh = (
             self._integrate_synaptic_inputs_at_dendrites(
-                synaptic_inputs={syn_pv_pv: prev_pv_spikes_buf.read(1)},
+                synaptic_inputs={syn_pv_pv: inhib_net._prev_pv_spikes},
                 n_neurons=inhib_net.n_pv,
             ).g_gaba_a
             + self._integrate_synaptic_inputs_at_dendrites(
-                synaptic_inputs={syn_olm_pv: prev_olm_spikes_buf.read(1)},
+                synaptic_inputs={syn_olm_pv: inhib_net._prev_olm_spikes},
                 n_neurons=inhib_net.n_pv,
             ).g_gaba_a
         )
@@ -932,19 +918,19 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         # ------------------------------------------------------------------
         # Septal GABA → OLM  (external input, no STP – held in inhib_net)
         # ------------------------------------------------------------------
-        if septal_gaba is not None:
-            olm_g_inh = inhib_net.septal_to_olm @ septal_gaba.float()
-        else:
-            olm_g_inh = torch.zeros(inhib_net.n_olm, device=self.device)
+        olm_g_inh = torch.zeros(inhib_net.n_olm, device=self.device)
         bist_g_inh = torch.zeros(inhib_net.n_bistratified, device=self.device)
 
         # ------------------------------------------------------------------
         # Run interneurons
         # ------------------------------------------------------------------
         inhib_out = inhib_net.forward(
-            pv_g_exc=pv_g_exc, pv_g_inh=pv_g_inh,
-            olm_g_exc=olm_g_exc, olm_g_inh=olm_g_inh,
-            bistratified_g_exc=bist_g_exc, bistratified_g_inh=bist_g_inh,
+            pv_g_exc=pv_g_exc,
+            pv_g_inh=pv_g_inh,
+            olm_g_exc=olm_g_exc,
+            olm_g_inh=olm_g_inh,
+            bistratified_g_exc=bist_g_exc,
+            bistratified_g_inh=bist_g_inh,
         )
         pv_spikes = inhib_out["pv_spikes"]
         olm_spikes = inhib_out["olm_spikes"]
@@ -964,13 +950,6 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         bist_dendritic = self._integrate_single_synaptic_input(syn_bist_pyr, bist_spikes).g_gaba_a
 
         dendritic = olm_dendritic + bist_dendritic
-
-        # ------------------------------------------------------------------
-        # Store inhibitory spikes for next-step I→I computation
-        # ------------------------------------------------------------------
-        prev_pv_spikes_buf.write_and_advance(pv_spikes)
-        prev_olm_spikes_buf.write_and_advance(olm_spikes)
-        prev_bist_spikes_buf.write_and_advance(bist_spikes)
 
         return {
             "perisomatic_gaba_a": perisomatic_gaba_a,
@@ -1012,15 +991,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         """
         self._process_neuromodulators(neuromodulator_inputs)
 
-        dg_input, ca3_input, ca1_input, septal_gaba, ffi_factor, encoding_mod, retrieval_mod = (
+        dg_input, ca3_input, _ca2_input, ca1_input, ffi_factor, encoding_mod, retrieval_mod = (
             self._extract_circuit_inputs(synaptic_inputs)
         )
 
-        dg_spikes,  dg_inhib_output  = self._step_dg(dg_input, ffi_factor, septal_gaba)
-        ca3_spikes, ca3_inhib_output = self._step_ca3(ca3_input, septal_gaba)
-        ca2_spikes, ca2_inhib_output = self._step_ca2(septal_gaba)
+        dg_spikes,  dg_inhib_output  = self._step_dg(dg_input, ffi_factor)
+        ca3_spikes, ca3_inhib_output = self._step_ca3(ca3_input)
+        ca2_spikes, ca2_inhib_output = self._step_ca2()
         ca1_spikes, ca1_inhib_output, ca1_basal_g_exc, ca1_apical_g_exc = (
-            self._step_ca1(ca1_input, ffi_factor, encoding_mod, retrieval_mod, septal_gaba)
+            self._step_ca1(ca1_input, ffi_factor, encoding_mod, retrieval_mod)
         )
 
         self._update_match_mismatch(ca1_basal_g_exc, ca1_apical_g_exc, retrieval_mod)
@@ -1035,10 +1014,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             HippocampusPopulation.CA3: ca3_spikes,
             HippocampusPopulation.CA2: ca2_spikes,
             HippocampusPopulation.CA1: ca1_spikes,
-            # Inhibitory populations (for diagnostics tracking)
-            HippocampusPopulation.DG_INHIBITORY_PV:           dg_inhib_output["pv_spikes"],
-            HippocampusPopulation.DG_INHIBITORY_OLM:          dg_inhib_output["olm_spikes"],
-            HippocampusPopulation.DG_INHIBITORY_BISTRATIFIED: dg_inhib_output["bistratified_spikes"],
+            HippocampusPopulation.DG_INHIBITORY_PV:            dg_inhib_output["pv_spikes"],
+            HippocampusPopulation.DG_INHIBITORY_OLM:           dg_inhib_output["olm_spikes"],
+            HippocampusPopulation.DG_INHIBITORY_BISTRATIFIED:  dg_inhib_output["bistratified_spikes"],
             HippocampusPopulation.CA3_INHIBITORY_PV:           ca3_inhib_output["pv_spikes"],
             HippocampusPopulation.CA3_INHIBITORY_OLM:          ca3_inhib_output["olm_spikes"],
             HippocampusPopulation.CA3_INHIBITORY_BISTRATIFIED: ca3_inhib_output["bistratified_spikes"],
@@ -1103,11 +1081,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _extract_circuit_inputs(
         self, synaptic_inputs: SynapticInput,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor], float, float, float]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, float, float, float]:
         """Integrate all multi-source synaptic inputs and compute gating signals.
 
         Returns:
-            ``(dg_input, ca3_input, ca1_input, septal_gaba,
+            ``(dg_input, ca3_input, ca2_input, ca1_input,
                ffi_factor, encoding_mod, retrieval_mod)``
         """
         dg_input = self._integrate_synaptic_inputs_at_dendrites(
@@ -1120,17 +1098,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             filter_by_target_population=HippocampusPopulation.CA3,
         ).g_ampa
 
-        # TODO: Add direct EC->CA2 input integration here
+        ca2_input = self._integrate_synaptic_inputs_at_dendrites(
+            synaptic_inputs, n_neurons=self.ca2_size,
+            filter_by_target_population=HippocampusPopulation.CA2,
+        ).g_ampa
 
         ca1_input = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs, n_neurons=self.ca1_size,
             filter_by_target_population=HippocampusPopulation.CA1,
         ).g_ampa
-
-        # Septal GABAergic input for OLM theta phase-locking
-        septal_gaba: Optional[torch.Tensor] = synaptic_inputs.get("septal_gaba", None)
-        if septal_gaba is not None and septal_gaba.numel() == 0:
-            septal_gaba = None
 
         # Encoding/retrieval modulation from PREVIOUS timestep's OLM state (causal)
         encoding_mod = self._prev_encoding_mod
@@ -1142,14 +1118,13 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ffi_strength = min(1.0, raw_ffi / self.stimulus_gating.max_inhibition)
         ffi_factor   = 1.0 - ffi_strength * self.config.ffi_strength
 
-        return dg_input, ca3_input, ca1_input, septal_gaba, ffi_factor, encoding_mod, retrieval_mod
+        return dg_input, ca3_input, ca2_input, ca1_input, ffi_factor, encoding_mod, retrieval_mod
 
     def _step_dg(
         self,
-        dg_input: Any,
+        dg_input: torch.Tensor,
         ffi_factor: float,
-        septal_gaba: Optional[Any],
-    ) -> tuple[Any, dict]:
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Process one timestep of the Dentate Gyrus (pattern separation).
 
         Returns:
@@ -1161,18 +1136,14 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         dg_inhib_output = self._run_hippocampal_inhibitory(
             inhib_net=self.dg_inhibitory,
             prev_pyr_spikes=self._dg_spike_buffer.read(1),
-            prev_pv_spikes_buf=self._dg_pv_buffer,
-            prev_olm_spikes_buf=self._dg_olm_buffer,
-            prev_bist_spikes_buf=self._dg_bistratified_buffer,
             pyr_pop=HippocampusPopulation.DG,
             pv_pop=HippocampusPopulation.DG_INHIBITORY_PV,
             olm_pop=HippocampusPopulation.DG_INHIBITORY_OLM,
             bist_pop=HippocampusPopulation.DG_INHIBITORY_BISTRATIFIED,
-            septal_gaba=septal_gaba,
         )
         dg_perisomatic_inhib = dg_inhib_output["perisomatic_gaba_a"]
 
-        dg_g_ampa, dg_g_nmda = split_excitatory_conductance(dg_g_exc, nmda_ratio=0.05)  # Reduced from 0.2
+        dg_g_ampa, dg_g_nmda = split_excitatory_conductance(dg_g_exc, nmda_ratio=0.05)
 
         dg_spikes, _ = self.dg_neurons.forward(
             g_ampa_input=ConductanceTensor(dg_g_ampa),
@@ -1184,9 +1155,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _step_ca3(
         self,
-        ca3_input: Any,
-        septal_gaba: Optional[Any],
-    ) -> tuple[Any, dict]:
+        ca3_input: torch.Tensor,
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Process one timestep of CA3 (pattern completion + recurrence).
 
         Reads ``_dg_ca3_buffer`` and ``_ca3_ca3_buffer`` internally.
@@ -1228,18 +1198,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_rec_raw   = torch.matmul(ca3_ca3_weights, ca3_delayed.float())
         ca3_rec       = ca3_rec_raw * ach_recurrent_modulation
 
-        # Lateral CA3→CA3 feedback inhibition (basket cells, causal = prev timestep)
         prev_ca3_spikes = self._ca3_spike_buffer.read(1)
-        ca3_ca3_inhib_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=HippocampusPopulation.CA3,
-            target_region=self.region_name,
-            target_population=HippocampusPopulation.CA3,
-            receptor_type=ReceptorType.GABA_A,
-        )
-        ca3_feedback_inhibition = torch.matmul(
-            self.get_synaptic_weights(ca3_ca3_inhib_synapse), prev_ca3_spikes.float()
-        )
 
         # NE gain modulation (Î²-adrenergic: high NE → more responsive)
         ne_level = self._ne_concentration_ca3.mean().item()
@@ -1250,14 +1209,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca3_inhib_output = self._run_hippocampal_inhibitory(
             inhib_net=self.ca3_inhibitory,
             prev_pyr_spikes=prev_ca3_spikes,
-            prev_pv_spikes_buf=self._ca3_pv_buffer,
-            prev_olm_spikes_buf=self._ca3_olm_buffer,
-            prev_bist_spikes_buf=self._ca3_bistratified_buffer,
             pyr_pop=HippocampusPopulation.CA3,
             pv_pop=HippocampusPopulation.CA3_INHIBITORY_PV,
             olm_pop=HippocampusPopulation.CA3_INHIBITORY_OLM,
             bist_pop=HippocampusPopulation.CA3_INHIBITORY_BISTRATIFIED,
-            septal_gaba=septal_gaba,
         )
         ca3_perisomatic_inhib = ca3_inhib_output["perisomatic_gaba_a"]
 
@@ -1286,8 +1241,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         burst_risk   = torch.clamp((v_normalized - 0.8) / 0.2, 0.0, 1.0)
 
         ca3_g_inh = (
-            F.relu(ca3_feedback_inhibition)
-            + F.relu(ca3_perisomatic_inhib)
+            F.relu(ca3_perisomatic_inhib)
             + config.tonic_inhibition
             + burst_risk * 0.1
         )
@@ -1332,8 +1286,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _step_ca2(
         self,
-        septal_gaba: Optional[Any],
-    ) -> tuple[Any, dict]:
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Process one timestep of CA2 (social memory / temporal context).
 
         Reads ``_ca3_ca2_buffer`` internally.
@@ -1356,34 +1309,15 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         stp_efficacy     = self.stp_modules[ca3_ca2_synapse].forward(ca3_spikes_for_ca2_float)
         ca2_from_ca3 = torch.matmul(ca3_ca2_weights, stp_efficacy * ca3_spikes_for_ca2_float)
 
-        # CA2 lateral feedback inhibition (prevents runaway amplification)
-        prev_ca2_spikes      = self._ca2_spike_buffer.read(1)
-        ca2_population_rate  = prev_ca2_spikes.float().mean()
-        ca2_ca2_inhib_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=HippocampusPopulation.CA2,
-            target_region=self.region_name,
-            target_population=HippocampusPopulation.CA2,
-            receptor_type=ReceptorType.GABA_A,
-        )
-        local_lateral_ca2 = torch.matmul(
-            self.get_synaptic_weights(ca2_ca2_inhib_synapse), prev_ca2_spikes.float()
-        )
-        ca2_feedback_inhibition = ca2_population_rate * 0.2 + local_lateral_ca2 * 0.1
-
         ca2_g_exc = F.relu(ca2_from_ca3)
 
         ca2_inhib_output = self._run_hippocampal_inhibitory(
             inhib_net=self.ca2_inhibitory,
             prev_pyr_spikes=self._ca2_spike_buffer.read(1),
-            prev_pv_spikes_buf=self._ca2_pv_buffer,
-            prev_olm_spikes_buf=self._ca2_olm_buffer,
-            prev_bist_spikes_buf=self._ca2_bistratified_buffer,
             pyr_pop=HippocampusPopulation.CA2,
             pv_pop=HippocampusPopulation.CA2_INHIBITORY_PV,
             olm_pop=HippocampusPopulation.CA2_INHIBITORY_OLM,
             bist_pop=HippocampusPopulation.CA2_INHIBITORY_BISTRATIFIED,
-            septal_gaba=septal_gaba,
         )
         ca2_perisomatic_inhib = ca2_inhib_output["perisomatic_gaba_a"]
 
@@ -1393,7 +1327,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         v_normalized = torch.clamp((self.ca2_neurons.V_soma - v_rest) / (v_threshold - v_rest), 0.0, 1.0)
         burst_risk   = torch.clamp((v_normalized - 0.8) / 0.2, 0.0, 1.0)
         ca2_g_inh = (
-            F.relu(config.tonic_inhibition + ca2_feedback_inhibition + ca2_perisomatic_inhib)
+            F.relu(config.tonic_inhibition + ca2_perisomatic_inhib)
             + burst_risk * 0.1
         )
 
@@ -1409,12 +1343,11 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _step_ca1(
         self,
-        ca1_input: Any,
+        ca1_input: torch.Tensor,
         ffi_factor: float,
         encoding_mod: float,
         retrieval_mod: float,
-        septal_gaba: Optional[Any],
-    ) -> tuple[Any, dict, Any, Any]:
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         """Process one timestep of CA1 (memory output / EC comparison layer).
 
         Reads ``_ca3_ca1_buffer`` and ``_ca2_ca1_buffer`` internally.
@@ -1453,7 +1386,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         # NMDA trace: tracks CA3-induced depolarisation for MgÂ²âº block removal
         if self.nmda_trace is not None:
-            nmda_decay = torch.exp(torch.tensor(-config.dt_ms / config.nmda_tau))
+            nmda_decay = decay_tensor(config.dt_ms, config.nmda_tau, device=self.nmda_trace.device)
             self.nmda_trace = self.nmda_trace * nmda_decay + ca1_from_ca3 * (1.0 - nmda_decay)
         else:
             self.nmda_trace = ca1_from_ca3
@@ -1481,14 +1414,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         ca1_inhib_output = self._run_hippocampal_inhibitory(
             inhib_net=self.ca1_inhibitory,
             prev_pyr_spikes=self._ca1_spike_buffer.read(1),
-            prev_pv_spikes_buf=self._ca1_pv_buffer,
-            prev_olm_spikes_buf=self._ca1_olm_buffer,
-            prev_bist_spikes_buf=self._ca1_bistratified_buffer,
             pyr_pop=HippocampusPopulation.CA1,
             pv_pop=HippocampusPopulation.CA1_INHIBITORY_PV,
             olm_pop=HippocampusPopulation.CA1_INHIBITORY_OLM,
             bist_pop=HippocampusPopulation.CA1_INHIBITORY_BISTRATIFIED,
-            septal_gaba=septal_gaba,
         )
         ca1_perisomatic_inhib = ca1_inhib_output["perisomatic_gaba_a"]  # PV basket cells
         ca1_dendritic_inhib   = ca1_inhib_output["dendritic"]            # OLM + bistratified
@@ -1540,8 +1469,8 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _update_match_mismatch(
         self,
-        ca1_basal_g_exc: Any,
-        ca1_apical_g_exc: Any,
+        ca1_basal_g_exc: torch.Tensor,
+        ca1_apical_g_exc: torch.Tensor,
         retrieval_mod: float,
     ) -> None:
         """Compare CA3 Schaffer drive vs EC direct drive to produce match/mismatch.
@@ -1570,10 +1499,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
     def _apply_plasticity(
         self,
         synaptic_inputs: SynapticInput,
-        dg_spikes: Any,
-        ca3_spikes: Any,
-        ca2_spikes: Any,
-        ca1_spikes: Any,
+        dg_spikes: torch.Tensor,
+        ca3_spikes: torch.Tensor,
+        ca2_spikes: torch.Tensor,
+        ca1_spikes: torch.Tensor,
         encoding_mod: float,
     ) -> None:
         """Apply all Hebbian and three-factor plasticity rules for the current timestep.
@@ -1732,10 +1661,10 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _update_spike_buffers(
         self,
-        dg_spikes:  Any,
-        ca3_spikes: Any,
-        ca2_spikes: Any,
-        ca1_spikes: Any,
+        dg_spikes:  torch.Tensor,
+        ca3_spikes: torch.Tensor,
+        ca2_spikes: torch.Tensor,
+        ca1_spikes: torch.Tensor,
     ) -> None:
         """Advance all per-region history and inter-layer delay buffers.
 

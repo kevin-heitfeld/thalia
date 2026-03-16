@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from .analysis_spectral import (
@@ -23,14 +21,11 @@ from .analysis_neural_coupling import (
     compute_spike_avalanches,
     compute_swr_ca3_ca1_coupling,
 )
-from .diagnostics_types import OscillatoryStats
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+from .diagnostics_types import OscillatoryStats, RecorderSnapshot
 
 
 def compute_oscillatory_stats(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_rate_binned: np.ndarray,
     region_rate_binned: np.ndarray,
     n_bins: int,

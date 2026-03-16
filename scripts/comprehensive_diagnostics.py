@@ -1,18 +1,17 @@
-"""
-Comprehensive Brain Diagnostics — thin driver script.
-
-This script owns the simulation loop.  All recording and analysis is
-delegated to ``DiagnosticsRecorder``, which can equally be plugged into a
-training loop with a single ``recorder.record(t, outputs)`` call.
-"""
+"""Comprehensive Brain Diagnostics — thin driver script."""
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import re
 import sys
 import time
+from contextlib import redirect_stdout
+from datetime import datetime
+from io import StringIO
 
-import matplotlib
 import torch
 
 from thalia import GlobalConfig
@@ -29,10 +28,189 @@ from thalia.diagnostics import (
 )
 from thalia.diagnostics.sweep import run_single, DEFAULT_SWEEP_PATTERNS
 
-matplotlib.use("Agg")
+from scripts.compare_runs import compare
+from scripts.tee_writer import TeeWriter
 
 # ── Configure line buffering so progress prints appear immediately ─────────────
 sys.stdout.reconfigure(line_buffering=True)
+
+
+def _run(args: argparse.Namespace, output_dir: str) -> None:
+    # ── Header ────────────────────────────────────────────────────────────────
+    print("\n" + "═" * 80)
+    print("THALIA  ·  COMPREHENSIVE BRAIN DIAGNOSTICS")
+    print("═" * 80)
+
+    print("\n  GlobalConfig:")
+    for field in GlobalConfig.__dataclass_fields__.values():
+        value = getattr(GlobalConfig, field.name)
+        print(f"    {field.name:25s}: {value}")
+
+    print(f"\n  Run parameters:")
+    print(f"    timesteps           : {args.timesteps}")
+    print(f"    input-pattern       : {args.input_pattern}")
+    print(f"    mode                : {args.mode}")
+    print(f"    output-dir          : {output_dir}")
+    print(f"    plots               : {'no' if args.no_plots else 'yes'}")
+    print(f"    sweep               : {args.sweep}")
+    if args.sweep_patterns:
+        print(f"    sweep-patterns      : {args.sweep_patterns}")
+    if args.report_interval is not None:
+        print(f"    report-interval     : {args.report_interval}")
+    print(f"    voltage-sample-size : {args.voltage_sample_size}")
+    print(f"    conductance-sample  : {args.conductance_sample_size}")
+    print(f"    cond-sample-interval: {args.conductance_sample_interval} timesteps")
+    print(f"    rate-bin-ms         : {args.rate_bin_ms}")
+    print(f"    device              : {args.device or '(pytorch default)'}")
+
+    # ── Build brain ───────────────────────────────────────────────────────────
+    print(f"\n{'═'*80}")
+    print("BUILDING BRAIN")
+    print(f"{'═'*80}\n")
+    # Set PyTorch default device before building so all tensors land there
+    if args.device is not None:
+        torch.set_default_device(args.device)
+    t_build = time.perf_counter()
+    brain = BrainBuilder.preset("default")
+    print(f"  ✓ Brain built in {time.perf_counter() - t_build:.3f} s")
+
+    print_brain_config(brain)
+    print_neuron_populations(brain)
+    print_synaptic_weights(brain, heading="INITIAL SYNAPTIC WEIGHTS")
+
+    # ── Create recorder ───────────────────────────────────────────────────────
+    # SFA health check is unreliable with a ramping input: FR rises monotonically
+    # so all populations appear adapted regardless of cellular SFA properties.
+    # Onset transients are handled automatically by detect_transient_step().
+    recorder = DiagnosticsRecorder(
+        brain=brain,
+        config=DiagnosticsConfig(
+            n_timesteps=args.timesteps,
+            dt_ms=brain.dt_ms,
+            mode=args.mode,
+            voltage_sample_size=args.voltage_sample_size,
+            conductance_sample_size=args.conductance_sample_size,
+            conductance_sample_interval_steps=args.conductance_sample_interval,
+            gain_sample_interval_ms=10,
+            rate_bin_ms=args.rate_bin_ms,
+            compute_avalanches=(args.timesteps >= 2000),
+            skip_sfa_health_check=(args.input_pattern == "ramp"),
+            sensory_pattern=args.input_pattern,
+        ),
+    )
+
+    # Warn if voltage sample size is low relative to population sizes
+    if recorder.config.voltage_sample_size < 20:
+        large_pops = [
+            f"{rn}:{pn}"
+            for rn, region in brain.regions.items()
+            for pn, pop in region.neuron_populations.items()
+            if pop.n_neurons > 100
+        ]
+        if large_pops:
+            print(
+                f"\n  NOTE: voltage_sample_size={recorder.config.voltage_sample_size} < 20 while "
+                f"{len(large_pops)} population(s) have >100 neurons. "
+                f"Consider increasing --voltage-sample-size for richer subpopulation analysis. "
+                f"voltage_bimodality (up/down state detection) is suppressed below 20 sampled "
+                f"neurons — use --voltage-sample-size ≥20 to enable it."
+            )
+
+    # ── Sweep mode ────────────────────────────────────────────────────────────
+    if args.sweep:
+        if args.sweep_patterns:
+            _sweep_patterns = [p.strip() for p in args.sweep_patterns.split(",")]
+            invalid = [p for p in _sweep_patterns if p not in SENSORY_PATTERNS]
+            if invalid:
+                raise SystemExit(
+                    f"--sweep-patterns contains unknown pattern(s): {invalid}. "
+                    f"Valid: {sorted(SENSORY_PATTERNS)}"
+                )
+        else:
+            _sweep_patterns = DEFAULT_SWEEP_PATTERNS
+        _sweep_report_interval = args.report_interval if args.report_interval is not None else 200
+        run_sweep(
+            brain, recorder,
+            timesteps=args.timesteps,
+            output_dir=output_dir,
+            patterns=_sweep_patterns,
+            no_plots=args.no_plots,
+            report_interval=_sweep_report_interval,
+            triage_fn=run_triage if args.triage else None,
+        )
+        print(f"\n{'═'*80}\nDONE (sweep)\n{'═'*80}\n")
+        return
+
+    # ── Single-run ────────────────────────────────────────────────────────────
+    print(f"\n{'═'*80}")
+    print(
+        f"RUNNING {args.timesteps} TIMESTEPS"
+        f"  input={args.input_pattern!r}  mode={args.mode!r}"
+    )
+    print(f"{'═'*80}\n")
+
+    _single_report_interval = (
+        args.report_interval if args.report_interval is not None
+        else max(50, args.timesteps // 20)
+    )
+    run_single(
+        brain, recorder, args.input_pattern, args.timesteps, output_dir,
+        report_interval=_single_report_interval,
+        no_plots=args.no_plots,
+        triage_fn=run_triage if args.triage else None,
+    )
+    print_synaptic_weights(brain, heading="FINAL SYNAPTIC WEIGHTS")
+
+    print(f"\n{'═'*80}")
+    print("DONE")
+    print(f"{'═'*80}\n")
+
+
+def _run_comparison(base_dir: str, current_stamp: str) -> None:
+    """Compare the current run with the most recent previous run, if one exists."""
+    stamp_re = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}$")
+
+    try:
+        entries = sorted(
+            (d for d in os.listdir(base_dir)
+             if os.path.isdir(os.path.join(base_dir, d)) and stamp_re.match(d)),
+            reverse=True,
+        )
+    except OSError:
+        return
+
+    if len(entries) < 2 or entries[0] != current_stamp:
+        print("  No previous timestamped run found — skipping comparison.")
+        return
+
+    new_stamp, old_stamp = entries[0], entries[1]
+    old_report = os.path.join(base_dir, old_stamp, "diagnostics_report.json")
+    new_report = os.path.join(base_dir, new_stamp, "diagnostics_report.json")
+
+    if not os.path.exists(old_report) or not os.path.exists(new_report):
+        print("  Previous run missing diagnostics_report.json — skipping comparison.")
+        return
+
+    with open(old_report, encoding="utf-8") as f:
+        old_data = json.load(f)
+    with open(new_report, encoding="utf-8") as f:
+        new_data = json.load(f)
+
+    # Capture output so we can write it to file AND print to console/log
+    buf = StringIO()
+    with redirect_stdout(buf):
+        compare(old_data, new_data)
+    output = buf.getvalue()
+
+    print(output, end="")
+
+    comparison_dir = os.path.join(base_dir, "comparison")
+    os.makedirs(comparison_dir, exist_ok=True)
+    comparison_path = os.path.join(comparison_dir, f"{old_stamp}_vs_{new_stamp}.txt")
+    with open(comparison_path, "w", encoding="utf-8") as f:
+        f.write(output)
+
+    print(f"  \u2713 Comparison saved to {comparison_path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,22 +218,19 @@ def parse_args() -> argparse.Namespace:
         description="Comprehensive Thalia brain diagnostics.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    _pattern_descriptions = {
-        "random":                "sparse Poisson to thalamus relay (~3%% neurons, 20%% prob).",
-        "rhythmic":              "8 Hz theta-burst to thalamus relay.",
-        "burst":                 "single 50 ms synchronous burst at t=100 ms (30%% of relay).",
-        "sustained_burst":       "repeating 50 ms on / 450 ms off cycle to thalamus relay.",
-        "background":            "low-rate (≈2 Hz) Poisson to every external-input synapse in all regions.",
-        "none":                  "no external input (spontaneous activity only).",
-        "gamma":                 "sinusoidal 40 Hz drive (5–15%% relay per step) — tests thalamocortical gamma chain.",
-        "correlated_background": "half relay shares a common Poisson driver — tests common-input vs. local synchrony.",
-        "ramp":                  "linearly ramping relay activation 0→30%% over --timesteps — tests rate coding and neural gain.",
-        "slow_wave":             "600 ms up/down cycle (up: 40 Hz relay, down: silence) — stress-tests cortical bistability and voltage bimodality.",
-    }
-    _pattern_help = "Sensory input pattern fed to the brain.\n" + "\n".join(
-        f"  {k!r}: {v}" for k, v in _pattern_descriptions.items() if k in SENSORY_PATTERNS
+
+    # Device selection
+    parser.add_argument(
+        "--device", type=str, default=None,
+        choices=["cpu", "cuda", "mps"],
+        help=(
+            "PyTorch device to build the brain on.  Defaults to the PyTorch global "
+            "default (usually CPU).  Use 'cuda' for NVIDIA GPU or 'mps' for Apple "
+            "Silicon.  The brain and all tensors are created on this device."
+        ),
     )
 
+    # Run configuration
     parser.add_argument(
         "--mode", type=str, default="full",
         choices=["full", "stats"],
@@ -72,7 +247,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input-pattern", type=str, default="random",
         choices=list(SENSORY_PATTERNS),
-        help=_pattern_help,
+        help=(
+            "Sensory input pattern fed to the brain.\n" +
+            "\n".join(f"  {k!r}: {v.__doc__}" for k, v in SENSORY_PATTERNS.items())
+        ).replace("%", "%%"),
     )
     parser.add_argument(
         "--sweep", action="store_true",
@@ -101,18 +279,10 @@ def parse_args() -> argparse.Namespace:
             "for quiet / CI runs."
         ),
     )
-    parser.add_argument(
-        "--output-dir", type=str, default="data/diagnostics",
-        help="Directory for diagnostic outputs (JSON, NPZ, PNG).",
-    )
-    parser.add_argument(
-        "--no-plots", action="store_true",
-        help="Skip matplotlib plot generation.",
-    )
 
     # Sampling / binning fidelity knobs
     parser.add_argument(
-        "--voltage-sample-size", type=int, default=8,
+        "--voltage-sample-size", type=int, default=20,
         help=(
             "Number of neurons sampled per population for voltage recording (full mode). "
             "Increase for larger populations (>50 neurons) to get reliable per-neuron "
@@ -147,17 +317,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    # Device selection
-    parser.add_argument(
-        "--device", type=str, default=None,
-        choices=["cpu", "cuda", "mps"],
-        help=(
-            "PyTorch device to build the brain on.  Defaults to the PyTorch global "
-            "default (usually CPU).  Use 'cuda' for NVIDIA GPU or 'mps' for Apple "
-            "Silicon.  The brain and all tensors are created on this device."
-        ),
-    )
-
     # Automatic failure triage
     parser.add_argument(
         "--triage", action="store_true",
@@ -171,160 +330,46 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    # Avalanche analysis option (requires long runs for enough events)
+    # Output configuration
     parser.add_argument(
-        "--compute-avalanches", action="store_true",
-        help=(
-            "Fit a power-law to the spike avalanche size distribution (Beggs & Plenz 2003). "
-            "Requires ≥200 avalanche events; add --timesteps ≥2000."
-        ),
+        "--output-dir", type=str, default="data/diagnostics",
+        help="Directory for diagnostic outputs (JSON, NPZ, PNG).",
+    )
+    parser.add_argument(
+        "--no-plots", action="store_true",
+        help="Skip matplotlib plot generation.",
+    )
+    parser.add_argument(
+        "--no-comparison", action="store_true",
+        help="Skip comparison with previous run.",
     )
 
     args = parser.parse_args()
-
-    # Avalanche analysis validation — too few events for a reliable fit.
-    if args.compute_avalanches and args.timesteps < 2000:
-        parser.error(
-            f"--compute-avalanches requires at least 200 avalanche events for a reliable fit. "
-            f"With typical parameters this means --timesteps should be at least 2000."
-        )
-
     return args
 
 
-def main() -> None:
+if __name__ == "__main__":
     args = parse_args()
 
-    # ── Header ────────────────────────────────────────────────────────────────
-    print("\n" + "═" * 80)
-    print("THALIA  ·  COMPREHENSIVE BRAIN DIAGNOSTICS")
-    print("═" * 80)
+    # ── Create timestamped output directory ────────────────────────────────────
+    run_stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+    output_dir = os.path.join(args.output_dir, run_stamp)
+    os.makedirs(output_dir, exist_ok=True)
 
-    print("\n  GlobalConfig:")
-    print(f"    DEFAULT_DT_MS            : {GlobalConfig.DEFAULT_DT_MS}")
-    print(f"    HOMEOSTASIS_DISABLED     : {GlobalConfig.HOMEOSTASIS_DISABLED}")
-    print(f"    LEARNING_DISABLED        : {GlobalConfig.LEARNING_DISABLED}")
-    print(f"    NEUROMODULATION_DISABLED : {GlobalConfig.NEUROMODULATION_DISABLED}")
-    print(f"    SYNAPTIC_WEIGHT_SCALE    : {GlobalConfig.SYNAPTIC_WEIGHT_SCALE}")
+    # ── Tee stdout/stderr to a log file ───────────────────────────────────────
+    log_path = os.path.join(output_dir, "diagnostics.txt")
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        try:
+            TeeWriter.patch_stdout_and_stderr(log_file)
 
-    print(f"\n  Run parameters:")
-    print(f"    timesteps           : {args.timesteps}")
-    print(f"    input-pattern       : {args.input_pattern}")
-    print(f"    mode                : {args.mode}")
-    print(f"    output-dir          : {args.output_dir}")
-    print(f"    plots               : {'no' if args.no_plots else 'yes'}")
-    print(f"    sweep               : {args.sweep}")
-    if args.sweep_patterns:
-        print(f"    sweep-patterns      : {args.sweep_patterns}")
-    if args.report_interval is not None:
-        print(f"    report-interval     : {args.report_interval}")
-    print(f"    voltage-sample-size : {args.voltage_sample_size}")
-    print(f"    conductance-sample  : {args.conductance_sample_size}")
-    print(f"    cond-sample-interval: {args.conductance_sample_interval} timesteps")
-    print(f"    rate-bin-ms         : {args.rate_bin_ms}")
-    print(f"    device              : {args.device or '(pytorch default)'}")
+            _run(args, output_dir)
 
-    # ── Build brain ───────────────────────────────────────────────────────────
-    print(f"\n{'═'*80}")
-    print("BUILDING BRAIN")
-    print(f"{'═'*80}\n")
-    # 3.4.2: set PyTorch default device before building so all tensors land there
-    if args.device is not None:
-        torch.set_default_device(args.device)
-    t_build = time.perf_counter()
-    brain = BrainBuilder.preset("default")
-    print(f"  ✓ Brain built in {time.perf_counter() - t_build:.3f} s")
+            # ── Compare with previous run ─────────────────────────────────
+            if not args.no_comparison:
+                print(f"\n{'═'*80}")
+                print("COMPARISON WITH PREVIOUS RUN")
+                print(f"{'═'*80}\n")
+                _run_comparison(args.output_dir, run_stamp)
 
-    print_brain_config(brain)
-    print_neuron_populations(brain)
-    print_synaptic_weights(brain, heading="INITIAL SYNAPTIC WEIGHTS")
-
-    # ── Create recorder ───────────────────────────────────────────────────────
-    # SFA health check is unreliable with a ramping input: FR rises monotonically
-    # so all populations appear adapted regardless of cellular SFA properties.
-    # Onset transients are handled automatically by detect_transient_step().
-    _skip_sfa = (args.input_pattern == "ramp")
-    config = DiagnosticsConfig(
-        n_timesteps=args.timesteps,
-        dt_ms=brain.dt_ms,
-        mode=args.mode,
-        voltage_sample_size=args.voltage_sample_size,
-        conductance_sample_size=args.conductance_sample_size,
-        conductance_sample_interval_steps=args.conductance_sample_interval,
-        gain_sample_interval_ms=10,
-        rate_bin_ms=args.rate_bin_ms,
-        compute_avalanches=args.compute_avalanches,
-        skip_sfa_health_check=_skip_sfa,
-        sensory_pattern=args.input_pattern,
-    )
-    recorder = DiagnosticsRecorder(brain, config)
-
-    # Warn if voltage sample size is low relative to population sizes
-    if config.voltage_sample_size < 20:
-        large_pops = [
-            f"{rn}:{pn}"
-            for rn, region in brain.regions.items()
-            for pn, pop in region.neuron_populations.items()
-            if pop.n_neurons > 100
-        ]
-        if large_pops:
-            print(
-                f"\n  NOTE: voltage_sample_size={config.voltage_sample_size} < 20 while "
-                f"{len(large_pops)} population(s) have >100 neurons. "
-                f"Consider increasing --voltage-sample-size for richer subpopulation analysis. "
-                f"voltage_bimodality (up/down state detection) is suppressed below 20 sampled "
-                f"neurons — use --voltage-sample-size ≥20 to enable it."
-            )
-
-    # ── Sweep mode ────────────────────────────────────────────────────────────
-    if args.sweep:
-        if args.sweep_patterns:
-            _sweep_patterns = [p.strip() for p in args.sweep_patterns.split(",")]
-            invalid = [p for p in _sweep_patterns if p not in SENSORY_PATTERNS]
-            if invalid:
-                raise SystemExit(
-                    f"--sweep-patterns contains unknown pattern(s): {invalid}. "
-                    f"Valid: {sorted(SENSORY_PATTERNS)}"
-                )
-        else:
-            _sweep_patterns = DEFAULT_SWEEP_PATTERNS
-        _sweep_report_interval = args.report_interval if args.report_interval is not None else 200
-        run_sweep(
-            brain, recorder,
-            timesteps=args.timesteps,
-            output_dir=args.output_dir,
-            patterns=_sweep_patterns,
-            no_plots=args.no_plots,
-            report_interval=_sweep_report_interval,
-            triage_fn=run_triage if args.triage else None,
-        )
-        print(f"\n{'═'*80}\nDONE (sweep)\n{'═'*80}\n")
-        return
-
-    # ── Single-run ────────────────────────────────────────────────────────────
-    print(f"\n{'═'*80}")
-    print(
-        f"RUNNING {args.timesteps} TIMESTEPS"
-        f"  input={args.input_pattern!r}  mode={args.mode!r}"
-    )
-    print(f"{'═'*80}\n")
-
-    _single_report_interval = (
-        args.report_interval if args.report_interval is not None
-        else max(50, args.timesteps // 20)
-    )
-    run_single(
-        brain, recorder, args.input_pattern, args.timesteps, args.output_dir,
-        report_interval=_single_report_interval,
-        no_plots=args.no_plots,
-        triage_fn=run_triage if args.triage else None,
-    )
-    print_synaptic_weights(brain, heading="FINAL SYNAPTIC WEIGHTS")
-
-    print(f"\n{'═'*80}")
-    print("DONE")
-    print(f"{'═'*80}\n")
-
-
-if __name__ == "__main__":
-    main()
+        finally:
+            TeeWriter.restore_original_stdout_and_stderr()

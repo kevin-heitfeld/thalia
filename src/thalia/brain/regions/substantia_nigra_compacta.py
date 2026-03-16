@@ -26,29 +26,30 @@ Biological Background:
 **Nigrostriatal Pathway:**
 - SNc DA → dorsal striatum D1 MSNs: direct pathway facilitation (Go)
 - SNc DA → dorsal striatum D2 MSNs: indirect pathway suppression (NoGo)
-- Dopamine-gated plasticity for motor sequence learning (Hikosaka et al. 2002)
-
-References:
-    Hikosaka, O., Nakamura, K., Sakai, K., & Nakahashi, H. (2002).
-        Central mechanisms of motor skill learning. Current Opinion in
-        Neurobiology, 12(2), 217-222.
-    Björklund, A., & Dunnett, S. B. (2007). Dopamine neuron systems in
-        the brain: an update. Trends in Neurosciences, 30(5), 194-202.
+- Dopamine-gated plasticity for motor sequence learning
 """
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Union
+from typing import TYPE_CHECKING, ClassVar, Dict, Union
 
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import SubstantiaNigraCompactaConfig
+from thalia.brain.configs import DopaminePacemakerConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
     NeuromodulatorChannel,
     PopulationName,
+    PopulationPolarity,
     PopulationSizes,
     RegionName,
     RegionOutput,
@@ -59,16 +60,16 @@ from .dopamine_pacemaker_base import DopaminePacemakerBase
 from .population_names import SNcPopulation
 from .region_registry import register_region
 
+if TYPE_CHECKING:
+    from thalia.brain.neurons import ConductanceLIF
+
 
 @register_region(
     "substantia_nigra_compacta",
     aliases=["snc", "nigra_compacta"],
     description="SNc - nigrostriatal dopamine pacemaker for motor learning",
-    version="1.0",
-    author="Thalia Project",
-    config_class=SubstantiaNigraCompactaConfig,
 )
-class SubstantiaNigraCompacta(DopaminePacemakerBase[SubstantiaNigraCompactaConfig]):
+class SubstantiaNigraCompacta(DopaminePacemakerBase[DopaminePacemakerConfig]):
     """Substantia Nigra pars Compacta — Nigrostriatal Dopamine System.
 
     Provides tonic dopaminergic drive to dorsal striatum for motor learning.
@@ -98,7 +99,7 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[SubstantiaNigraCompactaConfi
 
     def __init__(
         self,
-        config: SubstantiaNigraCompactaConfig,
+        config: DopaminePacemakerConfig,
         population_sizes: PopulationSizes,
         region_name: RegionName,
         *,
@@ -111,13 +112,59 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[SubstantiaNigraCompactaConfi
 
         # DA neurons — ConductanceLIF with spike-frequency adaptation and I_h pacemaker
         # I_h (HCN) contributes to 4-6 Hz tonic rhythm; activates during RMTg-driven pauses
-        # and provides a rebound ramp that restores tonic firing (Neuhoff et al. 2002).
-        self.da_neurons = self._make_da_neurons(self.da_size, SNcPopulation.DA)
+        # and provides a rebound ramp that restores tonic firing.
+        self.da_neurons: ConductanceLIF
+        self.da_neurons = self._create_and_register_neuron_population(
+            SNcPopulation.DA,
+            self.da_size,
+            polarity=PopulationPolarity.ANY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.da_size, self.device, cv=0.20),
+                v_threshold=heterogeneous_v_threshold(1.0, self.da_size, self.device, cv=0.12, clamp_fraction=0.25),
+                v_reset=0.0,
+                tau_ref=config.tau_ref,
+                g_L=heterogeneous_g_L(config.g_L, self.da_size, self.device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=config.noise_std,
+                adapt_increment=heterogeneous_adapt_increment(config.adapt_increment, self.da_size, self.device),
+                tau_adapt=config.tau_adapt,
+                E_adapt=-0.5,
+                # I_h (HCN) pacemaker — see class-level constants for rationale.
+                enable_ih=True,
+                g_h_max=0.03,
+                E_h=0.9,
+                V_half_h=-0.35,
+                k_h=0.08,
+                tau_h_ms=150.0,
+            ),
+        )
 
         # GABAergic interneurons (local inhibitory control)
-        self._init_gaba_interneurons(SNcPopulation.GABA, self.gaba_size)
+        self.gaba_neurons: ConductanceLIF
+        self.gaba_neurons = self._create_and_register_neuron_population(
+            population_name=SNcPopulation.GABA,
+            n_neurons=self.gaba_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(8.0, self.gaba_size, device=self.device, cv=0.10),
+                v_threshold=heterogeneous_v_threshold(1.0, self.gaba_size, device=self.device, cv=0.06),
+                v_reset=0.0,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_ref=2.5,
+                g_L=heterogeneous_g_L(0.10, self.gaba_size, device=self.device, cv=0.08),
+            ),
+        )
 
-        self._register_neuron_population(SNcPopulation.DA, self.da_neurons)
+        self._prev_gaba_spikes: torch.Tensor
+        self.register_buffer("_prev_gaba_spikes", torch.zeros(self.gaba_size, dtype=torch.bool, device=self.device), persistent=False)
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -137,7 +184,7 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[SubstantiaNigraCompactaConfi
         # STRIATAL SHORT-LOOP FEEDBACK (D1/D2 → SNc)
         # =====================================================================
         # Tonic 4-6 Hz pacemaking is achieved via baseline_drive + spike-frequency
-        # adaptation (see SubstantiaNigraCompactaConfig.baseline_drive):
+        # adaptation (see DopaminePacemakerConfig.baseline_drive):
         #   1. baseline_drive sets V_inf above threshold
         #   2. Each spike increments g_adapt, suppressing re-firing
         #   3. g_adapt decays (tau=300ms) → V_inf rises back → next spike

@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 import random
 import warnings
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 from scipy.optimize import curve_fit as sp_curve_fit
@@ -16,9 +16,7 @@ from scipy.signal import hilbert as sp_hilbert
 from scipy.signal import welch as sp_welch
 
 from .bio_ranges import EEG_BANDS, PAC_SPECS, freq_to_band
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+from .diagnostics_types import RecorderSnapshot
 
 
 # =============================================================================
@@ -98,7 +96,7 @@ def _compute_pac_mi(
 
 
 def compute_band_powers(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     region_rate_binned: np.ndarray,
     n_bins: int,
 ) -> Tuple[
@@ -165,7 +163,7 @@ def compute_band_powers(
 
 
 def compute_coherence_matrices(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     region_rate_binned: np.ndarray,
     n_bins: int,
     T: int,
@@ -233,7 +231,7 @@ def compute_coherence_matrices(
 
 
 def compute_pac_per_region(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Dict[str, float]:
     """Compute PAC (MVL modulation index) for each region matching a :data:`PAC_SPECS` entry.
@@ -273,7 +271,7 @@ def compute_pac_per_region(
 
 
 def compute_integration_tau(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     region_rate_binned: np.ndarray,
     n_bins: int,
 ) -> Dict[str, float]:

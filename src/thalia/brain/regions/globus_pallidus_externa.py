@@ -44,7 +44,14 @@ from typing import Union
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import TonicPacemakerConfig, get_default_gpe_config
+from thalia.brain.configs import TonicPacemakerConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+)
 from thalia.typing import (
     NeuromodulatorInput,
     PopulationPolarity,
@@ -63,9 +70,6 @@ from .region_registry import register_region
     "globus_pallidus_externa",
     aliases=["gpe"],
     description="Globus pallidus externa - basal ganglia indirect pathway hub",
-    version="1.0",
-    author="Thalia Project",
-    config_class=get_default_gpe_config,
 )
 class GlobusPallidusExterna(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
     """Globus Pallidus Externa - Indirect Pathway Hub.
@@ -99,33 +103,57 @@ class GlobusPallidusExterna(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
         self.prototypic_size = population_sizes[GPePopulation.PROTOTYPIC]
 
         # Prototypic neurons: ~75% of GPe, ~50 Hz tonic, project to STN + SNr
-        self.prototypic_neurons = self._make_bg_neurons(
-            self.prototypic_size, GPePopulation.PROTOTYPIC, noise_std=0.007
+        self.prototypic_neurons = self._create_and_register_neuron_population(
+            population_name=GPePopulation.PROTOTYPIC,
+            n_neurons=self.prototypic_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.prototypic_size, self.device),
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.prototypic_size, self.device),
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=heterogeneous_g_L(0.10, self.prototypic_size, self.device, cv=0.08),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                E_adapt=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=0.007,
+                adapt_increment=0.0,
+                tau_adapt=100.0,
+            ),
         )
+
         # Arkypallidal neurons: ~25% of GPe, project back to striatum.
-        # adapt_increment=0.015, tau_adapt=100ms cap equilibrium below 20 Hz.
-        # factor=0.85 reduces baseline drive (was 0.9 → 34 Hz despite adapt_increment=0.005).
-        self.arkypallidal_neurons = self._make_bg_neurons(
-            self.arkypallidal_size,
-            GPePopulation.ARKYPALLIDAL,
-            noise_std=0.005,
-            adapt_increment=0.015,
-            tau_adapt=100.0,
+        self.arkypallidal_neurons = self._create_and_register_neuron_population(
+            population_name=GPePopulation.ARKYPALLIDAL,
+            n_neurons=self.arkypallidal_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.arkypallidal_size, self.device),
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.arkypallidal_size, self.device),
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=heterogeneous_g_L(0.10, self.arkypallidal_size, self.device, cv=0.08),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                E_adapt=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=0.005,
+                adapt_increment=heterogeneous_adapt_increment(0.10, self.arkypallidal_size, self.device),
+                tau_adapt=100.0,
+            ),
         )
 
-        # Tonic drive: prototypic at full baseline; arkypallidal at 0.9× (just above threshold at rest)
-        # With factor=0.9: g_E_ss≈0.055, V_inf≈1.06 → ~10-15 Hz intrinsic; D2 inhibition will
-        # bring it down to 5-20 Hz target. Previous 0.5× was sub-threshold (V_inf≈0.70), relying on
-        # STN excitation which is chronically depleted (eff≈0.04) at STN's 20 Hz rate with U=0.50 τd=800ms.
-        # Previous 0.857 that caused 46.9 Hz was before STN was properly calibrated to 20 Hz.
+        # Tonic drive: prototypic at full baseline; arkypallidal at reduced drive.
+        # Factor 0.95: arkypallidal fire at 5-20 Hz (Abdi et al. 2015), much lower
+        # than prototypic 30-80 Hz. Increased from 0.80 after arkypallidals dropped
+        # to 3.9 Hz (too low). Factor 0.55 overcorrects catastrophically to 0.12 Hz.
         self.prototypic_baseline = self._make_tonic_baseline(self.prototypic_size)
-        self.arkypallidal_baseline = self._make_tonic_baseline(self.arkypallidal_size, factor=0.85)
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(GPePopulation.ARKYPALLIDAL, self.arkypallidal_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(GPePopulation.PROTOTYPIC, self.prototypic_neurons, polarity=PopulationPolarity.INHIBITORY)
+        self.arkypallidal_baseline = self._make_tonic_baseline(self.arkypallidal_size, factor=0.95)
 
         # Ensure all tensors are on the correct device
         self.to(device)

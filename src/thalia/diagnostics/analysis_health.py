@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 import numpy as np
 
@@ -17,6 +17,7 @@ from .diagnostics_types import (
     HomeostaticStats,
     OscillatoryStats,
     PopulationStats,
+    RecorderSnapshot,
     RegionStats,
 )
 from .health_cerebellar import (
@@ -74,9 +75,6 @@ from .health_thalamus import (
     check_relay_burst_mode,
     check_trn_relay_gating,
 )
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
 
 
 # =============================================================================
@@ -169,7 +167,7 @@ def _compute_global_brain_state(
 
 
 def assess_health(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     region_stats: Dict[str, RegionStats],
     connectivity: ConnectivityStats,

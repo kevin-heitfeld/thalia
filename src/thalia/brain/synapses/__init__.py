@@ -6,17 +6,10 @@ This module provides synaptic mechanisms for spiking neural networks.
 
 from __future__ import annotations
 
-from .neuromodulator_receptor import NeuromodulatorReceptor
-from .receptor_kinetics import (
-    CANONICAL_KINETICS,
+from .neuromodulator_receptor import (
+    NeuromodulatorReceptor,
     NMReceptorType,
-    ReceptorKinetics,
-    make_nm_receptor,
-)
-from .spillover import (
-    SpilloverConfig,
-    SpilloverTransmission,
-    apply_spillover_to_weights,
+    make_neuromodulator_receptor,
 )
 from .stp import (
     ShortTermPlasticity,
@@ -30,15 +23,8 @@ from .weight_init import (
 __all__ = [
     # Neuromodulator Receptors
     "NeuromodulatorReceptor",
-    # Canonical receptor kinetics registry
-    "CANONICAL_KINETICS",
     "NMReceptorType",
-    "ReceptorKinetics",
-    "make_nm_receptor",
-    # Spillover
-    "SpilloverConfig",
-    "SpilloverTransmission",
-    "apply_spillover_to_weights",
+    "make_neuromodulator_receptor",
     # Weight Initialization
     "ConductanceScaledSpec",
     "WeightInitializer",

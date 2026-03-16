@@ -11,18 +11,26 @@ from .neural_region import NeuralRegionConfig
 
 
 @dataclass
+class CorticalPopulationConfig:
+    tau_mem_ms: float
+    v_threshold: float
+    v_reset: float
+    adapt_increment: float
+    tau_adapt: float
+
+
+@dataclass
 class CorticalColumnConfig(NeuralRegionConfig):
     """Configuration for layered cortical microcircuit."""
 
     # =========================================================================
-    # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
+    # HOMEOSTATIC INTRINSIC PLASTICITY
     # =========================================================================
+    # Adaptive gain control to maintain target firing rates
     gain_learning_rate: float = 0.004
     gain_tau_ms: float = 2000.0
 
-    # =========================================================================
-    # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
-    # =========================================================================
+    # Adaptive threshold plasticity (complementary to gain adaptation)
     threshold_learning_rate: float = 0.03
     threshold_min: float = 0.2
     threshold_max: float = 1.5
@@ -49,108 +57,9 @@ class CorticalColumnConfig(NeuralRegionConfig):
     gap_junction_max_neighbors: int = 8
 
     # =========================================================================
-    # LAYER-SPECIFIC HETEROGENEITY
+    # INHIBITORY INTERNEURON OVERRIDES
     # =========================================================================
-    # Biological reality: Each cortical layer has distinct cell types with
-    # different electrophysiological properties:
-    # - L2/3 pyramidal: Medium tau_mem (~20ms), moderate threshold
-    # - L4 spiny stellate: Fast, small tau_mem (~10ms), low threshold
-    # - L5 thick-tuft pyramidal: Slow tau_mem (~30ms), high threshold, burst-capable
-    # - L6 corticothalamic: Variable tau_mem (~15-25ms), moderate threshold
-    #
-    # This heterogeneity enables:
-    # - L2/3: Integration and association over longer timescales
-    # - L4: Fast sensory processing and feature detection
-    # - L5: Decision-making and sustained output generation
-    # - L6: Feedback control with tuned dynamics
-
-    # Layer-specific neuron parameters
-    # Each layer gets a complete parameter set for neuron creation
-    population_overrides: Dict[CortexPopulation, Dict[str, float]] = field(
-        default_factory=lambda: {
-            CortexPopulation.L23_PYR: {
-                "tau_mem": 20.0,          # Moderate integration for association
-                "v_threshold": 1.8,       # High threshold for selective integration
-                "adapt_increment": 0.45,  # VERY STRONG adaptation (prevents runaway recurrence)
-                "tau_adapt": 150.0,       # Medium-slow decay (100-200ms biological)
-            },
-            CortexPopulation.L4_PYR: {
-                "tau_mem": 10.0,          # Fast integration for sensory input
-                "v_threshold": 0.65,      # Lowered 1.1→0.65: thalamus at 30 Hz with STP eff=0.029
-                                          # gives V_inf≈0.70; threshold must be below achievable V_inf.
-                                          # adapt_increment=0.20, tau_adapt=80ms → ~3 Hz steady-state
-                "adapt_increment": 0.20,  # Moderate adaptation to prevent overfiring from strong input
-                "tau_adapt": 80.0,        # Fast decay (50-100ms biological)
-            },
-            CortexPopulation.L5_PYR: {
-                "tau_mem": 30.0,          # Slow integration for output generation
-                "v_threshold": 1.2,       # Moderate-high threshold for reliable output (not too easily driven)
-                "adapt_increment": 0.20,  # Moderate adaptation to enable burst firing without runaway activity
-                "tau_adapt": 120.0,       # Medium decay (80-150ms biological)
-            },
-            CortexPopulation.L6A_PYR: {
-                "tau_mem": 15.0,          # Fast for TRN feedback (low gamma)
-                "v_threshold": 1.4,       # Higher threshold to prevent excessive feedback excitation (calibrated for stable low gamma)
-                "adapt_increment": 0.18,  # Moderate adaptation to support feedback dynamics without runaway activity
-                "tau_adapt": 100.0,       # Medium-fast decay (80-120ms biological)
-            },
-            CortexPopulation.L6B_PYR: {
-                "tau_mem": 25.0,          # Moderate for relay feedback (high gamma)
-                "v_threshold": 1.1,       # Lower threshold to allow fast modulation of L4 (calibrated for stable high gamma)
-                "adapt_increment": 0.22,  # Moderate adaptation to support relay dynamics without runaway activity
-                "tau_adapt": 100.0,       # Medium-fast decay (80-120ms biological)
-            },
-        }
-    )
-    """Layer-specific neuron parameters.
-
-    Each layer has distinct electrophysiological properties:
-
-    **L2/3 (Integration & Association)**:
-    - tau_mem: 20ms (moderate, ~10 Hz resonance)
-    - v_threshold: 1.8 (high, selective integration)
-    - adapt_increment: 0.45 (very strong, prevents runaway)
-    - tau_adapt: 150ms (slow, sustained decorrelation)
-
-    **L4 (Fast Sensory Processing)**:
-    - tau_mem: 10ms (fast, ~20 Hz resonance)
-    - v_threshold: 0.9 (low, sensitive detection)
-    - adapt_increment: 0.05 (minimal, faithful relay)
-    - tau_adapt: 80ms (fast, rapid reset)
-
-    **L5 (Output Generation)**:
-    - tau_mem: 30ms (slow, ~6 Hz resonance)
-    - v_threshold: 1.2 (moderate-high, reliable output)
-    - adapt_increment: 0.20 (moderate, burst patterns)
-    - tau_adapt: 120ms (medium, stable output)
-
-    **L6A (TRN Feedback, Low Gamma)**:
-    - tau_mem: 15ms (fast feedback control)
-    - v_threshold: 1.0 (standard)
-    - adapt_increment: 0.08 (light, feedback dynamics)
-    - tau_adapt: 100ms (medium-fast)
-
-    **L6B (Relay Feedback, High Gamma)**:
-    - tau_mem: 25ms (moderate feedback)
-    - v_threshold: 0.9 (lower, fast modulation)
-    - adapt_increment: 0.12 (moderate, gain control)
-    - tau_adapt: 100ms (medium-fast)
-
-    Biological ranges from intracellular recordings:
-    - tau_mem: L4 spiny stellate 8-12ms, L2/3 pyramidal 18-25ms, L5 pyramidal 25-35ms
-    - v_threshold: -50 to -58mV biological (normalized 0.9-1.8 in our model)
-    - adapt_increment: Layer-specific Ca2+-dependent K+ conductances
-    - tau_adapt: 50-200ms depending on cell type and recording conditions
-    """
-
-    # =========================================================================
-    # SPIKE-FREQUENCY ADAPTATION (SFA)
-    # =========================================================================
-    # Cortical pyramidal neurons show strong spike-frequency adaptation.
-    # Inherited from base: adapt_increment=0.0, adapt_tau=100.0
-    # Override for L2/3 strong adaptation:
-    adapt_increment: float = 0.30  # Very strong adaptation for decorrelation
-    # adapt_tau: 100.0 (use base default)
+    total_inhib_fraction: float = 0.25
 
     # =========================================================================
     # SPIKE-TIMING DEPENDENT PLASTICITY (STDP)
@@ -222,97 +131,78 @@ class CorticalColumnConfig(NeuralRegionConfig):
     # L2/3 RECURRENT CONNECTION PARAMETERS
     # =========================================================================
     # Connectivity and weight scale for the L2/3→L2/3 recurrent synapse.
-    # Subclasses (e.g. PrefrontalCortexConfig) can increase these to create stronger
-    # WM attractors.
     l23_recurrent_connectivity: float = 0.25     # Sparse recurrence (standard cortex)
     l23_recurrent_weight_scale: float = 0.0008   # Weak weights (prevents runaway in sensory cortex)
 
-
-@dataclass
-class PrefrontalCortexConfig(CorticalColumnConfig):
-    """Configuration specific to prefrontal cortex.
-
-    PFC is the agranular frontal cortex specialised for executive control and
-    working memory.  It is structurally a CorticalColumn with PFC-specific
-    parameter overrides:
-
-    * Dense mesocortical DA to L2/3 — D1-gated WM update pathway.
-    * Dense, strong L2/3 recurrence — attractor dynamics for WM persistence.
-    * Long tau_mem in L2/3 (200 ms) and L5 (150 ms) — temporal integration.
-    * D1/D2 dopamine receptor subpopulations on L2/3 neurons.
-    """
-
     # =========================================================================
-    # PFC-SPECIFIC CORTICAL COLUMN OVERRIDES
+    # POPULATION-SPECIFIC HETEROGENEITY
     # =========================================================================
-    # PFC is agranular: thin L4, thick L2/3 and L5.
-    # Long tau_mem in L2/3 supports WM attractor persistence.
-    # Weak adapt_increment in L2/3 allows sustained spiking (no rapid adaptation).
-
-    population_overrides: Dict[CortexPopulation, Dict[str, float]] = field(
+    population_overrides: Dict[CortexPopulation, CorticalPopulationConfig] = field(
         default_factory=lambda: {
-            CortexPopulation.L23_PYR: {
-                "tau_mem": 200.0,          # Very long integration for WM persistence
-                "v_threshold": 1.8,        # Same as default — selective firing
-                "adapt_increment": 0.05,   # Very weak — allows sustained WM activity
-                "tau_adapt": 200.0,        # Slow — WM timescale
-            },
-            CortexPopulation.L4_PYR: {
-                "tau_mem": 10.0,           # Fast — same as default
-                "v_threshold": 0.65,       # Low threshold — same as default
-                "adapt_increment": 0.20,
-                "tau_adapt": 80.0,
-            },
-            CortexPopulation.L5_PYR: {
-                "tau_mem": 150.0,          # Long — planning / output integration
-                "v_threshold": 1.2,
-                "adapt_increment": 0.15,   # Weaker — supports sustained output
-                "tau_adapt": 180.0,        # Slow — planning timescale
-            },
-            CortexPopulation.L6A_PYR: {
-                "tau_mem": 15.0,
-                "v_threshold": 1.4,
-                "adapt_increment": 0.18,
-                "tau_adapt": 100.0,
-            },
-            CortexPopulation.L6B_PYR: {
-                "tau_mem": 25.0,
-                "v_threshold": 1.1,
-                "adapt_increment": 0.22,
-                "tau_adapt": 100.0,
-            },
+            CortexPopulation.L23_PYR: CorticalPopulationConfig(
+                tau_mem_ms=20.0,       # Moderate integration for association
+                v_threshold=2.5,       # Raised 2.0→2.5: PFC L23 from internal recurrence (target ≤3)
+                v_reset=-0.15,         # AHP: 15% below E_L; enables visible SFA, prevents bursting
+                adapt_increment=1.5,   # Raised 1.0→1.5: PFC L23 at 3.89 Hz, need more adaptation to suppress recurrence
+                tau_adapt=150.0,       # Medium-slow decay (100-200ms biological)
+            ),
+            CortexPopulation.L4_PYR: CorticalPopulationConfig(
+                tau_mem_ms=10.0,       # Fast integration for sensory input
+                v_threshold=0.65,      # Lowered 1.1→0.65: thalamus at 30 Hz with STP eff=0.029
+                                       # gives V_inf≈0.70; threshold must be below achievable V_inf.
+                                       # adapt_increment=0.20, tau_adapt=80ms → ~3 Hz steady-state
+                v_reset=-0.10,         # AHP: mild for faithful fast relay
+                adapt_increment=0.20,  # Moderate adaptation to prevent overfiring from strong input
+                tau_adapt=80.0,        # Fast decay (50-100ms biological)
+            ),
+            CortexPopulation.L5_PYR: CorticalPopulationConfig(
+                tau_mem_ms=30.0,       # Slow integration for output generation
+                v_threshold=1.2,       # Moderate-high threshold for reliable output (not too easily driven)
+                v_reset=-0.12,         # AHP: moderate for output neurons
+                adapt_increment=0.20,  # Moderate adaptation to enable burst firing without runaway activity
+                tau_adapt=120.0,       # Medium decay (80-150ms biological)
+            ),
+            CortexPopulation.L6A_PYR: CorticalPopulationConfig(
+                tau_mem_ms=15.0,       # Fast for TRN feedback (low gamma)
+                v_threshold=1.4,       # Higher threshold to prevent excessive feedback excitation (calibrated for stable low gamma)
+                v_reset=-0.10,         # AHP: mild for feedback neurons
+                adapt_increment=0.25,  # Raised 0.18→0.25: at 2.9 Hz, g_adapt_ss=0.073 (1.45× g_L); L6A SFA=0.77-0.83 needs stronger adaptation
+                tau_adapt=100.0,       # Medium-fast decay (80-120ms biological)
+            ),
+            CortexPopulation.L6B_PYR: CorticalPopulationConfig(
+                tau_mem_ms=25.0,       # Moderate for relay feedback (high gamma)
+                v_threshold=1.1,       # Lower threshold to allow fast modulation of L4 (calibrated for stable high gamma)
+                v_reset=-0.10,         # AHP: mild for relay modulation
+                adapt_increment=0.22,  # Moderate adaptation to support relay dynamics without runaway activity
+                tau_adapt=100.0,       # Medium-fast decay (80-120ms biological)
+            ),
+
+            # =========================================================================
+            # INHIBITORY INTERNEURON OVERRIDES
+            # =========================================================================
+            CortexPopulation.L23_INHIBITORY_PV:  CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0),
+            CortexPopulation.L23_INHIBITORY_SST: CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0),
+            CortexPopulation.L23_INHIBITORY_VIP: CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt= 70.0),
+            CortexPopulation.L23_INHIBITORY_NGC: CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0),
+
+            CortexPopulation.L4_INHIBITORY_PV:   CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0),
+            CortexPopulation.L4_INHIBITORY_SST:  CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0),
+            CortexPopulation.L4_INHIBITORY_VIP:  CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt= 70.0),
+            CortexPopulation.L4_INHIBITORY_NGC:  CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0),
+
+            CortexPopulation.L5_INHIBITORY_PV:   CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0),
+            CortexPopulation.L5_INHIBITORY_SST:  CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0),
+            CortexPopulation.L5_INHIBITORY_VIP:  CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt= 70.0),
+            CortexPopulation.L5_INHIBITORY_NGC:  CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0),
+
+            CortexPopulation.L6A_INHIBITORY_PV:  CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.05, tau_adapt=100.0),
+            CortexPopulation.L6A_INHIBITORY_SST: CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0),
+            CortexPopulation.L6A_INHIBITORY_VIP: CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt= 70.0),
+            CortexPopulation.L6A_INHIBITORY_NGC: CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0),
+
+            CortexPopulation.L6B_INHIBITORY_PV:  CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0),
+            CortexPopulation.L6B_INHIBITORY_SST: CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0),
+            CortexPopulation.L6B_INHIBITORY_VIP: CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt= 70.0),
+            CortexPopulation.L6B_INHIBITORY_NGC: CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0),
         }
     )
-
-    # Dense mesocortical DA to L2/3: WM gating via D1 receptors.
-    # Standard cortex: 7.5%.  PFC L2/3: 30% (matches L5 primary innervation).
-    # Biology: Goldman-Rakic et al. 1992; mesocortical DA densely innervates
-    # deep L3 / L5 of dlPFC which routes through our L2/3 WM population.
-    da_l23_fraction: float = 0.30
-
-    # Dense L2/3 recurrence for WM attractor dynamics.
-    # Standard cortex: connectivity=0.25, weight_scale=0.0008 (sparse, weak).
-    # PFC: all-to-all (1.0) at 5× weight scale → robust WM attractors.
-    l23_recurrent_connectivity: float = 1.0
-    l23_recurrent_weight_scale: float = 0.004
-
-    # =========================================================================
-    # D1/D2 DOPAMINE RECEPTOR SUBTYPES
-    # =========================================================================
-    # PFC L2/3 neurons split into D1-dominant (excitatory DA response) and
-    # D2-dominant (inhibitory DA response) populations.
-    # D1 (~60%): Enhance WM maintenance and gating on high-DA bursts.
-    # D2 (~40%): Suppress noise; protect WM on low/baseline DA.
-    # Biology: Goldman-Rakic et al. 2000; Seamans & Yang 2004.
-    d1_fraction: float = 0.6     # Fraction of L2/3 neurons that are D1-dominant
-    d1_da_gain: float = 0.3      # DA gain for D1 neurons (excitatory)
-    d2_da_gain: float = 0.3      # DA suppression for D2 neurons (inhibitory)
-
-    # =========================================================================
-    # HOMEOSTATIC INTRINSIC PLASTICITY (PFC overrides)
-    # =========================================================================
-    # PFC requires slower homeostasis to preserve WM patterns across delays.
-    gain_learning_rate: float = 0.001    # Very slow (prevents WM collapse)
-    gain_tau_ms: float = 5000.0          # 5 s averaging window
-    threshold_learning_rate: float = 0.02
-    threshold_min: float = 0.05          # Lower floor for under-firing regions

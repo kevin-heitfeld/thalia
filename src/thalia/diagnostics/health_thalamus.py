@@ -15,12 +15,11 @@ from .region_tags import THALAMIC_TAGS, matches_any
 from .sensory_patterns import WAKING_PATTERNS
 
 if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
-
+    from .diagnostics_types import RecorderSnapshot
 
 
 def check_trn_relay_gating(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check TRN–relay inverse firing-rate relationship in thalamic regions.
@@ -42,17 +41,17 @@ def check_trn_relay_gating(
     if n_bins < 10:
         return  # need ≥ 500 ms for a meaningful correlation estimate
 
-    for rn, region in rec.brain.regions.items():
+    for rn in rec._region_keys:
         if not matches_any(rn, THALAMIC_TAGS):
             continue
         trn_indices = [
             rec._pop_index[(rn, pn)]
-            for pn in region.neuron_populations.keys()
+            for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
             if "trn" in pn.lower() and (rn, pn) in rec._pop_index
         ]
         relay_indices = [
             rec._pop_index[(rn, pn)]
-            for pn in region.neuron_populations.keys()
+            for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
             if "relay" in pn.lower() and (rn, pn) in rec._pop_index
         ]
         if not trn_indices or not relay_indices:

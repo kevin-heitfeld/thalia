@@ -3,37 +3,73 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
 from .diagnostics_types import (
     DiagnosticsReport,
     PopulationStats,
+    RecorderSnapshot,
     RegionStats,
 )
 from .analysis_connectivity import compute_connectivity_stats
 from .analysis_health import assess_health
 from .analysis_homeostasis import compute_homeostatic_stats
+from .analysis_neural_coupling import compute_effective_synaptic_gain
 from .analysis_oscillations import compute_oscillatory_stats
 from .analysis_population import compute_population_stats
 from .analysis_region import compute_region_stats
 
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+
+def _find_settling_step(
+    history: np.ndarray,
+    n_steps: int,
+    valid_indices: List[int],
+    window: int,
+    threshold_pct: float,
+) -> int:
+    """Find the earliest gain-sample index at which all trajectories have settled.
+
+    Returns n_steps if no settling point is found.
+    """
+    for g in range(window, n_steps):
+        settled = True
+        for idx in valid_indices:
+            traj = history[g - window : g + 1, idx]
+            valid = traj[~np.isnan(traj)]
+            if len(valid) < max(4, window // 4):
+                settled = False
+                break
+            half = len(valid) // 2
+            past_mean = float(np.mean(valid[:half]))
+            recent_mean = float(np.mean(valid[half:]))
+            if (
+                abs(past_mean) > 1e-6
+                and abs(recent_mean - past_mean) / abs(past_mean) > threshold_pct
+            ):
+                settled = False
+                break
+        if settled:
+            return g
+    return n_steps
 
 
-def detect_transient_step(rec: "DiagnosticsRecorder", T: int) -> int:
+def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
     """Detect the end of the onset transient; return the first step to analyse.
 
-    Scans homeostatic gain trajectories for the earliest gain-sample index at
-    which ALL valid (non-NaN, non-zero) trajectories have changed by less than
-    2 % over a sliding backward window of 50 gain-sample points.  Converts to
-    a timestep index and returns it.
+    Uses two independent signals and takes the later settling point:
 
-    Falls back to 300 ms (≈ 5 × STP equilibration τ at 30 Hz thalamic drive)
-    when homeostasis is disabled or no valid gain trajectories exist.  This
-    covers the STP depletion transient even when gains are all constant.
+    1. **Homeostatic gain trajectories** — scans for the earliest gain-sample
+       index at which ALL valid trajectories have changed by less than 2 % over
+       a sliding backward window of 50 gain-sample points.
+
+    2. **STP efficacy trajectories** — same sliding-window test on x·u efficacy
+       histories (5 % threshold, since STP is noisier than gain).
+
+    Falls back to 3 × max(τ_d) from the STP configs (clamped to [300, 2000] ms)
+    when no valid trajectories exist.  This covers the STP depletion transient
+    even when gains are all constant.
 
     The result is capped at T // 2 so the analysis window is never shorter
     than half the recording.  Returns 0 when T < 200 (too short to detect).
@@ -43,48 +79,68 @@ def detect_transient_step(rec: "DiagnosticsRecorder", T: int) -> int:
 
     n_steps = rec._gain_sample_step
     gi_steps = max(1, int(rec.config.gain_sample_interval_ms / rec.dt_ms))
+    cap = T // 2
 
-    # ── Primary: homeostatic gain settling ───────────────────────────────────
-    if n_steps >= 20:
-        window = min(50, n_steps // 4)
-        valid_indices: List[int] = []
-        for idx in range(rec._n_pops):
-            vals = rec._g_L_scale_history[:n_steps, idx]
-            clean = vals[~np.isnan(vals)]
-            if len(clean) > 0 and float(np.mean(np.abs(clean))) > 1e-6:
-                valid_indices.append(idx)
+    # ── Compute STP-based fallback from actual τ_d values ────────────────────
+    max_tau_d = 60.0  # baseline assumption
+    if rec._stp_configs:
+        max_tau_d = max(max_tau_d, max(cfg[1] for cfg in rec._stp_configs))
+    # 3 × max(τ_d) covers STP convergence at moderate presynaptic rates.
+    # Clamp to [300, 2000] ms to avoid both too-short and absurd fallbacks.
+    stp_fallback_ms = max(300.0, min(2000.0, 3.0 * max_tau_d))
+    fallback_step = min(int(stp_fallback_ms / rec.dt_ms), cap)
 
-        if valid_indices:
-            for g in range(window, n_steps):
-                settled = True
-                for idx in valid_indices:
-                    traj = rec._g_L_scale_history[g - window : g + 1, idx]
-                    valid = traj[~np.isnan(traj)]
-                    if len(valid) < max(4, window // 4):
-                        settled = False
-                        break
-                    half = len(valid) // 2
-                    past_mean = float(np.mean(valid[:half]))
-                    recent_mean = float(np.mean(valid[half:]))
-                    if (
-                        abs(past_mean) > 1e-6
-                        and abs(recent_mean - past_mean) / abs(past_mean) > 0.02
-                    ):
-                        settled = False
-                        break
-                if settled:
-                    t0 = min(g * gi_steps, T // 2)
-                    return t0
+    if n_steps < 20:
+        return fallback_step
 
-    # ── Fallback: STP equilibration (300 ms ≈ 5 × τ_STP) ────────────────────
-    return min(int(300.0 / rec.dt_ms), T // 2)
+    window = min(50, n_steps // 4)
+
+    # ── Signal 1: homeostatic gain settling (2 % threshold) ──────────────────
+    gain_settle = n_steps  # default: not settled
+    gain_valid: List[int] = []
+    for idx in range(rec._n_pops):
+        vals = rec._g_L_scale_history[:n_steps, idx]
+        clean = vals[~np.isnan(vals)]
+        if len(clean) > 0 and float(np.mean(np.abs(clean))) > 1e-6:
+            gain_valid.append(idx)
+    if gain_valid:
+        gain_settle = _find_settling_step(
+            rec._g_L_scale_history, n_steps, gain_valid, window, 0.02,
+        )
+
+    # ── Signal 2: STP efficacy settling (5 % threshold, noisier) ─────────────
+    stp_settle = n_steps  # default: not settled
+    n_stp = rec._stp_efficacy_history.shape[1] if rec._stp_efficacy_history.ndim == 2 else 0
+    stp_valid: List[int] = []
+    for idx in range(n_stp):
+        vals = rec._stp_efficacy_history[:n_steps, idx]
+        clean = vals[~np.isnan(vals)]
+        if len(clean) > 0 and float(np.mean(np.abs(clean))) > 1e-6:
+            stp_valid.append(idx)
+    if stp_valid:
+        stp_settle = _find_settling_step(
+            rec._stp_efficacy_history, n_steps, stp_valid, window, 0.05,
+        )
+
+    # ── Combine: take the later of gain and STP settling ─────────────────────
+    if gain_valid or stp_valid:
+        # Use actual detected settling (max of both signals).
+        # If one signal has no valid trajectories, it defaults to n_steps
+        # (unsettled), so we only consider signals that had valid data.
+        candidates: List[int] = []
+        if gain_valid:
+            candidates.append(gain_settle)
+        if stp_valid:
+            candidates.append(stp_settle)
+        detected = max(candidates) if candidates else n_steps
+        if detected < n_steps:
+            return min(detected * gi_steps, cap)
+
+    return fallback_step
 
 
-def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
-    """Compute and return a complete :class:`DiagnosticsReport`.
-
-    Call this via ``DiagnosticsRecorder.analyze()``.
-    """
+def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
+    """Compute and return a complete :class:`DiagnosticsReport`."""
     T = rec._n_recorded or rec.config.n_timesteps
 
     # Detect and exclude the onset transient from steady-state analyses.
@@ -126,7 +182,7 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
     # Region binned rates derived from pop_rate_binned for strict consistency.
     # region_rate[b, r] = Σ_p (pop_rate[b,p] * pop_size[p]) / Σ_p pop_size[p]
     # Weights are sourced from pop_stats[...].n_neurons — the same field used by
-    # _weighted_mean_fr() — so the time-mean of region_rate_binned[:,r] is
+    # weighted_mean_fr() — so the time-mean of region_rate_binned[:,r] is
     # guaranteed to equal region_stats[rn].mean_fr_hz by construction.
     region_rate_binned = np.zeros((n_bins, rec._n_regions), dtype=np.float32)
     if n_bins > 0:
@@ -146,6 +202,7 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
     oscillations = compute_oscillatory_stats(rec, pop_rate_binned, region_rate_binned, n_bins, T)
     connectivity = compute_connectivity_stats(rec, T)
     homeostasis = compute_homeostatic_stats(rec)
+    synaptic_gain = compute_effective_synaptic_gain(rec, region_rate_binned, n_bins)
     health = assess_health(rec, pop_stats, region_stats, connectivity, oscillations, homeostasis)
 
     report = DiagnosticsReport(
@@ -164,6 +221,7 @@ def analyze(rec: "DiagnosticsRecorder") -> DiagnosticsReport:
         pop_rate_binned=pop_rate_binned,
         region_rate_binned=region_rate_binned,
         raw_spike_counts=rec._pop_spike_counts[:T].copy(),
+        effective_synaptic_gain=synaptic_gain if synaptic_gain else None,
     )
 
     # Neuromodulator concentration histories (both modes)

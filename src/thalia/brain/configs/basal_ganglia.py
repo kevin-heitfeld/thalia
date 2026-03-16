@@ -28,7 +28,7 @@ class TonicPacemakerConfig(NeuralRegionConfig):
     See the nucleus-specific factory docstring for tuning details.
     """
 
-    tau_mem: float = 15.0
+    tau_mem_ms: float = 15.0
     """Membrane time constant in ms (10-20ms typical for BG output nuclei)."""
 
     v_threshold: float = 1.0
@@ -43,133 +43,6 @@ class TonicPacemakerConfig(NeuralRegionConfig):
     Non-zero only for nuclei whose autonomous firing is driven by HCN rebound
     (e.g. STN: 0.0006).  All other nuclei leave this at the default 0.0.
     """
-
-
-def get_default_gpe_config() -> TonicPacemakerConfig:
-    """Default config for GPe (globus pallidus externa).
-
-    The GPe is a key node in the basal ganglia indirect pathway, containing
-    two distinct cell types:
-    - Prototypic neurons: GABAergic, ~50 Hz tonic, project to STN and SNr
-    - Arkypallidal neurons: GABAergic, project back to striatum (global suppression)
-
-    baseline_drive=0.011: Per-step AMPA conductance for tonic pacemaking.
-    IMPORTANT: This is NOT the steady-state conductance. Actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.011 / (1 - exp(-1/5))  [dt=1ms, tau_E=5ms]
-               ≈ 0.011 / 0.181 ≈ 0.061
-
-    With g_L=0.10 and g_E_ss≈0.061, V_inf ≈ 1.13 (just above threshold), giving
-    ~40-50 Hz intrinsic rate for prototypic neurons (target 30–80 Hz). Arkypallidal
-    neurons receive 85.7% → g_E_ss≈0.052, V_inf≈1.03 → ~25-30 Hz (target 5–20 Hz).
-
-    Previous value 0.060 was 5.5× too large (treated as steady-state rather than
-    per-step), causing g_E_ss≈0.331, V_inf≈2.3 → 300-440 Hz hyperactivity.
-    """
-    return TonicPacemakerConfig(baseline_drive=0.011)
-
-
-def get_default_gpi_config() -> TonicPacemakerConfig:
-    """Default config for GPi (globus pallidus interna / entopeduncular nucleus).
-
-    The GPi is the primary output nucleus of the basal ganglia for motor and
-    cognitive loops, complementing the SNr (which gates saccades and VTA output).
-    Two distinct cell types:
-    - Principal neurons (~75%): GABAergic, ~60-80 Hz tonic, project to thalamus VA/VL
-      (motor loop) and MD (cognitive/limbic loop).
-    - Border cells (~25%): Pause on unexpected reward; proposed to encode a value signal
-      analogous to SNr's value-coding subset.
-
-    baseline_drive=0.013: Per-step AMPA conductance for tonic pacemaking.
-    IMPORTANT: This is NOT the steady-state conductance. Actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.013 / (1 - exp(-1/5))  [dt=1ms, tau_E=5ms]
-               ≈ 0.013 / 0.181 ≈ 0.072
-
-    With g_L=0.10 and g_E_ss≈0.072, V_inf ≈ 1.19 (above threshold), giving
-    ~60-80 Hz intrinsic rate for principal neurons (target 60-80 Hz; slightly
-    higher than GPe ~50 Hz). Border cells receive 0.4× → g_E_ss≈0.029,
-    V_inf≈0.85 (sub-threshold at rest; fire only when driven by excitatory input).
-    """
-    return TonicPacemakerConfig(baseline_drive=0.013)
-
-
-def get_default_lhb_config() -> TonicPacemakerConfig:
-    """Default config for LHb (lateral habenula).
-
-    The lateral habenula encodes negative reward prediction errors by
-    exciting RMTg to pause VTA dopamine neurons on aversive outcomes.
-
-    Key features:
-    - Low tonic baseline (mostly silent until driven by SNr)
-    - Excited by SNr output (high SNr → bad outcome signal)
-    - Projects to RMTg to mediate dopamine pauses
-    - Glutamatergic principal neurons
-    """
-    return TonicPacemakerConfig(baseline_drive=0.007, tau_mem=20.0)
-
-
-def get_default_rmtg_config() -> TonicPacemakerConfig:
-    """Default config for RMTg (rostromedial tegmental nucleus).
-
-    The RMTg (tail of VTA) mediates dopamine pauses: LHb excites RMTg,
-    which provides fast GABAergic inhibition to VTA DA neurons.
-
-    Key features:
-    - Receives strong excitation from LHb
-    - Projects GABAergic inhibition to VTA DA neurons
-    - Drives dopamine pauses (negative RPE signal)
-    - Moderate tonic baseline activity
-
-    baseline_drive=0.004: Per-step AMPA conductance to RMTg GABA neurons.
-    IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.004 / (1 - exp(-1/4))  [tau_E=4ms for RMTg]
-               ≈ 0.004 / 0.221 ≈ 0.018
-
-    Reduced from 0.012 (run-03: 65.9 Hz → target 5–30 Hz). LHb excitatory input
-    is the primary driver; baseline just sets a sub-threshold floor so LHb can
-    push RMTg into 15-25 Hz territory during aversive signalling.
-
-    tau_mem=15.0 (default): RMTg GABAergic neurons share the fast membrane
-    dynamics of BG output nuclei, enabling precise DA pause timing.
-    """
-    return TonicPacemakerConfig(baseline_drive=0.004)
-
-
-def get_default_snr_config() -> TonicPacemakerConfig:
-    """Default config for SNr (substantia nigra pars reticulata).
-
-    The SNr is the primary output nucleus of the basal ganglia, consisting of
-    tonically-active GABAergic neurons that gate thalamic output and provide
-    value feedback to VTA for dopamine-based reinforcement learning.
-
-    Key features:
-    - Tonic firing at 50-70 Hz baseline
-    - Disinhibition mechanism: Striatum D1 reduces SNr → releases thalamus
-    - Value encoding: Firing rate inversely proportional to state value
-    - Closed-loop TD learning: Striatum → SNr → VTA → Striatum
-
-    baseline_drive=0.015: Per-step AMPA conductance for SNr (vta_feedback) neurons.
-    IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.015 / 0.181 ≈ 0.083
-
-    Reduced from 0.022 (run-03: 98.7 Hz → target 50–70 Hz). After STN fix (63.7→20 Hz)
-    STN→SNr excitation drops ~3×. With baseline g_ss≈0.083 + STN g_ss≈0.015 at 20 Hz,
-    total g_E≈0.098, V_inf≈1.48 (v_threshold=1.25) → ~60-70 Hz.
-
-    With g_L=0.10, g_E_ss≈0.122, and v_threshold=1.25: V_inf_no_inh ≈ 1.51
-    (above threshold). With biological GPe→SNr inhibition (g_I≈0.015 at corrected
-    GPe weight), V_inf ≈ 1.37 → ~60-70 Hz tonic rate (target 50-70 Hz).
-
-    v_threshold=1.25: Higher than GPe/GPi (1.0) to match SNr's stronger tonic drive.
-    """
-    return TonicPacemakerConfig(baseline_drive=0.015, v_threshold=1.25)
 
 
 @dataclass
@@ -198,7 +71,7 @@ class StriatumConfig(NeuralRegionConfig):
     # Biology: D1 and D2 naturally balance via competition and FSI inhibition
     # BIOLOGY: Homeostatic plasticity operates on minutes-to-hours timescale
     gain_learning_rate: float = 0.0004
-    gain_tau_ms: float = 30000.0  # (should be hours, but 30s for testing
+    gain_tau_ms: float = 30000.0  # (should be hours, but 30s for testing)
 
     # =========================================================================
     # LEARNING RATES
@@ -313,7 +186,7 @@ class DopaminePacemakerConfig(NeuralRegionConfig):
     - Use spike-frequency adaptation (slow AHP, tau ~300 ms) for tonic pacemaking
     """
 
-    tau_mem: float = 20.0
+    tau_mem_ms: float = 20.0
     """DA neuron membrane time constant in ms."""
 
     g_L: float = 0.08
@@ -331,83 +204,8 @@ class DopaminePacemakerConfig(NeuralRegionConfig):
     tau_adapt: float = 300.0
     """Adaptation conductance time constant in ms (~300ms for DA pacemakers)."""
 
-
-@dataclass
-class SubstantiaNigraCompactaConfig(DopaminePacemakerConfig):
-    """Configuration for SNc (substantia nigra pars compacta) region.
-
-    The SNc contains tonically-active dopaminergic neurons that project via the
-    nigrostriatal pathway to the dorsal striatum (caudate + putamen), providing
-    dopamine critical for motor control and habit learning.
-
-    Distinct from VTA:
-    - VTA projects mesolimbically (to ventral striatum / NAc) and mesocortically
-      (to PFC) for reward and executive control.
-    - SNc projects nigrostriatally (to dorsal striatum) for action sequencing and
-      motor learning. Loss of SNc DA neurons causes Parkinson's disease.
-
-    Key features:
-    - Tonic pacemaking at 4-6 Hz via intrinsic conductances (Ca2+, HCN)
-    - Spike-frequency adaptation (slow AHP) suppresses runaway activity
-    - Sends `da_nigrostriatal` neuromodulator to dorsal striatum
-    - Receives inhibition from striatal D1/D2 neurons (short-loop feedback)
-    """
-
-    rpe_normalization: bool = False
-    """SNc does not compute RPE; motor dopamine is largely tonic.
-
-    Unlike VTA, SNc does not receive direct reward feedback.
-    This flag is kept for API symmetry with VTAConfig.
-    """
-
-    baseline_drive: float = 0.008
-    """Per-step AMPA conductance added to SNc DA neurons each timestep.
-
-    IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.008 / 0.181 ≈ 0.044
-
-    Reduced from 0.010 (run-03: 10.0 Hz → target 2–8 Hz). With g_L=0.08 and
-    g_E_ss≈0.044, V_inf≈1.06 (barely above threshold). Spike-frequency adaptation
-    (adapt_increment=0.013, tau=300ms) yields ~5–7 Hz autonomous pacemaking.
-
-    With g_L=0.08 and g_E_ss≈0.055, V_inf ≈ 1.22 (above threshold). Spike-frequency
-    adaptation (adapt_increment=0.013, tau_adapt=300ms) then suppresses re-firing
-    until g_adapt decays, yielding ~5-6 Hz tonic ISI via adaptation equilibrium.
-    Previous value 0.050 was 5.5× too large, causing g_E_ss≈0.276, V_inf≈2.5
-    → ~119 Hz hyperactivity even with adaptation.
-    """
-
-
-def get_default_stn_config() -> TonicPacemakerConfig:
-    """Default config for STN (subthalamic nucleus).
-
-    The STN is the sole glutamatergic nucleus within the basal ganglia, forming
-    the hyperdirect pathway from cortex and the reciprocal GPe-STN oscillatory loop.
-    STN neurons are autonomous pacemakers (~20 Hz) driven by HCN (I_h) channels.
-
-    Key features:
-    - Autonomous pacemaking via I_h (HCN) currents (~20 Hz)
-    - Receives hyperdirect cortical input (fast, strong excitation)
-    - Receives GPe inhibition (indirect pathway modulation)
-    - Projects excitatory output to SNr and back to GPe
-
-    baseline_drive=0.007: Tonic drive for autonomous pacemaker baseline.
-    Reduced from 0.011 (run-03: 63.7 Hz) → 0.007 targeting ~20 Hz.
-    g_E_ss = 0.007/0.181 ≈ 0.039 + cortical hyperdirect input (~0.017) → total ~0.056.
-    V_inf ≈ 1.08 at target 20 Hz. (dt=1ms, tau_E=5ms)
-
-    i_h_conductance=0.0006: Peak HCN conductance supporting voltage-sag pacemaking.
-
-    tau_mem=18.0: Slightly longer than GPe/GPi/SNr (15ms); STN glutamatergic
-    neurons have slower membrane integration (~15-25ms biological range).
-    """
-    return TonicPacemakerConfig(
-        baseline_drive=0.007,
-        tau_mem=18.0,
-        i_h_conductance=0.0006,
-    )
+    baseline_drive: float = 0.0
+    """Per-step AMPA conductance added to DA neurons each timestep for tonic pacemaking."""
 
 
 @dataclass
@@ -437,9 +235,6 @@ class VTAConfig(DopaminePacemakerConfig):
     gamma: float = 0.99
     """TD learning discount factor for future reward weighting."""
 
-    rpe_normalization: bool = True
-    """Enable adaptive RPE normalization to prevent saturation."""
-
     # -------------------------------------------------------------------------
     # ConductanceLIF DA neuron parameters
     #
@@ -458,56 +253,13 @@ class VTAConfig(DopaminePacemakerConfig):
     # threshold in the E_L=0, E_E=3 scale).  This is fixed in vta.py.
     # -------------------------------------------------------------------------
     mesolimbic_baseline_drive: float = 0.005
-    """Per-step AMPA conductance added to mesolimbic DA neurons each timestep.
-
-    IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
-
-        g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-               = 0.007 / 0.181 ≈ 0.039
-
-    Reduced from 0.010 (run-03: 12.0 Hz → target 2–8 Hz). After fixing RMTeg
-    (65.9→15 Hz) the inhibitory input to VTA decreases, so baseline must come
-    down to compensate. With g_L=0.08 and g_E_ss≈0.039, V_inf≈1.08.
-
-    With g_L=0.08 and g_E_ss≈0.055, V_inf ≈ 1.22 (above threshold). Spike-frequency
-    adaptation (adapt_increment=0.013, tau_adapt=300ms) then hyperpolarises after
-    each spike until g_adapt decays, yielding ~5-6 Hz autonomous pacemaking.
-    The adaptation threshold-crossing ISI solves to ~167ms (≈6 Hz) under the
-    spike-frequency adaptation equilibrium.
-
-    Previous value 0.055 was 5.5× too large (treated as steady-state rather than
-    per-step), causing g_E_ss≈0.304, V_inf≈2.7 → ~147 Hz even with adaptation.
-    """
+    """Per-step AMPA conductance added to mesolimbic DA neurons each timestep."""
 
     mesocortical_baseline_drive: float = 0.007
-    """Per-step AMPA conductance added to mesocortical DA neurons each timestep.
-
-    IMPORTANT: This is NOT the steady-state conductance; actual g_E_ss is:
-
-        g_E_ss = 0.009 / 0.181 ≈ 0.050
-
-    Reduced from 0.012 (run-03: 14.0 Hz → target 2–8 Hz). Slightly higher than
-    mesolimbic (0.007) to achieve 7–9 Hz vs 5–7 Hz, compensating for faster
-    adaptation in mesocortical sub-population.
-
-    Slightly higher than mesolimbic (0.010) to achieve 7-9 Hz tonic vs 5-6 Hz.
-    Mesocortical neurons have no D2 autoreceptors and higher g_adapt increment
-    (0.018 vs 0.013), so a larger per-step drive compensates, yielding ~7-8 Hz
-    via the spike-frequency adaptation equilibrium.
-
-    Previous value 0.062 was 5.2× too large, causing ~128 Hz hyperactivity.
-    """
+    """Per-step AMPA conductance added to mesocortical DA neurons each timestep."""
 
     d2_autoreceptor_gain: float = 0.3
-    """Somatodendritic D2 autoreceptor gain for mesolimbic DA neurons.
-
-    Previous-step DA spike rate suppresses phasic RPE/ramp drive next step.
-    Biological basis: D2Rs activate Gi/o → open GIRK channels (K+ outward) + inhibit
-    adenylyl cyclase → reduce VGCCs → net hyperpolarisation and reduced excitability.
-    Range 0.2–0.5: at peak tonic rate (~0.01 mean/step at 1ms dt), suppression <0.5%;
-    at burst rate (~0.05 mean/step), suppression ~1.5% — gentle, self-limiting.
-    Set to 0.0 to disable.
-    """
+    """Somatodendritic D2 autoreceptor gain for mesolimbic DA neurons."""
 
     # -------------------------------------------------------------------------
     # Mesocortical sub-population parameters (Lammel et al. 2008)
@@ -517,14 +269,7 @@ class VTAConfig(DopaminePacemakerConfig):
     #   3. Respond more to stress/aversive stimuli, less to reward per se
     # -------------------------------------------------------------------------
     noise_std: float = 0.015
-    """DA neuron membrane noise standard deviation.
-
-    Overrides the DopaminePacemakerConfig default (0.002): VTA receives strong
-    common-input from SNr (74 Hz) and RMTg broadcasts, driving ρ=0.69 synchrony
-    in mesolimbic DA at the lower noise level.  0.015 provides enough independent
-    variation across the 1375+875 neurons to desynchronise without disrupting
-    tonic pacemaking.
-    """
+    """DA neuron membrane noise standard deviation."""
 
     mesocortical_adapt_increment: float = 0.018
     """Adaptation increment for mesocortical DA neurons."""
@@ -545,18 +290,6 @@ class VTAConfig(DopaminePacemakerConfig):
     # -------------------------------------------------------------------------
     # DA ramp — anticipatory reward signal
     # -------------------------------------------------------------------------
-    da_ramp_enabled: bool = True
-    """Enable slowly-building anticipatory DA ramp before expected rewards.
-
-    The ramp models the "dopamine ramp" observed in primate recording:
-    tonic DA rises monotonically during an approach
-    to reward even before the reward is received.  This provides additional
-    temporal credit assignment beyond the eligibility trace.
-
-    Mechanics: each timestep without a reward increments a bounded ramp signal;
-    each reward delivery resets it.  The ramp is added to the baseline DA drive.
-    """
-
     da_ramp_tau_ms: float = 500.0
     """Time constant (ms) for DA ramp build-up.  The ramp asymptotes to
     ``da_ramp_gain / (dt_ms / da_ramp_tau_ms)`` under no-reward conditions.

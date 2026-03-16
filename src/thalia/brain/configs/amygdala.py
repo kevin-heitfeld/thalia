@@ -111,7 +111,7 @@ class CentralAmygdalaConfig(AmygdalaNucleusConfig):
     - ~10% glutamatergic projection neurons (CeM output to brainstem)
     """
 
-    tau_mem: float = 20.0
+    tau_mem_ms: float = 20.0
     """Membrane time constant (ms)."""
 
     v_threshold: float = 1.35

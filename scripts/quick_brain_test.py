@@ -1,22 +1,34 @@
-"""Quick test script for the Brain class to verify basic functionality and output shapes."""
+"""Quick test script to create a brain and perform a forward pass with random input, printing outputs and synaptic weight stats for verification."""
+
+from __future__ import annotations
 
 import sys
 import time
-from typing import Dict, Optional, cast
+from typing import TYPE_CHECKING, Dict, Optional
 
 import torch
 
-from thalia.brain import BrainBuilder, Brain
+from thalia import GlobalConfig
+from thalia.brain import BrainBuilder
 from thalia.brain.regions.population_names import ExternalPopulation
-from thalia.brain.synapses import ShortTermPlasticity, STPConfig
-from thalia.typing import BrainOutput, RegionSizes, SynapseId, SynapticInput
+from thalia.typing import SynapseId
+
+if TYPE_CHECKING:
+    from thalia.brain import Brain
+    from thalia.brain.synapses import ShortTermPlasticity
+    from thalia.typing import BrainOutput, RegionSizes, SynapticInput
 
 
 # NOTE: Enable line buffering for real-time output
 sys.stdout.reconfigure(line_buffering=True)
 
 
-def main() -> None:
+if __name__ == "__main__":
+    print("GlobalConfig:")
+    for field in GlobalConfig.__dataclass_fields__.values():
+        value = getattr(GlobalConfig, field.name)
+        print(f"    {field.name:25s}: {value}")
+
     # Override default population sizes for testing
     external_reward_size: int = 36
     external_sensory_size: int = 42
@@ -30,7 +42,7 @@ def main() -> None:
     }
 
     # Create brain with default preset
-    print("Creating brain...")
+    print("\nCreating brain...")
     start_time = time.time()
     brain: Brain = BrainBuilder.preset("default", **default_overrides)
     print(f"Brain created in {time.time() - start_time:.2f}s")
@@ -43,10 +55,9 @@ def main() -> None:
             mean_weight = weights.mean()
             min_weight = weights.min()
             max_weight = weights.max()
-            stp: Optional[ShortTermPlasticity] = cast(Optional[ShortTermPlasticity], region.stp_modules.get(synapse_id, None))
+            stp: Optional[ShortTermPlasticity] = region.get_stp_module(synapse_id)
             if stp is not None:
-                stp_config: STPConfig = stp.config
-                stp_info = f"(STP: U={stp_config.U}, tau_d={stp_config.tau_d}ms, tau_f={stp_config.tau_f}ms)"
+                stp_info = f"(STP: U={stp.config.U}, tau_d={stp.config.tau_d}ms, tau_f={stp.config.tau_f}ms)"
             else:
                 stp_info = "(No STP)"
             print(
@@ -72,7 +83,3 @@ def main() -> None:
         for population_name, spikes in region_output.items():
             n_active = spikes.sum().item()
             print(f"  {population_name}: {spikes.shape} ({n_active} active spikes)")
-
-
-if __name__ == "__main__":
-    main()

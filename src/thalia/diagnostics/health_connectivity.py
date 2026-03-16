@@ -13,12 +13,12 @@ from .diagnostics_types import (
 )
 
 if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+    from .diagnostics_types import RecorderSnapshot
 
 
 def check_connectivity(
     connectivity: ConnectivityStats,
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check broken tracts, axonal delay accuracy, and reversed connectivity."""

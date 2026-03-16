@@ -54,9 +54,9 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     # =========================================================================
     # Membrane properties
     # =========================================================================
-    tau_mem: Union[float, torch.Tensor] = 12.0  # Fast membrane (faster than DA/NE)
+    tau_mem_ms: Union[float, torch.Tensor] = 12.0  # Fast membrane (faster than DA/NE)
     v_reset: float = -0.08  # Shallow reset (allows rapid bursting)
-    v_threshold: Union[float, torch.Tensor] = 1.0
+    v_threshold: Union[float, torch.Tensor] = 0.90  # Raised 0.85→0.90: NB:ach 18.4 Hz+100% epileptiform after heterogeneity CV; reduce excitability
     tau_ref: float = 1.5  # Very short refractory (enables fast bursts)
 
     # Leak conductance
@@ -79,7 +79,7 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     # I_h pacemaking current (HCN channels) - MODERATE
     # Between NE and DA for 2-5 Hz baseline
     # Must dominate g_L for pacemaking
-    i_h_conductance: float = 0.45
+    i_h_conductance: float = 0.22  # Reduced 0.25→0.22: NB:ach 18.4 Hz+100% epileptiform after heterogeneity; lower pacemaker drive
     i_h_reversal: float = 0.77
 
     # =========================================================================

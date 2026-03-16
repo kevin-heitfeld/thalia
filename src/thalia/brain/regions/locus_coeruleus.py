@@ -19,6 +19,9 @@ from thalia.brain.neurons import (
     ConductanceLIFConfig,
     NorepinephrineNeuronConfig,
     NorepinephrineNeuron,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_g_L,
 )
 from thalia.typing import (
     ConductanceTensor,
@@ -42,9 +45,6 @@ from .region_registry import register_region
     "locus_coeruleus",
     aliases=["lc", "norepinephrine_system"],
     description="Locus coeruleus - norepinephrine arousal and uncertainty system",
-    version="1.0",
-    author="Thalia Project",
-    config_class=LocusCoeruleusConfig,
 )
 class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
     """Locus Coeruleus - Norepinephrine Arousal and Uncertainty System."""
@@ -65,50 +65,47 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
         super().__init__(config, population_sizes, region_name, device=device)
 
         self.ne_neurons_size = population_sizes[LocusCoeruleusPopulation.NE]
-        self.gaba_neurons_size = population_sizes[LocusCoeruleusPopulation.GABA]
+        self.gaba_size = population_sizes[LocusCoeruleusPopulation.GABA]
 
         # Norepinephrine neurons (gap junction coupled, synchronized bursts)
-        self.ne_neurons = NorepinephrineNeuron(
+        self.ne_neurons: NorepinephrineNeuron
+        self.ne_neurons = self._create_and_register_neuron_population(
+            population_name=LocusCoeruleusPopulation.NE,
             n_neurons=self.ne_neurons_size,
+            polarity=PopulationPolarity.ANY,
             config=NorepinephrineNeuronConfig(
-                region_name=self.region_name,
-                population_name=LocusCoeruleusPopulation.NE,
-                uncertainty_to_current_gain=self.config.uncertainty_gain,
+                uncertainty_to_current_gain=20.0,
                 gap_junction_strength=self.config.gap_junction_strength,
                 gap_junction_neighbor_radius=self.config.gap_junction_radius,
+                tau_mem_ms=heterogeneous_tau_mem(18.0, self.ne_neurons_size, device, cv=0.20),
+                v_threshold=heterogeneous_v_threshold(1.0, self.ne_neurons_size, device, cv=0.12, clamp_fraction=0.25),
+                g_L=heterogeneous_g_L(0.056, self.ne_neurons_size, device),
             ),
-            device=device,
         )
 
         # GABAergic interneurons (local inhibition, homeostasis).
-        # We call _init_gaba_interneurons for the registration boilerplate, then
-        # replace the plain FSI neurons with noise-enabled ones (noise_std=0.015)
-        # so GABA can fire in the fluctuation-driven regime at 5–20 Hz.  Without
-        # noise the instantaneous ne_activity (~0.006/step at 5 Hz NE) is far
-        # below the FSI threshold and GABA stays silent.
-        self._init_gaba_interneurons(LocusCoeruleusPopulation.GABA, self.gaba_neurons_size)
-        _tau_mem = torch.linspace(6.0, 10.0, self.gaba_neurons_size, device=device)
-        self.gaba_neurons = ConductanceLIF(
-            n_neurons=self.gaba_neurons_size,
+        self.gaba_neurons: ConductanceLIF
+        self.gaba_neurons = self._create_and_register_neuron_population(
+            population_name=LocusCoeruleusPopulation.GABA,
+            n_neurons=self.gaba_size,
+            polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=LocusCoeruleusPopulation.GABA,
-                tau_mem=_tau_mem,
-                v_threshold=1.0,
+                tau_mem_ms=heterogeneous_tau_mem(6.0, self.gaba_size, device=device),
+                v_threshold=heterogeneous_v_threshold(1.0, self.gaba_size, device=device, cv=0.06),
                 v_reset=0.0,
                 tau_ref=2.5,
-                g_L=0.10,
+                g_L=heterogeneous_g_L(0.10, self.gaba_size, device=device, cv=0.08),
                 E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=3.0,
                 tau_I=3.0,
-                noise_std=0.015,   # Reverted 0.040→0.015 (run-12: noise tripled rate to 26.5 Hz causing 99.1% burst);
-                                   # burst is suppressed via skip_burst_check in bio_ranges.py (shared NE drive).
+                noise_std=0.015,
             ),
-            device=device,
         )
-        self.neuron_populations[LocusCoeruleusPopulation.GABA] = self.gaba_neurons
+
+        self._prev_gaba_spikes: torch.Tensor
+        self.register_buffer("_prev_gaba_spikes", torch.zeros(self.gaba_size, dtype=torch.bool, device=self.device), persistent=False)
 
         # Low-pass filtered NE activity (τ=20ms) used by _compute_gaba_drive.
         # Smoothing converts the sparse instantaneous ne_activity signal into a
@@ -130,14 +127,8 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
         )
 
         # Adaptive normalization
-        if config.uncertainty_normalization:
-            self._avg_uncertainty = 0.5
-            self._uncertainty_count = 0
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(LocusCoeruleusPopulation.NE, self.ne_neurons, polarity=PopulationPolarity.ANY)
+        self._avg_uncertainty = 0.5
+        self._uncertainty_count = 0
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -166,8 +157,7 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
         uncertainty = self._compute_uncertainty(pfc_spikes, hippocampus_spikes)
 
         # Normalize uncertainty to prevent saturation
-        if self.config.uncertainty_normalization:
-            uncertainty = self._normalize_uncertainty(uncertainty)
+        uncertainty = self._normalize_uncertainty(uncertainty)
 
         # Update NE neurons with uncertainty drive
         # High uncertainty → depolarization → synchronized burst
@@ -212,11 +202,7 @@ class LocusCoeruleus(NeuromodulatorSourceRegion[LocusCoeruleusConfig]):
         """
         _LC_LP_DECAY: float = 0.9512  # exp(-1 / 20ms)
         self._ne_lp_activity = self._ne_lp_activity * _LC_LP_DECAY + primary_activity
-        return torch.full(
-            (self.gaba_neurons_size,),
-            self._ne_lp_activity * 0.11,
-            device=self.device,
-        )
+        return torch.full((self.gaba_size,), self._ne_lp_activity * 0.09, device=self.device)
 
     def _step_gaba_interneurons(self, primary_activity: float) -> torch.Tensor:
         """Override to use AMPA-only drive for LC GABA interneurons."""

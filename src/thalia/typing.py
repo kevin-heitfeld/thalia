@@ -167,14 +167,14 @@ class ReceptorType(StrEnum):
     GABA_B = "gaba_b"   # Slow inhibitory (GABAergic, metabotropic K⁺)
 
     @property
-    def is_inhibitory(self) -> bool:
-        """True for GABAergic (inhibitory) receptor types."""
-        return self in (ReceptorType.GABA_A, ReceptorType.GABA_B)
-
-    @property
     def is_excitatory(self) -> bool:
         """True for glutamatergic (excitatory) receptor types."""
         return self in (ReceptorType.AMPA, ReceptorType.NMDA)
+
+    @property
+    def is_inhibitory(self) -> bool:
+        """True for GABAergic (inhibitory) receptor types."""
+        return self in (ReceptorType.GABA_A, ReceptorType.GABA_B)
 
 
 class PopulationPolarity(StrEnum):

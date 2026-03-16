@@ -59,6 +59,14 @@ import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import CentralAmygdalaConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    split_excitatory_conductance,
+)
 from thalia.brain.synapses import (
     STPConfig,
     WeightInitializer,
@@ -75,9 +83,8 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
-from .amygdala_nucleus import AmygdalaNucleus
+from .neural_region import NeuralRegion
 from .population_names import CeAPopulation
 from .region_registry import register_region
 
@@ -86,11 +93,8 @@ from .region_registry import register_region
     "central_amygdala",
     aliases=["cea", "amygdala_cea"],
     description="Central amygdala — fear output nucleus (CeL integrator + CeM effector)",
-    version="1.0",
-    author="Thalia Project",
-    config_class=CentralAmygdalaConfig,
 )
-class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
+class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
     """Central Amygdala: fear output and autonomic response nucleus.
 
     Contains:
@@ -103,11 +107,6 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
                          (BLA also)
                          direct to CeM (bypass CeL)
     """
-
-    # Override: CeA receives dense shared BLA→CeA excitatory broadcast (2000-neuron source)
-    # that drives ρ>0.90 with the default 0.03.  Higher noise breaks the common-input
-    # synchrony while keeping individual firing rates within the biological range.
-    _AMY_NOISE_STD: float = 0.08
 
     # NE from LC modulates CeM arousal output gain (alpha-1 adrenoceptors on CeM neurons).
     neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [NeuromodulatorChannel.NE]
@@ -136,26 +135,50 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
 
         # CeL neurons (lateral CeA): integrative, GABAergic
         # Moderate activity; receives BLA principal input directly
-        self.lateral_neurons = self._make_amygdala_neuron(
-            self.lateral_size,
-            CeAPopulation.LATERAL,
-            config.tau_mem,
-            config.v_threshold,
-            g_L=0.06,
-            adapt_increment=0.06,
-            tau_adapt=120.0,
+        self.lateral_neurons = self._create_and_register_neuron_population(
+            population_name=CeAPopulation.LATERAL,
+            n_neurons=self.lateral_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.lateral_size, self.device),
+                v_threshold=heterogeneous_v_threshold(config.v_threshold, self.lateral_size, self.device),
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=heterogeneous_g_L(0.06, self.lateral_size, self.device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=6.0,
+                tau_I=12.0,
+                adapt_increment=heterogeneous_adapt_increment(0.15, self.lateral_size, self.device),
+                tau_adapt=120.0,
+                E_adapt=-0.5,
+                noise_std=0.08,
+            ),
         )
 
         # CeM neurons (medial CeA): output, projects to LC and LHb
         # More excitable than CeL; gated by CeL inhibition
-        self.medial_neurons = self._make_amygdala_neuron(
-            self.medial_size,
-            CeAPopulation.MEDIAL,
-            config.tau_mem,
-            config.v_threshold * 0.9,   # Slightly easier to activate
-            g_L=0.05,
-            adapt_increment=0.05,
-            tau_adapt=150.0,
+        self.medial_neurons = self._create_and_register_neuron_population(
+            population_name=CeAPopulation.MEDIAL,
+            n_neurons=self.medial_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.medial_size, self.device),
+                v_threshold=heterogeneous_v_threshold(config.v_threshold * 0.9, self.medial_size, self.device),  # Slightly easier to activate
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=heterogeneous_g_L(0.05, self.medial_size, self.device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=6.0,
+                tau_I=12.0,
+                adapt_increment=heterogeneous_adapt_increment(0.12, self.medial_size, self.device),
+                tau_adapt=150.0,
+                E_adapt=-0.5,
+                noise_std=0.08,
+            ),
         )
 
         # =====================================================================
@@ -177,7 +200,7 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+            stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
         )
 
         # CeL self-inhibition (lateral mutual inhibition: ON/OFF dynamics)
@@ -192,7 +215,7 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+            stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
         )
 
         # Baseline drives
@@ -203,11 +226,7 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
             (self.medial_size,), config.baseline_drive_medial, device=device
         )
 
-        # =====================================================================
-        # REGISTER POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(CeAPopulation.LATERAL, self.lateral_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(CeAPopulation.MEDIAL, self.medial_neurons, polarity=PopulationPolarity.INHIBITORY)
+        self._lateral_spikes_prev = None
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -252,7 +271,7 @@ class CentralAmygdala(AmygdalaNucleus[CentralAmygdalaConfig]):
         )
         int_cel_inh = self._integrate_synaptic_inputs_at_dendrites(
             {cel_cel_synapse: self._lateral_spikes_prev}
-            if hasattr(self, '_lateral_spikes_prev')
+            if self._lateral_spikes_prev is not None
             else {},
             n_neurons=self.lateral_size,
         )

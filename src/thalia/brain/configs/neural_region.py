@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from thalia import GlobalConfig
 from thalia.errors import ConfigurationError
@@ -19,39 +18,37 @@ class NeuralRegionConfig:
     # =========================================================================
     # GENERAL PARAMETERS
     # =========================================================================
-    seed: Optional[int] = None  # Random seed for reproducibility. None = no seeding.
     dt_ms: float = GlobalConfig.DEFAULT_DT_MS  # Simulation timestep in milliseconds.
 
-    learning_rate: float = 0.001
-    """Base learning rate for plasticity."""
+    learning_rate: float = 0.001  # Base learning rate for plasticity.
 
     # =========================================================================
     # SYNAPTIC WEIGHT BOUNDS
     # =========================================================================
-    w_min: float = 0.0
-    """Minimum synaptic weight (usually 0.0 for excitatory)."""
-
-    w_max: float = 1.0
-    """Maximum synaptic weight (prevents runaway potentiation)."""
+    w_min: float = 0.0  # Minimum synaptic weight (usually 0.0 for excitatory).
+    w_max: float = 1.0  # Maximum synaptic weight (prevents runaway potentiation).
 
     # =========================================================================
-    # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
+    # GAP JUNCTIONS
     # =========================================================================
-    # Adaptive gain control to maintain target firing rates (Turrigiano 2008)
+    gap_junction_strength:  float = 0.0  # Gap junction conductance strength.
+    gap_junction_threshold: float = 0.3  # Connectivity threshold for gap junction coupling.
+    gap_junction_max_neighbors: int = 6  # Maximum gap junction neighbors per neuron.
+
+    # =========================================================================
+    # HOMEOSTATIC INTRINSIC PLASTICITY
+    # =========================================================================
+    # ADAPTIVE GAIN CONTROL to maintain target firing rates
     # Biological basis: Intrinsic plasticity (ion channel remodeling)
     gain_learning_rate: float = 0.02  # Learning rate for gain adaptation (0 = disabled)
     gain_tau_ms: float = 2000.0  # Time constant for firing rate averaging
 
-    # =========================================================================
     # ADAPTIVE THRESHOLD PLASTICITY (complementary to gain adaptation)
-    # =========================================================================
     threshold_learning_rate: float = 0.05  # Learning rate for threshold adaptation
     threshold_min: float = 0.1  # Minimum adaptive threshold
     threshold_max: float = 1.0  # Maximum adaptive threshold
 
-    # =========================================================================
     # SYNAPTIC SCALING (complementary to gain adaptation)
-    # =========================================================================
     # Biology: Chronically underactive neurons scale up ALL input synapses globally
     # This is distinct from gain adaptation (intrinsic excitability) and works together
     # with it to maintain network stability.
@@ -60,42 +57,8 @@ class NeuralRegionConfig:
     synaptic_scaling_max_factor: float = 2.0  # Maximum scaling factor (prevent explosion)
 
     # =========================================================================
-    # ELIGIBILITY TRACES
+    # VALIDATION
     # =========================================================================
-    eligibility_tau_ms: float = 1000.0
-    """Time constant for extended eligibility traces in milliseconds.
-
-    For DELAYED modulation (100-1000ms after spike correlation).
-    Fast STDP uses tau_plus_ms/tau_minus_ms (~20ms) for coincidence detection.
-    """
-
-    # =========================================================================
-    # GAP JUNCTIONS
-    # =========================================================================
-    gap_junction_strength: float = 0.0
-    """Gap junction conductance strength."""
-
-    gap_junction_threshold: float = 0.3
-    """Connectivity threshold for gap junction coupling."""
-
-    gap_junction_max_neighbors: int = 6
-    """Maximum gap junction neighbors per neuron."""
-
-    # =========================================================================
-    # HOMEOSTATIC PLASTICITY
-    # =========================================================================
-    activity_target: float = 0.1
-    """Target fraction of neurons active per timestep."""
-
-    # =========================================================================
-    # SPIKE-FREQUENCY ADAPTATION (SFA)
-    # =========================================================================
-    adapt_increment: float = 0.0
-    """Adaptation current increase per spike (0 = disabled)."""
-
-    adapt_tau: float = 100.0
-    """Adaptation decay time constant in milliseconds."""
-
     def __post_init__(self) -> None:
         """Validate config field values."""
         if self.dt_ms <= 0:
@@ -108,6 +71,10 @@ class NeuralRegionConfig:
             raise ConfigurationError(f"w_max must be > 0, got {self.w_max}")
         if self.w_min > self.w_max:
             raise ConfigurationError(f"w_min ({self.w_min}) must be <= w_max ({self.w_max})")
+        if self.gap_junction_strength < 0:
+            raise ConfigurationError(f"gap_junction_strength must be >= 0, got {self.gap_junction_strength}")
+        if self.gap_junction_max_neighbors < 0:
+            raise ConfigurationError(f"gap_junction_max_neighbors must be >= 0, got {self.gap_junction_max_neighbors}")
         if self.gain_learning_rate < 0:
             raise ConfigurationError(f"gain_learning_rate must be >= 0, got {self.gain_learning_rate}")
         if self.gain_tau_ms <= 0:
@@ -122,13 +89,3 @@ class NeuralRegionConfig:
             raise ConfigurationError(f"synaptic_scaling_lr must be >= 0, got {self.synaptic_scaling_lr}")
         if self.synaptic_scaling_max_factor < 1.0:
             raise ConfigurationError(f"synaptic_scaling_max_factor must be >= 1.0, got {self.synaptic_scaling_max_factor}")
-        if self.eligibility_tau_ms <= 0:
-            raise ConfigurationError(f"eligibility_tau_ms must be > 0, got {self.eligibility_tau_ms}")
-        if self.gap_junction_strength < 0:
-            raise ConfigurationError(f"gap_junction_strength must be >= 0, got {self.gap_junction_strength}")
-        if self.gap_junction_max_neighbors < 0:
-            raise ConfigurationError(f"gap_junction_max_neighbors must be >= 0, got {self.gap_junction_max_neighbors}")
-        if not (0.0 <= self.activity_target <= 1.0):
-            raise ConfigurationError(f"activity_target must be in [0, 1], got {self.activity_target}")
-        if self.adapt_tau <= 0:
-            raise ConfigurationError(f"adapt_tau must be > 0, got {self.adapt_tau}")

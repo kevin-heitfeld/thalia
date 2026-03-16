@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d as sp_gaussian_filter1d
@@ -12,9 +12,7 @@ from scipy.signal import hilbert as sp_hilbert
 from scipy.signal import welch as sp_welch
 
 from .analysis_spectral import band_power
-
-if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+from .diagnostics_types import RecorderSnapshot
 
 
 # =============================================================================
@@ -45,7 +43,7 @@ def _bin_spike_times_to_array(
 
 
 def compute_plv_theta_per_region(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Tuple[Dict[str, float], Dict[str, bool]]:
     """Compute spike–theta PLV for CA1 pyramidal cells in each hippocampal region.
@@ -146,7 +144,7 @@ def compute_plv_theta_per_region(
 
 
 def compute_swr_ca3_ca1_coupling(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Dict[str, Dict[str, float]]:
     """Compute CA3→CA1 cross-correlation to validate SWR temporal coupling.
@@ -230,7 +228,7 @@ def compute_swr_ca3_ca1_coupling(
 
 
 def compute_hfo_per_region(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Dict[str, float]:
     """Compute HFO (100–250 Hz) band-power fraction for each hippocampal CA1 population.
@@ -272,7 +270,7 @@ def compute_hfo_per_region(
 
 
 def compute_cerebellar_metrics(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     """Compute cerebellar timing metrics: Purkinje–DCN anti-correlation and IO pairwise synchrony.
@@ -342,7 +340,7 @@ _BG_MOTOR_KEYWORDS = frozenset({
 
 
 def compute_beta_burst_stats(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     region_rate_binned: np.ndarray,
     n_bins: int,
 ) -> Dict[str, Dict[str, float]]:
@@ -439,14 +437,15 @@ def compute_beta_burst_stats(
 
 
 def compute_spike_avalanches(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Tuple[float, float, float]:
     """Fit a power-law to the spike avalanche size distribution and compute the
     branching ratio σ (Beggs & Plenz 2003).
 
-    Only runs when ``config.compute_avalanches`` is True.  Bins spikes at
-    ``config.avalanche_bin_ms`` resolution (Beggs & Plenz 2003).
+    Skipped when ``config.compute_avalanches`` is False (auto-disabled for
+    short runs < 2000 timesteps).  Bins spikes at ``config.avalanche_bin_ms``
+    resolution (Beggs & Plenz 2003).
 
     Returns:
         ``(avalanche_exponent, avalanche_r2, branching_ratio)`` — all NaN when
@@ -463,10 +462,8 @@ def compute_spike_avalanches(
     # natural timescale for avalanche propagation in simulation (no electrode averaging).
     # Fall back to config.avalanche_bin_ms (default 4 ms, Beggs & Plenz 2003) when
     # the brain has no tracts.
-    if rec.brain.axonal_tracts:
-        _mean_delay_ms = float(
-            np.mean([t.spec.delay_ms for t in rec.brain.axonal_tracts.values()])
-        )
+    if rec._tract_delay_ms:
+        _mean_delay_ms = float(np.mean(rec._tract_delay_ms))
         _bin_ms_av = max(rec.dt_ms, _mean_delay_ms)
     else:
         _bin_ms_av = rec.config.avalanche_bin_ms
@@ -532,7 +529,7 @@ _RELAY_KEYWORDS = frozenset({
 
 
 def compute_relay_burst_mode(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,  # noqa: ARG001  (T reserved for consistency with sibling functions)
 ) -> Dict[str, float]:
     """Compute the short-ISI fraction for relay populations in thalamic regions.
@@ -592,7 +589,7 @@ def compute_relay_burst_mode(
 
 
 def compute_ca3_ca1_theta_sequence(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Dict[str, Dict[str, float]]:
     """Compute CA3\u2192CA1 cross-correlation at theta-sequence timescales (5\u201330 ms).
@@ -693,7 +690,7 @@ _LAYER_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
-def _detect_thalamic_volleys(rec: "DiagnosticsRecorder", T: int) -> List[int]:
+def detect_thalamic_volleys(rec: RecorderSnapshot, T: int) -> List[int]:
     """Return timestep indices of thalamic relay volleys.
 
     A volley is any timestep where the combined spike count across all thalamic
@@ -732,7 +729,7 @@ def _detect_thalamic_volleys(rec: "DiagnosticsRecorder", T: int) -> List[int]:
 
 
 def compute_laminar_cascade(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     T: int,
 ) -> Dict[str, Dict[str, float]]:
     """Compute mean first-spike latency per cortical layer after thalamic volleys.
@@ -760,7 +757,7 @@ def compute_laminar_cascade(
     if not rec._spike_times:
         return {}
 
-    volley_timesteps = _detect_thalamic_volleys(rec, T)
+    volley_timesteps = detect_thalamic_volleys(rec, T)
     if not volley_timesteps:
         return {}
 
@@ -815,5 +812,78 @@ def compute_laminar_cascade(
         for tier, lats in tier_latencies.items():
             region_result[f"{tier}_lat_ms"] = float(np.mean(lats)) if lats else float("nan")
         result[rn] = region_result
+
+    return result
+
+
+# =============================================================================
+# EFFECTIVE SYNAPTIC GAIN
+# =============================================================================
+
+
+def compute_effective_synaptic_gain(
+    rec: RecorderSnapshot,
+    region_rate_binned: np.ndarray,
+    n_bins: int,
+) -> Dict[str, float]:
+    """Estimate effective synaptic gain per inter-region tract.
+
+    For each tract connecting distinct regions, computes the Pearson cross-
+    correlation between the pre-region and post-region binned firing rate
+    time series at the lag closest to the tract's axonal delay.  This provides
+    a linear estimate of how much pre-synaptic activity in the source region
+    drives post-synaptic rate changes in the target region.
+
+    Only inter-region tracts with at least 20 rate bins and non-zero variance
+    in both signals are included.  Returns a dict of ``{tract_label: gain}``.
+    """
+    if n_bins < 20 or region_rate_binned.shape[0] < 20:
+        return {}
+
+    rate_bin_ms = rec.config.rate_bin_ms
+
+    # Group tracts by unique (source_region → target_region) pairs
+    seen_pairs: Dict[Tuple[str, str], Tuple[str, float]] = {}
+    for tract_idx, sid in enumerate(rec._tract_keys):
+        src_r = sid.source_region
+        tgt_r = sid.target_region
+        if src_r == tgt_r:
+            continue
+        pair_key = (src_r, tgt_r)
+        if pair_key in seen_pairs:
+            continue
+        delay_ms = rec._tract_delay_ms[tract_idx] if tract_idx < len(rec._tract_delay_ms) else 0.0
+        label = f"{src_r}\u2192{tgt_r}"
+        seen_pairs[pair_key] = (label, delay_ms)
+
+    result: Dict[str, float] = {}
+    for (src_r, tgt_r), (label, delay_ms) in seen_pairs.items():
+        src_idx = rec._region_index.get(src_r)
+        tgt_idx = rec._region_index.get(tgt_r)
+        if src_idx is None or tgt_idx is None:
+            continue
+
+        src_rate = region_rate_binned[:n_bins, src_idx].astype(np.float64)
+        tgt_rate = region_rate_binned[:n_bins, tgt_idx].astype(np.float64)
+
+        src_rate = src_rate - src_rate.mean()
+        tgt_rate = tgt_rate - tgt_rate.mean()
+        src_std = float(src_rate.std())
+        tgt_std = float(tgt_rate.std())
+        if src_std < 1e-12 or tgt_std < 1e-12:
+            continue
+
+        # Lag in bins closest to the axonal delay
+        lag_bins = max(0, int(round(delay_ms / rate_bin_ms)))
+        lag_bins = min(lag_bins, n_bins // 3)
+
+        if lag_bins == 0:
+            xcorr = float(np.dot(src_rate, tgt_rate)) / (src_std * tgt_std * n_bins)
+        else:
+            n_overlap = n_bins - lag_bins
+            xcorr = float(np.dot(src_rate[:n_overlap], tgt_rate[lag_bins:])) / (
+                src_std * tgt_std * n_overlap
+            )
+        result[label] = xcorr
 
     return result

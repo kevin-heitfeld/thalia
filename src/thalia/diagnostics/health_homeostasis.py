@@ -14,11 +14,11 @@ from .diagnostics_types import (
 )
 
 if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+    from .diagnostics_types import RecorderSnapshot
 
 
 def check_homeostasis(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
     pop_stats: Dict[Tuple[str, str], PopulationStats] | None = None,
 ) -> None:
@@ -118,17 +118,10 @@ def check_homeostasis(
             if implied_pct > rec.config.thresholds.gain_slope_pct:
                 continue  # still adapting — FR mismatch may resolve
 
-            # Fetch the registered target rate from the brain object
-            region = rec.brain.regions[rn] if rn in rec.brain.regions else None
-            if region is None:
+            # Fetch the registered target rate from the snapshot metadata
+            target_hz = rec._homeostasis_target_hz.get((rn, pn), 0.0)
+            if target_hz <= 0.0:
                 continue
-            homeostasis_state = getattr(region, "_homeostasis", {}).get(pn)
-            if homeostasis_state is None:
-                continue
-            target_spikes_per_ms: float = float(homeostasis_state.target_firing_rate)
-            if target_spikes_per_ms <= 0.0:
-                continue
-            target_hz = target_spikes_per_ms * 1000.0
 
             ps = pop_stats.get((rn, pn))
             if ps is None or ps.total_spikes < 10:
@@ -181,11 +174,11 @@ def check_homeostasis(
                     message=f"STP not converged: {rn} [{syn_id}]  "
                             f"x\u00b7u drift={drift_stp:.1f}%  "
                             f"({first_stp:.3f} \u2192 {last_stp:.3f})  "
-                            f"— firing-rate metrics may reflect a transient; use --warmup"))
+                            f"— firing-rate metrics may reflect a transient; increase --timesteps"))
 
 
 def check_stp_directionality(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check that STP x·u direction under drive matches the expected biology.
@@ -220,13 +213,7 @@ def check_stp_directionality(
     seg = max(1, n_steps // 10)
 
     for stp_idx, (rn, syn_id) in enumerate(rec._stp_keys):
-        stp_mod = rec.brain.regions[rn].stp_modules[syn_id]
-        if not hasattr(stp_mod, "config"):
-            continue
-        cfg = stp_mod.config
-        U_val   = float(cfg.U)
-        tau_d   = float(cfg.tau_d)
-        tau_f   = float(cfg.tau_f)
+        U_val, tau_d, tau_f = rec._stp_configs[stp_idx]
 
         is_facilitating = tau_f >= 0.5 * tau_d and U_val <= 0.25
         is_depressing   = tau_d >= 2.0 * tau_f  and U_val >= 0.35
@@ -268,7 +255,7 @@ def check_stp_directionality(
 
 
 def check_stp_final_state(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     homeostasis: HomeostaticStats,
     issues: List[HealthIssue],
 ) -> None:

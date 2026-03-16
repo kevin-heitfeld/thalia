@@ -40,12 +40,13 @@ Current users:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Tuple
 
 import torch
 import torch.nn as nn
+
+from thalia.utils import decay_float
 
 
 # ---------------------------------------------------------------------------
@@ -129,17 +130,17 @@ class EligibilityTraceManager(nn.Module):
         self.n_output = n_output
         self.config = config
 
-        # All trace state is registered as buffers:
-        # - moves with .to(device)
-        # - serialised in state_dict()
-        self.register_buffer("input_trace",  torch.zeros(n_input,          device=device))
-        self.register_buffer("output_trace", torch.zeros(n_output,         device=device))
+        self.input_trace: torch.Tensor
+        self.output_trace: torch.Tensor
+        self.eligibility: torch.Tensor
+        self.register_buffer("input_trace",  torch.zeros(n_input,           device=device))
+        self.register_buffer("output_trace", torch.zeros(n_output,          device=device))
         self.register_buffer("eligibility",  torch.zeros(n_output, n_input, device=device))
 
         # Pre-compute decay scalars (updated via update_temporal_parameters)
-        self._decay_plus:  float = math.exp(-1.0 / config.tau_plus)
-        self._decay_minus: float = math.exp(-1.0 / config.tau_minus)
-        self._decay_elig:  float = math.exp(-1.0 / config.eligibility_tau_ms)
+        self._decay_plus:  float = decay_float(1.0, config.tau_plus)
+        self._decay_minus: float = decay_float(1.0, config.tau_minus)
+        self._decay_elig:  float = decay_float(1.0, config.eligibility_tau_ms)
 
     # ------------------------------------------------------------------
     # Temporal parameter management
@@ -147,9 +148,9 @@ class EligibilityTraceManager(nn.Module):
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Recompute decay scalars when the simulation timestep changes."""
-        self._decay_plus  = math.exp(-dt_ms / self.config.tau_plus)
-        self._decay_minus = math.exp(-dt_ms / self.config.tau_minus)
-        self._decay_elig  = math.exp(-dt_ms / self.config.eligibility_tau_ms)
+        self._decay_plus  = decay_float(dt_ms, self.config.tau_plus)
+        self._decay_minus = decay_float(dt_ms, self.config.tau_minus)
+        self._decay_elig  = decay_float(dt_ms, self.config.eligibility_tau_ms)
 
     # ------------------------------------------------------------------
     # Trace update
@@ -175,7 +176,7 @@ class EligibilityTraceManager(nn.Module):
             dt_ms: Timestep in milliseconds (used only to refresh cached decays if changed)
         """
         # Refresh decay if dt changed (rare but safe)
-        expected_plus = math.exp(-dt_ms / self.config.tau_plus)
+        expected_plus = decay_float(dt_ms, self.config.tau_plus)
         if abs(self._decay_plus - expected_plus) > 1e-7:
             self.update_temporal_parameters(dt_ms)
 
@@ -260,13 +261,7 @@ class EligibilityTraceManager(nn.Module):
             eligibility_update: Eligibility increment [n_output, n_input]
             dt_ms: Timestep in milliseconds (used only to refresh cached decay if changed)
         """
-        # Refresh if dt changed
-        expected = math.exp(-dt_ms / self.config.eligibility_tau_ms)
+        expected = decay_float(dt_ms, self.config.eligibility_tau_ms)
         if abs(self._decay_elig - expected) > 1e-7:
             self.update_temporal_parameters(dt_ms)
         self.eligibility = self.eligibility * self._decay_elig + eligibility_update
-
-    # ------------------------------------------------------------------
-    # .to(device) is handled automatically by nn.Module via register_buffer.
-    # No hand-written override needed.
-    # ------------------------------------------------------------------

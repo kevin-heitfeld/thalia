@@ -4,20 +4,9 @@ DiagnosticsRecorder: Training-loop-integrated brain diagnostics.
 Architecture
 ============
 The recorder is completely decoupled from the simulation loop.  It never
-drives its own loop; instead, call ``record(t, outputs)`` once per
+drives its own loop; instead, call ``record(t, inputs, outputs)`` once per
 timestep from whatever loop you own (training, evaluation, pre-training
-diagnostic run):
-
-    recorder = DiagnosticsRecorder(brain, config)
-
-    for t in range(n_timesteps):
-        outputs = brain.forward(inputs)
-        recorder.record(t, outputs)        # ← plug into any loop
-
-    report = recorder.analyze()
-    recorder.print_report(report)
-    recorder.save(report, "data/diagnostics")
-    recorder.plot(report, "data/diagnostics")
+diagnostic run).
 
 Modes
 =====
@@ -37,9 +26,9 @@ import numpy as np
 import torch
 
 from thalia.brain.synapses import NeuromodulatorReceptor
-from thalia.typing import BrainOutput, SynapseId
+from thalia.typing import BrainOutput, SynapseId, SynapticInput
 
-from .diagnostics_types import DiagnosticsConfig, DiagnosticsReport
+from .diagnostics_types import DiagnosticsConfig, RecorderSnapshot
 
 if TYPE_CHECKING:
     from thalia.brain import Brain
@@ -73,7 +62,7 @@ def _get_attr_fallback(obj: Any, *attrs: str) -> Optional[torch.Tensor]:
 class DiagnosticsRecorder:
     """Records brain activity for comprehensive diagnostics.
 
-    Completely decoupled from the simulation loop: call ``record(t, outputs)``
+    Completely decoupled from the simulation loop: call ``record(t, inputs, outputs)``
     once per timestep from whatever loop you own, then ``analyze()`` to get a
     :class:`DiagnosticsReport`.
 
@@ -96,6 +85,8 @@ class DiagnosticsRecorder:
         self._g_gaba_b_samples: Optional[np.ndarray] = None
         self._g_apical_samples: Optional[np.ndarray] = None  # g_E_apical for TwoCompartmentLIF only
         self._nm_concentration_history: np.ndarray  # allocated in _allocate_buffers
+
+        self._pop_config_types: Dict[Tuple[str, str], str] = {}
 
         self._build_index()
         self._print_memory_estimate()
@@ -144,10 +135,12 @@ class DiagnosticsRecorder:
 
         # STP modules — ordered list of (region, synapse_id) for trajectory sampling
         self._stp_keys: List[Tuple[str, SynapseId]] = []
+        self._stp_configs: List[Tuple[float, float, float]] = []
         for rn, region in self.brain.regions.items():
-            if hasattr(region, "stp_modules"):
-                for syn_id in region.stp_modules.keys():
-                    self._stp_keys.append((rn, syn_id))
+            for syn_id, stp_mod in region.stp_modules.items():
+                self._stp_keys.append((rn, syn_id))
+                cfg = stp_mod.config
+                self._stp_configs.append((float(cfg.U), float(cfg.tau_d), float(cfg.tau_f)))
         self._n_stp = len(self._stp_keys)
 
         # NeuromodulatorReceptor submodules — one entry per receptor instance
@@ -167,6 +160,32 @@ class DiagnosticsRecorder:
             if nm_outputs:
                 for pop_name in nm_outputs.values():
                     self._nm_source_pop_keys.append((rn, str(pop_name)))
+
+        # ── Static brain metadata captured once for snapshot serialisation ──────────
+        # Population polarity (StrEnum → str so it is JSON-safe)
+        self._pop_polarities: Dict[Tuple[str, str], str] = {}
+        for rn, region in self.brain.regions.items():
+            pols = getattr(region, "_population_polarities", {})
+            for pn in region.neuron_populations.keys():
+                pol = pols.get(pn)
+                self._pop_polarities[(rn, pn)] = str(pol) if pol is not None else "any"
+
+        # Axonal delay per tract (ms), same order as _tract_keys
+        self._tract_delay_ms: List[float] = [
+            float(self.brain.axonal_tracts[sid].spec.delay_ms)
+            for sid in self._tract_keys
+        ]
+
+        # Homeostatic target firing rate (Hz) per population
+        self._homeostasis_target_hz: Dict[Tuple[str, str], float] = {}
+        for rn, region in self.brain.regions.items():
+            homeostasis = getattr(region, "_homeostasis", None) or {}
+            for pn in region.neuron_populations.keys():
+                hs = homeostasis.get(pn)
+                if hs is not None:
+                    rate = float(getattr(hs, "target_firing_rate", 0.0))
+                    if rate > 0:
+                        self._homeostasis_target_hz[(rn, pn)] = rate * 1000.0
 
         # Fixed random neuron samples per population (seed=42 for reproducibility)
         rng = np.random.default_rng(seed=42)
@@ -228,8 +247,10 @@ class DiagnosticsRecorder:
                 return f"{b / _MB:7.1f} MB"
             return f"{b / 1024:7.1f} KB"
 
+        print(f"\n{'═'*80}")
         print(f"  DiagnosticsRecorder buffer estimate  "
               f"(mode={self.config.mode!r}, T={T}, P={P}, R={R}):")
+        print(f"{'═'*80}\n")
         for label, nbytes in rows:
             if nbytes > 0:
                 print(f"    {label:<30s}: {_fmt(nbytes)}")
@@ -337,6 +358,7 @@ class DiagnosticsRecorder:
         self._region_spike_counts.fill(0)
         self._tract_sent.fill(0)
         self._spike_times.clear()
+        self._pop_config_types.clear()
         if self.config.mode == "full":
             self._spike_flat_n.fill(0)
         self._gain_sample_times.clear()
@@ -365,13 +387,14 @@ class DiagnosticsRecorder:
     # RECORD  — the single integration point
     # =========================================================================
 
-    def record(self, timestep: int, outputs: BrainOutput) -> None:
+    def record(self, timestep: int, inputs: SynapticInput, outputs: BrainOutput) -> None:
         """Record one timestep of brain output.
 
         Call this immediately after ``brain.forward()`` inside your loop.
 
         Args:
             timestep: Zero-based timestep index (must be < config.n_timesteps).
+            inputs: Dict of synaptic inputs to the brain at this timestep.
             outputs: Dict ``{region_name: {pop_name: spike_tensor}}`` returned
                 by ``brain.forward()``.
         """
@@ -465,12 +488,11 @@ class DiagnosticsRecorder:
 
         # STP x·u efficacy
         for stp_idx, (rn, syn_id) in enumerate(self._stp_keys):
-            stp_mod = self.brain.regions[rn].stp_modules[syn_id]
-            if hasattr(stp_mod, "x") and hasattr(stp_mod, "u"):
-                with torch.no_grad():
-                    self._stp_efficacy_history[step, stp_idx] = float(
-                        (stp_mod.x * stp_mod.u).mean().item()
-                    )
+            stp_mod = self.brain.regions[rn].get_stp_module(syn_id)
+            assert stp_mod is not None
+            self._stp_efficacy_history[step, stp_idx] = float(
+                (stp_mod.x * stp_mod.u).mean().item()
+            )
 
         # Neuromodulator receptor concentrations
         if self._n_nm_receptors > 0:
@@ -479,11 +501,10 @@ class DiagnosticsRecorder:
                     obj: Any = self.brain.regions[rn]
                     for part in mod_name.split("."):
                         obj = getattr(obj, part)
-                    with torch.no_grad():
-                        conc: torch.Tensor = obj.concentration  # type: ignore[attr-defined]
-                        self._nm_concentration_history[step, nm_idx] = float(
-                            conc.mean().item()
-                        )
+                    conc: torch.Tensor = obj.concentration
+                    self._nm_concentration_history[step, nm_idx] = float(
+                        conc.mean().item()
+                    )
                 except (AttributeError, KeyError):
                     pass
 
@@ -507,9 +528,8 @@ class DiagnosticsRecorder:
             v_idx = self._v_sample_idx[idx]
             if len(v_idx) == 0:
                 continue
-            with torch.no_grad():
-                vals = pop_obj.V_soma[torch.from_numpy(v_idx).long().to(pop_obj.V_soma.device)]
-                self._voltages[t, idx, : len(v_idx)] = vals.cpu().numpy()
+            vals = pop_obj.V_soma[torch.from_numpy(v_idx).long().to(pop_obj.V_soma.device)]
+            self._voltages[t, idx, : len(v_idx)] = vals.cpu().numpy()
 
     def _sample_conductances(self, timestep: int) -> None:
         """Sample g_E, g_I, g_nmda, g_gaba_b for fixed neurons."""
@@ -529,42 +549,41 @@ class DiagnosticsRecorder:
 
             dev_idx = torch.from_numpy(c_idx).long()
 
-            with torch.no_grad():
-                # ConductanceLIF: g_E / g_I / g_nmda
-                # TwoCompartmentLIF: g_E_basal / g_I_basal / g_nmda_basal
-                g_exc  = _get_attr_fallback(pop_obj, "g_E",    "g_E_basal")
-                g_inh  = _get_attr_fallback(pop_obj, "g_I",    "g_I_basal")
-                g_nmda = _get_attr_fallback(pop_obj, "g_nmda", "g_nmda_basal")
-                if g_exc is not None:
-                    dev_idx_dev = dev_idx.to(g_exc.device)
-                    self._g_exc_samples[step, idx, : len(c_idx)] = (
-                        g_exc[dev_idx_dev].cpu().numpy()
-                    )
-                if g_inh is not None:
-                    dev_idx_dev = dev_idx.to(g_inh.device)
-                    self._g_inh_samples[step, idx, : len(c_idx)] = (
-                        g_inh[dev_idx_dev].cpu().numpy()
-                    )
-                if g_nmda is not None:
-                    dev_idx_dev = dev_idx.to(g_nmda.device)
-                    self._g_nmda_samples[step, idx, : len(c_idx)] = (
-                        g_nmda[dev_idx_dev].cpu().numpy()
-                    )
-                # GABA_B (slow inhibition; drives theta, up/down states, burst termination)
-                g_gaba_b = _get_attr_fallback(pop_obj, "g_gaba_b", "g_gaba_b_basal")
-                if g_gaba_b is not None and self._g_gaba_b_samples is not None:
-                    dev_idx_dev = dev_idx.to(g_gaba_b.device)
-                    self._g_gaba_b_samples[step, idx, : len(c_idx)] = (
-                        g_gaba_b[dev_idx_dev].cpu().numpy()
-                    )
+            # ConductanceLIF: g_E / g_I / g_nmda
+            # TwoCompartmentLIF: g_E_basal / g_I_basal / g_nmda_basal
+            g_exc  = _get_attr_fallback(pop_obj, "g_E",    "g_E_basal")
+            g_inh  = _get_attr_fallback(pop_obj, "g_I",    "g_I_basal")
+            g_nmda = _get_attr_fallback(pop_obj, "g_nmda", "g_nmda_basal")
+            if g_exc is not None:
+                dev_idx_dev = dev_idx.to(g_exc.device)
+                self._g_exc_samples[step, idx, : len(c_idx)] = (
+                    g_exc[dev_idx_dev].cpu().numpy()
+                )
+            if g_inh is not None:
+                dev_idx_dev = dev_idx.to(g_inh.device)
+                self._g_inh_samples[step, idx, : len(c_idx)] = (
+                    g_inh[dev_idx_dev].cpu().numpy()
+                )
+            if g_nmda is not None:
+                dev_idx_dev = dev_idx.to(g_nmda.device)
+                self._g_nmda_samples[step, idx, : len(c_idx)] = (
+                    g_nmda[dev_idx_dev].cpu().numpy()
+                )
+            # GABA_B (slow inhibition; drives theta, up/down states, burst termination)
+            g_gaba_b = _get_attr_fallback(pop_obj, "g_gaba_b", "g_gaba_b_basal")
+            if g_gaba_b is not None and self._g_gaba_b_samples is not None:
+                dev_idx_dev = dev_idx.to(g_gaba_b.device)
+                self._g_gaba_b_samples[step, idx, : len(c_idx)] = (
+                    g_gaba_b[dev_idx_dev].cpu().numpy()
+                )
 
-                # Apical AMPA (TwoCompartmentLIF only; NaN for ConductanceLIF populations)
-                g_exc_apical = getattr(pop_obj, "g_E_apical", None)
-                if g_exc_apical is not None and self._g_apical_samples is not None:
-                    dev_idx_dev = dev_idx.to(g_exc_apical.device)
-                    self._g_apical_samples[step, idx, : len(c_idx)] = (
-                        g_exc_apical[dev_idx_dev].cpu().numpy()
-                    )
+            # Apical AMPA (TwoCompartmentLIF only; NaN for ConductanceLIF populations)
+            g_exc_apical = getattr(pop_obj, "g_E_apical", None)
+            if g_exc_apical is not None and self._g_apical_samples is not None:
+                dev_idx_dev = dev_idx.to(g_exc_apical.device)
+                self._g_apical_samples[step, idx, : len(c_idx)] = (
+                    g_exc_apical[dev_idx_dev].cpu().numpy()
+                )
 
         self._cond_sample_step += 1
 
@@ -596,27 +615,159 @@ class DiagnosticsRecorder:
             self._spike_times[key] = nested
 
     # =========================================================================
-    # DELEGATING PUBLIC API
+    # SNAPSHOT — decouple analysis / plotting from live brain state
     # =========================================================================
 
-    def analyze(self) -> "DiagnosticsReport":
-        """Compute and return a complete :class:`DiagnosticsReport`."""
+    def _capture_stp_final_state(self) -> "Dict[str, Dict[str, float]]":
+        """Read the current x / u tensors from all live STP modules.
+
+        Called once inside :meth:`to_snapshot` so the snapshot carries the
+        end-of-run STP state independent of the brain object.
+        """
+        result: Dict[str, Dict[str, float]] = {}
+        for rn, syn_id in self._stp_keys:
+            stp_mod = self.brain.regions[rn].get_stp_module(syn_id)
+            assert stp_mod is not None
+            result[str(syn_id)] = {
+                "mean_x": float(stp_mod.x.mean().item()),
+                "mean_u": float(stp_mod.u.mean().item()),
+                "efficacy": float((stp_mod.x * stp_mod.u).mean().item()),
+            }
+        return result
+
+    def _capture_tract_weight_stats(self) -> "Dict[str, Dict[str, float]]":
+        """Snapshot per-tract weight statistics from the live brain."""
+        result: Dict[str, Dict[str, float]] = {}
+        for syn_id in self._tract_keys:
+            region = self.brain.regions[syn_id.target_region]
+            w = region.get_synaptic_weights(syn_id).data
+            result[str(syn_id)] = {
+                "mean": float(w.mean().item()),
+                "n_nonzero": float((w != 0).sum().item()),
+                "n_total": float(w.numel()),
+            }
+        return result
+
+    def _capture_pop_neuron_params(self) -> "Dict[Tuple[str, str], Dict[str, float]]":
+        """Snapshot per-population neuron biophysics from the live brain.
+
+        Captures all standard ConductanceLIFConfig fields plus any specialized
+        fields from subclasses (NorepinephrineNeuronConfig, SerotoninNeuronConfig,
+        AcetylcholineNeuronConfig, etc.) so that the calibration advisor can
+        reason about intrinsic parameters like i_h, SK, autoreceptors, and noise.
+        """
+        result: Dict[Tuple[str, str], Dict[str, float]] = {}
+        # Extra fields to capture from specialized config subclasses.
+        _EXTRA_FIELDS = (
+            "i_h_conductance", "i_h_reversal",
+            "sk_conductance", "sk_reversal", "ca_decay", "ca_influx_per_spike",
+            "noise_std",
+            "autoreceptor_conductance", "autoreceptor_tau_ms", "autoreceptor_gain",
+            "gap_junction_strength",
+            "uncertainty_to_current_gain", "serotonin_drive_gain",
+        )
+        for rn, pn in self._pop_keys:
+            pop = self.brain.regions[rn].neuron_populations[pn]
+            cfg = pop.config
+            def _scalar(v: object) -> float:
+                """Convert a scalar or per-neuron tensor to a single float."""
+                if isinstance(v, torch.Tensor):
+                    return float(v.mean().item())
+                return float(v)
+
+            params: Dict[str, float] = {
+                "g_L": _scalar(cfg.g_L),
+                "v_threshold": _scalar(cfg.v_threshold),
+                "v_reset": float(cfg.v_reset),
+                "E_L": float(cfg.E_L),
+                "E_E": float(cfg.E_E),
+                "E_I": float(cfg.E_I),
+                "tau_E": float(cfg.tau_E),
+                "tau_I": float(cfg.tau_I),
+                "tau_ref": float(cfg.tau_ref),
+                "tau_mem_ms": _scalar(cfg.tau_mem_ms),
+                "adapt_increment": _scalar(cfg.adapt_increment),
+                "tau_adapt": float(cfg.tau_adapt),
+                "E_adapt": float(cfg.E_adapt),
+                "tau_GABA_B": float(cfg.tau_GABA_B),
+                "E_GABA_B": float(cfg.E_GABA_B),
+                "tau_nmda": float(cfg.tau_nmda),
+                "E_nmda": float(cfg.E_nmda),
+            }
+            # Capture config class name for type identification
+            params["_config_class"] = hash(type(cfg).__name__) * 0  # store 0 as placeholder
+            # Store the actual class name as a string field (keyed specially)
+            for attr in _EXTRA_FIELDS:
+                val = getattr(cfg, attr, None)
+                if val is not None:
+                    params[attr] = _scalar(val)
+            # Store config class name for downstream classification
+            params["_config_type_name"] = 0.0  # placeholder; actual name stored in _pop_config_types
+            result[(rn, pn)] = params
+        # Store config type names separately (not float-valued)
+        for rn, pn in self._pop_keys:
+            pop = self.brain.regions[rn].neuron_populations[pn]
+            self._pop_config_types[(rn, pn)] = type(pop.config).__name__
+        return result
+
+    def to_snapshot(self) -> RecorderSnapshot:
+        """Extract a :class:`RecorderSnapshot` from the current recorder state.
+
+        The snapshot is a self-contained, serialisable copy of everything the
+        analysis and plotting functions need.  It carries no references to the
+        live ``Brain`` or any ``torch.Tensor`` objects, so it is safe to save
+        to disk, share between processes, or use after the simulation has ended.
+
+        Call :meth:`RecorderSnapshot.save` on the returned object to persist it.
+        Call :meth:`RecorderSnapshot.load` to reload and re-run analysis later.
+        """
         if self.config.mode == "full":
+            # Ensure spike times are populated before snapshotting.
             self._build_spike_times()
-        from thalia.diagnostics.analysis import analyze as _analyze
-        return _analyze(self)
-
-    def print_report(self, report: "DiagnosticsReport", detailed: bool = True) -> None:
-        """Print a formatted text report to stdout."""
-        from thalia.diagnostics.diagnostics_io import print_report as _print_report
-        _print_report(report, detailed=detailed)
-
-    def save(self, report: "DiagnosticsReport", output_dir: str) -> None:
-        """Save report summary (JSON) and raw traces (NPZ) to ``output_dir``."""
-        from thalia.diagnostics.diagnostics_io import save as _save
-        _save(report, output_dir)
-
-    def plot(self, report: "DiagnosticsReport", output_dir: str) -> None:
-        """Generate and save diagnostic plots to ``output_dir``."""
-        from thalia.diagnostics.diagnostics_plots import plot as _plot
-        _plot(self, report, output_dir)
+        return RecorderSnapshot(
+            config=self.config,
+            dt_ms=self.dt_ms,
+            _pop_keys=list(self._pop_keys),
+            _pop_index=dict(self._pop_index),
+            _n_pops=self._n_pops,
+            _pop_sizes=self._pop_sizes.copy(),
+            _region_keys=list(self._region_keys),
+            _region_index=dict(self._region_index),
+            _n_regions=self._n_regions,
+            _region_pop_indices={k: list(v) for k, v in self._region_pop_indices.items()},
+            _tract_keys=list(self._tract_keys),
+            _tract_index=dict(self._tract_index),
+            _n_tracts=self._n_tracts,
+            _stp_keys=list(self._stp_keys),
+            _nm_receptor_keys=list(self._nm_receptor_keys),
+            _n_nm_receptors=self._n_nm_receptors,
+            _nm_source_pop_keys=list(self._nm_source_pop_keys),
+            _v_sample_idx=[arr.copy() for arr in self._v_sample_idx],
+            _c_sample_idx=[arr.copy() for arr in self._c_sample_idx],
+            _n_recorded=self._n_recorded,
+            _gain_sample_step=self._gain_sample_step,
+            _cond_sample_step=self._cond_sample_step,
+            _gain_sample_times=list(self._gain_sample_times),
+            _pop_spike_counts=self._pop_spike_counts.copy(),
+            _per_neuron_spike_counts=[arr.copy() for arr in self._per_neuron_spike_counts],
+            _region_spike_counts=self._region_spike_counts.copy(),
+            _tract_sent=self._tract_sent.copy(),
+            _spike_times=dict(self._spike_times),  # shallow — lists are read-only after analyze()
+            _voltages=self._voltages.copy() if self._voltages is not None else None,
+            _g_exc_samples=self._g_exc_samples.copy() if self._g_exc_samples is not None else None,
+            _g_inh_samples=self._g_inh_samples.copy() if self._g_inh_samples is not None else None,
+            _g_nmda_samples=self._g_nmda_samples.copy() if self._g_nmda_samples is not None else None,
+            _g_gaba_b_samples=self._g_gaba_b_samples.copy() if self._g_gaba_b_samples is not None else None,
+            _g_apical_samples=self._g_apical_samples.copy() if self._g_apical_samples is not None else None,
+            _g_L_scale_history=self._g_L_scale_history.copy(),
+            _stp_efficacy_history=self._stp_efficacy_history.copy(),
+            _nm_concentration_history=self._nm_concentration_history.copy(),
+            _pop_polarities=dict(self._pop_polarities),
+            _tract_delay_ms=list(self._tract_delay_ms),
+            _homeostasis_target_hz=dict(self._homeostasis_target_hz),
+            _stp_configs=list(self._stp_configs),
+            _stp_final_state=self._capture_stp_final_state(),
+            _tract_weight_stats=self._capture_tract_weight_stats(),
+            _pop_neuron_params=self._capture_pop_neuron_params(),
+            _pop_config_types=self._pop_config_types.copy(),
+        )

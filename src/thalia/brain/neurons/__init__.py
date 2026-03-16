@@ -15,6 +15,11 @@ from .conductance_lif_neuron import (
     ConductanceLIF,
     TwoCompartmentLIFConfig,
     TwoCompartmentLIF,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    split_excitatory_conductance,
 )
 from .norepinephrine_neuron import (
     NorepinephrineNeuronConfig,
@@ -23,10 +28,6 @@ from .norepinephrine_neuron import (
 from .serotonin_neuron import (
     SerotoninNeuronConfig,
     SerotoninNeuron,
-)
-from .neuron_factory import (
-    NeuronFactory,
-    NeuronType,
 )
 
 __all__ = [
@@ -41,7 +42,10 @@ __all__ = [
     "NorepinephrineNeuron",
     "SerotoninNeuronConfig",
     "SerotoninNeuron",
-    # Neuron factory
-    "NeuronFactory",
-    "NeuronType",
+    # Utils
+    "heterogeneous_adapt_increment",
+    "heterogeneous_g_L",
+    "heterogeneous_tau_mem",
+    "heterogeneous_v_threshold",
+    "split_excitatory_conductance",
 ]

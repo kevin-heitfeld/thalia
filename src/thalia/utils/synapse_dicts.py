@@ -114,13 +114,7 @@ class SynapseIdParameterDict(_SynapseKeyedMixin[nn.Parameter], nn.Module):
 class SynapseIdModuleDict(_SynapseKeyedMixin[nn.Module], nn.Module):
     """``nn.ModuleDict`` wrapper keyed by :class:`~thalia.typing.SynapseId`.
 
-    Use this to store sub-modules (STP, learning strategies, etc.):
-
-    .. code-block:: python
-
-        stp_modules = SynapseIdModuleDict()
-        stp_modules[sid] = ShortTermPlasticity(config)
-        stp = stp_modules[sid]
+    Use this to store sub-modules (STP, learning strategies, etc.).
 
     All PyTorch semantics (``.to()``, ``.parameters()``, ``state_dict()``)
     work correctly through the underlying ``nn.ModuleDict``.

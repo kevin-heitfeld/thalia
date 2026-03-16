@@ -68,7 +68,13 @@ from typing import Union
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import TonicPacemakerConfig, get_default_snr_config
+from thalia.brain.configs import TonicPacemakerConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+)
 from thalia.typing import (
     NeuromodulatorInput,
     PopulationPolarity,
@@ -87,9 +93,6 @@ from .region_registry import register_region
     "substantia_nigra",
     aliases=["snr", "substantia_nigra_reticulata"],
     description="Substantia nigra pars reticulata - basal ganglia output nucleus",
-    version="1.0",
-    author="Thalia Project",
-    config_class=get_default_snr_config,
 )
 class SubstantiaNigra(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
     """Substantia Nigra pars Reticulata - Basal Ganglia Output Nucleus.
@@ -133,17 +136,29 @@ class SubstantiaNigra(BasalGangliaOutputNucleus[TonicPacemakerConfig]):
         self.vta_feedback_size = population_sizes[SubstantiaNigraPopulation.VTA_FEEDBACK]
 
         # GABAergic output neurons (tonically active)
-        self.neurons = self._make_bg_neurons(
-            self.vta_feedback_size, SubstantiaNigraPopulation.VTA_FEEDBACK, noise_std=0.007
+        self.neurons = self._create_and_register_neuron_population(
+            population_name=SubstantiaNigraPopulation.VTA_FEEDBACK,
+            n_neurons=self.vta_feedback_size,
+            polarity=PopulationPolarity.ANY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.vta_feedback_size, self.device),
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.vta_feedback_size, self.device),
+                v_reset=0.0,
+                tau_ref=self.config.tau_ref,
+                g_L=heterogeneous_g_L(0.10, self.vta_feedback_size, self.device, cv=0.08),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                E_adapt=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=0.007,
+                adapt_increment=0.0,
+            ),
         )
 
         # Tonic drive for baseline firing (~50-70 Hz)
         self.baseline_drive = self._make_tonic_baseline(self.vta_feedback_size)
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(SubstantiaNigraPopulation.VTA_FEEDBACK, self.neurons, polarity=PopulationPolarity.ANY)
 
         # Ensure all tensors are on the correct device
         self.to(device)

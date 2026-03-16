@@ -40,41 +40,186 @@ Type checkers (mypy/pyright) will catch unit mismatches at development time.
 
 from __future__ import annotations
 
+import math
+import warnings
 from dataclasses import dataclass
 from hashlib import md5
 from typing import Optional, Union
-import math
 
 import torch
 import torch.nn as nn
 
-import thalia.utils.rng as rng
 from thalia import GlobalConfig
-from thalia.typing import ConductanceTensor, GapJunctionReversal, VoltageTensor
+from thalia.errors import ConfigurationError
+from thalia.typing import ConductanceTensor, GapJunctionReversal, PopulationName, RegionName, VoltageTensor
+from thalia.utils import decay_tensor, philox_gaussian, philox_uniform
 
 
 # =============================================================================
-# Helper functions for conductance decay and stable string hashing
+# Helper functions
 # =============================================================================
 
 
-KNUTH_MULTIPLICATIVE_HASH = 2654435761
-
-
-def string_hash_md5(s: str) -> int:
+def _string_hash_md5_31bit(s: str) -> int:
     """Stable hash function for strings using MD5. Returns 31-bit int safe for int64 arithmetic."""
     return int(md5(s.encode()).hexdigest()[:8], 16) % (2**31)
 
 
-def _decay(dt_ms: float, tau: Union[float, torch.Tensor], device: torch.device) -> torch.Tensor:
-    if isinstance(tau, torch.Tensor):
-        return torch.exp(-dt_ms / tau)
-    else:
-        return torch.tensor(math.exp(-dt_ms / tau), device=device)
+def _create_neuron_seeds(
+    region_name: RegionName,
+    population_name: PopulationName,
+    n_neurons: int,
+    device: Union[str, torch.device],
+) -> torch.Tensor:
+    """Generate per-neuron seeds for RNG independence."""
+    KNUTH_MULTIPLICATIVE_HASH = 2654435761
+    return torch.tensor([
+        _string_hash_md5_31bit(f"{region_name}_{population_name}_{neuron_id}")
+        for neuron_id in range(n_neurons)
+    ], dtype=torch.int64, device=device) * KNUTH_MULTIPLICATIVE_HASH
 
 
-def _ensure(t: Optional[torch.Tensor], n_neurons: int, device: torch.device) -> torch.Tensor:
-    return t if t is not None else torch.zeros(n_neurons, device=device)
+def heterogeneous_tau_mem(
+    tau_mem_mean: float,
+    n_neurons: int,
+    device: Union[str, torch.device],
+    *,
+    cv: float = 0.15,
+    clamp_fraction: float = 0.30,
+) -> torch.Tensor:
+    """Generate heterogeneous membrane time constants for a population of neurons.
+
+    Args:
+        tau_mem_mean: Mean membrane time constant (ms).
+        n_neurons: Number of neurons.
+        device: Torch device.
+        cv: Coefficient of variation (std/mean).
+            Typical values: 0.10-0.12 for fast-spiking interneurons,
+            0.15-0.20 for pyramidal neurons, 0.20-0.25 for neuromodulatory.
+        clamp_fraction: Symmetric clamp range as fraction of mean (±).
+            E.g. 0.30 clamps to [0.7*mean, 1.3*mean].
+    """
+    tau_mem_heterogeneous = torch.normal(
+        mean=tau_mem_mean,
+        std=tau_mem_mean * cv,
+        size=(n_neurons,),
+        device=device
+    ).clamp(min=tau_mem_mean * (1.0 - clamp_fraction), max=tau_mem_mean * (1.0 + clamp_fraction))
+    return tau_mem_heterogeneous
+
+
+def heterogeneous_v_threshold(
+    v_threshold_mean: float,
+    n_neurons: int,
+    device: Union[str, torch.device],
+    *,
+    cv: float = 0.10,
+    clamp_fraction: float = 0.15,
+) -> torch.Tensor:
+    """Generate heterogeneous spike thresholds for a population of neurons.
+
+    Args:
+        v_threshold_mean: Mean spike threshold (normalised units).
+        n_neurons: Number of neurons.
+        device: Torch device.
+        cv: Coefficient of variation (std/mean).
+            Typical values: 0.05-0.08 for fast-spiking interneurons,
+            0.10-0.12 for pyramidal neurons, 0.12-0.15 for neuromodulatory.
+        clamp_fraction: Symmetric clamp range as fraction of mean (±).
+            E.g. 0.15 clamps to [0.85*mean, 1.15*mean].
+    """
+    v_threshold_heterogeneous = torch.normal(
+        mean=v_threshold_mean,
+        std=v_threshold_mean * cv,
+        size=(n_neurons,),
+        device=device
+    ).clamp(min=v_threshold_mean * (1.0 - clamp_fraction), max=v_threshold_mean * (1.0 + clamp_fraction))
+    return v_threshold_heterogeneous
+
+
+def heterogeneous_g_L(
+    g_L_mean: float,
+    n_neurons: int,
+    device: Union[str, torch.device],
+    *,
+    cv: float = 0.12,
+    clamp_fraction: float = 0.20,
+) -> torch.Tensor:
+    """Generate heterogeneous leak conductances for a population of neurons.
+
+    Different g_L values give each neuron a different input resistance
+    (R_in = 1/g_L) and thus a different gain on its f-I curve, producing
+    natural firing-rate diversity within the population.
+
+    Args:
+        g_L_mean: Mean leak conductance.
+        n_neurons: Number of neurons.
+        device: Torch device.
+        cv: Coefficient of variation (std/mean).
+            Typical values: 0.08-0.10 for fast-spiking interneurons,
+            0.12-0.15 for pyramidal neurons.
+        clamp_fraction: Symmetric clamp range as fraction of mean (±).
+            E.g. 0.20 clamps to [0.8*mean, 1.2*mean].
+    """
+    return torch.normal(
+        mean=g_L_mean,
+        std=g_L_mean * cv,
+        size=(n_neurons,),
+        device=device,
+    ).clamp(min=g_L_mean * (1.0 - clamp_fraction), max=g_L_mean * (1.0 + clamp_fraction))
+
+
+def heterogeneous_adapt_increment(
+    adapt_mean: float,
+    n_neurons: int,
+    device: Union[str, torch.device],
+    *,
+    cv: float = 0.20,
+    clamp_fraction: float = 0.35,
+) -> torch.Tensor:
+    """Generate heterogeneous adaptation increments for a population of neurons.
+
+    Different adapt_increment values make some neurons strongly adapting
+    (bursty onset, then silence) and others weakly adapting (sustained firing),
+    creating natural within-population rate heterogeneity (high FR-CV).
+
+    Args:
+        adapt_mean: Mean adaptation increment per spike.
+        n_neurons: Number of neurons.
+        device: Torch device.
+        cv: Coefficient of variation (std/mean).
+            Wider than tau_mem_ms/v_threshold because adaptation strength
+            varies substantially across neurons of the same type.
+        clamp_fraction: Symmetric clamp range as fraction of mean (±).
+            E.g. 0.35 clamps to [0.65*mean, 1.35*mean].
+    """
+    return torch.normal(
+        mean=adapt_mean,
+        std=adapt_mean * cv,
+        size=(n_neurons,),
+        device=device,
+    ).clamp(min=adapt_mean * (1.0 - clamp_fraction), max=adapt_mean * (1.0 + clamp_fraction))
+
+
+def split_excitatory_conductance(g_exc_total: torch.Tensor, nmda_ratio: float) -> tuple[torch.Tensor, torch.Tensor]:
+    """Split excitatory conductance into AMPA (fast) and NMDA (slow) components.
+
+    Biology: Excitatory synapses contain both AMPA and NMDA receptors.
+    AMPA provides fast transmission (tau~5ms), NMDA provides slow temporal
+    integration (tau~100ms) with coincidence-detection via Mg²⁺ voltage-gate.
+
+    Args:
+        g_exc_total: Total excitatory conductance to split
+        nmda_ratio: Fraction of total conductance that is NMDA
+
+    Returns:
+        g_ampa: Fast AMPA conductance (80% of total)
+        g_nmda: Slow NMDA conductance (20% of total, voltage-gated downstream)
+    """
+    ampa_ratio = 1.0 - nmda_ratio
+    g_ampa = g_exc_total * ampa_ratio
+    g_nmda = g_exc_total * nmda_ratio
+    return g_ampa, g_nmda
 
 
 # =============================================================================
@@ -100,7 +245,7 @@ class ConductanceLIFConfig:
 
     Attributes:
 
-        tau_mem: Membrane time constant in ms (default: 20.0)
+        tau_mem_ms: Membrane time constant in ms (default: 20.0)
             Can be a scalar (same for all neurons) or tensor (per-neuron).
             Controls how quickly the membrane potential decays toward rest.
             Larger values = slower decay = longer memory of inputs.
@@ -161,18 +306,19 @@ class ConductanceLIFConfig:
     # =========================================================================
     # RNG configuration (counter-based per-neuron for true independence)
     # =========================================================================
-    region_name: str  # Brain region identifier
-    population_name: str  # Population identifier
+    region_name: RegionName = "INVALID"
+    population_name: PopulationName = "INVALID"
 
     # =========================================================================
     # Membrane properties
     # =========================================================================
-    tau_mem: Union[float, torch.Tensor] = 20.0  # Membrane time constant (ms) - scalar or per-neuron
+    tau_mem_ms: Union[float, torch.Tensor] = 20.0  # Membrane time constant (ms) - scalar or per-neuron
     v_reset: float = 0.0  # Reset after spike; set below E_L for after-hyperpolarization
     v_threshold: Union[float, torch.Tensor] = 1.0  # Spike threshold - scalar or per-neuron
     tau_ref: float = 5.0  # Refractory period (ms)
 
-    g_L: float = 0.05  # Leak conductance; τ_m = 1/g_L = 20ms (C_m normalised to 1)
+    g_L: Union[float, torch.Tensor] = 0.05  # Leak conductance; τ_m = 1/g_L = 20ms (C_m normalised to 1)
+                                               # Can be scalar or per-neuron tensor for gain heterogeneity
 
     # =========================================================================
     # Reversal potentials (normalized units)
@@ -227,7 +373,7 @@ class ConductanceLIFConfig:
     # Adaptation
     # =========================================================================
     tau_adapt: float = 100.0
-    adapt_increment: float = 0.0
+    adapt_increment: Union[float, torch.Tensor] = 0.0  # Can be scalar or per-neuron tensor
     E_adapt: float = -0.5  # Adaptation reversal (hyperpolarizing, like slow K+)
 
     # =========================================================================
@@ -260,7 +406,7 @@ class ConductanceLIFConfig:
     k_h_T: float = 0.15  # Slope of h_T activation curve
 
     @property
-    def tau_m(self) -> float:
+    def tau_m(self) -> Union[float, torch.Tensor]:
         """Passive membrane time constant (ms): τ_m = 1 / g_L (C_m normalised to 1)."""
         return 1.0 / self.g_L
 
@@ -297,55 +443,94 @@ class ConductanceLIF(nn.Module):
         self.config = config
         self.device = torch.device(device)
 
+        if config.region_name == "INVALID" or config.population_name == "INVALID":
+            raise ConfigurationError(
+                f"ConductanceLIFConfig for [{config.region_name}:{config.population_name}] must have valid region_name and population_name for RNG seeding."
+            )
+
         # =============================================================================
         # Register constants as buffers
         # =============================================================================
-        self.g_L: torch.Tensor
-        self.E_L: torch.Tensor
-        self.E_E: torch.Tensor
-        self.E_I: torch.Tensor
-        self.E_nmda: torch.Tensor
-        self.E_GABA_B: torch.Tensor
-        self.E_adapt: torch.Tensor
-        self.v_reset: torch.Tensor
-        self.register_buffer("g_L", torch.tensor(config.g_L, device=device))
-        self.register_buffer("E_L", torch.tensor(config.E_L, device=device))
-        self.register_buffer("E_E", torch.tensor(config.E_E, device=device))
-        self.register_buffer("E_I", torch.tensor(config.E_I, device=device))
-
         # Precomputed NMDA block constants: B(v) = sigmoid(_nmda_a + _nmda_b * v)
         # Equivalent to 1/(1 + mg_conc * exp(-0.062 * v_mv) / 3.57) but avoids
         # 4 extra per-call tensor ops by folding the v_mv transform into two scalars.
         _nmda_scale = 65.0 / (config.E_E - config.E_L)
         _nmda_bias_mv = -config.E_L * _nmda_scale - 65.0
         _nmda_C = config.mg_conc / 3.57 * math.exp(-0.062 * _nmda_bias_mv)
+
+        self.g_L: torch.Tensor
+        self.E_L: torch.Tensor
+        self.E_E: torch.Tensor
+        self.E_I: torch.Tensor
         self._nmda_a: torch.Tensor
         self._nmda_b: torch.Tensor
-        self.register_buffer("_nmda_a", torch.tensor(-math.log(_nmda_C), device=device), persistent=False)
-        self.register_buffer("_nmda_b", torch.tensor(0.062 * _nmda_scale, device=device), persistent=False)
-        self.register_buffer("E_nmda", torch.tensor(config.E_nmda, device=device))
-        self.register_buffer("E_GABA_B", torch.tensor(config.E_GABA_B, device=device))
-        self.register_buffer("E_adapt", torch.tensor(config.E_adapt, device=device))
-        self.register_buffer("v_reset", torch.tensor(config.v_reset, device=device))
+        self.E_nmda: torch.Tensor
+        self.E_GABA_B: torch.Tensor
+        self.E_adapt: torch.Tensor
+        self.v_reset: torch.Tensor
+        self.adapt_increment: torch.Tensor
+
+        # g_L: per-neuron leak conductance (scalar → broadcast, tensor → per-neuron gain diversity)
+        if isinstance(config.g_L, (int, float)):
+            warnings.warn(
+                f"[{config.region_name}:{config.population_name}] ConductanceLIFConfig.g_L provided as scalar ({config.g_L}). "
+                f"Using the same g_L for all {n_neurons} neurons."
+            )
+            self.register_buffer("g_L", torch.full((n_neurons,), float(config.g_L), dtype=torch.float32, device=device))
+        else:
+            assert config.g_L.shape[0] == n_neurons
+            self.register_buffer("g_L", config.g_L.to(device=device, dtype=torch.float32))
+
+        self.register_buffer("E_L",      torch.tensor(config.E_L,          device=device))
+        self.register_buffer("E_E",      torch.tensor(config.E_E,          device=device))
+        self.register_buffer("E_I",      torch.tensor(config.E_I,          device=device))
+        self.register_buffer("_nmda_a",  torch.tensor(-math.log(_nmda_C),  device=device), persistent=False)
+        self.register_buffer("_nmda_b",  torch.tensor(0.062 * _nmda_scale, device=device), persistent=False)
+        self.register_buffer("E_nmda",   torch.tensor(config.E_nmda,       device=device))
+        self.register_buffer("E_GABA_B", torch.tensor(config.E_GABA_B,     device=device))
+        self.register_buffer("E_adapt",  torch.tensor(config.E_adapt,      device=device))
+        self.register_buffer("v_reset",  torch.tensor(config.v_reset,      device=device))
+
+        # adapt_increment: per-neuron adaptation strength (scalar → uniform, tensor → heterogeneous)
+        if isinstance(config.adapt_increment, (int, float)):
+            # No warning for 0.0: intentionally non-adapting (PV/FSI, SK-based, BG pacemakers)
+            if config.adapt_increment != 0.0:
+                warnings.warn(
+                    f"[{config.region_name}:{config.population_name}] ConductanceLIFConfig.adapt_increment provided as scalar ({config.adapt_increment}). "
+                    f"Using the same adapt_increment for all {n_neurons} neurons."
+                )
+            self.register_buffer(
+                "adapt_increment",
+                torch.full((n_neurons,), float(config.adapt_increment), dtype=torch.float32, device=device),
+            )
+        else:
+            self.register_buffer(
+                "adapt_increment",
+                config.adapt_increment.to(device=device, dtype=torch.float32),
+            )
 
         # =============================================================================
-        # Per-neuron tau_mem for heterogeneous time constants (frequency diversity)
+        # Per-neuron tau_mem_ms for heterogeneous time constants (frequency diversity)
         # =============================================================================
         # This enables different neuron types to resonate at different frequencies:
         # - Fast-spiking (3-8ms): Gamma oscillations (40-80 Hz)
         # - Standard pyramidal (15-30ms): Alpha/beta (8-15 Hz)
         # - PFC delay neurons (100-500ms): Persistent activity (<2 Hz)
-        self.tau_mem_per_neuron: torch.Tensor
-        if isinstance(config.tau_mem, (int, float)):
+        self.tau_mem_ms: torch.Tensor
+        if isinstance(config.tau_mem_ms, (int, float)):
+            warnings.warn(
+                f"[{config.region_name}:{config.population_name}] ConductanceLIFConfig.tau_mem_ms provided as scalar ({config.tau_mem_ms} ms). "
+                f"Using the same tau_mem_ms for all {n_neurons} neurons."
+            )
             self.register_buffer(
-                "tau_mem_per_neuron",
-                torch.full((n_neurons,), float(config.tau_mem), dtype=torch.float32, device=device),
+                "tau_mem_ms",
+                torch.full((n_neurons,), float(config.tau_mem_ms), dtype=torch.float32, device=device),
             )
         else:
-            assert config.tau_mem.shape[0] == n_neurons
+            assert config.tau_mem_ms.shape[0] == n_neurons
             self.register_buffer(
-                "tau_mem_per_neuron",
-                config.tau_mem.to(device=device, dtype=torch.float32),
+                "tau_mem_ms",
+                config.tau_mem_ms.to(device=device, dtype=torch.float32),
             )
 
         # =============================================================================
@@ -353,6 +538,10 @@ class ConductanceLIF(nn.Module):
         # =============================================================================
         self.v_threshold: torch.Tensor
         if isinstance(config.v_threshold, (int, float)):
+            warnings.warn(
+                f"[{config.region_name}:{config.population_name}] ConductanceLIFConfig.v_threshold provided as scalar ({config.v_threshold}). "
+                f"Using the same v_threshold for all {n_neurons} neurons."
+            )
             self.register_buffer(
                 "v_threshold",
                 torch.full((n_neurons,), float(config.v_threshold), dtype=torch.float32, device=device),
@@ -394,34 +583,19 @@ class ConductanceLIF(nn.Module):
         # =============================================================================
         # RNG INDEPENDENCE: Per-Neuron Counter-Based Seeds
         # =============================================================================
-        # Each neuron gets a unique seed to eliminate spurious correlations
-        # Noise generation is f(seed_i, timestep) using Philox algorithm
-
-        # Create per-neuron seeds (each neuron gets unique seed)
-        # Derive seed from identity (refactor-proof, order-independent)
-        # Hierarchical key: hash(region, population, neuron_id)
-        # Use md5 for stable hashing across Python sessions (hash() is salted)
-        neuron_seeds = [
-            string_hash_md5(f"{config.region_name}_{config.population_name}_{neuron_id}")
-            for neuron_id in range(self.n_neurons)
-        ]
-        self._neuron_seeds: torch.Tensor
-        self.register_buffer("_neuron_seeds", torch.tensor(neuron_seeds, dtype=torch.int64, device=device))
-
         # Pre-scaled seeds: multiply by the Knuth golden-ratio constant (floor(2^32/φ)) once
         # at init so the per-timestep noise path only needs an addition, not a multiply.
         # The constant spreads adjacent neuron indices maximally across the 64-bit counter
         # space, preventing counter collisions between neurons at nearby timesteps.
-        self._neuron_seeds_scaled: torch.Tensor
-        self.register_buffer("_neuron_seeds_scaled", self._neuron_seeds * KNUTH_MULTIPLICATIVE_HASH)
+        self._neuron_seeds: torch.Tensor
+        self.register_buffer("_neuron_seeds", _create_neuron_seeds(config.region_name, config.population_name, self.n_neurons, device=device))
 
         # Timestep counter for runtime noise (NOT a buffer - changes every forward pass)
         # Init-time calls use (1<<31) offset: unreachable by runtime (simulation steps << 2^31)
         self._rng_timestep = 0
-        _ctr = self._neuron_seeds_scaled
-        _u_v       = rng.philox_uniform(_ctr + (1 << 31))       # voltage init
-        _u_r       = rng.philox_uniform(_ctr + (1 << 31) + 1)   # refractory init
-        _gauss_ref = rng.philox_gaussian(_ctr + (1 << 31) + 2)  # tau_ref distribution (uses +2 and +3)
+        _u_v       = philox_uniform(self._neuron_seeds + (1 << 31))       # voltage init
+        _u_r       = philox_uniform(self._neuron_seeds + (1 << 31) + 1)   # refractory init
+        _gauss_ref = philox_gaussian(self._neuron_seeds + (1 << 31) + 2)  # tau_ref distribution (uses +2 and +3)
 
         # =============================================================================
         # Ornstein-Uhlenbeck noise state
@@ -455,7 +629,9 @@ class ConductanceLIF(nn.Module):
         self.g_GABA_B: torch.Tensor = torch.zeros(self.n_neurons, device=device)  # GABA_B conductance (slow, K⁺)
         self.g_nmda: torch.Tensor = torch.zeros(self.n_neurons, device=device)    # NMDA conductance (slow excitation)
         self.g_adapt: torch.Tensor = torch.zeros(self.n_neurons, device=device)   # Adaptation conductance
+
         # Pre-allocated zero tensor for None conductance inputs — avoids torch.zeros() allocation in forward
+        self._zeros: torch.Tensor
         self.register_buffer("_zeros", torch.zeros(self.n_neurons, device=device), persistent=False)
 
         # =============================================================================
@@ -524,20 +700,20 @@ class ConductanceLIF(nn.Module):
         config = self.config
         device = self.V_soma.device
 
-        self._g_E_decay      = _decay(dt_ms, config.tau_E, device)
-        self._g_I_decay      = _decay(dt_ms, config.tau_I, device)
-        self._g_nmda_decay   = _decay(dt_ms, config.tau_nmda, device)
-        self._g_GABA_B_decay = _decay(dt_ms, config.tau_GABA_B, device)
-        self._V_soma_decay   = _decay(dt_ms, self.tau_mem_per_neuron, device)
-        self._adapt_decay    = _decay(dt_ms, config.tau_adapt, device)
-        self._ou_decay       = _decay(dt_ms, config.noise_tau_ms, device)
+        self._g_E_decay      = decay_tensor(dt_ms, config.tau_E, device)
+        self._g_I_decay      = decay_tensor(dt_ms, config.tau_I, device)
+        self._g_nmda_decay   = decay_tensor(dt_ms, config.tau_nmda, device)
+        self._g_GABA_B_decay = decay_tensor(dt_ms, config.tau_GABA_B, device)
+        self._V_soma_decay   = decay_tensor(dt_ms, self.tau_mem_ms, device)
+        self._adapt_decay    = decay_tensor(dt_ms, config.tau_adapt, device)
+        self._ou_decay       = decay_tensor(dt_ms, config.noise_tau_ms, device)
         self._ou_std = config.noise_std * torch.sqrt(1.0 - self._ou_decay**2)
 
         if config.enable_t_channels:
-            self._h_T_decay = _decay(dt_ms, config.tau_h_T_ms, device)
+            self._h_T_decay = decay_tensor(dt_ms, config.tau_h_T_ms, device)
 
         if config.enable_ih:
-            self._h_decay = _decay(dt_ms, config.tau_h_ms, device)
+            self._h_decay = decay_tensor(dt_ms, config.tau_h_ms, device)
 
     def adjust_thresholds(
         self,
@@ -640,9 +816,7 @@ class ConductanceLIF(nn.Module):
             self.refractory = (self._u_refractory_init * self.tau_ref_per_neuron / self._dt_ms).to(torch.int32)
         assert self.refractory is not None
 
-        device = self.V_soma.device
         config = self.config
-        n_neurons = self.n_neurons
 
         # Cache registered buffers once — avoids nn.Module.__getattr__ on each access
         g_L          = self.g_L
@@ -812,14 +986,14 @@ class ConductanceLIF(nn.Module):
         V_soma_inf = V_inf_numerator / g_total
 
         # Effective time constant: τ_eff = 1 / g_total (with C_m = 1)
-        # But we also need to account for per-neuron tau_mem diversity
+        # But we also need to account for per-neuron tau_mem_ms diversity
         # The true membrane dynamics depend on both conductance-based τ_eff AND intrinsic τ_mem
         # We model this as: τ_combined = (τ_mem * τ_eff) / (τ_mem + τ_eff)
-        # For simplicity and biological accuracy, we use tau_mem to scale the decay:
-        # decay = exp(-dt / tau_mem * g_total / g_L_effective)
+        # For simplicity and biological accuracy, we use tau_mem_ms to scale the decay:
+        # decay = exp(-dt / tau_mem_ms * g_total / g_L_effective)
         # Where g_total/g_L_effective gives the conductance-based speed-up factor
-        # Per-neuron decay factor incorporating both tau_mem and conductance state
-        # Fast neurons (small tau_mem) decay quickly, slow neurons (large tau_mem) integrate longer
+        # Per-neuron decay factor incorporating both tau_mem_ms and conductance state
+        # Fast neurons (small tau_mem_ms) decay quickly, slow neurons (large tau_mem_ms) integrate longer
         # Use effective g_L (homeostatic modulation affects time constant)
         # CORRECT: exp(-dt/tau * g_total/g_L) = exp(-dt/tau)^(g_total/g_L) = pow(_V_soma_decay, g_total/g_L)
         V_soma_decay_effective = torch.pow(_V_soma_decay, g_total / g_L_effective)
@@ -830,7 +1004,7 @@ class ConductanceLIF(nn.Module):
 
         # Add noise (PER-NEURON independent noise)
         if config.noise_std > 0:
-            noise = rng.philox_gaussian(self._neuron_seeds_scaled + self._rng_timestep)
+            noise = philox_gaussian(self._neuron_seeds + self._rng_timestep)
             self._rng_timestep += 2  # philox_gaussian internally uses counters and counters+1
             # Ornstein-Uhlenbeck (colored) noise: dx = -x/τ*dt + σ*sqrt(2/τ)*dW
             # Discrete: x(t+dt) = x(t)*exp(-dt/τ) + σ*sqrt(1-exp(-2*dt/τ))*randn()
@@ -855,8 +1029,7 @@ class ConductanceLIF(nn.Module):
             ref_steps = (tau_ref / dt_ms).int()
             self.refractory.copy_(torch.where(spikes, ref_steps, self.refractory))
             # Adaptation increment
-            if config.adapt_increment > 0:
-                self.g_adapt.add_(spikes.float(), alpha=config.adapt_increment)
+            self.g_adapt.add_(spikes.float() * self.adapt_increment)
 
         return spikes, self.V_soma
 
@@ -981,51 +1154,90 @@ class TwoCompartmentLIF(nn.Module):
         self.config = config
         self.device = torch.device(device)
 
+        if config.region_name == "INVALID" or config.population_name == "INVALID":
+            raise ConfigurationError(
+                f"ConductanceLIFConfig for [{config.region_name}:{config.population_name}] must have valid region_name and population_name for RNG seeding."
+            )
+
         # =============================================================================
         # Shared buffers (somatic, identical to ConductanceLIF)
         # =============================================================================
+        # Precomputed NMDA block constants (see ConductanceLIF for derivation)
+        _nmda_scale = 65.0 / (config.E_E - config.E_L)
+        _nmda_bias_mv = -config.E_L * _nmda_scale - 65.0
+        _nmda_C = config.mg_conc / 3.57 * math.exp(-0.062 * _nmda_bias_mv)
+
         self.g_L: torch.Tensor
         self.E_L: torch.Tensor
         self.E_E: torch.Tensor
         self.E_I: torch.Tensor
+        self._nmda_a: torch.Tensor
+        self._nmda_b: torch.Tensor
         self.E_nmda: torch.Tensor
         self.E_GABA_B: torch.Tensor
         self.E_Ca: torch.Tensor
         self.E_adapt: torch.Tensor
         self.v_reset: torch.Tensor
-        self.register_buffer("g_L",      torch.tensor(config.g_L,      device=device))
-        self.register_buffer("E_L",      torch.tensor(config.E_L,      device=device))
-        self.register_buffer("E_E",      torch.tensor(config.E_E,      device=device))
-        self.register_buffer("E_I",      torch.tensor(config.E_I,      device=device))
+        self.adapt_increment: torch.Tensor
 
-        # Precomputed NMDA block constants (see ConductanceLIF for derivation)
-        _nmda_scale = 65.0 / (config.E_E - config.E_L)
-        _nmda_bias_mv = -config.E_L * _nmda_scale - 65.0
-        _nmda_C = config.mg_conc / 3.57 * math.exp(-0.062 * _nmda_bias_mv)
-        self._nmda_a: torch.Tensor
-        self._nmda_b: torch.Tensor
-        self.register_buffer("_nmda_a", torch.tensor(-math.log(_nmda_C), device=device), persistent=False)
-        self.register_buffer("_nmda_b", torch.tensor(0.062 * _nmda_scale, device=device), persistent=False)
-        self.register_buffer("E_nmda",   torch.tensor(config.E_nmda,   device=device))
-        self.register_buffer("E_GABA_B", torch.tensor(config.E_GABA_B, device=device))
-        self.register_buffer("E_Ca",     torch.tensor(config.E_Ca,     device=device))
-        self.register_buffer("E_adapt",  torch.tensor(config.E_adapt,  device=device))
-        self.register_buffer("v_reset",  torch.tensor(config.v_reset,  device=device))
+        # g_L: per-neuron leak conductance (scalar → broadcast, tensor → per-neuron gain diversity)
+        if isinstance(config.g_L, (int, float)):
+            warnings.warn(
+                f"[{config.region_name}:{config.population_name}] TwoCompartmentLIFConfig.g_L provided as scalar ({config.g_L}). "
+                f"Using the same g_L for all {n_neurons} neurons."
+            )
+            self.register_buffer("g_L", torch.full((n_neurons,), float(config.g_L), dtype=torch.float32, device=device))
+        else:
+            assert config.g_L.shape[0] == n_neurons
+            self.register_buffer("g_L", config.g_L.to(device=device, dtype=torch.float32))
 
-        # =============================================================================
-        # Per-neuron tau_mem for heterogeneous time constants (frequency diversity) (soma)
-        # =============================================================================
-        self.tau_mem_per_neuron: torch.Tensor
-        if isinstance(config.tau_mem, (int, float)):
+        self.register_buffer("E_L",      torch.tensor(config.E_L,          device=device))
+        self.register_buffer("E_E",      torch.tensor(config.E_E,          device=device))
+        self.register_buffer("E_I",      torch.tensor(config.E_I,          device=device))
+        self.register_buffer("_nmda_a",  torch.tensor(-math.log(_nmda_C),  device=device), persistent=False)
+        self.register_buffer("_nmda_b",  torch.tensor(0.062 * _nmda_scale, device=device), persistent=False)
+        self.register_buffer("E_nmda",   torch.tensor(config.E_nmda,       device=device))
+        self.register_buffer("E_GABA_B", torch.tensor(config.E_GABA_B,     device=device))
+        self.register_buffer("E_Ca",     torch.tensor(config.E_Ca,         device=device))
+        self.register_buffer("E_adapt",  torch.tensor(config.E_adapt,      device=device))
+        self.register_buffer("v_reset",  torch.tensor(config.v_reset,      device=device))
+
+        # adapt_increment: per-neuron adaptation strength (scalar → uniform, tensor → heterogeneous)
+        if isinstance(config.adapt_increment, (int, float)):
+            # No warning for 0.0: intentionally non-adapting (PV/FSI, SK-based, BG pacemakers)
+            if config.adapt_increment != 0.0:
+                warnings.warn(
+                    f"[{config.region_name}:{config.population_name}] TwoCompartmentLIFConfig.adapt_increment provided as scalar ({config.adapt_increment}). "
+                    f"Using the same adapt_increment for all {n_neurons} neurons."
+                )
             self.register_buffer(
-                "tau_mem_per_neuron",
-                torch.full((n_neurons,), float(config.tau_mem), dtype=torch.float32, device=device),
+                "adapt_increment",
+                torch.full((n_neurons,), float(config.adapt_increment), dtype=torch.float32, device=device),
             )
         else:
-            assert config.tau_mem.shape[0] == n_neurons
             self.register_buffer(
-                "tau_mem_per_neuron",
-                config.tau_mem.to(device=device, dtype=torch.float32),
+                "adapt_increment",
+                config.adapt_increment.to(device=device, dtype=torch.float32),
+            )
+
+        # =============================================================================
+        # Per-neuron tau_mem_ms for heterogeneous time constants (frequency diversity) (soma)
+        # =============================================================================
+        self.tau_mem_ms: torch.Tensor
+        if isinstance(config.tau_mem_ms, (int, float)):
+            warnings.warn(
+                f"[{config.region_name}:{config.population_name}] TwoCompartmentLIFConfig.tau_mem_ms provided as scalar ({config.tau_mem_ms} ms). "
+                f"Using the same tau_mem_ms for all {n_neurons} neurons."
+            )
+            self.register_buffer(
+                "tau_mem_ms",
+                torch.full((n_neurons,), float(config.tau_mem_ms), dtype=torch.float32, device=device),
+            )
+        else:
+            assert config.tau_mem_ms.shape[0] == n_neurons
+            self.register_buffer(
+                "tau_mem_ms",
+                config.tau_mem_ms.to(device=device, dtype=torch.float32),
             )
 
         # =============================================================================
@@ -1033,6 +1245,10 @@ class TwoCompartmentLIF(nn.Module):
         # =============================================================================
         self.v_threshold: torch.Tensor
         if isinstance(config.v_threshold, (int, float)):
+            warnings.warn(
+                f"[{config.region_name}:{config.population_name}] TwoCompartmentLIFConfig.v_threshold provided as scalar ({config.v_threshold}). "
+                f"Using the same v_threshold for all {n_neurons} neurons."
+            )
             self.register_buffer(
                 "v_threshold",
                 torch.full((n_neurons,), float(config.v_threshold), dtype=torch.float32, device=device),
@@ -1074,27 +1290,19 @@ class TwoCompartmentLIF(nn.Module):
         # =============================================================================
         # RNG INDEPENDENCE: Per-Neuron Counter-Based Seeds
         # =============================================================================
-        neuron_seeds = [
-            string_hash_md5(f"{config.region_name}_{config.population_name}_{neuron_id}")
-            for neuron_id in range(self.n_neurons)
-        ]
-        self._neuron_seeds: torch.Tensor
-        self.register_buffer("_neuron_seeds", torch.tensor(neuron_seeds, dtype=torch.int64, device=device))
-
         # Pre-scaled seeds: multiply by the Knuth golden-ratio constant (floor(2^32/φ)) once
         # at init so the per-timestep noise path only needs an addition, not a multiply.
         # The constant spreads adjacent neuron indices maximally across the 64-bit counter
         # space, preventing counter collisions between neurons at nearby timesteps.
-        self._neuron_seeds_scaled: torch.Tensor
-        self.register_buffer("_neuron_seeds_scaled", self._neuron_seeds * KNUTH_MULTIPLICATIVE_HASH)
+        self._neuron_seeds: torch.Tensor
+        self.register_buffer("_neuron_seeds", _create_neuron_seeds(config.region_name, config.population_name, self.n_neurons, device=device))
 
         # Timestep counter for runtime noise (NOT a buffer - changes every forward pass)
         # Init-time calls use (1<<31) offset: unreachable by runtime (simulation steps << 2^31)
         self._rng_timestep = 0
-        _ctr = self._neuron_seeds_scaled
-        _u_v       = rng.philox_uniform(_ctr + (1 << 31))       # voltage init
-        _u_r       = rng.philox_uniform(_ctr + (1 << 31) + 1)   # refractory init
-        _gauss_ref = rng.philox_gaussian(_ctr + (1 << 31) + 2)  # tau_ref distribution (uses +2 and +3)
+        _u_v       = philox_uniform(self._neuron_seeds + (1 << 31))       # voltage init
+        _u_r       = philox_uniform(self._neuron_seeds + (1 << 31) + 1)   # refractory init
+        _gauss_ref = philox_gaussian(self._neuron_seeds + (1 << 31) + 2)  # tau_ref distribution (uses +2 and +3)
 
         # =============================================================================
         # Ornstein-Uhlenbeck noise state
@@ -1120,7 +1328,7 @@ class TwoCompartmentLIF(nn.Module):
         # Initialize conductances and state variables
         # =============================================================================
         # Somatic state
-        self.V_soma: VoltageTensor = v_init                                      # V_soma
+        self.V_soma: VoltageTensor = v_init                                        # V_soma
         self.g_E_basal: torch.Tensor = torch.zeros(n_neurons, device=device)       # AMPA (basal)
         self.g_I_basal: torch.Tensor = torch.zeros(n_neurons, device=device)       # GABA_A (basal)
         self.g_GABA_B_basal: torch.Tensor = torch.zeros(n_neurons, device=device)  # GABA_B (basal)
@@ -1133,6 +1341,10 @@ class TwoCompartmentLIF(nn.Module):
         self.g_I_apical: torch.Tensor = torch.zeros(n_neurons, device=device)             # GABA_A (apical)
         self.g_nmda_apical: torch.Tensor = torch.zeros(n_neurons, device=device)          # NMDA (apical, blocked at V_dend!)
         self.g_Ca: torch.Tensor = torch.zeros(n_neurons, device=device)                   # Ca spike conductance (transient)
+
+        # Pre-allocated zero tensor for None conductance inputs — avoids torch.zeros() allocation in forward
+        self._zeros: torch.Tensor
+        self.register_buffer("_zeros", torch.zeros(self.n_neurons, device=device), persistent=False)
 
         # =============================================================================
         # Per-neuron refractory period for desynchronization
@@ -1164,15 +1376,15 @@ class TwoCompartmentLIF(nn.Module):
         config = self.config
         device = self.V_soma.device
 
-        self._g_E_decay      = _decay(dt_ms, config.tau_E, device)
-        self._g_I_decay      = _decay(dt_ms, config.tau_I, device)
-        self._g_nmda_decay   = _decay(dt_ms, config.tau_nmda, device)
-        self._g_GABA_B_decay = _decay(dt_ms, config.tau_GABA_B, device)
-        self._g_Ca_decay     = _decay(dt_ms, config.tau_Ca_ms, device)
-        self._V_soma_decay   = _decay(dt_ms, self.tau_mem_per_neuron, device)
-        self._V_dend_decay   = _decay(dt_ms, config.C_d / config.g_L_d, device)
-        self._adapt_decay    = _decay(dt_ms, config.tau_adapt, device)
-        self._ou_decay       = _decay(dt_ms, config.noise_tau_ms, device)
+        self._g_E_decay      = decay_tensor(dt_ms, config.tau_E, device)
+        self._g_I_decay      = decay_tensor(dt_ms, config.tau_I, device)
+        self._g_nmda_decay   = decay_tensor(dt_ms, config.tau_nmda, device)
+        self._g_GABA_B_decay = decay_tensor(dt_ms, config.tau_GABA_B, device)
+        self._g_Ca_decay     = decay_tensor(dt_ms, config.tau_Ca_ms, device)
+        self._V_soma_decay   = decay_tensor(dt_ms, self.tau_mem_ms, device)
+        self._V_dend_decay   = decay_tensor(dt_ms, config.C_d / config.g_L_d, device)
+        self._adapt_decay    = decay_tensor(dt_ms, config.tau_adapt, device)
+        self._ou_decay       = decay_tensor(dt_ms, config.noise_tau_ms, device)
         self._ou_std = config.noise_std * torch.sqrt(1.0 - self._ou_decay**2)
 
     def adjust_thresholds(
@@ -1244,17 +1456,17 @@ class TwoCompartmentLIF(nn.Module):
             self.refractory = (self._u_refractory_init * self.tau_ref_per_neuron / self._dt_ms).to(torch.int32)
         assert self.refractory is not None
 
-        device = self.V_soma.device
         config = self.config
-        n_neurons = self.n_neurons
 
-        g_ampa_b  = _ensure(g_ampa_basal, n_neurons, device)
-        g_nmda_b  = _ensure(g_nmda_basal, n_neurons, device)
-        g_gaba_a_b = _ensure(g_gaba_a_basal, n_neurons, device)
-        g_gaba_b_b = _ensure(g_gaba_b_basal, n_neurons, device)
-        g_ampa_a  = _ensure(g_ampa_apical, n_neurons, device)
-        g_nmda_a  = _ensure(g_nmda_apical, n_neurons, device)
-        g_gaba_a_a = _ensure(g_gaba_a_apical, n_neurons, device)
+        # Use pre-allocated zero buffer instead of torch.zeros() per None input
+        _z = self._zeros
+        g_ampa_b   = g_ampa_basal    if g_ampa_basal    is not None else _z
+        g_nmda_b   = g_nmda_basal    if g_nmda_basal    is not None else _z
+        g_gaba_a_b = g_gaba_a_basal  if g_gaba_a_basal  is not None else _z
+        g_gaba_b_b = g_gaba_b_basal  if g_gaba_b_basal  is not None else _z
+        g_ampa_a   = g_ampa_apical   if g_ampa_apical   is not None else _z
+        g_nmda_a   = g_nmda_apical   if g_nmda_apical   is not None else _z
+        g_gaba_a_a = g_gaba_a_apical if g_gaba_a_apical is not None else _z
 
         # Validate gap junction inputs (both must be provided together)
         if g_gap_input is not None or E_gap_reversal is not None:
@@ -1343,7 +1555,7 @@ class TwoCompartmentLIF(nn.Module):
 
         # OU noise on soma
         if config.noise_std > 0:
-            noise = rng.philox_gaussian(self._neuron_seeds_scaled + self._rng_timestep)
+            noise = philox_gaussian(self._neuron_seeds + self._rng_timestep)
             self._rng_timestep += 2  # philox_gaussian internally uses counters and counters+1
             self.ou_noise.mul_(self._ou_decay).add_(noise * self._ou_std)
             new_V_soma = new_V_soma + self.ou_noise
@@ -1373,8 +1585,7 @@ class TwoCompartmentLIF(nn.Module):
             ref_steps = (self.tau_ref_per_neuron / dt_ms).int()
             self.refractory.copy_(torch.where(spikes, ref_steps, self.refractory))
             # Adaptation increment
-            if config.adapt_increment > 0:
-                self.g_adapt.add_(spikes.float(), alpha=config.adapt_increment)
+            self.g_adapt.add_(spikes.float() * self.adapt_increment)
             # BAP: retrograde depolarisation of dendrite
             # V_dend += bap_amplitude * (E_Ca − V_dend)
             bap_dv = config.bap_amplitude * (config.E_Ca - self.V_dend) * spikes.float()

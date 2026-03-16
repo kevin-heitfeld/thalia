@@ -42,25 +42,23 @@ Biological Background:
 
 **Outputs:**
 - ``'5ht'`` neuromodulator channel broadcast to all subscribers
-
-**References:**
-- Jacobs & Azmitia (1992): Structure and function of raphe nuclei
-- Miyazaki et al. (2011, 2012): Dorsal raphe 5-HT and patience/reward timing
-- Liu et al. (2005): DRN neuron electrophysiology in vivo
-- Dayan & Huys (2008): Serotonin, tonic inhibition, and RL
 """
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional, Union
+from typing import TYPE_CHECKING, ClassVar, Dict, Optional, Union
 
 import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import DorsalRapheNucleusConfig
 from thalia.brain.neurons import (
+    ConductanceLIFConfig,
     SerotoninNeuronConfig,
     SerotoninNeuron,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_g_L,
 )
 from thalia.typing import (
     ConductanceTensor,
@@ -78,14 +76,14 @@ from .neuromodulator_source_region import NeuromodulatorSourceRegion
 from .population_names import DRNPopulation, LHbPopulation
 from .region_registry import register_region
 
+if TYPE_CHECKING:
+    from thalia.brain.neurons import ConductanceLIF
+
 
 @register_region(
     "dorsal_raphe",
     aliases=["drn", "serotonin_system", "raphe"],
     description="Dorsal raphe nucleus - serotonin patience and mood system",
-    version="1.0",
-    author="Thalia Project",
-    config_class=DorsalRapheNucleusConfig,
 )
 class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
     """Dorsal Raphe Nucleus — Serotonin Patience and Mood System.
@@ -120,33 +118,50 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         super().__init__(config, population_sizes, region_name, device=device)
 
         self.serotonin_neurons_size = population_sizes[DRNPopulation.SEROTONIN]
-        self.gaba_neurons_size = population_sizes[DRNPopulation.GABA]
+        self.gaba_size = population_sizes[DRNPopulation.GABA]
 
         # ── 5-HT projection neurons ──────────────────────────────────────────
-        self.serotonin_neurons = SerotoninNeuron(
+        self.serotonin_neurons: SerotoninNeuron
+        self.serotonin_neurons = self._create_and_register_neuron_population(
+            population_name=DRNPopulation.SEROTONIN,
             n_neurons=self.serotonin_neurons_size,
+            polarity=PopulationPolarity.ANY,
             config=SerotoninNeuronConfig(
-                region_name=self.region_name,
-                population_name=DRNPopulation.SEROTONIN,
                 serotonin_drive_gain=config.tonic_drive_gain * 20.0,
+                tau_mem_ms=heterogeneous_tau_mem(15.0, self.serotonin_neurons_size, device, cv=0.20),
+                v_threshold=heterogeneous_v_threshold(1.0, self.serotonin_neurons_size, device, cv=0.12, clamp_fraction=0.25),
+                g_L=heterogeneous_g_L(0.067, self.serotonin_neurons_size, device),
             ),
-            device=device,
         )
 
         # ── Local GABAergic interneurons (homeostatic inhibition) ────────────
         # These correspond to the ~15% GABA cells in DRN that regulate
         # 5-HT neuron excitability and mediate LHb-driven pauses.
-        self._init_gaba_interneurons(DRNPopulation.GABA, self.gaba_neurons_size)
+        self.gaba_neurons: ConductanceLIF
+        self.gaba_neurons = self._create_and_register_neuron_population(
+            population_name=DRNPopulation.GABA,
+            n_neurons=self.gaba_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(8.0, self.gaba_size, device=self.device, cv=0.10),
+                v_threshold=heterogeneous_v_threshold(1.0, self.gaba_size, device=self.device, cv=0.06),
+                v_reset=0.0,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_ref=2.5,
+                g_L=heterogeneous_g_L(0.10, self.gaba_size, device=self.device, cv=0.08),
+            ),
+        )
+
+        self._prev_gaba_spikes: torch.Tensor
+        self.register_buffer("_prev_gaba_spikes", torch.zeros(self.gaba_size, dtype=torch.bool, device=self.device), persistent=False)
 
         # ── Drive normalisation state ────────────────────────────────────────
-        if config.drive_normalization:
-            self._avg_drive: float = 0.5
-            self._drive_count: int = 0
-
-        # ====================================================================
-        # REGISTER POPULATIONS
-        # ====================================================================
-        self._register_neuron_population(DRNPopulation.SEROTONIN, self.serotonin_neurons, polarity=PopulationPolarity.ANY)
+        self._avg_drive: float = 0.5
+        self._drive_count: int = 0
 
         self.to(device)
 
@@ -182,8 +197,7 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         # Subtracted by normalised LHb signal (punishment → pause)
         raw_drive = config.tonic_drive_gain - lhb_rate * config.lhb_inhibition_gain
 
-        if config.drive_normalization:
-            raw_drive = self._normalize_drive(raw_drive)
+        raw_drive = self._normalize_drive(raw_drive)
 
         # Clip drive to sensible range for I_h modulation
         serotonin_drive = float(torch.tensor(raw_drive).clamp(-1.0, 1.0).item())
@@ -224,7 +238,7 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
             primary_activity: Mean serotonin neuron firing rate.
 
         Returns:
-            Drive conductance tensor [gaba_neurons_size]
+            Drive conductance tensor [gaba_size]
         """
         # Tonic baseline REMOVED: a constant 0.3 drive pushes GABA neurons to V*=2.25
         # (threshold=0.9), saturating them at ~420 Hz and fully silencing serotonin
@@ -232,7 +246,7 @@ class DorsalRapheNucleus(NeuromodulatorSourceRegion[DorsalRapheNucleusConfig]):
         # overshoots its target. Match the base-class convention: gain 2.0, no baseline.
         feedback = primary_activity * 2.0
 
-        return torch.full((self.gaba_neurons_size,), feedback, device=self.gaba_neurons.device)
+        return torch.full((self.gaba_size,), feedback, device=self.gaba_neurons.device)
 
     def _normalize_drive(self, raw_drive: float) -> float:
         """Adaptive normalisation to prevent saturation / silence.

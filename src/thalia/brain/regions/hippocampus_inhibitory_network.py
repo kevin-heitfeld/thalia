@@ -44,15 +44,23 @@ This creates **emergent encoding/retrieval separation** without hardcoded modula
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union, cast
 
 import torch
 import torch.nn as nn
 
-from thalia.brain.neurons import ConductanceLIFConfig, ConductanceLIF
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    ConductanceLIF,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    split_excitatory_conductance,
+)
+from thalia.brain.regions.population_names import HippocampusPopulation
 from thalia.brain.synapses import WeightInitializer
-from thalia.typing import ConductanceTensor, PopulationName, RegionName
-from thalia.utils import split_excitatory_conductance
+from thalia.typing import ConductanceTensor, PopulationName, PopulationPolarity
 
 
 class HippocampalInhibitoryNetwork(nn.Module):
@@ -71,24 +79,24 @@ class HippocampalInhibitoryNetwork(nn.Module):
 
     def __init__(
         self,
-        region_name: RegionName,
         population_name: PopulationName,
         pyr_size: int,
         total_inhib_fraction: float,
         v_threshold_olm: float,
         v_threshold_bistratified: float,
+        _create_and_register_neurons_fn: Callable[[], ConductanceLIF],
         dt_ms: float,
         device: Union[str, torch.device],
     ):
         """Initialize hippocampal inhibitory network.
 
         Args:
-            region_name: Region identifier (e.g., "hippocampus")
             population_name: Population identifier (e.g., "ca1", "ca1_inhibitory")
             pyr_size: Number of pyramidal neurons
             total_inhib_fraction: Fraction of pyramidal count
             v_threshold_olm: Spike threshold for OLM cells.
             v_threshold_bistratified: Spike threshold for bistratified cells.
+            _create_and_register_neurons_fn: Function to create and register neurons in parent NeuralRegion
             dt_ms: Timestep in milliseconds
             device: Torch device
         """
@@ -117,54 +125,58 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # CREATE NEURON POPULATIONS
         # =====================================================================
 
+        pv_pop_name = cast(HippocampusPopulation, f"{population_name}_pv")
+        olm_pop_name = cast(HippocampusPopulation, f"{population_name}_olm")
+        bistratified_pop_name = cast(HippocampusPopulation, f"{population_name}_bistratified")
+
         # PV basket cells: Fast-spiking perisomatic inhibition
         # Normal fast-spiking threshold (0.9) — PV cells should fire in response
         # to pyramidal activity to maintain E/I balance and generate gamma oscillations.
-        self.pv_neurons = ConductanceLIF(
+        self.pv_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=pv_pop_name,
             n_neurons=self.n_pv,
+            polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                region_name=region_name,
-                population_name=f"{population_name}_pv",
-                tau_mem=7.0,    # Fast-spiking
-                v_threshold=0.9,  # Normal fast-spiking threshold
+                tau_mem_ms=heterogeneous_tau_mem(7.0, self.n_pv, device, cv=0.10),
+                v_threshold=heterogeneous_v_threshold(0.9, self.n_pv, device, cv=0.06),
                 v_reset=0.0,
                 tau_adapt=50.0,     # Weak adaptation
-                adapt_increment=0.05,
+                adapt_increment=heterogeneous_adapt_increment(0.10, self.n_pv, device),
+                g_L=heterogeneous_g_L(0.05, self.n_pv, device, cv=0.08),
             ),
-            device=device,
         )
 
         # OLM cells: CRITICAL for theta phase-locking
         # High adaptation creates burst-pause dynamics for theta rhythm
-        self.olm_neurons = ConductanceLIF(
+        self.olm_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=olm_pop_name,
             n_neurons=self.n_olm,
+            polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                region_name=region_name,
-                population_name=f"{population_name}_olm",
-                tau_mem=25.0,   # Slow (regular-spiking)
-                v_threshold=v_threshold_olm,
+                tau_mem_ms=heterogeneous_tau_mem(25.0, self.n_olm, device),
+                v_threshold=heterogeneous_v_threshold(v_threshold_olm, self.n_olm, device),
                 v_reset=0.0,
                 tau_adapt=100.0,    # STRONG adaptation (creates bursting)
-                adapt_increment=0.20,  # Large increment (burst termination)
+                adapt_increment=heterogeneous_adapt_increment(0.20, self.n_olm, device),
+                g_L=heterogeneous_g_L(0.05, self.n_olm, device),
                 noise_std=0.020,
             ),
-            device=device,
         )
 
         # Bistratified cells: Dendritic targeting
-        self.bistratified_neurons = ConductanceLIF(
+        self.bistratified_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=bistratified_pop_name,
             n_neurons=self.n_bistratified,
+            polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                region_name=region_name,
-                population_name=f"{population_name}_bistratified",
-                tau_mem=12.0,   # Medium
-                v_threshold=v_threshold_bistratified,
+                tau_mem_ms=heterogeneous_tau_mem(12.0, self.n_bistratified, device),
+                v_threshold=heterogeneous_v_threshold(v_threshold_bistratified, self.n_bistratified, device),
                 v_reset=0.0,
                 tau_adapt=60.0,
-                adapt_increment=0.08,
+                adapt_increment=heterogeneous_adapt_increment(0.15, self.n_bistratified, device),
+                g_L=heterogeneous_g_L(0.05, self.n_bistratified, device),
                 noise_std=0.020,
             ),
-            device=device,
         )
 
         # =====================================================================
@@ -189,22 +201,10 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # Membrane-potential state for gap junction coupling (V-difference, not spike-based)
         self._prev_pv_v_soma: Optional[torch.Tensor] = None
 
-        # =====================================================================
-        # SEPTAL INPUT WEIGHTS (medial septum → OLM)
-        # =====================================================================
-        # Septal GABAergic neurons inhibit OLM cells at theta peaks → rebound at troughs.
-        # This is an EXTERNAL INPUT transform (not an internal registered connection):
-        # the parent NeuralRegion computes olm_g_inh from this weight and the septal
-        # spike tensor, then passes it via the forward() signature.
-        # Biology: ~100 pacemaker GABA neurons in medial septum project broadly to all
-        # hippocampal OLM cells with full connectivity, driving theta phase-locking.
-        self.septal_to_olm = nn.Parameter(WeightInitializer.sparse_random(
-            n_input=100,   # Assumed septal GABA population size (pacemaker cells)
-            n_output=self.n_olm,
-            connectivity=1.0,  # All-to-all: septal GABA projects broadly
-            weight_scale=0.5,
-            device=device,
-        ))
+        # Previous-step inhibitory spikes for I→I connections (PV→PV, OLM→PV)
+        self._prev_pv_spikes = torch.zeros(self.n_pv, dtype=torch.bool, device=device)
+        self._prev_olm_spikes = torch.zeros(self.n_olm, dtype=torch.bool, device=device)
+        self._prev_bistratified_spikes = torch.zeros(self.n_bistratified, dtype=torch.bool, device=device)
 
     # =========================================================================
     # FORWARD PASS
@@ -291,8 +291,11 @@ class HippocampalInhibitoryNetwork(nn.Module):
             g_gaba_b_input=None,
         )
 
-        # Update gap junction state (membrane potential from this step)
+        # Update state for next timestep
         self._prev_pv_v_soma = self.pv_neurons.V_soma.clone()
+        self._prev_pv_spikes = pv_spikes
+        self._prev_olm_spikes = olm_spikes
+        self._prev_bistratified_spikes = bistratified_spikes
 
         return {
             "pv_spikes": pv_spikes,

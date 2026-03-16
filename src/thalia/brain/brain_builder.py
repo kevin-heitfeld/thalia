@@ -46,7 +46,7 @@ class RegionSpec:
     name: RegionName
     registry_name: RegionName
     population_sizes: PopulationSizes
-    config: Optional[NeuralRegionConfig] = None
+    config: NeuralRegionConfig
     instance: Optional[NeuralRegion] = None
 
 
@@ -60,6 +60,8 @@ class ConnectionSpec:
         axonal_delay_std_ms: Standard deviation for heterogeneous delays (0 = uniform)
         connectivity: Connection probability (fraction of connections present, 0-1)
         weight_scale: Initial weight scale (normalized conductance)
+        stp_config: Short-term plasticity configuration
+        learning_strategy: Learning strategy for this connection
         instance: Instantiated axonal tract (set after build())
     """
 
@@ -69,7 +71,7 @@ class ConnectionSpec:
     connectivity: float
     weight_scale: Union[float, ConductanceScaledSpec]
     stp_config: Optional[STPConfig]
-    learning_strategy: Optional[LearningStrategy] = None
+    learning_strategy: Optional[LearningStrategy]
     instance: Optional[AxonalTract] = None
 
 
@@ -173,7 +175,7 @@ class ConductanceBudgetEntry:
     """Non-empty list of warnings; empty means no issues detected."""
 
 
-def _apply_stp_correction(
+def apply_stp_correction(
     weight_scale: Union[float, ConductanceScaledSpec],
     stp_config: Optional[STPConfig],
 ) -> Union[float, ConductanceScaledSpec]:
@@ -224,7 +226,7 @@ class BrainBuilder:
         name: RegionName,
         registry_name: RegionName,
         population_sizes: PopulationSizes,
-        config: Optional[NeuralRegionConfig] = None,
+        config: NeuralRegionConfig,
     ) -> BrainBuilder:
         """Add a region to the brain.
 
@@ -232,7 +234,7 @@ class BrainBuilder:
             name: Instance name
             registry_name: Region type in registry
             population_sizes: Population size specifications
-            config: Optional region configuration parameters
+            config: Region configuration parameters
 
         Returns:
             Self for method chaining
@@ -249,6 +251,8 @@ class BrainBuilder:
         if not NeuralRegionRegistry.is_registered(registry_name):
             available = NeuralRegionRegistry.list_regions()
             raise KeyError(f"Registry name '{registry_name}' not found. Available: {available}")
+
+        config.dt_ms = self.brain_config.dt_ms
 
         spec = RegionSpec(
             name=name,
@@ -267,7 +271,7 @@ class BrainBuilder:
         axonal_delay_std_ms: float,
         connectivity: float,
         weight_scale: Union[float, ConductanceScaledSpec],
-        stp_config: Optional[STPConfig] = None,
+        stp_config: Optional[STPConfig],
     ) -> BrainBuilder:
         """Connect two regions with an axonal tract.
 
@@ -299,6 +303,7 @@ class BrainBuilder:
             connectivity=connectivity,
             weight_scale=weight_scale,
             stp_config=stp_config,
+            learning_strategy=None,
         )
 
         self._connection_specs.append(spec)
@@ -310,7 +315,7 @@ class BrainBuilder:
         n_input: int,
         connectivity: float,
         weight_scale: Union[float, ConductanceScaledSpec],
-        stp_config: Optional[STPConfig] = None,
+        stp_config: Optional[STPConfig],
     ) -> BrainBuilder:
         """Add an external input source to a region.
 
@@ -351,13 +356,12 @@ class BrainBuilder:
         axonal_delay_std_ms: float,
         connectivity: float,
         weight_scale: Union[float, ConductanceScaledSpec],
+        stp_config: Optional[STPConfig],
         *,
         target_region: RegionName = "striatum",
-        d2_weight_scale: Optional[Union[float, ConductanceScaledSpec]] = None,
         fsi_connectivity: float = 0.5,
         fsi_weight_scale: Optional[Union[float, ConductanceScaledSpec]] = None,
         tan_connectivity: float = 0.3,
-        stp_config: Optional[STPConfig] = None,
     ) -> "BrainBuilder":
         """Connect a source region to the striatum with explicit D1, D2, FSI, and TAN pathways.
 
@@ -368,9 +372,9 @@ class BrainBuilder:
         | Pop      | connectivity       | weight_scale                 | STP                |
         +==========+====================+==============================+====================+
         | D1       | *connectivity*     | *weight_scale*               | *stp_config*       |
-        | D2       | *connectivity*     | *d2_weight_scale*            | *stp_config*       |
-        | FSI      | *fsi_connectivity* | *fsi_weight_scale*           | None               |
-        | TAN      | *tan_connectivity* | weight_scale×0.5             | None               |
+        | D2       | *connectivity*     | *weight_scale*               | *stp_config*       |
+        | FSI      | *fsi_connectivity* | *fsi_weight_scale*           | *stp_config*       |
+        | TAN      | *tan_connectivity* | *weight_scale*×1.5           | U=0.30 depressing  |
         +----------+--------------------+------------------------------+--------------------+
 
         FSI weight default is ``weight_scale * 20``.  FSI cells are fast-spiking
@@ -386,20 +390,18 @@ class BrainBuilder:
             axonal_delay_ms: Mean axonal delay in milliseconds (applied to all four connections).
             axonal_delay_std_ms: Std-dev for heterogeneous delays.
             connectivity: Connection probability for D1 and D2 MSNs.
-            weight_scale: Initial weight scale for D1 MSNs (and TAN/FSI baseline).
+            weight_scale: Initial weight scale for D1 and D2 MSNs (and TAN/FSI baseline).
             target_region: Name of the target striatal region (default: ``"striatum"``).
-            d2_weight_scale: Weight scale for D2 MSNs; defaults to *weight_scale* if None.
             fsi_connectivity: Connection probability for FSI input (default 0.5).
             fsi_weight_scale: Weight scale for FSI; defaults to ``weight_scale * 20``
                               if None (FSI require stronger drive than MSNs).
             tan_connectivity: Connection probability for TAN input (default 0.3).
-            stp_config: Short-term plasticity config applied to D1 and D2 only;
-                        FSI and TAN always receive ``None``.
+            stp_config: Short-term plasticity config applied to D1, D2 and FSI;
+                        TAN gets its own moderate depressing STP (U=0.30).
 
         Returns:
             Self for method chaining.
         """
-        d2_ws = d2_weight_scale if d2_weight_scale is not None else weight_scale
         # FSI weight derivation:
         # If fsi_weight_scale is provided, use it directly.
         # If weight_scale is a ConductanceScaledSpec, auto-derive an FSI-specific spec
@@ -420,15 +422,15 @@ class BrainBuilder:
                 # stp_utilization_factor defaults to 1.0 — auto-correction handles STP
             )
         else:
-            fsi_ws = weight_scale * 10.0  # type: ignore[operator]
+            fsi_ws = weight_scale * 10.0
 
         # TAN weight derivation:
         # TANs are large cholinergic neurons (g_L=0.04, tau_E=10ms) with intrinsic
         # pacemaking; afferent drive should bring them sub-threshold (target_v_inf=0.95)
         # so pacemaking + input together reach threshold.  Half the D1/D2 fraction.
-        # stp_utilization_factor=1.0 (hardcoded): TAN receives stp_config=None; if we
-        # inherited the parent's manual STP factor the weight would be inflated with no
-        # STP depletion to compensate, massively overdriving TAN.
+        # TAN gets its own moderate depressing STP (U=0.30); auto-correction handles
+        # u_eff computation for ConductanceScaledSpec weights.
+        tan_stp = STPConfig(U=0.30, tau_d=400.0, tau_f=20.0)
         if isinstance(weight_scale, ConductanceScaledSpec):
             tan_ws: Union[float, ConductanceScaledSpec] = ConductanceScaledSpec(
                 source_rate_hz=weight_scale.source_rate_hz,
@@ -436,16 +438,16 @@ class BrainBuilder:
                 target_tau_E_ms=10.0,     # Slower cholinergic AMPA
                 target_v_inf=0.95,        # Sub-threshold; intrinsic pacemaking closes gap
                 fraction_of_drive=weight_scale.fraction_of_drive * 0.5,
-                # stp_utilization_factor defaults to 1.0 — TAN has no STP; never inherit
+                # stp_utilization_factor defaults to 1.0 — auto-correction handles STP
             )
         else:
-            tan_ws = weight_scale * 1.5  # type: ignore[operator]
+            tan_ws = weight_scale * 1.5
 
         for target_pop, conn, ws, used_stp_config in [
             (StriatumPopulation.D1,  connectivity,     weight_scale, stp_config),
-            (StriatumPopulation.D2,  connectivity,     d2_ws,        stp_config),
+            (StriatumPopulation.D2,  connectivity,     weight_scale, stp_config),
             (StriatumPopulation.FSI, fsi_connectivity, fsi_ws,       stp_config),
-            (StriatumPopulation.TAN, tan_connectivity, tan_ws,       None),
+            (StriatumPopulation.TAN, tan_connectivity, tan_ws,       tan_stp),
         ]:
             self.connect(
                 synapse_id=SynapseId(
@@ -541,7 +543,7 @@ class BrainBuilder:
                 # Actual u_eff at source rate (with STP depletion accounted for)
                 u_eff = stp_cfg.steady_state_utilization(spec.source_rate_hz) if stp_cfg is not None else 1.0
 
-                # Mirror the _apply_stp_correction() logic used in _create_axonal_tract():
+                # Mirror the apply_stp_correction() logic used in _create_axonal_tract():
                 # if stp_utilization_factor is the default (1.0) AND STP is present,
                 # auto-correction will scale the weight up by 1/u_eff at build time,
                 # so the runtime conductance equals g_intended.
@@ -760,7 +762,7 @@ class BrainBuilder:
             delay_std_ms=conn_spec.axonal_delay_std_ms,
         )
 
-        weight_scale = _apply_stp_correction(conn_spec.weight_scale, conn_spec.stp_config)
+        weight_scale = apply_stp_correction(conn_spec.weight_scale, conn_spec.stp_config)
 
         target_region.add_input_source(
             synapse_id=synapse_id,
@@ -778,10 +780,9 @@ class BrainBuilder:
         # conductance before depletion settles.  Pre-loading u_ss/x_ss makes
         # t=0 identical to any other timestep at the expected firing rate.
         if conn_spec.stp_config is not None and isinstance(weight_scale, ConductanceScaledSpec):
-            if synapse_id in target_region.stp_modules:
-                target_region.stp_modules[synapse_id].initialize_to_steady_state(
-                    weight_scale.source_rate_hz
-                )
+            stp = target_region.get_stp_module(synapse_id)
+            if stp is not None:
+                stp.initialize_to_steady_state(weight_scale.source_rate_hz)
 
         return AxonalTract(
             spec=spec,
@@ -813,22 +814,9 @@ class BrainBuilder:
         # Instantiate regions
         regions: Dict[RegionName, NeuralRegion[NeuralRegionConfig]] = {}
         for name, spec in self._region_specs.items():
-            config_class = NeuralRegionRegistry.get_config_class(spec.registry_name)
-
-            if config_class is None:
-                raise ValueError(
-                    f"Region '{spec.registry_name}' has no config_class registered. "
-                    f"Update registry with config_class metadata."
-                )
-
-            config = spec.config if spec.config is not None else config_class()
-
-            config.seed = self.brain_config.seed
-            config.dt_ms = self.brain_config.dt_ms
-
             region = NeuralRegionRegistry.create(
                 spec.registry_name,
-                config=config,
+                config=spec.config,
                 population_sizes=spec.population_sizes,
                 region_name=name,
                 device=device,
@@ -856,7 +844,7 @@ class BrainBuilder:
         # These are provided by the training loop, not from other brain regions
         for ext_spec in self._external_input_specs:
             target_region = regions[ext_spec.synapse_id.target_region]
-            weight_scale = _apply_stp_correction(ext_spec.weight_scale, ext_spec.stp_config)
+            weight_scale = apply_stp_correction(ext_spec.weight_scale, ext_spec.stp_config)
             target_region.add_input_source(
                 synapse_id=ext_spec.synapse_id,
                 n_input=ext_spec.n_input,
@@ -867,11 +855,9 @@ class BrainBuilder:
                 device=device,
             )
             if ext_spec.stp_config is not None and isinstance(weight_scale, ConductanceScaledSpec):
-                sid = ext_spec.synapse_id
-                if sid in target_region.stp_modules:
-                    target_region.stp_modules[sid].initialize_to_steady_state(
-                        weight_scale.source_rate_hz
-                    )
+                stp = target_region.get_stp_module(ext_spec.synapse_id)
+                if stp is not None:
+                    stp.initialize_to_steady_state(weight_scale.source_rate_hz)
 
         # Finalize initialization for regions that need post-connection setup
         # This allows regions to build components that depend on complete connectivity
@@ -995,9 +981,9 @@ class PresetArchitecture:
 # ============================================================================
 # Import after class definitions to avoid circular imports.
 
-from thalia.brain.presets.default import build as _build_default  # noqa: E402
-from thalia.brain.presets.basal_ganglia import build as _build_bg  # noqa: E402
-from thalia.brain.presets.medial_temporal_lobe import build as _build_mtl  # noqa: E402
+from thalia.brain.presets.default import build as _build_default
+from thalia.brain.presets.basal_ganglia import build as _build_bg
+from thalia.brain.presets.medial_temporal_lobe import build as _build_mtl
 
 BrainBuilder.register_preset(
     name="default",

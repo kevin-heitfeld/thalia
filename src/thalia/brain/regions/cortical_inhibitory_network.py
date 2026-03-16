@@ -69,15 +69,25 @@ Gap Junctions:
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union, cast
 
 import torch
 import torch.nn as nn
 
-from thalia.brain.neurons import NeuronFactory
-from thalia.brain.synapses import WeightInitializer, NMReceptorType, make_nm_receptor
-from thalia.typing import ConductanceTensor, PopulationName, RegionName
-from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
+from thalia.brain.configs.cortical_column import CorticalPopulationConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    ConductanceLIF,
+    split_excitatory_conductance,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+)
+from thalia.brain.regions.population_names import CortexPopulation
+from thalia.brain.synapses import WeightInitializer, NMReceptorType, make_neuromodulator_receptor
+from thalia.typing import ConductanceTensor, PopulationPolarity
+from thalia.utils import CircularDelayBuffer
 
 
 class CorticalInhibitoryNetwork(nn.Module):
@@ -96,33 +106,46 @@ class CorticalInhibitoryNetwork(nn.Module):
     # INITIALIZATION
     # =========================================================================
 
+    # Default electrophysiology parameters per cell type.
+    _PV_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0)
+    _SST_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt=90.0)
+    _VIP_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt=70.0)
+    _NGC_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0)
+
     def __init__(
         self,
-        region_name: RegionName,
-        population_name: PopulationName,
+        population_name: CortexPopulation,
         pyr_size: int,
         total_inhib_fraction: float,
-        pv_adapt_increment: float,
+        _create_and_register_neurons_fn: Callable[[], ConductanceLIF],
         dt_ms: float,
         device: Union[str, torch.device],
+        population_overrides: Dict[CortexPopulation, CorticalPopulationConfig],
     ):
         """Initialize inhibitory network for one cortical layer.
 
         Args:
-            region_name: Region name (e.g., 'cortex') for RNG seeding
             population_name: Layer name (e.g., 'L23', 'L4') for RNG seeding
             pyr_size: Number of pyramidal neurons in this layer
             total_inhib_fraction: Fraction of pyramidal count (e.g. 0.25 = 20% of total)
-            pv_adapt_increment: Spike-frequency adaptation increment for PV neurons.
-                L4 passes ~0.10 to prevent runaway firing when L4_pyr drive exceeds
-                the w_pyr_pv design rate—a pragmatic rate-limiting brake.
             dt_ms: Simulation timestep in milliseconds
             device: Torch device
+            population_overrides: Per-cell-type parameter overrides.
         """
         super().__init__()
 
         self.pyr_size = pyr_size
         self.dt_ms = dt_ms
+
+        pv_pop_name = cast(CortexPopulation, f"{population_name}_pv")
+        sst_pop_name = cast(CortexPopulation, f"{population_name}_sst")
+        vip_pop_name = cast(CortexPopulation, f"{population_name}_vip")
+        ngc_pop_name = cast(CortexPopulation, f"{population_name}_ngc")
+
+        pv_overrides = population_overrides.get(pv_pop_name, self._PV_DEFAULTS)
+        sst_overrides = population_overrides.get(sst_pop_name, self._SST_DEFAULTS)
+        vip_overrides = population_overrides.get(vip_pop_name, self._VIP_DEFAULTS)
+        ngc_overrides = population_overrides.get(ngc_pop_name, self._NGC_DEFAULTS)
 
         # Total inhibitory neurons (25% of pyramidal = 20% of total)
         total_inhib = max(int(pyr_size * total_inhib_fraction), 10)
@@ -135,68 +158,83 @@ class CorticalInhibitoryNetwork(nn.Module):
         self.other_size = total_inhib - (self.pv_size + self.sst_size + self.vip_size + self.ngc_size)
 
         # PV+ Basket Cells (fast-spiking)
-        # Use fast_spiking factory (already has tau_mem=8ms, heterogeneous)
-        # Override for slightly faster dynamics (5ms mean).
-        # pv_adapt_increment is 0.0 by default (non-adapting fast-spiking), but L4
-        # passes a non-zero value to prevent overdrive when L4_pyr fires at 1-2 Hz
-        # with w_pyr_pv calibrated at a lower expected rate.
-        self.pv_neurons = NeuronFactory.create_fast_spiking_neurons(
-            region_name=region_name,
-            population_name=f"{population_name}_pv",
+        self.pv_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=pv_pop_name,
             n_neurons=self.pv_size,
-            device=device,
-            tau_mem=5.0,
-            v_threshold=0.75,  # Reduced 0.9→0.75: Pyr→PV STP depletes to eff≈0.21 at actual pyr rates (4-5 Hz), bringing V_inf from calibrated 0.93 fresh-STP down to ~0.81; threshold 0.75 ensures robust firing in steady-state
-            adapt_increment=pv_adapt_increment,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                v_reset=pv_overrides.v_reset,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_ref=2.5,
+                g_L=heterogeneous_g_L(0.10, self.pv_size, device, cv=0.08),
+                tau_mem_ms=heterogeneous_tau_mem(pv_overrides.tau_mem_ms, self.pv_size, device, cv=0.10),
+                v_threshold=heterogeneous_v_threshold(pv_overrides.v_threshold, self.pv_size, device, cv=0.06),
+                adapt_increment=heterogeneous_adapt_increment(pv_overrides.adapt_increment, self.pv_size, device),
+            ),
         )
 
         # SST+ Martinotti Cells (regular-spiking)
-        # Use pyramidal factory as base (regular-spiking, similar dynamics)
-        self.sst_neurons = NeuronFactory.create_pyramidal_neurons(
-            region_name=region_name,
-            population_name=f"{population_name}_sst",
+        self.sst_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=sst_pop_name,
             n_neurons=self.sst_size,
-            device=device,
-            tau_mem=15.0,
-            v_threshold=1.0,
-            adapt_increment=0.05,
-            tau_adapt=90.0,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                g_L=heterogeneous_g_L(0.05, self.sst_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=sst_overrides.v_reset,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_mem_ms=heterogeneous_tau_mem(sst_overrides.tau_mem_ms, self.sst_size, device),
+                v_threshold=heterogeneous_v_threshold(sst_overrides.v_threshold, self.sst_size, device),
+                adapt_increment=heterogeneous_adapt_increment(sst_overrides.adapt_increment, self.sst_size, device),
+                tau_adapt=sst_overrides.tau_adapt,
+            ),
         )
 
         # VIP+ Interneurons (disinhibitory)
-        # Use pyramidal factory as base (regular-spiking)
-        self.vip_neurons = NeuronFactory.create_pyramidal_neurons(
-            region_name=region_name,
-            population_name=f"{population_name}_vip",
+        self.vip_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=vip_pop_name,
             n_neurons=self.vip_size,
-            device=device,
-            tau_mem=10.0,
-            v_threshold=0.9,
-            adapt_increment=0.02,
-            tau_adapt=70.0,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                g_L=heterogeneous_g_L(0.05, self.vip_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=vip_overrides.v_reset,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_mem_ms=heterogeneous_tau_mem(vip_overrides.tau_mem_ms, self.vip_size, device),
+                v_threshold=heterogeneous_v_threshold(vip_overrides.v_threshold, self.vip_size, device),
+                adapt_increment=heterogeneous_adapt_increment(vip_overrides.adapt_increment, self.vip_size, device),
+                tau_adapt=vip_overrides.tau_adapt,
+            ),
         )
 
         # L1 Neurogliaform (NGC) cells
-        # Slow, regular-spiking with moderate adaptation.
-        # tau_mem=15ms matches real NGC (Jiang et al. 2015 Table S3: ~12-18ms).
-        # v_threshold=0.75: at actual L23 Pyr rates of 2-5 Hz with ei_ngc_std=10/n_pyr
-        # and no STP, V_inf ≈ 0.55-0.70 (subthreshold at 1.0). Lowering threshold
-        # to 0.75 allows NGC to fire when driven by local pyramidal spikes.
-        # adapt_increment=0.25 + tau_adapt=100ms: SFA self-limits NGC to 5-25 Hz.
-        # The pyr→NGC weight has high-variance outliers (max 24× mean due to no STP
-        # cap), so a strong adapt_increment is required to prevent any single NGC
-        # neuron from bursting when receiving an above-mean weight from a pyramidal
-        # cell.  At design L23_pyr rate (3 Hz), V_inf ≈ 0.98 → R_ss ≈ 9 Hz. At
-        # 5 Hz pyr, V_inf ≈ 1.34 → R_ss ≈ 23 Hz.  (Jiang et al. 2015; Wozny 2011)
-        self.ngc_neurons = NeuronFactory.create_pyramidal_neurons(
-            region_name=region_name,
-            population_name=f"{population_name}_ngc",
+        self.ngc_neurons: ConductanceLIF = _create_and_register_neurons_fn(
+            population_name=ngc_pop_name,
             n_neurons=self.ngc_size,
-            device=device,
-            tau_mem=15.0,
-            v_threshold=0.75,
-            adapt_increment=0.25,
-            tau_adapt=100.0,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                g_L=heterogeneous_g_L(0.05, self.ngc_size, device),
+                tau_E=5.0,
+                tau_I=10.0,
+                v_reset=ngc_overrides.v_reset,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_mem_ms=heterogeneous_tau_mem(ngc_overrides.tau_mem_ms, self.ngc_size, device),
+                v_threshold=heterogeneous_v_threshold(ngc_overrides.v_threshold, self.ngc_size, device),
+                adapt_increment=heterogeneous_adapt_increment(ngc_overrides.adapt_increment, self.ngc_size, device),
+                tau_adapt=ngc_overrides.tau_adapt,
+            ),
         )
 
         # =====================================================================
@@ -231,7 +269,7 @@ class CorticalInhibitoryNetwork(nn.Module):
         # NICOTINIC ACh RECEPTOR ON VIP (alpha4beta2 subtype)
         # =====================================================================
         # Nicotinic α4β2 on VIP (ionotropic; τ_rise=3 ms, τ_decay=15 ms).
-        self.ach_nicotinic_vip = make_nm_receptor(
+        self.ach_nicotinic_vip = make_neuromodulator_receptor(
             NMReceptorType.ACH_NICOTINIC, n_receptors=self.vip_size, dt_ms=dt_ms, device=device
         )
 
@@ -253,7 +291,7 @@ class CorticalInhibitoryNetwork(nn.Module):
         # Muscarinic M1 on NGC (Gq → PLC/IP3): τ_rise=100 ms, τ_decay=1500 ms.
         # Very slow metabotropic cascade: sustained suppression of NGC axon-initial-segment
         # inhibition during attentional states (Bhagya et al. 2002).
-        self.ach_muscarinic_ngc = make_nm_receptor(
+        self.ach_muscarinic_ngc = make_neuromodulator_receptor(
             NMReceptorType.ACH_MUSCARINIC_M1, n_receptors=self.ngc_size, dt_ms=dt_ms, device=device
         )
 

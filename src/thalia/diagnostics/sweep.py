@@ -1,26 +1,19 @@
-"""Sweep-mode diagnostics — run all input patterns from a shared warmup state.
-
-Public API
-----------
-simulate
-    Core simulation loop; runs *n_steps* timesteps with optional recording.
-run_sweep
-    Run a sequence of input patterns and return per-pattern reports.
-plot_sweep_comparison
-    Save a multi-panel bar chart comparing key metrics across patterns.
-"""
+"""Sweep over multiple sensory input patterns, running a full diagnostics pass for each, then compare."""
 
 from __future__ import annotations
 
 import json
 import os
 import time
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Dict, Optional, Sequence, Tuple
 
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 
+from .analysis import analyze
+from .analysis_tuning import compute_tuning, print_tuning_report
+from .calibration_advisor import compute_calibration_advice, print_calibration_advice
+from .diagnostics_io import print_report, save_report, save_snapshot
+from .diagnostics_plots import plot, plot_sweep_comparison
 from .diagnostics_types import DiagnosticsReport
 from .sensory_patterns import make_sensory_input
 
@@ -29,7 +22,7 @@ if TYPE_CHECKING:
     from .diagnostics_recorder import DiagnosticsRecorder
 
 
-DEFAULT_SWEEP_PATTERNS: tuple[str, ...] = ("random", "rhythmic", "burst", "slow_wave", "none")
+DEFAULT_SWEEP_PATTERNS: Tuple[str, ...] = ("random", "rhythmic", "burst", "slow_wave", "none")
 
 
 # =============================================================================
@@ -37,9 +30,9 @@ DEFAULT_SWEEP_PATTERNS: tuple[str, ...] = ("random", "rhythmic", "burst", "slow_
 # =============================================================================
 
 
-def simulate(
-    brain: "Brain",
-    recorder: Optional["DiagnosticsRecorder"],
+def _simulate(
+    brain: Brain,
+    recorder: DiagnosticsRecorder,
     n_steps: int,
     pattern: str,
     *,
@@ -49,16 +42,12 @@ def simulate(
 ) -> float:
     """Run the core simulation loop for *n_steps* timesteps.
 
-    If *recorder* is ``None`` the loop runs ``brain.forward()`` only (warmup
-    mode — no data is recorded).  If a recorder is provided, each forward
-    output is additionally passed to ``recorder.record()``.
-
     Parameters
     ----------
     brain:
         The live ``Brain`` instance.
     recorder:
-        ``DiagnosticsRecorder`` to record into, or ``None`` for warmup.
+        ``DiagnosticsRecorder`` to record into.
     n_steps:
         Number of simulation steps to run.
     pattern:
@@ -79,22 +68,26 @@ def simulate(
         Elapsed wall-clock seconds for the loop.
     """
     t_start = time.perf_counter()
+
     t_forward_total = 0.0
     t_record_total = 0.0
     for t in range(n_steps):
         synaptic_inputs = make_sensory_input(brain, t, pattern, n_timesteps=n_steps)
+
         _tf0 = time.perf_counter()
         outputs = brain.forward(synaptic_inputs)
         _tf1 = time.perf_counter()
         t_forward_total += _tf1 - _tf0
-        if recorder is not None:
-            _tr0 = time.perf_counter()
-            recorder.record(t, outputs)
-            t_record_total += time.perf_counter() - _tr0
+
+        _tr0 = time.perf_counter()
+        recorder.record(t, synaptic_inputs, outputs)
+        t_record_total += time.perf_counter() - _tr0
+
         if spike_accumulator is not None:
             for rn, region_output in outputs.items():
                 count = sum(int(spikes.sum().item()) for spikes in region_output.values())
                 spike_accumulator[rn] = spike_accumulator.get(rn, 0) + count
+
         if (t + 1) % report_interval == 0:
             elapsed = time.perf_counter() - t_start
             steps_done = t + 1
@@ -108,6 +101,7 @@ def simulate(
                 f"  fwd {fwd_pct:4.1f}%  rec {rec_pct:4.1f}%"
                 f"  ETA {eta:6.2f} s"
             )
+
     return time.perf_counter() - t_start
 
 
@@ -117,15 +111,15 @@ def simulate(
 
 
 def run_single(
-    brain: "Brain",
-    recorder: "DiagnosticsRecorder",
+    brain: Brain,
+    recorder: DiagnosticsRecorder,
     pattern: str,
     timesteps: int,
     output_dir: str,
     *,
     report_interval: int,
     no_plots: bool = False,
-    triage_fn: Optional[Callable[["Brain", DiagnosticsReport], None]] = None,
+    triage_fn: Optional[Callable[[Brain, DiagnosticsReport], None]] = None,
     detailed: bool = True,
 ) -> DiagnosticsReport:
     """Simulate one recording pass, then analyse, report, optionally triage, save, and plot.
@@ -133,7 +127,8 @@ def run_single(
     The caller is responsible for resetting the recorder between passes
     (``recorder.reset()``).
     """
-    elapsed_sim = simulate(
+    recorder.config.sensory_pattern = pattern
+    elapsed_sim = _simulate(
         brain, recorder, timesteps, pattern,
         report_interval=report_interval, label="step",
     )
@@ -142,15 +137,25 @@ def run_single(
         f"  ({timesteps / elapsed_sim:.1f} steps/s)"
     )
 
+    recorder_snapshot = recorder.to_snapshot()
+    save_snapshot(recorder_snapshot, os.path.join(output_dir, "snapshot"))
+
     print(f"\n{'\u2550'*80}")
     print("ANALYSING")
     print(f"{'\u2550'*80}\n")
-    recorder.config.sensory_pattern = pattern
     t_analyse = time.perf_counter()
-    report = recorder.analyze()
+    report = analyze(recorder_snapshot)
     print(f"  \u2713 Analysis complete in {time.perf_counter() - t_analyse:.3f} s")
 
-    recorder.print_report(report, detailed=detailed)
+    print_report(report, detailed=detailed)
+
+    # Tuning guidance for out-of-range populations
+    tuning = compute_tuning(recorder_snapshot, report)
+    print_tuning_report(tuning)
+
+    # Calibration advisor: actionable parameter recommendations
+    advice = compute_calibration_advice(recorder_snapshot, report, tuning)
+    print_calibration_advice(advice)
 
     if triage_fn is not None:
         triage_fn(brain, report)
@@ -158,119 +163,28 @@ def run_single(
     print(f"\n{'\u2550'*80}")
     print(f"SAVING  \u2192  {output_dir}")
     print(f"{'\u2550'*80}\n")
-    recorder.save(report, output_dir)
+    save_report(report, output_dir)
+    print("  \u2713 Snapshot saved")
 
     if not no_plots:
         print(f"\n{'\u2550'*80}")
         print("GENERATING PLOTS")
         print(f"{'\u2550'*80}\n")
-        recorder.plot(report, output_dir)
+        plot(recorder_snapshot, report, output_dir)
 
     return report
 
 
-def plot_sweep_comparison(
-    sweep_reports: Dict[str, DiagnosticsReport],
-    output_dir: str,
-) -> None:
-    """Save a multi-panel bar chart comparing key metrics across sweep patterns.
-
-    Panels:
-
-    1. Mean firing rate (Hz) per region+population, grouped by pattern.
-    2. E/I ratio per region, grouped by pattern.
-    3. Stability score per pattern.
-
-    The figure is written to ``<output_dir>/sweep_comparison.png``.
-    """
-    patterns = list(sweep_reports.keys())
-    n_pat = len(patterns)
-    colours = matplotlib.colormaps["tab10"].resampled(n_pat)
-    pat_colours = {p: colours(i) for i, p in enumerate(patterns)}
-
-    # Collect all (region, population) keys across all reports.
-    pop_keys: List[str] = sorted(
-        {
-            pk
-            for rep in sweep_reports.values()
-            for pk in rep.health.population_status
-        }
-    )
-    region_keys: List[str] = sorted(
-        {rn for rep in sweep_reports.values() for rn in rep.regions}
-    )
-
-    fig, axes = plt.subplots(3, 1, figsize=(max(12, len(pop_keys) * 0.7 + 2), 14))
-    fig.suptitle("Sweep Pattern Comparison", fontsize=13)
-
-    # Panel 1: mean FR per population.
-    ax0 = axes[0]
-    x0 = np.arange(len(pop_keys))
-    bar_w = 0.8 / max(n_pat, 1)
-    for i, pat in enumerate(patterns):
-        rep = sweep_reports[pat]
-        heights = []
-        for pk in pop_keys:
-            rn, pn = pk.split(":", 1)
-            fr_val = 0.0
-            rs = rep.regions.get(rn)
-            if rs is not None:
-                pop_s = rs.populations.get(pn)
-                if pop_s is not None:
-                    fr_val = pop_s.mean_fr_hz if not np.isnan(pop_s.mean_fr_hz) else 0.0
-            heights.append(fr_val)
-        ax0.bar(x0 + i * bar_w, heights, width=bar_w, label=pat, color=pat_colours[pat], alpha=0.85)
-    ax0.set_xticks(x0 + bar_w * (n_pat - 1) / 2)
-    ax0.set_xticklabels(pop_keys, rotation=45, ha="right", fontsize=7)
-    ax0.set_ylabel("Mean FR (Hz)")
-    ax0.set_title("Firing Rates by Population")
-    ax0.legend(fontsize=8)
-
-    # Panel 2: E/I ratio per region.
-    ax1 = axes[1]
-    x1 = np.arange(len(region_keys))
-    for i, pat in enumerate(patterns):
-        rep = sweep_reports[pat]
-        heights = [
-            (rep.regions[rn].ei_ratio if rn in rep.regions and not np.isnan(rep.regions[rn].ei_ratio) else 0.0)
-            for rn in region_keys
-        ]
-        ax1.bar(x1 + i * bar_w, heights, width=bar_w, label=pat, color=pat_colours[pat], alpha=0.85)
-    ax1.set_xticks(x1 + bar_w * (n_pat - 1) / 2)
-    ax1.set_xticklabels(region_keys, rotation=45, ha="right", fontsize=7)
-    ax1.set_ylabel("E/I ratio")
-    ax1.set_title("E/I Conductance Ratio by Region")
-    ax1.legend(fontsize=8)
-
-    # Panel 3: stability score per pattern.
-    ax2 = axes[2]
-    scores = [sweep_reports[p].health.stability_score for p in patterns]
-    bar_colours = [pat_colours[p] for p in patterns]
-    ax2.bar(patterns, scores, color=bar_colours, alpha=0.85)
-    ax2.set_ylim(0, 1.05)
-    ax2.set_ylabel("Stability score")
-    ax2.set_title("Overall Stability Score by Pattern")
-    ax2.axhline(0.7, color="orange", linestyle="--", linewidth=0.8, label="OK threshold (0.7)")
-    ax2.legend(fontsize=8)
-
-    fig.tight_layout()
-    os.makedirs(output_dir, exist_ok=True)
-    out_path = os.path.join(output_dir, "sweep_comparison.png")
-    fig.savefig(out_path, dpi=130, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  ✓ Sweep comparison figure saved: {out_path}")
-
-
 def run_sweep(
-    brain: "Brain",
-    recorder: "DiagnosticsRecorder",
+    brain: Brain,
+    recorder: DiagnosticsRecorder,
     *,
     timesteps: int,
     output_dir: str,
     patterns: Sequence[str] = DEFAULT_SWEEP_PATTERNS,
     no_plots: bool = False,
     report_interval: int = 200,
-    triage_fn: Optional[Callable[["Brain", DiagnosticsReport], None]] = None,
+    triage_fn: Optional[Callable[[Brain, DiagnosticsReport], None]] = None,
 ) -> Dict[str, DiagnosticsReport]:
     """Run *patterns* in sequence and return per-pattern reports.
 

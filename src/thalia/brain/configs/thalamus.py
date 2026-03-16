@@ -48,9 +48,9 @@ class ThalamusConfig(NeuralRegionConfig):
     # =========================================================================
     # GAP JUNCTIONS: TRN INTERNEURONS
     # =========================================================================
-    gap_junction_strength: float = 0.10  # Moderate coupling for alpha synchronization (8-13 Hz)
+    gap_junction_strength: float = 0.06  # Increased: 0.04→0.02 worsened ρ 0.46→0.53. Stronger coupling smooths subthreshold dynamics
     gap_junction_threshold: float = 0.3  # Neighborhood connectivity threshold
-    gap_junction_max_neighbors: int = 8  # Max neighbors per interneuron (biological: 4-12)
+    gap_junction_max_neighbors: int = 4  # Reduced from 8: prevents pathological synchrony in small TRN population
 
     # =========================================================================
     # SPATIAL FILTERING: CENTER-SURROUND RECEPTIVE FIELDS

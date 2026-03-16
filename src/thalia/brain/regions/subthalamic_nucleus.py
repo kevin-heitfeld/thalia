@@ -13,11 +13,18 @@ from typing import Union
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import TonicPacemakerConfig, get_default_stn_config
-from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.brain.configs import TonicPacemakerConfig
+from thalia.brain.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_g_L,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
+    PopulationPolarity,
     PopulationSizes,
     RegionName,
     RegionOutput,
@@ -33,9 +40,6 @@ from .region_registry import register_region
     "subthalamic_nucleus",
     aliases=["stn"],
     description="Subthalamic nucleus - glutamatergic basal ganglia pacemaker",
-    version="1.0",
-    author="Thalia Project",
-    config_class=get_default_stn_config,
 )
 class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
     """Subthalamic Nucleus - Glutamatergic Basal Ganglia Pacemaker.
@@ -60,47 +64,38 @@ class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
         # enable_ih=True: voltage-dependent HCN current activates on hyperpolarisation,
         # providing the depolarising sag and rebound burst that drives ~20 Hz pacemaking.
         # This replaces the old constant i_h_drive scalar offset.
-        self.stn_neurons = ConductanceLIF(
+        self.stn_neurons: ConductanceLIF
+        self.stn_neurons = self._create_and_register_neuron_population(
+            population_name=STNPopulation.STN,
             n_neurons=self.stn_size,
+            polarity=PopulationPolarity.ANY,
             config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=STNPopulation.STN,
-                tau_mem=self.config.tau_mem,
-                v_threshold=self.config.v_threshold,
+                tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.stn_size, device, cv=0.20),
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.stn_size, device, cv=0.12, clamp_fraction=0.25),
                 v_reset=0.0,
                 tau_ref=self.config.tau_ref,
-                g_L=0.08,
+                g_L=heterogeneous_g_L(0.08, self.stn_size, device),
                 E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
                 noise_std=0.006,
-                # I_h (HCN) pacemaker — voltage-dependent, activates during hyperpolarisation
-                enable_ih=True,
+                enable_ih=True,  # I_h (HCN) pacemaker — voltage-dependent, activates during hyperpolarisation
                 g_h_max=self.config.i_h_conductance * 10.0,  # Scale from old constant to max-conductance
-                E_h=-0.3,      # Depolarising (between E_L=0 and E_I=-0.5)
-                V_half_h=-0.3, # Halfway between rest and inhibitory reversal
-                k_h=0.10,      # Steep voltage-dependence
-                tau_h_ms=80.0, # Slightly faster than default for ~20 Hz pacemaking
+                E_h=-0.3,        # Depolarising (between E_L=0 and E_I=-0.5)
+                V_half_h=-0.3,   # Halfway between rest and inhibitory reversal
+                k_h=0.10,        # Steep voltage-dependence
+                tau_h_ms=80.0,   # Slightly faster than default for ~20 Hz pacemaking
             ),
-            device=device,
         )
 
         # Baseline drive for autonomous pacemaking (tonic excitatory conductance)
         # I_h is now handled by enable_ih in the neuron config (voltage-dependent).
         # This scalar baseline provides the sustained low-level depolarisation needed
         # to keep STN neurons near threshold between I_h-driven rebounds.
-        # Registered as a buffer so it moves with .to(device) and is saved in state_dict.
-        self.register_buffer(
-            "baseline_drive",
-            torch.full((self.stn_size,), self.config.baseline_drive, device=device),
-        )
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(STNPopulation.STN, self.stn_neurons)
+        self.baseline_drive: torch.Tensor
+        self.register_buffer("baseline_drive", torch.full((self.stn_size,), self.config.baseline_drive, device=device))
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -118,8 +113,6 @@ class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
         )
 
         # Baseline autonomous pacemaker drive (tonic excitatory conductance)
-        # I_h (voltage-dependent HCN current) is now computed inside stn_neurons.forward()
-        # via enable_ih=True in the ConductanceLIF config.
         g_exc = self.baseline_drive.clone() + dendrite.g_ampa
 
         # AMPA-only for tonic pacemaking: tau_NMDA=100ms creates Mg²⁺-blocked bistability

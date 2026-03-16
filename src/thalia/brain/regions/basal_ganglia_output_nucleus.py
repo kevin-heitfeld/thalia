@@ -17,12 +17,14 @@ from typing import TypeVar
 import torch
 
 from thalia.brain.configs.basal_ganglia import TonicPacemakerConfig
-from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.brain.neurons import (
+    ConductanceLIF,
+    split_excitatory_conductance,
+)
 from thalia.typing import (
     ConductanceTensor,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
 from .neural_region import NeuralRegion
 
@@ -30,87 +32,11 @@ ConfigT = TypeVar("ConfigT", bound=TonicPacemakerConfig)
 
 
 class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
-    """Abstract base class for basal ganglia output nuclei.
-
-    Provides three lightweight factory / step helpers that eliminate the
-    boilerplate repeated identically in SNr, GPe, and GPi:
-
-    ``_make_bg_neurons(n, pop_name, noise_std)``
-        Constructs a :class:`~thalia.brain.neurons.ConductanceLIF` with the
-        canonical BG output-nucleus biophysical parameters (g_L=0.10, reversals,
-        tau_E/I) drawn from ``self.config``.
-
-    ``_make_tonic_baseline(size, factor)``
-        Returns a ``torch.full`` tensor of per-step AMPA conductance for tonic
-        pacemaking, scaled by ``config.baseline_drive * factor``.
-
-    ``_bg_step_single(inputs, n, pop_name, neurons, baseline, nmda_ratio)``
-        Runs one complete dendrite-integrate → AMPA/NMDA split → neuron-forward
-        cycle for a single BG population.  SNr passes ``nmda_ratio=0.01``;
-        GPe and GPi use the default 0.05.
-
-    Subclasses must still implement :meth:`_step` (calling these helpers) and
-    register their populations in ``__init__`` via
-    :meth:`~NeuralRegion._register_neuron_population`.
-    """
+    """Abstract base class for basal ganglia output nuclei."""
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-
-    def _make_bg_neurons(
-        self,
-        n_neurons: int,
-        population_name: str,
-        noise_std: float = 0.007,
-        adapt_increment: float = 0.0,
-        tau_adapt: float = 100.0,
-        E_adapt: float = -0.5,
-    ) -> ConductanceLIF:
-        """Create a standard BG output-nucleus ConductanceLIF population.
-
-        Parameters drawn from ``self.config``: ``tau_mem``, ``v_threshold``,
-        ``tau_ref``.  Fixed biophysical constants (``g_L=0.10``, reversal
-        potentials, ``tau_E=5ms``, ``tau_I=10ms``) are shared by all BG
-        output nuclei and therefore hardcoded here.
-
-        Args:
-            n_neurons: Number of neurons.
-            population_name: Stored in the neuron config (used for diagnostics).
-            noise_std: Membrane voltage noise σ.  Prototypic / principal
-                populations typically use 0.007; secondary populations 0.005.
-            adapt_increment: Spike-frequency adaptation conductance increment per
-                spike (0.0 = disabled).  Use for populations that need rate-limiting
-                adaptation (e.g. arkypallidal: 0.005 gives ~12 Hz equilibrium).
-            tau_adapt: Adaptation decay time constant in ms.
-            E_adapt: Adaptation reversal potential (hyperpolarising, like slow K+).
-
-        Returns:
-            Initialized :class:`~thalia.brain.neurons.ConductanceLIF` placed on
-            ``self.device``.
-        """
-        return ConductanceLIF(
-            n_neurons=n_neurons,
-            config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=population_name,
-                tau_mem=self.config.tau_mem,
-                v_threshold=self.config.v_threshold,
-                v_reset=0.0,
-                tau_ref=self.config.tau_ref,
-                g_L=0.10,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                E_adapt=E_adapt,
-                tau_E=5.0,
-                tau_I=10.0,
-                noise_std=noise_std,
-                adapt_increment=adapt_increment,
-                tau_adapt=tau_adapt,
-            ),
-            device=self.device,
-        )
 
     def _make_tonic_baseline(self, size: int, factor: float = 1.0) -> torch.Tensor:
         """Create a tonic baseline drive tensor for one population.

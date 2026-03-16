@@ -36,13 +36,6 @@ class StimulusGating(nn.Module):
 
     The inhibition strength is proportional to how much the input changed.
 
-    As an ``nn.Module``, all internal state (specifically ``_smoothed_input``)
-    is registered as a buffer so it:
-
-    - Moves correctly with ``.to(device)``
-    - Is included in ``state_dict()`` and survives checkpoint save/load
-    - Is initialised on the correct device at construction time
-
     Note:
         This is NOT canonical "feedforward inhibition" (lateral inhibition
         via interneurons). This is stimulus-onset gating that clears

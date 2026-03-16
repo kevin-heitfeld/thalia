@@ -50,7 +50,7 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # =========================================================================
     # Membrane properties
     # =========================================================================
-    tau_mem: Union[float, torch.Tensor] = 18.0  # Slightly slower than DA neurons
+    tau_mem_ms: Union[float, torch.Tensor] = 18.0  # Slightly slower than DA neurons
     v_reset: float = -0.12  # Slightly deeper hyperpolarization
     v_threshold: Union[float, torch.Tensor] = 1.0
     tau_ref: float = 2.5  # Slightly longer refractory period
@@ -66,7 +66,7 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # =========================================================================
     # I_h pacemaking current (HCN channels) - WEAKER than DA
     # Lower conductance → lower baseline firing rate (1-3 Hz vs 4-5 Hz)
-    i_h_conductance: float = 0.20  # Boosted for reliable tonic firing
+    i_h_conductance: float = 0.10  # Reduced 0.12→0.10: LC:NE at 5.53 Hz (target ≤5), i_h shows diminishing returns alone
     i_h_reversal: float = 0.75
 
     # =========================================================================
@@ -86,7 +86,7 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # =========================================================================
     # SK calcium-activated K+ channels (spike-frequency adaptation)
     # =========================================================================
-    sk_conductance: float = 0.025  # Slightly stronger than DA (longer bursts)
+    sk_conductance: float = 0.055  # Raised 0.035→0.055: LC:NE at 6.29 Hz (target ≤5), increase SK after-spike inhibition
     sk_reversal: float = -0.5
     ca_decay: float = 0.93  # Slower calcium decay (longer burst duration)
     ca_influx_per_spike: float = 0.18

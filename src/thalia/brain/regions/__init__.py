@@ -62,7 +62,6 @@ from .neural_region import NeuralRegion
 from .neuromodulator_source_region import NeuromodulatorSourceRegion
 from .basal_ganglia_output_nucleus import BasalGangliaOutputNucleus
 from .dopamine_pacemaker_base import DopaminePacemakerBase
-from .amygdala_nucleus import AmygdalaNucleus
 
 from .basolateral_amygdala import BasolateralAmygdala
 from .central_amygdala import CentralAmygdala
@@ -96,7 +95,6 @@ __all__ = [
     "NeuromodulatorSourceRegion",
     "BasalGangliaOutputNucleus",
     "DopaminePacemakerBase",
-    "AmygdalaNucleus",
     # Regions
     "BasolateralAmygdala",
     "CentralAmygdala",

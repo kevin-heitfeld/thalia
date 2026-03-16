@@ -39,12 +39,15 @@ class CeAPopulation(StrEnum):
 class CerebellumPopulation(StrEnum):
     """Cerebellar population names."""
 
+    BASKET = "basket"            # Molecular layer interneuron (inner ML): soma inhibition of Purkinje
     DCN = "dcn"
+    GOLGI = "golgi"
     GRANULE = "granule"
     INFERIOR_OLIVE = "inferior_olive"
     MOSSY = "mossy"
     PARALLEL_FIBERS = "parallel_fibers"
     PURKINJE = "purkinje"
+    STELLATE = "stellate"        # Molecular layer interneuron (outer ML): dendritic inhibition of Purkinje
 
 
 class CortexPopulation(StrEnum):
@@ -114,7 +117,7 @@ class DRNPopulation(StrEnum):
     GABA = "gaba"             # Local GABAergic interneurons (homeostatic inhibition)
 
 
-class ECPopulation(StrEnum):
+class EntorhinalCortexPopulation(StrEnum):
     """Entorhinal cortex population names.
 
     The entorhinal cortex is the primary gateway between neocortex and hippocampus.
@@ -124,16 +127,17 @@ class ECPopulation(StrEnum):
     integrated memory signals back to neocortex.
     """
 
-    EC_II = "ec_ii"    # Layer II stellate/pyramidal cells → DG, CA3 (perforant path)
-    EC_III = "ec_iii"  # Layer III pyramidal time cells → CA1 (temporoammonic direct path)
-    EC_V = "ec_v"      # Layer V pyramidal output cells ← CA1/subiculum → neocortex
+    EC_II = "ec_ii"                  # Layer II stellate/pyramidal cells → DG, CA3 (perforant path)
+    EC_III = "ec_iii"                # Layer III pyramidal time cells → CA1 (temporoammonic direct path)
+    EC_V = "ec_v"                    # Layer V pyramidal output cells ← CA1/subiculum → neocortex
+    EC_INHIBITORY = "ec_inhibitory"  # Layer II/III PV basket cells — feedforward/feedback inhibition
 
 
 class GPePopulation(StrEnum):
     """Globus pallidus externa population names."""
 
     ARKYPALLIDAL = "arkypallidal"  # Projects back to striatum (global suppression)
-    PROTOTYPIC = "prototypic"    # Projects to STN / SNr (canonical indirect pathway)
+    PROTOTYPIC = "prototypic"      # Projects to STN / SNr (canonical indirect pathway)
 
 
 class GPiPopulation(StrEnum):

@@ -42,6 +42,7 @@ import torch
 import torch.nn as nn
 
 from thalia import GlobalConfig
+from thalia.utils import decay_tensor
 
 
 @dataclass
@@ -159,15 +160,21 @@ class ShortTermPlasticity(nn.Module):
         self.config = config
 
         # Register constants
-        self.register_buffer("U", torch.tensor(self.config.U, dtype=torch.float32))
+        self.U: torch.Tensor
+        self.register_buffer("U", torch.tensor(self.config.U, device=device, dtype=torch.float32))
 
         # Decay factors (computed from dt in update_temporal_parameters)
         # Initialize to dummy values - must call update_temporal_parameters() before use
         self._dt_ms: Optional[float] = None
-        self.register_buffer("decay_d", torch.tensor(0.0, dtype=torch.float32))
-        self.register_buffer("decay_f", torch.tensor(0.0, dtype=torch.float32))
-        self.register_buffer("recovery_d", torch.tensor(0.0, dtype=torch.float32))
-        self.register_buffer("recovery_f", torch.tensor(0.0, dtype=torch.float32))
+
+        self.decay_d: torch.Tensor
+        self.decay_f: torch.Tensor
+        self.recovery_d: torch.Tensor
+        self.recovery_f: torch.Tensor
+        self.register_buffer("decay_d", torch.tensor(0.0, device=device, dtype=torch.float32))
+        self.register_buffer("decay_f", torch.tensor(0.0, device=device, dtype=torch.float32))
+        self.register_buffer("recovery_d", torch.tensor(0.0, device=device, dtype=torch.float32))
+        self.register_buffer("recovery_f", torch.tensor(0.0, device=device, dtype=torch.float32))
 
         # Initialize state variables as [n_pre] — STP is per-presynaptic-neuron.
         # The n_post dimension is unnecessary: all postsynaptic targets of the same
@@ -177,6 +184,8 @@ class ShortTermPlasticity(nn.Module):
         self.u: torch.Tensor = torch.full(shape, self.U.item(), device=device, dtype=torch.float32)
         # Available resources (depression)
         self.x: torch.Tensor = torch.ones(shape, device=device, dtype=torch.float32)
+
+        self.to(device)
 
     @torch.no_grad()
     def forward(self, pre_spikes: torch.Tensor) -> torch.Tensor:
@@ -244,19 +253,9 @@ class ShortTermPlasticity(nn.Module):
         self._dt_ms = dt_ms
         device = self.U.device
 
-        # Recompute depression decay: exp(-dt / tau_d)
-        self.decay_d = torch.tensor(
-            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_d)).item()),
-            device=device,
-            dtype=torch.float32,
-        )
-
-        # Recompute facilitation decay: exp(-dt / tau_f)
-        self.decay_f = torch.tensor(
-            float(torch.exp(torch.tensor(-dt_ms / self.config.tau_f)).item()),
-            device=device,
-            dtype=torch.float32,
-        )
+        # Compute decay factors for continuous dynamics: exp(-dt / tau)
+        self.decay_d = decay_tensor(dt_ms, self.config.tau_d, device=device)
+        self.decay_f = decay_tensor(dt_ms, self.config.tau_f, device=device)
 
         # Compute recovery rates
         self.recovery_d = torch.tensor(

@@ -3,105 +3,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Dict
+
+from thalia.brain.regions.population_names import EntorhinalCortexPopulation, HippocampusPopulation
 
 from .neural_region import NeuralRegionConfig
 
 
 @dataclass
-class HippocampalLayerConfig:
+class EntorhinalCortexPopulationConfig:
+    tau_mem_ms: float
+    v_threshold: float
+    adapt_increment: float
+    adapt_tau_ms: float
+    tonic_drive: float
+
+
+@dataclass
+class HippocampalPopulationConfig:
     v_threshold: float
     adapt_increment: float
     tau_adapt: float
     total_inhib_fraction: float
     v_threshold_olm: float
     v_threshold_bistratified: float
-
-
-def get_default_dg_layer_config() -> HippocampalLayerConfig:
-    """Per-layer configuration for the Dentate Gyrus (pattern separation).
-
-    All threshold and adaptation parameters that were previously scattered as
-    magic literals in ``Hippocampus.__init__`` are collected here so they can
-    be swept and inspected without editing region code.
-    """
-    return HippocampalLayerConfig(
-        # Firing threshold for DG granule cells (normalised).
-        # High value enforces sparse activity (<1 Hz).  History: raised 0.9→1.6→1.8
-        # to drive population fraction toward the 2–5 % biological target.
-        v_threshold=1.8,
-        # Spike-frequency adaptation increment.  Strong to enforce sparsity (Ca²⁺-K⁺).
-        adapt_increment=0.30,
-        # Adaptation decay time constant (ms).  Slow to persist across pattern presentations.
-        tau_adapt=120.0,
-        # Fraction of DG pyramidal count allocated to inhibitory interneurons.
-        total_inhib_fraction=0.20,
-        # OLM cell firing threshold.  Tuned to ~0.3–0.8 Hz at sparse DG activity.
-        v_threshold_olm=1.00,
-        # Bistratified cell firing threshold.
-        v_threshold_bistratified=1.00,
-    )
-
-
-def get_default_ca3_layer_config() -> HippocampalLayerConfig:
-    """Per-layer configuration for CA3 (pattern completion / autoassociative memory)."""
-    return HippocampalLayerConfig(
-        # CA3 firing threshold (normalised).
-        # Lowered 1.0→0.50: EC_II drive reaches V_inf ≈ 0.53 at biological input rates
-        # with STP, so the threshold must be reachable from combined EC + DG input.
-        v_threshold=0.50,
-        # Spike-frequency adaptation increment.  Biological AHP range 0.20–0.30.
-        adapt_increment=0.25,
-        # Adaptation decay time constant (ms).
-        tau_adapt=100.0,
-        # Fraction of CA3 pyramidal count allocated to inhibitory interneurons.
-        total_inhib_fraction=0.25,
-        # OLM cell threshold.  Lowered 0.35→0.20: at 3 Hz CA3 pyrarmidal activity
-        # with Pyr→OLM w_max=0.030 and STP U=0.5 τ_d=700ms, V_inf ≈ 0.18–0.22;
-        # 0.35 was unreachable, 0.20 allows 5–15 Hz target.
-        v_threshold_olm=0.20,
-        # Bistratified cell threshold.
-        v_threshold_bistratified=0.30,
-    )
-
-
-def get_default_ca2_layer_config() -> HippocampalLayerConfig:
-    """Per-layer configuration for CA2 (social / temporal context memory)."""
-    return HippocampalLayerConfig(
-        # CA2 firing threshold. Lowered from 1.1 (near-silence) → 0.6 to
-        # reach 1–5 Hz target given weak CA3-only excitatory drive.
-        v_threshold=0.6,
-        # Reduced adaptation: 0.25 was too strong, suppressing near-silent
-        # population below 0.5 Hz. 0.05 allows 1–5 Hz range.
-        adapt_increment=0.05,
-        # Adaptation decay time constant (ms).
-        tau_adapt=100.0,
-        # Lighter inhibition than CA3; CA2 is a smaller, more tightly gated hub.
-        total_inhib_fraction=0.15,
-        # OLM cell threshold.
-        v_threshold_olm=0.35,
-        # Bistratified cell threshold.
-        v_threshold_bistratified=0.30,
-    )
-
-
-def get_default_ca1_layer_config() -> HippocampalLayerConfig:
-    """Per-layer configuration for CA1 (output / coincidence detection layer)."""
-    return HippocampalLayerConfig(
-        # CA1 firing threshold.  Lowered 0.50→0.30: EC_III V_inf ≈ 0.18 at STP-depleted
-        # 11 Hz; threshold must be reachable from combined EC_III + CA3 Schaffer + PFC drive.
-        v_threshold=0.30,
-        # Moderate adaptation to prevent runaway output activity.
-        adapt_increment=0.20,
-        # Faster adapt decay than CA3/CA2 for responsive output-layer dynamics.
-        tau_adapt=80.0,
-        # Stronger inhibition supports theta modulation and coincidence gating.
-        total_inhib_fraction=0.30,
-        # OLM cell threshold.  Lowered 0.35→0.20 matching CA3 OLM analysis:
-        # CA1 pyr fires ~1–5 Hz with weak E drive; 0.35 was unreachable.
-        v_threshold_olm=0.20,
-        # Bistratified cell threshold.
-        v_threshold_bistratified=0.30,
-    )
 
 
 @dataclass
@@ -135,135 +60,45 @@ class EntorhinalCortexConfig(NeuralRegionConfig):
     - Grid-cell–like tiling (approximated by heterogeneous noise-driven LIF)
     - Layer-specific STP (facilitating perforant; depressing temporoammonic)
     - Direct CA1 readout pathway for memory-indexing output to cortex
-
-    References:
-    - Hafting et al. (2005): Grid cells in entorhinal cortex
-    - Amaral & Witter (1989): Three-dimensional organisation of the hippocampal
-      formation — a review of anatomical data
-    - Brun et al. (2008): Impaired spatial representation in the dentate gyrus
-      following entorhinal cortex lesions
-    - Deshmukh & Knierim (2011): Representation of non-spatial and spatial
-      information in the lateral entorhinal cortex
     """
 
-    # =========================================================================
-    # EC_II — PERFORANT PATH (Grid/Place cells → DG, CA3)
-    # =========================================================================
-    ec_ii_tau_mem_ms: float = 20.0
-    """EC layer II stellate cell membrane time constant (ms).
-
-    Stellate cells have relatively fast integration (~20 ms) consistent
-    with their role as feedforward relay neurons.
-    """
-
-    ec_ii_threshold: float = 1.1
-    """EC_II firing threshold (normalised).
-
-    Slightly below CA3 threshold — EC drives hippocampus, not the other
-    way around.
-    """
-
-    ec_ii_adapt_increment: float = 0.15
-    """Spike-frequency adaptation increment for EC_II neurons.
-
-    Moderate adaptation to prevent sustained high-rate responses; grid cells
-    show burst-then-adapt firing at field crossing.
-    """
-
-    ec_ii_adapt_tau_ms: float = 100.0
-    """EC_II adaptation decay time constant (ms)."""
-
-    ec_ii_tonic_drive: float = 0.005
-    """Background excitatory conductance to EC_II (maintains low tonic activity).
-
-    Models the persistent depolarisation from layer I inputs and recurrent
-    EC activity.  Value is normalised input conductance per neuron.
-    """
-
-    # =========================================================================
-    # EC_III — TEMPOROAMMONIC PATH (Time cells → CA1)
-    # =========================================================================
-    ec_iii_tau_mem_ms: float = 25.0
-    """EC layer III pyramidal cell membrane time constant (ms).
-
-    Layer III cells are larger, slower integrators than layer II stellate
-    cells.  Their longer time constant (~25 ms) supports the temporal coding
-    required for 'time cell' activity along the theta cycle.
-    """
-
-    ec_iii_threshold: float = 1.2
-    """EC_III firing threshold (normalised)."""
-
-    ec_iii_adapt_increment: float = 0.20
-    """EC_III adaptation increment.  Slightly stronger than EC_II to implement
-    the depressing (novelty-emphasis) character of the temporoammonic synapse.
-    """
-
-    ec_iii_adapt_tau_ms: float = 80.0
-    """EC_III adaptation decay time constant (ms)."""
-
-    ec_iii_tonic_drive: float = 0.005
-    """Background excitatory conductance to EC_III (lower than EC_II;
-    time-cell activity is sparser).
-    """
-
-    # =========================================================================
-    # EC_V — BACK-PROJECTION (Receives CA1 → outputs to cortex)
-    # =========================================================================
-    ec_v_tau_mem_ms: float = 30.0
-    """EC layer V pyramidal cell membrane time constant (ms).
-
-    Deeper-layer cells tend to be larger with slower integration, consistent
-    with their role aggregating hippocampal outputs over several theta cycles.
-    """
-
-    ec_v_threshold: float = 1.15
-    """EC_V firing threshold (normalised)."""
-
-    ec_v_adapt_increment: float = 0.12
-    """EC_V adaptation increment.  Mild — layer V cells maintain moderate
-    sustained activity to drive cortical consolidation.
-    """
-
-    ec_v_adapt_tau_ms: float = 150.0
-    """EC_V adaptation decay time constant (ms).
-
-    Long adaptation time constant supports persistent activity over
-    multiple theta cycles, acting as a short-term memory buffer.
-    """
-
-    ec_v_tonic_drive: float = 0.01
-    """Background excitatory conductance to EC_V (very low — driven mainly
-    by CA1 back-projection input rather than tonic drive).
-    """
+    population_overrides: Dict[EntorhinalCortexPopulation, EntorhinalCortexPopulationConfig] = field(
+        default_factory=lambda: {
+            EntorhinalCortexPopulation.EC_II: EntorhinalCortexPopulationConfig(
+                tau_mem_ms=20.0,
+                v_threshold=1.1,
+                adapt_increment=0.15,
+                adapt_tau_ms=100.0,
+                tonic_drive=0.005,
+            ),
+            EntorhinalCortexPopulation.EC_III: EntorhinalCortexPopulationConfig(
+                tau_mem_ms=25.0,
+                v_threshold=1.2,
+                adapt_increment=0.20,
+                adapt_tau_ms=80.0,
+                tonic_drive=0.005,
+            ),
+            EntorhinalCortexPopulation.EC_V: EntorhinalCortexPopulationConfig(
+                tau_mem_ms=30.0,
+                v_threshold=1.15,
+                adapt_increment=0.18,
+                adapt_tau_ms=150.0,
+                tonic_drive=0.01,
+            ),
+            EntorhinalCortexPopulation.EC_INHIBITORY: EntorhinalCortexPopulationConfig(
+                tau_mem_ms=8.0,
+                v_threshold=0.90,
+                adapt_increment=0.52,
+                adapt_tau_ms=30.0,
+                tonic_drive=0.0,  # Inhibitory neurons are driven entirely by network input, no tonic drive
+            ),
+        }
+    )
 
 
 @dataclass
 class HippocampusConfig(NeuralRegionConfig):
-    """Configuration for hippocampus (trisynaptic circuit).
-
-    The hippocampus has ~5x expansion from EC to DG, then compression back.
-
-    Per-layer neuron and inhibitory-network parameters are grouped into four
-    sub-configs (``dg``, ``ca3``, ``ca2``, ``ca1``) so individual thresholds
-    and adaptation constants can be swept or inspected without touching region
-    code.
-    """
-
-    # =========================================================================
-    # PER-LAYER SUB-CONFIGS
-    # =========================================================================
-    dg:  HippocampalLayerConfig = field(default_factory=get_default_dg_layer_config)
-    """Dentate Gyrus neuron and inhibitory-network parameters."""
-
-    ca3: HippocampalLayerConfig = field(default_factory=get_default_ca3_layer_config)
-    """CA3 neuron and inhibitory-network parameters."""
-
-    ca2: HippocampalLayerConfig = field(default_factory=get_default_ca2_layer_config)
-    """CA2 neuron and inhibitory-network parameters."""
-
-    ca1: HippocampalLayerConfig = field(default_factory=get_default_ca1_layer_config)
-    """CA1 neuron and inhibitory-network parameters."""
+    """Configuration for hippocampus (trisynaptic circuit)."""
 
     # =========================================================================
     # CONSOLIDATION
@@ -295,7 +130,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # Real hippocampus has extrasynaptic GABA_A receptors (α5 subunit) that
     # provide continuous background inhibition from GABA spillover.
     # This prevents runaway excitation even when phasic inhibition fails.
-    tonic_inhibition: float = 0.0008  # Reduced (0.002→0.0008): was creating an inhibitory floor that blocked sub-threshold CA3/CA1
+    tonic_inhibition: float = 0.0008
 
     # =========================================================================
     # GAP JUNCTIONS (Electrical Synapses)
@@ -303,7 +138,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # Gap junctions between CA1 interneurons (basket cells, bistratified cells)
     # provide fast electrical coupling for theta-gamma synchronization.
     # Critical for precise spike timing in episodic memory encoding/retrieval.
-    #
+
     # CA1 interneurons (~10-15% of CA1 population) have dense gap junction
     # networks that synchronize inhibition during theta-gamma nested oscillations.
     gap_junction_strength: float = 0.01  # Coupling strength (biological: 0.05-0.2)
@@ -326,10 +161,7 @@ class HippocampusConfig(NeuralRegionConfig):
     # Adaptive threshold plasticity (complementary to gain adaptation)
     threshold_learning_rate: float = 0.02  # Moderate threshold adaptation
     threshold_min: float = 0.05  # Lower floor to allow more aggressive adaptation for under-firing
-    threshold_max: float = 3.0  # Raised 1.5→3.0: DG granule cells have v_threshold=1.8 for sparsity
-    # but threshold_max=1.5 was CLAMPING DG threshold DOWN to 1.5, defeating the design.
-    # Root cause: homeostasis drives threshold toward target; if target<actual, threshold RISES.
-    # At threshold=1.5, DG still fires at 2.3 Hz (plateau reached). Need headroom above 1.8.
+    threshold_max: float = 3.0
 
     # =========================================================================
     # LEARNING RATES
@@ -383,7 +215,6 @@ class HippocampusConfig(NeuralRegionConfig):
     # characterised by synchronous CA3 population bursts (>5% cells in 1-5ms) that
     # strongly drive CA1 via already-potentiated Schaffer collaterals, enabling
     # rapid offline sequence replay essential for systems memory consolidation.
-    # References: Buzsaki 1989 (Neuroscience); Wilson & McNaughton 1994 (Science).
     ripple_threshold: float = 0.05
     """CA3 population firing rate (fraction) that triggers SWR onset.
 
@@ -414,6 +245,46 @@ class HippocampusConfig(NeuralRegionConfig):
     Provides a depolarising bias that keeps the CA3 attractor active across
     the SWR duration.  Range: 0.1 (subtle) – 0.5 (strong sustained replay).
     """
+
+    # =========================================================================
+    # PER-LAYER SUB-CONFIGS
+    # =========================================================================
+    population_overrides: Dict[HippocampusPopulation, HippocampalPopulationConfig] = field(
+        default_factory=lambda: {
+            HippocampusPopulation.DG: HippocampalPopulationConfig(
+                v_threshold=1.8,
+                adapt_increment=0.50,  # Raised 0.30→0.50: at 0.6 Hz, g_adapt_ss=0.036 (0.72× g_L); need stronger burst termination for sparse coding
+                tau_adapt=120.0,
+                total_inhib_fraction=0.20,
+                v_threshold_olm=1.00,
+                v_threshold_bistratified=1.50,  # Raised 1.00→1.50: DG bistrat SFA=20.0 (>3.0) + ρ=0.92 runaway — raise threshold to reduce firing and adaptation load
+            ),
+            HippocampusPopulation.CA3: HippocampalPopulationConfig(
+                v_threshold=0.74,           # Lowered 0.77→0.74: CA3 at 0.95 Hz (target 1-5), need more threshold reduction
+                adapt_increment=0.35,       # Raised 0.15→0.35: at 1.3 Hz, g_adapt_ss=0.046 (0.91× g_L); CA3 SFA=0.82 needs stronger adaptation for burst termination
+                tau_adapt=100.0,            # Raised 50→100: slower decay spreads adaptation evenly, prevents dump-and-rebound cycling
+                total_inhib_fraction=0.30,
+                v_threshold_olm=0.01,       # Lowered 0.02→0.01: CA3 OLM at 4.79 Hz (target ≥5)
+                v_threshold_bistratified=0.12,  # Keep: CA3 bistrat fixed at 6.58 Hz
+            ),
+            HippocampusPopulation.CA2: HippocampalPopulationConfig(
+                v_threshold=0.60,
+                adapt_increment=0.20,  # Raised 0.05→0.20: at 3.0 Hz, g_adapt_ss=0.060 (1.2× g_L); CA2 social memory cells need moderate adaptation
+                tau_adapt=100.0,
+                total_inhib_fraction=0.15,
+                v_threshold_olm=0.35,
+                v_threshold_bistratified=0.30,
+            ),
+            HippocampusPopulation.CA1: HippocampalPopulationConfig(
+                v_threshold=0.30,
+                adapt_increment=0.35,  # Raised 0.20→0.35: at 2.4 Hz, g_adapt_ss=0.067 (1.3× g_L); CA1 SFA=0.92 needs stronger adaptation
+                tau_adapt=80.0,
+                total_inhib_fraction=0.30,
+                v_threshold_olm=0.12,           # Lowered 0.15→0.12: CA1 OLM at 4.99 Hz (target ≥5)
+                v_threshold_bistratified=0.25,  # Keep: CA1 bistrat fixed at 6.07 Hz
+            ),
+        }
+    )
 
 
 @dataclass
@@ -546,16 +417,9 @@ class SubiculumConfig(NeuralRegionConfig):
     - Single PRINCIPAL population (excitatory pyramidal)
     - Implicit PV basket-cell inhibition via lateral inhibition coefficient
     - Receives CA1 input; outputs to EC_V, PFC L5, BLA PRINCIPAL
-
-    References:
-    - O'Mara et al. (2001): The subiculum: the heart of the hippocampal outflow
-    - Witter et al. (2000): Anatomical organisation of the parahippocampal-
-      hippocampal network
-    - Aggleton (2012): Multiple anatomical systems embedded within the primate
-      medial temporal lobe: implications for hippocampal function
     """
 
-    tau_mem: float = 25.0
+    tau_mem_ms: float = 25.0
     """Subicular pyramidal membrane time constant (ms).
 
     Intermediate between CA1 (~20 ms) and EC_V (~30 ms), consistent with
@@ -567,12 +431,8 @@ class SubiculumConfig(NeuralRegionConfig):
     and should be easily driven by strong CA1 input.
     """
 
-    adapt_increment: float = 0.10
-    """Spike-frequency adaptation increment (I_KCA).
-
-    Mild adaptation — subicular cells show burst-then-regular firing;
-    a small increment allows burst onset without full silencing.
-    """
+    adapt_increment: float = 0.20
+    """Spike-frequency adaptation increment (I_KCA)."""
 
     tau_adapt: float = 150.0
     """Adaptation decay time constant (ms).

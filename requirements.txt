@@ -14,6 +14,7 @@ mpmath==1.3.0
 mypy==1.19.1
 mypy_extensions==1.1.0
 networkx==3.6.1
+ninja==1.13.0
 numpy==2.4.2
 packaging==26.0
 pathspec==1.0.4
@@ -28,7 +29,7 @@ scipy==1.17.0
 setuptools==80.10.2
 six==1.17.0
 sympy==1.14.0
--e git+https://github.com/kevin-heitfeld/thalia@a8019f1e3a3bcdcfcf48b8165d508ff276dda531#egg=thalia
+-e git+https://github.com/kevin-heitfeld/thalia@1a31b0cd1f31bdd2c3398ca6f529a02bbd15e3fa#egg=thalia
 torch==2.10.0
 torchvision==0.25.0
 tqdm==4.67.3

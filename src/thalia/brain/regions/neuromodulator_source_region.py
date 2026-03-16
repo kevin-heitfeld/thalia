@@ -14,12 +14,6 @@ Each region has one or more principal neuron populations that broadcast a
 neuromodulator, plus a small pool of local GABA interneurons that provide
 homeostatic feedback inhibition (preventing runaway activity).
 
-Subclasses are responsible for:
-- Creating and registering their primary neuron population(s)
-- Calling ``_init_gaba_interneurons()`` in ``__init__``
-- Calling ``_step_gaba_interneurons(primary_activity)`` in ``forward()``
-- Overriding ``_compute_gaba_drive()`` if they need non-default baseline / gain
-
 Excluded regions
 ----------------
 ``MedialSeptum`` is intentionally **not** a subclass: its GABA population is a
@@ -30,23 +24,28 @@ ACh and GABA populations.
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 import torch
 
 from thalia.brain.configs import NeuralRegionConfig
 from thalia.brain.neurons import (
-    NeuronFactory,
-    NeuronType,
+    ConductanceLIFConfig,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_g_L,
+    split_excitatory_conductance,
 )
 from thalia.typing import (
     ConductanceTensor,
     PopulationName,
     PopulationPolarity,
 )
-from thalia.utils import split_excitatory_conductance
 
 from .neural_region import NeuralRegion
+
+if TYPE_CHECKING:
+    from thalia.brain.neurons import ConductanceLIF
 
 ConfigT = TypeVar("ConfigT", bound=NeuralRegionConfig)
 
@@ -56,59 +55,6 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
 
     Provides the shared primary-population + local-GABA-interneuron pattern.
     """
-
-    # =========================================================================
-    # INITIALIZATION
-    # =========================================================================
-
-    def _init_gaba_interneurons(self, gaba_population_name: PopulationName, gaba_size: int) -> None:
-        """Construct and register a local GABA interneuron pool.
-
-        Creates fast-spiking (:attr:`NeuronType.FAST_SPIKING`) neurons and
-        registers them as an ``INHIBITORY`` population.  Results are stored on
-        ``self`` as:
-
-        * ``gaba_neurons``       — the neuron group
-        * ``gaba_neurons_size``  — integer count
-        * ``_gaba_population_name`` — the registered population key
-        * ``_prev_gaba_spikes``  — zero-initialised bool buffer (previous-step spikes)
-
-        Call once from a subclass ``__init__`` after the primary population(s)
-        have been created.  The stored ``_prev_gaba_spikes`` buffer is meant to
-        be updated each ``forward()`` call by the subclass.
-
-        Args:
-            gaba_population_name: Population enum member identifying GABA neurons
-                                  (used for registration and weight routing).
-            gaba_size:            Number of GABA neurons.
-        """
-        device = self.device
-
-        self._gaba_population_name: PopulationName = gaba_population_name
-        self.gaba_neurons_size: int = gaba_size
-
-        self.gaba_neurons = NeuronFactory.create(
-            region_name=self.region_name,
-            population_name=gaba_population_name,
-            neuron_type=NeuronType.FAST_SPIKING,
-            n_neurons=gaba_size,
-            device=device,
-        )
-        self._register_neuron_population(
-            gaba_population_name,
-            self.gaba_neurons,
-            polarity=PopulationPolarity.INHIBITORY,
-        )
-        # Delay buffer: GABA spikes from the previous timestep, used as:
-        #   (a) inhibitory feedback to primary neurons next step
-        #   (b) self-inhibition within the GABA pool
-        # Initialised to zeros (silent at t=0).
-        self._prev_gaba_spikes: torch.Tensor
-        self.register_buffer(
-            "_prev_gaba_spikes",
-            torch.zeros(gaba_size, dtype=torch.bool, device=device),
-            persistent=False,
-        )
 
     # =========================================================================
     # Forward helpers
@@ -127,19 +73,9 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
                               population(s), in the range [0, 1].
 
         Returns:
-            Drive conductance tensor of shape ``[gaba_neurons_size]``.
+            Drive conductance tensor of shape ``[gaba_size]``.
         """
-        # No tonic baseline: a constant 0.3 drive saturates fast-spiking GABA
-        # neurons at ~400 Hz (V* = 2.25, far above threshold 0.9), which then
-        # completely silences primary neurons through feedback.  GABA should only
-        # fire proportionally when the primary population overshoots its target.
-        # Gain 2.0 keeps GABA below threshold at normal primary rates (<10 Hz)
-        # but drives it strongly when the primary runs away (>50 Hz).
-        return torch.full(
-            (self.gaba_neurons_size,),
-            primary_activity * 2.0,
-            device=self.device,
-        )
+        return torch.full((self.gaba_size,), primary_activity * 1.0, device=self.device)
 
     def _step_gaba_interneurons(self, primary_activity: float) -> torch.Tensor:
         """Advance GABA interneurons one timestep and return their spikes.
@@ -160,7 +96,7 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
                               used to drive the GABA interneurons.
 
         Returns:
-            GABA spike tensor of shape ``[gaba_neurons_size]``.
+            GABA spike tensor of shape ``[gaba_size]``.
         """
         gaba_drive = self._compute_gaba_drive(primary_activity)
         gaba_g_ampa, gaba_g_nmda = split_excitatory_conductance(gaba_drive, nmda_ratio=0.3)
@@ -170,8 +106,8 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT], Generic[ConfigT]):
         # equivalent to uniform all-to-all inhibition with unit weight.
         prev_gaba_rate = self._prev_gaba_spikes.float().mean().item()
         gaba_self_inh = torch.full(
-            (self.gaba_neurons_size,),
-            prev_gaba_rate * 0.5,   # moderate self-inhibition to prevent saturation
+            (self.gaba_size,),
+            prev_gaba_rate * 0.5,
             device=self._prev_gaba_spikes.device,
         )
 

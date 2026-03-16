@@ -88,10 +88,9 @@ def generate_github_urls(repo_root: Path, output_file: Path) -> None:
     print(f"Output written to: {output_file}")
 
 
-def main():
-    """Main entry point."""
-    # Get the repository root (parent of scripts directory)
-    script_dir = Path(__file__).parent
+if __name__ == "__main__":
+    # Get the repository root
+    script_dir = Path(__file__).parent.parent
     repo_root = script_dir.parent
 
     # Output file
@@ -101,7 +100,3 @@ def main():
     print("Generating GitHub raw URLs...")
 
     generate_github_urls(repo_root, output_file)
-
-
-if __name__ == "__main__":
-    main()

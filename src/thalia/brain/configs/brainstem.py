@@ -79,21 +79,7 @@ class CerebellumConfig(NeuralRegionConfig):
     Biology: DCN neurons are spontaneously active (40-60 Hz at rest) due to intrinsic
     persistent sodium and HCN currents. This is approximated as a constant excitatory
     conductance baseline that Purkinje inhibition then sculpts.
-
-    DCN params: tau_E=4ms, g_L=0.10, v_threshold=1.0.
-    g_E_ss = baseline_drive / (1 - exp(-dt/tau_E))
-           = 0.012 / (1 - exp(-1/4))
-           ≈ 0.012 / 0.221 ≈ 0.054
-
-    V_inf(baseline only) = (0.054 × 3.0) / (0.10 + 0.054) ≈ 1.05 (just above threshold).
-    Purkinje_ss inhibition at 83 Hz with STP eff=0.011 delivers negligible GABA → DCN
-    can fire tonically. Mossy collaterals add additional drive.
-    Target: 40-60 Hz tonic DCN firing rate.
-
-    Previous: no baseline_drive → DCN relied solely on mossy collaterals, which were
-    insufficient → DCN fired at only 3.7 Hz (run-06; target 10–100 Hz).
     """
-
 
     # =========================================================================
     # GAP JUNCTIONS (Inferior Olive Synchronization)
@@ -137,11 +123,11 @@ class DorsalRapheNucleusConfig(NeuralRegionConfig):
     - DRN output channel ``'5ht'``: broadcast to striatum, PFC, hippocampus, BLA, thalamus
     """
 
-    tonic_drive_gain: float = 1.0
+    tonic_drive_gain: float = 0.90
     """Overall gain on tonic excitatory drive to 5-HT neurons.
 
-    Values > 1 increase baseline firing; values < 1 decrease it.
-    Normal range: 0.5-2.0.
+    Reduced 0.95→0.90: DR:serotonin at 3.05 Hz (target ≤3.0); previous 0.95 had zero effect
+    had no effect because tonic pacemaker dominates.  Normal range: 0.5-2.0.
     """
 
     lhb_inhibition_gain: float = 3.0
@@ -151,9 +137,6 @@ class DorsalRapheNucleusConfig(NeuralRegionConfig):
     Biology: LHb→DRN operates via GABA interneurons and direct habenulo-raphe fibres.
     Typical range: 2.0-5.0.
     """
-
-    drive_normalization: bool = True
-    """Enable adaptive normalization of the tonic drive to prevent firing rate drift."""
 
 
 @dataclass
@@ -171,44 +154,8 @@ class LocusCoeruleusConfig(NeuralRegionConfig):
     - Global projections → all brain regions
     """
 
-    uncertainty_gain: float = 20.0
-    """Gain for converting uncertainty to membrane current (mV per uncertainty unit).
-
-    High uncertainty → depolarization → synchronized burst (10-15 Hz)
-    Low uncertainty → hyperpolarization → pause or low tonic
-    """
-
     gap_junction_strength: float = 0.05
     """Gap junction coupling strength (voltage-gated to prevent pacemaker quenching)."""
 
     gap_junction_radius: int = 50
     """Radius for gap junction connectivity (neurons within this range are coupled)."""
-
-    uncertainty_normalization: bool = True
-    """Enable adaptive uncertainty normalization to prevent saturation."""
-
-
-@dataclass
-class NucleusBasalisConfig(NeuralRegionConfig):
-    """Configuration for NB (nucleus basalis) region.
-
-    The NB is the brain's primary source of cortical acetylcholine, broadcasting
-    attention and encoding/retrieval mode signals. NB neurons exhibit fast,
-    brief bursts in response to prediction errors and attention shifts.
-
-    Key features:
-    - Acetylcholine neurons: Tonic (2-5 Hz) + fast bursts (10-20 Hz for 50-100ms)
-    - Brief bursts (shorter than DA/NE) due to fast SK adaptation
-    - Prediction error magnitude → encoding mode, attention enhancement
-    - Selective projections → cortex and hippocampus (not striatum)
-    """
-
-    pe_gain: float = 25.0
-    """Gain for converting prediction error to membrane current (mV per PE unit).
-
-    High |PE| → depolarization → fast brief burst (10-20 Hz for 50-100ms)
-    Low |PE| → baseline tonic firing
-    """
-
-    pe_normalization: bool = True
-    """Enable adaptive prediction error normalization to prevent saturation."""

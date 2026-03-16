@@ -39,8 +39,7 @@ Key Features:
 
 from __future__ import annotations
 
-import math
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Union
 
 import torch
 
@@ -51,18 +50,20 @@ from thalia.brain.gap_junctions import (
     GapJunctionCoupling,
 )
 from thalia.brain.neurons import (
-    ConductanceLIF,
     ConductanceLIFConfig,
-    NeuronFactory,
-    NeuronType,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    split_excitatory_conductance,
 )
 from thalia.brain.synapses import (
-    WeightInitializer,
     NeuromodulatorReceptor,
     NMReceptorType,
-    make_nm_receptor,
+    STPConfig,
+    WeightInitializer,
+    make_neuromodulator_receptor,
 )
-from thalia.brain.synapses.stp import STPConfig
 from thalia.learning import (
     D1D2STDPConfig,
     D1STDPStrategy,
@@ -86,21 +87,21 @@ from thalia.utils import (
     CircularDelayBuffer,
     compute_da_gain,
     compute_ne_gain,
-    split_excitatory_conductance,
+    decay_float,
 )
 
 from .neural_region import NeuralRegion
 from .population_names import StriatumPopulation
 from .region_registry import register_region
 
+if TYPE_CHECKING:
+    from thalia.brain.neurons import ConductanceLIF
+
 
 @register_region(
     "striatum",
     aliases=["basal_ganglia"],
     description="Reinforcement learning via dopamine-modulated three-factor rule with D1/D2 opponent pathways",
-    version="1.0",
-    author="Thalia Project",
-    config_class=StriatumConfig,
 )
 class Striatum(NeuralRegion[StriatumConfig]):
     """Striatal region with three-factor reinforcement learning.
@@ -171,20 +172,49 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # =====================================================================
         # D1/D2 PATHWAYS - Separate MSN Populations
         # =====================================================================
-        # Create D1 and D2 pathways with their own neuron populations
-        self.d1_neurons = NeuronFactory.create(
-            region_name=self.region_name,
+        self.d1_neurons: ConductanceLIF
+        self.d1_neurons = self._create_and_register_neuron_population(
             population_name=StriatumPopulation.D1,
-            neuron_type=NeuronType.MSN_D1,
             n_neurons=self.d1_size,
-            device=device,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                region_name=self.region_name,
+                v_threshold=heterogeneous_v_threshold(1.02, self.d1_size, device),
+                v_reset=-0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                tau_ref=2.0,
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.d1_size, device),
+                tau_adapt=200.0,
+                adapt_increment=heterogeneous_adapt_increment(0.18, self.d1_size, device),
+                g_L=heterogeneous_g_L(0.05, self.d1_size, device),
+                noise_std=0.025,
+            ),
         )
-        self.d2_neurons = NeuronFactory.create(
-            region_name=self.region_name,
+
+        self.d2_neurons: ConductanceLIF
+        self.d2_neurons = self._create_and_register_neuron_population(
             population_name=StriatumPopulation.D2,
-            neuron_type=NeuronType.MSN_D2,
             n_neurons=self.d2_size,
-            device=device,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                v_threshold=heterogeneous_v_threshold(1.02, self.d2_size, device),
+                v_reset=-0.10,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                tau_ref=2.0,
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.d2_size, device),
+                tau_adapt=200.0,
+                adapt_increment=heterogeneous_adapt_increment(0.24, self.d2_size, device),
+                g_L=heterogeneous_g_L(0.05, self.d2_size, device),
+                noise_std=0.025,
+            ),
         )
 
         # =====================================================================
@@ -198,34 +228,30 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # simulation stability — at <15 neurons gap-junction topology collapses
         # and feedforward inhibition becomes all-or-nothing.
         self.fsi_size = max(self.config.fsi_min_neurons, int(total_msn_neurons * 0.02))
-        self.fsi_neurons: ConductanceLIF = NeuronFactory.create_fast_spiking_neurons(
-            region_name=self.region_name,
+        self.fsi_neurons: ConductanceLIF
+        self.fsi_neurons = self._create_and_register_neuron_population(
             population_name=StriatumPopulation.FSI,
             n_neurons=self.fsi_size,
-            device=device,
-            # v_threshold restored to 1.0 (standard): threshold=1.3 was a stopgap for
-            # the old NMDA-driven 406 Hz saturation. NMDA is now disabled (nmda_ratio=0.0
-            # in forward pass), so 1.3 is too high and prevents any firing on cortical input.
-            v_threshold=1.0,
-            # Adaptation: limits FSI to ~14 Hz at biological corticostriatal drive.
-            # Without adaptation, FSI fires at 100-200 Hz when V_inf >> threshold (tau_mem=8ms,
-            # refractory-limited). With adapt_increment=0.10 and tau_adapt=50ms:
-            #   g_adapt_eq = (g_E*E_E − threshold*(g_L+g_E)) / (threshold+0.5) ≈ 0.069
-            #   rate_eq = g_adapt_eq / (incr*tau) = 0.069/(0.10*50) ≈ 14 Hz  (target 10-50 Hz)
-            adapt_increment=0.10,
-            tau_adapt=50.0,
-            E_adapt=-0.5,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(8.0, self.fsi_size, device=device, cv=0.10),
+                v_reset=0.0,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_ref=2.5,
+                g_L=heterogeneous_g_L(0.10, self.fsi_size, device, cv=0.08),
+                v_threshold=heterogeneous_v_threshold(1.0, self.fsi_size, device, cv=0.06),
+                adapt_increment=heterogeneous_adapt_increment(0.10, self.fsi_size, device),
+                tau_adapt=50.0,
+                E_adapt=-0.5,
+            ),
         )
-        self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None  # Lazily initialized on first forward pass
 
-        # =====================================================================
-        # REGISTER FOUNDATIONAL POPULATIONS
-        # MUST happen before _add_internal_connection so the Dale's Law polarity
-        # checks in _add_internal_connection have the correct registered polarity.
-        # =====================================================================
-        self._register_neuron_population(StriatumPopulation.D1, self.d1_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(StriatumPopulation.D2, self.d2_neurons, polarity=PopulationPolarity.INHIBITORY)
-        self._register_neuron_population(StriatumPopulation.FSI, self.fsi_neurons, polarity=PopulationPolarity.INHIBITORY)
+        # Lazily initialized on first forward pass
+        self.gap_junctions_fsi: Optional[GapJunctionCoupling] = None
 
         # =====================================================================
         # MSN→FSI CONNECTIONS (Inhibitory Feedback via GABAergic Collaterals)
@@ -243,6 +269,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
 
         # D1 MSNs → FSI (inhibitory GABAergic collaterals, ~30% connectivity)
         # CONDUCTANCE-BASED: Weak MSN→FSI GABAergic connections (Dale's Law)
+        # Depressing — same STP as MSN lateral collaterals (D1↔D2).
         self._add_internal_connection(
             source_population=StriatumPopulation.D1,
             target_population=StriatumPopulation.FSI,
@@ -254,11 +281,12 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=None,
+            stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
         )
 
         # D2 MSNs → FSI (inhibitory GABAergic collaterals, ~30% connectivity)
         # CONDUCTANCE-BASED: Weak MSN→FSI GABAergic connections (matches D1, Dale's Law)
+        # Depressing — same STP as MSN lateral collaterals (D1↔D2).
         self._add_internal_connection(
             source_population=StriatumPopulation.D2,
             target_population=StriatumPopulation.FSI,
@@ -270,7 +298,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=None,
+            stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
         )
 
         # =====================================================================
@@ -297,7 +325,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.65, tau_d=550.0, tau_f=15.0),
+            stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=15.0),
         )
 
         # FSI → D2 connections (same structure)
@@ -313,7 +341,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.65, tau_d=550.0, tau_f=15.0),
+            stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=15.0),
         )
 
         # =====================================================================
@@ -330,7 +358,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d1_size,
                 n_output=self.d1_size,
                 connectivity=0.4,
-                weight_scale=0.007,
+                weight_scale=0.012,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
@@ -346,7 +374,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 n_input=self.d2_size,
                 n_output=self.d2_size,
                 connectivity=0.4,
-                weight_scale=0.007,
+                weight_scale=0.012,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
@@ -360,17 +388,18 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # creating the opponent Go/NoGo competition that underlies action selection.
         # Cross-pathway connectivity is sparser (~10%) than within-pathway (~40%)
         # reflecting the greater anatomical distance between D1/D2 MSN soma clusters.
-        # Reference: Taverna et al. (2008) J. Neurosci.; Planert et al. (2010)
-        #
+
         # D1 (Go) → D2 (NoGo): when Go pathway is activated it actively suppresses NoGo
+        # Connectivity and weight increased from 0.20/0.006 — CI=0.95 showed
+        # insufficient D1↔D2 competition for action selection.
         self._add_internal_connection(
             source_population=StriatumPopulation.D1,
             target_population=StriatumPopulation.D2,
             weights=WeightInitializer.sparse_random(
                 n_input=self.d1_size,
                 n_output=self.d2_size,
-                connectivity=0.1,
-                weight_scale=0.003,
+                connectivity=0.30,
+                weight_scale=0.010,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
@@ -384,8 +413,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
             weights=WeightInitializer.sparse_random(
                 n_input=self.d2_size,
                 n_output=self.d1_size,
-                connectivity=0.1,
-                weight_scale=0.003,
+                connectivity=0.30,
+                weight_scale=0.010,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
@@ -399,10 +428,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Buffer names produced by _register_homeostasis are d1_firing_rate /
         # d2_firing_rate, matching the direct accesses in forward().
         # Striatum uses a custom joint D1+D2 update rather than _update_homeostasis.
-        # use_synaptic_scaling=True: Turrigiano & Nelson (2004) — multiplicative
-        # upscaling of all afferent MSN weights when the population is chronically silent.
-        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.002, device=device)  # Reduced 0.008→0.002: MSN biological spontaneous rate is 0.5-2 Hz at rest (no reward/action); 8 Hz is active-state rate causing homeostatic mismatch
-        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.002, device=device)  # Same: 2 Hz target reflects sparse baseline MSN activity (Mahon et al. 2006)
+        self._register_homeostasis(StriatumPopulation.D1, self.d1_size, target_firing_rate=0.002, device=device)
+        self._register_homeostasis(StriatumPopulation.D2, self.d2_size, target_firing_rate=0.002, device=device)
 
         # =====================================================================
         # D1/D2 PATHWAY DELAY BUFFERS (Temporal Competition)
@@ -433,10 +460,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # D1 receptor: Gs → cAMP → PKA cascade (τ_rise=500 ms, τ_decay=8 s).
         # D2 receptor: Gi → GIRK / ↓cAMP (τ_rise=80 ms, τ_decay=500 ms).
         # Kinetics are now canonical — capture the gate (D2) vs long-term bias (D1) distinction.
-        self.da_receptor_d1 = make_nm_receptor(
+        self.da_receptor_d1 = make_neuromodulator_receptor(
             NMReceptorType.DA_D1, n_receptors=self.d1_size, dt_ms=self.dt_ms, device=device
         )
-        self.da_receptor_d2 = make_nm_receptor(
+        self.da_receptor_d2 = make_neuromodulator_receptor(
             NMReceptorType.DA_D2, n_receptors=self.d2_size, dt_ms=self.dt_ms, device=device
         )
 
@@ -458,10 +485,10 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Both D1 and D2 MSNs receive NE modulation.
 
         # α1-adrenergic (Gq): moderate kinetics τ_rise=10 ms, τ_decay=150 ms.
-        self.ne_receptor_d1 = make_nm_receptor(
+        self.ne_receptor_d1 = make_neuromodulator_receptor(
             NMReceptorType.NE_ALPHA1, n_receptors=self.d1_size, dt_ms=self.dt_ms, device=device
         )
-        self.ne_receptor_d2 = make_nm_receptor(
+        self.ne_receptor_d2 = make_neuromodulator_receptor(
             NMReceptorType.NE_ALPHA1, n_receptors=self.d2_size, dt_ms=self.dt_ms, device=device
         )
 
@@ -479,7 +506,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # LTP (patience effect; Boulougouris et al. 2008; Grahn et al. 2009).
         # Kinetics: tau_rise ~5 ms (fast release), tau_decay ~80 ms (SERT reuptake).
         # 5-HT2A/2B (Gq → PLC): τ_rise=8 ms, τ_decay=100 ms.
-        self.sht_receptor_d1 = make_nm_receptor(
+        self.sht_receptor_d1 = make_neuromodulator_receptor(
             NMReceptorType.SHT_2A, n_receptors=self.d1_size, dt_ms=self.dt_ms, device=device
         )
         self._sht_concentration_d1: torch.Tensor
@@ -497,42 +524,38 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # FSI neurons (g_L=0.10, tau_mem=8ms) cannot fire below ~55 Hz above threshold.
         # TANs are large cholinergic neurons: tau_mem~80ms, g_L=0.04, tau_E=10ms.
         self.tan_size = max(1, int(total_msn_neurons * 0.01))  # ~1% of MSNs, minimum 1
-        self.tan_neurons = ConductanceLIF(
+        self.tan_neurons: ConductanceLIF
+        self.tan_neurons = self._create_and_register_neuron_population(
+            population_name=StriatumPopulation.TAN,
             n_neurons=self.tan_size,
+            polarity=PopulationPolarity.ANY,
             config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=StriatumPopulation.TAN,
-                tau_mem=80.0,    # Long integration window (cholinergic neurons: ~80-100ms)
-                g_L=0.04,        # Low leak for sustained depolarisation
+                tau_mem_ms=heterogeneous_tau_mem(80.0, self.tan_size, device, cv=0.20),    # Long integration window (cholinergic neurons: ~80-100ms)
+                g_L=heterogeneous_g_L(0.04, self.tan_size, device),
                 tau_E=10.0,      # Slow AMPA kinetics matching cortical/thalamic cholinergic drive
                 tau_I=20.0,      # Slow GABA-A kinetics (pause inhibition)
-                v_threshold=1.2, # Raised (1.0→1.2): thalamic overflow was driving 28 Hz; needs higher bar
+                v_threshold=heterogeneous_v_threshold(1.2, self.tan_size, device, cv=0.12, clamp_fraction=0.25), # Raised (1.0→1.2): thalamic overflow was driving 28 Hz; needs higher bar
                 v_reset=0.0,
                 tau_ref=5.0,     # Longer refractory for slow cholinergic neurons
                 E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 noise_std=0.005, # Reduced (0.01→0.005) to lower noise-driven jitter
-                adapt_increment=0.015,  # Raised 0.010→0.015: at 12 Hz with 0.010, scale ×1.5 targets ~8 Hz (target 5-10 Hz)
+                adapt_increment=heterogeneous_adapt_increment(0.05, self.tan_size, device),  # Raised 0.025→0.05: at 9.9 Hz, g_adapt_ss=0.099 (2.48× g_L=0.04); TANs need moderate adaptation
                 tau_adapt=200.0,        # Slow AHP matching cholinergic neuron biophysics
             ),
-            device=device,
         )
+
         # Tonic baseline drive for autonomous 5-10 Hz pacemaking.
         # TANs fire tonically without external drive (intrinsic pacemaking via I_h etc.),
         # approximated here as a constant excitatory conductance baseline.
-        # Registered as buffers so they move with .to(device) and are saved in state_dict.
-        self.register_buffer(
-            "_tan_baseline",
-            torch.full((self.tan_size,), self.config.tan_baseline_drive, device=device),
-        )
+        self._tan_baseline: torch.Tensor
+        self.register_buffer("_tan_baseline", torch.full((self.tan_size,), self.config.tan_baseline_drive, device=device))
 
         # Tonic baseline drive for FSI; provides minimal sub-threshold depolarisation so
         # cortical/thalamic bursts can push FSI above threshold. AMPA-only (NMDA disabled).
-        self.register_buffer(
-            "_fsi_baseline",
-            torch.full((self.fsi_size,), self.config.fsi_baseline_drive, device=device),
-        )
+        self._fsi_baseline: torch.Tensor
+        self.register_buffer("_fsi_baseline", torch.full((self.fsi_size,), self.config.fsi_baseline_drive, device=device))
 
         # TAN → D1 inhibition (M2 receptor-mediated, widespread cholinergic inhibition)
         self._add_internal_connection(
@@ -546,7 +569,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=None,
+            stp_config=STPConfig(U=0.25, tau_d=400.0, tau_f=20.0),
         )
 
         # TAN → D2 inhibition (M2 receptor-mediated, cholinergic gating of NoGo pathway)
@@ -561,12 +584,8 @@ class Striatum(NeuralRegion[StriatumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=None,
+            stp_config=STPConfig(U=0.25, tau_d=400.0, tau_f=20.0),
         )
-
-        # Register TAN population after neuron creation and its internal connections.
-        # (D1, D2, FSI were registered earlier, before their first _add_internal_connection)
-        self._register_neuron_population(StriatumPopulation.TAN, self.tan_neurons, polarity=PopulationPolarity.ANY)
 
         # =====================================================================
         # TAN ACh CONCENTRATION TRACKING (muscarinic timescale)
@@ -587,7 +606,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # Scalar inhibitory trace driving the TAN pause; decays with tau = 300 ms.
         self.register_buffer("_tan_pause_trace", torch.zeros(1, device=device))
         # Pre-compute per-step decay factor (updated by update_temporal_parameters).
-        self._tan_pause_decay: float = math.exp(-GlobalConfig.DEFAULT_DT_MS / 300.0)
+        self._tan_pause_decay: float = decay_float(GlobalConfig.DEFAULT_DT_MS, 300.0)
 
         # Ensure all tensors are on the correct device
         self.to(device)

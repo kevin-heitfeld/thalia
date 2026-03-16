@@ -9,15 +9,28 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from thalia.brain.presets.basal_ganglia import add_bg_circuit
-from thalia.brain.presets.medial_temporal_lobe import add_mtl_circuit
+from thalia.brain.configs import (
+    BasolateralAmygdalaConfig,
+    CentralAmygdalaConfig,
+    CerebellumConfig,
+    CorticalColumnConfig,
+    CorticalPopulationConfig,
+    DopaminePacemakerConfig,
+    DorsalRapheNucleusConfig,
+    LocusCoeruleusConfig,
+    NeuralRegionConfig,
+    ThalamusConfig,
+    VTAConfig,
+)
+from thalia.brain.presets.basal_ganglia import add_basal_ganglia_regions, add_basal_ganglia_circuit
+from thalia.brain.presets.medial_temporal_lobe import add_medial_temporal_lobe_regions, add_medial_temporal_lobe_circuit
 from thalia.brain.regions.population_names import (
     BLAPopulation,
     CeAPopulation,
     CerebellumPopulation,
     CortexPopulation,
     DRNPopulation,
-    ECPopulation,
+    EntorhinalCortexPopulation,
     ExternalPopulation,
     GPePopulation,
     GPiPopulation,
@@ -49,18 +62,20 @@ def _default_sizes() -> RegionSizes:
     """Return default population sizes based on rodent brain estimates (scaled for tractability)."""
     return {
         "basolateral_amygdala": {
-            BLAPopulation.PRINCIPAL: 2000,   # ~60% of BLA — glutamatergic fear/extinction engrams
-            BLAPopulation.PV: 500,           # ~20% — fast-spiking, feedforward inhibition
-            BLAPopulation.SOM: 300,          # ~10% — slow, dendritic inhibition (extinction)
+            BLAPopulation.PRINCIPAL: 2000,  # ~60% of BLA — glutamatergic fear/extinction engrams
+            BLAPopulation.PV: 500,          # ~20% — fast-spiking, feedforward inhibition
+            BLAPopulation.SOM: 300,         # ~10% — slow, dendritic inhibition (extinction)
         },
         "central_amygdala": {
-            CeAPopulation.LATERAL: 750,      # CeL — integrative (ON/OFF cell division)
-            CeAPopulation.MEDIAL: 500,       # CeM — output nucleus (→ LC, LHb)
+            CeAPopulation.LATERAL: 750,  # CeL — integrative (ON/OFF cell division)
+            CeAPopulation.MEDIAL: 500,   # CeM — output nucleus (→ LC, LHb)
         },
         "cerebellum": {
             CerebellumPopulation.GRANULE: 10000,  # Granule:Purkinje = 100:1 (biology: 1000:1)
             CerebellumPopulation.PURKINJE: 100,   # Sole output of cerebellar cortex
             CerebellumPopulation.DCN: 100,        # Sole cerebellar output neurons
+            CerebellumPopulation.BASKET: 100,     # Molecular layer: soma inhibition, 1:1 with Purkinje
+            CerebellumPopulation.STELLATE: 300,   # Molecular layer: dendritic inhibition, 3:1 with Purkinje
         },
         "cortex_association": {
             # Association cortex: thinner L4, thicker L2/3 vs sensory
@@ -79,21 +94,22 @@ def _default_sizes() -> RegionSizes:
             CortexPopulation.L6B_PYR: 600,
         },
         "dorsal_raphe": {
-            DRNPopulation.SEROTONIN: 5000,   # Serotonergic projection neurons
-            DRNPopulation.GABA: 500,         # Local GABAergic interneurons
+            DRNPopulation.SEROTONIN: 5000,  # Serotonergic projection neurons
+            DRNPopulation.GABA: 500,        # Local GABAergic interneurons
         },
         "entorhinal_cortex": {
-            ECPopulation.EC_II: 400,    # Layer II stellate cells: grid/place → DG, CA3
-            ECPopulation.EC_III: 300,   # Layer III pyramidal time cells → CA1
-            ECPopulation.EC_V: 200,     # Layer V output back-projection ← CA1 → neocortex
+            EntorhinalCortexPopulation.EC_II: 400,          # Layer II stellate cells: grid/place → DG, CA3
+            EntorhinalCortexPopulation.EC_III: 300,         # Layer III pyramidal time cells → CA1
+            EntorhinalCortexPopulation.EC_V: 200,           # Layer V output back-projection ← CA1 → neocortex
+            EntorhinalCortexPopulation.EC_INHIBITORY: 250,  # PV basket cells (~22% of EC; fixes E/I=7.5 imbalance)
         },
         "globus_pallidus_externa": {
-            GPePopulation.ARKYPALLIDAL: 700,   # ~25%, project back to striatum
-            GPePopulation.PROTOTYPIC: 2000,    # ~75%, project to STN + SNr
+            GPePopulation.ARKYPALLIDAL: 700,  # ~25%, project back to striatum
+            GPePopulation.PROTOTYPIC: 2000,   # ~75%, project to STN + SNr
         },
         "globus_pallidus_interna": {
-            GPiPopulation.PRINCIPAL: 1500,     # ~75%, project to thalamus VA/VL/MD
-            GPiPopulation.BORDER_CELLS: 500,   # ~25%, value-coding; pause on reward
+            GPiPopulation.PRINCIPAL: 1500,    # ~75%, project to thalamus VA/VL/MD
+            GPiPopulation.BORDER_CELLS: 500,  # ~25%, value-coding; pause on reward
         },
         "hippocampus": {
             HippocampusPopulation.DG: 500,
@@ -102,7 +118,7 @@ def _default_sizes() -> RegionSizes:
             HippocampusPopulation.CA1: 375,
         },
         "lateral_habenula": {
-            LHbPopulation.PRINCIPAL: 500,      # Glutamatergic, bad-outcome signal
+            LHbPopulation.PRINCIPAL: 500,  # Glutamatergic, bad-outcome signal
         },
         "locus_coeruleus": {
             LocusCoeruleusPopulation.NE: 1600,
@@ -125,7 +141,7 @@ def _default_sizes() -> RegionSizes:
             CortexPopulation.L6B_PYR: 60,
         },
         "rostromedial_tegmentum": {
-            RMTgPopulation.GABA: 1000,         # GABAergic, inhibit VTA DA
+            RMTgPopulation.GABA: 1000,  # GABAergic, inhibit VTA DA
         },
         "striatum": {
             StriatumPopulation.D1: 200,
@@ -139,11 +155,11 @@ def _default_sizes() -> RegionSizes:
             SNcPopulation.GABA: 500,
         },
         "subthalamic_nucleus": {
-            STNPopulation.STN: 500,            # Glutamatergic pacemakers (~20 Hz autonomous)
+            STNPopulation.STN: 500,  # Glutamatergic pacemakers (~20 Hz autonomous)
         },
         "thalamus": {
             ThalamusPopulation.RELAY: 400,
-            ThalamusPopulation.TRN: 40,        # 10:1 relay:TRN ratio
+            ThalamusPopulation.TRN: 40,     # 10:1 relay:TRN ratio
         },
         "vta": {
             VTAPopulation.DA_MESOLIMBIC: 1375,   # 55% — reward/motivation
@@ -165,8 +181,8 @@ def _resolve_sizes(
     sizes_overrides: RegionSizes = overrides.get("population_sizes", {})
 
     sizes: RegionSizes = {
-        region: {**defaults[region], **sizes_overrides.get(region, {})}
-        for region in defaults
+        region_name: {**population_sizes, **sizes_overrides.get(region_name, {})}
+        for region_name, population_sizes in defaults.items()
     }
 
     external_reward_size: int = (
@@ -194,28 +210,152 @@ def _resolve_sizes(
 
 def _add_regions(builder: BrainBuilder, sizes: RegionSizes) -> None:
     """Register all brain regions with the builder."""
-    builder.add_region("basolateral_amygdala", "basolateral_amygdala", population_sizes=sizes["basolateral_amygdala"])
-    builder.add_region("central_amygdala", "central_amygdala", population_sizes=sizes["central_amygdala"])
-    builder.add_region("cerebellum", "cerebellum", population_sizes=sizes["cerebellum"])
-    builder.add_region("cortex_association", "cortical_column", population_sizes=sizes["cortex_association"])
-    builder.add_region("cortex_sensory", "cortical_column", population_sizes=sizes["cortex_sensory"])
-    builder.add_region("dorsal_raphe", "dorsal_raphe", population_sizes=sizes["dorsal_raphe"])
-    builder.add_region("entorhinal_cortex", "entorhinal_cortex", population_sizes=sizes["entorhinal_cortex"])
-    builder.add_region("globus_pallidus_externa", "globus_pallidus_externa", population_sizes=sizes["globus_pallidus_externa"])
-    builder.add_region("globus_pallidus_interna", "globus_pallidus_interna", population_sizes=sizes["globus_pallidus_interna"])
-    builder.add_region("hippocampus", "hippocampus", population_sizes=sizes["hippocampus"])
-    builder.add_region("lateral_habenula", "lateral_habenula", population_sizes=sizes["lateral_habenula"])
-    builder.add_region("locus_coeruleus", "locus_coeruleus", population_sizes=sizes["locus_coeruleus"])
-    builder.add_region("medial_septum", "medial_septum", population_sizes=sizes["medial_septum"])
-    builder.add_region("nucleus_basalis", "nucleus_basalis", population_sizes=sizes["nucleus_basalis"])
-    builder.add_region("prefrontal_cortex", "prefrontal_cortex", population_sizes=sizes["prefrontal_cortex"])
-    builder.add_region("rostromedial_tegmentum", "rostromedial_tegmentum", population_sizes=sizes["rostromedial_tegmentum"])
-    builder.add_region("striatum", "striatum", population_sizes=sizes["striatum"])
-    builder.add_region("substantia_nigra", "substantia_nigra", population_sizes=sizes["substantia_nigra"])
-    builder.add_region("substantia_nigra_compacta", "substantia_nigra_compacta", population_sizes=sizes["substantia_nigra_compacta"])
-    builder.add_region("subthalamic_nucleus", "subthalamic_nucleus", population_sizes=sizes["subthalamic_nucleus"])
-    builder.add_region("thalamus", "thalamus", population_sizes=sizes["thalamus"])
-    builder.add_region("vta", "vta", population_sizes=sizes["vta"])
+    builder.add_region(
+        "basolateral_amygdala", "basolateral_amygdala",
+        population_sizes=sizes["basolateral_amygdala"],
+        config=BasolateralAmygdalaConfig(),
+    )
+    builder.add_region(
+        "central_amygdala", "central_amygdala",
+        population_sizes=sizes["central_amygdala"],
+        config=CentralAmygdalaConfig(),
+    )
+    builder.add_region(
+        "cerebellum", "cerebellum",
+        population_sizes=sizes["cerebellum"],
+        config=CerebellumConfig(),
+    )
+    builder.add_region(
+        "cortex_association", "cortical_column",
+        population_sizes=sizes["cortex_association"],
+        config=CorticalColumnConfig(),
+    )
+    sensory_cortex_config = CorticalColumnConfig()
+    sensory_cortex_config.population_overrides[CortexPopulation.L23_INHIBITORY_PV]  = CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.65, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L23_INHIBITORY_SST] = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L4_INHIBITORY_PV]   = CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.65, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L4_INHIBITORY_SST]  = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L5_INHIBITORY_PV]   = CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.65, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L5_INHIBITORY_SST]  = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L6A_INHIBITORY_PV]  = CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.65, v_reset=0.0, adapt_increment=0.05, tau_adapt=100.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L6A_INHIBITORY_SST] = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L6B_INHIBITORY_PV]  = CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.65, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0)
+    sensory_cortex_config.population_overrides[CortexPopulation.L6B_INHIBITORY_SST] = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt= 90.0)
+    builder.add_region(
+        "cortex_sensory", "cortical_column",
+        population_sizes=sizes["cortex_sensory"],
+        config=sensory_cortex_config,
+    )
+    builder.add_region(
+        "dorsal_raphe", "dorsal_raphe",
+        population_sizes=sizes["dorsal_raphe"],
+        config=DorsalRapheNucleusConfig(),
+    )
+    builder.add_region(
+        "locus_coeruleus", "locus_coeruleus",
+        population_sizes=sizes["locus_coeruleus"],
+        config=LocusCoeruleusConfig(),
+    )
+    builder.add_region(
+        "nucleus_basalis", "nucleus_basalis",
+        population_sizes=sizes["nucleus_basalis"],
+        config=NeuralRegionConfig(),
+    )
+    pfc_config = CorticalColumnConfig(
+        # PFC requires slower homeostasis to preserve WM patterns across delays.
+        gain_learning_rate=0.001,    # Very slow (prevents WM collapse)
+        gain_tau_ms=5000.0,          # 5 s averaging window
+
+        threshold_learning_rate=0.02,
+        threshold_min=0.05,          # Lower floor for under-firing regions
+        threshold_max=1.5,
+
+        # Dense mesocortical DA to L2/3: WM gating via D1 receptors.
+        # Standard cortex: 7.5%.  PFC L2/3: 30% (matches L5 primary innervation).
+        # Biology: Goldman-Rakic et al. 1992; mesocortical DA densely innervates
+        # deep L3 / L5 of dlPFC which routes through our L2/3 WM population.
+        da_l23_fraction=0.30,
+
+        # Dense L2/3 recurrence for WM attractor dynamics.
+        l23_recurrent_connectivity=0.3,
+        l23_recurrent_weight_scale=0.0003,
+    )
+    pfc_config.population_overrides[CortexPopulation.L23_PYR] = CorticalPopulationConfig(
+        tau_mem_ms=200.0,       # Very long integration for WM persistence
+        v_threshold=1.8,        # Same as default — selective firing
+        v_reset=-0.15,          # AHP: enables SFA in PFC WM neurons
+        adapt_increment=0.65,   # Raised 0.55→0.65: PFC L23 at 3.19 Hz (target ≤3), need slightly more adaptation
+        tau_adapt=120.0,        # Reduced 200→120: faster adaptation to suppress intra-region excitation
+    )
+    pfc_config.population_overrides[CortexPopulation.L4_PYR] = CorticalPopulationConfig(
+        tau_mem_ms=10.0,        # Fast — same as default
+        v_threshold=0.65,       # Low threshold — same as default
+        v_reset=-0.10,          # AHP: mild for fast relay
+        adapt_increment=0.20,
+        tau_adapt=80.0,
+    )
+    pfc_config.population_overrides[CortexPopulation.L5_PYR] = CorticalPopulationConfig(
+        tau_mem_ms=150.0,       # Long — planning / output integration
+        v_threshold=1.2,
+        v_reset=-0.12,          # AHP: moderate for output neurons
+        adapt_increment=0.15,   # Weaker — supports sustained output
+        tau_adapt=180.0,        # Slow — planning timescale
+    )
+    pfc_config.population_overrides[CortexPopulation.L6A_PYR] = CorticalPopulationConfig(
+        tau_mem_ms=15.0,
+        v_threshold=1.4,
+        v_reset=-0.10,          # AHP: mild for feedback neurons
+        adapt_increment=0.25,   # Raised 0.18→0.25: match base cortical column L6A increase
+        tau_adapt=100.0,
+    )
+    pfc_config.population_overrides[CortexPopulation.L6B_PYR] = CorticalPopulationConfig(
+        tau_mem_ms=25.0,
+        v_threshold=1.1,
+        v_reset=-0.10,          # AHP: mild for relay modulation
+        adapt_increment=0.22,
+        tau_adapt=100.0,
+    )
+    builder.add_region(
+        "prefrontal_cortex", "prefrontal_cortex",
+        population_sizes=sizes["prefrontal_cortex"],
+        config=pfc_config,
+    )
+    builder.add_region(
+        "substantia_nigra_compacta", "substantia_nigra_compacta",
+        population_sizes=sizes["substantia_nigra_compacta"],
+        config=DopaminePacemakerConfig(baseline_drive=0.008),
+    )
+    builder.add_region(
+        "thalamus", "thalamus",
+        population_sizes=sizes["thalamus"],
+        config=ThalamusConfig(),
+    )
+    builder.add_region(
+        "vta", "vta",
+        population_sizes=sizes["vta"],
+        config=VTAConfig(),
+    )
+
+    add_basal_ganglia_regions(
+        builder,
+        sizes,
+        str_name="striatum",
+        gpe_name="globus_pallidus_externa",
+        gpi_name="globus_pallidus_interna",
+        stn_name="subthalamic_nucleus",
+        snr_name="substantia_nigra",
+        lhb_name="lateral_habenula",
+        rmtg_name="rostromedial_tegmentum",
+    )
+
+    add_medial_temporal_lobe_regions(
+        builder,
+        sizes,
+        ms_name="medial_septum",
+        ec_name="entorhinal_cortex",
+        hpc_name="hippocampus",
+        sub_name=None,
+    )
 
 
 # =============================================================================
@@ -236,8 +376,6 @@ def _connect_external_inputs(
     # External Sensory Input → Thalamus RELAY
     # Represents retinogeniculate / cochlear / somatosensory ascending pathway.
     # Very fast, heavily myelinated; delay implicit in simulation timestep.
-    # ConductanceScaledSpec: external sensory (20 Hz) drives relay to V_inf=0.85
-    # (just above threshold=0.8). 80% of relay drive; L6b corticothalamic handles 20%.
     builder.add_external_input_source(
         synapse_id=SynapseId.external_sensory_to_thalamus_relay("thalamus"),
         n_input=external_sensory_size,
@@ -247,8 +385,9 @@ def _connect_external_inputs(
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.85,
-            fraction_of_drive=0.80,
+            fraction_of_drive=0.92,
         ),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=30.0),
     )
 
     # External reward → VTA DA MESOLIMBIC
@@ -258,18 +397,19 @@ def _connect_external_inputs(
         n_input=external_reward_size,
         connectivity=0.7,
         weight_scale=0.0008,
+        stp_config=None,
     )
 
     # External novelty → VTA DA MESOLIMBIC (Hippocampal-VTA loop, Lisman & Grace 2005)
     # CA1 mismatch signal (prediction error: EC input > CA3 recall) auto-injected by
     # Brain.forward() with one-step causal delay.  Represents the subiculum → ventral
     # striatum → VTA disinhibition pathway that gates exploratory DA bursts on novel stimuli.
-    # Weight ~60% of reward weight: novelty drive is weaker than explicit reward.
     builder.add_external_input_source(
         synapse_id=SynapseId.external_novelty_to_vta_da("vta"),
         n_input=external_reward_size,
         connectivity=0.5,
         weight_scale=0.0005,
+        stp_config=None,
     )
 
 
@@ -305,12 +445,11 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             target_v_inf=0.70,
             fraction_of_drive=0.85,
         ),
-        stp_config=STPConfig(U=0.45, tau_d=700.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # Thalamus → L4 PV: Feedforward inhibition drive
     # PV cells have lower thresholds; thalamus provides 35% of PV drive.
-    # Reduced from 0.80: 217 Hz PV at 0.80 silenced L4_pyr completely.
     builder.connect(
         synapse_id=SynapseId(
             source_region="thalamus",
@@ -350,8 +489,9 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             target_g_L=0.10,
             target_tau_E_ms=4.0,
             target_v_inf=1.0,
-            fraction_of_drive=0.40,
+            fraction_of_drive=0.13,
         ),
+        stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
     )
 
     # CorticalColumn L6b → Thalamus RELAY: Excitatory precision feedback (type-II, fast)
@@ -372,7 +512,7 @@ def _connect_thalamocortical(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.85,
-            fraction_of_drive=0.20,
+            fraction_of_drive=0.30,
         ),
         stp_config=STPConfig(U=0.08, tau_d=150.0, tau_f=800.0),
     )
@@ -396,7 +536,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             source_region="cortex_sensory",
             source_population=CortexPopulation.L5_PYR,
             target_region="entorhinal_cortex",
-            target_population=ECPopulation.EC_II,
+            target_population=EntorhinalCortexPopulation.EC_II,
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=6.0,
@@ -418,7 +558,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             source_region="cortex_association",
             source_population=CortexPopulation.L23_PYR,
             target_region="entorhinal_cortex",
-            target_population=ECPopulation.EC_II,
+            target_population=EntorhinalCortexPopulation.EC_II,
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
@@ -440,7 +580,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             source_region="cortex_association",
             source_population=CortexPopulation.L23_PYR,
             target_region="entorhinal_cortex",
-            target_population=ECPopulation.EC_III,
+            target_population=EntorhinalCortexPopulation.EC_III,
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=5.0,
@@ -458,14 +598,14 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
 
     # Internal MTL wiring: EC ↔ HPC afferents, HPC → EC back-projection,
     # and septal theta pacemaker loop (MS ↔ HPC) are all wired by the preset.
-    add_mtl_circuit(builder, add_regions=False)
+    add_medial_temporal_lobe_circuit(builder, add_regions=False)
 
     # EC_V → Association cortex L2/3: memory indexing output → cortical consolidation
     # EC layer V broadcasts the compressed hippocampal memory index back to neocortex.
     builder.connect(
         synapse_id=SynapseId(
             source_region="entorhinal_cortex",
-            source_population=ECPopulation.EC_V,
+            source_population=EntorhinalCortexPopulation.EC_V,
             target_region="cortex_association",
             target_population=CortexPopulation.L23_PYR,
             receptor_type=ReceptorType.AMPA,
@@ -480,6 +620,8 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.10,
         ),
+        # Moderately depressing long-range excitatory (entorhinal→neocortex).
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # Thalamus → Hippocampus DG: direct sensory-to-memory pathway (bypass cortex)
@@ -503,7 +645,7 @@ def _connect_cortex_ec_hippocampus(builder: BrainBuilder) -> None:
             target_v_inf=0.90,
             fraction_of_drive=0.20,
         ),
-        stp_config=STPConfig(U=0.45, tau_d=700.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
 
@@ -541,7 +683,6 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.50,
         ),
-        # Corticofrontal feedforward: moderate depression (CORTICAL_FF).
         stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
@@ -565,9 +706,6 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.20,
         ),
-        # D1-MSN disinhibitory gate: encoded as AMPA but represents the net
-        # suppressive effect transmitted via the direct pathway.  Striatopallidal-
-        # like depression (moderate) prevents sustained BG gating.
         stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
     )
 
@@ -591,7 +729,6 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.15,
         ),
-        # PFC→CA1: corticofugal depressing top-down
         stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
@@ -610,19 +747,20 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
-            target_g_L=0.02,
-            target_tau_E_ms=10.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.15,
+            target_g_L=0.03,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.6,
+            fraction_of_drive=0.35,  # Reduced 0.55→0.35: PFC L23=5.66 Hz (target ≤3), reduce external seed for recurrent loops
+            stp_utilization_factor=0.28,
         ),
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
     # Hippocampus CA1 → PFC L5: hippocampal context to PFC output-layer apical tufts
-    # CA1 in biology projects to BOTH L2/3 and L5/6 of PFC via the fornix
-    # (Thierry et al. 2000; Jay et al. 1992).  The L5 target provides apical dendritic
-    # input, gating subcortical output via coincidence detection in the two-compartment
-    # model.  PFC is the apex of the cortical hierarchy — hippocampus is the only
+    # CA1 in biology projects to BOTH L2/3 and L5/6 of PFC via the fornix.
+    # The L5 target provides apical dendritic input, gating subcortical output via
+    # coincidence detection in the two-compartment model.
+    # PFC is the apex of the cortical hierarchy — hippocampus is the only
     # major source of top-down context for PFC L5 apical compartment.
     builder.connect(
         synapse_id=SynapseId(
@@ -637,12 +775,12 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
-            target_g_L=0.02,
-            target_tau_E_ms=10.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.10,
+            target_g_L=0.03,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.6,
+            fraction_of_drive=0.90,
+            stp_utilization_factor=0.28,
         ),
-        # CA1→PFC L5 apical: same Schaffer-collateral-like dynamics as L23 path.
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
@@ -662,13 +800,12 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
-            target_g_L=0.05,
+            target_g_L=0.03,
             target_tau_E_ms=5.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.20,
+            target_v_inf=1.6,
+            fraction_of_drive=0.90,
+            stp_utilization_factor=0.16,
         ),
-        # PFC top-down to sensory L2/3: facilitating (canonical hierarchical FB
-        # targets superficial layers; Wang et al. 2006 — UF-type).
         stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
@@ -676,7 +813,7 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
     # Canonical predictive-coding FB targets both L2/3 (suppression of prediction error)
     # and L5 apical tufts (gain modulation of output layer).  L5 is the main
     # subcortical projection layer; PFC gating here modulates what sensory signals
-    # reach thalamus, striatum and cerebellum.  (Larkum 2013; Bastos et al. 2012)
+    # reach thalamus, striatum and cerebellum.
     builder.connect(
         synapse_id=SynapseId(
             source_region="prefrontal_cortex",
@@ -690,12 +827,12 @@ def _connect_prefrontal(builder: BrainBuilder) -> None:
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
-            target_g_L=0.05,
+            target_g_L=0.03,
             target_tau_E_ms=5.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.10,
+            target_v_inf=1.6,
+            fraction_of_drive=0.90,
+            stp_utilization_factor=0.16,
         ),
-        # PFC→sensory L5 apical: facilitating FB (same type as PFC→L23 pathway).
         stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
@@ -750,7 +887,7 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=2.5,
             target_v_inf=0.90,
-            fraction_of_drive=0.08,  # Reduced 0.25→0.08: PFC→granule weight was 4× sensory weight (dominant driver); reduce to match sensory
+            fraction_of_drive=0.08,
         ),
         stp_config=STPConfig(U=0.10, tau_d=100.0, tau_f=500.0),
     )
@@ -775,9 +912,10 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.10,
         ),
-        # DCN→cortex output: facilitating at baseline DCN rates
-        # (Pugh & Raman 2006: DCN→VL thalamus facilitates at low firing rates).
-        stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
+        # DCN→L4 is a facilitating pathway (cerebellar predictions build up with DCN bursts).
+        # U=0.05: low initial release → facilitates during DCN bursts; tau_f>tau_d ensures
+        # net facilitation rather than the net depression caused by U=0.1.
+        stp_config=STPConfig(U=0.05, tau_d=150.0, tau_f=300.0),
     )
 
     # Cerebellum DCN → Sensory cortex L4 PV: feedforward inhibition for motor predictions
@@ -799,7 +937,6 @@ def _connect_cerebellum(builder: BrainBuilder) -> None:
             target_v_inf=0.95,
             fraction_of_drive=0.05,
         ),
-        # Same DCN facilitating STP for PV feedforward.
         stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
@@ -834,7 +971,7 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.65,  # Increased 0.25→0.65: MSN D1/D2 at 0.5 Hz (target 8 Hz); source fires ~3 Hz vs 10 Hz design
+            fraction_of_drive=0.45,
         ),
         stp_config=STPConfig(U=0.4, tau_d=250.0, tau_f=150.0),
     )
@@ -851,7 +988,7 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.35,  # Increased 0.13→0.35: hippocampal CA1 also underfires; 2.7× boost
+            fraction_of_drive=0.35,
         ),
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
@@ -868,15 +1005,13 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.55,  # Increased 0.21→0.55: PFC L5 underfires; 2.6× boost
+            fraction_of_drive=0.35,
         ),
         stp_config=STPConfig(U=0.4, tau_d=250.0, tau_f=150.0),
     )
 
     # Thalamus → Striatum: thalamostriatal pathway for habitual responses
-    # Direct sensory-action pathway bypassing cortex (Smith et al. 2004, 2009, 2014).
-    # Strong THALAMO_STRIATAL depression (U=0.5) motivates the elevated base weight;
-    # auto-correction compensates by using the actual steady-state u_eff.
+    # Direct sensory-action pathway bypassing cortex.
     builder.connect_to_striatum(
         source_region="thalamus",
         source_population=ThalamusPopulation.RELAY,
@@ -888,9 +1023,12 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.70,
+            fraction_of_drive=0.40,
         ),
-        stp_config=STPConfig(U=0.12, tau_d=200.0, tau_f=500.0),
+        # Thalamostriatal synapses are facilitating (Raju et al. 2006; Ellender et al. 2011).
+        # U=0.05: low initial release probability → builds with sustained relay bursts.
+        # tau_f=500ms > tau_d=200ms ensures net facilitation across the burst window.
+        stp_config=STPConfig(U=0.05, tau_d=200.0, tau_f=500.0),
     )
 
     # Association cortex L5 → Striatum: goal-directed corticostriatal projection
@@ -906,7 +1044,7 @@ def _connect_striatal_inputs(builder: BrainBuilder) -> None:
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.55,  # Increased 0.21→0.55: assoc cortex underfires; 2.6× boost
+            fraction_of_drive=0.40,
         ),
         stp_config=STPConfig(U=0.4, tau_d=250.0, tau_f=150.0),
     )
@@ -927,7 +1065,7 @@ def _connect_basal_ganglia(builder: BrainBuilder) -> None:
     # All direct/indirect pathways, GPi → thalamus, and the anti-reward cascade
     # (SNr → LHb → RMTg → VTA) are delegated to the BG preset.
     # Regions are already registered by _add_regions; only connections are wired here.
-    add_bg_circuit(
+    add_basal_ganglia_circuit(
         builder,
         thalamus_name="thalamus",
         vta_name="vta",
@@ -1017,14 +1155,12 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
         connectivity=0.2,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
-            target_g_L=0.05,
+            target_g_L=0.03,
             target_tau_E_ms=5.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.10,
+            target_v_inf=1.6,
+            fraction_of_drive=0.70,
+            stp_utilization_factor=0.25,
         ),
-        # Association L6B→Sensory L2/3: canonical top-down FB from deep layer
-        # to superficial layer.  L6B origin is type-II CT-like (facilitating);
-        # Markov et al. (2014) show FB connections are broadly facilitating.
         stp_config=STPConfig(U=0.08, tau_d=150.0, tau_f=800.0),
     )
 
@@ -1043,12 +1179,12 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
-            target_g_L=0.05,
+            target_g_L=0.03,
             target_tau_E_ms=5.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.10,
+            target_v_inf=1.6,
+            fraction_of_drive=0.50,
+            stp_utilization_factor=0.28,
         ),
-        # CA1→Association L2/3: hippocampal output moderate depression.
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
@@ -1066,12 +1202,12 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
         connectivity=0.3,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
-            target_g_L=0.05,
+            target_g_L=0.03,
             target_tau_E_ms=5.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.20,
+            target_v_inf=1.6,
+            fraction_of_drive=0.50,
+            stp_utilization_factor=0.16,
         ),
-        # PFC top-down to association L2/3: facilitating deep-layer FB.
         stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
@@ -1093,12 +1229,12 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
-            target_g_L=0.05,
+            target_g_L=0.03,
             target_tau_E_ms=5.0,
-            target_v_inf=1.05,
-            fraction_of_drive=0.12,
+            target_v_inf=1.6,
+            fraction_of_drive=0.90,
+            stp_utilization_factor=0.16,
         ),
-        # PFC→assoc L5 apical: facilitating FB projection (type-II; Markov et al. 2014).
         stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
     )
 
@@ -1120,17 +1256,15 @@ def _connect_corticocortical(builder: BrainBuilder) -> None:
             target_g_L=0.10,
             target_tau_E_ms=4.0,
             target_v_inf=1.0,
-            fraction_of_drive=0.40,
+            fraction_of_drive=0.13,
         ),
+        stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
     )
 
 
 # =============================================================================
 # Neuromodulator systems: NE (LC), ACh (NB), 5-HT (DRN)
 # =============================================================================
-# Note: the SNr → LHb → RMTg → VTA anti-reward cascade is now wired by
-# add_bg_circuit() inside _connect_basal_ganglia() above.
-
 def _connect_neuromodulators(builder: BrainBuilder) -> None:
     """Wire inputs into the three spike-based neuromodulator systems.
 
@@ -1159,7 +1293,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_g_L=0.056,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.20,
+            fraction_of_drive=0.06,  # Reduced 0.08→0.06: LC:NE=5.64 Hz (target ≤5), PFC input
         ),
         stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
@@ -1183,7 +1317,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_g_L=0.056,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.10,
+            fraction_of_drive=0.04,  # Reduced 0.06→0.04: LC:NE=5.64 Hz (target ≤5), CA1 novelty input
         ),
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
@@ -1217,7 +1351,6 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
     # BLA PRINCIPAL → NB ACH: emotional salience drives ACh encoding-mode bursts
     # BLA principal neurons respond to unexpected / aversive stimuli (US, threat).
     # High BLA activity → strong prediction error → NB bursts ACh.
-    # (Zaborszky et al. 2015; Holland & Gallagher 1999)
     # Distance: ~2-4cm → 5-8ms delay.
     builder.connect(
         synapse_id=SynapseId(
@@ -1245,7 +1378,6 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
     # LHb → DRN SEROTONIN: punishment / negative RPE → 5-HT pause
     # LHb principal (glutamatergic) projects heavily to DRN.
     # High LHb activity → 5-HT pause (via local GABA interneurons in DRN).
-    # (Vertes & Linley 2008; Stern et al. 2017)
     # Distance: ~1-2cm (adjacent midbrain) → 2-4ms delay.
     builder.connect(
         synapse_id=SynapseId(
@@ -1263,7 +1395,7 @@ def _connect_neuromodulators(builder: BrainBuilder) -> None:
             target_g_L=0.067,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.40,
+            fraction_of_drive=0.22,  # Reduced 0.25→0.22: DR serotonin=3.05 Hz (target ≤3), marginal overshoot
         ),
         stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )
@@ -1302,7 +1434,8 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.35,
         ),
-        stp_config=None,
+        # Depressing long-range cortical projection.
+        stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
     )
 
     # Thalamus RELAY → BLA PRINCIPAL: fast CS pathway (thalamo-amygdalar shortcut)
@@ -1327,7 +1460,8 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.40,
         ),
-        stp_config=None,
+        # Moderately depressing thalamocortical relay.
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # Hippocampus CA1 → BLA PRINCIPAL: contextual fear / extinction renewal
@@ -1351,7 +1485,8 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_v_inf=1.05,
             fraction_of_drive=0.15,
         ),
-        stp_config=None,
+        # Facilitating — hippocampal→amygdala gates memory-driven salience.
+        stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=300.0),
     )
 
     # PFC → BLA SOM: top-down extinction regulation
@@ -1445,7 +1580,7 @@ def _connect_amygdala(builder: BrainBuilder) -> None:
             target_g_L=0.056,
             target_tau_E_ms=5.0,
             target_v_inf=0.95,
-            fraction_of_drive=0.20,
+            fraction_of_drive=0.08,  # Reduced 0.10→0.08: LC:NE=5.64 Hz (target ≤5), continue reducing
         ),
         stp_config=STPConfig(U=0.50, tau_d=700.0, tau_f=20.0),
     )

@@ -40,13 +40,13 @@ Standalone preset brain::
 
 Embedded in a larger builder (inject-and-wire pattern)::
 
-    from thalia.brain.presets.bg_preset import add_bg_circuit
-    add_bg_circuit(builder, thalamus_name="thalamus", vta_name="vta")
+    from thalia.brain.presets.bg_preset import add_basal_ganglia_circuit
+    add_basal_ganglia_circuit(builder, thalamus_name="thalamus", vta_name="vta")
     # then wire cortex → STN (hyperdirect) externally
 
 Name-overriding::
 
-    add_bg_circuit(
+    add_basal_ganglia_circuit(
         builder,
         striatum_name="striatum_dorsal",
         snr_name="snr_left",
@@ -59,6 +59,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from thalia.brain.configs.basal_ganglia import (
+    StriatumConfig,
+    TonicPacemakerConfig,
+)
 from thalia.brain.regions.population_names import (
     GPePopulation,
     GPiPopulation,
@@ -81,7 +85,7 @@ if TYPE_CHECKING:
 # Default population sizes
 # =============================================================================
 
-_DEFAULT_BG_SIZES: RegionSizes = {
+DEFAULT_BASAL_GANGLIA_SIZES: RegionSizes = {
     "striatum": {
         StriatumPopulation.D1: 200,   # Direct-pathway MSNs  (Go)
         StriatumPopulation.D2: 200,   # Indirect-pathway MSNs (NoGo)
@@ -110,7 +114,7 @@ _DEFAULT_BG_SIZES: RegionSizes = {
 }
 
 
-def _resolve_bg_sizes(
+def resolve_basal_ganglia_sizes(
     overrides: Dict[str, Any],
     str_name: str,
     gpe_name: str,
@@ -134,7 +138,7 @@ def _resolve_bg_sizes(
 
     result: RegionSizes = {}
     for instance, canonical in canonical_map.items():
-        defaults = dict(_DEFAULT_BG_SIZES[canonical])
+        defaults = dict(DEFAULT_BASAL_GANGLIA_SIZES[canonical])
         user = size_overrides.get(instance, size_overrides.get(canonical, {}))
         result[instance] = {**defaults, **user}
     return result
@@ -144,7 +148,7 @@ def _resolve_bg_sizes(
 # Add regions
 # =============================================================================
 
-def _add_bg_regions(
+def add_basal_ganglia_regions(
     builder: BrainBuilder,
     sizes: RegionSizes,
     str_name: str,
@@ -155,13 +159,41 @@ def _add_bg_regions(
     lhb_name: str,
     rmtg_name: str,
 ) -> None:
-    builder.add_region(str_name,  "striatum",                  population_sizes=sizes[str_name])
-    builder.add_region(gpe_name,  "globus_pallidus_externa",   population_sizes=sizes[gpe_name])
-    builder.add_region(gpi_name,  "globus_pallidus_interna",   population_sizes=sizes[gpi_name])
-    builder.add_region(stn_name,  "subthalamic_nucleus",       population_sizes=sizes[stn_name])
-    builder.add_region(snr_name,  "substantia_nigra",          population_sizes=sizes[snr_name])
-    builder.add_region(lhb_name,  "lateral_habenula",          population_sizes=sizes[lhb_name])
-    builder.add_region(rmtg_name, "rostromedial_tegmentum",    population_sizes=sizes[rmtg_name])
+    builder.add_region(
+        gpe_name, "globus_pallidus_externa",
+        population_sizes=sizes[gpe_name],
+        config=TonicPacemakerConfig(baseline_drive=0.011),
+    )
+    builder.add_region(
+        gpi_name, "globus_pallidus_interna",
+        population_sizes=sizes[gpi_name],
+        config=TonicPacemakerConfig(baseline_drive=0.012),
+    )
+    builder.add_region(
+        lhb_name, "lateral_habenula",
+        population_sizes=sizes[lhb_name],
+        config=TonicPacemakerConfig(baseline_drive=0.007, tau_mem_ms=20.0),
+    )
+    builder.add_region(
+        rmtg_name, "rostromedial_tegmentum",
+        population_sizes=sizes[rmtg_name],
+        config=TonicPacemakerConfig(baseline_drive=0.004),
+    )
+    builder.add_region(
+        str_name, "striatum",
+        population_sizes=sizes[str_name],
+        config=StriatumConfig(),
+    )
+    builder.add_region(
+        snr_name, "substantia_nigra",
+        population_sizes=sizes[snr_name],
+        config=TonicPacemakerConfig(baseline_drive=0.015, v_threshold=1.25),
+    )
+    builder.add_region(
+        stn_name, "subthalamic_nucleus",
+        population_sizes=sizes[stn_name],
+        config=TonicPacemakerConfig(baseline_drive=0.007, tau_mem_ms=18.0, i_h_conductance=0.0006),
+    )
 
 
 # =============================================================================
@@ -265,7 +297,7 @@ def _connect_indirect_pathway(
         axonal_delay_std_ms=1.2,
         connectivity=0.5,
         weight_scale=0.00017,
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.25, tau_d=200.0, tau_f=20.0),
     )
 
     # GPe PROTOTYPIC → STN: slow GABA_B component
@@ -284,7 +316,7 @@ def _connect_indirect_pathway(
         axonal_delay_std_ms=1.2,
         connectivity=0.4,
         weight_scale=0.000050,
-        stp_config=STPConfig(U=0.4, tau_d=700.0, tau_f=30.0),
+        stp_config=STPConfig(U=0.25, tau_d=350.0, tau_f=30.0),
     )
 
     # STN → GPe PROTOTYPIC: excitatory feedback (closes GPe-STN oscillatory loop)
@@ -306,7 +338,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.05,
             fraction_of_drive=0.13,
         ),
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # STN → GPe ARKYPALLIDAL: closes STN-arky loop
@@ -328,7 +360,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.05,
             fraction_of_drive=0.08,
         ),
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # STN → SNr: excitatory indirect output
@@ -350,7 +382,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.10,
             fraction_of_drive=0.30,
         ),
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # STN → GPi PRINCIPAL: hyperdirect path reaches GPi too
@@ -372,7 +404,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.10,
             fraction_of_drive=0.25,
         ),
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # STN → GPi BORDER_CELLS: value-coding border cells require excitatory drive.
@@ -399,7 +431,7 @@ def _connect_indirect_pathway(
             target_v_inf=1.10,
             fraction_of_drive=0.10,
         ),
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
     )
 
     # GPe PROTOTYPIC → SNr: pallido-nigral inhibitory bypass
@@ -415,7 +447,7 @@ def _connect_indirect_pathway(
         axonal_delay_std_ms=1.2,
         connectivity=0.4,
         weight_scale=0.00024,
-        stp_config=STPConfig(U=0.45, tau_d=500.0, tau_f=25.0),
+        stp_config=STPConfig(U=0.25, tau_d=200.0, tau_f=25.0),
     )
 
     # GPe PROTOTYPIC → GPi PRINCIPAL: pallido-pallidal inhibitory pacing
@@ -431,7 +463,7 @@ def _connect_indirect_pathway(
         axonal_delay_std_ms=0.9,
         connectivity=0.4,
         weight_scale=0.00020,
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.25, tau_d=200.0, tau_f=20.0),
     )
 
 
@@ -470,7 +502,8 @@ def _connect_anti_reward_pathway(
             target_v_inf=1.05,
             fraction_of_drive=0.25,
         ),
-        stp_config=None,
+        # Low U + fast τ_d sustains ~64% efficacy at 70 Hz tonic firing.
+        stp_config=STPConfig(U=0.08, tau_d=100.0, tau_f=20.0),
     )
 
     # LHb → RMTg: activates GABAergic DA-pause mediator
@@ -521,7 +554,7 @@ def _connect_bg_output_to_thalamus(
         axonal_delay_std_ms=0.9,
         connectivity=0.5,
         weight_scale=0.0010,
-        stp_config=STPConfig(U=0.3, tau_d=400.0, tau_f=100.0),
+        stp_config=STPConfig(U=0.20, tau_d=200.0, tau_f=50.0),
     )
 
 
@@ -551,6 +584,8 @@ def _connect_bg_output_to_vta(
         axonal_delay_std_ms=0.5,
         connectivity=0.4,
         weight_scale=0.0005,
+        # Low U + fast τ_d sustains ~64% efficacy at 70 Hz tonic firing.
+        stp_config=STPConfig(U=0.08, tau_d=100.0, tau_f=20.0),
     )
 
     # RMTg → VTA DA_MESOLIMBIC: GABAergic pause
@@ -566,7 +601,7 @@ def _connect_bg_output_to_vta(
         axonal_delay_std_ms=0.5,
         connectivity=0.7,
         weight_scale=0.0005,
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
     )
 
     # RMTg → VTA DA_MESOCORTICAL: same pause, mesocortical sub-population
@@ -582,7 +617,7 @@ def _connect_bg_output_to_vta(
         axonal_delay_std_ms=0.5,
         connectivity=0.7,
         weight_scale=0.0005,
-        stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
     )
 
 
@@ -590,7 +625,7 @@ def _connect_bg_output_to_vta(
 # Public entry points
 # =============================================================================
 
-def add_bg_circuit(
+def add_basal_ganglia_circuit(
     builder: BrainBuilder,
     *,
     striatum_name: str = "striatum",
@@ -630,11 +665,11 @@ def add_bg_circuit(
         overrides: Dict[str, Any] = {}
         if population_sizes is not None:
             overrides["population_sizes"] = population_sizes
-        sizes = _resolve_bg_sizes(
+        sizes = resolve_basal_ganglia_sizes(
             overrides,
             striatum_name, gpe_name, gpi_name, stn_name, snr_name, lhb_name, rmtg_name,
         )
-        _add_bg_regions(
+        add_basal_ganglia_regions(
             builder, sizes,
             striatum_name, gpe_name, gpi_name, stn_name, snr_name, lhb_name, rmtg_name,
         )
@@ -666,10 +701,10 @@ def build(builder: BrainBuilder, **overrides: Any) -> None:
         builder = BrainBuilder.preset_builder("basal_ganglia")
         builder.add_region("thalamus", "thalamus", ...)
         builder.add_region("vta", "vta", ...)
-        add_bg_circuit(builder, thalamus_name="thalamus", vta_name="vta")
+        add_basal_ganglia_circuit(builder, thalamus_name="thalamus", vta_name="vta")
         brain = builder.build()
     """
-    add_bg_circuit(
+    add_basal_ganglia_circuit(
         builder,
         population_sizes=overrides.get("population_sizes"),
     )

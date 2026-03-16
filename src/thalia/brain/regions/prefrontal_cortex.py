@@ -20,8 +20,8 @@ from typing import Any, ClassVar, Dict, List, Union
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import PrefrontalCortexConfig
-from thalia.brain.synapses import NMReceptorType, make_nm_receptor
+from thalia.brain.configs import CorticalColumnConfig
+from thalia.brain.synapses import NMReceptorType, make_neuromodulator_receptor
 from thalia.typing import (
     NeuromodulatorChannel,
     NeuromodulatorInput,
@@ -44,9 +44,6 @@ from .region_registry import register_region
         "Agranular laminar cortex with WM-attractor L2/3, DA-gated executive control, "
         "and emergent goal representations"
     ),
-    version="1.0",
-    author="Thalia Project",
-    config_class=PrefrontalCortexConfig,
 )
 class PrefrontalCortex(CorticalColumn):
     """Prefrontal cortex: CorticalColumn with WM-attractor L2/3 and goal emergence."""
@@ -69,33 +66,14 @@ class PrefrontalCortex(CorticalColumn):
 
     def __init__(
         self,
-        config: PrefrontalCortexConfig,
+        config: CorticalColumnConfig,
         population_sizes: PopulationSizes,
         region_name: RegionName,
         *,
         device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ):
-        """Initialise PFC as a CorticalColumn with WM specialisations.
-
-        Calls :meth:`CorticalColumn.__init__` which builds the full layered circuit
-        using ``PrefrontalCortexConfig`` defaults (long tau_mem, dense L2/3 recurrence,
-        higher DA fraction to L2/3).  Then adds the PFC-specific extensions.
-        """
+        """Initialise PFC as a CorticalColumn with WM specialisations."""
         super().__init__(config, population_sizes, region_name, device=device)
-
-        # =====================================================================
-        # D1/D2 RECEPTOR SUBTYPE SPLIT (on L2/3 pyramidal population)
-        # =====================================================================
-        # L2/3 neurons are split into two sub-populations:
-        #   D1-dominant [0, n_d1):            excitatory DA response → WM gating
-        #   D2-dominant [n_d1, l23_pyr_size): inhibitory DA response → WM protection
-        # Indices are stored as persistent=False buffers (not saved in checkpoints).
-        n_d1 = int(self.l23_pyr_size * config.d1_fraction)
-
-        self._d1_neurons: torch.Tensor
-        self._d2_neurons: torch.Tensor
-        self.register_buffer("_d1_neurons", torch.arange(n_d1, device=device))
-        self.register_buffer("_d2_neurons", torch.arange(n_d1, self.l23_pyr_size, device=device))
 
         # =====================================================================
         # EMERGENT GOAL SYSTEM
@@ -145,8 +123,7 @@ class PrefrontalCortex(CorticalColumn):
         # attenuating DA-driven goal consolidation under high serotonin.
         # Kinetics: tau_rise ~10 ms, tau_decay ~200 ms (SERT reuptake).
         # 5-HT1A (Gi → GIRK): patience / temporal discounting gate.
-        # τ_decay=500 ms — sustained suppression over the reward window.
-        self.sht_receptor = make_nm_receptor(
+        self.sht_receptor = make_neuromodulator_receptor(
             NMReceptorType.SHT_1A, n_receptors=self.l23_pyr_size, dt_ms=self.config.dt_ms, device=device
         )
         self._sht_concentration_l23: torch.Tensor

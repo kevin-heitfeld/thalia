@@ -14,7 +14,7 @@ Usage in a training loop::
     for t in range(n_steps):
         inputs = make_sensory_input(brain, t, pattern="random")
         outputs = brain.forward(inputs)
-        recorder.record(t, outputs)
+        recorder.record(t, inputs, outputs)
 """
 
 from __future__ import annotations
@@ -346,18 +346,18 @@ def _ramp_sentinel(brain: "Brain", t: int) -> Optional[SynapticInput]:  # noqa: 
 #: Ordered mapping of pattern name → generator function.
 #: Add new patterns here — no changes to :func:`make_sensory_input` required.
 SENSORY_PATTERNS: Dict[str, Callable[["Brain", int], Optional[SynapticInput]]] = {
-    "none":                    _sensory_none,
-    "background":              _sensory_background,
-    "burst":                   _sensory_burst,
-    "correlated_background":   _sensory_correlated_background,
-    "direct_cortical":         _sensory_direct_cortical,
-    "gamma":                   _sensory_gamma,
-    "hippocampal_theta":        _sensory_hippocampal_theta,
-    "ramp":                    _ramp_sentinel,
-    "random":                  _sensory_random,
-    "rhythmic":                _sensory_rhythmic,
-    "slow_wave":               _sensory_slow_wave,
-    "sustained_burst":         _sensory_sustained_burst,
+    "none":                  _sensory_none,
+    "background":            _sensory_background,
+    "burst":                 _sensory_burst,
+    "correlated_background": _sensory_correlated_background,
+    "direct_cortical":       _sensory_direct_cortical,
+    "gamma":                 _sensory_gamma,
+    "hippocampal_theta":     _sensory_hippocampal_theta,
+    "ramp":                  _ramp_sentinel,
+    "random":                _sensory_random,
+    "rhythmic":              _sensory_rhythmic,
+    "slow_wave":             _sensory_slow_wave,
+    "sustained_burst":       _sensory_sustained_burst,
 }
 
 #: Patterns that correspond to a **waking / alert** physiological state.

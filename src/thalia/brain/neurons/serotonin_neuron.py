@@ -66,7 +66,7 @@ class SerotoninNeuronConfig(ConductanceLIFConfig):
     # =========================================================================
     # Membrane properties
     # =========================================================================
-    tau_mem: Union[float, torch.Tensor] = 15.0  # Intermediate membrane time constant
+    tau_mem_ms: Union[float, torch.Tensor] = 15.0  # Intermediate membrane time constant
     v_reset: float = -0.10   # Moderate hyperpolarization reset
     v_threshold: Union[float, torch.Tensor] = 1.0
     tau_ref: float = 2.0    # Moderate refractory period
@@ -87,7 +87,7 @@ class SerotoninNeuronConfig(ConductanceLIFConfig):
     # =========================================================================
     # SK calcium-activated K+ channels (spike-frequency adaptation)
     # =========================================================================
-    sk_conductance: float = 0.028   # Moderate adaptation
+    sk_conductance: float = 0.060   # Raised 0.042→0.060: DR 5-HT at 3.90 Hz (target ≤3); stronger SK after-spike inhibition
     sk_reversal: float = -0.5
     ca_decay: float = 0.91          # Moderate calcium decay
     ca_influx_per_spike: float = 0.18

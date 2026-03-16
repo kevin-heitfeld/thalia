@@ -78,7 +78,16 @@ import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import VTAConfig
-from thalia.brain.synapses import NMReceptorType, make_nm_receptor
+from thalia.brain.neurons import (
+    ConductanceLIF,
+    ConductanceLIFConfig,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    split_excitatory_conductance,
+)
+from thalia.brain.synapses import NMReceptorType, make_neuromodulator_receptor
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -91,7 +100,7 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import CircularDelayBuffer, split_excitatory_conductance
+from thalia.utils import CircularDelayBuffer
 
 from .dopamine_pacemaker_base import DopaminePacemakerBase
 from .population_names import VTAPopulation
@@ -102,9 +111,6 @@ from .region_registry import register_region
     "vta",
     aliases=["ventral_tegmental_area", "dopamine_system"],
     description="Ventral tegmental area - dopamine reward prediction error system",
-    version="1.0",
-    author="Thalia Project",
-    config_class=VTAConfig,
 )
 class VTA(DopaminePacemakerBase[VTAConfig]):
     """Ventral Tegmental Area - Dopamine Reward Prediction Error System.
@@ -142,7 +148,7 @@ class VTA(DopaminePacemakerBase[VTAConfig]):
 
         self.da_mesolimbic_size = population_sizes[VTAPopulation.DA_MESOLIMBIC]
         self.da_mesocortical_size = population_sizes[VTAPopulation.DA_MESOCORTICAL]
-        self.gaba_neurons_size = population_sizes[VTAPopulation.GABA]
+        self.gaba_size = population_sizes[VTAPopulation.GABA]
 
         # -----------------------------------------------------------------------
         # MESOLIMBIC DA NEURONS (~55% of VTA DA)
@@ -150,9 +156,34 @@ class VTA(DopaminePacemakerBase[VTAConfig]):
         # Have D2 somatodendritic autoreceptors (Beckstead et al. 2004).
         # Tonic 4-6 Hz, burst to 15-20 Hz for positive RPE.
         # -----------------------------------------------------------------------
-        self.da_mesolimbic_neurons = self._make_da_neurons(
-            self.da_mesolimbic_size,
+        self.da_mesolimbic_neurons: ConductanceLIF
+        self.da_mesolimbic_neurons = self._create_and_register_neuron_population(
             VTAPopulation.DA_MESOLIMBIC,
+            self.da_mesolimbic_size,
+            polarity=PopulationPolarity.ANY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.da_mesolimbic_size, self.device, cv=0.20),
+                v_threshold=heterogeneous_v_threshold(1.0, self.da_mesolimbic_size, self.device, cv=0.12, clamp_fraction=0.25),
+                v_reset=0.0,
+                tau_ref=config.tau_ref,
+                g_L=heterogeneous_g_L(config.g_L, self.da_mesolimbic_size, self.device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=config.noise_std,
+                adapt_increment=heterogeneous_adapt_increment(config.adapt_increment, self.da_mesolimbic_size, self.device),
+                tau_adapt=config.tau_adapt,
+                E_adapt=-0.5,
+                # I_h (HCN) pacemaker — see class-level constants for rationale.
+                enable_ih=True,
+                g_h_max=0.03,
+                E_h=0.9,
+                V_half_h=-0.35,
+                k_h=0.08,
+                tau_h_ms=150.0,
+            ),
         )
 
         # -----------------------------------------------------------------------
@@ -163,18 +194,63 @@ class VTA(DopaminePacemakerBase[VTAConfig]):
         # Respond more to aversive/novel stimuli than to pure reward.
         # Uses config.mesocortical_adapt_increment for faster adaptation.
         # -----------------------------------------------------------------------
-        self.da_mesocortical_neurons = self._make_da_neurons(
-            self.da_mesocortical_size,
+        self.da_mesocortical_neurons: ConductanceLIF
+        self.da_mesocortical_neurons = self._create_and_register_neuron_population(
             VTAPopulation.DA_MESOCORTICAL,
-            adapt_increment=config.mesocortical_adapt_increment,
+            self.da_mesocortical_size,
+            polarity=PopulationPolarity.ANY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.da_mesocortical_size, self.device, cv=0.20),
+                v_threshold=heterogeneous_v_threshold(1.0, self.da_mesocortical_size, self.device, cv=0.12, clamp_fraction=0.25),
+                v_reset=0.0,
+                tau_ref=config.tau_ref,
+                g_L=heterogeneous_g_L(config.g_L, self.da_mesocortical_size, self.device),
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                noise_std=config.noise_std,
+                adapt_increment=heterogeneous_adapt_increment(config.mesocortical_adapt_increment, self.da_mesocortical_size, self.device),
+                tau_adapt=config.tau_adapt,
+                E_adapt=-0.5,
+                # I_h (HCN) pacemaker — see class-level constants for rationale.
+                enable_ih=True,
+                g_h_max=0.03,
+                E_h=0.9,
+                V_half_h=-0.35,
+                k_h=0.08,
+                tau_h_ms=150.0,
+            ),
         )
 
         # GABAergic interneurons (local inhibition, homeostasis)
-        self._init_gaba_interneurons(VTAPopulation.GABA, self.gaba_neurons_size)
+        self.gaba_neurons: ConductanceLIF
+        self.gaba_neurons = self._create_and_register_neuron_population(
+            population_name=VTAPopulation.GABA,
+            n_neurons=self.gaba_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(8.0, self.gaba_size, device=self.device, cv=0.10),
+                v_threshold=heterogeneous_v_threshold(1.0, self.gaba_size, device=self.device, cv=0.06),
+                v_reset=0.0,
+                E_L=0.0,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_ref=2.5,
+                g_L=heterogeneous_g_L(0.10, self.gaba_size, device=self.device, cv=0.08),
+            ),
+        )
+
+        self._prev_gaba_spikes: torch.Tensor
+        self.register_buffer("_prev_gaba_spikes", torch.zeros(self.gaba_size, dtype=torch.bool, device=self.device), persistent=False)
 
         # D2 somatodendritic autoreceptors — MESOLIMBIC ONLY
         # Exponential moving average of per-neuron DA firing rate (one-step lag).
-        # Mesocortical neurons lack this feedback (Lammel et al. 2008).
+        # Mesocortical neurons lack this feedback.
+        self._prev_mesolimbic_spike_rate: torch.Tensor
         self.register_buffer("_prev_mesolimbic_spike_rate", torch.zeros(self.da_mesolimbic_size, device=device))
 
         # -----------------------------------------------------------------------
@@ -194,16 +270,12 @@ class VTA(DopaminePacemakerBase[VTAConfig]):
         # DA ramp — anticipatory reward signal (Howe et al. 2013)
         # Slowly builds up each step without reward; resets on reward delivery.
         # -----------------------------------------------------------------------
-        if config.da_ramp_enabled:
-            self.register_buffer(
-                "_da_ramp_signal",
-                torch.zeros(1, device=device),
-            )
+        self._da_ramp_signal: torch.Tensor
+        self.register_buffer("_da_ramp_signal", torch.zeros(1, device=device))
 
         # Adaptive normalization state
-        if config.rpe_normalization:
-            self._avg_abs_rpe = 0.5  # Running average of |RPE|
-            self._rpe_count = 0
+        self._avg_abs_rpe = 0.5  # Running average of |RPE|
+        self._rpe_count = 0
 
         # =====================================================================
         # SEROTONIN RECEPTOR (5-HT1A on mesolimbic DA neurons — from DRN)
@@ -214,22 +286,12 @@ class VTA(DopaminePacemakerBase[VTAConfig]):
         # Mesocortical neurons have weaker 5-HT1A expression (Gervais & Bhagya 2007).
         # Kinetics: tau_rise ~10 ms, tau_decay ~200 ms (SERT reuptake).
         # 5-HT1A (Gi → GIRK): inhibitory on DA-mesolimbic neurons.
-        # τ_rise=10 ms, τ_decay=500 ms (Gervais & Bhagya 2007).
-        self.sht_receptor = make_nm_receptor(
+        self.sht_receptor = make_neuromodulator_receptor(
             NMReceptorType.SHT_1A, n_receptors=self.da_mesolimbic_size, dt_ms=config.dt_ms, device=device,
-            amplitude_scale=1.33,  # Preserve legacy ~0.20 effective amplitude
+            amplitude_scale=1.33,
         )
         self._sht_concentration: torch.Tensor
-        self.register_buffer(
-            "_sht_concentration",
-            torch.zeros(self.da_mesolimbic_size, device=device),
-        )
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(VTAPopulation.DA_MESOLIMBIC, self.da_mesolimbic_neurons, polarity=PopulationPolarity.ANY)
-        self._register_neuron_population(VTAPopulation.DA_MESOCORTICAL, self.da_mesocortical_neurons, polarity=PopulationPolarity.ANY)
+        self.register_buffer("_sht_concentration", torch.zeros(self.da_mesolimbic_size, device=device))
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -308,35 +370,33 @@ class VTA(DopaminePacemakerBase[VTAConfig]):
         # DA RAMP — anticipatory reward signal
         # =====================================================================
         ramp: float = 0.0
-        if self.config.da_ramp_enabled:
-            if reward > 0:
-                # Reward received: reset ramp (dopamine ramp collapses post-reward)
-                self._da_ramp_signal.fill_(0.0)
-            else:
-                # No reward: build anticipatory ramp (bounded exponential rise).
-                # V(s')-scaled: ramp increments proportional to learned value anticipation.
-                # When striatum hasn't learned to predict reward (V_s_prime ≈ 0) the ramp
-                # stays flat; once it strongly predicts upcoming reward (V_s_prime → 1)
-                # the ramp builds at full rate.  This makes the ramp emerge from
-                # corticostriatal learning rather than being a fixed-clock timer.
-                # Biological basis: in Howe et al. 2013 ramp amplitude correlates with
-                # learned value; Hamid et al. 2016 shows DA ramp scales with Q(s).
-                decay = 1.0 - config.dt_ms / self.config.da_ramp_tau_ms
-                value_confidence = max(V_s_prime, 0.0)  # scaled by learned V(s')
-                self._da_ramp_signal.mul_(decay).add_(
-                    torch.tensor(
-                        [self.config.da_ramp_gain * config.dt_ms * value_confidence],
-                        dtype=torch.float32, device=device,
-                    )
+        if reward > 0:
+            # Reward received: reset ramp (dopamine ramp collapses post-reward)
+            self._da_ramp_signal.fill_(0.0)
+        else:
+            # No reward: build anticipatory ramp (bounded exponential rise).
+            # V(s')-scaled: ramp increments proportional to learned value anticipation.
+            # When striatum hasn't learned to predict reward (V_s_prime ≈ 0) the ramp
+            # stays flat; once it strongly predicts upcoming reward (V_s_prime → 1)
+            # the ramp builds at full rate.  This makes the ramp emerge from
+            # corticostriatal learning rather than being a fixed-clock timer.
+            # Biological basis: in Howe et al. 2013 ramp amplitude correlates with
+            # learned value; Hamid et al. 2016 shows DA ramp scales with Q(s).
+            decay = 1.0 - config.dt_ms / self.config.da_ramp_tau_ms
+            value_confidence = max(V_s_prime, 0.0)  # scaled by learned V(s')
+            self._da_ramp_signal.mul_(decay).add_(
+                torch.tensor(
+                    [self.config.da_ramp_gain * config.dt_ms * value_confidence],
+                    dtype=torch.float32, device=device,
                 )
-            ramp = float(self._da_ramp_signal.item())
+            )
+        ramp = float(self._da_ramp_signal.item())
 
-        if self.config.rpe_normalization:
-            self._rpe_count += 1
-            alpha = 1.0 / min(self._rpe_count, 100)
-            self._avg_abs_rpe = (1 - alpha) * self._avg_abs_rpe + alpha * abs(rpe)
-            epsilon = 1e-6
-            rpe = rpe / (self._avg_abs_rpe + epsilon)
+        self._rpe_count += 1
+        alpha = 1.0 / min(self._rpe_count, 100)
+        self._avg_abs_rpe = (1 - alpha) * self._avg_abs_rpe + alpha * abs(rpe)
+        epsilon = 1e-6
+        rpe = rpe / (self._avg_abs_rpe + epsilon)
 
         rpe_clipped = max(-1.0, min(1.0, rpe))
 

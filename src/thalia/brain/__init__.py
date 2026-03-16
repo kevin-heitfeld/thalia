@@ -8,12 +8,10 @@ from .brain_builder import (
     BrainBuilder,
     ConductanceBudgetEntry,
     SourceContribution,
+    apply_stp_correction,
 )
 from .brain import (
     Brain,
-)
-from .neuromodulator_hub import (
-    NeuromodulatorHub,
 )
 from .configs import (
     BrainConfig,
@@ -22,9 +20,11 @@ from .configs import (
     HippocampusConfig,
     MedialSeptumConfig,
     NeuralRegionConfig,
-    PrefrontalCortexConfig,
     StriatumConfig,
     ThalamusConfig,
+)
+from .neuromodulator_hub import (
+    NeuromodulatorHub,
 )
 from .regions import (
     NeuralRegion,
@@ -47,6 +47,13 @@ __all__ = [
     # Axonal Tracts
     "AxonalTract",
     "AxonalTractSourceSpec",
+    # Brain Builder
+    "BrainBuilder",
+    "ConductanceBudgetEntry",
+    "SourceContribution",
+    "apply_stp_correction",
+    # Brain
+    "Brain",
     # Configurations
     "BrainConfig",
     "CerebellumConfig",
@@ -54,9 +61,10 @@ __all__ = [
     "HippocampusConfig",
     "MedialSeptumConfig",
     "NeuralRegionConfig",
-    "PrefrontalCortexConfig",
     "StriatumConfig",
     "ThalamusConfig",
+    # Neuromodulator Hub
+    "NeuromodulatorHub",
     # Regions
     "NeuralRegion",
     "Cerebellum",
@@ -68,14 +76,6 @@ __all__ = [
     "StimulusGating",
     "NeuralRegionRegistry",
     "register_region",
-    # Brain Builder
-    "BrainBuilder",
-    "ConductanceBudgetEntry",
-    "SourceContribution",
-    # Brain
-    "Brain",
-    # Neuromodulator Hub
-    "NeuromodulatorHub",
     # Synapse Specs
     "ConductanceScaledSpec",
     "STPConfig",

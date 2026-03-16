@@ -26,44 +26,25 @@ HPC → EC (back-projection):
 Optional Subiculum stage (enable with ``include_subiculum=True``):
   * HPC CA1 → Sub PRINCIPAL (burst-to-regular conversion relay)
   * Sub PRINCIPAL → EC_V   (CA1-EC relay; replaces direct CA1→EC_V)
-
-Usage
------
-Standalone preset brain::
-
-    from thalia.brain import BrainBuilder
-    brain = BrainBuilder.preset("mtl")
-
-Embedded in a larger builder (inject-and-wire pattern)::
-
-    from thalia.brain.presets.mtl_preset import add_mtl_circuit
-    add_mtl_circuit(builder)
-    # now add external cortex→EC and EC→cortex connections as needed
-
-Name-overriding (for multi-hemisphere models)::
-
-    add_mtl_circuit(
-        builder,
-        medial_septum_name="ms_left",
-        entorhinal_cortex_name="ec_left",
-        hippocampus_name="hpc_left",
-        subiculum_name="sub_left",
-        include_subiculum=True,
-    )
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from thalia.brain.configs.hippocampus import (
+    EntorhinalCortexConfig,
+    HippocampusConfig,
+    MedialSeptumConfig,
+    SubiculumConfig,
+)
 from thalia.brain.regions.population_names import (
-    ECPopulation,
+    EntorhinalCortexPopulation,
     HippocampusPopulation,
     MedialSeptumPopulation,
     SubiculumPopulation,
 )
-from thalia.brain.synapses import ConductanceScaledSpec
-from thalia.brain.synapses.stp import STPConfig
+from thalia.brain.synapses import ConductanceScaledSpec, STPConfig
 from thalia.typing import PopulationSizes, RegionSizes, ReceptorType, SynapseId
 
 if TYPE_CHECKING:
@@ -74,15 +55,15 @@ if TYPE_CHECKING:
 # Default population sizes
 # =============================================================================
 
-_DEFAULT_MTL_SIZES: RegionSizes = {
+DEFAULT_MEDIAL_TEMPORAL_LOBE_SIZES: RegionSizes = {
     "medial_septum": {
         MedialSeptumPopulation.ACH: 200,   # Cholinergic pacemaker neurons
         MedialSeptumPopulation.GABA: 200,  # GABAergic phase-locking neurons
     },
     "entorhinal_cortex": {
-        ECPopulation.EC_II: 400,   # Stellate cells: grid/place → DG, CA3
-        ECPopulation.EC_III: 300,  # Pyramidal time cells → CA1
-        ECPopulation.EC_V: 200,    # Output back-projection ← CA1 → neocortex
+        EntorhinalCortexPopulation.EC_II: 400,   # Stellate cells: grid/place → DG, CA3
+        EntorhinalCortexPopulation.EC_III: 300,  # Pyramidal time cells → CA1
+        EntorhinalCortexPopulation.EC_V: 200,    # Output back-projection ← CA1 → neocortex
     },
     "hippocampus": {
         HippocampusPopulation.DG: 500,   # Dentate gyrus (pattern separation)
@@ -96,7 +77,7 @@ _DEFAULT_MTL_SIZES: RegionSizes = {
 }
 
 
-def _resolve_mtl_sizes(
+def resolve_medial_temporal_lobe_sizes(
     overrides: Dict[str, Any],
     ms_name: str,
     ec_name: str,
@@ -111,7 +92,7 @@ def _resolve_mtl_sizes(
     size_overrides: RegionSizes = overrides.get("population_sizes", {})
 
     def _merge(canonical: str, instance: str) -> PopulationSizes:
-        defaults = dict(_DEFAULT_MTL_SIZES[canonical])
+        defaults = dict(DEFAULT_MEDIAL_TEMPORAL_LOBE_SIZES[canonical])
         user = size_overrides.get(instance, size_overrides.get(canonical, {}))
         return {**defaults, **user}
 
@@ -127,20 +108,35 @@ def _resolve_mtl_sizes(
 # Add regions
 # =============================================================================
 
-def _add_mtl_regions(
+def add_medial_temporal_lobe_regions(
     builder: BrainBuilder,
     sizes: RegionSizes,
     ms_name: str,
     ec_name: str,
     hpc_name: str,
-    sub_name: str,
-    include_subiculum: bool,
+    sub_name: Optional[str],
 ) -> None:
-    builder.add_region(ms_name,  "medial_septum",    population_sizes=sizes[ms_name])
-    builder.add_region(ec_name,  "entorhinal_cortex", population_sizes=sizes[ec_name])
-    builder.add_region(hpc_name, "hippocampus",       population_sizes=sizes[hpc_name])
-    if include_subiculum:
-        builder.add_region(sub_name, "subiculum",     population_sizes=sizes[sub_name])
+    builder.add_region(
+        ms_name, "medial_septum",
+        population_sizes=sizes[ms_name],
+        config=MedialSeptumConfig(),
+    )
+    builder.add_region(
+        ec_name, "entorhinal_cortex",
+        population_sizes=sizes[ec_name],
+        config=EntorhinalCortexConfig(),
+    )
+    builder.add_region(
+        hpc_name, "hippocampus",
+        population_sizes=sizes[hpc_name],
+        config=HippocampusConfig(),
+    )
+    if sub_name is not None:
+        builder.add_region(
+            sub_name, "subiculum",
+            population_sizes=sizes[sub_name],
+            config=SubiculumConfig(),
+        )
 
 
 # =============================================================================
@@ -161,7 +157,6 @@ def _connect_septal_theta_loop(
     # MS GABA → HPC CA3: septal theta drive
     # GABAergic pacemaker phase-locks hippocampal OLM interneurons.
     # Well-myelinated; distance ~1-2 cm → 2 ms delay.
-    # STP: strong depressing PV basket-like (Freund & Antal 1988; Varga et al. 2008).
     builder.connect(
         synapse_id=SynapseId(
             source_region=ms_name,
@@ -215,11 +210,10 @@ def _connect_ec_to_hpc(
     """
     # EC_II → HPC DG: perforant path — outer molecular layer
     # Sparse 15-20% connectivity; depressing STP privileges encoding onset.
-    # (McNaughton 1980; Bortolotto et al. 2003)
     builder.connect(
         synapse_id=SynapseId(
             source_region=ec_name,
-            source_population=ECPopulation.EC_II,
+            source_population=EntorhinalCortexPopulation.EC_II,
             target_region=hpc_name,
             target_population=HippocampusPopulation.DG,
             receptor_type=ReceptorType.AMPA,
@@ -238,12 +232,10 @@ def _connect_ec_to_hpc(
     )
 
     # EC_II → HPC CA3: direct perforant path (stratum lacunosum-moleculare)
-    # Higher target_v_inf (1.20) so EC_II alone can drive CA3 to threshold
-    # when DG mossy fibre drive is near-zero at tonic firing rates.
     builder.connect(
         synapse_id=SynapseId(
             source_region=ec_name,
-            source_population=ECPopulation.EC_II,
+            source_population=EntorhinalCortexPopulation.EC_II,
             target_region=hpc_name,
             target_population=HippocampusPopulation.CA3,
             receptor_type=ReceptorType.AMPA,
@@ -255,19 +247,18 @@ def _connect_ec_to_hpc(
             source_rate_hz=5.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
-            target_v_inf=1.20,
-            fraction_of_drive=0.65,
+            target_v_inf=1.15,
+            fraction_of_drive=0.20,
         ),
         stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
     )
 
     # EC_III → HPC CA1: temporoammonic direct path (distal apical dendrites)
     # Stronger depression than perforant path; emphasises novelty detection.
-    # (Otmakhova et al. 2002)
     builder.connect(
         synapse_id=SynapseId(
             source_region=ec_name,
-            source_population=ECPopulation.EC_III,
+            source_population=EntorhinalCortexPopulation.EC_III,
             target_region=hpc_name,
             target_population=HippocampusPopulation.CA1,
             receptor_type=ReceptorType.AMPA,
@@ -297,7 +288,7 @@ def _connect_hpc_to_ec_direct(
             source_region=hpc_name,
             source_population=HippocampusPopulation.CA1,
             target_region=ec_name,
-            target_population=ECPopulation.EC_V,
+            target_population=EntorhinalCortexPopulation.EC_V,
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
@@ -357,7 +348,7 @@ def _connect_hpc_via_subiculum(
             source_region=sub_name,
             source_population=SubiculumPopulation.PRINCIPAL,
             target_region=ec_name,
-            target_population=ECPopulation.EC_V,
+            target_population=EntorhinalCortexPopulation.EC_V,
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.5,
@@ -368,7 +359,7 @@ def _connect_hpc_via_subiculum(
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=1.05,
-            fraction_of_drive=0.80,
+            fraction_of_drive=0.50,  # Reduced 0.80→0.50: Sub→EC_V, EC_V at 10.44 Hz (target 1-8 Hz)
         ),
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
@@ -378,7 +369,7 @@ def _connect_hpc_via_subiculum(
 # Public entry points
 # =============================================================================
 
-def add_mtl_circuit(
+def add_medial_temporal_lobe_circuit(
     builder: BrainBuilder,
     *,
     medial_septum_name: str = "medial_septum",
@@ -418,10 +409,10 @@ def add_mtl_circuit(
     hpc_name = hippocampus_name
     sub_name = subiculum_name
 
-    sizes = _resolve_mtl_sizes(overrides, ms_name, ec_name, hpc_name, sub_name)
+    sizes = resolve_medial_temporal_lobe_sizes(overrides, ms_name, ec_name, hpc_name, sub_name)
 
     if add_regions:
-        _add_mtl_regions(builder, sizes, ms_name, ec_name, hpc_name, sub_name, include_subiculum)
+        add_medial_temporal_lobe_regions(builder, sizes, ms_name, ec_name, hpc_name, sub_name if include_subiculum else None)
 
     _connect_septal_theta_loop(builder, ms_name, hpc_name)
     _connect_ec_to_hpc(builder, ec_name, hpc_name)
@@ -447,7 +438,7 @@ def build(builder: BrainBuilder, **overrides: Any) -> None:
 
         brain = BrainBuilder.preset("mtl", include_subiculum=True)
     """
-    add_mtl_circuit(
+    add_medial_temporal_lobe_circuit(
         builder,
         include_subiculum=bool(overrides.get("include_subiculum", False)),
         population_sizes=overrides.get("population_sizes"),

@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-from thalia.brain.synapses.stp import STPConfig
+from thalia.brain.synapses import STPConfig
 
 
 # ---------------------------------------------------------------------------

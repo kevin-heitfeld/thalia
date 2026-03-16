@@ -21,20 +21,19 @@ Dynamics:
 
 This provides the bridge between spiking neuromodulator neurons (VTA, LC, NB)
 and the concentration-based three-factor learning rules in target regions.
-
-Author: Thalia Project
-Date: February 2026
 """
 
 from __future__ import annotations
 
-import math
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Optional
 
 import torch
 import torch.nn as nn
 
 from thalia import GlobalConfig
+from thalia.utils import decay_float
 
 
 class NeuromodulatorReceptor(nn.Module):
@@ -94,8 +93,8 @@ class NeuromodulatorReceptor(nn.Module):
 
         # Decay factors scaled by dt_ms so dynamics are timestep-independent.
         # Using exp(-dt_ms / tau) gives the one-step decay factor for Euler integration.
-        self.alpha_rise = math.exp(-dt_ms / tau_rise_ms)
-        self.alpha_decay = math.exp(-dt_ms / tau_decay_ms)
+        self.alpha_rise = decay_float(dt_ms, tau_rise_ms)
+        self.alpha_decay = decay_float(dt_ms, tau_decay_ms)
 
         # Transfer rate: fraction of the rising pool moved to the concentration
         # pool each step.  Must equal (1 - alpha_decay) so that at steady state
@@ -258,6 +257,186 @@ def create_acetylcholine_receptors(
         tau_rise_ms=5.0,
         tau_decay_ms=50.0,  # AChE hydrolysis (very fast)
         spike_amplitude=0.2,
+        dt_ms=dt_ms,
+        device=device,
+    )
+
+
+# ============================================================================
+# DATA CONTAINER
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class ReceptorKinetics:
+    """Immutable kinetics specification for one receptor subtype.
+
+    Attributes:
+        tau_rise_ms: Rise time constant (ms) — models the lag from spike
+            arrival to peak effector activation (e.g. PKA phosphorylation).
+        tau_decay_ms: Decay time constant (ms) — models reuptake / enzyme
+            degradation returning the effector to baseline.
+        spike_amplitude: Fractional concentration increase per presynaptic
+            spike (0–1 units).  Calibrated so a ~5 Hz tonic rate saturates
+            to roughly 0.3–0.5 in the decay timescale.
+    """
+    tau_rise_ms: float
+    tau_decay_ms: float
+    spike_amplitude: float
+
+
+# ============================================================================
+# RECEPTOR SUBTYPE ENUM
+# ============================================================================
+
+
+class NMReceptorType(StrEnum):
+    """Neuromodulator receptor subtypes with distinct downstream cascades.
+
+    Naming follows the pharmacological convention:
+    *transmitter*_*receptor_subtype* (or *ion_channel* for ionotropic).
+    """
+    # Dopaminergic
+    DA_D1 = "da_d1"  # Gs → cAMP → PKA (very slow, long-lasting)
+    DA_D2 = "da_d2"  # Gi → GIRK / ↓cAMP (fast, transient)
+
+    # Noradrenergic
+    NE_ALPHA1 = "ne_alpha1"  # α1-adrenergic, Gq (moderate)
+    NE_BETA   = "ne_beta"    # β-adrenergic, Gs → cAMP (slow cAMP cascade)
+
+    # Cholinergic
+    ACH_NICOTINIC     = "ach_nicotinic"      # nAChR, ionotropic (fast)
+    ACH_MUSCARINIC_M1 = "ach_muscarinic_m1"  # M1, Gq → PLC/IP3 (very slow)
+    ACH_MUSCARINIC_M2 = "ach_muscarinic_m2"  # M2, Gi → GIRK (moderate)
+
+    # Serotonergic
+    SHT_1A = "5ht_1a"  # Gi → GIRK (slow)
+    SHT_2A = "5ht_2a"  # Gq → PLC (fast)
+    SHT_2C = "5ht_2c"  # Gq → PLC (fast, same cascade as 2A)
+
+
+# ============================================================================
+# CANONICAL KINETICS TABLE
+# ============================================================================
+
+
+CANONICAL_KINETICS: dict[NMReceptorType, ReceptorKinetics] = {
+    # ------------------------------------------------------------------
+    # Dopamine
+    # ------------------------------------------------------------------
+    # D1: Gs → adenylyl cyclase → ↑cAMP → PKA activation.
+    # Onset: ~500 ms (PKA activation peak after a burst).
+    # Decay: ~8 s (phosphodiesterase cleaves cAMP; DARPP-32 dephosphorylation).
+    NMReceptorType.DA_D1: ReceptorKinetics(
+        tau_rise_ms=500.0,
+        tau_decay_ms=8000.0,
+        spike_amplitude=0.08,
+    ),
+    # D2: Gi → ↓cAMP + GIRK channel opening.
+    # Onset: ~80 ms (GIRK opens rapidly once Gβγ is released).
+    # Decay: ~500 ms (GIRK closes after GTP hydrolysis / DAT clearance).
+    NMReceptorType.DA_D2: ReceptorKinetics(
+        tau_rise_ms=80.0,
+        tau_decay_ms=500.0,
+        spike_amplitude=0.12,
+    ),
+    # ------------------------------------------------------------------
+    # Norepinephrine
+    # ------------------------------------------------------------------
+    # α1-adrenergic: Gq → PLC → DAG/IP3 → PKC.
+    # Moderate kinetics: onset ~8–15 ms (fast Gq activation), decay ~150 ms.
+    NMReceptorType.NE_ALPHA1: ReceptorKinetics(
+        tau_rise_ms=10.0,
+        tau_decay_ms=150.0,
+        spike_amplitude=0.12,
+    ),
+    # β-adrenergic: Gs → cAMP → PKA (same cascade as D1, but faster PDE clearance).
+    # Onset: ~80 ms.  Decay: ~1000 ms.
+    NMReceptorType.NE_BETA: ReceptorKinetics(
+        tau_rise_ms=80.0,
+        tau_decay_ms=1000.0,
+        spike_amplitude=0.10,
+    ),
+    # ------------------------------------------------------------------
+    # Acetylcholine
+    # ------------------------------------------------------------------
+    # Nicotinic (α4β2 / α7): ionotropic — channel opens in <5 ms, desensitises
+    # within ~15 ms.
+    NMReceptorType.ACH_NICOTINIC: ReceptorKinetics(
+        tau_rise_ms=3.0,
+        tau_decay_ms=15.0,
+        spike_amplitude=0.15,
+    ),
+    # Muscarinic M1: Gq → PLC → IP3/DAG.
+    # Onset: ~100 ms (PLC activation lag), Decay: ~1500 ms (IP3-R & PKC decay).
+    NMReceptorType.ACH_MUSCARINIC_M1: ReceptorKinetics(
+        tau_rise_ms=100.0,
+        tau_decay_ms=1500.0,
+        spike_amplitude=0.10,
+    ),
+    # Muscarinic M2: Gi → GIRK + ↓ACh release (autoreceptor / Golgi cells).
+    # Moderate: onset ~50 ms, decay ~600 ms.
+    NMReceptorType.ACH_MUSCARINIC_M2: ReceptorKinetics(
+        tau_rise_ms=50.0,
+        tau_decay_ms=600.0,
+        spike_amplitude=0.10,
+    ),
+    # ------------------------------------------------------------------
+    # Serotonin
+    # ------------------------------------------------------------------
+    # 5-HT1A: Gi → GIRK (hyperpolarisation, gates fear extinction / DA pause).
+    # Onset: ~10 ms (GIRK).  Decay: ~500 ms (SERT reuptake + GTP hydrolysis).
+    NMReceptorType.SHT_1A: ReceptorKinetics(
+        tau_rise_ms=10.0,
+        tau_decay_ms=500.0,
+        spike_amplitude=0.15,
+    ),
+    # 5-HT2A / 5-HT2C: Gq → PLC (attention gain, patience gating, striatal attenuation).
+    # Fast Gq cascade: onset ~8 ms, decay ~100 ms (SERT reuptake).
+    NMReceptorType.SHT_2A: ReceptorKinetics(
+        tau_rise_ms=8.0,
+        tau_decay_ms=100.0,
+        spike_amplitude=0.12,
+    ),
+    NMReceptorType.SHT_2C: ReceptorKinetics(
+        tau_rise_ms=8.0,
+        tau_decay_ms=100.0,
+        spike_amplitude=0.12,
+    ),
+}
+
+
+# ============================================================================
+# FACTORY HELPER
+# ============================================================================
+
+def make_neuromodulator_receptor(
+    subtype: NMReceptorType,
+    n_receptors: int,
+    dt_ms: float = GlobalConfig.DEFAULT_DT_MS,
+    device: Optional[torch.device] = None,
+    *,
+    amplitude_scale: float = 1.0,
+) -> NeuromodulatorReceptor:
+    """Create a ``NeuromodulatorReceptor`` with canonical kinetics for *subtype*.
+
+    Args:
+        subtype: Receptor subtype key from :class:`NMReceptorType`.
+        n_receptors: Number of postsynaptic receptor sites.
+        dt_ms: Simulation timestep (ms).
+        device: PyTorch device.
+        amplitude_scale: Optional multiplicative override on ``spike_amplitude``
+            for regions with atypical innervation density.
+
+    Returns:
+        Configured :class:`NeuromodulatorReceptor` instance.
+    """
+    kinetics = CANONICAL_KINETICS[subtype]
+    return NeuromodulatorReceptor(
+        n_receptors=n_receptors,
+        tau_rise_ms=kinetics.tau_rise_ms,
+        tau_decay_ms=kinetics.tau_decay_ms,
+        spike_amplitude=kinetics.spike_amplitude * amplitude_scale,
         dt_ms=dt_ms,
         device=device,
     )

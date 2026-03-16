@@ -50,7 +50,7 @@ import math
 from dataclasses import dataclass
 from typing import List, Literal, Optional
 
-from thalia.brain.synapses.stp import STPConfig
+from thalia.brain.synapses import STPConfig
 
 ReceptorKind = Literal["ampa", "nmda", "gaba_a", "gaba_b"]
 

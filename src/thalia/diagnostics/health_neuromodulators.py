@@ -16,11 +16,11 @@ from .diagnostics_types import (
 from .region_tags import CORTICAL_TAGS, DA_SOURCE_TAGS, PREFRONTAL_TAGS, STRIATAL_TAGS, matches_any
 
 if TYPE_CHECKING:
-    from .diagnostics_recorder import DiagnosticsRecorder
+    from .diagnostics_types import RecorderSnapshot
 
 
 def check_neuromodulators(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
 ) -> None:
@@ -48,7 +48,7 @@ def check_neuromodulators(
 
 
 def check_neuromodulator_levels(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check tonic neuromodulator concentrations are within physiological range.
@@ -138,7 +138,7 @@ _NM_PHASIC_SPECS: List[Tuple[str, float, float, str]] = [
 
 
 def check_neuromodulator_phasic(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     issues: List[HealthIssue],
 ) -> None:
     """Check that phasic neuromodulators are not chronically elevated without transients.
@@ -199,7 +199,7 @@ def check_neuromodulator_phasic(
 
 
 def check_nm_downstream_effects(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
 ) -> None:
@@ -250,34 +250,35 @@ def check_nm_downstream_effects(
     half = T // 2
     spike_counts = rec._pop_spike_counts  # shape [T, P]
 
-    for rn, region in rec.brain.regions.items():
+    for rn in rec._region_keys:
         if not matches_any(rn, STRIATAL_TAGS):
             continue
 
         # Identify D1-MSN and D2-MSN population indices for this region.
         d1_indices = [
             rec._pop_index[(rn, pn)]
-            for pn in region.neuron_populations.keys()
+            for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
             if "d1" in pn.lower() and (rn, pn) in rec._pop_index
         ]
         d2_indices = [
             rec._pop_index[(rn, pn)]
-            for pn in region.neuron_populations.keys()
+            for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
             if "d2" in pn.lower() and (rn, pn) in rec._pop_index
         ]
         if not d1_indices or not d2_indices:
             continue
 
         # Whole-recording mean FRs from pop_stats.
+        rn_pop_names = [rec._pop_keys[i][1] for i in rec._region_pop_indices[rn]]
         d1_fr_vals = [
             pop_stats[(rn, pn)].mean_fr_hz
-            for pn in region.neuron_populations.keys()
+            for pn in rn_pop_names
             if "d1" in pn.lower() and (rn, pn) in pop_stats
             and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
         ]
         d2_fr_vals = [
             pop_stats[(rn, pn)].mean_fr_hz
-            for pn in region.neuron_populations.keys()
+            for pn in rn_pop_names
             if "d2" in pn.lower() and (rn, pn) in pop_stats
             and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
         ]
@@ -335,7 +336,7 @@ def check_nm_downstream_effects(
 
 
 def check_nm_oscillation_gating(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     oscillations: OscillatoryStats,
     issues: List[HealthIssue],
 ) -> None:
@@ -421,7 +422,7 @@ def check_nm_oscillation_gating(
 
 
 def check_d1_d2_da_balance(
-    rec: "DiagnosticsRecorder",
+    rec: RecorderSnapshot,
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
 ) -> None:
@@ -462,21 +463,18 @@ def check_d1_d2_da_balance(
         if not matches_any(rn, STRIATAL_TAGS):
             continue
 
-        region = rec.brain.regions[rn] if rn in rec.brain.regions else None
-        if region is None:
-            continue
-
         # Collect D1 and D2 mean FRs for this region.
+        region_pops = [rec._pop_keys[i][1] for i in rec._region_pop_indices.get(rn, [])]
         d1_fr_vals = [
             pop_stats[(rn, pn)].mean_fr_hz
-            for pn in region.neuron_populations.keys()
+            for pn in region_pops
             if "d1" in pn.lower()
             and (rn, pn) in pop_stats
             and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
         ]
         d2_fr_vals = [
             pop_stats[(rn, pn)].mean_fr_hz
-            for pn in region.neuron_populations.keys()
+            for pn in region_pops
             if "d2" in pn.lower()
             and (rn, pn) in pop_stats
             and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)

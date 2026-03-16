@@ -47,13 +47,20 @@ The LHb→RMTg→VTA disynaptic pathway provides:
 
 from __future__ import annotations
 
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 
 from thalia import GlobalConfig
-from thalia.brain.configs import TonicPacemakerConfig, get_default_lhb_config
-from thalia.brain.neurons import ConductanceLIF, ConductanceLIFConfig
+from thalia.brain.configs import TonicPacemakerConfig
+from thalia.brain.neurons import (
+    ConductanceLIFConfig,
+    heterogeneous_tau_mem,
+    heterogeneous_v_threshold,
+    heterogeneous_adapt_increment,
+    heterogeneous_g_L,
+    split_excitatory_conductance,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -63,20 +70,19 @@ from thalia.typing import (
     RegionOutput,
     SynapticInput,
 )
-from thalia.utils import split_excitatory_conductance
 
 from .neural_region import NeuralRegion
 from .population_names import LHbPopulation
 from .region_registry import register_region
+
+if TYPE_CHECKING:
+    from thalia.brain.neurons import ConductanceLIF
 
 
 @register_region(
     "lateral_habenula",
     aliases=["lhb"],
     description="Lateral habenula - aversive prediction error encoder",
-    version="1.0",
-    author="Thalia Project",
-    config_class=get_default_lhb_config,
 )
 class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
     """Lateral Habenula - Aversive Prediction Error Encoder.
@@ -106,37 +112,31 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
         self.principal_size = population_sizes[LHbPopulation.PRINCIPAL]
 
         # Glutamatergic principal neurons (mostly silent at baseline)
-        self.principal_neurons = ConductanceLIF(
+        self.principal_neurons: ConductanceLIF
+        self.principal_neurons = self._create_and_register_neuron_population(
+            population_name=LHbPopulation.PRINCIPAL,
             n_neurons=self.principal_size,
+            polarity=PopulationPolarity.EXCITATORY,
             config=ConductanceLIFConfig(
-                region_name=self.region_name,
-                population_name=LHbPopulation.PRINCIPAL,
-                tau_mem=self.config.tau_mem,
-                v_threshold=self.config.v_threshold,
-                v_reset=0.0,
+                tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.principal_size, device),
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.principal_size, device),
+                v_reset=-0.05,
                 tau_ref=self.config.tau_ref,
-                g_L=0.08,
+                g_L=heterogeneous_g_L(0.08, self.principal_size, device),
                 E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
-                noise_std=0.080,   # Reverted 0.120→0.080 (run-12: noise raised rate to 16.5 Hz, burst worsened to 33.8%);
-                                   # burst suppressed via skip_burst_check in bio_ranges.py (habenula burst-coding is characteristic).
-                adapt_increment=0.10,  # Added: central_amygdala drive was causing 66.71 Hz (target 5-20 Hz); at target 12 Hz equilibrium, g_adapt≈0.12, V_inf→threshold
-                tau_adapt=100.0,       # LHb neurons show burst-then-adapt biologically (Weiss & Bhatt 2019)
+                noise_std=0.080,
+                adapt_increment=heterogeneous_adapt_increment(0.10, self.principal_size, device),
+                tau_adapt=100.0,
                 E_adapt=-0.5,
             ),
-            device=device,
         )
 
         # Low baseline drive (LHb is mostly quiet except during aversive events)
         self.baseline_drive = torch.full((self.principal_size,), config.baseline_drive, device=device)
-
-        # =====================================================================
-        # REGISTER NEURON POPULATIONS
-        # =====================================================================
-        self._register_neuron_population(LHbPopulation.PRINCIPAL, self.principal_neurons, polarity=PopulationPolarity.EXCITATORY)
 
         # Ensure all tensors are on the correct device
         self.to(device)
