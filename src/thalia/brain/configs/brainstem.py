@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from thalia.brain.gap_junctions import GapJunctionConfig
+from thalia.brain.regions.population_names import CerebellumPopulation
+from thalia.brain.synapses import NMReceptorType
 from thalia.errors import ConfigurationError
+from thalia.typing import NeuromodulatorChannel
 
-from .neural_region import NeuralRegionConfig
+from .neural_region import (
+    HomeostaticGainConfig,
+    HomeostaticThresholdConfig,
+    NMReceptorConfig,
+    NeuralRegionConfig,
+)
 
 
 @dataclass
@@ -27,15 +36,29 @@ class CerebellumConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    gain_learning_rate: float = 0.005  # Slow learning rate for gain adaptation (prevents instability)
-    gain_tau_ms: float = 2000.0  # 2s averaging window (slow for motor stability)
+    homeostatic_gain: HomeostaticGainConfig = field(default_factory=lambda: HomeostaticGainConfig(
+        lr_per_ms=0.001,  # Reduced 0.005→0.001: effective tau must be ≥ 1000 ms (biological minimum for homeostasis)
+        tau_ms=2000.0,  # 2s averaging window (slow for motor stability)
+    ))
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
     # =========================================================================
-    threshold_learning_rate: float = 0.005  # Slow learning rate for threshold adaptation (prevents instability)
-    threshold_min: float = 0.5   # Moderate min (ensures some baseline excitability)
-    threshold_max: float = 1.2  # Moderate max (Purkinje cells naturally active)
+    homeostatic_threshold: HomeostaticThresholdConfig = field(default_factory=lambda: HomeostaticThresholdConfig(
+        lr_per_ms=0.001,  # Reduced 0.005→0.001: effective tau must be ≥ 1000 ms (biological minimum for homeostasis)
+        threshold_min=0.5,   # Moderate min (ensures some baseline excitability)
+        threshold_max=1.2,  # Moderate max (Purkinje cells naturally active)
+    ))
+    homeostatic_target_rates: dict[str, float] = field(default_factory=lambda: {
+        CerebellumPopulation.PURKINJE: 0.065,
+    })
+
+    neuromodulator_receptors: list[NMReceptorConfig] = field(default_factory=lambda: [
+        NMReceptorConfig(NMReceptorType.NE_BETA, NeuromodulatorChannel.NE, "_ne_concentration", (CerebellumPopulation.PURKINJE,), amplitude_scale=1.5),
+        NMReceptorConfig(NMReceptorType.DA_D1, NeuromodulatorChannel.DA_NIGROSTRIATAL, "_da_concentration", (CerebellumPopulation.GRANULE,), amplitude_scale=2.5),
+        NMReceptorConfig(NMReceptorType.ACH_MUSCARINIC_M2, NeuromodulatorChannel.ACH, "_ach_concentration", (), amplitude_scale=2.0),
+        NMReceptorConfig(NMReceptorType.SHT_2A, NeuromodulatorChannel.SHT, "_sht_concentration", (CerebellumPopulation.PURKINJE,)),
+    ])
 
     # =========================================================================
     # ARCHITECTURE: GRANULE→PURKINJE→DCN CIRCUIT
@@ -93,9 +116,11 @@ class CerebellumConfig(NeuralRegionConfig):
     # - Synchronization time: <1ms (ultra-fast electrical coupling)
     # - Functional role: Coordinates learning across multiple cerebellar modules
     # - Complex spikes arrive synchronously at related Purkinje cells
-    gap_junction_strength: float = 0.18  # Strong coupling for IO synchronization
-    gap_junction_threshold: float = 0.20  # Low threshold for dense connectivity
-    gap_junction_max_neighbors: int = 12  # Many neighbors for global sync
+    gap_junctions: GapJunctionConfig = field(default_factory=lambda: GapJunctionConfig(
+        coupling_strength=0.18,  # Strong coupling for IO synchronization
+        connectivity_threshold=0.20,  # Low threshold for dense connectivity
+        max_neighbors=12,  # Many neighbors for global sync
+    ))
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -123,11 +148,14 @@ class DorsalRapheNucleusConfig(NeuralRegionConfig):
     - DRN output channel ``'5ht'``: broadcast to striatum, PFC, hippocampus, BLA, thalamus
     """
 
-    tonic_drive_gain: float = 0.90
+    tonic_drive_gain: float = 0.78
     """Overall gain on tonic excitatory drive to 5-HT neurons.
 
-    Reduced 0.95→0.90: DR:serotonin at 3.05 Hz (target ≤3.0); previous 0.95 had zero effect
-    had no effect because tonic pacemaker dominates.  Normal range: 0.5-2.0.
+    Lowered 0.92→0.78: DRN still at 4.24 Hz, target 0.5-3 Hz. Also LHb fix should
+    provide stronger inhibition; combined reduction should bring DRN into range.
+    biological target. Downstream serotonin receptor levels were low (0.0039)
+    but this was a receptor kinetics issue not source firing. Keep DRN within
+    2-3 Hz tonic range and address receptor accumulation separately.
     """
 
     lhb_inhibition_gain: float = 3.0
@@ -136,6 +164,16 @@ class DorsalRapheNucleusConfig(NeuralRegionConfig):
     High LHb activity (punishment) → strong DRN suppression → 5-HT pause.
     Biology: LHb→DRN operates via GABA interneurons and direct habenulo-raphe fibres.
     Typical range: 2.0-5.0.
+    """
+
+    pfc_excitation_gain: float = 1.5
+    """Gain converting normalised PFC spiking rate to excitatory DRN drive.
+
+    PFC glutamatergic L5 neurons project to DRN serotonin neurons, providing
+    top-down excitatory control.  When PFC is active (executive control engaged),
+    it supports serotonin tone → patience and impulse control.
+    Biology: Celada et al. 2001; Hajós et al. 2007.
+    Typical range: 1.0-3.0.
     """
 
 
@@ -154,8 +192,10 @@ class LocusCoeruleusConfig(NeuralRegionConfig):
     - Global projections → all brain regions
     """
 
-    gap_junction_strength: float = 0.05
-    """Gap junction coupling strength (voltage-gated to prevent pacemaker quenching)."""
+    gap_junctions: GapJunctionConfig = field(default_factory=lambda: GapJunctionConfig(
+        coupling_strength=0.05,
+    ))
+    """Gap junction coupling config (voltage-gated to prevent pacemaker quenching)."""
 
     gap_junction_radius: int = 50
     """Radius for gap junction connectivity (neurons within this range are coupled)."""

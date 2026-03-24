@@ -18,16 +18,15 @@ from thalia import GlobalConfig
 def validate_spike_tensor(spikes: torch.Tensor, tensor_name: str = "<unspecified>") -> None:
     """Validate that a tensor is a binary spike tensor (0s and 1s).
 
-    Only active when ``GlobalConfig.DEBUG`` is ``True``. Set that flag during
-    development/testing; leave it ``False`` (default) in production to avoid
-    the ``torch.all`` overhead on every hot-path call.
+    Accepts both ``torch.bool`` and ``torch.float32`` dtypes (ADR-004 relaxation).
+    Only active when ``GlobalConfig.DEBUG`` is ``True``.
 
     Args:
         spikes: Tensor to validate
         tensor_name: Name of the tensor for error messages
 
     Raises:
-        ValueError: If the tensor is not binary (contains values other than 0 or 1)
+        ValueError: If the tensor is not 1-D or contains non-binary values
     """
     if not GlobalConfig.DEBUG:
         return
@@ -35,8 +34,11 @@ def validate_spike_tensor(spikes: torch.Tensor, tensor_name: str = "<unspecified
     if not spikes.dim() == 1:
         raise ValueError(f"{tensor_name} must be a 1D tensor (ADR-005), got shape {spikes.shape}.")
 
+    if spikes.dtype == torch.bool:
+        return  # bool tensors are inherently binary
+
     if not torch.all((spikes == 0) | (spikes == 1)):
-        raise ValueError(f"{tensor_name} must be a binary spike tensor (ADR-005) containing only 0s and 1s.")
+        raise ValueError(f"{tensor_name} must be a binary spike tensor (ADR-004) containing only 0s and 1s.")
 
 
 def compute_firing_rate(spikes: torch.Tensor) -> float:

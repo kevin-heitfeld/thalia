@@ -14,7 +14,7 @@ class GlobalConfig:
     synaptic weight scaling.
     """
 
-    DEBUG: bool = False  # Set to True to enable runtime tensor validation (validate_spike_tensor etc.)
+    DEBUG: bool = False  # Set to True to enable runtime tensor validation
     """Enable expensive runtime assertions and tensor validation. Leave False in production."""
 
     DEFAULT_DEVICE: str = "cpu"  # Default device for tensors (can be overridden per brain/region)
@@ -31,6 +31,3 @@ class GlobalConfig:
 
     NEUROMODULATION_DISABLED: bool = False  # Set to True to disable all neuromodulator effects (DA, NE, ACh)
     """Global neuromodulation enable flag."""
-
-    SYNAPTIC_WEIGHT_SCALE: float = 1.0  # Set to 0.0 to disable synaptic conductances and test intrinsic excitability alone
-    """Global weight scale factor for conductance-based synapses."""

@@ -348,7 +348,7 @@ CANONICAL_KINETICS: dict[NMReceptorType, ReceptorKinetics] = {
     NMReceptorType.NE_ALPHA1: ReceptorKinetics(
         tau_rise_ms=10.0,
         tau_decay_ms=150.0,
-        spike_amplitude=0.12,
+        spike_amplitude=0.18,  # Raised 0.14→0.18: NE receptor at 0.0042 (target ≥0.005); LC NE dropped to 2.94 Hz; 29% amplitude increase compensates
     ),
     # β-adrenergic: Gs → cAMP → PKA (same cascade as D1, but faster PDE clearance).
     # Onset: ~80 ms.  Decay: ~1000 ms.

@@ -16,7 +16,6 @@ from thalia.typing import (
 from thalia.utils import (
     CircularDelayBuffer,
     HeterogeneousDelayBuffer,
-    validate_spike_tensor,
 )
 
 
@@ -123,7 +122,6 @@ class AxonalTract(nn.Module):
         spikes = population_outputs.get(sid.source_population, None)
 
         if spikes is not None:
-            validate_spike_tensor(spikes)
             if spikes.shape[0] != self.spec.size:
                 raise ValueError(
                     f"AxonalTract size mismatch for {sid}: "

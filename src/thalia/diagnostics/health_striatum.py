@@ -1,49 +1,29 @@
 """Striatal and basal-ganglia pathway health checks.
 
 Checks in this module go beyond D1/D2 competition (which is covered by
-:func:`~.health_ei_oscillations.check_oscillatory_bands`) and verify the
+:func:`~.health_oscillations.check_oscillatory_bands`) and verify the
 structural integrity of the **indirect pathway** (D2 MSN → GPe → STN → SNr/GPi)
 and the tonic activity of basal-ganglia output nuclei.
-
-References
-----------
-- Albin, Young & Penney 1989 *Trends Neurosci* — indirect/direct pathway model.
-- Mink 1996 *Prog Neurobiol* — focused inhibition via basal ganglia.
-- DeLong 1990 *Trends Neurosci* — STN–GPe pacemaker oscillation.
-- Bergman et al. 1998 *J Neurophysiol* — GPe tonic activity in parkinsonian models.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
-
 import numpy as np
 
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    PopulationStats,
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
+from .region_tags import (
+    ARKYPALLIDAL_TAGS,
+    D2_MSN_TAGS,
+    GPE_TAGS,
+    GPI_TAGS,
+    SNR_TAGS,
+    STN_TAGS,
+    matches_any,
 )
 
 
-# Matched against region names case-insensitively (substring match).
-_GPE_TAGS = ("globus_pallidus", "gpe")
-_STN_TAGS = ("subthalamic", "stn")
-_SNR_TAGS = ("substantia_nigra_reticulata", "snr")
-_GPI_TAGS = ("globus_pallidus_internal", "globus_pallidus_interna", "gpi")
-_D2_POP_TAGS = ("d2",)
-_D1_POP_TAGS = ("d1",)
-
-
-def _matches(name: str, tags: tuple[str, ...]) -> bool:
-    nl = name.lower()
-    return any(t in nl for t in tags)
-
-
-def check_basal_ganglia_pathway(
-    pop_stats: "Dict[Tuple[str, str], PopulationStats]",
-    issues: List[HealthIssue],
-) -> None:
+def check_basal_ganglia_pathway(ctx: HealthCheckContext) -> None:
     """Validate indirect-pathway ordering and basal-ganglia output-nucleus tonicity.
 
     Checks performed
@@ -64,6 +44,8 @@ def check_basal_ganglia_pathway(
        10 Hz collapses this gateway inhibition, leading to motor dis-inhibition
        and involuntary movements (Albin et al. 1989).
     """
+    pop_stats, issues = ctx.pop_stats, ctx.issues
+    config = ctx.thresholds.regional
     # Collect per-region mean FRs for each BG nucleus
     d2_active_regions: set[str] = set()
     gpe_stats:  list[tuple[str, str, float]] = []  # (rn, pn, mean_fr_hz)
@@ -74,15 +56,15 @@ def check_basal_ganglia_pathway(
     for (rn, pn), ps in pop_stats.items():
         if np.isnan(ps.mean_fr_hz):
             continue
-        if _matches(pn, _D2_POP_TAGS) and ps.mean_fr_hz > 0.5:
+        if matches_any(pn, D2_MSN_TAGS) and ps.mean_fr_hz > 0.5:
             d2_active_regions.add(rn)
-        if _matches(rn, _GPE_TAGS):
+        if matches_any(rn, GPE_TAGS):
             gpe_stats.append((rn, pn, ps.mean_fr_hz))
-        if _matches(rn, _STN_TAGS):
+        if matches_any(rn, STN_TAGS):
             stn_stats.append((rn, pn, ps.mean_fr_hz))
-        if _matches(rn, _SNR_TAGS):
+        if matches_any(rn, SNR_TAGS):
             snr_stats.append((rn, pn, ps.mean_fr_hz))
-        if _matches(rn, _GPI_TAGS):
+        if matches_any(rn, GPI_TAGS):
             gpi_stats.append((rn, pn, ps.mean_fr_hz))
 
     # ── 1. GPe tonic suppression ─────────────────────────────────────────────
@@ -92,8 +74,8 @@ def check_basal_ganglia_pathway(
         d2_nearby = bool(d2_active_regions)
         # Arkypallidal neurons (~25% of GPe) fire at 5–20 Hz physiologically
         # (Abdi et al. 2015), not 30–80 Hz like prototypic neurons.  Skip them.
-        is_arkypallidal = "arkypallidal" in pn.lower()
-        if d2_nearby and not is_arkypallidal and fr < 20.0:
+        is_arkypallidal = matches_any(pn, ARKYPALLIDAL_TAGS)
+        if d2_nearby and not is_arkypallidal and fr < config.gpe_min_fr_hz:
             pop_key = f"{rn}:{pn}"
             issues.append(HealthIssue(
                 severity="warning",
@@ -111,7 +93,7 @@ def check_basal_ganglia_pathway(
     # ── 2. STN hyperactivity ─────────────────────────────────────────────────
     for rn, pn, fr in stn_stats:
         pop_key = f"{rn}:{pn}"
-        if fr > 60.0:
+        if fr > config.stn_max_fr_hz:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.FIRING,
@@ -128,7 +110,7 @@ def check_basal_ganglia_pathway(
     # ── 3. SNr/GPi tonic gateway activity ────────────────────────────────────
     for rn, pn, fr in snr_stats + gpi_stats:
         pop_key = f"{rn}:{pn}"
-        if fr < 10.0:
+        if fr < config.bg_output_min_fr_hz:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.FIRING,

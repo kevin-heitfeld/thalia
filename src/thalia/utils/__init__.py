@@ -22,7 +22,6 @@ from .reward_coding import (
     generate_reward_spikes,
 )
 from .rng import (
-    gaussian_from_uniform,
     philox_uniform,
     philox_gaussian,
 )
@@ -59,7 +58,6 @@ __all__ = [
     # Reward Coding
     "generate_reward_spikes",
     # RNG
-    "gaussian_from_uniform",
     "philox_uniform",
     "philox_gaussian",
     # Spike Utilities

@@ -28,7 +28,13 @@ from .configs import BrainConfig, NeuralRegionConfig
 from .regions import NeuralRegionRegistry, NeuralRegion
 
 if TYPE_CHECKING:
+    from thalia.diagnostics.diagnostics_report import HealthIssue
     from thalia.learning.strategies import LearningStrategy
+
+
+# Biological default: axonal delay variability is ~30% of mean conduction time,
+# reflecting normal distribution of axon diameters and myelination within a tract.
+DEFAULT_DELAY_STD_FRACTION: float = 0.30
 
 
 @dataclass
@@ -154,7 +160,6 @@ class ConductanceBudgetEntry:
 
     target_g_L: float
     target_E_E: float
-    target_E_L: float
 
     g_exc_intended: float
     """Sum of designed conductance for AMPA/NMDA (excitatory) sources only."""
@@ -194,6 +199,31 @@ def apply_stp_correction(
         return weight_scale
     u_eff = stp_config.steady_state_utilization(weight_scale.source_rate_hz)
     return replace(weight_scale, stp_utilization_factor=u_eff)
+
+
+def _print_preflight_issues(issues: List[HealthIssue]) -> None:
+    """Print pre-flight validation issues to stdout."""
+    criticals = [i for i in issues if i.severity == "critical"]
+    warnings  = [i for i in issues if i.severity == "warning"]
+    infos     = [i for i in issues if i.severity == "info"]
+    print("\n" + "─" * 80)
+    print("PRE-FLIGHT VALIDATION")
+    print("─" * 80)
+    if criticals:
+        print(f"\n  CRITICAL ({len(criticals)}):")
+        for i in criticals:
+            print(f"    • {i.message}")
+    if warnings:
+        print(f"\n  WARNINGS ({len(warnings)}):")
+        for i in warnings:
+            print(f"    • {i.message}")
+    if infos:
+        print(f"\n  INFO ({len(infos)}):")
+        for i in infos:
+            print(f"    • {i.message}")
+    if not criticals and not warnings:
+        print("  ✓ All pre-flight checks passed")
+    print("─" * 80)
 
 
 class BrainBuilder:
@@ -268,20 +298,21 @@ class BrainBuilder:
         self,
         synapse_id: SynapseId,
         axonal_delay_ms: float,
-        axonal_delay_std_ms: float,
         connectivity: float,
         weight_scale: Union[float, ConductanceScaledSpec],
         stp_config: Optional[STPConfig],
+        axonal_delay_std_ms: Optional[float] = None,
     ) -> BrainBuilder:
         """Connect two regions with an axonal tract.
 
         Args:
             synapse_id: Unique identifier for the synapse (source/target/population combination)
             axonal_delay_ms: Axonal conduction delay in milliseconds (mean)
-            axonal_delay_std_ms: Standard deviation for heterogeneous delays (0 = uniform delay)
             connectivity: Connection probability (fraction of connections present, 0-1)
             weight_scale: Initial weight scale (normalized conductance)
             stp_config: Optional short-term plasticity configuration for this connection (if None, no STP applied)
+            axonal_delay_std_ms: Standard deviation for heterogeneous delays.
+                If None, auto-computed as DEFAULT_DELAY_STD_FRACTION × axonal_delay_ms (30%).
 
         Returns:
             Self for method chaining
@@ -295,6 +326,9 @@ class BrainBuilder:
             raise ValueError(f"Target region '{synapse_id.target_region}' not found")
         if isinstance(weight_scale, float) and weight_scale < 0:
             raise ValueError("Weight scale must be non-negative")
+
+        if axonal_delay_std_ms is None:
+            axonal_delay_std_ms = DEFAULT_DELAY_STD_FRACTION * axonal_delay_ms
 
         spec = ConnectionSpec(
             synapse_id=synapse_id,
@@ -353,11 +387,11 @@ class BrainBuilder:
         source_region: RegionName,
         source_population: PopulationName,
         axonal_delay_ms: float,
-        axonal_delay_std_ms: float,
         connectivity: float,
         weight_scale: Union[float, ConductanceScaledSpec],
         stp_config: Optional[STPConfig],
         *,
+        axonal_delay_std_ms: Optional[float] = None,
         target_region: RegionName = "striatum",
         fsi_connectivity: float = 0.5,
         fsi_weight_scale: Optional[Union[float, ConductanceScaledSpec]] = None,
@@ -377,20 +411,22 @@ class BrainBuilder:
         | TAN      | *tan_connectivity* | *weight_scale*×1.5           | U=0.30 depressing  |
         +----------+--------------------+------------------------------+--------------------+
 
-        FSI weight default is ``weight_scale * 20``.  FSI cells are fast-spiking
-        interneurons with a higher spike threshold and shorter membrane time constant
-        than MSNs, so they require substantially stronger drive to reach firing
-        threshold from cortical/thalamic afferents.  Without this boost, FSI input
-        is sub-threshold and D1/D2 MSNs receive no lateral inhibition, causing the
-        E/I ratio to blow up (observed: 54.9 during diagnostics).
+        When *weight_scale* is a :class:`ConductanceScaledSpec`, FSI and TAN
+        weights are auto-derived with population-specific biophysics.  FSI
+        ``fraction_of_drive`` is scaled by 0.40 (no adaptation → V_inf must
+        stay near threshold); TAN by 0.15 (large baseline pacemaking drive).
+        When *weight_scale* is a plain float, FSI gets ``weight_scale * 10``.
 
         Args:
             source_region: Name of the source region.
             source_population: Source population identifier.
             axonal_delay_ms: Mean axonal delay in milliseconds (applied to all four connections).
-            axonal_delay_std_ms: Std-dev for heterogeneous delays.
             connectivity: Connection probability for D1 and D2 MSNs.
             weight_scale: Initial weight scale for D1 and D2 MSNs (and TAN/FSI baseline).
+            stp_config: Short-term plasticity config applied to D1, D2 and FSI;
+                        TAN gets its own moderate depressing STP (U=0.30).
+            axonal_delay_std_ms: Std-dev for heterogeneous delays.
+                If None, auto-computed as DEFAULT_DELAY_STD_FRACTION × axonal_delay_ms (30%).
             target_region: Name of the target striatal region (default: ``"striatum"``).
             fsi_connectivity: Connection probability for FSI input (default 0.5).
             fsi_weight_scale: Weight scale for FSI; defaults to ``weight_scale * 20``
@@ -418,7 +454,10 @@ class BrainBuilder:
                 target_g_L=0.10,          # FSI leak conductance (fast-spiking, tau_m≈8ms)
                 target_tau_E_ms=5.0,      # Standard AMPA
                 target_v_inf=1.10,        # FSI fires above threshold for FFI role
-                fraction_of_drive=weight_scale.fraction_of_drive,
+                # Scale down: FSI has no adaptation (PV+ Kv3), so combined drive from
+                # all 5 sources must stay near threshold to avoid max-rate firing.
+                # 0.40→25.6 Hz; 0.25 targets ~12-15 Hz (middle of 5-20 Hz range).
+                fraction_of_drive=weight_scale.fraction_of_drive * 0.25,
                 # stp_utilization_factor defaults to 1.0 — auto-correction handles STP
             )
         else:
@@ -437,7 +476,8 @@ class BrainBuilder:
                 target_g_L=0.04,          # TAN leak conductance (slow, tau_m≈25ms)
                 target_tau_E_ms=10.0,     # Slower cholinergic AMPA
                 target_v_inf=0.95,        # Sub-threshold; intrinsic pacemaking closes gap
-                fraction_of_drive=weight_scale.fraction_of_drive * 0.5,
+                # Tuning: 0.25→15.7, 0.15→9.8, 0.08→0.5, 0.12→2.1, 0.14→9.0; 0.13 targets ~5 Hz.
+                fraction_of_drive=weight_scale.fraction_of_drive * 0.13,
                 # stp_utilization_factor defaults to 1.0 — auto-correction handles STP
             )
         else:
@@ -508,11 +548,10 @@ class BrainBuilder:
 
         entries: List[ConductanceBudgetEntry] = []
         for (target_region, target_pop), group in groups.items():
-            # Use target neuron params from first spec — g_L and E_L are neuron properties
+            # Use target neuron params from first spec — g_L is a neuron property
             # consistent across all connections targeting the same population.
             ref_spec = group[0][2]
             g_L = ref_spec.target_g_L
-            E_L = ref_spec.target_E_L
 
             # E_E reference: pull from first excitatory spec (for display + issue thresholds).
             exc_pairs = [(s, sp) for (s, _, sp, __) in group if s.receptor_type not in INHIBITORY_RECEPTORS]
@@ -530,14 +569,18 @@ class BrainBuilder:
                 E_reversal = spec.target_E_E
 
                 # g this source is designed to deliver at its reference operating point.
-                # Formula: g = g_L * (V_inf - E_L) / (E_reversal - V_inf)
-                # Works for both exc and inh — both numerator and denominator are same sign
-                # when V_inf lies between E_L and E_reversal (the normal operating regime).
+                # Full formula: g_E = (g_L * V_inf + g_I * (V_inf - E_I)) / (E_reversal - V_inf)
+                # where g_I = inhibitory_load × g_L accounts for local interneuron feedback.
+                # For inhibitory sources (GABA E_reversal), inhibitory_load is N/A (always 0).
+                # When inhibitory_load = 0 (default), reduces to: g = g_L * V_inf / (E_reversal - V_inf)
                 denom = E_reversal - spec.target_v_inf
-                g_ss_ref = (
-                    spec.target_g_L * (spec.target_v_inf - spec.target_E_L) / denom
-                    if abs(denom) > 1e-9 else 0.0
-                )
+                if abs(denom) > 1e-9:
+                    g_I_expected = spec.inhibitory_load * spec.target_g_L
+                    g_ss_ref = (
+                        spec.target_g_L * spec.target_v_inf + g_I_expected * (spec.target_v_inf - spec.E_I)
+                    ) / denom
+                else:
+                    g_ss_ref = 0.0
                 g_intended = g_ss_ref * spec.fraction_of_drive
 
                 # Actual u_eff at source rate (with STP depletion accounted for)
@@ -577,14 +620,14 @@ class BrainBuilder:
             g_intended_total  = g_exc_intended  + g_inh_intended
             g_effective_total = g_exc_effective + g_inh_effective
 
-            # Generalized V_inf: (Σ g_i·E_rev_i + g_L·E_L) / (g_L + Σ g_i)
-            _num_int = g_L * E_L + sum(s.g_intended * s.E_reversal for s in source_summaries)
+            # Generalized V_inf: (Σ g_i·E_rev_i) / (g_L + Σ g_i)  [E_L = 0]
+            _num_int = sum(s.g_intended * s.E_reversal for s in source_summaries)
             _den_int = g_L + g_intended_total
-            v_inf_intended = _num_int / _den_int if _den_int > 0 else E_L
+            v_inf_intended = _num_int / _den_int if _den_int > 0 else 0.0
 
-            _num_eff = g_L * E_L + sum(s.g_effective * s.E_reversal for s in source_summaries)
+            _num_eff = sum(s.g_effective * s.E_reversal for s in source_summaries)
             _den_eff = g_L + g_effective_total
-            v_inf_effective = _num_eff / _den_eff if _den_eff > 0 else E_L
+            v_inf_effective = _num_eff / _den_eff if _den_eff > 0 else 0.0
 
             ei_ratio = (
                 g_exc_effective / g_inh_effective
@@ -635,7 +678,6 @@ class BrainBuilder:
                 stp_penalty=stp_penalty,
                 target_g_L=g_L,
                 target_E_E=E_E_ref,
-                target_E_L=E_L,
                 g_exc_intended=g_exc_intended,
                 g_exc_effective=g_exc_effective,
                 g_inh_intended=g_inh_intended,
@@ -790,20 +832,45 @@ class BrainBuilder:
             device=device,
         )
 
-    def build(self, device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE) -> Brain:
+    def build(
+        self,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+        *,
+        validate_preflight: bool = True,
+        calibrate_weights: bool = False,
+        calibration_steps: Optional[int] = None,
+        calibration_iterations: Optional[int] = None,
+    ) -> Brain:
         """Build Brain from specifications.
 
         Steps:
-            1. Validate graph
+            1. Validate graph structure
             2. Instantiate all regions from registry
             3. Instantiate all axonal tracts from connection specs
-            4. Create Brain instance with regions and axonal tracts
+            4. Create Brain instance
+            5. Validate neuromodulator subscriptions
+            6. Run pre-flight validation (unless *validate_preflight* is ``False``)
+            7. Run weight calibration (unless *calibrate_weights* is ``False``)
+
+        Args:
+            device: PyTorch device for all tensors.
+            validate_preflight: If ``True`` (default), run
+                :func:`~thalia.diagnostics.validate_brain` on the finished
+                brain and raise :class:`ValueError` if any CRITICAL issues are
+                found.  Pass ``False`` to skip — useful in unit tests or when
+                deliberately exploring edge-case configurations.
+            calibrate_weights: If ``True``, run :meth:`Brain.calibrate_weights`
+                after construction to iteratively adjust excitatory weights until
+                spontaneous firing rates match the homeostatic targets.
+            calibration_steps: Measurement steps per calibration iteration.
+            calibration_iterations: Number of calibration cycles.
 
         Returns:
             Constructed Brain instance
 
         Raises:
-            ValueError: If validation fails
+            ValueError: If structural graph validation fails, or if pre-flight
+                validation finds CRITICAL issues.
         """
         # Validate before building
         issues = self.validate()
@@ -859,13 +926,6 @@ class BrainBuilder:
                 if stp is not None:
                     stp.initialize_to_steady_state(weight_scale.source_rate_hz)
 
-        # Finalize initialization for regions that need post-connection setup
-        # This allows regions to build components that depend on complete connectivity
-        # (e.g., thalamus gap junctions that need all input sources)
-        for region in regions.values():
-            if hasattr(region, 'finalize_initialization'):
-                region.finalize_initialization()
-
         # Create Brain
         brain = Brain(
             config=self.brain_config,
@@ -878,6 +938,37 @@ class BrainBuilder:
         # neuromodulator_subscriptions must be published by at least one other region.
         # Raises ValueError at build time rather than silently returning None at runtime.
         brain.neuromodulator_hub.validate()
+
+        # Pre-flight validation: catch biophysical / topological misconfigurations
+        # that would silently break learning without producing an obvious error.
+        if validate_preflight:
+            from thalia.diagnostics.health_preflight import validate_brain
+            preflight_issues = validate_brain(brain)
+            if preflight_issues:
+                _print_preflight_issues(preflight_issues)
+                criticals = [i for i in preflight_issues if i.severity == "critical"]
+                if criticals:
+                    raise ValueError(
+                        f"Brain pre-flight validation failed with {len(criticals)} "
+                        f"critical issue(s) — see output above.  Pass "
+                        f"validate_preflight=False to build() to skip this check."
+                    )
+
+        # Weight calibration: iteratively rescale excitatory weights until
+        # spontaneous firing matches homeostatic targets.  Runs after pre-flight
+        # so validation reflects the as-constructed weight distribution, not
+        # the post-calibration one.
+        if calibrate_weights:
+            if calibration_steps is None or calibration_iterations is None:
+                raise ValueError("calibration_steps and calibration_iterations must be provided when calibrate_weights=True")
+
+            brain.calibrate_weights(
+                n_steps=calibration_steps,
+                n_iterations=calibration_iterations,
+                warmup_steps=calibration_steps // 10,  # first 10% of steps are warmup and not included in rate measurements
+                correction_gain=0.5,
+                max_correction=3.0,
+            )
 
         return brain
 

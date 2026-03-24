@@ -106,6 +106,30 @@ class GapJunctionCoupling(nn.Module):
         self.coupling_matrix: torch.Tensor
         self.register_buffer("coupling_matrix", coupling_matrix)
 
+        # Pre-compute static total gap conductance per neuron (row sum)
+        self._g_gap_total: torch.Tensor
+        self.register_buffer("_g_gap_total", coupling_matrix.sum(dim=1))
+
+    @classmethod
+    def from_coupling_matrix(cls, coupling_matrix: torch.Tensor) -> "GapJunctionCoupling":
+        """Create from a pre-built coupling matrix.
+
+        Use this when the coupling matrix is constructed directly (e.g. via
+        :class:`~thalia.brain.synapses.WeightInitializer`) rather than inferred
+        from shared afferent inputs.
+
+        Args:
+            coupling_matrix: Pre-built coupling matrix [n_neurons, n_neurons]
+                where entry (i,j) is the gap junction conductance from j to i.
+        """
+        instance = cls.__new__(cls)
+        nn.Module.__init__(instance)
+        instance.n_neurons = coupling_matrix.size(0)
+        instance.device = coupling_matrix.device
+        instance.register_buffer("coupling_matrix", coupling_matrix)
+        instance.register_buffer("_g_gap_total", coupling_matrix.sum(dim=1))
+        return instance
+
     def _build_coupling_matrix(self, weights: torch.Tensor) -> torch.Tensor:
         """
         Build gap junction coupling matrix from functional connectivity.
@@ -213,8 +237,8 @@ class GapJunctionCoupling(nn.Module):
             E_gap_effective: Effective reversal potential per neuron [n_neurons]
                 (weighted average of neighbor voltages)
         """
-        # Total gap junction conductance per neuron
-        g_gap_total = self.coupling_matrix.sum(dim=1)  # [n_neurons]
+        # Total gap junction conductance per neuron (pre-computed)
+        g_gap_total = self._g_gap_total  # [n_neurons]
 
         # Weighted sum of neighbor voltages
         neighbor_weighted_v = self.coupling_matrix @ voltages  # [n_neurons]

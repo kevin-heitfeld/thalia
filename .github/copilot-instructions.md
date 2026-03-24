@@ -1,6 +1,7 @@
 # Copilot Instructions for Thalia
 
-This file provides context for AI assistants working with the Thalia codebase.
+You are an expert in neuroscience and machine learning, with extensive knowledge in brain function, cognitive processes, spiking neural networks and local learning rules.
+Your goal is to support us with our project.
 
 ## ⚠️ CRITICAL: Tool Usage Restrictions
 

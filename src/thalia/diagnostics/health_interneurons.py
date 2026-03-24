@@ -2,27 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import List
 
 import numpy as np
 
 from thalia.typing import PopulationPolarity
 
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    PopulationStats,
-)
-from .region_tags import CORTICAL_TAGS, matches_any
-
-if TYPE_CHECKING:
-    from .diagnostics_types import RecorderSnapshot
+from ._helpers import bin_counts_2d
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
+from .region_tags import CORTICAL_TAGS, PV_TAGS, PYRAMIDAL_TAGS, SST_TAGS, VIP_TAGS, matches_any
 
 
-def check_interneuron_ratio(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_interneuron_ratio(ctx: HealthCheckContext) -> None:
     """Check inhibitory interneuron neuron-count ratio in neocortical regions.
 
     A healthy neocortex contains ~20–30 % GABAergic interneurons (Tremblay et
@@ -34,10 +26,9 @@ def check_interneuron_ratio(
     Restricted to regions whose names contain ``"cortex"`` or
     ``"prefrontal"`` — the biological reference range does not apply to
     striatum, thalamus, cerebellum, or neuromodulatory nuclei.
-
-    Reference: Tremblay et al. 2016, *Neuron* "GABAergic interneurons in the
-    neocortex: from cellular properties to circuits".
     """
+    rec, issues = ctx.rec, ctx.issues
+    config = ctx.thresholds.connectivity
     for rn in rec._region_keys:
         if not matches_any(rn, CORTICAL_TAGS):
             continue
@@ -53,7 +44,7 @@ def check_interneuron_ratio(
         if n_total == 0:
             continue
         ratio = n_inhibitory / n_total
-        if ratio < 0.15:
+        if ratio < config.interneuron_ratio_low:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.INTERNEURON_COVERAGE,
@@ -65,7 +56,7 @@ def check_interneuron_ratio(
                     f"— region may lack sufficient GABAergic coverage"
                 ),
             ))
-        elif ratio > 0.40:
+        elif ratio > config.interneuron_ratio_high:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.INTERNEURON_COVERAGE,
@@ -79,10 +70,7 @@ def check_interneuron_ratio(
             ))
 
 
-def check_interneuron_subtype_balance(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_interneuron_subtype_balance(ctx: HealthCheckContext) -> None:
     """Check that cortical interneuron subtypes (PV, SST, VIP) are proportionally balanced.
 
     When a cortical region contains populations identified as at least two of
@@ -101,9 +89,9 @@ def check_interneuron_subtype_balance(
     Only checked for cortical / prefrontal regions when ≥ 2 subtype labels are
     present.  Silently skips regions with a single named subtype or zero
     inhibitory neurons.
-
-    References: Tremblay, Lee & Bhatt 2016 *Neuron*; Jiang et al. 2015 *Cell*.
     """
+    rec, issues = ctx.rec, ctx.issues
+    config = ctx.thresholds.connectivity
     for rn in rec._region_keys:
         if not matches_any(rn, CORTICAL_TAGS):
             continue
@@ -115,12 +103,11 @@ def check_interneuron_subtype_balance(
             if polarity != PopulationPolarity.INHIBITORY:
                 continue
             n = int(rec._pop_sizes[pop_idx])
-            pn_l = pn.lower()
-            if "pv" in pn_l or "parvalbumin" in pn_l:
+            if matches_any(pn, PV_TAGS):
                 pv_n += n
-            elif "sst" in pn_l or "somatostatin" in pn_l or "som" in pn_l:
+            elif matches_any(pn, SST_TAGS):
                 sst_n += n
-            elif "vip" in pn_l:
+            elif matches_any(pn, VIP_TAGS):
                 vip_n += n
             else:
                 other_in_n += n
@@ -138,7 +125,7 @@ def check_interneuron_subtype_balance(
         sst_frac = sst_n / n_in_total
         vip_frac = vip_n / n_in_total
 
-        if pv_n > 0 and pv_frac < 0.20:
+        if pv_n > 0 and pv_frac < config.pv_fraction_min:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.INTERNEURON_COVERAGE,
@@ -151,7 +138,7 @@ def check_interneuron_subtype_balance(
                     f"may be impaired (Tremblay et al. 2016)"
                 ),
             ))
-        if sst_n > 0 and sst_frac < 0.10:
+        if sst_n > 0 and sst_frac < config.sst_fraction_min:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.INTERNEURON_COVERAGE,
@@ -164,7 +151,7 @@ def check_interneuron_subtype_balance(
                     f"under-represented (Tremblay et al. 2016)"
                 ),
             ))
-        if vip_n > 0 and vip_frac < 0.05:
+        if vip_n > 0 and vip_frac < config.vip_fraction_min:
             issues.append(HealthIssue(
                 severity="info",
                 category=HealthCategory.INTERNEURON_COVERAGE,
@@ -179,11 +166,7 @@ def check_interneuron_subtype_balance(
             ))
 
 
-def check_interneuron_fr_balance(
-    rec: RecorderSnapshot,
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-) -> None:
+def check_interneuron_fr_balance(ctx: HealthCheckContext) -> None:
     """Check PV/pyramidal firing-rate ratio and VIP–SST anticorrelation.
 
     Two firing-rate-based interneuron circuit checks for cortical regions:
@@ -199,15 +182,15 @@ def check_interneuron_fr_balance(
 
     **VIP–SST anticorrelation**
     VIP interneurons disinhibit pyramidal cells by inhibiting SST (and PV)
-    interneurons (Pi et al. 2013, *Nature*).  A healthy disinhibitory circuit
-    produces a negative correlation between the binned VIP population rate
-    and the binned SST population rate.  Positive correlation indicates that
-    VIP is either not driving SST suppression or that both subtypes are
-    coactivated by shared drive, which would short-circuit disinhibition.
-    Gate: ≥ 50 rate bins required; Pearson r > 0.2 triggers a warning.
-    Reference: Pi et al. 2013, *Nature* "Cortical interneurons that specialize
-    in disinhibitory control".
+    interneurons.  A healthy disinhibitory circuit produces a negative
+    correlation between the binned VIP population rate and the binned SST
+    population rate.  Positive correlation indicates that VIP is either not
+    driving SST suppression or that both subtypes are coactivated by shared
+    drive, which would short-circuit disinhibition.  Gate: ≥ 50 rate bins
+    required; Pearson r > config.vip_sst_corr_max triggers a warning.
     """
+    rec, pop_stats, issues = ctx.rec, ctx.pop_stats, ctx.issues
+    config = ctx.thresholds.connectivity
     bin_steps = max(1, int(rec.config.rate_bin_ms / rec.dt_ms))
     T = rec._n_recorded or rec.config.n_timesteps
     n_bins = T // bin_steps
@@ -223,22 +206,21 @@ def check_interneuron_fr_balance(
         pyr_fr_sum = pyr_fr_n = 0.0
         for pop_idx in rec._region_pop_indices[rn]:
             _, pn = rec._pop_keys[pop_idx]
-            pn_l = pn.lower()
             ps = pop_stats.get((rn, pn))
             if ps is None:
                 continue
             n = float(rec._pop_sizes[pop_idx])
-            if "pv" in pn_l or "parvalbumin" in pn_l:
+            if matches_any(pn, PV_TAGS):
                 pv_fr_sum += ps.mean_fr_hz * n
                 pv_fr_n   += n
-            elif "pyr" in pn_l or "pyramidal" in pn_l:
+            elif matches_any(pn, PYRAMIDAL_TAGS):
                 pyr_fr_sum += ps.mean_fr_hz * n
                 pyr_fr_n   += n
 
         if pv_fr_n > 0 and pyr_fr_n > 0:
             pv_mean  = pv_fr_sum  / pv_fr_n
             pyr_mean = pyr_fr_sum / pyr_fr_n
-            if pyr_mean > 0.1 and pv_mean < 2.0 * pyr_mean:
+            if pyr_mean > 0.1 and pv_mean < config.pv_pyramidal_fr_ratio * pyr_mean:
                 issues.append(HealthIssue(
                     severity="warning",
                     category=HealthCategory.INTERNEURON_COVERAGE,
@@ -266,13 +248,12 @@ def check_interneuron_fr_balance(
         sst_sizes: List[float] = []
         for pop_idx in rec._region_pop_indices[rn]:
             _, pn = rec._pop_keys[pop_idx]
-            pn_l = pn.lower()
             idx = pop_idx
             n = float(rec._pop_sizes[pop_idx])
-            if "vip" in pn_l:
+            if matches_any(pn, VIP_TAGS):
                 vip_indices.append(idx)
                 vip_sizes.append(n)
-            elif "sst" in pn_l or "somatostatin" in pn_l:
+            elif matches_any(pn, SST_TAGS):
                 sst_indices.append(idx)
                 sst_sizes.append(n)
 
@@ -281,7 +262,7 @@ def check_interneuron_fr_balance(
 
         # Neuron-weighted binned rates for each subtype.
         spike_counts = rec._pop_spike_counts[:n_bins * bin_steps]
-        binned = spike_counts.reshape(n_bins, bin_steps, rec._n_pops).sum(axis=1).astype(np.float64)
+        binned = bin_counts_2d(spike_counts, n_bins, bin_steps)
 
         vip_sizes_arr = np.array(vip_sizes)
         sst_sizes_arr = np.array(sst_sizes)
@@ -293,7 +274,7 @@ def check_interneuron_fr_balance(
             continue
 
         r = float(np.corrcoef(vip_trace, sst_trace)[0, 1])
-        if r > 0.2:
+        if r > config.vip_sst_corr_max:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.INTERNEURON_COVERAGE,

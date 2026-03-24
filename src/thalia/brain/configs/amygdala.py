@@ -2,11 +2,38 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict
 
+from thalia.brain.regions.population_names import BLAPopulation, CeAPopulation
+from thalia.brain.synapses import NMReceptorType
 from thalia.errors import ConfigurationError
+from thalia.typing import NeuromodulatorChannel, PopulationPolarity
 
-from .neural_region import NeuralRegionConfig
+from .neural_region import NMReceptorConfig, NeuralPopulationConfig, NeuralRegionConfig, SynapticScalingConfig
+
+
+# ---------------------------------------------------------------------------
+# Per-population config classes
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BLAPopulationConfig(NeuralPopulationConfig):
+    """Per-population biophysical parameters for BLA populations."""
+
+    polarity: PopulationPolarity = PopulationPolarity.EXCITATORY
+    """Dale's law polarity for this population."""
+
+
+@dataclass
+class CeAPopulationConfig(NeuralPopulationConfig):
+    """Per-population biophysical parameters for CeA populations."""
+
+    polarity: PopulationPolarity = PopulationPolarity.INHIBITORY
+    """Dale's law polarity for this population."""
+
+    baseline_drive: float = 0.0
+    """Tonic excitatory drive for this population."""
 
 
 @dataclass
@@ -46,23 +73,6 @@ class BasolateralAmygdalaConfig(AmygdalaNucleusConfig):
     - Theta oscillations (~8 Hz) gate consolidation
     """
 
-    # Tau (ms)
-    tau_mem_principal: float = 25.0
-    """Membrane time constant for principal neurons (slow, enables temporal integration)."""
-
-    tau_mem_pv: float = 8.0
-    """Membrane time constant for PV interneurons (fast, feedforward gating)."""
-
-    tau_mem_som: float = 20.0
-    """Membrane time constant for SOM interneurons (moderate, dendritic inhibition)."""
-
-    # Excitability
-    v_threshold_principal: float = 1.2
-    """Firing threshold for principal neurons (raised to prevent runaway excitation at baseline)."""
-
-    v_threshold_pv: float = 1.5
-    """High threshold for PV interneurons to prevent hyperactivity."""
-
     # Synaptic conductances
     baseline_drive: float = 0.0005
     """Tonic excitatory drive (very low - BLA is mostly silent at baseline)."""
@@ -71,20 +81,58 @@ class BasolateralAmygdalaConfig(AmygdalaNucleusConfig):
     learning_rate: float = 0.002
     """STDP learning rate for CS–US association (slow for stable fear memories)."""
 
-    w_min: float = 0.0
-    """Minimum synaptic weight."""
+    synaptic_scaling: SynapticScalingConfig = field(default_factory=lambda: SynapticScalingConfig(
+        w_min=0.0,
+        w_max=5.0,
+    ))
+    """Synaptic scaling with wider weight range for BLA fear conditioning."""
 
-    w_max: float = 5.0
-    """Maximum synaptic weight."""
+    homeostatic_target_rates: dict[str, float] = field(default_factory=lambda: {
+        BLAPopulation.PRINCIPAL: 0.003,
+    })
+
+    neuromodulator_receptors: list[NMReceptorConfig] = field(default_factory=lambda: [
+        NMReceptorConfig(NMReceptorType.DA_D1, NeuromodulatorChannel.DA_MESOLIMBIC, "_da_concentration", (BLAPopulation.PRINCIPAL,)),
+        NMReceptorConfig(NMReceptorType.NE_BETA, NeuromodulatorChannel.NE, "_ne_concentration", (BLAPopulation.PRINCIPAL,)),
+        NMReceptorConfig(NMReceptorType.SHT_1A, NeuromodulatorChannel.SHT, "_sht_concentration", (BLAPopulation.PRINCIPAL,)),
+        NMReceptorConfig(NMReceptorType.ACH_MUSCARINIC_M1, NeuromodulatorChannel.ACH, "_ach_concentration", (BLAPopulation.PRINCIPAL,)),
+    ])
+
+    population_overrides: Dict[str, BLAPopulationConfig] = field(
+        default_factory=lambda: {
+            BLAPopulation.PRINCIPAL: BLAPopulationConfig(
+                tau_mem_ms=25.0,
+                v_threshold=1.2,
+                v_reset=-0.10,
+                adapt_increment=0.30,
+                tau_adapt_ms=200.0,
+                noise_std=0.06,
+                polarity=PopulationPolarity.EXCITATORY,
+            ),
+            BLAPopulation.PV: BLAPopulationConfig(
+                tau_mem_ms=8.0,
+                v_threshold=1.0,
+                v_reset=0.0,
+                adapt_increment=0.0,
+                tau_adapt_ms=100.0,
+                noise_std=0.08,
+                polarity=PopulationPolarity.INHIBITORY,
+            ),
+            BLAPopulation.SOM: BLAPopulationConfig(
+                tau_mem_ms=20.0,
+                v_threshold=1.1,
+                v_reset=0.0,
+                adapt_increment=0.10,
+                tau_adapt_ms=200.0,
+                noise_std=0.03,
+                polarity=PopulationPolarity.INHIBITORY,
+            ),
+        }
+    )
+    """Per-population biophysical overrides."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if self.tau_mem_principal <= 0:
-            raise ConfigurationError(f"tau_mem_principal must be > 0, got {self.tau_mem_principal}")
-        if self.tau_mem_pv <= 0:
-            raise ConfigurationError(f"tau_mem_pv must be > 0, got {self.tau_mem_pv}")
-        if self.tau_mem_som <= 0:
-            raise ConfigurationError(f"tau_mem_som must be > 0, got {self.tau_mem_som}")
         if self.baseline_drive < 0:
             raise ConfigurationError(f"baseline_drive must be >= 0, got {self.baseline_drive}")
 
@@ -110,21 +158,31 @@ class CentralAmygdalaConfig(AmygdalaNucleusConfig):
     - ~90% GABAergic interneurons (CeA is almost entirely inhibitory)
     - ~10% glutamatergic projection neurons (CeM output to brainstem)
     """
-
-    tau_mem_ms: float = 20.0
-    """Membrane time constant (ms)."""
-
-    v_threshold: float = 1.35
-    """Firing threshold.
-
-    Raised 1.0→1.25 (run-11: CeA lateral=13.2 Hz, medial=10.1 Hz vs target 0–8 Hz).
-    Raised 1.25→1.35 (run-12: CeA lateral=8.30 Hz still above 0–8 Hz target).
-    Higher threshold means cells need more synchronous input to fire, keeping
-    baseline rates within the biological 0.5–8 Hz range.
-    """
-
-    baseline_drive_lateral: float = 0.0003
-    """Tonic drive to CeL (mostly silent)."""
-
-    baseline_drive_medial: float = 0.0005
-    """Tonic drive to CeM (slightly more active, drives background autonomic tone)."""
+    neuromodulator_receptors: list[NMReceptorConfig] = field(default_factory=lambda: [
+        NMReceptorConfig(NMReceptorType.SHT_1A, NeuromodulatorChannel.SHT, "_sht_concentration", (CeAPopulation.MEDIAL,)),
+    ])
+    population_overrides: Dict[str, CeAPopulationConfig] = field(
+        default_factory=lambda: {
+            CeAPopulation.LATERAL: CeAPopulationConfig(
+                tau_mem_ms=20.0,
+                v_threshold=1.35,
+                v_reset=0.0,
+                adapt_increment=0.15,
+                tau_adapt_ms=120.0,
+                noise_std=0.08,
+                polarity=PopulationPolarity.INHIBITORY,
+                baseline_drive=0.0003,
+            ),
+            CeAPopulation.MEDIAL: CeAPopulationConfig(
+                tau_mem_ms=20.0,
+                v_threshold=1.215,  # 1.35 * 0.9: CeM is slightly easier to activate
+                v_reset=0.0,
+                adapt_increment=0.12,
+                tau_adapt_ms=150.0,
+                noise_std=0.08,
+                polarity=PopulationPolarity.INHIBITORY,
+                baseline_drive=0.0005,
+            ),
+        }
+    )
+    """Per-population biophysical overrides."""

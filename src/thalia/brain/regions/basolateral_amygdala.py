@@ -14,26 +14,23 @@ import torch
 from thalia import GlobalConfig
 from thalia.brain.configs import BasolateralAmygdalaConfig
 from thalia.brain.neurons import (
-    ConductanceLIFConfig,
-    TwoCompartmentLIFConfig,
-    heterogeneous_tau_mem,
-    heterogeneous_v_threshold,
-    heterogeneous_adapt_increment,
-    heterogeneous_g_L,
+    build_conductance_lif_config,
+    build_two_compartment_config,
     split_excitatory_conductance,
 )
-from thalia.brain.synapses import (
-    NMReceptorType,
-    make_neuromodulator_receptor,
-    STPConfig,
-    WeightInitializer,
+from thalia.brain.synapses import STPConfig
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    MetaplasticityConfig,
+    MetaplasticityStrategy,
+    STDPConfig,
+    STDPStrategy,
 )
-from thalia.learning import STDPConfig, STDPStrategy
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
     NeuromodulatorInput,
-    PopulationPolarity,
     PopulationSizes,
     ReceptorType,
     RegionName,
@@ -42,7 +39,7 @@ from thalia.typing import (
     SynapticInput,
 )
 
-from .neural_region import NeuralRegion
+from .neural_region import InternalConnectionSpec, NeuralRegion
 from .population_names import BLAPopulation
 from .region_registry import register_region
 
@@ -67,6 +64,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
     neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [
         NeuromodulatorChannel.DA_MESOLIMBIC,
         NeuromodulatorChannel.NE,
+        NeuromodulatorChannel.ACH,
         NeuromodulatorChannel.SHT,
     ]
 
@@ -89,6 +87,10 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self.pv_size = population_sizes[BLAPopulation.PV]
         self.som_size = population_sizes[BLAPopulation.SOM]
 
+        principal_cfg = config.population_overrides[BLAPopulation.PRINCIPAL]
+        pv_cfg = config.population_overrides[BLAPopulation.PV]
+        som_cfg = config.population_overrides[BLAPopulation.SOM]
+
         # =====================================================================
         # NEURON POPULATIONS
         # =====================================================================
@@ -99,29 +101,10 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self.principal_neurons = self._create_and_register_neuron_population(
             population_name=BLAPopulation.PRINCIPAL,
             n_neurons=self.principal_size,
-            polarity=PopulationPolarity.EXCITATORY,
-            config=TwoCompartmentLIFConfig(
-                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_principal, self.principal_size, device),
-                v_threshold=heterogeneous_v_threshold(config.v_threshold_principal, self.principal_size, device),
-                v_reset=-0.10,
-                tau_ref=config.tau_ref,
-                g_L=heterogeneous_g_L(0.05, self.principal_size, device),
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=7.0,         # Moderate AMPA (slightly slower for integration)
-                tau_I=12.0,        # GABA_A for PV/SOM inhibition
-                adapt_increment=heterogeneous_adapt_increment(0.30, self.principal_size, device),
-                tau_adapt=200.0,   # Slower decay to maintain adaptation during burst
-                noise_std=0.02,    # Reduced noise; high noise was driving extra spikes
-                # Two-compartment dendritic parameters
-                g_c=0.05,          # Somato-dendritic coupling conductance
-                C_d=0.5,           # Dendritic membrane capacitance
-                g_L_d=0.03,        # Dendritic leak conductance
-                bap_amplitude=0.3, # Back-propagating AP strength (enables STDP coincidence)
-                theta_Ca=2.0,      # Ca2+ spike threshold (dendritic burst)
-                g_Ca_spike=0.30,   # Ca2+ spike conductance
-                tau_Ca_ms=20.0,    # Ca2+ decay time (synaptogenesis window)
+            polarity=principal_cfg.polarity,
+            config=build_two_compartment_config(
+                principal_cfg, self.principal_size, device,
+                tau_ref=config.tau_ref, tau_E=7.0, tau_I=12.0,
             ),
         )
 
@@ -129,18 +112,11 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self.pv_neurons = self._create_and_register_neuron_population(
             population_name=BLAPopulation.PV,
             n_neurons=self.pv_size,
-            polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(1.0, self.pv_size, device, cv=0.06),
-                v_reset=0.0,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=3.0,
-                tau_I=3.0,
-                tau_ref=2.5,
-                g_L=heterogeneous_g_L(0.10, self.pv_size, device, cv=0.08),
-                tau_mem_ms=heterogeneous_tau_mem(8.0, self.pv_size, device=device, cv=0.10),
+            polarity=pv_cfg.polarity,
+            config=build_conductance_lif_config(
+                pv_cfg, self.pv_size, device,
+                tau_ref=2.5, g_L=0.10, tau_E=3.0, tau_I=3.0,
+                tau_mem_cv=0.10, v_threshold_cv=0.06, g_L_cv=0.08,
             ),
         )
 
@@ -149,22 +125,10 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self.som_neurons = self._create_and_register_neuron_population(
             population_name=BLAPopulation.SOM,
             n_neurons=self.som_size,
-            polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_som, self.som_size, self.device),
-                v_threshold=heterogeneous_v_threshold(1.1, self.som_size, self.device),
-                v_reset=0.0,
-                tau_ref=5.0,
-                g_L=heterogeneous_g_L(0.06, self.som_size, self.device),
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=8.0,
-                tau_I=15.0,
-                adapt_increment=heterogeneous_adapt_increment(0.1, self.som_size, self.device),
-                tau_adapt=200.0,
-                E_adapt=-0.5,
-                noise_std=0.03,
+            polarity=som_cfg.polarity,
+            config=build_conductance_lif_config(
+                som_cfg, self.som_size, device,
+                g_L=0.06, tau_E=8.0, tau_I=15.0,
             ),
         )
 
@@ -172,71 +136,59 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         # INTERNAL CONNECTIVITY
         # =====================================================================
 
-        # Principal → PV (feedforward excitation of PV → rapid feedback inhibition)
-        # Biology: Principal axon collaterals excite local PV interneurons.
-        # BLA:pv is quiescent at rest (~0.5–5 Hz) — only recruited during CS/US events.
-        # At baseline with ~2 Hz principal drive, weight_scale=0.0005 yields ~0.9 Hz PV, which
-        # is appropriate for resting state (Woodruff & Sah 2007; Bienvenu et al. 2012).
-        self._add_internal_connection(
-            source_population=BLAPopulation.PRINCIPAL,
-            target_population=BLAPopulation.PV,
-            weights=WeightInitializer.sparse_random(
-                n_input=self.principal_size,
-                n_output=self.pv_size,
-                connectivity=0.4,
-                weight_scale=0.0005,
-                device=device,
-            ),
-            receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+        # Inhibitory STDP for I→E synapses (Vogels et al. 2011)
+        istdp_cfg = InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
         )
+        self.istdp_pv:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_som: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
 
-        # PV → Principal (fast feedforward inhibition)
-        # Biology: PV cells hyperpolarise principal soma, sharpening temporal tuning
-        self._add_internal_connection(
-            source_population=BLAPopulation.PV,
-            target_population=BLAPopulation.PRINCIPAL,
-            weights=WeightInitializer.sparse_random(
-                n_input=self.pv_size,
-                n_output=self.principal_size,
+        # Principal ↔ PV (feedforward excitation + fast feedback inhibition)
+        # Biology: Principal axon collaterals excite local PV interneurons;
+        # PV cells hyperpolarise principal soma, sharpening temporal tuning.
+        # BLA:pv is quiescent at rest (~0.5–5 Hz) — only recruited during CS/US events.
+        # At baseline with ~2 Hz principal drive, weight_scale=0.0005 yields ~0.9 Hz PV,
+        # appropriate for resting state (Woodruff & Sah 2007; Bienvenu et al. 2012).
+        self._principal_pv_synapse, self._pv_principal_synapse = self._add_feedforward_inhibition(
+            exc_pop=BLAPopulation.PRINCIPAL,
+            inh_pop=BLAPopulation.PV,
+            e_to_i=InternalConnectionSpec(
+                connectivity=0.4, weight_scale=0.0005,
+                receptor_type=ReceptorType.AMPA,
+                stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+            ),
+            i_to_e=InternalConnectionSpec(
                 connectivity=0.5,
                 weight_scale=0.016,  # Doubled (0.008→0.016): feedback inhibition must overcome runaway
-                device=device,
+                receptor_type=ReceptorType.GABA_A,
+                stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=20.0),
+                learning_strategy=self.istdp_pv,
             ),
-            receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=20.0),
+            device=device,
         )
 
-        # Principal → SOM (slower recurrent excitation of SOM interneurons)
-        # Biology: Activity-dependent recruitment of SOM cells during sustained input
-        self._add_internal_connection(
-            source_population=BLAPopulation.PRINCIPAL,
-            target_population=BLAPopulation.SOM,
-            weights=WeightInitializer.sparse_random(
-                n_input=self.principal_size,
-                n_output=self.som_size,
-                connectivity=0.3,
-                weight_scale=0.0015,
-                device=device,
+        # Principal ↔ SOM (slower excitation + dendritic inhibition: extinction gating)
+        # Biology: Activity-dependent recruitment of SOM cells during sustained input;
+        # SOM targets principal cell dendrites, reducing excitatory integration.
+        self._principal_som_synapse, self._som_principal_synapse = self._add_feedforward_inhibition(
+            exc_pop=BLAPopulation.PRINCIPAL,
+            inh_pop=BLAPopulation.SOM,
+            e_to_i=InternalConnectionSpec(
+                connectivity=0.3, weight_scale=0.0015,
+                receptor_type=ReceptorType.AMPA,
+                stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
             ),
-            receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
-        )
-
-        # SOM → Principal (dendritic inhibition: extinction gating)
-        # Biology: SOM targets principal cell dendrites, reducing excitatory integration
-        self._add_internal_connection(
-            source_population=BLAPopulation.SOM,
-            target_population=BLAPopulation.PRINCIPAL,
-            weights=WeightInitializer.sparse_random(
-                n_input=self.som_size,
-                n_output=self.principal_size,
-                connectivity=0.4,
-                weight_scale=0.002,
-                device=device,
+            i_to_e=InternalConnectionSpec(
+                connectivity=0.4, weight_scale=0.002,
+                receptor_type=ReceptorType.GABA_A,
+                stp_config=STPConfig(U=0.25, tau_d=400.0, tau_f=20.0),
+                learning_strategy=self.istdp_som,
             ),
-            receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.25, tau_d=400.0, tau_f=20.0),
+            device=device,
         )
 
         # =====================================================================
@@ -252,48 +204,32 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             a_minus=0.006,  # LTD (slower forgetting)
             tau_plus=25.0,  # ±25ms window (BLA temporal resolution)
             tau_minus=25.0,
-            w_min=config.w_min,
-            w_max=config.w_max,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
         ))
+
+        # Metaplasticity config for principal-neuron synapses.
+        # Emotional memories are persistent (McGaugh 2004); consolidated fear
+        # associations resist extinction → strong consolidation sensitivity.
+        self._meta_config = MetaplasticityConfig(
+            tau_recovery_ms=5000.0,
+            depression_strength=5.0,
+            tau_consolidation_ms=300000.0,
+            consolidation_sensitivity=0.1,
+            rate_min=0.1,
+        )
 
         # Baseline drive tensor (tonic low-level activity)
         self.baseline_drive = torch.full((self.principal_size,), config.baseline_drive, device=device)
 
         # =====================================================================
-        # NOREPINEPHRINE RECEPTOR (LC → BLA, β-adrenergic)
+        # NEUROMODULATOR RECEPTORS
         # =====================================================================
-        # NE from LC gates fear memory consolidation. High NE during emotional
-        # arousal (stress/shock) enhances STDP magnitude via β-adrenergic signalling,
-        # and mildly boosts principal excitability (signal-to-noise gain).
-        # Ref: McGaugh 2004; Roozendaal et al. 2009 (stress-NE synergy in BLA)
-        # β-adrenergic (Gs → cAMP → PKA): gates fear memory consolidation.
-        # τ_rise=80 ms, τ_decay=1000 ms (Woodward 1991; McGaugh 2004).
-        self.ne_receptor = make_neuromodulator_receptor(
-            NMReceptorType.NE_BETA, n_receptors=self.principal_size, dt_ms=self.config.dt_ms, device=device
-        )
-        self._ne_concentration: torch.Tensor
-        self.register_buffer("_ne_concentration", torch.zeros(self.principal_size, device=device))
-
-        # =====================================================================
-        # SEROTONIN RECEPTOR (DRN → BLA, 5-HT1A inhibitory)
-        # =====================================================================
-        # 5-HT1A (Gi-coupled) on principal neurons reduces excitability:
-        # opens K+ channels → mild hyperpolarisation → gates fear extinction.
-        # Ref: Gross et al. 2002 (5-HT1A KO → impaired extinction);
-        #      Bhagya et al. 2015; Denny et al. 2014 (DRN→BLA extinction circuit)
-        # 5-HT1A (Gi → GIRK): gates fear extinction, τ_decay=500 ms
-        # (Gross et al. 2002; Bhagya et al. 2015).
-        self.sht_receptor = make_neuromodulator_receptor(
-            NMReceptorType.SHT_1A, n_receptors=self.principal_size, dt_ms=self.config.dt_ms, device=device
-        )
-        self._sht_concentration: torch.Tensor
-        self.register_buffer("_sht_concentration", torch.zeros(self.principal_size, device=device))
-
-        # Homeostasis for principal cells
-        self._register_homeostasis(BLAPopulation.PRINCIPAL, self.principal_size, target_firing_rate=0.003, device=device)
-
-        self._pv_spikes_prev = None
-        self._som_spikes_prev = None
+        # DA D1 (VTA → BLA): fear acquisition / excitability boost (Bissière 2003)
+        # NE β-adrenergic (LC → BLA): fear memory consolidation (McGaugh 2004)
+        # 5-HT1A (DRN → BLA): extinction gating (Gross 2002; Bhagya 2015)
+        # ACh M1 (NB → BLA): attention-enhanced encoding (Power 2003)
+        self._init_receptors_from_config(device)
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -302,35 +238,23 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Compute BLA activity for one timestep.
-
-        Args:
-            synaptic_inputs: CS inputs (cortex, thalamus, hippocampus, PFC)
-            neuromodulator_inputs: DA from VTA (US signal, gates plasticity)
-        """
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
+        """Compute BLA activity for one timestep."""
         device = self.device
 
         # =====================================================================
-        # DA NEUROMODULATION (US/RPE signal)
+        # NEUROMODULATOR RECEPTOR UPDATES
         # =====================================================================
-        # DA from VTA/SNc gates fear acquisition by boosting principal excitability
-        da_signal = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.DA_MESOLIMBIC)
-        da_boost = 0.0
-        if da_signal is not None:
-            da_rate = da_signal.float().mean().item()
-            da_boost = da_rate * 0.1  # Reduced DA gain (0.5→0.1): 20 Hz VTA was adding +0.01 continuous boost
+        self._update_receptors(neuromodulator_inputs)
 
-        # NE (β-adrenergic): fear consolidation gain + STDP enhancement
-        ne_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.NE)
-        self._ne_concentration = self.ne_receptor.update(ne_spikes)
-
-        # 5-HT (5-HT1A inhibitory): extinction gating via excitability suppression
-        sht_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.SHT)
-        self._sht_concentration = self.sht_receptor.update(sht_spikes)
-
+        da_level = self._da_concentration.mean().item()
         ne_level = self._ne_concentration.mean().item()
         sht_level = self._sht_concentration.mean().item()
+        ach_level = self._ach_concentration.mean().item()
 
         # =====================================================================
         # PRINCIPAL NEURONS
@@ -343,39 +267,24 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
 
         # PV → PRINCIPAL: perisomatic (basal) inhibition — fast, soma-targeted
         # Biology: PV basket cells form synapses on soma and proximal dendrites
-        pv_principal_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=BLAPopulation.PV,
-            target_region=self.region_name,
-            target_population=BLAPopulation.PRINCIPAL,
-            receptor_type=ReceptorType.GABA_A,
-        )
+        #
         # SOM → PRINCIPAL: dendritic (apical) inhibition — slow, extinction gating
         # Biology: SOM/Martinotti cells target distal apical dendrites, reducing
         # excitatory integration of top-down and associative inputs during extinction
-        som_principal_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=BLAPopulation.SOM,
-            target_region=self.region_name,
-            target_population=BLAPopulation.PRINCIPAL,
-            receptor_type=ReceptorType.GABA_A,
-        )
-
+        #
         # Separate PV and SOM inhibition so they map to the correct compartments
-        pv_int_inh = self._integrate_synaptic_inputs_at_dendrites(
-            {pv_principal_synapse: self._pv_spikes_prev} if self._pv_spikes_prev is not None else {},
-            n_neurons=self.principal_size,
-        )
-        som_int_inh = self._integrate_synaptic_inputs_at_dendrites(
-            {som_principal_synapse: self._som_spikes_prev} if self._som_spikes_prev is not None else {},
-            n_neurons=self.principal_size,
-        )
+        pv_int_inh = self._integrate_single_synaptic_input(self._pv_principal_synapse, self._prev_spikes(BLAPopulation.PV))
+        som_int_inh = self._integrate_single_synaptic_input(self._som_principal_synapse, self._prev_spikes(BLAPopulation.SOM))
 
+        # DA D1: mild excitability boost via cAMP/PKA (+20% at max DA)
         # NE β-adrenergic: mild excitability boost during arousal (+30% at max NE)
         # 5-HT1A (Gi-coupled): hyperpolarising gate, reduces excitability (-35% at max 5-HT)
+        # ACh M1: attention-enhanced encoding boost (+15% at max ACh)
+        da_excitability = 1.0 + 0.2 * da_level
         ne_excitability = 1.0 + 0.3 * ne_level
         sht_excitability = max(0.0, 1.0 - 0.35 * sht_level)
-        g_exc = (self.baseline_drive.clone() + dendrite_principal.g_ampa + da_boost) * ne_excitability * sht_excitability
+        ach_excitability = 1.0 + 0.15 * ach_level
+        g_exc = (self.baseline_drive.clone() + dendrite_principal.g_ampa) * da_excitability * ne_excitability * sht_excitability * ach_excitability
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=0.25)
 
         # Basal conductances: external GABAergic inputs + PV perisomatic inhibition
@@ -401,17 +310,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         )
 
         # Principal → PV internal excitation
-        principal_pv_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=BLAPopulation.PRINCIPAL,
-            target_region=self.region_name,
-            target_population=BLAPopulation.PV,
-            receptor_type=ReceptorType.AMPA,
-        )
-        int_principal_pv = self._integrate_synaptic_inputs_at_dendrites(
-            {principal_pv_synapse: principal_spikes},
-            n_neurons=self.pv_size,
-        )
+        int_principal_pv = self._integrate_single_synaptic_input(self._principal_pv_synapse, principal_spikes)
 
         g_exc_pv = dendrite_pv.g_ampa + int_principal_pv.g_ampa
         g_inh_pv = dendrite_pv.g_gaba_a
@@ -434,17 +333,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             filter_by_target_population=BLAPopulation.SOM,
         )
 
-        principal_som_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=BLAPopulation.PRINCIPAL,
-            target_region=self.region_name,
-            target_population=BLAPopulation.SOM,
-            receptor_type=ReceptorType.AMPA,
-        )
-        int_principal_som = self._integrate_synaptic_inputs_at_dendrites(
-            {principal_som_synapse: principal_spikes},
-            n_neurons=self.som_size,
-        )
+        int_principal_som = self._integrate_single_synaptic_input(self._principal_som_synapse, principal_spikes)
 
         g_exc_som = dendrite_som.g_ampa + int_principal_som.g_ampa
         g_inh_som = dendrite_som.g_gaba_a
@@ -470,14 +359,16 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         if not GlobalConfig.LEARNING_DISABLED:
             # Register STDP strategy for any external synapse targeting PRINCIPAL
             # (SOM/PV targets are interneurons; their weights are fixed by design)
+            # Each synapse gets its own MetaplasticityStrategy wrapper so that
+            # per-synapse consolidation/rate buffers are correctly shaped.
             for synapse_id in synaptic_inputs:
                 if synapse_id.target_population == BLAPopulation.PRINCIPAL:
                     if self.get_learning_strategy(synapse_id) is None:
-                        self._add_learning_strategy(synapse_id, self._stdp_strategy, device=device)
-
-        # Cache inhibitory spike trains for next-step integration
-        self._pv_spikes_prev = pv_spikes
-        self._som_spikes_prev = som_spikes
+                        strategy = MetaplasticityStrategy(
+                            base_strategy=self._stdp_strategy,
+                            config=self._meta_config,
+                        )
+                        self._add_learning_strategy(synapse_id, strategy, device=device)
 
         # =====================================================================
         # HOMEOSTASIS: Rate tracking + synaptic scaling for principal cells
@@ -489,11 +380,17 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
     def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
         ne_level = self._ne_concentration.mean().item()
         sht_level = self._sht_concentration.mean().item()
+        ach_level = self._ach_concentration.mean().item()
         # NE β-adrenergic: enhances STDP magnitude during emotional arousal
         # Range: LR × [1.0, 2.5] (high NE during shock strongly boosts fear learning)
         # Ref: McGaugh 2004; Roozendaal et al. 2009
-        # 5-HT1A: attenuates plasticity during extinction / safety learning
-        # Range: × [0.5, 1.0] (makes extinction slower, consistent with biology)
-        # Ref: Bhagya et al. 2015; Denny et al. 2014
-        effective_lr = self.config.learning_rate * (1.0 + 1.5 * ne_level) * (1.0 - 0.5 * sht_level)
-        return {"learning_rate": max(effective_lr, 0.0)}
+        # ACh M1: enhances LTP during attentional encoding (+40% at max ACh)
+        effective_lr = self.config.learning_rate * (1.0 + 1.5 * ne_level) * (1.0 + 0.4 * ach_level)
+        # 5-HT passed separately for asymmetric LTP/LTD modulation in STDP:
+        # suppresses LTP (anti-impulsive gating) and enhances LTD (extinction).
+        return {
+            "learning_rate": max(effective_lr, 0.0),
+            "serotonin": sht_level,
+            "norepinephrine": ne_level,
+            "acetylcholine": ach_level,
+        }

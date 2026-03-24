@@ -32,16 +32,6 @@ Biological Background:
    - Receive CA1 / subiculum output (via synaptic projections)
    - Relay condensed memory index back to association and sensory cortices
    - Moderate sustained activity — short-term memory buffer over theta cycles
-
-**Inputs (expected SynapseId patterns):**
-- ``cortex_sensory`` / ``CortexPopulation.L5_PYR``  → EC_II (spatial context)
-- ``cortex_association`` / ``CortexPopulation.L23_PYR``  → EC_II, EC_III (semantic context)
-- ``hippocampus`` / ``HippocampusPopulation.CA1``  → EC_V (memory readout)
-
-**Outputs:**
-- ``EntorhinalCortexPopulation.EC_II``  — perforant path input to DG and CA3
-- ``EntorhinalCortexPopulation.EC_III`` — temporoammonic input to CA1
-- ``EntorhinalCortexPopulation.EC_V``   — back-projection to neocortex
 """
 
 from __future__ import annotations
@@ -53,15 +43,12 @@ import torch
 from thalia import GlobalConfig
 from thalia.brain.configs import EntorhinalCortexConfig, EntorhinalCortexPopulationConfig
 from thalia.brain.neurons import (
-    ConductanceLIFConfig,
     ConductanceLIF,
-    heterogeneous_tau_mem,
-    heterogeneous_v_threshold,
-    heterogeneous_adapt_increment,
-    heterogeneous_g_L,
+    build_conductance_lif_config,
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import STPConfig, WeightInitializer
+from thalia.learning import InhibitorySTDPConfig, InhibitorySTDPStrategy
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
@@ -74,7 +61,6 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import CircularDelayBuffer
 
 from .neural_region import NeuralRegion
 from .population_names import EntorhinalCortexPopulation
@@ -143,19 +129,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             population_name=EntorhinalCortexPopulation.EC_II,
             n_neurons=self.ec_ii_size,
             polarity=PopulationPolarity.EXCITATORY,
-            config=ConductanceLIFConfig(
-                g_L=heterogeneous_g_L(0.05, self.ec_ii_size, device),
-                tau_E=5.0,
-                tau_I=10.0,
-                v_reset=-0.08,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                v_threshold=heterogeneous_v_threshold(ec_ii_overrides.v_threshold, self.ec_ii_size, device),
-                adapt_increment=heterogeneous_adapt_increment(ec_ii_overrides.adapt_increment, self.ec_ii_size, device),
-                tau_adapt=ec_ii_overrides.adapt_tau_ms,
-                tau_mem_ms=heterogeneous_tau_mem(ec_ii_overrides.tau_mem_ms, self.ec_ii_size, device),
-            ),
+            config=build_conductance_lif_config(ec_ii_overrides, self.ec_ii_size, device, dendrite_cv=0.30),
         )
 
         # ── EC_III: Layer III pyramidal cells (Time cells) ───────────────────
@@ -164,19 +138,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             population_name=EntorhinalCortexPopulation.EC_III,
             n_neurons=self.ec_iii_size,
             polarity=PopulationPolarity.EXCITATORY,
-            config=ConductanceLIFConfig(
-                g_L=heterogeneous_g_L(0.05, self.ec_iii_size, device),
-                tau_E=5.0,
-                tau_I=10.0,
-                v_reset=-0.08,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                v_threshold=heterogeneous_v_threshold(ec_iii_overrides.v_threshold, self.ec_iii_size, device),
-                adapt_increment=heterogeneous_adapt_increment(ec_iii_overrides.adapt_increment, self.ec_iii_size, device),
-                tau_adapt=ec_iii_overrides.adapt_tau_ms,
-                tau_mem_ms=heterogeneous_tau_mem(ec_iii_overrides.tau_mem_ms, self.ec_iii_size, device),
-            ),
+            config=build_conductance_lif_config(ec_iii_overrides, self.ec_iii_size, device, dendrite_cv=0.30),
         )
 
         # ── EC_V: Layer V pyramidal cells (Back-projection to cortex) ────────
@@ -185,19 +147,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             population_name=EntorhinalCortexPopulation.EC_V,
             n_neurons=self.ec_v_size,
             polarity=PopulationPolarity.EXCITATORY,
-            config=ConductanceLIFConfig(
-                g_L=heterogeneous_g_L(0.05, self.ec_v_size, device),
-                tau_E=5.0,
-                tau_I=10.0,
-                v_reset=-0.08,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                v_threshold=heterogeneous_v_threshold(ec_v_overrides.v_threshold, self.ec_v_size, device),
-                adapt_increment=heterogeneous_adapt_increment(ec_v_overrides.adapt_increment, self.ec_v_size, device),
-                tau_adapt=ec_v_overrides.adapt_tau_ms,
-                tau_mem_ms=heterogeneous_tau_mem(ec_v_overrides.tau_mem_ms, self.ec_v_size, device),
-            ),
+            config=build_conductance_lif_config(ec_v_overrides, self.ec_v_size, device, dendrite_cv=0.30),
         )
 
         # ── EC_INHIBITORY: Layer II/III PV basket cells ────────────────────────
@@ -211,28 +161,15 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             population_name=EntorhinalCortexPopulation.EC_INHIBITORY,
             n_neurons=self.ec_inh_size,
             polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                v_reset=0.0,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=3.0,
-                tau_I=3.0,
-                tau_ref=2.5,
-                g_L=heterogeneous_g_L(0.10, self.ec_inh_size, device, cv=0.08),
-                v_threshold=heterogeneous_v_threshold(ec_inh_overrides.v_threshold, self.ec_inh_size, device, cv=0.06),
-                adapt_increment=heterogeneous_adapt_increment(ec_inh_overrides.adapt_increment, self.ec_inh_size, device),
-                tau_adapt=ec_inh_overrides.adapt_tau_ms,
-                tau_mem_ms=heterogeneous_tau_mem(ec_inh_overrides.tau_mem_ms, self.ec_inh_size, device=device, cv=0.10),
+            config=build_conductance_lif_config(
+                ec_inh_overrides, self.ec_inh_size, device,
+                tau_ref=2.5, g_L=0.10, tau_E=3.0, tau_I=3.0,
+                tau_mem_cv=0.10, v_threshold_cv=0.06, g_L_cv=0.08,
             ),
         )
 
         # ── Internal connectivity: E→I and I→E ────────────────────────────
         # EC_II → EC_INHIBITORY (feedforward excitation: AMPA, mild depression).
-        # Weight std scales with 1/n_src matching cortical E→PV formula (40/n_pyr
-        # gives 10-70 Hz; 10/n gives ~5-10 Hz with adaptation, clamped to 1-10 Hz target).
-        # STP: U=0.25, τd=150ms (mild depression) — less depressing than E→E so
-        # interneurons stay responsive during sustained cortical drive.
         self._add_internal_connection(
             source_population=EntorhinalCortexPopulation.EC_II,
             target_population=EntorhinalCortexPopulation.EC_INHIBITORY,
@@ -262,6 +199,19 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.25, tau_d=150.0, tau_f=20.0),
         )
+
+        # Inhibitory STDP for EC_INHIBITORY→EC_II/III/V (Vogels et al. 2011)
+        istdp_cfg = InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        )
+        self.istdp_ec_ii:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_ec_iii: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_ec_v:   InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+
         # EC_INHIBITORY → EC_II (perisomatic GABA_A inhibition).
         self._add_internal_connection(
             source_population=EntorhinalCortexPopulation.EC_INHIBITORY,
@@ -270,11 +220,12 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
                 n_input=self.ec_inh_size,
                 n_output=self.ec_ii_size,
                 connectivity=0.6,
-                weight_scale=0.040,
+                weight_scale=0.060,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.5, tau_d=150.0, tau_f=20.0),
+            learning_strategy=self.istdp_ec_ii,
         )
         # EC_INHIBITORY → EC_III (perisomatic GABA_A inhibition).
         self._add_internal_connection(
@@ -284,11 +235,12 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
                 n_input=self.ec_inh_size,
                 n_output=self.ec_iii_size,
                 connectivity=0.6,
-                weight_scale=0.040,
+                weight_scale=0.060,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.5, tau_d=150.0, tau_f=20.0),
+            learning_strategy=self.istdp_ec_iii,
         )
         # EC_INHIBITORY → EC_V (weaker: layer V is functionally distinct).
         self._add_internal_connection(
@@ -298,18 +250,13 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
                 n_input=self.ec_inh_size,
                 n_output=self.ec_v_size,
                 connectivity=0.3,
-                weight_scale=0.018,
+                weight_scale=0.027,
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.5, tau_d=150.0, tau_f=20.0),
+            learning_strategy=self.istdp_ec_v,
         )
-
-        # Spike buffers for 1-step causal E→I and I→E delays
-        # (standard CircularDelayBuffer pattern — see cortical_column.py).
-        self._ec_ii_buf  = CircularDelayBuffer(max_delay=1, size=self.ec_ii_size,  dtype=torch.bool, device=device)
-        self._ec_iii_buf = CircularDelayBuffer(max_delay=1, size=self.ec_iii_size, dtype=torch.bool, device=device)
-        self._ec_inh_buf = CircularDelayBuffer(max_delay=1, size=self.ec_inh_size, dtype=torch.bool, device=device)
 
         self.to(device)
 
@@ -317,7 +264,11 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
     # FORWARD
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Route cortical → hippocampal and hippocampal → cortical signals.
 
         Processing order:
@@ -326,15 +277,6 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         3. Fire EC_II and EC_III neurons (output: perforant / temporoammonic spikes).
         4. Integrate hippocampal CA1 back-projection into EC_V dendrites.
         5. Fire EC_V neurons (output: back-projection spikes to neocortex).
-
-        Args:
-            synaptic_inputs: Routed ``SynapseId``-keyed spike tensors.
-            neuromodulator_inputs: Broadcast neuromodulatory signals (not used
-                directly — EC does not subscribe to neuromodulators, but the
-                base class may inspect them).
-
-        Returns:
-            ``RegionOutput`` mapping ``EntorhinalCortexPopulation`` keys to boolean spike tensors.
         """
         config = self.config
 
@@ -375,25 +317,25 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             n_neurons=self.ec_inh_size,
             filter_by_target_population=EntorhinalCortexPopulation.EC_INHIBITORY,
         )
-        inh_int_ii = self._integrate_synaptic_inputs_at_dendrites(
-            {SynapseId(
+        inh_int_ii = self._integrate_single_synaptic_input(
+            SynapseId(
                 source_region=self.region_name,
                 source_population=EntorhinalCortexPopulation.EC_II,
                 target_region=self.region_name,
                 target_population=EntorhinalCortexPopulation.EC_INHIBITORY,
                 receptor_type=ReceptorType.AMPA,
-            ): self._ec_ii_buf.read(1)},
-            n_neurons=self.ec_inh_size,
+            ),
+            self._prev_spikes(EntorhinalCortexPopulation.EC_II),
         )
-        inh_int_iii = self._integrate_synaptic_inputs_at_dendrites(
-            {SynapseId(
+        inh_int_iii = self._integrate_single_synaptic_input(
+            SynapseId(
                 source_region=self.region_name,
                 source_population=EntorhinalCortexPopulation.EC_III,
                 target_region=self.region_name,
                 target_population=EntorhinalCortexPopulation.EC_INHIBITORY,
                 receptor_type=ReceptorType.AMPA,
-            ): self._ec_iii_buf.read(1)},
-            n_neurons=self.ec_inh_size,
+            ),
+            self._prev_spikes(EntorhinalCortexPopulation.EC_III),
         )
 
         g_exc_inh = inh_ext.g_ampa + inh_int_ii.g_ampa + inh_int_iii.g_ampa
@@ -407,35 +349,37 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
 
         # ── 4. Compute I→E inhibition using previous-step PV spikes ──────────
         # 1-step causal delay: PV spikes at t-1 gate principal cell firing at t.
-        inh_to_ii = self._integrate_synaptic_inputs_at_dendrites(
-            {SynapseId(
+        prev_ec_inh = self._prev_spikes(EntorhinalCortexPopulation.EC_INHIBITORY)
+
+        inh_to_ii = self._integrate_single_synaptic_input(
+            SynapseId(
                 source_region=self.region_name,
                 source_population=EntorhinalCortexPopulation.EC_INHIBITORY,
                 target_region=self.region_name,
                 target_population=EntorhinalCortexPopulation.EC_II,
                 receptor_type=ReceptorType.GABA_A,
-            ): self._ec_inh_buf.read(1)},
-            n_neurons=self.ec_ii_size,
+            ),
+            prev_ec_inh,
         )
-        inh_to_iii = self._integrate_synaptic_inputs_at_dendrites(
-            {SynapseId(
+        inh_to_iii = self._integrate_single_synaptic_input(
+            SynapseId(
                 source_region=self.region_name,
                 source_population=EntorhinalCortexPopulation.EC_INHIBITORY,
                 target_region=self.region_name,
                 target_population=EntorhinalCortexPopulation.EC_III,
                 receptor_type=ReceptorType.GABA_A,
-            ): self._ec_inh_buf.read(1)},
-            n_neurons=self.ec_iii_size,
+            ),
+            prev_ec_inh,
         )
-        inh_to_v = self._integrate_synaptic_inputs_at_dendrites(
-            {SynapseId(
+        inh_to_v = self._integrate_single_synaptic_input(
+            SynapseId(
                 source_region=self.region_name,
                 source_population=EntorhinalCortexPopulation.EC_INHIBITORY,
                 target_region=self.region_name,
                 target_population=EntorhinalCortexPopulation.EC_V,
                 receptor_type=ReceptorType.GABA_A,
-            ): self._ec_inh_buf.read(1)},
-            n_neurons=self.ec_v_size,
+            ),
+            prev_ec_inh,
         )
         g_gaba_a_ii  = inh_to_ii.g_gaba_a
         g_gaba_a_iii = inh_to_iii.g_gaba_a
@@ -478,10 +422,6 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             g_gaba_b_input=None,
         )
 
-        # ── 9. Advance spike buffers for next timestep ────────────────────────
-        self._ec_ii_buf.write_and_advance(ec_ii_spikes)
-        self._ec_iii_buf.write_and_advance(ec_iii_spikes)
-        self._ec_inh_buf.write_and_advance(ec_inh_spikes)
 
         region_outputs: RegionOutput = {
             EntorhinalCortexPopulation.EC_II: ec_ii_spikes,

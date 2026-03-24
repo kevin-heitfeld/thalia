@@ -4,6 +4,10 @@ from .axonal_tract import (
     AxonalTract,
     AxonalTractSourceSpec,
 )
+from .biophysics_registry import (
+    BiophysicsRegistry,
+    PopulationBiophysics,
+)
 from .brain_builder import (
     BrainBuilder,
     ConductanceBudgetEntry,
@@ -54,6 +58,9 @@ __all__ = [
     "apply_stp_correction",
     # Brain
     "Brain",
+    # Biophysics Registry
+    "BiophysicsRegistry",
+    "PopulationBiophysics",
     # Configurations
     "BrainConfig",
     "CerebellumConfig",

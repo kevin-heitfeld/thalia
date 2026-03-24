@@ -1,3 +1,3 @@
 # TODO
 
-- Implement spillover for all regions?
+- Implement spillover?

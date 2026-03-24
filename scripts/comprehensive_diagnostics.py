@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
 import sys
 import time
-from contextlib import redirect_stdout
 from datetime import datetime
-from io import StringIO
 
 import torch
 
@@ -22,20 +18,21 @@ from thalia.diagnostics import (
     print_brain_config,
     print_neuron_populations,
     print_synaptic_weights,
+    run_comparison,
     run_single,
     run_sweep,
     DEFAULT_SWEEP_PATTERNS,
     SENSORY_PATTERNS,
 )
 
-from scripts.compare_runs import compare
+from thalia.diagnostics.comparison_text import format_comparison_text
 from scripts.tee_writer import TeeWriter
 
 # Configure line buffering so progress prints appear immediately
 sys.stdout.reconfigure(line_buffering=True)
 
 
-def _run(args: argparse.Namespace, output_dir: str) -> None:
+def _run_diagnostics(args: argparse.Namespace, output_dir: str) -> None:
     # ── Header ────────────────────────────────────────────────────────────────
     print("\n" + "═" * 80)
     print("THALIA  ·  COMPREHENSIVE BRAIN DIAGNOSTICS")
@@ -162,54 +159,7 @@ def _run(args: argparse.Namespace, output_dir: str) -> None:
     print(f"{'═'*80}\n")
 
 
-def _run_comparison(base_dir: str, current_stamp: str) -> None:
-    """Compare the current run with the most recent previous run, if one exists."""
-    stamp_re = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}$")
-
-    try:
-        entries = sorted(
-            (d for d in os.listdir(base_dir)
-             if os.path.isdir(os.path.join(base_dir, d)) and stamp_re.match(d)),
-            reverse=True,
-        )
-    except OSError:
-        return
-
-    if len(entries) < 2 or entries[0] != current_stamp:
-        print("  No previous timestamped run found — skipping comparison.")
-        return
-
-    new_stamp, old_stamp = entries[0], entries[1]
-    old_report = os.path.join(base_dir, old_stamp, "diagnostics_report.json")
-    new_report = os.path.join(base_dir, new_stamp, "diagnostics_report.json")
-
-    if not os.path.exists(old_report) or not os.path.exists(new_report):
-        print("  Previous run missing diagnostics_report.json — skipping comparison.")
-        return
-
-    with open(old_report, encoding="utf-8") as f:
-        old_data = json.load(f)
-    with open(new_report, encoding="utf-8") as f:
-        new_data = json.load(f)
-
-    # Capture output so we can write it to file AND print to console/log
-    buf = StringIO()
-    with redirect_stdout(buf):
-        compare(old_data, new_data)
-    output = buf.getvalue()
-
-    print(output, end="")
-
-    comparison_dir = os.path.join(base_dir, "comparison")
-    os.makedirs(comparison_dir, exist_ok=True)
-    comparison_path = os.path.join(comparison_dir, f"{old_stamp}_vs_{new_stamp}.txt")
-    with open(comparison_path, "w", encoding="utf-8") as f:
-        f.write(output)
-
-    print(f"  \u2713 Comparison saved to {comparison_path}")
-
-
-def parse_args() -> argparse.Namespace:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Comprehensive Thalia brain diagnostics.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -323,27 +273,29 @@ def parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args = _parse_args()
 
-    # ── Create timestamped output directory ────────────────────────────────────
+    # Create timestamped output directory
     run_stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
     output_dir = os.path.join(args.output_dir, run_stamp)
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── Tee stdout/stderr to a log file ───────────────────────────────────────
+    # Tee stdout/stderr to a log file
     log_path = os.path.join(output_dir, "diagnostics.txt")
     with open(log_path, "w", encoding="utf-8") as log_file:
         try:
             TeeWriter.patch_stdout_and_stderr(log_file)
 
-            _run(args, output_dir)
-
-            # ── Compare with previous run ─────────────────────────────────
+            _run_diagnostics(args, output_dir)
             if not args.no_comparison:
-                print(f"\n{'═'*80}")
-                print("COMPARISON WITH PREVIOUS RUN")
-                print(f"{'═'*80}\n")
-                _run_comparison(args.output_dir, run_stamp)
+                report = run_comparison(args.output_dir, run_stamp)
+                if report is not None:
+                    print(f"\n{'═'*80}")
+                    print("COMPARISON WITH PREVIOUS RUN")
+                    print(f"{'═'*80}")
+                    print(format_comparison_text(report, heading=None))
+                else:
+                    print("\n  No previous timestamped run found — skipping comparison.")
 
         finally:
             TeeWriter.restore_original_stdout_and_stderr()

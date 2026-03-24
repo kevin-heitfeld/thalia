@@ -2,57 +2,54 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict
 
 import numpy as np
 
 from .bio_ranges import bio_range
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    OscillatoryStats,
-    PopulationStats,
-)
-from .region_tags import CEREBELLAR_TAGS, matches_any
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
+from .region_tags import CEREBELLAR_TAGS, GRANULE_TAGS, PURKINJE_TAGS, matches_any
 
 
-def check_cerebellar_coupling(
-    oscillations: OscillatoryStats,
-    issues: List[HealthIssue],
-) -> None:
+def check_cerebellar_coupling(ctx: HealthCheckContext) -> None:
     """Check Purkinje-DCN anti-correlation and IO gap-junction pairwise synchrony.
 
     Two independent cerebellar-circuit checks:
 
     * **Purkinje–DCN correlation**: The deep cerebellar nuclei (DCN) rebound
       during pauses in Purkinje cell inhibition, producing an anti-phase
-      population-rate relationship (Heck et al. 2007).  A positive correlation
-      (corr > 0.1) indicates that Purkinje inhibition is not suppressing DCN.
+      population-rate relationship.  Healthy correlation is negative (ρ ≈ −0.3 to −0.7).
+      A correlation above −0.1 suggests Purkinje inhibition is not effectively
+      suppressing DCN; above +0.3 means they are co-firing (inhibition absent).
 
     * **IO pairwise synchrony**: Inferior olive neurons are electrically coupled
       via gap junctions and co-fire even at low rates (Llinás & Yarom 1981).
       Expected pairwise ρ > 0.3; low synchrony indicates absent or broken
       gap-junction coupling.
-
-    References: Heck et al. 2007 *J Neurophysiol*; Llinás & Yarom 1981 *J Physiol*.
     """
-    for rn_cb2, corr_pd in oscillations.purkinje_dcn_corr.items():
-        if not np.isnan(corr_pd) and corr_pd > 0.1:
+    oscillations, issues = ctx.oscillations, ctx.issues
+    config = ctx.thresholds.regional
+    for rn_cb2, corr_pd in oscillations.cerebellar.purkinje_dcn_corr.items():
+        if np.isnan(corr_pd):
+            continue
+        if corr_pd > config.purkinje_dcn_cofiring:
+            issues.append(HealthIssue(severity="critical", category=HealthCategory.CEREBELLAR, region=rn_cb2,
+                message=f"Purkinje-DCN CO-FIRING: {rn_cb2}  corr={corr_pd:.2f} "
+                        f"(expected < −0.1; Purkinje inhibition appears absent"))
+        elif corr_pd > config.purkinje_dcn_anticorr:
             issues.append(HealthIssue(severity="warning", category=HealthCategory.CEREBELLAR, region=rn_cb2,
                 message=f"Purkinje-DCN not anti-correlated: {rn_cb2}  corr={corr_pd:.2f} "
-                        f"(expected < 0; DCN should rebound during Purkinje silence)"))
+                        f"(expected < −0.1; DCN should rebound during Purkinje silence)"))
 
-    for rn_io2, corr_io2 in oscillations.io_pairwise_corr.items():
-        if not np.isnan(corr_io2) and corr_io2 < 0.1:
+    for rn_io2, corr_io2 in oscillations.cerebellar.io_pairwise_corr.items():
+        if not np.isnan(corr_io2) and corr_io2 < config.io_synchrony_low:
             issues.append(HealthIssue(severity="warning", category=HealthCategory.CEREBELLAR, region=rn_io2,
                 message=f"IO pairwise synchrony weak: {rn_io2}  corr={corr_io2:.2f} "
                         f"(expected >0.3; gap-junction-coupled IO neurons should co-fire)"))
 
 
-def check_inferior_olive(
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-) -> None:
+def check_inferior_olive(ctx: HealthCheckContext) -> None:
     """Check that every inferior-olive population is firing in its biological range.
 
     The inferior olive (IO) is the sole source of climbing-fibre error signals
@@ -69,6 +66,7 @@ def check_inferior_olive(
       Sustained rates above 3 Hz are not physiologically supported by the
       IO pacemaker and indicate runaway excitation or missing inhibitory input.
     """
+    pop_stats, issues = ctx.pop_stats, ctx.issues
     _io_range = bio_range("", "inferior_olive") or (0.3, 3.0)
     _IO_LO, _IO_HI = _io_range
 
@@ -85,8 +83,7 @@ def check_inferior_olive(
                 message=(
                     f"INFERIOR OLIVE SILENT: {rn}:{pn}  FR={fr:.2f} Hz "
                     f"(expected {_IO_LO}\u2013{_IO_HI} Hz)  "
-                    f"\u2014 no climbing-fibre error signal; cerebellar learning disabled "
-                    f"(Llin\u00e1s & Yarom 1981; Marr\u2013Albus\u2013Ito theory)"
+                    f"\u2014 no climbing-fibre error signal; cerebellar learning disabled"
                 ),
             ))
         elif fr > _IO_HI:
@@ -104,10 +101,7 @@ def check_inferior_olive(
             ))
 
 
-def check_mossy_fibre_granule_drive(
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-) -> None:
+def check_mossy_fibre_granule_drive(ctx: HealthCheckContext) -> None:
     """Check that mossy-fibre input drives granule cells in every cerebellar region.
 
     Granule cells are the obligatory relay between mossy-fibre afferents and
@@ -131,10 +125,9 @@ def check_mossy_fibre_granule_drive(
     The 0.1 Hz lower bound is taken from ``bio_range(rn, "granule")``.
     Purkinje "in-range" threshold is 1 Hz — well below the normal 40–100 Hz
     tonic range so the check fires even if Purkinje spiking is reduced.
-
-    References: Eccles et al. 1967 *The Cerebellum as a Neuronal Machine*;
-    Apps & Garwicz 2005 *Nat Rev Neurosci*.
     """
+    pop_stats, issues = ctx.pop_stats, ctx.issues
+    config = ctx.thresholds.regional
     # Build per-region lookup: granule FR and mean Purkinje FR.
     granule_fr: Dict[str, float] = {}
     purkinje_fr: Dict[str, float] = {}
@@ -145,11 +138,11 @@ def check_mossy_fibre_granule_drive(
         fr = ps.mean_fr_hz
         if np.isnan(fr):
             continue
-        if "granule" in pn.lower():
+        if matches_any(pn, GRANULE_TAGS):
             # Use the lowest granule FR if multiple sub-populations exist.
             if rn not in granule_fr or fr < granule_fr[rn]:
                 granule_fr[rn] = fr
-        elif "purkinje" in pn.lower():
+        elif matches_any(pn, PURKINJE_TAGS):
             # Accumulate for mean across multiple Purkinje sub-populations.
             if rn not in purkinje_fr:
                 purkinje_fr[rn] = fr
@@ -165,7 +158,7 @@ def check_mossy_fibre_granule_drive(
 
         pkj_fr = purkinje_fr.get(rn)
 
-        if pkj_fr is not None and pkj_fr >= 1.0:
+        if pkj_fr is not None and pkj_fr >= config.purkinje_active_fr_hz:
             issues.append(HealthIssue(
                 severity="critical",
                 category=HealthCategory.CEREBELLAR,
@@ -176,8 +169,7 @@ def check_mossy_fibre_granule_drive(
                     f"Purkinje FR={pkj_fr:.1f} Hz  "
                     f"\u2014 Purkinje firing is spontaneous, not driven by mossy-fibre "
                     f"input via parallel fibres; check mossy-fibre \u2192 granule "
-                    f"synaptic weights and connectivity "
-                    f"(Apps & Garwicz 2005; Eccles et al. 1967)"
+                    f"synaptic weights and connectivity"
                 ),
             ))
         else:
@@ -189,7 +181,6 @@ def check_mossy_fibre_granule_drive(
                     f"Granule cells silent: {rn}  "
                     f"granule FR={g_fr:.3f} Hz (< {granule_lo} Hz threshold)  "
                     f"\u2014 mossy-fibre \u2192 granule drive absent; "
-                    f"parallel-fibre EPSPs on Purkinje cells will be missing "
-                    f"(Apps & Garwicz 2005)"
+                    f"parallel-fibre EPSPs on Purkinje cells will be missing or weak"
                 ),
             ))

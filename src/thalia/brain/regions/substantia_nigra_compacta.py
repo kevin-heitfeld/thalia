@@ -31,19 +31,24 @@ Biological Background:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Dict, Union
+from typing import TYPE_CHECKING, ClassVar, Dict, List, Union
 
 import torch
+from torch import nn
 
 from thalia import GlobalConfig
 from thalia.brain.configs import DopaminePacemakerConfig
 from thalia.brain.neurons import (
     ConductanceLIFConfig,
     heterogeneous_adapt_increment,
+    heterogeneous_dendrite_coupling,
     heterogeneous_g_L,
+    heterogeneous_noise_std,
+    heterogeneous_tau_adapt,
     heterogeneous_tau_mem,
     heterogeneous_v_threshold,
 )
+from thalia.brain.synapses import WeightInitializer
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -56,7 +61,7 @@ from thalia.typing import (
     SynapticInput,
 )
 
-from .dopamine_pacemaker_base import DopaminePacemakerBase
+from .neuromodulator_source_region import NeuromodulatorSourceRegion
 from .population_names import SNcPopulation
 from .region_registry import register_region
 
@@ -69,7 +74,7 @@ if TYPE_CHECKING:
     aliases=["snc", "nigra_compacta"],
     description="SNc - nigrostriatal dopamine pacemaker for motor learning",
 )
-class SubstantiaNigraCompacta(DopaminePacemakerBase[DopaminePacemakerConfig]):
+class SubstantiaNigraCompacta(NeuromodulatorSourceRegion[DopaminePacemakerConfig]):
     """Substantia Nigra pars Compacta — Nigrostriatal Dopamine System.
 
     Provides tonic dopaminergic drive to dorsal striatum for motor learning.
@@ -97,6 +102,11 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[DopaminePacemakerConfig]):
         NeuromodulatorChannel.DA_NIGROSTRIATAL: SNcPopulation.DA,
     }
 
+    # 5-HT from DRN inhibits nigrostriatal DA release via 5-HT1A on DA somata.
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [
+        NeuromodulatorChannel.SHT,
+    ]
+
     def __init__(
         self,
         config: DopaminePacemakerConfig,
@@ -120,66 +130,85 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[DopaminePacemakerConfig]):
             polarity=PopulationPolarity.ANY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.da_size, self.device, cv=0.20),
-                v_threshold=heterogeneous_v_threshold(1.0, self.da_size, self.device, cv=0.12, clamp_fraction=0.25),
                 v_reset=0.0,
+                # v_threshold CV raised 0.12→0.25→0.35: tight threshold clustering
+                # caused pacemaker phase-lock (100% epileptiform at CV=0.12, 60%
+                # at CV=0.25).  Wider spread introduces natural frequency variation
+                # that further breaks phase-lock across the population.
+                v_threshold=heterogeneous_v_threshold(1.0, self.da_size, self.device, cv=0.35, clamp_fraction=0.25),
                 tau_ref=config.tau_ref,
                 g_L=heterogeneous_g_L(config.g_L, self.da_size, self.device),
-                E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
-                noise_std=config.noise_std,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(config.noise_std, self.da_size, self.device),
+                noise_tau_ms=3.0,
+                # tau_adapt CV raised 0.25→0.40: combined with threshold hetero-
+                # geneity, varied adaptation time constants further desynchronise
+                # pacemaker neurons by giving each a different recovery trajectory.
+                tau_adapt_ms=heterogeneous_tau_adapt(config.tau_adapt_ms, self.da_size, self.device, cv=0.40),
                 adapt_increment=heterogeneous_adapt_increment(config.adapt_increment, self.da_size, self.device),
-                tau_adapt=config.tau_adapt,
                 E_adapt=-0.5,
                 # I_h (HCN) pacemaker — see class-level constants for rationale.
+                # g_h_max: 0.03→0.015→0.008→0.004→0.008 (reverted).  Reducing
+                # g_h_max alone didn't fix phase-lock (100% at 0.004).  The real
+                # fix is increased v_threshold + tau_adapt heterogeneity above.
                 enable_ih=True,
-                g_h_max=0.03,
+                g_h_max=0.008,
                 E_h=0.9,
                 V_half_h=-0.35,
                 k_h=0.08,
                 tau_h_ms=150.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.da_size, self.device, cv=0.25),
             ),
         )
 
         # GABAergic interneurons (local inhibitory control)
-        self.gaba_neurons: ConductanceLIF
-        self.gaba_neurons = self._create_and_register_neuron_population(
-            population_name=SNcPopulation.GABA,
-            n_neurons=self.gaba_size,
-            polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                tau_mem_ms=heterogeneous_tau_mem(8.0, self.gaba_size, device=self.device, cv=0.10),
-                v_threshold=heterogeneous_v_threshold(1.0, self.gaba_size, device=self.device, cv=0.06),
-                v_reset=0.0,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=3.0,
-                tau_I=3.0,
-                tau_ref=2.5,
-                g_L=heterogeneous_g_L(0.10, self.gaba_size, device=self.device, cv=0.08),
+        self._init_gaba_interneurons(SNcPopulation.GABA, self.gaba_size, device)
+
+        # =====================================================================
+        # SPARSE RECURRENT GABA INHIBITION (desynchronisation mechanism)
+        # =====================================================================
+        # SNc DA neurons lack D2 autoreceptors (unlike VTA mesolimbic), so they
+        # have no self-inhibitory feedback to break I_h pacemaker synchrony.
+        # This sparse inhibition matrix models heterogeneous local GABA interneuron
+        # projections: when multiple DA neurons co-fire, each receives a different-
+        # strength GABA feedback next timestep, creating competitive dynamics that
+        # desynchronise the population.  Same proven pattern as VTA mesocortical fix.
+        # Reduced 30%/0.012→20%/0.008: full-strength recurrent GABA
+        # resolved epileptiform (100%→0%) but over-suppressed DA rate to
+        # 1.38 Hz (target 2-8 Hz).  Lighter inhibition should maintain
+        # desynchronisation while allowing higher tonic firing.
+        self._da_recurrent_inhib_weights = nn.Parameter(
+            WeightInitializer.sparse_random_no_autapses(
+                n_input=self.da_size,
+                n_output=self.da_size,
+                connectivity=0.20,
+                weight_scale=0.008,
+                device=device,
             ),
+            requires_grad=False,
         )
 
-        self._prev_gaba_spikes: torch.Tensor
-        self.register_buffer("_prev_gaba_spikes", torch.zeros(self.gaba_size, dtype=torch.bool, device=self.device), persistent=False)
+        # =====================================================================
+        # SEROTONIN RECEPTOR (DRN → SNc, 5-HT1A inhibitory)
+        # 5-HT1A on DA somata: serotonin suppresses tonic DA firing
+        self._init_receptors_from_config(device)
 
         # Ensure all tensors are on the correct device
         self.to(device)
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Advance SNc one timestep.
-
-        Args:
-            synaptic_inputs: Inhibitory feedback from striatum D1/D2 and GPe.
-            neuromodulator_inputs: Unused (SNc is a neuromodulator source).
-
-        Returns:
-            ``RegionOutput`` with ``SNcPopulation.DA`` and ``SNcPopulation.GABA``
-            spike tensors.
-        """
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
+        """Advance SNc one timestep."""
         # =====================================================================
         # STRIATAL SHORT-LOOP FEEDBACK (D1/D2 → SNc)
         # =====================================================================
@@ -194,9 +223,22 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[DopaminePacemakerConfig]):
             n_neurons=self.da_size,
             filter_by_target_population=SNcPopulation.DA,
         )
-        g_inh = striatal_dendrite.g_gaba_a
 
-        baseline = torch.full((self.da_size,), self.config.baseline_drive, device=self.device)
+        # Sparse recurrent GABA inhibition: previous-timestep DA spikes →
+        # heterogeneous GABA_A conductance.  Each DA neuron receives a
+        # different weighted sum of neighbors' spikes, breaking co-activation.
+        da_recurrent_gaba = torch.matmul(
+            self._da_recurrent_inhib_weights,
+            self._prev_spikes(SNcPopulation.DA),
+        )
+        g_inh = striatal_dendrite.g_gaba_a + da_recurrent_gaba
+
+        # 5-HT1A inhibitory modulation: serotonin reduces DA excitability
+        self._update_receptors(neuromodulator_inputs)
+        sht_level = self._sht_concentration.mean().item()
+        sht_suppression = max(0.0, 1.0 - 0.25 * sht_level)  # -25% at max 5-HT
+
+        baseline = torch.full((self.da_size,), self.config.baseline_drive * sht_suppression, device=self.device)
 
         da_spikes, _ = self.da_neurons.forward(
             g_ampa_input=ConductanceTensor(baseline),
@@ -209,7 +251,9 @@ class SubstantiaNigraCompacta(DopaminePacemakerBase[DopaminePacemakerConfig]):
         # GABA INTERNEURONS
         # =====================================================================
         da_activity = da_spikes.float().mean().item()
-        gaba_spikes = self._step_gaba_interneurons(da_activity)
+        gaba_spikes = self._step_gaba_interneurons(
+            da_activity, drive_scale=0.05, drive_baseline=0.004,
+        )
 
         region_outputs: RegionOutput = {
             SNcPopulation.DA: da_spikes,

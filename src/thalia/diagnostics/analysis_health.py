@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 import numpy as np
 
 from .bio_ranges import (
     adaptation_expected_for,
+    EEG_BANDS,
 )
-from .diagnostics_types import (
+from .diagnostics_metrics import (
     ConnectivityStats,
-    HealthCategory,
-    HealthIssue,
-    HealthReport,
     HomeostaticStats,
+    LearningStats,
     OscillatoryStats,
     PopulationStats,
-    RecorderSnapshot,
     RegionStats,
 )
+from .diagnostics_report import HealthCategory, HealthIssue, HealthReport
+from .diagnostics_snapshot import RecorderSnapshot
 from .health_cerebellar import (
     check_cerebellar_coupling,
     check_inferior_olive,
@@ -27,25 +27,29 @@ from .health_cerebellar import (
 )
 from .health_compartment import (
     check_two_compartment_apical_basal,
+    check_two_compartment_dendritic_computation,
 )
 from .health_connectivity import (
     check_connectivity,
 )
-from .health_ei_oscillations import (
+from .health_context import HealthCheckContext
+from .health_ei_balance import (
     check_ei_balance,
-    check_integration_tau,
+)
+from .health_oscillations import (
+    check_aperiodic_exponent,
+    check_cfc,
     check_oscillatory_bands,
-    check_pac,
+)
+from .health_temporal import (
+    check_integration_tau,
     check_tau_hierarchy,
 )
 from .health_firing import (
     check_population_firing,
 )
 from .health_hippocampus import (
-    check_hippocampal_theta_plv,
-    check_medial_septum_theta_pacemaker,
-    check_swr_hfo_coupling,
-    check_theta_sequence,
+    check_hippocampal_health,
 )
 from .health_homeostasis import (
     check_homeostasis,
@@ -58,15 +62,21 @@ from .health_interneurons import (
     check_interneuron_subtype_balance,
 )
 from .health_laminar import (
+    check_cortical_column_roles,
     check_laminar_cascade,
+)
+from .health_learning import (
+    check_learning_health,
 )
 from .health_neuromodulators import (
     check_d1_d2_da_balance,
     check_neuromodulator_levels,
     check_neuromodulator_phasic,
     check_neuromodulators,
+    check_nm_ach_gamma_enhancement,
     check_nm_downstream_effects,
     check_nm_oscillation_gating,
+    check_nm_serotonin_da_antagonism,
 )
 from .health_striatum import (
     check_basal_ganglia_pathway,
@@ -75,6 +85,7 @@ from .health_thalamus import (
     check_relay_burst_mode,
     check_trn_relay_gating,
 )
+from .brain_state_classifier import BrainState
 
 
 # =============================================================================
@@ -140,7 +151,6 @@ def _compute_global_brain_state(
     if np.isnan(dom_freq) or dom_freq <= 0.0:
         dominant_osc = "none"
     else:
-        from .bio_ranges import EEG_BANDS
         dominant_osc = "gamma"  # default for frequencies above all defined bands
         for band, (f_lo, f_hi) in EEG_BANDS.items():
             if f_lo <= dom_freq < f_hi:
@@ -148,7 +158,7 @@ def _compute_global_brain_state(
                 break
 
     # ── Criticality ───────────────────────────────────────────────────────
-    sigma = oscillations.avalanche_branching_ratio
+    sigma = oscillations.avalanche.branching_ratio
     if np.isnan(sigma):
         criticality = "unknown"
     elif sigma > 1.05:
@@ -173,6 +183,8 @@ def assess_health(
     connectivity: ConnectivityStats,
     oscillations: OscillatoryStats,
     homeostasis: HomeostaticStats,
+    learning: Optional[LearningStats] = None,
+    inferred_brain_state: BrainState = "unknown",
 ) -> HealthReport:
     """Assess overall brain health with per-population biological plausibility.
 
@@ -180,45 +192,54 @@ def assess_health(
     and ``region`` context) directly to the shared ``issues`` list, making
     ``HealthIssue`` the primary source of truth for all health findings.
     """
-    issues: List[HealthIssue] = []
-    population_status: Dict[str, str] = {}
-
-    check_basal_ganglia_pathway(pop_stats, issues)
-    check_cerebellar_coupling(oscillations, issues)
-    check_connectivity(connectivity, rec, issues)
-    check_d1_d2_da_balance(rec, pop_stats, issues)
-    check_ei_balance(region_stats, issues)
-    check_hippocampal_theta_plv(oscillations, issues, rec.config.thresholds)
-    check_homeostasis(rec, issues, pop_stats)
-    check_inferior_olive(pop_stats, issues)
-    check_integration_tau(oscillations, issues)
-    check_interneuron_fr_balance(rec, pop_stats, issues)
-    check_interneuron_ratio(rec, issues)
-    check_interneuron_subtype_balance(rec, issues)
-    check_laminar_cascade(oscillations, issues)
-    check_medial_septum_theta_pacemaker(pop_stats, issues)
-    check_mossy_fibre_granule_drive(pop_stats, issues)
-    check_neuromodulator_levels(rec, issues)
-    check_neuromodulator_phasic(rec, issues)
-    check_neuromodulators(rec, pop_stats, issues)
-    check_nm_downstream_effects(rec, pop_stats, issues)
-    check_nm_oscillation_gating(rec, oscillations, issues)
-    check_oscillatory_bands(region_stats, oscillations, issues)
-    check_pac(oscillations, issues)
-    check_population_firing(
-        pop_stats, issues, population_status,
-        config=rec.config.thresholds,
-        skip_sfa_check=rec.config.skip_sfa_health_check,
-        sensory_pattern=rec.config.sensory_pattern,
+    ctx = HealthCheckContext(
+        rec=rec,
+        pop_stats=pop_stats,
+        region_stats=region_stats,
+        connectivity=connectivity,
+        oscillations=oscillations,
+        homeostasis=homeostasis,
+        learning=learning,
+        inferred_brain_state=inferred_brain_state,
     )
-    check_relay_burst_mode(oscillations, issues, rec.config.sensory_pattern)
-    check_stp_directionality(rec, issues)
-    check_stp_final_state(rec, homeostasis, issues)
-    check_swr_hfo_coupling(oscillations, issues)
-    check_tau_hierarchy(oscillations, issues)
-    check_theta_sequence(oscillations, issues)
-    check_trn_relay_gating(rec, issues)
-    check_two_compartment_apical_basal(rec, pop_stats, issues)
+
+    check_basal_ganglia_pathway(ctx)
+    check_cerebellar_coupling(ctx)
+    check_connectivity(ctx)
+    check_cortical_column_roles(ctx)
+    check_d1_d2_da_balance(ctx)
+    check_ei_balance(ctx)
+    check_hippocampal_health(ctx)
+    check_homeostasis(ctx)
+    check_inferior_olive(ctx)
+    check_integration_tau(ctx)
+    check_interneuron_fr_balance(ctx)
+    check_interneuron_ratio(ctx)
+    check_interneuron_subtype_balance(ctx)
+    check_laminar_cascade(ctx)
+    check_learning_health(ctx)
+    check_mossy_fibre_granule_drive(ctx)
+    check_neuromodulator_levels(ctx)
+    check_neuromodulator_phasic(ctx)
+    check_neuromodulators(ctx)
+    check_nm_downstream_effects(ctx)
+    check_nm_oscillation_gating(ctx)
+    check_nm_ach_gamma_enhancement(ctx)
+    check_nm_serotonin_da_antagonism(ctx)
+    check_oscillatory_bands(ctx)
+    check_cfc(ctx)
+    check_aperiodic_exponent(ctx)
+    check_population_firing(ctx)
+    check_relay_burst_mode(ctx)
+    check_stp_directionality(ctx)
+    check_stp_final_state(ctx)
+    check_tau_hierarchy(ctx)
+    check_trn_relay_gating(ctx)
+    check_two_compartment_apical_basal(ctx)
+    check_two_compartment_dendritic_computation(ctx)
+
+    issues = ctx.issues
+    population_status = ctx.population_status
 
     n_ok      = sum(1 for s in population_status.values() if s == "ok")
     n_low     = sum(1 for s in population_status.values() if s == "low")
@@ -277,29 +298,12 @@ def assess_health(
     # Derive plain str lists from structured issues for HealthReport fields.
     critical = [i.message for i in issues if i.severity == "critical"]
     health_warnings = [i.message for i in issues if i.severity == "warning"]
-    n_crit = len(critical)
-    n_warn = len(health_warnings)
-    # Normalize penalty weights by population count (groups of 10) so that the
-    # score is comparable regardless of brain size.  A single-region run with
-    # 1–9 populations uses no normalization (divisor=1); a 40-population run
-    # divides each per-issue penalty by 4, keeping the score on the same scale.
-    n_pops = max(1, len(rec._pop_keys))
-    norm = max(1, n_pops // 10)
-    crit_w = rec.config.thresholds.critical_weight / norm
-    warn_w = rec.config.thresholds.warning_weight / norm
-    stability = max(
-        0.0,
-        1.0 - n_crit * crit_w - n_warn * warn_w,
-    )
-    is_healthy = n_crit == 0 and stability > 0.7
 
     global_brain_state = _compute_global_brain_state(
         pop_stats, oscillations
     )
 
     return HealthReport(
-        is_healthy=is_healthy,
-        stability_score=stability,
         critical_issues=critical,
         warnings=health_warnings,
         population_status=population_status,
@@ -309,4 +313,5 @@ def assess_health(
         n_populations_unknown=n_unknown,
         all_issues=issues,
         global_brain_state=global_brain_state,
+        inferred_brain_state=inferred_brain_state,
     )

@@ -6,7 +6,9 @@ from typing import Dict, Tuple
 
 import numpy as np
 
-from .diagnostics_types import PopulationStats, RecorderSnapshot, RegionStats
+from ._helpers import bin_counts_1d, combine_inhibitory
+from .diagnostics_metrics import PopulationStats, RegionStats
+from .diagnostics_snapshot import RecorderSnapshot
 
 
 def compute_ei_lag(
@@ -157,7 +159,7 @@ def extract_region_conductances(
     # Combined inhibitory per population: GABA-A + GABA-B (linearity of expectation
     # makes this equivalent to averaging the per-sample element-wise sums, but without
     # the alignment hazard of the old flat-concatenation approach).
-    inh_combined_pm = np.where(np.isnan(gaba_b_pm), inh_pm, inh_pm + gaba_b_pm)
+    inh_combined_pm = np.vectorize(combine_inhibitory)(inh_pm, gaba_b_pm)
 
     return (
         _wavg(exc_pm),
@@ -166,6 +168,89 @@ def extract_region_conductances(
         _wavg(inh_pm),     # mean_g_gaba_a
         _wavg(gaba_b_pm),
     )
+
+
+def extract_region_mean_voltage(
+    rec: RecorderSnapshot,
+    region_name: str,
+) -> float:
+    """Neuron-count-weighted mean membrane voltage for a region.
+
+    Uses the voltage sample buffer ``_voltages`` [T, n_pops, V].  Returns
+    NaN when voltage samples are unavailable.
+    """
+    if rec._voltages is None:
+        return float(np.nan)
+
+    p_indices = rec._region_pop_indices.get(region_name, [])
+    if not p_indices:
+        return float(np.nan)
+
+    n_recorded = rec._n_recorded
+    if n_recorded < 1:
+        return float(np.nan)
+
+    weights = np.array([float(rec._pop_sizes[pi]) for pi in p_indices], dtype=np.float64)
+    total_w = weights.sum()
+    if total_w < 1e-9:
+        return float(np.nan)
+
+    # Per-pop mean voltage: nanmean over timesteps and sampled neurons
+    pop_means = np.array([
+        np.nanmean(rec._voltages[:n_recorded, pi, :])
+        for pi in p_indices
+    ], dtype=np.float64)
+
+    valid = ~np.isnan(pop_means)
+    if not valid.any():
+        return float(np.nan)
+    return float((weights[valid] * pop_means[valid]).sum() / weights[valid].sum())
+
+
+def extract_region_reversal_potentials(
+    rec: RecorderSnapshot,
+    region_name: str,
+) -> Tuple[float, float, float, float]:
+    """Neuron-count-weighted mean reversal potentials for a region.
+
+    Reads ``E_E``, ``E_nmda``, ``E_I``, ``E_GABA_B`` from the per-population
+    neuron params snapshot.  Returns ``(E_E, E_nmda, E_I, E_GABA_B)`` — all
+    NaN when params are unavailable.
+    """
+    p_indices = rec._region_pop_indices.get(region_name, [])
+    if not p_indices:
+        return np.nan, np.nan, np.nan, np.nan
+
+    pop_keys_in_region = [rec._pop_keys[pi] for pi in p_indices]
+    weights = np.array([float(rec._pop_sizes[pi]) for pi in p_indices], dtype=np.float64)
+    total_w = weights.sum()
+    if total_w < 1e-9:
+        return np.nan, np.nan, np.nan, np.nan
+
+    vals = {k: [] for k in ("E_E", "E_nmda", "E_I", "E_GABA_B")}
+    w_arr = []
+    for i, pk in enumerate(pop_keys_in_region):
+        params = rec._pop_neuron_params.get(pk)
+        if params is None:
+            continue
+        w_arr.append(weights[i])
+        for k in vals:
+            vals[k].append(params.get(k, float(np.nan)))
+
+    if not w_arr:
+        return np.nan, np.nan, np.nan, np.nan
+
+    w = np.array(w_arr, dtype=np.float64)
+
+    def _wavg(values: list) -> float:
+        a = np.array(values, dtype=np.float64)
+        valid = ~np.isnan(a)
+        if not valid.any():
+            return float(np.nan)
+        return float((w[valid] * a[valid]).sum() / w[valid].sum())
+
+    return (_wavg(vals["E_E"]), _wavg(vals["E_nmda"]),
+            _wavg(vals["E_I"]), _wavg(vals["E_GABA_B"]))
 
 
 def compute_region_stats(
@@ -190,6 +275,10 @@ def compute_region_stats(
     # Excitatory numerator = AMPA (g_E) + NMDA (g_nmda) when available.
     # Inhibitory denominator = GABA-A (g_I) + GABA-B (g_gaba_b) when available.
     mean_g_exc, mean_g_nmda, mean_g_inh, mean_g_gaba_a, mean_g_gaba_b = extract_region_conductances(rec, region_name)
+
+    # --- Mean voltage and reversal potentials (for current ratio) -----
+    mean_voltage = extract_region_mean_voltage(rec, region_name)
+    mean_E_E, mean_E_nmda, mean_E_I, mean_E_GABA_B = extract_region_reversal_potentials(rec, region_name)
 
     # --- E/I lag cross-correlation ------------------------------------
     ei_lag_ms, ei_xcorr_peak = compute_ei_lag(rec, region_name)
@@ -216,8 +305,8 @@ def compute_region_stats(
                 nb = T_local // bs
                 if nb < 4:
                     return np.nan
-                d1_b = d1_counts[:nb * bs].reshape(nb, bs).sum(axis=1)
-                d2_b = d2_counts[:nb * bs].reshape(nb, bs).sum(axis=1)
+                d1_b = bin_counts_1d(d1_counts, nb, bs)
+                d2_b = bin_counts_1d(d2_counts, nb, bs)
                 if d1_b.std() == 0 or d2_b.std() == 0:
                     return np.nan
                 return float(np.corrcoef(d1_b, d2_b)[0, 1])
@@ -235,6 +324,11 @@ def compute_region_stats(
         mean_g_inh=mean_g_inh,
         mean_g_gaba_a=mean_g_gaba_a,
         mean_g_gaba_b=mean_g_gaba_b,
+        mean_voltage=mean_voltage,
+        mean_E_E=mean_E_E,
+        mean_E_nmda=mean_E_nmda,
+        mean_E_I=mean_E_I,
+        mean_E_GABA_B=mean_E_GABA_B,
         ei_lag_ms=ei_lag_ms,
         ei_xcorr_peak=ei_xcorr_peak,
         d1_d2_competition_index_200ms=d1_d2_competition_index_200ms,

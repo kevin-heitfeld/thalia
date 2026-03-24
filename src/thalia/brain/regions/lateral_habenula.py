@@ -47,7 +47,7 @@ The LHb→RMTg→VTA disynaptic pathway provides:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 
@@ -55,7 +55,11 @@ from thalia import GlobalConfig
 from thalia.brain.configs import TonicPacemakerConfig
 from thalia.brain.neurons import (
     ConductanceLIFConfig,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_noise_std,
+    heterogeneous_tau_adapt,
     heterogeneous_tau_mem,
+    heterogeneous_v_reset,
     heterogeneous_v_threshold,
     heterogeneous_adapt_increment,
     heterogeneous_g_L,
@@ -119,19 +123,24 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
             polarity=PopulationPolarity.EXCITATORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.principal_size, device),
+                v_reset=heterogeneous_v_reset(-0.05, self.principal_size, device),
                 v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.principal_size, device),
-                v_reset=-0.05,
                 tau_ref=self.config.tau_ref,
                 g_L=heterogeneous_g_L(0.08, self.principal_size, device),
-                E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
-                noise_std=0.080,
-                adapt_increment=heterogeneous_adapt_increment(0.10, self.principal_size, device),
-                tau_adapt=100.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.080, self.principal_size, device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(400.0, self.principal_size, device),
+                adapt_increment=heterogeneous_adapt_increment(0.05, self.principal_size, device),  # Raised 0.01→0.05: SFA was 0.99 (no adaptation) at 24 Hz
                 E_adapt=-0.5,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.principal_size, device, cv=0.25),
             ),
         )
 
@@ -141,7 +150,11 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
         # Ensure all tensors are on the correct device
         self.to(device)
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Update LHb neurons from SNr input (high SNr = bad outcome = LHb excited)."""
         # =====================================================================
         # Integrate synaptic inputs at dendrites (all sources → PRINCIPAL)
@@ -169,5 +182,7 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
         region_outputs: RegionOutput = {
             LHbPopulation.PRINCIPAL: principal_spikes,
         }
+
+        self._apply_all_population_homeostasis(region_outputs)
 
         return region_outputs

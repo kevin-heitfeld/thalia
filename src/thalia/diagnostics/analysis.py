@@ -7,17 +7,17 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from .diagnostics_types import (
-    DiagnosticsReport,
-    PopulationStats,
-    RecorderSnapshot,
-    RegionStats,
-)
+from ._helpers import bin_counts_2d
+from .diagnostics_metrics import PopulationStats, RegionStats
+from .diagnostics_report import DiagnosticsReport
+from .diagnostics_snapshot import RecorderSnapshot
 from .analysis_connectivity import compute_connectivity_stats
 from .analysis_health import assess_health
 from .analysis_homeostasis import compute_homeostatic_stats
-from .analysis_neural_coupling import compute_effective_synaptic_gain
-from .analysis_oscillations import compute_oscillatory_stats
+from .analysis_learning import compute_learning_stats
+from .brain_state_classifier import classify_brain_state
+from .coupling import compute_effective_synaptic_gain
+from .analysis_spectral import compute_oscillatory_stats
 from .analysis_population import compute_population_stats
 from .analysis_region import compute_region_stats
 
@@ -58,7 +58,7 @@ def _find_settling_step(
 def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
     """Detect the end of the onset transient; return the first step to analyse.
 
-    Uses two independent signals and takes the later settling point:
+    Uses three independent signals and takes the latest settling point:
 
     1. **Homeostatic gain trajectories** — scans for the earliest gain-sample
        index at which ALL valid trajectories have changed by less than 2 % over
@@ -66,6 +66,13 @@ def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
 
     2. **STP efficacy trajectories** — same sliding-window test on x·u efficacy
        histories (5 % threshold, since STP is noisier than gain).
+
+    3. **Firing rate settling** — bins raw spike counts at
+       ``gain_sample_interval_ms`` resolution, then applies the same
+       sliding-window test (10 % threshold) across all populations with
+       non-trivial activity.  This directly detects when population firing
+       rates reach steady state, complementing the proxy signals from gain
+       and STP.
 
     Falls back to 3 × max(τ_d) from the STP configs (clamped to [300, 2000] ms)
     when no valid trajectories exist.  This covers the STP depletion transient
@@ -95,7 +102,7 @@ def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
 
     window = min(50, n_steps // 4)
 
-    # ── Signal 1: homeostatic gain settling (2 % threshold) ──────────────────
+    # ── Signal 1: homeostatic gain settling ──────────────────────────────────
     gain_settle = n_steps  # default: not settled
     gain_valid: List[int] = []
     for idx in range(rec._n_pops):
@@ -105,10 +112,11 @@ def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
             gain_valid.append(idx)
     if gain_valid:
         gain_settle = _find_settling_step(
-            rec._g_L_scale_history, n_steps, gain_valid, window, 0.02,
+            rec._g_L_scale_history, n_steps, gain_valid, window,
+            rec.config.transient_gain_threshold_pct,
         )
 
-    # ── Signal 2: STP efficacy settling (5 % threshold, noisier) ─────────────
+    # ── Signal 2: STP efficacy settling (noisier) ────────────────────────────
     stp_settle = n_steps  # default: not settled
     n_stp = rec._stp_efficacy_history.shape[1] if rec._stp_efficacy_history.ndim == 2 else 0
     stp_valid: List[int] = []
@@ -119,20 +127,44 @@ def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
             stp_valid.append(idx)
     if stp_valid:
         stp_settle = _find_settling_step(
-            rec._stp_efficacy_history, n_steps, stp_valid, window, 0.05,
+            rec._stp_efficacy_history, n_steps, stp_valid, window,
+            rec.config.transient_stp_threshold_pct,
         )
 
-    # ── Combine: take the later of gain and STP settling ─────────────────────
-    if gain_valid or stp_valid:
-        # Use actual detected settling (max of both signals).
-        # If one signal has no valid trajectories, it defaults to n_steps
-        # (unsettled), so we only consider signals that had valid data.
-        candidates: List[int] = []
-        if gain_valid:
-            candidates.append(gain_settle)
-        if stp_valid:
-            candidates.append(stp_settle)
-        detected = max(candidates) if candidates else n_steps
+    # ── Signal 3: firing rate settling ────────────────────────────────────────
+    # Bin raw spike counts at the same cadence as gain/STP sampling so the
+    # same _find_settling_step logic and window size apply directly.
+    rate_settle = n_steps  # default: not settled
+    rate_valid: List[int] = []
+    n_rate_bins = min(n_steps, T // gi_steps)
+    if n_rate_bins >= 20:
+        usable_steps = n_rate_bins * gi_steps
+        rate_binned = (
+            bin_counts_2d(rec._pop_spike_counts[:usable_steps], n_rate_bins, gi_steps)
+            / np.maximum(rec._pop_sizes, 1).astype(np.float64)
+        )
+        for idx in range(rec._n_pops):
+            col = rate_binned[:, idx]
+            col_mean: float = float(np.mean(col))
+            if col_mean > 1e-6:
+                rate_valid.append(idx)
+        if rate_valid:
+            rate_settle = _find_settling_step(
+                rate_binned, n_rate_bins, rate_valid, window,
+                rec.config.transient_rate_threshold_pct,
+            )
+
+    # ── Combine: take the latest of all valid settling signals ───────────────
+    candidates: List[int] = []
+    if gain_valid:
+        candidates.append(gain_settle)
+    if stp_valid:
+        candidates.append(stp_settle)
+    if rate_valid:
+        candidates.append(rate_settle)
+
+    if candidates:
+        detected = max(candidates)
         if detected < n_steps:
             return min(detected * gi_steps, cap)
 
@@ -142,6 +174,14 @@ def detect_transient_step(rec: RecorderSnapshot, T: int) -> int:
 def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
     """Compute and return a complete :class:`DiagnosticsReport`."""
     T = rec._n_recorded or rec.config.n_timesteps
+
+    if rec._running_stats is not None:
+        total = rec._running_stats.total_n_recorded
+        print(
+            f"\n  [streaming] Analysing window of {T} steps "
+            f"({T * rec.dt_ms:.0f} ms) from total run of "
+            f"{total} steps ({total * rec.dt_ms:.0f} ms)."
+        )
 
     # Detect and exclude the onset transient from steady-state analyses.
     t0 = detect_transient_step(rec, T)
@@ -170,10 +210,7 @@ def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
     n_bins = T_eff // bin_steps
     if n_bins > 0:
         pop_rate_binned = (
-            rec._pop_spike_counts[t0 : t0 + n_bins * bin_steps]
-            .reshape(n_bins, bin_steps, rec._n_pops)
-            .sum(axis=1)
-            .astype(np.float32)
+            bin_counts_2d(rec._pop_spike_counts[t0 : t0 + n_bins * bin_steps], n_bins, bin_steps).astype(np.float32)
             / np.maximum(rec._pop_sizes, 1).astype(np.float32)
         )
     else:
@@ -202,8 +239,10 @@ def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
     oscillations = compute_oscillatory_stats(rec, pop_rate_binned, region_rate_binned, n_bins, T)
     connectivity = compute_connectivity_stats(rec, T)
     homeostasis = compute_homeostatic_stats(rec)
+    learning = compute_learning_stats(rec)
     synaptic_gain = compute_effective_synaptic_gain(rec, region_rate_binned, n_bins)
-    health = assess_health(rec, pop_stats, region_stats, connectivity, oscillations, homeostasis)
+    inferred_brain_state = classify_brain_state(oscillations)
+    health = assess_health(rec, pop_stats, region_stats, connectivity, oscillations, homeostasis, learning, inferred_brain_state)
 
     report = DiagnosticsReport(
         timestamp=time.time(),
@@ -221,6 +260,7 @@ def analyze(rec: RecorderSnapshot) -> DiagnosticsReport:
         region_rate_binned=region_rate_binned,
         raw_spike_counts=rec._pop_spike_counts[:T].copy(),
         effective_synaptic_gain=synaptic_gain if synaptic_gain else None,
+        learning=learning,
     )
 
     # Neuromodulator concentration histories (both modes)

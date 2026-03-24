@@ -40,7 +40,8 @@ class CerebellumPopulation(StrEnum):
     """Cerebellar population names."""
 
     BASKET = "basket"            # Molecular layer interneuron (inner ML): soma inhibition of Purkinje
-    DCN = "dcn"
+    DCN = "dcn"                  # Glutamatergic projection (→ thalamus)
+    DCN_GABA = "dcn_gaba"        # GABAergic projection (→ inferior olive, nucleo-olivary inhibition)
     GOLGI = "golgi"
     GRANULE = "granule"
     INFERIOR_OLIVE = "inferior_olive"
@@ -248,9 +249,13 @@ class SubiculumPopulation(StrEnum):
         found biologically (regular-spiking, burst-firing, weak-burst) but are
         collapsed into a single population with heterogeneous ConductanceLIF
         parameters so that the emergent population activity spans all three modes.
+    PV: Parvalbumin-positive basket cells (inhibitory, ~15% of subicular neurons).
+        Provide fast feedback inhibition (~1 ms latency) onto pyramidal cells,
+        preventing runaway synchronous bursting.
     """
 
     PRINCIPAL = "principal"
+    PV = "pv"
 
 
 class SubstantiaNigraPopulation(StrEnum):

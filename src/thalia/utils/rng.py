@@ -1,40 +1,42 @@
 """Random number generation utilities for Thalia, including Philox-based RNG for reproducibility and GPU efficiency."""
 
+import hashlib
 import logging
 import math
 import os
+import sys
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Optional
 
 import torch
+from torch.utils.cpp_extension import load as _cpp_load
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Native C++ kernel (compiled once, cached in src/thalia/utils/_philox_build/)
 # ---------------------------------------------------------------------------
-_philox_ext: Any = None
+_philox_ext: Optional[ModuleType | str] = None
 _philox_ext_loaded: bool = False
 
 
-def _get_philox_ext() -> Any:
+def _get_philox_ext() -> Optional[ModuleType | str]:
     """Lazy-load the compiled Philox C++ extension.  Returns None on failure."""
     global _philox_ext, _philox_ext_loaded
     if _philox_ext_loaded:
         return _philox_ext
     _philox_ext_loaded = True
     try:
-        from torch.utils.cpp_extension import load as _cpp_load  # noqa: PLC0415
-        import sys  # noqa: PLC0415
-
         # Ensure the venv Scripts/bin directory is on PATH so torch can find ninja.exe
         venv_scripts = str(Path(sys.executable).parent)
         if venv_scripts not in os.environ.get("PATH", ""):
             os.environ["PATH"] = venv_scripts + os.pathsep + os.environ.get("PATH", "")
 
         src = Path(__file__).parent / "philox_cpu_kernel.cpp"
-        build = Path(__file__).parent / "_philox_build"
-        build.mkdir(exist_ok=True)
+        _src_hash = hashlib.md5(src.read_bytes()).hexdigest()[:8]
+        build = Path(__file__).parent / "_build" / f"_philox_{_src_hash}"
+        build.mkdir(parents=True, exist_ok=True)
 
         # On Windows, vcvarsall may set INCLUDE/LIB with ucrt paths but omit
         # um/shared/winrt (headers) and um/x64 (libs like kernel32.lib).
@@ -48,7 +50,7 @@ def _get_philox_ext() -> Any:
             for entry in include_env.split(os.pathsep):
                 p = Path(entry)
                 if p.name.lower() == "ucrt" and p.parent.exists():
-                    sdk_ver_dir = p.parent  # e.g. ...Windows Kits\10\include\10.0.26100.0
+                    sdk_ver_dir = p.parent  # e.g. ...Windows Kits\10\include\<version>
                     break
             if sdk_ver_dir is not None:
                 # Include: sdk_ver_dir/um, sdk_ver_dir/shared, sdk_ver_dir/winrt
@@ -79,7 +81,7 @@ def _get_philox_ext() -> Any:
             verbose=False,
         )
         logger.debug("Philox C++ kernel loaded")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Could not load Philox C++ kernel, falling back to TorchScript: %s", exc)
         _philox_ext = None
     return _philox_ext
@@ -88,11 +90,6 @@ def _get_philox_ext() -> Any:
 # ---------------------------------------------------------------------------
 # TorchScript fallback (used when C++ kernel is unavailable)
 # ---------------------------------------------------------------------------
-
-@torch.jit.script
-def _gaussian_from_uniform_jit(u1: torch.Tensor, u2: torch.Tensor) -> torch.Tensor:
-    return torch.sqrt(-2.0 * torch.log(u1)) * torch.cos(2.0 * math.pi * u2)
-
 
 @torch.jit.script
 def _philox_uniform_jit(counters: torch.Tensor) -> torch.Tensor:
@@ -112,17 +109,13 @@ def _philox_uniform_jit(counters: torch.Tensor) -> torch.Tensor:
 def _philox_gaussian_jit(counters: torch.Tensor) -> torch.Tensor:
     u1 = _philox_uniform_jit(counters)
     u2 = _philox_uniform_jit(counters + 1)
-    return _gaussian_from_uniform_jit(u1, u2)
+    # Box-Muller transform to get Gaussian(0,1) from uniform(0,1)
+    return torch.sqrt(-2.0 * torch.log(u1)) * torch.cos(2.0 * math.pi * u2)
 
 
 # ---------------------------------------------------------------------------
 # Public API — dispatches to C kernel when available, TorchScript otherwise
 # ---------------------------------------------------------------------------
-
-def gaussian_from_uniform(u1: torch.Tensor, u2: torch.Tensor) -> torch.Tensor:
-    """Convert two independent uniform(0,1) tensors to a standard Gaussian(0,1) tensor using Box-Muller."""
-    return _gaussian_from_uniform_jit(u1, u2)
-
 
 def philox_uniform(counters: torch.Tensor) -> torch.Tensor:
     """Philox 2x32-10 → uniform (0, 1).  Uses native C++ kernel when available."""

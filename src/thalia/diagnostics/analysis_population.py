@@ -7,8 +7,10 @@ from typing import List, NamedTuple, Optional, Tuple
 import numpy as np
 from scipy.optimize import curve_fit as sp_curve_fit
 
-from .bio_ranges import bio_range
-from .diagnostics_types import PopulationStats, RecorderSnapshot
+from ._helpers import bin_counts_1d, deterministic_rng
+from .bio_ranges import bio_range, burst_window_ms_for
+from .diagnostics_metrics import PopulationStats
+from .diagnostics_snapshot import RecorderSnapshot
 
 
 # =============================================================================
@@ -81,18 +83,22 @@ class _IsiResult(NamedTuple):
     """ISI statistics returned by :func:`compute_isi_stats`."""
     isi_mean_ms: float
     isi_cv: float
+    isi_cv_corrected: float
     fraction_bursting: float
     fraction_refractory_violations: float
     isi_cv2: float
+    isi_cv2_population: float
     fraction_isi_lt_80ms: float
 
 
 _NAN_ISI_RESULT = _IsiResult(
     isi_mean_ms=np.nan,
     isi_cv=np.nan,
+    isi_cv_corrected=np.nan,
     fraction_bursting=np.nan,
     fraction_refractory_violations=np.nan,
     isi_cv2=np.nan,
+    isi_cv2_population=np.nan,
     fraction_isi_lt_80ms=np.nan,
 )
 
@@ -105,12 +111,6 @@ _NAN_FR_RESULT = _FrStatsResult(
     hist=np.zeros(20, dtype=np.float32),
     edges=np.zeros(21, dtype=np.float32),
 )
-
-# NOTE: Fano-factor and pairwise-correlation sampling previously used module-level
-# RNGs (_RNG_FF, _RNG_PC) that advanced state across analysis calls.  In sweep mode
-# this made patterns 2–4 sample different neuron subsets than pattern 1, breaking
-# cross-pattern comparability.  Both functions now create a call-local RNG seeded
-# deterministically from the population identity.
 
 
 # =============================================================================
@@ -189,8 +189,9 @@ def compute_fr_stats(
 def compute_isi_stats(
     spike_times_list: List[List[int]],
     dt_ms: float,
+    tau_ref_ms: float = 0.0,
 ) -> _IsiResult:
-    """Compute ISI mean, CV, CV₂, burst fraction, refractory violations, DA marker.
+    """Compute ISI mean, CV, dead-time-corrected CV, CV₂, burst fraction, refractory violations.
 
     Parameters
     ----------
@@ -199,6 +200,10 @@ def compute_isi_stats(
         Equivalent to ``rec._spike_times[(rn, pn)]``.
     dt_ms:
         Simulation timestep in milliseconds.
+    tau_ref_ms:
+        Absolute refractory period in milliseconds (from neuron config).
+        Used for *dead-time-corrected* ISI CV (Nawrot et al. 2008):
+        ``CV_corrected = std(ISI) / (mean(ISI) - tau_ref)``.
     """
     # Collect integer-step diffs per neuron, then concatenate once and scale.
     # Avoids the O(N_spikes) Python list overhead of .tolist() + list.extend().
@@ -212,6 +217,14 @@ def compute_isi_stats(
     arr = np.concatenate(chunks).astype(np.float32) * dt_ms  # ms
     isi_mean_ms = float(arr.mean())
     isi_cv = float(arr.std() / arr.mean()) if arr.mean() > 0 else np.nan
+    # Dead-time-corrected CV (Nawrot et al. 2008): normalise by (mean - tau_ref)
+    # so that neurons firing near the refractory limit are not inflated.
+    effective_mean = isi_mean_ms - tau_ref_ms
+    isi_cv_corrected = (
+        float(arr.std() / effective_mean)
+        if effective_mean > 0
+        else np.nan
+    )
     frac_burst = float((arr < 10.0).mean())
     # Refractory period violation — ISI < 2 ms signals a missing refractory bug.
     frac_refrac = float((arr < 2.0).mean())
@@ -228,14 +241,29 @@ def compute_isi_stats(
             if valid_n.any():
                 cv2_vals.append(float(np.mean(2.0 * diffs_n[valid_n] / sums_n[valid_n])))
     isi_cv2 = float(np.mean(cv2_vals)) if cv2_vals else np.nan
+    # Population-level CV₂ — pooled ISIs across all neurons reveal global temporal
+    # structure that per-neuron averaging obscures (Shinomoto et al. 2003).
+    if len(arr) >= 3:
+        diffs_pool = np.abs(np.diff(arr))
+        sums_pool = arr[:-1] + arr[1:]
+        valid_pool = sums_pool > 0
+        isi_cv2_population = (
+            float(np.mean(2.0 * diffs_pool[valid_pool] / sums_pool[valid_pool]))
+            if valid_pool.any()
+            else np.nan
+        )
+    else:
+        isi_cv2_population = np.nan
     # Fraction of ISIs < 80 ms for DA burst-mode detection.
     frac_isi_lt_80ms = float((arr < 80.0).mean())
     return _IsiResult(
         isi_mean_ms=isi_mean_ms,
         isi_cv=isi_cv,
+        isi_cv_corrected=isi_cv_corrected,
         fraction_bursting=frac_burst,
         fraction_refractory_violations=frac_refrac,
         isi_cv2=isi_cv2,
+        isi_cv2_population=isi_cv2_population,
         fraction_isi_lt_80ms=frac_isi_lt_80ms,
     )
 
@@ -275,7 +303,7 @@ def compute_fano_factor(
     if spike_times_list is not None:
         n_actual = len(spike_times_list)
         n_sample_ff = min(50, n_actual)
-        rng_ff = np.random.default_rng(seed=hash((rn, pn, "ff")) & 0xFFFFFFFF)
+        rng_ff = deterministic_rng(rn, pn, "ff")
         ff_sample_idxs = rng_ff.choice(n_actual, size=n_sample_ff, replace=False)
         per_neuron_ff: List[float] = []
         for nidx in ff_sample_idxs:
@@ -290,8 +318,7 @@ def compute_fano_factor(
         return float(np.mean(per_neuron_ff)) if per_neuron_ff else np.nan
     else:
         # Vectorised population-level FF (no Python loop).
-        pop_counts_flat = pop_counts_col[: n_ff_bins * ff_bin_steps]
-        ff_counts = pop_counts_flat.reshape(n_ff_bins, ff_bin_steps).sum(axis=1).astype(np.float64)
+        ff_counts = bin_counts_1d(pop_counts_col, n_ff_bins, ff_bin_steps)
         ff_mean = ff_counts.mean()
         return float(ff_counts.var() / ff_mean) if ff_mean > 0 else np.nan
 
@@ -322,7 +349,7 @@ def compute_fano_scaling(
         return []
 
     n_sample = min(50, n_actual)
-    rng = np.random.default_rng(seed=hash((rn, pn, "fano_scaling")) & 0xFFFFFFFF)
+    rng = deterministic_rng(rn, pn, "fano_scaling")
     sample_idxs = rng.choice(n_actual, size=n_sample, replace=False)
 
     result: List[Tuple[float, float]] = []
@@ -382,7 +409,7 @@ def compute_pairwise_correlation(
 
     n_actual = len(spike_times_list)
     n_sample = min(30, n_actual)
-    rng_pc = np.random.default_rng(seed=hash((rn, pn, "pc")) & 0xFFFFFFFF)
+    rng_pc = deterministic_rng(rn, pn, "pc")
     sample_idxs = rng_pc.choice(n_actual, size=n_sample, replace=False)
     spike_mat = np.zeros((n_sample, n_corr_bins), dtype=np.float64)
     for i, nidx in enumerate(sample_idxs):
@@ -437,7 +464,7 @@ def compute_pairwise_correlation_distribution(
 
     n_actual = len(spike_times_list)
     n_sample = min(30, n_actual)
-    rng_pc = np.random.default_rng(seed=hash((rn, pn, "pc")) & 0xFFFFFFFF)
+    rng_pc = deterministic_rng(rn, pn, "pc")
     sample_idxs = rng_pc.choice(n_actual, size=n_sample, replace=False)
     spike_mat = np.zeros((n_sample, n_corr_bins), dtype=np.float64)
     for i, nidx in enumerate(sample_idxs):
@@ -555,8 +582,7 @@ def compute_sfa_tau(
     if n_bins < 10:
         return np.nan
     rate_trace = (
-        pop_counts_col[: n_bins * bin_steps]
-        .reshape(n_bins, bin_steps).sum(axis=1).astype(np.float64)
+        bin_counts_1d(pop_counts_col, n_bins, bin_steps)
         / max(n_neurons, 1)
         / (bin_steps * dt_ms / 1000.0)
     )
@@ -581,6 +607,61 @@ def compute_sfa_tau(
         return np.nan
 
 
+def compute_sfa_tau_two_component(
+    pop_counts_col: np.ndarray,
+    n_neurons: int,
+    T: int,
+    dt_ms: float,
+    rate_bin_ms: float,
+) -> Tuple[float, float]:
+    """Fit FR(t) = A₁·exp(−t/τ₁) + A₂·exp(−t/τ₂) + FR_ss and return (τ_fast, τ_slow).
+
+    Two-component adaptation captures:
+    - Fast adaptation (Na⁺ inactivation): τ₁ < 50 ms
+    - Slow adaptation (Ca²⁺-activated K⁺): τ₂ = 100–5000 ms
+
+    Returns ``(nan, nan)`` if fewer than 30 spikes, fewer than 20 rate bins,
+    the FR does not decrease, or the fit does not converge.
+    """
+    total = int(pop_counts_col[:T].sum())
+    if total < 30 or n_neurons <= 0:
+        return (np.nan, np.nan)
+    bin_steps = max(1, int(rate_bin_ms / dt_ms))
+    n_bins = T // bin_steps
+    if n_bins < 20:
+        return (np.nan, np.nan)
+    rate_trace = (
+        bin_counts_1d(pop_counts_col, n_bins, bin_steps)
+        / max(n_neurons, 1)
+        / (bin_steps * dt_ms / 1000.0)
+    )
+    t_trace = np.arange(n_bins, dtype=np.float64) * rate_bin_ms
+    fr0_est = float(rate_trace[:3].mean())
+    ss_est = float(rate_trace[-3:].mean())
+    if fr0_est <= ss_est:
+        return (np.nan, np.nan)
+    try:
+        def _two_exp(t: np.ndarray, fr_ss: float, a1: float, tau1: float,
+                     a2: float, tau2: float) -> np.ndarray:
+            return fr_ss + a1 * np.exp(-t / tau1) + a2 * np.exp(-t / tau2)  # type: ignore[return-value]
+
+        amp_est = fr0_est - ss_est
+        popt, _ = sp_curve_fit(
+            _two_exp, t_trace, rate_trace,
+            p0=[ss_est, amp_est * 0.6, 30.0, amp_est * 0.4, 500.0],
+            bounds=(
+                [0.0, 0.0, 1.0, 0.0, 10.0],
+                [np.inf, np.inf, 200.0, np.inf, 5000.0],
+            ),
+            maxfev=3000,
+        )
+        tau_fast = min(popt[2], popt[4])
+        tau_slow = max(popt[2], popt[4])
+        return (float(tau_fast), float(tau_slow))
+    except (ValueError, RuntimeError):
+        return (np.nan, np.nan)
+
+
 def compute_da_burst_rate(
     spike_times_list: List[List[int]],
     dt_ms: float,
@@ -588,7 +669,11 @@ def compute_da_burst_rate(
 ) -> float:
     """Count DA-style burst events per second across all neurons.
 
-    A burst event is ≥3 consecutive ISIs < 80 ms followed by a pause ISI > 200 ms.
+    Uses the Grace & Bunney (1984) criterion:
+    - Burst onset: ISI ≤ 80 ms
+    - Burst termination: ISI > 160 ms
+    - Minimum burst: ≥ 2 spikes (i.e., ≥ 1 intra-burst ISI)
+
     Events are summed across neurons and divided by the recording duration in seconds.
     Returns NaN if no neurons have sufficient spikes.
     """
@@ -597,24 +682,29 @@ def compute_da_burst_rate(
     total_events = 0
     any_eligible = False
     for times in spike_times_list:
-        if len(times) < 5:  # need ≥4 ISIs to form a burst + pause
+        if len(times) < 3:  # need ≥2 ISIs to detect a burst + termination
             continue
         any_eligible = True
         isis_ms = np.diff(np.array(times, dtype=np.float64)) * dt_ms
-        i = 0
-        while i < len(isis_ms) - 1:  # need at least one ISI after position i
-            # Count consecutive intra-burst ISIs (< 80 ms)
-            burst_len = 0
-            j = i
-            while j < len(isis_ms) and isis_ms[j] < 80.0:
-                burst_len += 1
-                j += 1
-            # Burst is valid if ≥3 ISIs < 80 ms and followed by a pause > 200 ms
-            if burst_len >= 3 and j < len(isis_ms) and isis_ms[j] > 200.0:
-                total_events += 1
-                i = j + 1  # skip past the pause
+        in_burst = False
+        burst_spikes = 0
+        for isi in isis_ms:
+            if not in_burst:
+                if isi <= 80.0:
+                    in_burst = True
+                    burst_spikes = 2  # first ISI connects two spikes
             else:
-                i += 1
+                if isi <= 80.0:
+                    burst_spikes += 1
+                else:
+                    # Burst terminates when ISI > 160 ms (Grace & Bunney 1984)
+                    if isi > 160.0 and burst_spikes >= 2:
+                        total_events += 1
+                    in_burst = False
+                    burst_spikes = 0
+        # Handle burst still active at end of recording
+        if in_burst and burst_spikes >= 2:
+            total_events += 1
     if not any_eligible:
         return np.nan
     return float(total_events) / (duration_ms / 1000.0)
@@ -744,8 +834,9 @@ def compute_population_stats(
     fr = compute_fr_stats(rec, pop_idx, T_eff, total_spikes, spike_times_list)
 
     # ISI statistics
+    tau_ref_ms = rec._pop_neuron_params.get(key, {}).get("tau_ref", 0.0)
     isi = (
-        compute_isi_stats(spike_times_list, rec.dt_ms)
+        compute_isi_stats(spike_times_list, rec.dt_ms, tau_ref_ms=tau_ref_ms)
         if spike_times_list is not None
         else _NAN_ISI_RESULT
     )
@@ -793,8 +884,8 @@ def compute_population_stats(
     # Epileptiform burst events
     fraction_burst_events = compute_burst_events(
         pop_counts_col, n_neurons, T_eff,
-        burst_win_steps=max(1, int(20.0 / rec.dt_ms)),
-        burst_coactivation_fraction=rec.config.thresholds.burst_coactivation_fraction,
+        burst_win_steps=max(1, int(burst_window_ms_for(rn, pn) / rec.dt_ms)),
+        burst_coactivation_fraction=rec.config.thresholds.firing.burst_coactivation_fraction,
     )
 
     # DA-style burst event rate
@@ -809,6 +900,11 @@ def compute_population_stats(
 
     # SFA time constant
     sfa_tau_ms = compute_sfa_tau(
+        pop_counts_col, n_neurons, T_eff, rec.dt_ms, rec.config.rate_bin_ms
+    )
+
+    # SFA two-component exponential fit
+    sfa_tau_fast_ms, sfa_tau_slow_ms = compute_sfa_tau_two_component(
         pop_counts_col, n_neurons, T_eff, rec.dt_ms, rec.config.rate_bin_ms
     )
 
@@ -836,6 +932,110 @@ def compute_population_stats(
     else:
         mean_g_exc_apical = np.nan
 
+    # ── Two-compartment dendritic validation (E7) ──────────────────────
+    bap_attenuation_ratio = np.nan
+    nmda_plateau_fraction = np.nan
+    coincidence_gain = np.nan
+    is_two_compartment = rec._pop_config_types.get(key) == "TwoCompartmentLIFConfig"
+
+    if is_two_compartment and T_eff > 20:
+        # --- bAP attenuation ratio ---
+        # Measure V_dend deflection around somatic spikes.
+        if (
+            rec._v_dend_samples is not None
+            and rec._voltages is not None
+            and spike_times_list is not None
+        ):
+            v_soma_arr = rec._voltages[t0:T, pop_idx, :]  # [T_eff, V]
+            v_dend_arr = rec._v_dend_samples[t0:T, pop_idx, :]  # [T_eff, V]
+            n_v_samples = v_soma_arr.shape[1]
+            soma_peaks: list[float] = []
+            dend_deflections: list[float] = []
+            # Use the first min(n_v_samples, n_neurons) sampled neurons.
+            n_check = min(n_v_samples, len(spike_times_list))
+            for ni in range(n_check):
+                spk_ts = spike_times_list[ni]
+                for t_sp in spk_ts:
+                    if t_sp < 1 or t_sp >= T_eff - 1:
+                        continue
+                    # V_soma spike amplitude: V at spike time minus V one step before.
+                    v_pre = float(v_soma_arr[t_sp - 1, ni])
+                    v_at = float(v_soma_arr[t_sp, ni])
+                    soma_amp = v_at - v_pre
+                    if soma_amp < 0.01 or np.isnan(soma_amp):
+                        continue
+                    # V_dend deflection: max of V_dend[t_sp:t_sp+2] minus V_dend[t_sp-1].
+                    d_pre = float(v_dend_arr[t_sp - 1, ni])
+                    d_window = v_dend_arr[t_sp: min(t_sp + 3, T_eff), ni]
+                    d_peak = float(np.nanmax(d_window))
+                    dend_defl = d_peak - d_pre
+                    if np.isnan(dend_defl) or dend_defl < 0:
+                        continue
+                    soma_peaks.append(soma_amp)
+                    dend_deflections.append(dend_defl)
+            if len(soma_peaks) >= 5:
+                bap_attenuation_ratio = float(
+                    np.mean(dend_deflections) / np.mean(soma_peaks)
+                )
+
+        # --- NMDA plateau fraction ---
+        if rec._g_plateau_samples is not None:
+            cond_step = rec._cond_sample_step
+            if cond_step > 0:
+                plateau_slab = rec._g_plateau_samples[:cond_step, pop_idx, :]
+                # Fraction of samples where g_plateau > 0 for any neuron.
+                nonzero = np.nansum(plateau_slab > 1e-6)
+                total_samples = np.sum(~np.isnan(plateau_slab))
+                if total_samples > 0:
+                    nmda_plateau_fraction = float(nonzero / total_samples)
+
+        # --- Coincidence gain ---
+        # Compare firing rate when both basal and apical inputs are present
+        # vs when only basal input is present.
+        if (
+            rec._g_exc_samples is not None
+            and rec._g_apical_samples is not None
+            and rec._cond_sample_step > 10
+        ):
+            ci = max(rec.config.conductance_sample_interval_steps, 1)
+            # Restrict conductance samples to steady-state window [t0, T).
+            cond_t0 = t0 // ci
+            cond_T = min(rec._cond_sample_step, T // ci)
+            n_cond_eff = cond_T - cond_t0
+            if n_cond_eff > 10:
+                basal_cond = np.nanmean(
+                    rec._g_exc_samples[cond_t0:cond_T, pop_idx, :], axis=1
+                )  # [n_cond_eff]
+                apical_cond = np.nanmean(
+                    rec._g_apical_samples[cond_t0:cond_T, pop_idx, :], axis=1
+                )  # [n_cond_eff]
+                # Skip if apical is all-NaN (ConductanceLIF)
+                if not np.all(np.isnan(apical_cond)):
+                    basal_threshold = float(np.nanpercentile(basal_cond, 50))
+                    apical_threshold = float(np.nanpercentile(apical_cond, 50))
+                    if basal_threshold > 1e-6 and apical_threshold > 1e-6:
+                        # Map conductance time to spike-count time.
+                        rate_col = pop_counts_col.astype(np.float64)  # [T_eff]
+                        # Downsample rate to conductance cadence.
+                        if ci <= 1:
+                            rate_at_cond = rate_col[:n_cond_eff]
+                        else:
+                            rate_at_cond = np.array([
+                                rate_col[i * ci] if i * ci < T_eff else 0.0
+                                for i in range(n_cond_eff)
+                            ])
+                        basal_high = basal_cond > basal_threshold
+                        apical_high = apical_cond > apical_threshold
+                        both = basal_high & apical_high
+                        basal_only = basal_high & ~apical_high
+                        n_both = int(both.sum())
+                        n_basal_only = int(basal_only.sum())
+                        if n_both >= 5 and n_basal_only >= 5:
+                            fr_both = float(rate_at_cond[both].mean())
+                            fr_basal_only = float(rate_at_cond[basal_only].mean())
+                            if fr_basal_only > 1e-6:
+                                coincidence_gain = fr_both / fr_basal_only
+
     # Network state classifier — build the final object once, then
     # fill in network_state in place (PopulationStats is not frozen).
     ps = PopulationStats(
@@ -845,9 +1045,11 @@ def compute_population_stats(
         hyperactive_threshold_hz=fr.hyperactive_threshold_hz,
         total_spikes=total_spikes,
         isi_mean_ms=isi.isi_mean_ms, isi_cv=isi.isi_cv,
+        isi_cv_corrected=isi.isi_cv_corrected,
         fraction_bursting=isi.fraction_bursting,
         fraction_refractory_violations=isi.fraction_refractory_violations,
         isi_cv2=isi.isi_cv2, fraction_isi_lt_80ms=isi.fraction_isi_lt_80ms,
+        isi_cv2_population=isi.isi_cv2_population,
         sfa_index=sfa_index, per_neuron_ff=_ff_value,
         pairwise_correlation=pairwise_correlation,
         fraction_burst_events=fraction_burst_events,
@@ -859,7 +1061,12 @@ def compute_population_stats(
         up_state_duration_ms=up_state_duration_ms,
         down_state_duration_ms=down_state_duration_ms,
         sfa_tau_ms=sfa_tau_ms,
+        sfa_tau_fast_ms=sfa_tau_fast_ms,
+        sfa_tau_slow_ms=sfa_tau_slow_ms,
         mean_g_exc_apical=mean_g_exc_apical,
+        bap_attenuation_ratio=bap_attenuation_ratio,
+        nmda_plateau_fraction=nmda_plateau_fraction,
+        coincidence_gain=coincidence_gain,
         fano_scaling=fano_scaling,
         pairwise_correlation_distribution=pairwise_correlation_distribution,
     )

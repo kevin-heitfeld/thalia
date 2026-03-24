@@ -6,7 +6,16 @@ import sys
 
 
 class TeeWriter:
-    """Write to both a stream (stdout/stderr) and a log file simultaneously."""
+    """Write to both a stream (stdout/stderr) and a log file simultaneously.
+
+    Usage:
+        with open("log.txt", "w") as log_file:
+            try:
+                TeeWriter.patch_stdout_and_stderr(log_file)
+                # Your code that prints to stdout/stderr here
+            finally:
+                TeeWriter.restore_original_stdout_and_stderr()
+    """
 
     def __init__(self, stream: object, log_file: object) -> None:
         self._stream = stream

@@ -52,15 +52,20 @@ import torch.nn as nn
 from thalia.brain.neurons import (
     ConductanceLIFConfig,
     ConductanceLIF,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_noise_std,
+    heterogeneous_tau_adapt,
     heterogeneous_tau_mem,
+    heterogeneous_v_reset,
     heterogeneous_v_threshold,
     heterogeneous_adapt_increment,
     heterogeneous_g_L,
     split_excitatory_conductance,
 )
 from thalia.brain.regions.population_names import HippocampusPopulation
+from thalia.brain.gap_junctions import GapJunctionCoupling
 from thalia.brain.synapses import WeightInitializer
-from thalia.typing import ConductanceTensor, PopulationName, PopulationPolarity
+from thalia.typing import ConductanceTensor, GapJunctionReversal, PopulationName, PopulationPolarity
 
 
 class HippocampalInhibitoryNetwork(nn.Module):
@@ -130,19 +135,33 @@ class HippocampalInhibitoryNetwork(nn.Module):
         bistratified_pop_name = cast(HippocampusPopulation, f"{population_name}_bistratified")
 
         # PV basket cells: Fast-spiking perisomatic inhibition
-        # Normal fast-spiking threshold (0.9) — PV cells should fire in response
-        # to pyramidal activity to maintain E/I balance and generate gamma oscillations.
+        # Threshold history: 0.9→0.7→0.8→1.0.  At 0.8, DG_PV hit 66 Hz and CA2_PV
+        # hit 94 Hz (both far above 5-20 Hz target).  Raising to 1.0 requires 25%
+        # more excitatory drive to fire, which combined with reduced E→PV w_max for
+        # DG and CA2 should bring PV rates into the 20-40 Hz range.
         self.pv_neurons: ConductanceLIF = _create_and_register_neurons_fn(
             population_name=pv_pop_name,
             n_neurons=self.n_pv,
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(7.0, self.n_pv, device, cv=0.10),
-                v_threshold=heterogeneous_v_threshold(0.9, self.n_pv, device, cv=0.06),
                 v_reset=0.0,
-                tau_adapt=50.0,     # Weak adaptation
-                adapt_increment=heterogeneous_adapt_increment(0.10, self.n_pv, device),
+                v_threshold=heterogeneous_v_threshold(1.0, self.n_pv, device, cv=0.06),  # Raised 0.8→1.0
+                tau_ref=5.0,
                 g_L=heterogeneous_g_L(0.05, self.n_pv, device, cv=0.08),
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.n_pv, device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=50.0,
+                adapt_increment=0.0,  # PV/FSI are non-adapting (Kv3 channels)
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.n_pv, device, cv=0.20),
             ),
         )
 
@@ -154,12 +173,23 @@ class HippocampalInhibitoryNetwork(nn.Module):
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(25.0, self.n_olm, device),
+                v_reset=heterogeneous_v_reset(-0.05, self.n_olm, device),
                 v_threshold=heterogeneous_v_threshold(v_threshold_olm, self.n_olm, device),
-                v_reset=0.0,
-                tau_adapt=100.0,    # STRONG adaptation (creates bursting)
-                adapt_increment=heterogeneous_adapt_increment(0.20, self.n_olm, device),
+                tau_ref=5.0,
                 g_L=heterogeneous_g_L(0.05, self.n_olm, device),
-                noise_std=0.020,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.07, self.n_olm, device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(3000.0, self.n_olm, device),
+                adapt_increment=heterogeneous_adapt_increment(0.04, self.n_olm, device),
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.n_olm, device, cv=0.20),
             ),
         )
 
@@ -170,24 +200,33 @@ class HippocampalInhibitoryNetwork(nn.Module):
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(12.0, self.n_bistratified, device),
+                v_reset=heterogeneous_v_reset(-0.05, self.n_bistratified, device),
                 v_threshold=heterogeneous_v_threshold(v_threshold_bistratified, self.n_bistratified, device),
-                v_reset=0.0,
-                tau_adapt=60.0,
-                adapt_increment=heterogeneous_adapt_increment(0.15, self.n_bistratified, device),
+                tau_ref=5.0,
                 g_L=heterogeneous_g_L(0.05, self.n_bistratified, device),
-                noise_std=0.020,
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=5.0,
+                tau_I=10.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.06, self.n_bistratified, device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(3000.0, self.n_bistratified, device),
+                adapt_increment=heterogeneous_adapt_increment(0.02, self.n_bistratified, device),
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.n_bistratified, device, cv=0.20),
             ),
         )
 
         # =====================================================================
         # GAP JUNCTIONS (PV cells only — electrical coupling, not synaptic)
         # =====================================================================
-        # All synaptic weight matrices (E→I, I→E, I→I) have been moved to the
-        # parent NeuralRegion via _add_internal_connection() so they participate
-        # in the standard STP, diagnostic, and learning-strategy pipeline.
         # Gap junctions are electrical (V-difference coupling), not synaptic, so
-        # they remain here along with the membrane-potential state they need.
-        self.pv_gap_junctions = WeightInitializer.sparse_uniform_no_autapses(
+        # they are not registered via _add_internal_connection().  Computed as
+        # proper (g_gap, E_gap) and passed to the neuron's g_gap_input channel.
+        pv_gap_matrix = WeightInitializer.sparse_uniform_no_autapses(
             n_input=self.n_pv,
             n_output=self.n_pv,
             connectivity=0.5,
@@ -196,15 +235,8 @@ class HippocampalInhibitoryNetwork(nn.Module):
             device=device,
         )
         # Make symmetric (gap junctions are bidirectional)
-        self.pv_gap_junctions.data = (self.pv_gap_junctions.data + self.pv_gap_junctions.data.T) * 0.5
-
-        # Membrane-potential state for gap junction coupling (V-difference, not spike-based)
-        self._prev_pv_v_soma: Optional[torch.Tensor] = None
-
-        # Previous-step inhibitory spikes for I→I connections (PV→PV, OLM→PV)
-        self._prev_pv_spikes = torch.zeros(self.n_pv, dtype=torch.bool, device=device)
-        self._prev_olm_spikes = torch.zeros(self.n_olm, dtype=torch.bool, device=device)
-        self._prev_bistratified_spikes = torch.zeros(self.n_bistratified, dtype=torch.bool, device=device)
+        pv_gap_matrix.data = (pv_gap_matrix.data + pv_gap_matrix.data.T) * 0.5
+        self.pv_gap_junctions = GapJunctionCoupling.from_coupling_matrix(pv_gap_matrix)
 
     # =========================================================================
     # FORWARD PASS
@@ -252,12 +284,14 @@ class HippocampalInhibitoryNetwork(nn.Module):
         # enabling ultra-fast synchronization for coherent gamma oscillations.
         # IMPORTANT: Only allow coupling with active pyramidal drive to prevent
         # spontaneous PV entrainment from gap junctions alone.
-        if self._prev_pv_v_soma is not None:
-            pyr_drive_strength = pv_g_exc.mean().item()
-            if pyr_drive_strength > 0.01:
-                gap_junction_gain = min(1.0, pyr_drive_strength / 0.1)
-                pv_gap_current = self._prev_pv_v_soma @ self.pv_gap_junctions.T
-                pv_g_exc = pv_g_exc + pv_gap_current * 0.05 * gap_junction_gain
+        pv_g_gap: Optional[ConductanceTensor] = None
+        pv_E_gap: Optional[GapJunctionReversal] = None
+        pyr_drive_strength = pv_g_exc.mean().item()
+        if pyr_drive_strength > 0.01:
+            gap_junction_gain = min(1.0, pyr_drive_strength / 0.1)
+            g_gap_total, E_gap = self.pv_gap_junctions.forward(self.pv_neurons.V_soma)
+            pv_g_gap = ConductanceTensor(g_gap_total * gap_junction_gain)
+            pv_E_gap = GapJunctionReversal(E_gap)
 
         # =====================================================================
         # AMPA / NMDA SPLIT
@@ -277,6 +311,8 @@ class HippocampalInhibitoryNetwork(nn.Module):
             g_nmda_input=ConductanceTensor(pv_g_nmda),
             g_gaba_a_input=ConductanceTensor(pv_g_inh),
             g_gaba_b_input=None,
+            g_gap_input=pv_g_gap,
+            E_gap_reversal=pv_E_gap,
         )
         olm_spikes, _ = self.olm_neurons.forward(
             g_ampa_input=ConductanceTensor(olm_g_ampa),
@@ -290,12 +326,6 @@ class HippocampalInhibitoryNetwork(nn.Module):
             g_gaba_a_input=ConductanceTensor(bistratified_g_inh),
             g_gaba_b_input=None,
         )
-
-        # Update state for next timestep
-        self._prev_pv_v_soma = self.pv_neurons.V_soma.clone()
-        self._prev_pv_spikes = pv_spikes
-        self._prev_olm_spikes = olm_spikes
-        self._prev_bistratified_spikes = bistratified_spikes
 
         return {
             "pv_spikes": pv_spikes,

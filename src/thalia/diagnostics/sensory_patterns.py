@@ -54,7 +54,7 @@ def _get_relay_context(
     Returns ``None`` when no thalamus region is registered, allowing callers to
     bail early before allocating any tensors.
     """
-    thalamus = brain.get_region_by_name("thalamus")
+    thalamus = brain.get_region_by_name("thalamus_sensory")
     if thalamus is None:
         return None
     return thalamus, thalamus.get_population_size(ThalamusPopulation.RELAY), brain.device
@@ -65,12 +65,12 @@ def _get_relay_context(
 # =============================================================================
 
 
-def _sensory_none(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_none(brain: Brain, t: int) -> Optional[SynapticInput]:
     """No external input — spontaneous activity only."""
     return None
 
 
-def _sensory_background(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_background(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Low-rate (≈2 Hz) independent Poisson noise into every registered
     external-input synapse across all brain regions (E6 pattern)."""
     result: SynapticInput = {}
@@ -98,7 +98,7 @@ def _sensory_background(brain: "Brain", t: int) -> Optional[SynapticInput]:
         return None
 
 
-def _sensory_random(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_random(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Sparse Poisson: ~3 % of relay neurons, each with 20 % spike probability."""
     ctx = _get_relay_context(brain)
     if ctx is None:
@@ -112,7 +112,7 @@ def _sensory_random(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_rhythmic(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_rhythmic(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Theta rhythm (8 Hz / 125 ms period): active for the first 20 % of each cycle."""
     ctx = _get_relay_context(brain)
     if ctx is None:
@@ -127,7 +127,7 @@ def _sensory_rhythmic(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_burst(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_burst(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Single 50 ms synchronous burst (30 % of relay) at t = 100 ms.
 
     Models a transient dense thalamic volley (e.g. startle response).
@@ -145,7 +145,7 @@ def _sensory_burst(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_sustained_burst(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_sustained_burst(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Repeating 50-ms-on / 450-ms-off burst cycle (30 % of relay active).
 
     Tests how the network recovers from repeated synchronous volleys.
@@ -164,7 +164,7 @@ def _sensory_sustained_burst(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_gamma(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_gamma(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Sinusoidal 40 Hz drive to thalamus relay.
 
     Carrier probability oscillates between 5 % and 15 % per step,
@@ -181,7 +181,7 @@ def _sensory_gamma(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_correlated_background(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_correlated_background(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Low-rate background with a shared common-input driver (correlated noise).
 
     Half the relay neurons receive an independent Poisson spike at ≈2 Hz;
@@ -200,7 +200,7 @@ def _sensory_correlated_background(brain: "Brain", t: int) -> Optional[SynapticI
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_ramp(brain: "Brain", t: int, n_timesteps: int) -> Optional[SynapticInput]:
+def _sensory_ramp(brain: Brain, t: int, n_timesteps: int) -> Optional[SynapticInput]:
     """Linearly ramping input from 0 to 30 % relay activation over *n_timesteps* steps.
 
     Tests rate coding, neural gain, and whether gain modulation
@@ -218,7 +218,7 @@ def _sensory_ramp(brain: "Brain", t: int, n_timesteps: int) -> Optional[Synaptic
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_slow_wave(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_slow_wave(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Slow-wave / burst-suppression pattern for testing up/down state dynamics.
 
     The cycle is **600 ms** long, split into:
@@ -258,7 +258,7 @@ def _sensory_slow_wave(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return {SynapseId.external_sensory_to_thalamus_relay(thalamus.region_name): spikes}
 
 
-def _sensory_hippocampal_theta(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_hippocampal_theta(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Theta-frequency (8 Hz) drive to medial septum GABA and ACh populations.
 
     Activates the septohippocampal theta generator directly, bypassing thalamus.
@@ -294,7 +294,7 @@ def _sensory_hippocampal_theta(brain: "Brain", t: int) -> Optional[SynapticInput
     return result if result else None
 
 
-def _sensory_direct_cortical(brain: "Brain", t: int) -> Optional[SynapticInput]:
+def _sensory_direct_cortical(brain: Brain, t: int) -> Optional[SynapticInput]:
     """Sparse Poisson drive (≈5 Hz) to cortical L4 external-input synapses.
 
     Fires 0.5 % of each L4 external-input synapse population per step,
@@ -325,7 +325,7 @@ def _sensory_direct_cortical(brain: "Brain", t: int) -> Optional[SynapticInput]:
     return result if result else None
 
 
-def _ramp_sentinel(brain: "Brain", t: int) -> Optional[SynapticInput]:  # noqa: ARG001
+def _ramp_sentinel(brain: Brain, t: int) -> Optional[SynapticInput]:  # noqa: ARG001
     """Registry stub for the ramp pattern.
 
     ``_sensory_ramp`` requires a third argument (``n_timesteps``) that is not
@@ -346,7 +346,7 @@ def _ramp_sentinel(brain: "Brain", t: int) -> Optional[SynapticInput]:  # noqa: 
 
 #: Ordered mapping of pattern name → generator function.
 #: Add new patterns here — no changes to :func:`make_sensory_input` required.
-SENSORY_PATTERNS: Dict[str, Callable[["Brain", int], Optional[SynapticInput]]] = {
+SENSORY_PATTERNS: Dict[str, Callable[[Brain, int], Optional[SynapticInput]]] = {
     "none":                  _sensory_none,
     "background":            _sensory_background,
     "burst":                 _sensory_burst,
@@ -379,7 +379,7 @@ NEUTRAL_PATTERNS: frozenset[str] = frozenset({"none", "background"})
 
 
 def make_sensory_input(
-    brain: "Brain",
+    brain: Brain,
     timestep: int,
     pattern: str,
     *,

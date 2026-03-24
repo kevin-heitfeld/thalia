@@ -1,60 +1,120 @@
-"""Shared base class for basal ganglia output nuclei (SNr, GPe, GPi).
+"""Shared base class for basal ganglia output nuclei (GPi, SNr).
 
-All three major BG output nuclei share the same biophysical footprint:
-- Tonically active GABAergic neurons (50–80 Hz baseline)
-- Conductance-LIF with g_L=0.10, τ_E=5ms, τ_I=10ms
-- Per-step tonic baseline drive from ``config.baseline_drive``
-- A common integrate→split→forward pattern per population
+GPi and SNr share the same computational pattern: tonically firing GABAergic
+populations whose output is gated by striatal inhibition and STN excitation.
+The only differences are per-population biophysical parameters (noise level,
+adaptation, baseline drive, NMDA ratio).
 
-This module extracts those commonalities into helper methods so each
-nucleus stays focused on its own population layout and connectivity.
+A single class :class:`BasalGangliaOutputNucleus` is registered under two names
+(``globus_pallidus_interna``, ``substantia_nigra``) and parameterised via
+:class:`~thalia.brain.configs.basal_ganglia.BGOutputConfig`.
+
+.. note::
+    GPe (globus pallidus externa) is **not** registered here.  It uses the
+    dedicated :class:`~thalia.brain.regions.globus_pallidus_externa.GlobusPollidusExterna`
+    subclass which adds electrical gap junction coupling between PROTOTYPIC neurons.
 """
 
 from __future__ import annotations
 
-from typing import TypeVar
+from typing import Optional, Union
 
 import torch
 
-from thalia.brain.configs.basal_ganglia import TonicPacemakerConfig
+from thalia import GlobalConfig
+from thalia.brain.configs.basal_ganglia import BGOutputConfig, BGPopulationConfig
 from thalia.brain.neurons import (
     ConductanceLIF,
+    build_conductance_lif_config,
     split_excitatory_conductance,
 )
 from thalia.typing import (
     ConductanceTensor,
+    NeuromodulatorInput,
+    PopulationSizes,
+    RegionName,
+    RegionOutput,
     SynapticInput,
 )
 
 from .neural_region import NeuralRegion
+from .region_registry import register_region
 
-ConfigT = TypeVar("ConfigT", bound=TonicPacemakerConfig)
 
+class BasalGangliaOutputNucleus(NeuralRegion[BGOutputConfig]):
+    """Basal ganglia output nucleus (GPi, SNr).
 
-class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
-    """Abstract base class for basal ganglia output nuclei."""
+    Registered under two names (``globus_pallidus_interna``, ``substantia_nigra``);
+    parameterised entirely via :class:`~thalia.brain.configs.basal_ganglia.BGOutputConfig`
+    which carries :class:`~thalia.brain.configs.basal_ganglia.BGPopulationConfig` entries
+    for each population.
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    GPe uses :class:`~thalia.brain.regions.globus_pallidus_externa.GlobusPollidusExterna`
+    instead, which adds gap junction coupling on PROTOTYPIC neurons.
+    """
 
-    def _make_tonic_baseline(self, size: int, factor: float = 1.0) -> torch.Tensor:
-        """Create a tonic baseline drive tensor for one population.
+    def __init__(
+        self,
+        config: BGOutputConfig,
+        population_sizes: PopulationSizes,
+        region_name: RegionName,
+        *,
+        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
+    ) -> None:
+        super().__init__(config, population_sizes, region_name, device=device)
 
-        Returns ``torch.full((size,), config.baseline_drive * factor)`` on
-        ``self.device``.  Secondary populations (GPe arkypallidal, GPi border
-        cells) pass a ``factor < 1.0`` to keep them sub-threshold at rest.
-
-        Args:
-            size: Number of neurons (tensor length).
-            factor: Scaling relative to ``config.baseline_drive``.
-
-        Returns:
-            1-D float tensor of per-step AMPA conductance values.
-        """
-        return torch.full(
-            (size,), self.config.baseline_drive * factor, device=self.device
+        overrides = config.population_overrides
+        assert overrides, (
+            f"BGOutputConfig.population_overrides must be non-empty for region '{region_name}'"
         )
+        self._population_overrides: dict[str, BGPopulationConfig] = dict(overrides)
+
+        for pop_name, pop_config in self._population_overrides.items():
+            n = population_sizes[pop_name]
+
+            self._create_and_register_neuron_population(
+                population_name=pop_name,
+                n_neurons=n,
+                polarity=pop_config.polarity,
+                config=build_conductance_lif_config(
+                    pop_config, n, device,
+                    tau_ref=config.tau_ref, g_L=0.10, g_L_cv=0.08,
+                ),
+            )
+
+            # Register tonic baseline drive as a named buffer so .to(device) tracks it.
+            baseline = torch.full(
+                (n,), config.baseline_drive * pop_config.baseline_multiplier, device=device,
+            )
+            self.register_buffer(f"_baseline_{pop_name}", baseline)
+
+        self.to(device)
+
+    # ------------------------------------------------------------------
+    # Step
+    # ------------------------------------------------------------------
+
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
+        result: RegionOutput = {}
+        for pop_name, pop_config in self._population_overrides.items():
+            n = self.get_population_size(pop_name)
+            neurons = self.neuron_populations[pop_name]
+            assert isinstance(neurons, ConductanceLIF)
+            baseline: torch.Tensor = getattr(self, f"_baseline_{pop_name}")
+
+            result[pop_name] = self._bg_step_single(
+                synaptic_inputs, n, pop_name, neurons,
+                baseline=baseline, nmda_ratio=pop_config.nmda_ratio,
+            )
+        return result
+
+    # ------------------------------------------------------------------
+    # Shared single-population step
+    # ------------------------------------------------------------------
 
     def _bg_step_single(
         self,
@@ -62,9 +122,9 @@ class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
         n_neurons: int,
         population_name: str,
         neurons: ConductanceLIF,
-        baseline: torch.Tensor,
         *,
-        nmda_ratio: float = 0.05,
+        baseline: torch.Tensor,
+        nmda_ratio: float,
     ) -> torch.Tensor:
         """Run one timestep for a single BG output population.
 
@@ -73,26 +133,13 @@ class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
             2. Add tonic baseline to g_AMPA.
             3. Split combined excitatory conductance into AMPA + NMDA components.
             4. Forward through the ConductanceLIF neuron model.
-
-        Args:
-            synaptic_inputs: Region-wide synaptic input dict for this timestep.
-            n_neurons: Population size (passed to dendrite integration).
-            population_name: Used to filter incoming synaptic weights to this pop.
-            neurons: The :class:`~thalia.brain.neurons.ConductanceLIF` for this pop.
-            baseline: Tonic baseline tensor of shape ``(n_neurons,)``.
-            nmda_ratio: Fraction of excitatory conductance assigned to NMDA.
-                GPe and GPi use 0.05 (sparse NMDA at pallidal synapses).
-                SNr uses 0.01 (near-soma synapses with minimal NMDA involvement).
-
-        Returns:
-            Spike tensor of shape ``(n_neurons,)``.
         """
         dendrite = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=n_neurons,
             filter_by_target_population=population_name,
         )
-        g_exc = baseline.clone() + dendrite.g_ampa
+        g_exc = baseline + dendrite.g_ampa
         g_inh = dendrite.g_gaba_a
 
         g_ampa, g_nmda = split_excitatory_conductance(g_exc, nmda_ratio=nmda_ratio)
@@ -102,4 +149,23 @@ class BasalGangliaOutputNucleus(NeuralRegion[ConfigT]):
             g_gaba_a_input=ConductanceTensor(g_inh),
             g_gaba_b_input=None,
         )
+
         return spikes
+
+
+# ---------------------------------------------------------------------------
+# Register under the two canonical BG output nucleus names.
+# GPe is registered separately in globus_pallidus_externa.py.
+# ---------------------------------------------------------------------------
+
+register_region(
+    "globus_pallidus_interna",
+    aliases=["gpi", "entopeduncular"],
+    description="Globus pallidus interna - basal ganglia output nucleus for motor/cognitive loops",
+)(BasalGangliaOutputNucleus)
+
+register_region(
+    "substantia_nigra",
+    aliases=["snr", "substantia_nigra_reticulata"],
+    description="Substantia nigra pars reticulata - basal ganglia output nucleus",
+)(BasalGangliaOutputNucleus)

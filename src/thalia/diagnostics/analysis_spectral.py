@@ -1,4 +1,4 @@
-"""Spectral analysis: band powers, coherence matrices, PAC, integration tau."""
+"""Spectral analysis: band powers, coherence matrices, PAC, integration tau, orchestrator."""
 
 from __future__ import annotations
 
@@ -9,14 +9,12 @@ from typing import Dict, Tuple
 
 import numpy as np
 from scipy.optimize import curve_fit as sp_curve_fit
-from scipy.signal import butter as sp_butter
 from scipy.signal import coherence as sp_coherence
-from scipy.signal import filtfilt as sp_filtfilt
-from scipy.signal import hilbert as sp_hilbert
 from scipy.signal import welch as sp_welch
 
-from .bio_ranges import EEG_BANDS, PAC_SPECS, freq_to_band
-from .diagnostics_types import RecorderSnapshot
+from .bio_ranges import EEG_BANDS, freq_to_band
+from .diagnostics_metrics import OscillatoryStats
+from .diagnostics_snapshot import RecorderSnapshot
 
 
 # =============================================================================
@@ -41,7 +39,7 @@ def _coherence(
 ) -> float:
     """Mean magnitude-squared coherence in [f_min, f_max] Hz (Welch-based)."""
     fs = 1.0 / (rate_bin_ms / 1000.0)
-    nperseg = min(len(x), 256)
+    nperseg = min(len(x), 512)
     if nperseg < 8:
         return 0.0
     freqs, Cxy = sp_coherence(x, y, fs=fs, nperseg=nperseg, window="hann")
@@ -49,45 +47,6 @@ def _coherence(
     if not mask.any():
         return 0.0
     return float(Cxy[mask].mean())
-
-
-# =============================================================================
-# THETA–GAMMA PAC
-# =============================================================================
-
-
-def _compute_pac_mi(
-    signal: np.ndarray,
-    fs: float,
-    theta_band: Tuple[float, float] = (4.0, 8.0),
-    gamma_band: Tuple[float, float] = (30.0, 100.0),
-) -> float:
-    """Compute Mean Vector Length (MVL) theta–gamma PAC modulation index.
-
-    Requires at least 500 ms of signal and a sampling rate that supports gamma
-    frequencies (fs > 2 × gamma_band[1]).  Returns NaN otherwise.
-
-    Args:
-        signal: 1-D population rate trace sampled at ``fs`` Hz.
-        fs: Sampling rate in Hz (typically 1000 / dt_ms).
-        theta_band: (f_lo, f_hi) for theta phase extraction (Hz).
-        gamma_band: (f_lo, f_hi) for gamma amplitude extraction (Hz).
-
-    Returns:
-        MVL modulation index ∈ [0, 1], or NaN.
-    """
-    nyq = fs / 2.0
-    if len(signal) < int(0.5 * fs) or nyq <= gamma_band[1]:
-        return float("nan")
-    sig = signal.astype(np.float64)
-    # Theta phase via bandpass + Hilbert
-    b_t, a_t = sp_butter(4, [theta_band[0] / nyq, theta_band[1] / nyq], btype="bandpass")
-    theta_phase = np.angle(sp_hilbert(sp_filtfilt(b_t, a_t, sig)))
-    # Gamma amplitude envelope via bandpass + Hilbert
-    b_g, a_g = sp_butter(4, [gamma_band[0] / nyq, gamma_band[1] / nyq], btype="bandpass")
-    gamma_amp = np.abs(sp_hilbert(sp_filtfilt(b_g, a_g, sig)))
-    # Mean Vector Length
-    return float(np.abs(np.mean(gamma_amp * np.exp(1j * theta_phase))))
 
 
 # =============================================================================
@@ -105,17 +64,19 @@ def compute_band_powers(
     Dict[str, str],
     Dict[str, float],
     float,
+    Dict[str, Dict[str, float]],
 ]:
     """Compute per-region and global Welch PSD band powers and dominant frequencies.
 
     Returns:
         ``(region_band_power, region_dominant_freq, region_dominant_band,
-        global_band_power, global_dominant_freq_hz)``
+        global_band_power, global_dominant_freq_hz, region_band_power_absolute)``
     """
     fs = 1.0 / (rec.config.rate_bin_ms / 1000.0)
-    nperseg = min(n_bins, 256)
+    nperseg = min(n_bins, 512)
 
     region_band_power: Dict[str, Dict[str, float]] = {}
+    region_band_power_absolute: Dict[str, Dict[str, float]] = {}
     region_dominant_freq: Dict[str, float] = {}
     region_dominant_band: Dict[str, str] = {}
 
@@ -123,6 +84,7 @@ def compute_band_powers(
         trace = region_rate_binned[:, r_idx].astype(np.float64)
         if trace.sum() < 1e-9 or n_bins < 8:
             region_band_power[rn] = {b: 0.0 for b in EEG_BANDS}
+            region_band_power_absolute[rn] = {b: 0.0 for b in EEG_BANDS}
             region_dominant_freq[rn] = 0.0
             region_dominant_band[rn] = "none"
             continue
@@ -132,6 +94,7 @@ def compute_band_powers(
         raw_bp = {b: band_power(psd, freqs, f1, f2) for b, (f1, f2) in EEG_BANDS.items()}
         total = sum(raw_bp.values()) or 1.0
         region_band_power[rn] = {b: v / total for b, v in raw_bp.items()}
+        region_band_power_absolute[rn] = dict(raw_bp)
 
         psd_no_dc = psd[1:]
         freqs_no_dc = freqs[1:]
@@ -154,7 +117,7 @@ def compute_band_powers(
     else:
         global_band_power = {b: 0.0 for b in EEG_BANDS}
 
-    return region_band_power, region_dominant_freq, region_dominant_band, global_band_power, global_dominant_freq
+    return region_band_power, region_dominant_freq, region_dominant_band, global_band_power, global_dominant_freq, region_band_power_absolute
 
 
 # =============================================================================
@@ -178,7 +141,7 @@ def compute_coherence_matrices(
     """
     rate_bin_ms = rec.config.rate_bin_ms
     fs = 1.0 / (rate_bin_ms / 1000.0)
-    nperseg = min(n_bins, 256)
+    nperseg = min(n_bins, 512)
     n_r = rec._n_regions
 
     coh_theta = np.full((n_r, n_r), np.nan, dtype=np.float32)
@@ -226,48 +189,99 @@ def compute_coherence_matrices(
 
 
 # =============================================================================
-# PAC PER REGION
+# APERIODIC (1/f) EXPONENT
 # =============================================================================
 
 
-def compute_pac_per_region(
+def _aperiodic_model(log_freq: np.ndarray, offset: float, exponent: float) -> np.ndarray:
+    """Linear model in log-log space: log10(PSD) = offset - exponent * log10(f)."""
+    return offset - exponent * log_freq
+
+
+def compute_aperiodic_exponent(
     rec: RecorderSnapshot,
-    T: int,
+    region_rate_binned: np.ndarray,
+    n_bins: int,
 ) -> Dict[str, float]:
-    """Compute PAC (MVL modulation index) for each region matching a :data:`PAC_SPECS` entry.
+    """Fit the aperiodic (1/f) spectral exponent χ per region.
 
-    Uses Gaussian-smoothed native-dt spike counts (σ ≈ 5 ms) as the LFP proxy.
-    Multiple specs may match the same region; the last match wins (more specific
-    region substrings should appear later in ``PAC_SPECS`` if needed).
-    Returns an empty dict when the simulation is shorter than 500 ms.
+    The power spectral density of neural signals follows a characteristic
+    1/f^χ power law in the aperiodic (background) component.  This
+    exponent reflects the balance between excitation and inhibition:
+
+    * χ ≈ 1.0–2.0: healthy cortical activity (He 2014; Donoghue et al. 2020).
+    * χ < 0.5: flattened spectrum — suggests epileptiform or
+      noise-dominated activity (reduced temporal correlation).
+    * χ > 3.0: very steep spectrum — suggests over-inhibition or
+      disconnected low-frequency fluctuations.
+
+    Method:
+        1. Compute Welch PSD (same parameters as band_power analysis).
+        2. Restrict to 2–40 Hz (avoids DC artefacts and aliasing edge).
+        3. Fit a linear model in log₁₀–log₁₀ space using least squares:
+           ``log₁₀(PSD) = offset − χ · log₁₀(f)``
+        4. Require R² ≥ 0.70 for reporting.
     """
-    from scipy.ndimage import gaussian_filter1d as sp_gaussian_filter1d
+    result: Dict[str, float] = {}
+    fs = 1.0 / (rec.config.rate_bin_ms / 1000.0)
+    nperseg = min(n_bins, 512)
 
-    pac_modulation_index: Dict[str, float] = {}
-    if T * rec.dt_ms < 500.0:
-        return pac_modulation_index
-    fs_raw = 1000.0 / rec.dt_ms
-    for rn in rec._region_keys:
-        rn_lower = rn.lower()
-        spec = next((s for s in reversed(PAC_SPECS) if s.region.lower() in rn_lower), None)
-        if spec is None:
+    if n_bins < 32:
+        return result  # need a reasonable spectral estimate
+
+    # Fitting range: 2–40 Hz avoids DC leak and stays well below Nyquist
+    # for typical 10 ms bins (Nyquist = 50 Hz).
+    f_fit_lo = 2.0
+    f_fit_hi = min(40.0, fs / 2.0 - 1.0)
+    if f_fit_hi <= f_fit_lo:
+        return result
+
+    for r_idx, rn in enumerate(rec._region_keys):
+        trace = region_rate_binned[:n_bins, r_idx].astype(np.float64)
+        if trace.sum() < 1e-9:
             continue
-        p_indices = rec._region_pop_indices[rn]
-        total_neurons = int(sum(rec._pop_sizes[i] for i in p_indices))
-        if total_neurons == 0:
+
+        freqs, psd = sp_welch(trace, fs=fs, nperseg=nperseg, window="hann", scaling="density")
+
+        # Select fitting range
+        mask = (freqs >= f_fit_lo) & (freqs <= f_fit_hi) & (psd > 0)
+        if mask.sum() < 5:
             continue
-        raw_counts = rec._pop_spike_counts[:T, p_indices].sum(axis=1).astype(np.float64)
-        sigma_steps = 5.0 / rec.dt_ms
-        smooth_counts = sp_gaussian_filter1d(raw_counts, sigma=sigma_steps)
-        phase_band = EEG_BANDS[spec.phase_band]
-        amp_band = EEG_BANDS[spec.amp_band]
-        pac_modulation_index[rn] = _compute_pac_mi(smooth_counts, fs_raw, phase_band, amp_band)
-    return pac_modulation_index
+
+        log_f = np.log10(freqs[mask])
+        log_psd = np.log10(psd[mask])
+
+        # Ordinary least-squares fit in log-log space
+        try:
+            popt, _ = sp_curve_fit(
+                _aperiodic_model,
+                log_f,
+                log_psd,
+                p0=[np.mean(log_psd), 1.5],
+                maxfev=1000,
+            )
+            exponent = float(popt[1])
+        except Exception:
+            continue
+
+        # R² quality gate
+        pred = _aperiodic_model(log_f, *popt)
+        ss_res = float(np.sum((log_psd - pred) ** 2))
+        ss_tot = float(np.sum((log_psd - log_psd.mean()) ** 2))
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        if r2 >= 0.70:
+            result[rn] = exponent
+
+    return result
 
 
 # =============================================================================
 # INTEGRATION TAU
 # =============================================================================
+
+
+def _exp_decay(t: np.ndarray, tau: float) -> np.ndarray:
+    return np.exp(-t / tau)
 
 
 def compute_integration_tau(
@@ -287,8 +301,6 @@ def compute_integration_tau(
     - ≥ 1 non-zero bin in the region
     - Fitted τ ∈ (1, 5000) ms (sanity bounds)
     - R² of the exponential fit ≥ 0.50
-
-    References: Murray et al. 2014 (Nature Neuroscience); Wasmuht et al. 2018.
     """
     result: Dict[str, float] = {}
     if n_bins < 100:
@@ -299,9 +311,6 @@ def compute_integration_tau(
     min_lag_bins = max(1, int(1.0 / bin_ms))               # skip lag-0 artefact
     lag_bins = np.arange(min_lag_bins, max_lag_bins + 1)
     lag_ms = lag_bins * bin_ms
-
-    def _exp_decay(t: np.ndarray, tau: float) -> np.ndarray:
-        return np.exp(-t / tau)
 
     for r_idx, rn in enumerate(rec._region_keys):
         trace = region_rate_binned[:n_bins, r_idx].astype(np.float64)
@@ -346,3 +355,86 @@ def compute_integration_tau(
             result[rn] = tau_fit
 
     return result
+
+
+# =============================================================================
+# OSCILLATORY STATS ORCHESTRATOR
+# =============================================================================
+
+
+def compute_oscillatory_stats(
+    rec: RecorderSnapshot,
+    pop_rate_binned: np.ndarray,
+    region_rate_binned: np.ndarray,
+    n_bins: int,
+    T: int,
+) -> OscillatoryStats:
+    """Orchestrate all oscillatory analyses and assemble OscillatoryStats."""
+    # Local imports to avoid circular dependency (coupling modules import from this file).
+    from .coupling import (
+        compute_beta_burst_stats,
+        compute_ca3_ca1_theta_sequence,
+        compute_cerebellar_metrics,
+        compute_cfc_per_region,
+        compute_hfo_per_region,
+        compute_laminar_cascade,
+        compute_plv_theta_per_region,
+        compute_relay_burst_mode,
+        compute_spike_avalanches,
+        compute_spike_field_coherence,
+        compute_swr_ca3_ca1_coupling,
+    )
+
+    (
+        region_band_power,
+        region_dominant_freq,
+        region_dominant_band,
+        global_band_power,
+        global_dominant_freq,
+        region_band_power_absolute,
+    ) = compute_band_powers(rec, region_rate_binned, n_bins)
+
+    coh_theta, coh_beta, coh_gamma, freq_resolution_hz = compute_coherence_matrices(
+        rec, region_rate_binned, n_bins, T
+    )
+    cfc_results, lfp_methods = compute_cfc_per_region(rec, T)
+    hfo_band_power = compute_hfo_per_region(rec, T)
+    plv_theta = compute_plv_theta_per_region(rec, T)
+    spike_field = compute_spike_field_coherence(rec, T, region_band_power)
+    avalanche = compute_spike_avalanches(rec, T)
+    cerebellar = compute_cerebellar_metrics(rec, T)
+    beta_burst_stats = compute_beta_burst_stats(rec, region_rate_binned, n_bins)
+    relay_burst_mode = compute_relay_burst_mode(rec, T)
+    swr_ca3_ca1_coupling = compute_swr_ca3_ca1_coupling(rec, T)
+    ca3_ca1_theta_sequence = compute_ca3_ca1_theta_sequence(rec, T)
+    region_integration_tau_ms = compute_integration_tau(rec, region_rate_binned, n_bins)
+    region_aperiodic_exponent = compute_aperiodic_exponent(rec, region_rate_binned, n_bins)
+    laminar_cascade_latencies = compute_laminar_cascade(rec, T)
+
+    return OscillatoryStats(
+        region_band_power=region_band_power,
+        region_band_power_absolute=region_band_power_absolute,
+        region_dominant_freq=region_dominant_freq,
+        region_dominant_band=region_dominant_band,
+        coherence_theta=coh_theta,
+        coherence_beta=coh_beta,
+        coherence_gamma=coh_gamma,
+        region_order=list(rec._region_keys),
+        global_dominant_freq_hz=global_dominant_freq,
+        global_band_power=global_band_power,
+        freq_resolution_hz=freq_resolution_hz,
+        cfc_results=cfc_results,
+        lfp_proxy_methods=lfp_methods,
+        hfo_band_power=hfo_band_power,
+        plv_theta=plv_theta,
+        spike_field_coherence=spike_field,
+        avalanche=avalanche,
+        cerebellar=cerebellar,
+        beta_burst_stats=beta_burst_stats,
+        relay_burst_mode=relay_burst_mode,
+        swr_ca3_ca1_coupling=swr_ca3_ca1_coupling,
+        ca3_ca1_theta_sequence=ca3_ca1_theta_sequence,
+        region_integration_tau_ms=region_integration_tau_ms,
+        region_aperiodic_exponent=region_aperiodic_exponent,
+        laminar_cascade_latencies=laminar_cascade_latencies,
+    )

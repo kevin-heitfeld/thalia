@@ -2,20 +2,6 @@
 
 from __future__ import annotations
 
-from .analysis_tuning import (
-    TractContribution,
-    TuningGuidance,
-    TuningReport,
-    compute_tuning,
-    print_tuning_report,
-)
-from .calibration_advisor import (
-    CalibrationAdvice,
-    CalibrationReport,
-    ParameterRecommendation,
-    compute_calibration_advice,
-    print_calibration_advice,
-)
 from .bio_ranges import (
     RegionSpec,
     EEG_BANDS,
@@ -24,30 +10,61 @@ from .bio_ranges import (
     expected_dominant_band,
     nm_tonic_range,
 )
-from .diagnostics_io import (
+from .brain_protocol import BrainLike
+from .diagnostics_snapshot import (
+    RecorderSnapshot,
+    RunningStats,
+)
+from .diagnostics_snapshot_io import (
+    load_snapshot,
+    save_report,
+    save_snapshot,
+)
+from .diagnostics_text_report import (
     print_brain_config,
     print_neuron_populations,
     print_report,
     print_synaptic_weights,
-    save_snapshot,
-    load_snapshot,
-    save_report,
 )
 from .diagnostics_recorder import (
     DiagnosticsRecorder,
 )
-from .diagnostics_types import (
+from .diagnostics_config import (
+    ConnectivityThresholds,
     DiagnosticsConfig,
-    ConnectivityStats,
+    FiringThresholds,
     HealthThresholds,
+    HomeostasisThresholds,
+    LearningThresholds,
+    NeuromodulatorThresholds,
+    OscillationThresholds,
+    RegionalThresholds,
+)
+from .diagnostics_metrics import (
+    AvalancheStats,
+    BetaBurstRegionStats,
+    CerebellarCouplingStats,
+    ConnectivityStats,
+    HomeostaticStats,
+    LaminarCascadeRegionStats,
+    LearningStats,
+    OscillatoryStats,
+    PlvThetaStats,
+    PopulationStats,
+    RegionStats,
+    STDPTimingStats,
+    SpikeFieldResult,
+    SwrCouplingRegionStats,
+    SynapseLearningSummary,
+    ThetaSequenceRegionStats,
+    WeightDistStats,
+)
+from .diagnostics_report import (
     DiagnosticsReport,
     HealthCategory,
+    HealthIssue,
     HealthReport,
-    HomeostaticStats,
-    OscillatoryStats,
-    PopulationStats,
-    RecorderSnapshot,
-    RegionStats,
+    PerformanceMetrics,
 )
 from .rate_predictor import (
     InputSpec,
@@ -70,10 +87,30 @@ from .stp_calculator import (
     stp_eq,
     stp_table,
 )
+from .health_preflight import (
+    validate_brain,
+)
+from .simulation_loop import simulate
 from .sweep import (
     run_single,
     run_sweep,
     DEFAULT_SWEEP_PATTERNS,
+)
+from .brain_state_classifier import (
+    BrainState,
+    classify_brain_state,
+)
+from .comparison import (
+    compare_reports,
+    run_comparison,
+)
+from .comparison_report import (
+    ComparisonReport,
+    IssueDiff,
+    MetricDelta,
+)
+from .comparison_text import (
+    format_comparison_text,
 )
 
 __all__ = [
@@ -84,17 +121,42 @@ __all__ = [
     "ei_ratio_thresholds",
     "expected_dominant_band",
     "nm_tonic_range",
+    # Protocol
+    "BrainLike",
     # Config & result types
+    "ConnectivityThresholds",
     "DiagnosticsConfig",
+    "FiringThresholds",
     "HealthThresholds",
+    "HomeostasisThresholds",
+    "LearningThresholds",
+    "NeuromodulatorThresholds",
+    "OscillationThresholds",
+    "RegionalThresholds",
     "DiagnosticsReport",
+    "AvalancheStats",
+    "BetaBurstRegionStats",
+    "CerebellarCouplingStats",
     "ConnectivityStats",
     "HealthCategory",
+    "HealthIssue",
     "HealthReport",
     "HomeostaticStats",
+    "LaminarCascadeRegionStats",
+    "LearningStats",
     "OscillatoryStats",
+    "PerformanceMetrics",
+    "PlvThetaStats",
     "PopulationStats",
+    "RecorderSnapshot",
     "RegionStats",
+    "RunningStats",
+    "STDPTimingStats",
+    "SpikeFieldResult",
+    "SwrCouplingRegionStats",
+    "SynapseLearningSummary",
+    "ThetaSequenceRegionStats",
+    "WeightDistStats",
     # I/O helpers (report-only, no live brain state needed)
     "print_report",
     "save_report",
@@ -120,24 +182,25 @@ __all__ = [
     "SLEEP_PATTERNS",
     "NEUTRAL_PATTERNS",
     "make_sensory_input",
+    # Pre-flight validation
+    "validate_brain",
     # Sweep mode
+    "simulate",
     "run_single",
     "run_sweep",
     "DEFAULT_SWEEP_PATTERNS",
+    # Brain state classifier
+    "BrainState",
+    "classify_brain_state",
+    # Run comparison
+    "compare_reports",
+    "run_comparison",
+    "ComparisonReport",
+    "IssueDiff",
+    "MetricDelta",
+    "format_comparison_text",
     # STP equilibrium calculator
     "STPResult",
     "stp_eq",
     "stp_table",
-    # Tuning guidance
-    "TractContribution",
-    "TuningGuidance",
-    "TuningReport",
-    "compute_tuning",
-    "print_tuning_report",
-    # Calibration advisor
-    "CalibrationAdvice",
-    "CalibrationReport",
-    "ParameterRecommendation",
-    "compute_calibration_advice",
-    "print_calibration_advice",
 ]

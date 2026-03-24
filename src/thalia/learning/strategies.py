@@ -12,7 +12,7 @@ import torch.nn as nn
 
 from thalia import GlobalConfig
 from thalia.errors import ConfigurationError
-from thalia.utils import decay_float, validate_spike_tensor
+from thalia.utils import decay_float
 
 from .eligibility_trace_manager import EligibilityTraceConfig, EligibilityTraceManager
 
@@ -324,6 +324,41 @@ class LearningStrategy(nn.Module, ABC):
         """
         self._dt_ms = dt_ms
 
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Compute weight update on sparse (COO-style) weight entries.
+
+        Default implementation reconstructs a dense matrix, delegates to
+        :meth:`compute_update`, and extracts sparse entries.  Subclasses
+        may override with more efficient sparse-native logic.
+
+        Args:
+            values: Current weight values ``[nnz]``.
+            row_indices: Post-synaptic neuron indices ``[nnz]`` (0..n_post-1).
+            col_indices: Pre-synaptic neuron indices ``[nnz]`` (0..n_pre-1).
+            n_post: Number of post-synaptic neurons.
+            n_pre: Number of pre-synaptic neurons.
+            pre_spikes: Presynaptic spikes ``[n_pre]``.
+            post_spikes: Postsynaptic spikes ``[n_post]``.
+            **kwargs: Strategy-specific inputs.
+
+        Returns:
+            Updated weight values ``[nnz]`` (do NOT clamp).
+        """
+        dense = torch.zeros(n_post, n_pre, device=values.device)
+        dense[row_indices, col_indices] = values
+        updated_dense = self.compute_update(dense, pre_spikes, post_spikes, **kwargs)
+        return updated_dense[row_indices, col_indices]
+
 
 # =============================================================================
 # STDP and BCM Strategies
@@ -446,18 +481,18 @@ class STDPStrategy(LearningStrategy):
                 - dopamine (float): Dopamine level for DA-modulated STDP
                 - acetylcholine (float): ACh level (favors LTP/encoding)
                 - norepinephrine (float): NE level (inverted-U modulation)
+                - serotonin (float): 5-HT level (suppresses LTP, enhances LTD/extinction)
         """
         assert isinstance(self.config, STDPConfig)
         config: STDPConfig = self.config
 
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
-        validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
-        validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
         # Extract modulation kwargs
         dopamine       = kwargs.get("dopamine", 0.0)
         acetylcholine  = kwargs.get("acetylcholine", 0.0)
         norepinephrine = kwargs.get("norepinephrine", 0.0)
+        serotonin      = kwargs.get("serotonin", 0.0)
 
         # Cache registered buffers once — avoids nn.Module.__getattr__ per access
         firing_rates     = self.firing_rates
@@ -468,11 +503,11 @@ class STDPStrategy(LearningStrategy):
         ltp, ltd = self.trace_manager.compute_ltp_ltd_separate(pre_spikes, post_spikes)
 
         # Update firing rate tracking (EMA over spikes)
-        firing_rates.mul_(self._firing_rate_decay).add_(post_spikes.float(), alpha=1 - self._firing_rate_decay)
+        firing_rates.mul_(self._firing_rate_decay).add_(post_spikes, alpha=1 - self._firing_rate_decay)
 
         # Update retrograde signal (endocannabinoid-like)
         if config.retrograde_enabled:
-            spike_contribution = post_spikes.float()
+            spike_contribution = post_spikes
             rate_scaling = (firing_rates / config.retrograde_threshold).clamp(0, 2.0)
             weighted_contribution = spike_contribution * (0.5 + 0.5 * rate_scaling)
             retrograde_signal.mul_(self._retrograde_decay).add_(weighted_contribution, alpha=1 - self._retrograde_decay)
@@ -515,6 +550,14 @@ class STDPStrategy(LearningStrategy):
             ne_modulation = 1.0 - 0.5 * abs(norepinephrine - 0.5)  # Peak at 0.5
             ltp = ltp * ne_modulation
 
+            # Serotonin modulation: 5-HT1A suppresses LTP (patience / anti-impulsivity)
+            # Biology: 5-HT1A (Gi-coupled) inhibits PKA cascade required for LTP expression.
+            # High serotonin → reduced potentiation → prevents impulsive over-learning.
+            # Range: × [0.7, 1.0] (30% suppression at max 5-HT).
+            # Ref: Bhagya et al. 2015; Kojic et al. 2000.
+            sht_ltp_suppression = 1.0 - 0.3 * serotonin
+            ltp = ltp * sht_ltp_suppression
+
         # Apply neuromodulator modulations to LTD
         if isinstance(ltd, torch.Tensor):
             # CONDITIONAL LTD: Only apply depression when postsynaptic firing rate exceeds threshold
@@ -551,6 +594,31 @@ class STDPStrategy(LearningStrategy):
             ne_modulation = 1.0 - 0.5 * abs(norepinephrine - 0.5)
             ltd = ltd * ne_modulation
 
+            # Serotonin modulation: 5-HT enhances LTD (extinction learning)
+            # Biology: 5-HT facilitates extinction via enhanced depotentiation at
+            # previously strengthened synapses. High serotonin during safety/extinction
+            # promotes forgetting of maladaptive associations.
+            # Range: × [1.0, 1.4] (40% LTD enhancement at max 5-HT).
+            # Ref: Bhagya et al. 2015; Denny et al. 2014.
+            sht_ltd_enhancement = 1.0 + 0.4 * serotonin
+            ltd = ltd * sht_ltd_enhancement
+
+        # Heterosynaptic plasticity: inactive synapses undergo compensatory LTD
+        # when active synapses potentiate.  This enforces synaptic competition —
+        # neurons have a limited total synaptic resource, so strengthening one
+        # input weakens others (Lynch et al. 1977; Chistiakova et al. 2014).
+        # Implemented as: for each postsynaptic neuron, spread a fraction of the
+        # mean homosynaptic LTD to all synapses whose presynaptic neuron did NOT
+        # fire.  This prevents unbounded total weight growth per neuron and drives
+        # receptive field sharpening.
+        if config.heterosynaptic_ratio > 0.0 and isinstance(ltd, torch.Tensor):
+            pre_inactive = 1.0 - pre_spikes  # [n_pre]: 1 where pre did NOT fire
+            # Mean homosynaptic LTD per postsynaptic neuron [n_post]
+            mean_ltd = ltd.mean(dim=1)  # [n_post]
+            # Apply scaled depression to inactive presynaptic inputs
+            ltd_hetero = config.heterosynaptic_ratio * mean_ltd.unsqueeze(1) * pre_inactive.unsqueeze(0)
+            ltd = ltd + ltd_hetero
+
         # Compute weight change
         dw = ltp - ltd if isinstance(ltp, torch.Tensor) or isinstance(ltd, torch.Tensor) else 0
 
@@ -573,6 +641,86 @@ class STDPStrategy(LearningStrategy):
         # Propagate to trace_manager if already set up
         if hasattr(self, "trace_manager"):
             self.trace_manager.update_temporal_parameters(dt_ms)
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native STDP update operating on [nnz] value arrays."""
+        assert isinstance(self.config, STDPConfig)
+        config: STDPConfig = self.config
+
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        dopamine       = kwargs.get("dopamine", 0.0)
+        acetylcholine  = kwargs.get("acetylcholine", 0.0)
+        norepinephrine = kwargs.get("norepinephrine", 0.0)
+
+        firing_rates      = self.firing_rates
+        retrograde_signal = self.retrograde_signal
+
+        # Update per-neuron traces (unchanged from dense path)
+        self.trace_manager.update_traces(pre_spikes, post_spikes, self._dt_ms)
+
+        # Sparse LTP/LTD: [nnz] instead of [n_post, n_pre]
+        ltp, ltd = self.trace_manager.compute_ltp_ltd_separate_sparse(
+            pre_spikes, post_spikes, row_indices, col_indices
+        )
+
+        # Update firing rate tracking (per-neuron, unchanged)
+        firing_rates.mul_(self._firing_rate_decay).add_(
+            post_spikes, alpha=1 - self._firing_rate_decay
+        )
+
+        # Update retrograde signal (per-neuron, unchanged)
+        if config.retrograde_enabled:
+            spike_contribution = post_spikes
+            rate_scaling = (firing_rates / config.retrograde_threshold).clamp(0, 2.0)
+            weighted_contribution = spike_contribution * (0.5 + 0.5 * rate_scaling)
+            retrograde_signal.mul_(self._retrograde_decay).add_(
+                weighted_contribution, alpha=1 - self._retrograde_decay
+            )
+
+        # Retrograde gating (index [n_post] → [nnz] via row_indices)
+        if config.retrograde_enabled:
+            retro_gate = retrograde_signal.clamp(0, 1)  # [n_post]
+            ltp_gate = ((retro_gate - config.retrograde_ltp_gate) /
+                       (1.0 - config.retrograde_ltp_gate)).clamp(0, 1)
+            if isinstance(ltp, torch.Tensor):
+                ltp = ltp * ltp_gate[row_indices]
+            # retro_gate mutated in-place for ltd_enhance (same as dense path)
+            ltd_enhance = retro_gate.neg_().add_(1.0).mul_(
+                config.retrograde_ltd_enhance - 1.0
+            ).add_(1.0)
+            if isinstance(ltd, torch.Tensor):
+                ltd = ltd * ltd_enhance[row_indices]
+
+        # Neuromodulator modulations on LTP
+        if isinstance(ltp, torch.Tensor):
+            ltp = ltp * (1.0 + dopamine)
+            ltp = ltp * (0.5 + 0.5 * acetylcholine)
+            ltp = ltp * (1.0 - 0.5 * abs(norepinephrine - 0.5))
+
+        # Neuromodulator modulations on LTD
+        if isinstance(ltd, torch.Tensor):
+            activity_mask = firing_rates >= config.activity_threshold  # [n_post]
+            if isinstance(ltp, torch.Tensor):
+                ltp_protection = (ltp / (ltd + 1e-8)).clamp_(0, 1)
+                ltd = ltd * ltp_protection.mul_(-0.5).add_(1.0)
+            ltd = ltd * activity_mask[row_indices].float()
+            ltd = ltd * (1.0 - 0.5 * max(0.0, dopamine))
+            ltd = ltd * (1.0 - 0.3 * acetylcholine)
+            ltd = ltd * (1.0 - 0.5 * abs(norepinephrine - 0.5))
+
+        dw = ltp - ltd if isinstance(ltp, torch.Tensor) or isinstance(ltd, torch.Tensor) else 0
+        return values + dw if isinstance(dw, torch.Tensor) else values
 
 
 class BCMStrategy(LearningStrategy):
@@ -643,7 +791,7 @@ class BCMStrategy(LearningStrategy):
         assert isinstance(self.config, BCMConfig)
         config: BCMConfig = self.config
 
-        c = post_spikes.float()
+        c = post_spikes
         phi = c * (c - self.theta) / (self.theta + 1e-8)
 
         # FIRING-RATE-BASED LTD GATING: Block depression when firing rate is too low
@@ -703,19 +851,17 @@ class BCMStrategy(LearningStrategy):
         config: BCMConfig = self.config
 
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
-        validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
-        validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
         # Update firing rate EMA (in-place)
         self.firing_rates.mul_(self._decay_firing_rate_val).add_(
-            post_spikes.float(), alpha=1.0 - self._decay_firing_rate_val
+            post_spikes, alpha=1.0 - self._decay_firing_rate_val
         )
 
         # Compute BCM modulation using tracked firing rates
         phi = self.compute_phi(post_spikes, self.firing_rates)  # [n_post]
 
         # Weight update: dw[j,i] = lr × pre[i] × φ[j]
-        dw = config.learning_rate * torch.outer(phi, pre_spikes.float())
+        dw = config.learning_rate * torch.outer(phi, pre_spikes)
 
         # Activity-dependent weight decay (biologically inspired)
         # - Full decay when post-synaptic neurons are active (use-dependent pruning)
@@ -734,6 +880,43 @@ class BCMStrategy(LearningStrategy):
 
         # Return weight change without internal clamping (_apply_learning() owns clamping)
         return weights + dw
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native BCM update operating on [nnz] value arrays."""
+        assert isinstance(self.config, BCMConfig)
+        config: BCMConfig = self.config
+
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        # Update firing rate EMA (per-neuron, unchanged)
+        self.firing_rates.mul_(self._decay_firing_rate_val).add_(
+            post_spikes, alpha=1.0 - self._decay_firing_rate_val
+        )
+
+        # BCM modulation [n_post]
+        phi = self.compute_phi(post_spikes, self.firing_rates)
+
+        # Sparse outer product: dw[nnz] = lr * phi[row] * pre[col]
+        dw = config.learning_rate * phi[row_indices] * pre_spikes[col_indices]
+
+        # Activity-dependent weight decay
+        if config.weight_decay > 0:
+            activity_ratio = (self.firing_rates / config.min_activity_for_decay).clamp(0.0, 1.0)
+            effective_decay = config.silent_decay_factor + (1.0 - config.silent_decay_factor) * activity_ratio
+            dw = dw - config.weight_decay * effective_decay[row_indices] * values
+
+        self._update_theta()
+        return values + dw
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update decay factors when brain timestep changes.
@@ -830,11 +1013,11 @@ class ThreeFactorStrategy(LearningStrategy):
         # Normalized Hebbian coincidence: outer product, normalized by geometric-mean
         # firing rate so that co-activation from sparse populations is not drowned
         # out by dense populations and vice-versa.
-        pre_rate  = pre_spikes.float().mean()  + 1e-6
-        post_rate = post_spikes.float().mean() + 1e-6
+        pre_rate  = pre_spikes.mean()  + 1e-6
+        post_rate = post_spikes.mean() + 1e-6
         normalization = (pre_rate * post_rate).sqrt()
 
-        hebbian = torch.outer(post_spikes.float(), pre_spikes.float())
+        hebbian = torch.outer(post_spikes, pre_spikes)
 
         # Delegate decay + accumulation to EligibilityTraceManager; this
         # replaces the former hand-written:
@@ -870,8 +1053,6 @@ class ThreeFactorStrategy(LearningStrategy):
         config: ThreeFactorConfig = self.config
 
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
-        validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
-        validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
         modulator: float = kwargs.get("modulator", 0.0)
 
@@ -881,6 +1062,46 @@ class ThreeFactorStrategy(LearningStrategy):
         # Three-factor update — no internal clamping (_apply_learning() owns it)
         dw = config.learning_rate * self.trace_manager.eligibility * modulator
         return weights + dw
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native three-factor update with [nnz] eligibility."""
+        assert isinstance(self.config, ThreeFactorConfig)
+        config: ThreeFactorConfig = self.config
+
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        modulator: float = kwargs.get("modulator", 0.0)
+
+        # Lazy init sparse eligibility buffer
+        nnz = row_indices.shape[0]
+        if not hasattr(self, "_sparse_eligibility") or self._sparse_eligibility.shape[0] != nnz:
+            self._sparse_eligibility = torch.zeros(nnz, device=values.device)
+            self._sparse_elig_decay = decay_float(self._dt_ms, config.eligibility_tau)
+
+        # Compute normalized Hebbian coincidence at sparse positions
+        pre_rate = pre_spikes.mean() + 1e-6
+        post_rate = post_spikes.mean() + 1e-6
+        normalization = (pre_rate * post_rate).sqrt()
+
+        hebbian_sparse = post_spikes[row_indices] * pre_spikes[col_indices] / normalization
+
+        # Accumulate with exponential decay
+        self._sparse_eligibility.mul_(self._sparse_elig_decay).add_(hebbian_sparse)
+        self._sparse_eligibility.clamp_(0.0, 1.0)
+
+        # Three-factor update
+        dw = config.learning_rate * self._sparse_eligibility * modulator
+        return values + dw
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Update decay factor when brain timestep changes."""
@@ -962,13 +1183,11 @@ class D1STDPStrategy(LearningStrategy):
         config: D1D2STDPConfig = self.config
 
         self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
-        validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
-        validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
         dopamine: Any = kwargs.get("dopamine", 0.0)
 
         # Hebbian outer product: [n_post, n_pre]
-        eligibility_update = torch.outer(post_spikes.float(), pre_spikes.float())
+        eligibility_update = torch.outer(post_spikes, pre_spikes)
 
         # Multi-timescale trace update (in-place for efficiency)
         self.fast_trace.mul_(self._fast_decay).add_(eligibility_update)
@@ -986,6 +1205,51 @@ class D1STDPStrategy(LearningStrategy):
 
         weight_update = combined * da * config.learning_rate
         return weights + weight_update
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native D1 three-factor STDP with [nnz] traces."""
+        assert isinstance(self.config, D1D2STDPConfig)
+        config: D1D2STDPConfig = self.config
+
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        dopamine: Any = kwargs.get("dopamine", 0.0)
+
+        # Lazy init sparse traces
+        nnz = row_indices.shape[0]
+        if not hasattr(self, "_sparse_fast_trace") or self._sparse_fast_trace.shape[0] != nnz:
+            self._sparse_fast_trace = torch.zeros(nnz, device=values.device)
+            self._sparse_slow_trace = torch.zeros(nnz, device=values.device)
+
+        # Sparse Hebbian: [nnz]
+        eligibility_update = post_spikes[row_indices] * pre_spikes[col_indices]
+
+        # Multi-timescale trace update
+        self._sparse_fast_trace.mul_(self._fast_decay).add_(eligibility_update)
+        self._sparse_slow_trace.mul_(self._slow_decay).add_(
+            self._sparse_fast_trace * config.eligibility_consolidation_rate
+        )
+
+        combined = self._sparse_fast_trace + config.slow_trace_weight * self._sparse_slow_trace
+
+        # DA modulation: per-neuron [n_post] indexed to [nnz], or scalar
+        if isinstance(dopamine, torch.Tensor):
+            da: Any = dopamine[row_indices]
+        else:
+            da = dopamine
+
+        weight_update = combined * da * config.learning_rate
+        return values + weight_update
 
     # ------------------------------------------------------------------
     # Temporal parameter management
@@ -1026,6 +1290,34 @@ class D2STDPStrategy(D1STDPStrategy):
             inverted = -dopamine
         return super().compute_update(
             weights=weights,
+            pre_spikes=pre_spikes,
+            post_spikes=post_spikes,
+            **{**kwargs, "dopamine": inverted},
+        )
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Invert dopamine signal then delegate to D1's sparse method."""
+        dopamine = kwargs.get("dopamine", 0.0)
+        if isinstance(dopamine, torch.Tensor):
+            inverted: Any = -dopamine
+        else:
+            inverted = -dopamine
+        return super().compute_update_sparse(
+            values=values,
+            row_indices=row_indices,
+            col_indices=col_indices,
+            n_post=n_post,
+            n_pre=n_pre,
             pre_spikes=pre_spikes,
             post_spikes=post_spikes,
             **{**kwargs, "dopamine": inverted},
@@ -1114,8 +1406,6 @@ class PredictiveCodingStrategy(LearningStrategy):
 
         n_pre = pre_spikes.shape[0]
         self.ensure_setup(n_pre, post_spikes.shape[0], pre_spikes.device)
-        validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
-        validate_spike_tensor(post_spikes, tensor_name="post_spikes")
 
         lr: float = kwargs.get("learning_rate_override", config.learning_rate)
 
@@ -1123,13 +1413,42 @@ class PredictiveCodingStrategy(LearningStrategy):
         delayed_pre = self.pre_spike_buffer[0]  # [n_pre]
 
         # Anti-Hebbian outer product: strengthen inhibition on co-activation
-        dw = lr * torch.outer(post_spikes.float(), delayed_pre.float())
+        dw = lr * torch.outer(post_spikes, delayed_pre)
 
         # Advance ring buffer: shift existing entries back, insert current spikes
         self.pre_spike_buffer = torch.roll(self.pre_spike_buffer, shifts=1, dims=0)
-        self.pre_spike_buffer[0] = pre_spikes.float()
+        self.pre_spike_buffer[0] = pre_spikes
 
         return weights + dw
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native anti-Hebbian predictive update."""
+        assert isinstance(self.config, PredictiveCodingConfig)
+        config: PredictiveCodingConfig = self.config
+
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        lr: float = kwargs.get("learning_rate_override", config.learning_rate)
+        delayed_pre = self.pre_spike_buffer[0]  # [n_pre]
+
+        # Sparse anti-Hebbian: dw[nnz] = lr * post[row] * delayed_pre[col]
+        dw = lr * post_spikes[row_indices] * delayed_pre[col_indices]
+
+        # Advance ring buffer (same state update as dense path)
+        self.pre_spike_buffer = torch.roll(self.pre_spike_buffer, shifts=1, dims=0)
+        self.pre_spike_buffer[0] = pre_spikes
+
+        return values + dw
 
 
 # =============================================================================
@@ -1226,20 +1545,47 @@ class MaIStrategy(LearningStrategy):
             # No error signal delivered this timestep — skip learning
             return weights
 
-        validate_spike_tensor(pre_spikes, tensor_name="pre_spikes")
-
-        pre_f = pre_spikes.float()          # [n_granule]
         cf_f = climbing_fiber_spikes.float()  # [n_purkinje]
 
         # LTD: conjunctive PF + CF activation → depress synapse
         # outer(cf, pre): [n_purkinje, n_granule]
-        ltd_dw = config.ltd_rate * torch.outer(cf_f, pre_f)
+        ltd_dw = config.ltd_rate * torch.outer(cf_f, pre_spikes)
 
         # LTP: PF active, CF silent → slow normalizing potentiation
         no_cf = cf_f.neg_().add_(1.0).clamp_(min=0.0)   # [n_purkinje]; cf_f free to mutate after ltd_dw
-        ltp_dw = config.ltp_rate * torch.outer(no_cf, pre_f)
+        ltp_dw = config.ltp_rate * torch.outer(no_cf, pre_spikes)
 
         return weights + (ltp_dw - ltd_dw)
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native Marr-Albus-Ito update."""
+        assert isinstance(self.config, MaIConfig)
+        config: MaIConfig = self.config
+
+        climbing_fiber_spikes: Optional[torch.Tensor] = kwargs.get("climbing_fiber_spikes")
+        if climbing_fiber_spikes is None:
+            return values
+
+        cf_f = climbing_fiber_spikes.float()  # [n_purkinje]
+
+        # Sparse LTD: cf[row] * pre[col]
+        ltd_dw = config.ltd_rate * cf_f[row_indices] * pre_spikes[col_indices]
+
+        # Sparse LTP: (1-cf)[row] * pre[col]
+        no_cf = (1.0 - cf_f).clamp_(min=0.0)
+        ltp_dw = config.ltp_rate * no_cf[row_indices] * pre_spikes[col_indices]
+
+        return values + (ltp_dw - ltd_dw)
 
 
 # =============================================================================
@@ -1295,6 +1641,32 @@ class CompositeStrategy(LearningStrategy):
                     **kwargs,
                 )
         return weights
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Chain sub-strategies' sparse updates sequentially."""
+        for s in self.sub_strategies:
+            if isinstance(s, LearningStrategy):
+                values = s.compute_update_sparse(
+                    values=values,
+                    row_indices=row_indices,
+                    col_indices=col_indices,
+                    n_post=n_post,
+                    n_pre=n_pre,
+                    pre_spikes=pre_spikes,
+                    post_spikes=post_spikes,
+                    **kwargs,
+                )
+        return values
 
     def update_temporal_parameters(self, dt_ms: float) -> None:
         """Propagate timestep update to all sub-strategies."""
@@ -1406,15 +1778,52 @@ class TagAndCaptureStrategy(LearningStrategy):
 
         # Update tags: decay → add new Hebbian coincidence (take max)
         self.tags.mul_(config.tag_decay)
-        pre_f = pre_spikes.float()
-        post_f = post_spikes.float()
-        if pre_f.any() and post_f.any():
-            new_tags = torch.outer(post_f, pre_f)
+        if pre_spikes.any() and post_spikes.any():
+            new_tags = torch.outer(post_spikes, pre_spikes)
             if config.tag_threshold > 0.0:
-                new_tags = new_tags * (post_f.unsqueeze(1) >= config.tag_threshold).float()
+                new_tags = new_tags * (post_spikes.unsqueeze(1) >= config.tag_threshold).float()
             self.tags = torch.maximum(self.tags, new_tags)
 
         return new_weights
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native tag-and-capture with [nnz] tags."""
+        assert isinstance(self.config, TagAndCaptureConfig)
+        config: TagAndCaptureConfig = self.config
+
+        device = pre_spikes.device
+        self.ensure_setup(n_pre, n_post, device)
+
+        # Lazy init sparse tags
+        nnz = row_indices.shape[0]
+        if not hasattr(self, "_sparse_tags") or self._sparse_tags.shape[0] != nnz:
+            self._sparse_tags = torch.zeros(nnz, device=device)
+
+        # Delegate to base strategy's sparse update
+        new_values = self.base_strategy.compute_update_sparse(
+            values, row_indices, col_indices, n_post, n_pre,
+            pre_spikes, post_spikes, **kwargs
+        )
+
+        # Update sparse tags
+        self._sparse_tags.mul_(config.tag_decay)
+        if pre_spikes.any() and post_spikes.any():
+            new_tags = post_spikes[row_indices] * pre_spikes[col_indices]
+            if config.tag_threshold > 0.0:
+                new_tags = new_tags * (post_spikes[row_indices] >= config.tag_threshold).float()
+            self._sparse_tags = torch.maximum(self._sparse_tags, new_tags)
+
+        return new_values
 
     # ------------------------------------------------------------------
     # Consolidation (DA-gated capture)
@@ -1459,3 +1868,460 @@ class TagAndCaptureStrategy(LearningStrategy):
         """Propagate timestep change to the base strategy."""
         super().update_temporal_parameters(dt_ms)
         self.base_strategy.update_temporal_parameters(dt_ms)
+
+
+# =============================================================================
+# Metaplasticity Strategy (Abraham & Bear 1996)
+# =============================================================================
+
+
+@dataclass
+class MetaplasticityConfig:
+    """Configuration for per-synapse metaplasticity modulation.
+
+    Metaplasticity = activity-dependent regulation of future synaptic change.
+    Adds two per-synapse state variables:
+
+    * **plasticity_rate** ∈ [rate_min, 1.0]: multiplicatively scales all weight
+      updates from the wrapped base strategy.  Depressed after each modification,
+      recovers toward a resting level set by consolidation history.
+    * **consolidation**: accumulated modification history with slow exponential
+      decay.  As a synapse accumulates change, its resting plasticity rate
+      decreases — it becomes structurally consolidated and harder to modify.
+
+    Two timescales (mapped to biology):
+
+    * Short-term refractory (τ_recovery ~5s): CaMKII autophosphorylation prevents
+      rapid oscillation of synaptic weights after a modification event.
+    * Long-term consolidation (τ_consolidation ~5min): protein-synthesis-dependent
+      structural stabilisation makes frequently-modified synapses progressively
+      stiffer.
+
+    References:
+        Abraham & Bear 1996 — Metaplasticity: the plasticity of synaptic plasticity
+        Bhatt et al. 2009 — Bhatt, Zhang & Bhatt — Dendritic spine dynamics
+    """
+
+    tau_recovery_ms: float = 5000.0
+    """Time constant (ms) for plasticity_rate recovery toward rate_rest after
+    depression.  Maps to CaMKII activation timescale (~5 seconds)."""
+
+    depression_strength: float = 5.0
+    """How strongly a weight modification depresses future plasticity.
+    A raw |Δw| = 0.01 causes a plasticity_rate drop of 0.05."""
+
+    tau_consolidation_ms: float = 300000.0
+    """Time constant (ms) for consolidation history decay.  Maps to protein
+    synthesis and structural remodelling (~5 minutes)."""
+
+    consolidation_sensitivity: float = 0.1
+    """Scale factor κ governing how fast rate_rest decreases with accumulated
+    modification.  Cumulative |Δw| of κ ≈ 0.1 → rate_rest drops to ~37%."""
+
+    rate_min: float = 0.1
+    """Floor on plasticity_rate.  Even fully consolidated synapses retain this
+    fraction of the base learning rate (10% by default)."""
+
+    rate_init: float = 1.0
+    """Initial plasticity_rate for new synapses (fully plastic)."""
+
+    def __post_init__(self) -> None:
+        if self.tau_recovery_ms <= 0:
+            raise ConfigurationError(
+                f"tau_recovery_ms must be > 0, got {self.tau_recovery_ms}"
+            )
+        if self.tau_consolidation_ms <= 0:
+            raise ConfigurationError(
+                f"tau_consolidation_ms must be > 0, got {self.tau_consolidation_ms}"
+            )
+        if self.depression_strength < 0:
+            raise ConfigurationError(
+                f"depression_strength must be >= 0, got {self.depression_strength}"
+            )
+        if not (0.0 < self.rate_min <= 1.0):
+            raise ConfigurationError(
+                f"rate_min must be in (0, 1], got {self.rate_min}"
+            )
+        if not (0.0 < self.rate_init <= 1.0):
+            raise ConfigurationError(
+                f"rate_init must be in (0, 1], got {self.rate_init}"
+            )
+        if self.consolidation_sensitivity <= 0:
+            raise ConfigurationError(
+                f"consolidation_sensitivity must be > 0, got {self.consolidation_sensitivity}"
+            )
+
+
+class MetaplasticityStrategy(LearningStrategy):
+    """Per-synapse plasticity rate modulation wrapper.
+
+    Wraps any base :class:`LearningStrategy` and multiplicatively scales its
+    weight updates by a per-synapse ``plasticity_rate`` that adapts based on
+    the synapse's own modification history:
+
+    * **Recently modified synapses** become temporarily refractory (reduced
+      plasticity_rate), preventing rapid oscillation.
+    * **Frequently modified synapses** accumulate consolidation history, which
+      lowers their resting plasticity rate — making well-learned associations
+      progressively harder to overwrite (catastrophic forgetting protection).
+
+    The wrapper is transparent: callers see the same interface as the base
+    strategy.  Internal metastate (``plasticity_rate``, ``consolidation``)
+    updates as a side effect of each ``compute_update`` call.
+
+    Biology:
+        Abraham & Bear 1996 — Metaplasticity: the plasticity of synaptic plasticity.
+        CaMKII autophosphorylation (short refractory) and protein-synthesis-dependent
+        structural consolidation (long-term stiffening).
+    """
+
+    def __init__(
+        self,
+        base_strategy: LearningStrategy,
+        config: MetaplasticityConfig,
+    ) -> None:
+        super().__init__(config=base_strategy.config)
+        self.base_strategy = base_strategy
+        self.meta_config = config
+        self._decay_recovery: float = 0.0
+        self._decay_consolidation: float = 0.0
+        self._precompute_decays()
+
+    def _precompute_decays(self) -> None:
+        mc = self.meta_config
+        self._decay_recovery = decay_float(self._dt_ms, mc.tau_recovery_ms)
+        self._decay_consolidation = decay_float(self._dt_ms, mc.tau_consolidation_ms)
+
+    # ------------------------------------------------------------------
+    # Eager initialisation
+    # ------------------------------------------------------------------
+
+    def setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
+        mc = self.meta_config
+        self.register_buffer(
+            "plasticity_rate",
+            torch.full((n_post, n_pre), mc.rate_init, device=device),
+        )
+        self.register_buffer(
+            "consolidation",
+            torch.zeros(n_post, n_pre, device=device),
+        )
+        self.base_strategy.setup(n_pre, n_post, device)
+
+    def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
+        if (
+            not hasattr(self, "plasticity_rate")
+            or self.plasticity_rate.shape != (n_post, n_pre)
+        ):
+            self.setup(n_pre, n_post, device)
+        else:
+            self.base_strategy.ensure_setup(n_pre, n_post, device)
+        self._is_setup = True
+
+    # ------------------------------------------------------------------
+    # Per-step learning with metaplastic modulation
+    # ------------------------------------------------------------------
+
+    def compute_update(
+        self,
+        weights: torch.Tensor,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Scale base strategy weight update by per-synapse plasticity_rate.
+
+        1. Delegate to base strategy to get raw Δw.
+        2. Multiply raw Δw by per-synapse plasticity_rate.
+        3. Update metastate: depress plasticity_rate by |Δw|, accumulate
+           consolidation, recover toward rate_rest.
+        """
+        n_pre = pre_spikes.shape[0]
+        n_post = post_spikes.shape[0]
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        updated = self.base_strategy.compute_update(
+            weights, pre_spikes, post_spikes, **kwargs
+        )
+        raw_dw = updated - weights
+
+        # Scale by per-synapse plasticity rate
+        effective_dw = raw_dw * self.plasticity_rate
+
+        # Update metastate
+        self._update_metastate(raw_dw.abs())
+
+        return weights + effective_dw
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse path: index into plasticity_rate using COO indices."""
+        self.ensure_setup(n_pre, n_post, values.device)
+
+        updated = self.base_strategy.compute_update_sparse(
+            values, row_indices, col_indices, n_post, n_pre,
+            pre_spikes, post_spikes, **kwargs,
+        )
+        raw_dw = updated - values
+
+        rates = self.plasticity_rate[row_indices, col_indices]
+        effective_dw = raw_dw * rates
+
+        # Update metastate at sparse positions only
+        abs_dw = raw_dw.abs()
+        self._update_metastate_sparse(abs_dw, row_indices, col_indices)
+
+        return values + effective_dw
+
+    # ------------------------------------------------------------------
+    # Metastate update
+    # ------------------------------------------------------------------
+
+    def _update_metastate(self, abs_dw: torch.Tensor) -> None:
+        """Update plasticity_rate and consolidation (dense path).
+
+        Three steps per timestep:
+        1. Accumulate |Δw| into consolidation (slow integration).
+        2. Recover plasticity_rate toward rate_rest (exponential relaxation).
+        3. Depress plasticity_rate proportional to |Δw| (refractory).
+        """
+        mc = self.meta_config
+
+        # 1. Consolidation: slow accumulation of modification history
+        self.consolidation.mul_(self._decay_consolidation).add_(abs_dw)
+
+        # 2. Recovery: plasticity_rate → rate_rest (determined by consolidation)
+        rate_rest = mc.rate_min + (1.0 - mc.rate_min) * torch.exp(
+            -self.consolidation / mc.consolidation_sensitivity
+        )
+        self.plasticity_rate.mul_(self._decay_recovery).add_(
+            (1.0 - self._decay_recovery) * rate_rest
+        )
+
+        # 3. Depression: recent modification → temporary refractory
+        self.plasticity_rate.sub_(mc.depression_strength * abs_dw)
+        self.plasticity_rate.clamp_(min=mc.rate_min, max=1.0)
+
+    def _update_metastate_sparse(
+        self,
+        abs_dw: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+    ) -> None:
+        """Update plasticity_rate and consolidation at sparse positions only."""
+        mc = self.meta_config
+
+        # Read current values at sparse positions
+        consol = self.consolidation[row_indices, col_indices]
+        rates = self.plasticity_rate[row_indices, col_indices]
+
+        # 1. Consolidation
+        consol = consol * self._decay_consolidation + abs_dw
+
+        # 2. Recovery toward rate_rest
+        rate_rest = mc.rate_min + (1.0 - mc.rate_min) * torch.exp(
+            -consol / mc.consolidation_sensitivity
+        )
+        rates = rates * self._decay_recovery + (1.0 - self._decay_recovery) * rate_rest
+
+        # 3. Depression
+        rates = (rates - mc.depression_strength * abs_dw).clamp(
+            min=mc.rate_min, max=1.0
+        )
+
+        # Write back
+        self.consolidation[row_indices, col_indices] = consol
+        self.plasticity_rate[row_indices, col_indices] = rates
+
+    # ------------------------------------------------------------------
+    # Temporal parameter propagation
+    # ------------------------------------------------------------------
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        """Recompute decay factors and propagate to base strategy."""
+        super().update_temporal_parameters(dt_ms)
+        self._precompute_decays()
+        self.base_strategy.update_temporal_parameters(dt_ms)
+
+
+# =============================================================================
+# Inhibitory STDP (Vogels et al. 2011)
+# =============================================================================
+
+
+@dataclass
+class InhibitorySTDPConfig(LearningConfig):
+    """Configuration for inhibitory STDP (Vogels et al. 2011).
+
+    Symmetric learning rule for I→E synapses that homeostatically tunes
+    inhibition to balance excitation.  Both pre-before-post and post-before-pre
+    pairings potentiate; a constant depression term (*alpha*) on each
+    presynaptic spike provides the set-point.
+
+    Weight update (per timestep, trace-based):
+        Δw[j,i] = η × (x_pre[i] · post_spike[j]  +  pre_spike[i] · (x_post[j] − α))
+
+    *alpha* controls the target postsynaptic firing rate: when the postsynaptic
+    neuron fires more than the set-point, inhibitory weights grow; when it fires
+    less, they shrink.
+    """
+
+    tau_istdp: float = 20.0
+    """Time constant (ms) for both pre- and post-synaptic eligibility traces.
+    Vogels et al. 2011 use a single symmetric τ = 20 ms."""
+
+    alpha: float = 0.12
+    """Depression offset per presynaptic spike (dimensionless).
+    Sets the target postsynaptic firing-rate set-point.  The equilibrium post
+    rate in Hz ≈ alpha / (2 · tau_istdp / 1000).  Default 0.12 with τ = 20 ms
+    gives a target of ~3 Hz, appropriate for cortical pyramidal neurons."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.tau_istdp <= 0:
+            raise ConfigurationError(f"tau_istdp must be > 0, got {self.tau_istdp}")
+        if self.alpha < 0:
+            raise ConfigurationError(f"alpha must be >= 0, got {self.alpha}")
+
+
+class InhibitorySTDPStrategy(LearningStrategy):
+    """Inhibitory spike-timing-dependent plasticity (Vogels et al. 2011).
+
+    A symmetric Hebbian rule for I→E synapses that automatically tunes the
+    excitation/inhibition balance toward a target postsynaptic firing rate.
+
+    Trace dynamics (per timestep of duration *dt*)::
+
+        x_pre[i]  ← x_pre[i]  · decay  +  pre_spike[i]
+        x_post[j] ← x_post[j] · decay  +  post_spike[j]
+
+    Weight update::
+
+        Δw[j,i] = η × (x_pre[i] · post_spike[j]
+                      + pre_spike[i] · (x_post[j] − α))
+
+    * Post fires while pre-trace is high → LTP (causal pairing strengthens
+      inhibition).
+    * Pre fires while post-trace is high → LTP (anti-causal pairing also
+      strengthens).
+    * Pre fires alone (post-trace ≈ 0) → net LTD of −η·α (baseline
+      depression that prevents runaway potentiation).
+
+    The α offset ensures a stable equilibrium: if the postsynaptic neuron
+    fires above its target rate the inhibitory weights increase; if below,
+    they decrease.
+
+    Call :meth:`setup` once before the first :meth:`compute_update`.
+    """
+
+    def __init__(self, config: InhibitorySTDPConfig):
+        super().__init__(config)
+        self._decay_val: float = decay_float(
+            GlobalConfig.DEFAULT_DT_MS, config.tau_istdp
+        )
+
+    # ------------------------------------------------------------------
+    # Eager initialisation
+    # ------------------------------------------------------------------
+
+    def setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
+        assert isinstance(self.config, InhibitorySTDPConfig)
+        self.register_buffer("pre_trace", torch.zeros(n_pre, device=device))
+        self.register_buffer("post_trace", torch.zeros(n_post, device=device))
+        self._decay_val = decay_float(self._dt_ms, self.config.tau_istdp)
+
+    def ensure_setup(self, n_pre: int, n_post: int, device: torch.device) -> None:
+        if (
+            not hasattr(self, "pre_trace")
+            or self.pre_trace.shape[0] != n_pre
+            or self.post_trace.shape[0] != n_post
+        ):
+            self.setup(n_pre, n_post, device)
+        self._is_setup = True
+
+    # ------------------------------------------------------------------
+    # Dense path
+    # ------------------------------------------------------------------
+
+    def compute_update(
+        self,
+        weights: torch.Tensor,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Apply inhibitory STDP (dense weights [n_post, n_pre]).
+
+        Args:
+            weights: Current weight matrix [n_post, n_pre].
+            pre_spikes: Presynaptic (inhibitory) spikes [n_pre].
+            post_spikes: Postsynaptic (excitatory) spikes [n_post].
+        """
+        assert isinstance(self.config, InhibitorySTDPConfig)
+        config = self.config
+
+        self.ensure_setup(pre_spikes.shape[0], post_spikes.shape[0], pre_spikes.device)
+
+        # Decay traces then increment with current spikes
+        self.pre_trace.mul_(self._decay_val).add_(pre_spikes)
+        self.post_trace.mul_(self._decay_val).add_(post_spikes)
+
+        # Δw[j,i] = η × (x_pre[i] · post[j]  +  pre[i] · (x_post[j] − α))
+        #         = η × outer(post, x_pre)  +  η × outer(x_post − α, pre)
+        dw = config.learning_rate * (
+            torch.outer(post_spikes, self.pre_trace)
+            + torch.outer(self.post_trace - config.alpha, pre_spikes)
+        )
+
+        return weights + dw
+
+    # ------------------------------------------------------------------
+    # Sparse path
+    # ------------------------------------------------------------------
+
+    def compute_update_sparse(
+        self,
+        values: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+        n_post: int,
+        n_pre: int,
+        pre_spikes: torch.Tensor,
+        post_spikes: torch.Tensor,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Sparse-native iSTDP operating on [nnz] value arrays."""
+        assert isinstance(self.config, InhibitorySTDPConfig)
+        config = self.config
+
+        self.ensure_setup(n_pre, n_post, pre_spikes.device)
+
+        # Decay traces then increment with current spikes
+        self.pre_trace.mul_(self._decay_val).add_(pre_spikes)
+        self.post_trace.mul_(self._decay_val).add_(post_spikes)
+
+        # Sparse indexing: compute Δw only at existing connections
+        dw = config.learning_rate * (
+            post_spikes[row_indices] * self.pre_trace[col_indices]
+            + (self.post_trace[row_indices] - config.alpha) * pre_spikes[col_indices]
+        )
+
+        return values + dw
+
+    # ------------------------------------------------------------------
+    # Temporal parameter propagation
+    # ------------------------------------------------------------------
+
+    def update_temporal_parameters(self, dt_ms: float) -> None:
+        super().update_temporal_parameters(dt_ms)
+        assert isinstance(self.config, InhibitorySTDPConfig)
+        self._decay_val = decay_float(dt_ms, self.config.tau_istdp)

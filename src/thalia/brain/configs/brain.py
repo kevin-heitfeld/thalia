@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from thalia import GlobalConfig
 
@@ -37,25 +36,30 @@ class BrainConfig:
     """
 
     # =========================================================================
-    # VALIDATION AND SUMMARY
+    # PARALLELISM
     # =========================================================================
+    execute_regions_in_parallel: bool = False
+    """Execute brain regions in parallel using a thread pool during Brain.forward().
 
-    def summary(self) -> str:
-        """Return formatted summary of brain configuration."""
-        lines = [
-            "=== Brain Configuration ===",
-            f"  Data type: {self.dtype}",
-            f"  Timestep: {self.dt_ms} ms",
-            "",
-        ]
-        return "\n".join(lines)
+    Currently OFF by default: most Phase 1 work is GIL-held Python (tiny tensor
+    dispatch, dict lookups, attribute access).  Threading overhead exceeds the
+    benefit from overlapping the small fraction of GIL-free C++ kernel calls.
+    Re-enable once cortical inhibitory networks are fused into C++ (~0.8 s of
+    torch.mv moved out of Python dispatch → meaningful GIL-free overlap).
+    """
+
+    parallel_regions_max_workers: int = 4
+    """Maximum number of worker threads for parallel region execution."""
+
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
 
     def __post_init__(self):
         """Validate configuration after initialization."""
-        self._validate()
-
-    def _validate(self) -> None:
-        """Validate configuration values."""
         # Timing validation
         if self.dt_ms <= 0:
             raise ValueError(f"dt_ms must be positive, got {self.dt_ms}")
+        # Parallelism validation
+        if self.parallel_regions_max_workers < 1:
+            raise ValueError(f"parallel_regions_max_workers must be at least 1, got {self.parallel_regions_max_workers}")

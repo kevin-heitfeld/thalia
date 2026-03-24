@@ -38,33 +38,6 @@ Inhibitory Cell Types (based on cortical interneuron literature):
    - Modulated by acetylcholine (M1 muscarinic — METABOTROPIC, slow: tau ~200ms)
    - Slow dynamics: tau_mem ~15ms, moderate adaptation
    - Gate whether top-down feedback reaches L2/3 dendrites
-
-Connectivity Patterns:
-======================================================================================
-
-Excitatory → Inhibitory:
-- Pyramidal → PV: Strong, reliable (P=0.5)
-- Pyramidal → SST: Moderate (P=0.3)
-- Pyramidal → VIP: Strong, specific (P=0.4)
-- Pyramidal → NGC: Weak, local collaterals (P=0.2)
-- Long-range → NGC: Moderate, via L1 feedback axons (P=0.3)
-
-Inhibitory → Excitatory:
-- PV → Pyramidal: Strong, perisomatic (P=0.6)
-- SST → Pyramidal: Moderate, dendritic (P=0.4)
-- VIP → Pyramidal: Weak/absent (P=0.05)
-- NGC → Pyramidal: Small, diffuse GABA_A on apical tuft (P=0.5)
-
-Inhibitory → Inhibitory:
-- PV → PV: Weak lateral (P=0.3)
-- PV → SST: Moderate (P=0.3)
-- SST → PV: Weak (P=0.2)
-- VIP → PV: Strong (P=0.6)
-- VIP → SST: Strong (P=0.7)
-
-Gap Junctions:
-- PV ↔ PV: Dense (P=0.5)
-- Others: Absent
 """
 
 from __future__ import annotations
@@ -76,18 +49,14 @@ import torch.nn as nn
 
 from thalia.brain.configs.cortical_column import CorticalPopulationConfig
 from thalia.brain.neurons import (
-    ConductanceLIFConfig,
     ConductanceLIF,
     split_excitatory_conductance,
-    heterogeneous_adapt_increment,
-    heterogeneous_g_L,
-    heterogeneous_tau_mem,
-    heterogeneous_v_threshold,
+    build_conductance_lif_config,
 )
 from thalia.brain.regions.population_names import CortexPopulation
+from thalia.brain.gap_junctions import GapJunctionCoupling
 from thalia.brain.synapses import WeightInitializer, NMReceptorType, make_neuromodulator_receptor
 from thalia.typing import ConductanceTensor, PopulationPolarity
-from thalia.utils import CircularDelayBuffer
 
 
 class CorticalInhibitoryNetwork(nn.Module):
@@ -107,10 +76,10 @@ class CorticalInhibitoryNetwork(nn.Module):
     # =========================================================================
 
     # Default electrophysiology parameters per cell type.
-    _PV_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=5.0, v_threshold=0.75, v_reset=0.0, adapt_increment=0.10, tau_adapt=100.0)
-    _SST_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt=90.0)
-    _VIP_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.95, v_reset=0.0, adapt_increment=0.12, tau_adapt=70.0)
-    _NGC_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt=100.0)
+    _PV_DEFAULTS  = CorticalPopulationConfig(tau_mem_ms= 5.0, v_threshold=0.60, v_reset=0.0, adapt_increment=0.0,  tau_adapt_ms=100.0, noise_std=0.08)  # Non-adapting: PV/FSI use Kv3 channels for sustained high-frequency firing; low rheobase despite high g_L=0.10
+    _SST_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.10, tau_adapt_ms= 90.0, noise_std=0.08)
+    _VIP_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=10.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.06, tau_adapt_ms= 70.0, noise_std=0.08)  # Moderate threshold (CR+/VIP+); less adaptation than SST
+    _NGC_DEFAULTS = CorticalPopulationConfig(tau_mem_ms=15.0, v_threshold=0.80, v_reset=0.0, adapt_increment=0.30, tau_adapt_ms=100.0, noise_std=0.08)
 
     def __init__(
         self,
@@ -152,7 +121,7 @@ class CorticalInhibitoryNetwork(nn.Module):
 
         # Divide into subtypes (based on cortical distributions)
         self.pv_size  = max(int(total_inhib * 0.40), 4)  # 40% - basket cells
-        self.sst_size = max(int(total_inhib * 0.30), 3)  # 30% - Martinotti
+        self.sst_size = max(int(total_inhib * 0.30), 8)  # 30% - Martinotti; min 8 avoids Binomial(N,0.3) epileptiform sensitivity in tiny populations (PFC L4 n_sst=6, L6A n_sst=4)
         self.vip_size = max(int(total_inhib * 0.20), 2)  # 20% - disinhibitory
         self.ngc_size = max(int(total_inhib * 0.10), 2)  # 10% - L1 neurogliaform
         self.other_size = total_inhib - (self.pv_size + self.sst_size + self.vip_size + self.ngc_size)
@@ -162,18 +131,10 @@ class CorticalInhibitoryNetwork(nn.Module):
             population_name=pv_pop_name,
             n_neurons=self.pv_size,
             polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                v_reset=pv_overrides.v_reset,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=3.0,
-                tau_I=3.0,
-                tau_ref=2.5,
-                g_L=heterogeneous_g_L(0.10, self.pv_size, device, cv=0.08),
-                tau_mem_ms=heterogeneous_tau_mem(pv_overrides.tau_mem_ms, self.pv_size, device, cv=0.10),
-                v_threshold=heterogeneous_v_threshold(pv_overrides.v_threshold, self.pv_size, device, cv=0.06),
-                adapt_increment=heterogeneous_adapt_increment(pv_overrides.adapt_increment, self.pv_size, device),
+            config=build_conductance_lif_config(
+                pv_overrides, self.pv_size, device,
+                tau_ref=2.5, g_L=0.10, tau_E=3.0, tau_I=3.0,
+                tau_mem_cv=0.10, v_threshold_cv=0.06, g_L_cv=0.08,
             ),
         )
 
@@ -182,19 +143,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             population_name=sst_pop_name,
             n_neurons=self.sst_size,
             polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                g_L=heterogeneous_g_L(0.05, self.sst_size, device),
-                tau_E=5.0,
-                tau_I=10.0,
-                v_reset=sst_overrides.v_reset,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_mem_ms=heterogeneous_tau_mem(sst_overrides.tau_mem_ms, self.sst_size, device),
-                v_threshold=heterogeneous_v_threshold(sst_overrides.v_threshold, self.sst_size, device),
-                adapt_increment=heterogeneous_adapt_increment(sst_overrides.adapt_increment, self.sst_size, device),
-                tau_adapt=sst_overrides.tau_adapt,
-            ),
+            config=build_conductance_lif_config(sst_overrides, self.sst_size, device),
         )
 
         # VIP+ Interneurons (disinhibitory)
@@ -202,19 +151,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             population_name=vip_pop_name,
             n_neurons=self.vip_size,
             polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                g_L=heterogeneous_g_L(0.05, self.vip_size, device),
-                tau_E=5.0,
-                tau_I=10.0,
-                v_reset=vip_overrides.v_reset,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_mem_ms=heterogeneous_tau_mem(vip_overrides.tau_mem_ms, self.vip_size, device),
-                v_threshold=heterogeneous_v_threshold(vip_overrides.v_threshold, self.vip_size, device),
-                adapt_increment=heterogeneous_adapt_increment(vip_overrides.adapt_increment, self.vip_size, device),
-                tau_adapt=vip_overrides.tau_adapt,
-            ),
+            config=build_conductance_lif_config(vip_overrides, self.vip_size, device),
         )
 
         # L1 Neurogliaform (NGC) cells
@@ -222,33 +159,8 @@ class CorticalInhibitoryNetwork(nn.Module):
             population_name=ngc_pop_name,
             n_neurons=self.ngc_size,
             polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                g_L=heterogeneous_g_L(0.05, self.ngc_size, device),
-                tau_E=5.0,
-                tau_I=10.0,
-                v_reset=ngc_overrides.v_reset,
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_mem_ms=heterogeneous_tau_mem(ngc_overrides.tau_mem_ms, self.ngc_size, device),
-                v_threshold=heterogeneous_v_threshold(ngc_overrides.v_threshold, self.ngc_size, device),
-                adapt_increment=heterogeneous_adapt_increment(ngc_overrides.adapt_increment, self.ngc_size, device),
-                tau_adapt=ngc_overrides.tau_adapt,
-            ),
+            config=build_conductance_lif_config(ngc_overrides, self.ngc_size, device),
         )
-
-        # =====================================================================
-        # SYNAPTIC WEIGHT MATRICES (E→I, I→E, I→I)
-        # =====================================================================
-        # All E→I, I→E, and I→I weight matrices for PV/SST/VIP/NGC populations
-        # have been moved to the parent CorticalColumn via _add_internal_connection()
-        # so they participate in the standard STP, diagnostic, and learning pipeline.
-        #
-        # This class is a NEURON CONTAINER: it holds neurons, gap junctions,
-        # long-range input transforms (w_lr_vip, w_lr_ngc), ACh receptors, and
-        # the PV membrane-voltage buffer needed for gap junction coupling.
-        # I→I spike state buffers are owned by CorticalColumn (matching the
-        # hippocampal pattern) to eliminate cross-module private access.
 
         # =====================================================================
         # VIP LONG-RANGE INPUT MATRIX (external input transform, not registered)
@@ -256,12 +168,18 @@ class CorticalInhibitoryNetwork(nn.Module):
         # Long-range top-down projections → VIP disinhibitory gate.
         # Not registered via _add_internal_connection because the source is an
         # external population (PFC/association cortex), not a local population.
+        # Mean reduced 0.001→0.0002→0.0: eliminate the w_lr_vip pathway entirely.
+        # This pathway routes LOCAL pyramidal cell activity to VIP, creating the
+        # shared excitatory drive that produces positive VIP-SST correlation.
+        # VIP should be driven by: (1) dedicated inter-region top-down connections
+        # (vip_external_excitation from default.py), (2) ACh nicotinic drive,
+        # (3) noise. NOT by local pyramidal cells (which also drive SST).
         self.w_lr_vip = WeightInitializer.sparse_gaussian(
             n_input=self.pyr_size,
             n_output=self.vip_size,
             connectivity=0.4,
-            mean=0.001,
-            std=0.0005,
+            mean=0.0,
+            std=0.00001,  # Effectively zero; preserves tensor shape for forward() API
             device=device,
         )
 
@@ -298,7 +216,7 @@ class CorticalInhibitoryNetwork(nn.Module):
         # =====================================================================
         # GAP JUNCTIONS (PV cells only — electrical coupling, not synaptic)
         # =====================================================================
-        self.w_pv_gap = WeightInitializer.sparse_gaussian_no_autapses(
+        pv_gap_matrix = WeightInitializer.sparse_gaussian_no_autapses(
             n_input=self.pv_size,
             n_output=self.pv_size,
             connectivity=0.5,
@@ -306,14 +224,7 @@ class CorticalInhibitoryNetwork(nn.Module):
             std=0.001,
             device=device,
         )
-
-        # =====================================================================
-        # MEMBRANE STATE BUFFER (PV gap junction coupling)
-        # =====================================================================
-        # PV membrane voltage from the previous timestep is needed by the gap
-        # junction computation inside forward().  I→I spike state buffers live
-        # in CorticalColumn to avoid cross-module private access.
-        self._pv_membrane_buffer = CircularDelayBuffer(max_delay=1, size=self.pv_size, dtype=torch.float32, device=device)
+        self.pv_gap_junctions = GapJunctionCoupling.from_coupling_matrix(pv_gap_matrix)
 
     # =========================================================================
     # FORWARD PASS
@@ -322,17 +233,19 @@ class CorticalInhibitoryNetwork(nn.Module):
     @torch.no_grad()
     def forward(
         self,
+        *,
         pv_g_exc: torch.Tensor,
-        pv_g_inh: torch.Tensor,
+        pv_g_gaba_a: torch.Tensor,
         sst_g_exc: torch.Tensor,
-        sst_g_inh: torch.Tensor,
+        sst_g_gaba_a: torch.Tensor,
+        sst_g_gaba_b: torch.Tensor,
         vip_g_exc_from_pyr: torch.Tensor,
-        vip_g_inh: torch.Tensor,
+        vip_g_gaba_a: torch.Tensor,
         ngc_g_exc_from_pyr: torch.Tensor,
-        ngc_g_inh: torch.Tensor,
-        feedforward_excitation: Optional[torch.Tensor] = None,
-        long_range_excitation: Optional[torch.Tensor] = None,
-        ach_spikes: Optional[torch.Tensor] = None,
+        feedforward_excitation: Optional[torch.Tensor],
+        long_range_excitation: Optional[torch.Tensor],
+        ach_spikes: Optional[torch.Tensor],
+        vip_external_excitation: Optional[torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         """Run inhibitory interneuron populations given pre-computed synaptic conductances.
 
@@ -347,19 +260,22 @@ class CorticalInhibitoryNetwork(nn.Module):
 
         Args:
             pv_g_exc: AMPA conductance to PV from Pyr (STP-matmul in parent) [pv_size].
-            pv_g_inh: GABA_A conductance to PV from I→I (parent: PV→PV + SST→PV + VIP→PV).
+            pv_g_gaba_a: GABA_A conductance to PV from I→I (parent: PV→PV + SST→PV + VIP→PV).
             sst_g_exc: AMPA conductance to SST from Pyr [sst_size].
-            sst_g_inh: GABA_A to SST (parent: PV→SST + VIP→SST) [sst_size].
+            sst_g_gaba_a: GABA_A to SST (parent: PV→SST + VIP→SST) [sst_size].
+            sst_g_gaba_b: GABA_B to SST from VIP→SST slow pathway [sst_size].
             vip_g_exc_from_pyr: AMPA from Pyr to VIP (parent) [vip_size]. Long-range and
                 ACh drives are ADDED HERE (they stay in this class, not registered).
-            vip_g_inh: GABA_A to VIP (currently zero — VIP is not targeted) [vip_size].
+            vip_g_gaba_a: GABA_A to VIP from SST→VIP reciprocal inhibition [vip_size].
             ngc_g_exc_from_pyr: AMPA from Pyr to NGC (parent) [ngc_size].
-            ngc_g_inh: GABA_A to NGC (currently zero — NGC targets, not targeted) [ngc_size].
             feedforward_excitation: Optional direct AMPA drive to PV cells [pv_size].
                 Used by L4 where thalamic afferents bypass pyramidal cells.
             long_range_excitation: Optional top-down drive in pyr-space [pyr_size].
                 Routed to VIP via w_lr_vip and to NGC via w_lr_ngc.
             ach_spikes: Optional NB ACh spikes for nicotinic VIP + muscarinic NGC.
+            vip_external_excitation: Optional direct AMPA to VIP [vip_size] from
+                inter-region top-down connections targeting VIP populations.
+                Independent of local pyramidal drive.
 
         Returns:
             Dict with pv_spikes, sst_spikes, vip_spikes, ngc_spikes, pv_membrane,
@@ -369,12 +285,20 @@ class CorticalInhibitoryNetwork(nn.Module):
         """
         device = pv_g_exc.device
 
+        # Cache submodule lookups once — avoids nn.Module.__getattr__ per access
+        _pv_neurons  = self.pv_neurons
+        _sst_neurons = self.sst_neurons
+        _vip_neurons = self.vip_neurons
+        _ngc_neurons = self.ngc_neurons
+        _ach_nic     = self.ach_nicotinic_vip
+        _ach_musc    = self.ach_muscarinic_ngc
+
         # ------------------------------------------------------------------
         # L4 thalamic feedforward direct drive to PV
         # ------------------------------------------------------------------
         if feedforward_excitation is not None:
             assert feedforward_excitation.size(0) == self.pv_size
-            pv_g_exc = pv_g_exc + feedforward_excitation
+            pv_g_exc.add_(feedforward_excitation)
 
         # ------------------------------------------------------------------
         # Long-range top-down → VIP and NGC
@@ -387,19 +311,33 @@ class CorticalInhibitoryNetwork(nn.Module):
             ngc_lr_drive = torch.zeros(self.ngc_size, device=device)
 
         # ACh nicotinic on VIP (ionotropic, fast)
-        ach_nicotinic_drive = self.ach_nicotinic_vip.update(ach_spikes)
-        vip_g_exc = vip_g_exc_from_pyr + pv_g_exc_vip + ach_nicotinic_drive * 0.25
+        # Biology: VIP interneurons express α4β2 nAChRs that gate their
+        # responsiveness to local excitatory input (Porter et al. 1999).
+        # Without ACh, VIP cells are nearly silent regardless of pyramidal
+        # activity; ACh opens the gate, enabling the disinhibitory motif.
+        # Implementation: Pyr→VIP conductance is MULTIPLICATIVELY gated by
+        # ACh concentration.  A small baseline floor (0.15) prevents VIP
+        # from going fully silent, maintaining minimal homeostatic tone.
+        # Top-down and external VIP inputs bypass the gate (attention-
+        # independent; they represent direct inter-region commands).
+        ach_nicotinic_drive = _ach_nic.update(ach_spikes)
+        # ach_nicotinic_drive is in [0, 1]; map to gate in [0.15, 1.0]
+        ach_gate = 0.15 + ach_nicotinic_drive * 0.85  # [vip_size]
+        vip_pyr_gated = vip_g_exc_from_pyr * ach_gate
+        vip_g_exc = vip_pyr_gated + pv_g_exc_vip
+
+        # Direct top-down excitation to VIP from inter-region connections
+        if vip_external_excitation is not None:
+            vip_g_exc = vip_g_exc + vip_external_excitation
 
         # ACh muscarinic on NGC (metabotropic, slow)
-        ach_muscarinic_drive = self.ach_muscarinic_ngc.update(ach_spikes)
+        ach_muscarinic_drive = _ach_musc.update(ach_spikes)
         ngc_g_exc = ngc_g_exc_from_pyr + ngc_lr_drive + ach_muscarinic_drive * 0.20
 
         # ------------------------------------------------------------------
         # Gap junction coupling (PV cells — bidirectional electrical synapse)
         # ------------------------------------------------------------------
-        prev_pv_mem = self._pv_membrane_buffer.read(1)
-        pv_gap_coupling = torch.matmul(self.w_pv_gap, prev_pv_mem) - prev_pv_mem * self.w_pv_gap.sum(dim=1)
-        pv_g_exc = pv_g_exc + pv_gap_coupling * 0.3
+        g_gap_total, pv_E_gap = self.pv_gap_junctions.forward(_pv_neurons.V_soma)
 
         # ------------------------------------------------------------------
         # AMPA/NMDA split (AMPA-only for cortical interneurons; nmda_ratio=0.0)
@@ -414,35 +352,32 @@ class CorticalInhibitoryNetwork(nn.Module):
         # ------------------------------------------------------------------
         # Run interneurons
         # ------------------------------------------------------------------
-        pv_spikes, pv_membrane = self.pv_neurons.forward(
+        pv_spikes, pv_membrane = _pv_neurons.forward(
             g_ampa_input=ConductanceTensor(pv_g_ampa),
             g_nmda_input=ConductanceTensor(pv_g_nmda),
-            g_gaba_a_input=ConductanceTensor(pv_g_inh),
+            g_gaba_a_input=ConductanceTensor(pv_g_gaba_a),
             g_gaba_b_input=None,
+            g_gap_input=ConductanceTensor(g_gap_total),
+            E_gap_reversal=pv_E_gap,
         )
-        sst_spikes, sst_membrane = self.sst_neurons.forward(
+        sst_spikes, sst_membrane = _sst_neurons.forward(
             g_ampa_input=ConductanceTensor(sst_g_ampa),
             g_nmda_input=ConductanceTensor(sst_g_nmda),
-            g_gaba_a_input=ConductanceTensor(sst_g_inh),
-            g_gaba_b_input=None,
+            g_gaba_a_input=ConductanceTensor(sst_g_gaba_a),
+            g_gaba_b_input=ConductanceTensor(sst_g_gaba_b),
         )
-        vip_spikes, vip_membrane = self.vip_neurons.forward(
+        vip_spikes, vip_membrane = _vip_neurons.forward(
             g_ampa_input=ConductanceTensor(vip_g_ampa),
             g_nmda_input=ConductanceTensor(vip_g_nmda),
-            g_gaba_a_input=ConductanceTensor(vip_g_inh),
+            g_gaba_a_input=ConductanceTensor(vip_g_gaba_a),
             g_gaba_b_input=None,
         )
-        ngc_spikes, ngc_membrane = self.ngc_neurons.forward(
+        ngc_spikes, ngc_membrane = _ngc_neurons.forward(
             g_ampa_input=ConductanceTensor(ngc_g_ampa),
             g_nmda_input=ConductanceTensor(ngc_g_nmda),
-            g_gaba_a_input=ConductanceTensor(ngc_g_inh),
+            g_gaba_a_input=None,
             g_gaba_b_input=None,
         )
-
-        # ------------------------------------------------------------------
-        # Advance PV membrane buffer (gap junction state)
-        # ------------------------------------------------------------------
-        self._pv_membrane_buffer.write_and_advance(pv_membrane)
 
         return {
             "pv_spikes": pv_spikes,

@@ -26,13 +26,6 @@ Biophysical Mechanisms:
   cumulative recent spiking; τ_autoreceptor ~ 200 ms (GPCR coupling latency)
 - **SK channels**: Moderate spike-frequency adaptation
 - **No gap junctions**: DRN neurons are not electrically coupled (unlike LC)
-
-References:
-===========
-- Jacobs & Azmitia (1992): Structure and function of the raphe nuclei
-- Haj-Dahmane & Shen (2005): 5-HT1A autoreceptor modulation of DRN neurons
-- Liu et al. (2005): Dorsal raphe nucleus electrophysiology
-- Miyazaki et al. (2011): Role of serotonin in patience and reward timing
 """
 
 from __future__ import annotations
@@ -42,8 +35,7 @@ from typing import Optional, Union
 
 import torch
 
-from thalia import GlobalConfig
-from thalia.typing import ConductanceTensor, VoltageTensor
+from thalia.typing import ConductanceTensor, PopulationName, RegionName, VoltageTensor
 
 from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -57,26 +49,42 @@ class SerotoninNeuronConfig(ConductanceLIFConfig):
     - 5-HT1A autoreceptor GIRK channel (slow self-inhibition)
     - Moderate SK adaptation
     - No gap junctions (unlike LC)
-
-    Biological parameters based on:
-    - Liu et al. (2005): DRN dorsal raphe neuron properties
-    - Haj-Dahmane & Shen (2005): 5-HT1A autoreceptor kinetics
-    - Jacobs & Azmitia (1992): Raphe physiology
     """
     # =========================================================================
     # Membrane properties
     # =========================================================================
     tau_mem_ms: Union[float, torch.Tensor] = 15.0  # Intermediate membrane time constant
-    v_reset: float = -0.10   # Moderate hyperpolarization reset
-    v_threshold: Union[float, torch.Tensor] = 1.0
-    tau_ref: float = 2.0    # Moderate refractory period
-    g_L: float = 0.067  # Leak conductance
+    v_reset: Union[float, torch.Tensor] = -0.10    # Moderate hyperpolarization reset
+    v_threshold: Union[float, torch.Tensor] = 1.0  # Standard threshold
+    tau_ref: float = 2.0                           # Moderate refractory period
+    g_L: Union[float, torch.Tensor] = 0.067        # Leak conductance
+
+    # =========================================================================
+    # Reversal potentials (normalized units, E_L = 0 by convention)
+    # =========================================================================
+    E_E: float = 3.0   # Excitatory (≈ 0mV, well above threshold)
+    E_I: float = -0.5  # Inhibitory (≈ -70mV, below rest)
+
+    # =========================================================================
+    # Synaptic time constants
+    # =========================================================================
+    tau_E: float = 5.0         # Fast excitation
+    tau_I: float = 10.0
+
+    # NMDA conductance (slow excitation for temporal integration)
+    tau_nmda: float = 100.0    # NMDA decay time constant (80-150ms biologically)
+    E_nmda: float = 3.0        # NMDA reversal potential (same as AMPA)
+
+    # GABA_B slow inhibitory channel (metabotropic K⁺)
+    # Biology: tau_decay ~250-800 ms, deeper hyperpolarisation (E_GABA_B ~ -90 mV)
+    tau_GABA_B: float = 400.0  # GABA_B conductance decay (ms); 250-800 ms biologically
+    E_GABA_B: float = -0.8     # GABA_B reversal (normalised; more negative than E_I = -0.5)
 
     # =========================================================================
     # Noise
     # =========================================================================
-    noise_std: float = 0.075
-    """Intrinsic noise for realistic stochastic tonic firing."""
+    noise_std: Union[float, torch.Tensor] = 0.075
+    noise_tau_ms: float = 3.0
 
     # =========================================================================
     # I_h (HCN) pacemaker current parameters
@@ -103,7 +111,7 @@ class SerotoninNeuronConfig(ConductanceLIFConfig):
     """
 
     # Disable base-class adaptation (we use SK instead)
-    adapt_increment: float = 0.0
+    adapt_increment: Union[float, torch.Tensor] = 0.0
 
     # =========================================================================
     # 5-HT1A somatodendritic autoreceptor parameters
@@ -140,14 +148,16 @@ class SerotoninNeuron(ConductanceLIF):
     5. No gap junction coupling (unlike LC)
     """
 
-    def __init__(self, n_neurons: int, config: SerotoninNeuronConfig, device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE):
-        """Initialise serotonin neuron population.
-
-        Args:
-            n_neurons: Number of 5-HT neurons (~100,000-200,000 in human DRN)
-            config: Configuration with pacemaking and autoreceptor parameters
-        """
-        super().__init__(n_neurons, config, device)
+    def __init__(
+        self,
+        n_neurons: int,
+        config: SerotoninNeuronConfig,
+        region_name: RegionName,
+        population_name: PopulationName,
+        device: Union[str, torch.device],
+    ):
+        """Initialise serotonin neuron population."""
+        super().__init__(n_neurons, config, region_name, population_name, device)
 
         # Autoreceptor signal (slow 5-HT1A / GIRK)
         # Cumulative 5-HT1A activation; decays with autoreceptor_tau_ms
@@ -196,9 +206,10 @@ class SerotoninNeuron(ConductanceLIF):
             g_gaba_a_input=g_gaba_a_input,
             g_gaba_b_input=g_gaba_b_input,
         )
+        spikes_float = spikes.float()
 
         # Update SK calcium / adaptation
-        self.ca_concentration += spikes.float() * self.config.ca_influx_per_spike
+        self.ca_concentration += spikes_float * self.config.ca_influx_per_spike
         self.ca_concentration *= self.config.ca_decay
         self.sk_activation = self.ca_concentration / (self.ca_concentration + 0.3)
 
@@ -206,12 +217,9 @@ class SerotoninNeuron(ConductanceLIF):
         # Each spike increments the slow autoreceptor accumulator
         dt_ms: float = getattr(self, '_dt_ms', 1.0)
         alpha_auto = dt_ms / self.config.autoreceptor_tau_ms
-        self._autoreceptor_signal += spikes.float() * self.config.autoreceptor_gain
+        self._autoreceptor_signal += spikes_float * self.config.autoreceptor_gain
         self._autoreceptor_signal -= self._autoreceptor_signal * alpha_auto
         self._autoreceptor_signal.clamp_(min=0.0, max=1.0)
-
-        # Store spikes for diagnostic access
-        self.spikes = spikes
 
         return spikes, self.V_soma
 

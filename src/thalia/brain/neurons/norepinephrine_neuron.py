@@ -31,8 +31,7 @@ from typing import Optional, Union
 
 import torch
 
-from thalia import GlobalConfig
-from thalia.typing import ConductanceTensor, GapJunctionReversal, VoltageTensor
+from thalia.typing import ConductanceTensor, GapJunctionReversal, PopulationName, RegionName, VoltageTensor
 
 from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -51,15 +50,37 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # Membrane properties
     # =========================================================================
     tau_mem_ms: Union[float, torch.Tensor] = 18.0  # Slightly slower than DA neurons
-    v_reset: float = -0.12  # Slightly deeper hyperpolarization
+    v_reset: Union[float, torch.Tensor] = -0.12  # Slightly deeper hyperpolarization
     v_threshold: Union[float, torch.Tensor] = 1.0
     tau_ref: float = 2.5  # Slightly longer refractory period
-    g_L: float = 0.056  # Leak conductance
+    g_L: Union[float, torch.Tensor] = 0.056  # Leak conductance
+
+    # =========================================================================
+    # Reversal potentials (normalized units, E_L = 0 by convention)
+    # =========================================================================
+    E_E: float = 3.0   # Excitatory (≈ 0mV, well above threshold)
+    E_I: float = -0.5  # Inhibitory (≈ -70mV, below rest)
+
+    # =========================================================================
+    # Synaptic time constants
+    # =========================================================================
+    tau_E: float = 5.0         # Fast excitation
+    tau_I: float = 10.0
+
+    # NMDA conductance (slow excitation for temporal integration)
+    tau_nmda: float = 100.0    # NMDA decay time constant (80-150ms biologically)
+    E_nmda: float = 3.0        # NMDA reversal potential (same as AMPA)
+
+    # GABA_B slow inhibitory channel (metabotropic K⁺)
+    # Biology: tau_decay ~250-800 ms, deeper hyperpolarisation (E_GABA_B ~ -90 mV)
+    tau_GABA_B: float = 400.0  # GABA_B conductance decay (ms); 250-800 ms biologically
+    E_GABA_B: float = -0.8     # GABA_B reversal (normalised; more negative than E_I = -0.5)
 
     # =========================================================================
     # Noise
     # =========================================================================
-    noise_std: float = 0.08
+    noise_std: Union[float, torch.Tensor] = 0.08
+    noise_tau_ms: float = 3.0
 
     # =========================================================================
     # I_h (HCN) pacemaker current parameters
@@ -97,7 +118,7 @@ class NorepinephrineNeuronConfig(ConductanceLIFConfig):
     # Low uncertainty → hyperpolarization → pause
 
     # Disable adaptation from base class (we use SK instead)
-    adapt_increment: float = 0.0
+    adapt_increment: Union[float, torch.Tensor] = 0.0
 
 
 class NorepinephrineNeuron(ConductanceLIF):
@@ -111,15 +132,16 @@ class NorepinephrineNeuron(ConductanceLIF):
     5. Return to baseline after burst
     """
 
-    def __init__(self, n_neurons: int, config: NorepinephrineNeuronConfig, device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE):
-        """Initialize norepinephrine neuron population.
-
-        Args:
-            n_neurons: Number of NE neurons (~1,600 in human LC)
-            config: Configuration with pacemaking and gap junction parameters
-            device: PyTorch device for tensor allocation
-        """
-        super().__init__(n_neurons, config, device)
+    def __init__(
+        self,
+        n_neurons: int,
+        config: NorepinephrineNeuronConfig,
+        region_name: RegionName,
+        population_name: PopulationName,
+        device: Union[str, torch.device],
+    ):
+        """Initialize norepinephrine neuron population."""
+        super().__init__(n_neurons, config, region_name, population_name, device)
 
         # SK channel state (calcium-activated K+ for adaptation)
         self.ca_concentration = torch.zeros(n_neurons, device=device)
@@ -262,9 +284,6 @@ class NorepinephrineNeuron(ConductanceLIF):
         # SK activation (sigmoidal function of calcium)
         # High calcium → high SK → hyperpolarization → limits burst duration
         self.sk_activation = self.ca_concentration / (self.ca_concentration + 0.4)
-
-        # Store spikes for diagnostic access
-        self.spikes = spikes
 
         return spikes, self.V_soma
 

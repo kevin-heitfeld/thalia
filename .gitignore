@@ -9,7 +9,7 @@ __pycache__/
 .vscode/
 
 # Build artifacts
-src/**/_philox_build/
+src/**/_build/
 
 # Unit test / coverage reports
 htmlcov/

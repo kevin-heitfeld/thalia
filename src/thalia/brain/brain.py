@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from typing import Any, Dict, Iterator, Optional, Type, TypeVar, Union, cast
 
 import torch
@@ -12,6 +13,7 @@ from thalia.typing import (
     BrainOutput,
     NeuromodulatorChannel,
     NeuromodulatorInput,
+    PopulationKey,
     RegionName,
     RegionOutput,
     SynapseId,
@@ -20,13 +22,52 @@ from thalia.typing import (
 from thalia.utils import SynapseIdModuleDict, generate_reward_spikes, validate_spike_tensor
 
 from .axonal_tract import AxonalTract
+from .biophysics_registry import BiophysicsRegistry
 from .configs import BrainConfig, NeuralRegionConfig
 from .neuromodulator_hub import NeuromodulatorHub
+from .neuron_index_registry import NeuronIndexRegistry
+from .neurons.conductance_lif_batch import ConductanceLIFBatch
+from .neurons.conductance_lif_neuron import ConductanceLIF
+from .sparse_synaptic_matrix import GlobalSparseMatrix
+from .synapses.stp_batch import STPBatch
 
 from .regions import NeuralRegion
 
 
 RegionT = TypeVar('RegionT', bound=NeuralRegion[NeuralRegionConfig])
+
+
+# =============================================================================
+# REGION THREAD POOL FOR PARALLEL EXECUTION
+# =============================================================================
+
+
+class _RegionThreadPool:
+    """Lazy-initialised reusable thread pool for parallel region execution."""
+
+    def __init__(self) -> None:
+        self._pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        self._max_workers: int = 0
+
+    def get(self, max_workers: int) -> concurrent.futures.ThreadPoolExecutor:
+        if self._pool is None or self._max_workers != max_workers:
+            if self._pool is not None:
+                self._pool.shutdown(wait=False)
+            self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+            self._max_workers = max_workers
+        return self._pool
+
+
+_region_thread_pool = _RegionThreadPool()
+
+
+def _execute_region(
+    region: NeuralRegion[NeuralRegionConfig],
+    synaptic_inputs_for_region: SynapticInput,
+    neuromodulator_signals: NeuromodulatorInput,
+) -> RegionOutput:
+    """Execute a single region's forward pass (thread-safe)."""
+    return region.forward(synaptic_inputs_for_region, neuromodulator_signals)
 
 
 # =============================================================================
@@ -142,9 +183,7 @@ class Brain(nn.Module):
         self._pending_novelty_level: float = 0.0
 
         # Reward spikes queued by deliver_reward() for injection into the *next*
-        # forward() call.  Keeping reward delivery inside the normal timestep
-        # prevents the double-stepping bug where deliver_reward() used to call
-        # forward() itself, consuming a full timestep for the reward signal.
+        # forward() call.
         self._pending_reward_inputs: Optional[SynapticInput] = None
 
         # =================================================================
@@ -154,9 +193,114 @@ class Brain(nn.Module):
         # Regions compute decay factors, phase increments, etc.
         self.set_timestep(self.dt_ms)
 
+        # =================================================================
+        # BATCHED STP
+        # =================================================================
+        # Collect all STP modules across all regions into one batched kernel.
+        # Must be created after set_timestep() so decay factors are computed.
+        self._stp_batch = self._create_stp_batch()
+
+        # =================================================================
+        # BATCHED NEURON STATE
+        # =================================================================
+        # Collect all eligible ConductanceLIF populations into one global batch.
+        # After this call, eligible neurons' forward() writes inputs to batch
+        # buffers instead of computing individually.
+        self._neuron_batch = self._create_neuron_batch()
+
+        # =================================================================
+        # GLOBAL NEURON INDEX
+        # =================================================================
+        # Brain-wide registry mapping every (region, population) to a
+        # contiguous global index range.  Unifies the index scheme used for
+        # Philox RNG seeding with the sparse synaptic matrix row/column
+        # spaces introduced in Step 5.
+        self._neuron_index = NeuronIndexRegistry(
+            self.regions, self._neuron_batch, device=self.device,
+        )
+
+        # =================================================================
+        # GLOBAL SPARSE SYNAPTIC MATRIX (Step 5)
+        # =================================================================
+        # Four CSR sparse matrices (one per receptor type) replacing all
+        # inter-region dense matmuls for eligible targets (ConductanceLIF
+        # + subclasses).  TwoCompartmentLIF targets stay on the per-region
+        # batched dendrite path.  Must be created before
+        # build_batched_dendrite_weights so we can exclude sparse connections.
+        self._sparse_matrix = GlobalSparseMatrix(
+            self.regions, self._neuron_index, self._neuron_batch, self.device,
+        )
+        # Give each region a reference to the sparse matrix for sparse learning.
+        for region in self.regions.values():
+            region._sparse_matrix = self._sparse_matrix
+
+        # =================================================================
+        # BATCHED SYNAPTIC INTEGRATION
+        # =================================================================
+        # Precompute concatenated weight matrices per (target_pop, receptor_type)
+        # for connections NOT in the global sparse matrix (intra-region
+        # connections and TwoCompartmentLIF targets).
+        _sparse_sids = frozenset(self._sparse_matrix.connections.keys())
+        for region in self.regions.values():
+            region.build_batched_dendrite_weights(exclude_synapse_ids=_sparse_sids)
+
+        # =================================================================
+        # BIOPHYSICS REGISTRY (read-only query layer)
+        # =================================================================
+        self.biophysics = BiophysicsRegistry.from_brain(self)
+
+    def _create_stp_batch(self) -> STPBatch:
+        """Collect all STP modules across regions into one STPBatch.
+
+        Connections flagged as ``_manually_stepped_stp`` on their region are
+        excluded — those are stepped by the region itself with multi-step
+        delayed spikes and must not be double-updated.
+        """
+        entries: list[tuple[SynapseId, object]] = []
+        for region in self.regions.values():
+            excluded = region._manually_stepped_stp
+            for synapse_id, stp_module in region.stp_modules.items():
+                if synapse_id not in excluded:
+                    entries.append((synapse_id, stp_module))
+        return STPBatch(entries, device=self.device)
+
+    def _create_neuron_batch(self) -> ConductanceLIFBatch:
+        """Collect all eligible ConductanceLIF populations into one ConductanceLIFBatch.
+
+        **Eligibility**: Only exact ``ConductanceLIF`` instances are batched.
+        Subclasses (SerotoninNeuron, NorepinephrineNeuron, AcetylcholineNeuron)
+        and ``TwoCompartmentLIF`` are excluded.
+
+        After this call, eligible neurons' ``forward()`` writes inputs into the
+        batch's global buffers and returns a deferred spike view.  ``Brain.forward()``
+        then calls ``batch.step()`` once per timestep.
+        """
+        entries: list[tuple[PopulationKey, ConductanceLIF]] = []
+        for region_name, region in self.regions.items():
+            for pop_name, neuron in region.neuron_populations.items():
+                # Exact type match — subclasses are excluded
+                if type(neuron) is ConductanceLIF:
+                    entries.append(((region_name, pop_name), neuron))
+
+        batch = ConductanceLIFBatch(entries, device=self.device)
+        batch.update_temporal_parameters(self.dt_ms)
+        return batch
+
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
+
+    @staticmethod
+    def _merge_inputs(region_inputs: Dict[RegionName, SynapticInput], inputs_to_inject: SynapticInput) -> None:
+        """Merge external input spikes into region_inputs with logical-OR."""
+        for synapse_id, spikes in inputs_to_inject.items():
+            target_region = synapse_id.target_region
+            if target_region not in region_inputs:
+                region_inputs[target_region] = {}
+            if synapse_id in region_inputs[target_region]:
+                region_inputs[target_region][synapse_id] = region_inputs[target_region][synapse_id] | spikes
+            else:
+                region_inputs[target_region][synapse_id] = spikes
 
     @torch.no_grad()
     def forward(self, synaptic_inputs: Optional[SynapticInput] = None) -> BrainOutput:
@@ -180,10 +324,19 @@ class Brain(nn.Module):
         # At T>=delay: buffers have data, delayed_outputs have actual spikes
         # =====================================================================
 
+        if GlobalConfig.DEBUG:
+            for synapse_id, spikes in synaptic_inputs.items():
+                validate_spike_tensor(spikes, tensor_name=synapse_id)
+
+        # Cache nn.Module-registered dicts to avoid __getattr__ overhead
+        # (searches _parameters, _buffers, _modules) on every access.
+        _regions = self.regions           # nn.ModuleDict — 6 loops/step
+        _axonal_tracts = self.axonal_tracts  # SynapseIdModuleDict — 2 loops/step
+
         # STEP 1: Read delayed outputs from all axonal tracts (spikes from T-delay)
         region_inputs: Dict[RegionName, SynapticInput] = {}
 
-        for axonal_tract in self.axonal_tracts.values():
+        for axonal_tract in _axonal_tracts.values():
             # read_delayed_outputs() returns a flat SynapticInput dict keyed by
             # the pre-built SynapseId, which already encodes target region,
             # target population, and polarity — no reconstruction needed.
@@ -204,23 +357,11 @@ class Brain(nn.Module):
         # STEP 2: Inject external input spikes — sensory inputs passed by the caller AND
         # any reward spikes queued by deliver_reward() in the previous call.
         # All sources are merged with logical-OR so they layer on top of delayed tract outputs.
-        def _merge_inputs(inputs: SynapticInput) -> None:
-            for synapse_id, spikes in inputs.items():
-                validate_spike_tensor(spikes, tensor_name=str(synapse_id))
-                target_region = synapse_id.target_region
-                if target_region not in region_inputs:
-                    region_inputs[target_region] = {}
-                if synapse_id in region_inputs[target_region]:
-                    region_inputs[target_region][synapse_id] = region_inputs[target_region][synapse_id] | spikes
-                else:
-                    region_inputs[target_region][synapse_id] = spikes
-
         if synaptic_inputs is not None:
-            _merge_inputs(synaptic_inputs)
+            Brain._merge_inputs(region_inputs, synaptic_inputs)
 
-        # Drain pending reward spikes (queued by deliver_reward on the previous call).
         if self._pending_reward_inputs is not None:
-            _merge_inputs(self._pending_reward_inputs)
+            Brain._merge_inputs(region_inputs, self._pending_reward_inputs)
             self._pending_reward_inputs = None
 
         # STEP 3: HIPPOCAMPAL-VTA NOVELTY ROUTING (one-step causal delay)
@@ -260,12 +401,101 @@ class Brain(nn.Module):
         # One-timestep lag is unavoidable with clock-driven simulation (ADR-003).
         neuromodulator_signals: NeuromodulatorInput = self.neuromodulator_hub.build(self._last_brain_output)
 
-        # STEP 5: Execute all regions with synaptic inputs AND neuromodulator broadcast → produce outputs at T
+        # STEP 4b: Convert all region_inputs to float (ADR-004 relaxation).
+        # Axonal tracts store bool for 8× memory savings, but all downstream
+        # consumers (STP, sparse matmul, dendrite integration, learning) need
+        # float.  Converting once here eliminates ~100k redundant .float() calls.
+        for _ri_dict in region_inputs.values():
+            for _sid in _ri_dict:
+                _t = _ri_dict[_sid]
+                if not _t.is_floating_point():
+                    _ri_dict[_sid] = _t.float()
+
+        # STEP 5: Execute all regions and batch-fire ConductanceLIF neurons.
+        # =====================================================================
+        # Four-phase execution:
+        # Phase 1: All regions run _step() → ConductanceLIF populations write
+        #          inputs to batch buffers (returning deferred spike views);
+        #          TwoCompartmentLIF / subclass neurons fire normally.
+        # Phase 2: _neuron_batch.step() executes ONE fused kernel call for all
+        #          batched ConductanceLIF neurons, filling deferred spike views
+        #          in-place so that region_output dicts now hold correct spikes.
+        # Phase 3: Apply inter-region learning (using correct post-step spikes).
+        # Phase 4: Write outputs to axonal tracts.
+        # =====================================================================
+        stp_efficacy = self._stp_batch.step(region_inputs, self._last_brain_output)
+
+        # Global sparse synaptic integration (Step 5): 4 sparse matmuls replace
+        # hundreds of per-connection dense matmuls for ConductanceLIF targets.
+        # This fills batch input buffers (g_ampa_input, etc.) for batched pops
+        # and prepares subclass conductances for region bypass.
+        self._sparse_matrix.integrate(region_inputs, self._last_brain_output, stp_efficacy)
+        self._sparse_matrix.scatter_to_neuron_batch()
+
+        # Phase 1: Run all regions' _step().
         brain_output: BrainOutput = {}
-        for region_name, region in self.regions.items():
-            synaptic_inputs_for_region: SynapticInput = region_inputs.get(region_name, {})
-            region_output: RegionOutput = region.forward(synaptic_inputs_for_region, neuromodulator_signals)
-            brain_output[region_name] = region_output
+        region_synaptic_cache: Dict[RegionName, SynapticInput] = {}
+
+        # Pre-set precomputed fields for ALL regions before execution
+        # (required for thread-safety — each thread reads its own region's fields).
+        for region_name, region in _regions.items():
+            region._precomputed_stp_efficacy = stp_efficacy
+            region._precomputed_sparse_conductances = self._sparse_matrix.get_region_conductances(region_name)
+
+        if self.config.execute_regions_in_parallel and len(_regions) > 1:
+            # Parallel path: run regions concurrently via thread pool.
+            # Safe because: regions write only to disjoint state (own neurons,
+            # own batch buffer slices, own RegionOutput), and read from
+            # pre-materialized immutable inputs.  C++ kernels release the GIL.
+            pool = _region_thread_pool.get(
+                max_workers=min(self.config.parallel_regions_max_workers, len(_regions)),
+            )
+            futures: Dict[concurrent.futures.Future[RegionOutput], RegionName] = {}
+            for region_name, region in _regions.items():
+                synaptic_inputs_for_region: SynapticInput = region_inputs.get(region_name, {})
+                region_synaptic_cache[region_name] = synaptic_inputs_for_region
+                future = pool.submit(
+                    _execute_region,
+                    region,
+                    synaptic_inputs_for_region,
+                    neuromodulator_signals,
+                )
+                futures[future] = region_name
+
+            for future in concurrent.futures.as_completed(futures):
+                region_name = futures[future]
+                brain_output[region_name] = future.result()
+        else:
+            # Sequential path (fallback / single-region).
+            for region_name, region in _regions.items():
+                synaptic_inputs_for_region = region_inputs.get(region_name, {})
+                region_synaptic_cache[region_name] = synaptic_inputs_for_region
+                brain_output[region_name] = region.forward(synaptic_inputs_for_region, neuromodulator_signals)
+
+        # Clear precomputed fields after execution
+        for region_name, region in _regions.items():
+            region._precomputed_stp_efficacy = None
+            region._precomputed_sparse_conductances = None
+
+        # Phase 2: Execute all batched ConductanceLIF neurons in one kernel call.
+        # This fills the deferred spike views in-place, so brain_output now
+        # contains correct current-step spikes for all batched populations.
+        self._neuron_batch.step()
+
+        # Phase 2b: Convert all brain_output spikes to float (ADR-004 relaxation).
+        # Neurons produce bool spikes, but learning rules, neuromodulator hub,
+        # and _last_brain_output consumers all need float.  One bulk conversion
+        # here replaces scattered per-consumer .float() calls.
+        for _region_out in brain_output.values():
+            for _pop_name in _region_out:
+                _t = _region_out[_pop_name]
+                if not _t.is_floating_point():
+                    _region_out[_pop_name] = _t.float()
+
+        # Phase 3: Apply inter-region learning (post-step spikes are now valid).
+        if not GlobalConfig.LEARNING_DISABLED:
+            for region_name, region in _regions.items():
+                region.apply_learning(region_synaptic_cache[region_name], brain_output[region_name])
 
         # Update pending novelty level from hippocampus CA1 mismatch (injected next step)
         _hippocampus = self.get_region_by_name("hippocampus")
@@ -275,7 +505,7 @@ class Brain(nn.Module):
             self._pending_novelty_level = 0.0
 
         # STEP 6: Write current outputs to axonal tracts and advance buffers (available at T+delay)
-        for axonal_tract in self.axonal_tracts.values():
+        for axonal_tract in _axonal_tracts.values():
             # Write ALL source regions' current outputs to buffer (for T+delay reads)
             axonal_tract.write_and_advance(brain_output)
 
@@ -437,6 +667,206 @@ class Brain(nn.Module):
         for region in self.regions.values():
             region.update_temporal_parameters(new_dt_ms)
 
+        # Update batched STP (if already initialised)
+        if hasattr(self, '_stp_batch'):
+            self._stp_batch.update_temporal_parameters(new_dt_ms)
+
+        # Update batched neuron state (if already initialised)
+        if hasattr(self, '_neuron_batch'):
+            self._neuron_batch.update_temporal_parameters(new_dt_ms)
+
         # Update all axonal tracts
         for axonal_tract in self.axonal_tracts.values():
             axonal_tract.update_temporal_parameters(new_dt_ms)
+
+    # =========================================================================
+    # WEIGHT CALIBRATION
+    # =========================================================================
+
+    @torch.no_grad()
+    def calibrate_weights(
+        self,
+        *,
+        n_steps: int,
+        n_iterations: int,
+        warmup_steps: int,
+        correction_gain: float,
+        max_correction: float,
+    ) -> Dict[str, Any]:
+        """Calibrate excitatory weights so spontaneous firing matches homeostatic targets.
+
+        Runs ``n_iterations`` calibration cycles.  Each cycle:
+
+        1. Runs ``warmup_steps`` spontaneous-activity timesteps (no external input)
+           to let post-correction transients decay.
+        2. Runs ``n_steps`` timesteps and accumulates per-neuron spike counts.
+        3. For each population with a registered homeostatic target, computes a
+           multiplicative correction factor and applies it uniformly to all
+           incoming excitatory (AMPA/NMDA) weight matrices — both dense intra-region
+           weights and sparse inter-region weights in the global CSR matrices.
+        4. Rebuilds the precomputed batched dendrite weight matrices so the next
+           iteration sees the corrected weights.
+
+        **Correction formula** (geometric damping to prevent oscillation)::
+
+            scale = (target_rate / actual_rate) ** correction_gain
+            scale = clamp(scale, 1 / max_correction, max_correction)
+
+        A gain of 0.5 takes the square-root of the ideal correction each cycle,
+        converging in ~5 iterations while avoiding overshoot.
+
+        Args:
+            n_steps: Measurement timesteps per calibration cycle.
+            n_iterations: Number of calibration cycles.
+            warmup_steps: Transient-discard steps before each measurement phase.
+            correction_gain: Exponent for geometric damping (0 < gain ≤ 1).
+                1.0 applies the full correction; 0.5 (default) halves the log-error.
+            max_correction: Per-iteration clamp for the scale factor
+                (clips to ``[1/max_correction, max_correction]``).
+
+        Returns:
+            Dict with:
+                ``'iterations'``: list of per-cycle dicts with keys ``'rates_hz'``
+                    (``"region/pop"`` → Hz) and ``'corrections'`` (``"region/pop"``
+                    → ``{'actual_hz', 'target_hz', 'scale'}``).
+                ``'final_rates_hz'``: rates measured in the final cycle.
+        """
+        iteration_results = []
+        final_rates: Dict[str, float] = {}
+
+        for iteration in range(n_iterations):
+            # ------------------------------------------------------------------
+            # 1. Warm-up: discard transients from the previous correction.
+            # ------------------------------------------------------------------
+            for _ in range(warmup_steps):
+                self.forward(None)
+
+            # ------------------------------------------------------------------
+            # 2. Measurement: accumulate {(region, pop): [total_spikes, n_neurons]}.
+            # ------------------------------------------------------------------
+            spike_accum: Dict[tuple[str, str], list[float]] = {}
+            for _ in range(n_steps):
+                brain_output = self.forward(None)
+                for region_name, region_output in brain_output.items():
+                    for pop_name, spikes in region_output.items():
+                        key = (region_name, pop_name)
+                        total = float(spikes.float().sum().item())
+                        n = float(spikes.numel())
+                        if key in spike_accum:
+                            spike_accum[key][0] += total
+                        else:
+                            spike_accum[key] = [total, n]
+
+            # Convert to Hz for the output dict.
+            # actual_rate_per_timestep = total_spikes / n_neurons / n_steps
+            # actual_hz = actual_rate_per_timestep * 1000.0 / dt_ms
+            hz_factor = 1000.0 / (n_steps * self.dt_ms)
+            actual_rates_hz: Dict[str, float] = {
+                f"{rn}/{pn}": (v[0] / v[1]) * hz_factor
+                for (rn, pn), v in spike_accum.items()
+            }
+
+            # ------------------------------------------------------------------
+            # 3. Correction: scale excitatory weights for homeostasis populations.
+            # ------------------------------------------------------------------
+            corrections: Dict[str, Dict[str, float]] = {}
+
+            for region_name, region in self.regions.items():
+                for pop_name, state in region._homeostasis.items():
+                    key = (region_name, pop_name)
+                    if key not in spike_accum:
+                        continue  # Population produced no output — skip.
+
+                    total, n = spike_accum[key]
+                    actual_rate_per_step = total / n / n_steps  # spikes/timestep
+                    if actual_rate_per_step <= 0.0:
+                        continue  # Completely silent — can't form a finite ratio.
+
+                    # target_firing_rate is in spikes/timestep (calibrated at dt=1ms).
+                    # The ratio target/actual is dt-independent when both are in the
+                    # same units, so no explicit dt conversion is needed for the scale.
+                    target_rate_per_step = state.target_firing_rate
+                    if target_rate_per_step <= 0.0:
+                        continue
+
+                    raw_scale = target_rate_per_step / actual_rate_per_step
+                    damped_scale = raw_scale ** correction_gain
+                    clamped_scale = max(1.0 / max_correction, min(max_correction, damped_scale))
+
+                    corrections[f"{region_name}/{pop_name}"] = {
+                        "actual_hz": actual_rate_per_step * 1000.0 / self.dt_ms,
+                        "target_hz": target_rate_per_step * 1000.0 / self.dt_ms,
+                        "scale": clamped_scale,
+                    }
+
+                    self._scale_excitatory_weights(region, pop_name, clamped_scale)
+
+            # ------------------------------------------------------------------
+            # 4. Rebuild batched dendrite matrices to reflect corrected weights.
+            # ------------------------------------------------------------------
+            self._rebuild_batched_dendrite_weights()
+
+            iteration_results.append({
+                "iteration": iteration,
+                "rates_hz": actual_rates_hz,
+                "corrections": corrections,
+            })
+            final_rates = actual_rates_hz
+
+        return {
+            "iterations": iteration_results,
+            "final_rates_hz": final_rates,
+        }
+
+    def _scale_excitatory_weights(
+        self,
+        region: "NeuralRegion[NeuralRegionConfig]",
+        population_name: str,
+        scale: float,
+    ) -> None:
+        """Uniformly scale all incoming excitatory weights for one population.
+
+        Modifies both dense ``region.synaptic_weights`` (intra-region connections
+        and any remaining dense inter-region connections) and the shared
+        ``GlobalSparseMatrix`` (sparse inter-region connections), then clamps
+        all values to ``[0, region.config.synaptic_scaling.w_max]``.
+
+        Args:
+            region: Target region whose population receives the scaled inputs.
+            population_name: Name of the postsynaptic population to correct.
+            scale: Multiplicative scale factor (> 1 boosts; < 1 suppresses).
+        """
+        w_max = region.config.synaptic_scaling.w_max
+
+        # Dense weights (intra-region connections stored per-region).
+        for synapse_id, weights in region.synaptic_weights.items():
+            if (
+                synapse_id.target_population == population_name
+                and synapse_id.receptor_type.is_excitatory
+            ):
+                weights.data.mul_(scale).clamp_(max=w_max)
+
+        # Sparse weights (inter-region connections in the global CSR matrix).
+        for synapse_id, meta in self._sparse_matrix.connections.items():
+            if (
+                synapse_id.target_region == region.region_name
+                and synapse_id.target_population == population_name
+                and synapse_id.receptor_type.is_excitatory
+                and meta.nnz > 0
+            ):
+                values = self._sparse_matrix.get_weight_values(synapse_id)
+                values.mul_(scale).clamp_(max=w_max)
+                self._sparse_matrix.set_weight_values(synapse_id, values)
+
+    def _rebuild_batched_dendrite_weights(self) -> None:
+        """Rebuild precomputed batched dendrite weight matrices after weight modification.
+
+        Must be called after any in-place modification of ``synaptic_weights``
+        so that the concatenated batched matrices used by
+        ``_integrate_synaptic_inputs_at_dendrites`` reflect the updated values.
+        The sparse CSR matrix is updated in-place by
+        :meth:`_scale_excitatory_weights` and does not need rebuilding.
+        """
+        _sparse_sids = frozenset(self._sparse_matrix.connections.keys())
+        for region in self.regions.values():
+            region.build_batched_dendrite_weights(exclude_synapse_ids=_sparse_sids)

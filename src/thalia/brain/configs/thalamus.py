@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from thalia.brain.gap_junctions import GapJunctionConfig
+from thalia.brain.regions.population_names import ThalamusPopulation
+from thalia.brain.synapses import NMReceptorType
 from thalia.errors import ConfigurationError
+from thalia.typing import NeuromodulatorChannel
 
-from .neural_region import NeuralRegionConfig
+from .neural_region import (
+    HomeostaticGainConfig,
+    HomeostaticThresholdConfig,
+    NMReceptorConfig,
+    NeuralRegionConfig,
+)
 
 
 @dataclass
@@ -23,34 +32,40 @@ class ThalamusConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTIVE GAIN CONTROL (HOMEOSTATIC INTRINSIC PLASTICITY)
     # =========================================================================
-    gain_learning_rate: float = 0.0001  # Let conductance scales work first
-    gain_tau_ms: float = 10000.0  # Very slow adaptation
+    homeostatic_gain: HomeostaticGainConfig = field(default_factory=lambda: HomeostaticGainConfig(
+        lr_per_ms=0.001,  # Reduced 0.005→0.001: effective tau must be ≥ 1000 ms (biological minimum for homeostasis)
+        tau_ms=5000.0,  # Reduced 10000→5000: faster rate averaging tracks relay firing changes
+    ))
 
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (complementary to gain adaptation)
     # =========================================================================
-    threshold_learning_rate: float = 0.03
-    threshold_min: float = 0.05
-    threshold_max: float = 1.5
+    homeostatic_threshold: HomeostaticThresholdConfig = field(default_factory=lambda: HomeostaticThresholdConfig(
+        lr_per_ms=0.001,  # Reduced 0.005→0.001: effective tau must be ≥ 1000 ms (biological minimum for homeostasis).
+        # Previously 0.03 caused threshold crash from 0.80→0.05 in ~25ms during warmup.
+        # Slower rate prevents catastrophic overshoot while still allowing adaptation.
+        threshold_min=0.55,  # Raised 0.40→0.55: at 0.40 relay settled at 40 Hz (1.6× target).
+        # Higher floor constrains excitability closer to the 25 Hz homeostatic target.
+        threshold_max=1.5,
+    ))
+    homeostatic_target_rates: dict[str, float] = field(default_factory=lambda: {
+        ThalamusPopulation.RELAY: 0.025,
+    })
 
-    # =========================================================================
-    # BURST vs TONIC MODE SWITCHING
-    # =========================================================================
-    burst_threshold: float = -0.2
-    """Membrane potential threshold for burst mode (hyperpolarized)."""
-
-    tonic_threshold: float = 0.3
-    """Membrane potential threshold for tonic mode (depolarized)."""
-
-    burst_gain: float = 2.0
-    """Amplification factor for burst mode (alerting signal)."""
+    neuromodulator_receptors: list[NMReceptorConfig] = field(default_factory=lambda: [
+        NMReceptorConfig(NMReceptorType.ACH_MUSCARINIC_M1, NeuromodulatorChannel.ACH, "_ach_concentration_trn", (ThalamusPopulation.TRN,)),
+        NMReceptorConfig(NMReceptorType.DA_D1, NeuromodulatorChannel.DA_MESOCORTICAL, "_da_concentration_relay", (ThalamusPopulation.RELAY,)),
+        NMReceptorConfig(NMReceptorType.NE_ALPHA1, NeuromodulatorChannel.NE, "_ne_concentration_relay", (ThalamusPopulation.RELAY,)),
+    ])
 
     # =========================================================================
     # GAP JUNCTIONS: TRN INTERNEURONS
     # =========================================================================
-    gap_junction_strength: float = 0.06  # Increased: 0.04→0.02 worsened ρ 0.46→0.53. Stronger coupling smooths subthreshold dynamics
-    gap_junction_threshold: float = 0.3  # Neighborhood connectivity threshold
-    gap_junction_max_neighbors: int = 4  # Reduced from 8: prevents pathological synchrony in small TRN population
+    gap_junctions: GapJunctionConfig = field(default_factory=lambda: GapJunctionConfig(
+        coupling_strength=0.06,  # Increased: 0.04→0.02 worsened ρ 0.46→0.53. Stronger coupling smooths subthreshold dynamics
+        connectivity_threshold=0.3,  # Neighborhood connectivity threshold
+        max_neighbors=4,  # Reduced from 8: prevents pathological synchrony in small TRN population
+    ))
 
     # =========================================================================
     # SPATIAL FILTERING: CENTER-SURROUND RECEPTIVE FIELDS
@@ -82,27 +97,42 @@ class ThalamusConfig(NeuralRegionConfig):
     """
 
     # =========================================================================
-    # BURST vs TONIC MODE THRESHOLD
+    # BRAINSTEM ASCENDING AROUSAL DRIVE
     # =========================================================================
-    mode_threshold: float = 0.5
-    """Threshold separating burst mode (< threshold) from tonic mode (>= threshold).
+    relay_baseline_drive: float = 0.001  # Reduced 0.002→0.001: with external sensory (0.50 fraction) + L6B feedback
+    # (0.50 fraction) + GPi inhibition, 0.002 caused E/I=5.5 and relay burst mode.
+    # 0.001 provides sub-threshold arousal without dominating; cooperative drive from
+    # other sources brings relay to tonic 20-30 Hz.
+    """Per-step AMPA conductance added to relay neurons each timestep.
 
-    ``current_mode`` is a continuous value in [0, 1] computed by ``_determine_mode()``.
-    Values below this threshold trigger burst amplification; values at or above use
-    normal tonic relay. Different thalamic nuclei have different switching thresholds.
+    Represents ascending arousal from brainstem nuclei (LC norepinephrine,
+    cholinergic pedunculopontine nucleus, raphe serotonin) that tonically
+    depolarize thalamic relay cells during wakefulness.
+
+    Biological range: 0.001–0.005.
+    """
+
+    trn_baseline_drive: float = 0.001  # Reduced 0.003→0.001: 0.003 caused 6% sensory TRN epileptiform (T100408)
+    # (TRN assoc went 3.61→2.96 Hz, MD 4.96 Hz).  TRN g_L=0.10, so needs ~3% of g_L
+    # tonic drive to meaningfully depolarise toward threshold.
+    # to provide adequate inhibition for physiological E/I ratios.
+    """Per-step AMPA conductance added to TRN neurons each timestep.
+
+    Biological range: 0.0005–0.002.
+    """
+
+    trn_relay_gaba_a_mean: float = 0.015
+    """Mean weight for TRN→relay GABA_A synapses (sparse Gaussian initialization).
+
+    Controls per-spike inhibitory impact of TRN on relay neurons.
+    Higher values strengthen gating but risk excessive hyperpolarization
+    and T-channel rebound bursting.  Per-instance overrides allow
+    different thalamic nuclei to have different inhibitory strengths.
     """
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if self.burst_threshold >= self.tonic_threshold:
-            raise ConfigurationError(
-                f"burst_threshold ({self.burst_threshold}) must be < tonic_threshold ({self.tonic_threshold})"
-            )
-        if self.burst_gain <= 0:
-            raise ConfigurationError(f"burst_gain must be > 0, got {self.burst_gain}")
         if self.spatial_filter_width <= 0:
             raise ConfigurationError(f"spatial_filter_width must be > 0, got {self.spatial_filter_width}")
         if self.trn_recurrent_delay_ms <= 0:
             raise ConfigurationError(f"trn_recurrent_delay_ms must be > 0, got {self.trn_recurrent_delay_ms}")
-        if not (0.0 < self.mode_threshold < 1.0):
-            raise ConfigurationError(f"mode_threshold must be in (0, 1), got {self.mode_threshold}")

@@ -2,33 +2,67 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 
 from .bio_ranges import nm_tonic_range
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    OscillatoryStats,
-    PopulationStats,
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
+from .region_tags import (
+    ACH_NM_TAGS,
+    CORTICAL_TAGS,
+    D1_MSN_TAGS,
+    D2_MSN_TAGS,
+    DA_NEURON_TAGS,
+    DA_SOURCE_TAGS,
+    DOPAMINE_NM_TAGS,
+    PREFRONTAL_TAGS,
+    SEROTONIN_NM_TAGS,
+    STRIATAL_TAGS,
+    find_d1_d2_fr,
+    matches_any,
 )
-from .region_tags import CORTICAL_TAGS, DA_SOURCE_TAGS, PREFRONTAL_TAGS, STRIATAL_TAGS, matches_any
-
-if TYPE_CHECKING:
-    from .diagnostics_types import RecorderSnapshot
 
 
-def check_neuromodulators(
-    rec: RecorderSnapshot,
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-) -> None:
+_NM_PHASIC_SPECS: List[Tuple[str, float, float, str]] = [
+    # (mod_name_substring, mean_thresh, min_phasic_ratio, clinical_note)
+    # DA: phasic burst should be > 3× tonic (Schultz 1998).  Flag when the
+    # mean is already in the elevated range (≥ 0.50) yet no transients appear
+    # (p90/p10 < 2.0) — the hallmark of tonic hyperdopaminergia / receptor
+    # desensitisation.
+    (
+        "dopamine",
+        0.50,
+        2.0,
+        "chronically elevated with no phasic bursts "
+        "— receptor desensitisation territory; DA p90/p10 should be ≥ 2.0 "
+        "(Schultz 1998; Grace 1991)",
+    ),
+    # NE: locus-coeruleus output should be transient; sustained elevation
+    # shifts the inverted-U gain curve past the optimum, impairing cognitive
+    # flexibility (Arnsten 2011).  Mean ≥ 0.30 with little variation (ratio
+    # < 2.0) indicates tonically high rather than episodic LC bursting.
+    # LC burst peaks are 3–4× baseline (Aston-Jones & Cohen 2005), so
+    # p90/p10 ≥ 2.0 is the minimum expected phasic variability.
+    (
+        "norepinephrine",
+        0.30,
+        2.0,
+        "tonically elevated — inverted-U gain curve predicts impaired cognitive "
+        "flexibility at sustained high concentrations; bursts should be transient "
+        "(Arnsten 2011; Aston-Jones & Cohen 2005)",
+    ),
+]
+
+
+def check_neuromodulators(ctx: HealthCheckContext) -> None:
     """Check neuromodulator receptor concentrations stuck at zero.
 
     Only fires if at least one neuromodulator source population was active —
     prevents false positives when source regions are not connected/activated.
     """
+    rec, pop_stats, issues = ctx.rec, ctx.pop_stats, ctx.issues
     n_nm_steps = rec._gain_sample_step
     if n_nm_steps > 0 and rec._n_nm_receptors > 0 and rec._nm_source_pop_keys:
         any_source_firing = any(
@@ -47,10 +81,7 @@ def check_neuromodulators(
                                 f"over {len(valid)} samples)"))
 
 
-def check_neuromodulator_levels(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_neuromodulator_levels(ctx: HealthCheckContext) -> None:
     """Check tonic neuromodulator concentrations are within physiological range.
 
     Complements :func:`check_neuromodulators` (which only flags completely silent
@@ -61,10 +92,9 @@ def check_neuromodulator_levels(
     Concentrations are the normalised ``[0, 1]`` receptor activation values from
     :class:`NeuromodulatorReceptor`.  Thresholds come from
     :func:`~.bio_ranges.nm_tonic_range`.
-
-    References: Grace 1991 (DA); Descarries et al. 1997 (ACh); Mlinar et al.
-    2016 (5-HT); Berridge 2008 (NE).
     """
+    rec, issues = ctx.rec, ctx.issues
+    config = ctx.thresholds.neuromodulators
     n_nm_steps = rec._gain_sample_step
     if n_nm_steps < 10 or rec._n_nm_receptors == 0:
         return
@@ -78,7 +108,7 @@ def check_neuromodulator_levels(
         warn_low, warn_high = nm_tonic_range(mod_name)
         # Chronically elevated — near saturation / receptor desensitisation.
         if mean_c > warn_high:
-            severity = "critical" if mean_c > 0.90 else "warning"
+            severity = "critical" if mean_c > config.nm_saturation else "warning"
             label = "SATURATED" if severity == "critical" else "Elevated"
             issues.append(HealthIssue(
                 severity=severity,
@@ -108,39 +138,7 @@ def check_neuromodulator_levels(
             ))
 
 
-_NM_PHASIC_SPECS: List[Tuple[str, float, float, str]] = [
-    # (mod_name_substring, mean_thresh, min_phasic_ratio, clinical_note)
-    # DA: phasic burst should be > 3× tonic (Schultz 1998).  Flag when the
-    # mean is already in the elevated range (≥ 0.50) yet no transients appear
-    # (p90/p10 < 2.0) — the hallmark of tonic hyperdopaminergia / receptor
-    # desensitisation.
-    (
-        "dopamine",
-        0.50,
-        2.0,
-        "chronically elevated with no phasic bursts "
-        "— receptor desensitisation territory; DA p90/p10 should be ≥ 2.0 "
-        "(Schultz 1998; Grace 1991)",
-    ),
-    # NE: locus-coeruleus output should be transient; sustained elevation
-    # shifts the inverted-U gain curve past the optimum, impairing cognitive
-    # flexibility (Arnsten 2011).  Mean ≥ 0.30 with little variation (ratio
-    # < 1.5) indicates tonically high rather than episodic LC bursting.
-    (
-        "norepinephrine",
-        0.30,
-        1.5,
-        "tonically elevated — inverted-U gain curve predicts impaired cognitive "
-        "flexibility at sustained high concentrations; bursts should be transient "
-        "(Arnsten 2011; Berridge 2008)",
-    ),
-]
-
-
-def check_neuromodulator_phasic(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_neuromodulator_phasic(ctx: HealthCheckContext) -> None:
     """Check that phasic neuromodulators are not chronically elevated without transients.
 
     Uses the 10th-/90th-percentile ratio of the concentration trajectory as a
@@ -153,11 +151,9 @@ def check_neuromodulator_phasic(
     excursions (high p90), giving a ratio ≥ 2–3.  A chronically elevated,
     un-varying trajectory (ratio < threshold) suggests:
 
-    - **Dopamine**: receptor desensitisation / tonic hyperdopaminergia (Grace
-      1991; Schultz 1998).
+    - **Dopamine**: receptor desensitisation / tonic hyperdopaminergia.
     - **Norepinephrine**: locus-coeruleus in sustained high-gain mode — shifts
-      the inverted-U past the optimum and impairs task-switching (Arnsten 2011;
-      Berridge 2008).
+      the inverted-U past the optimum and impairs task-switching.
 
     Checked against :data:`_NM_PHASIC_SPECS`.  Only fires when the mean
     concentration exceeds the module-specific threshold AND phasic_ratio falls
@@ -165,6 +161,7 @@ def check_neuromodulator_phasic(
 
     Requires ≥ 50 valid samples for a meaningful percentile estimate.
     """
+    rec, issues = ctx.rec, ctx.issues
     n_nm_steps = rec._gain_sample_step
     if n_nm_steps < 50 or rec._n_nm_receptors == 0:
         return
@@ -198,11 +195,7 @@ def check_neuromodulator_phasic(
             break  # only the first matching spec per modulator
 
 
-def check_nm_downstream_effects(
-    rec: RecorderSnapshot,
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-) -> None:
+def check_nm_downstream_effects(ctx: HealthCheckContext) -> None:
     """Check that DA burst firing produces the expected D1/D2 MSN downstream effects.
 
     When any VTA or SNc DA population is actively burst-firing
@@ -228,9 +221,9 @@ def check_nm_downstream_effects(
        D2 disinhibition — the reverse of the expected DA effect.
 
     Requires ≥ 500 recorded steps for the half-split to be meaningful.
-
-    References: Gerfen & Surmeier 2011; Schultz 1998; Frank 2005.
     """
+    rec, pop_stats, issues = ctx.rec, ctx.pop_stats, ctx.issues
+    config = ctx.thresholds.neuromodulators
     T = rec._n_recorded or rec.config.n_timesteps
     if T < 500:
         return
@@ -238,7 +231,7 @@ def check_nm_downstream_effects(
     # Only fire when DA source populations are actively burst-firing.
     da_burst_active = any(
         matches_any(rn, DA_SOURCE_TAGS)
-        and "da" in pn.lower()
+        and matches_any(pn, DA_NEURON_TAGS)
         and not np.isnan(ps.da_burst_events_per_s)
         and ps.da_burst_events_per_s > 0.0
         for (rn, pn), ps in pop_stats.items()
@@ -255,33 +248,24 @@ def check_nm_downstream_effects(
             continue
 
         # Identify D1-MSN and D2-MSN population indices for this region.
+        region_pop_indices = rec._region_pop_indices[rn]
         d1_indices = [
-            rec._pop_index[(rn, pn)]
-            for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
-            if "d1" in pn.lower() and (rn, pn) in rec._pop_index
+            rec._pop_index[(rn, rec._pop_keys[i][1])]
+            for i in region_pop_indices
+            if matches_any(rec._pop_keys[i][1], D1_MSN_TAGS) and (rn, rec._pop_keys[i][1]) in rec._pop_index
         ]
         d2_indices = [
-            rec._pop_index[(rn, pn)]
-            for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
-            if "d2" in pn.lower() and (rn, pn) in rec._pop_index
+            rec._pop_index[(rn, rec._pop_keys[i][1])]
+            for i in region_pop_indices
+            if matches_any(rec._pop_keys[i][1], D2_MSN_TAGS) and (rn, rec._pop_keys[i][1]) in rec._pop_index
         ]
         if not d1_indices or not d2_indices:
             continue
 
         # Whole-recording mean FRs from pop_stats.
-        rn_pop_names = [rec._pop_keys[i][1] for i in rec._region_pop_indices[rn]]
-        d1_fr_vals = [
-            pop_stats[(rn, pn)].mean_fr_hz
-            for pn in rn_pop_names
-            if "d1" in pn.lower() and (rn, pn) in pop_stats
-            and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
-        ]
-        d2_fr_vals = [
-            pop_stats[(rn, pn)].mean_fr_hz
-            for pn in rn_pop_names
-            if "d2" in pn.lower() and (rn, pn) in pop_stats
-            and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
-        ]
+        d1_fr_vals, d2_fr_vals = find_d1_d2_fr(
+            rec._pop_keys, region_pop_indices, pop_stats, rn,
+        )
         d1_fr = float(np.mean(d1_fr_vals)) if d1_fr_vals else 0.0
         d2_fr = float(np.mean(d2_fr_vals)) if d2_fr_vals else 0.0
 
@@ -289,7 +273,7 @@ def check_nm_downstream_effects(
             continue  # Both essentially silent — DA effect not testable.
 
         # Static check: D2 should not dominate D1 more than 2:1 under DA drive.
-        if d2_fr > d1_fr * 2.0:
+        if d2_fr > d1_fr * config.nm_d2_d1_dominance_ratio:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.NEUROMODULATORS,
@@ -320,7 +304,7 @@ def check_nm_downstream_effects(
         if d1_first >= 0.5 and d2_first >= 0.5:
             d1_ratio = d1_second / d1_first
             d2_ratio = d2_second / d2_first
-            if d1_ratio < 0.6 and d2_ratio > 1.4:
+            if d1_ratio < config.nm_d1_decline_ratio and d2_ratio > config.nm_d2_rise_ratio:
                 issues.append(HealthIssue(
                     severity="warning",
                     category=HealthCategory.NEUROMODULATORS,
@@ -335,11 +319,7 @@ def check_nm_downstream_effects(
                 ))
 
 
-def check_nm_oscillation_gating(
-    rec: RecorderSnapshot,
-    oscillations: OscillatoryStats,
-    issues: List[HealthIssue],
-) -> None:
+def check_nm_oscillation_gating(ctx: HealthCheckContext) -> None:
     """Check that neuromodulator levels produce the expected oscillatory gating effects.
 
     Elevated ACh (nucleus-basalis output) should suppress slow delta/sigma
@@ -359,10 +339,9 @@ def check_nm_oscillation_gating(
       same striatal or prefrontal region → warning: DA should promote beta.
 
     Requires ≥ 10 NM samples and non-empty band power data for the region.
-
-    References: Metherate et al. 1992 *Science*; Seamans & Yang 2004 *Nat Rev
-    Neurosci*; Murthy & Fetz 1996 *J Neurophysiol*.
     """
+    rec, oscillations, issues = ctx.rec, ctx.oscillations, ctx.issues
+    config = ctx.thresholds.neuromodulators
     n_nm_steps = rec._gain_sample_step
     if n_nm_steps < 10 or rec._n_nm_receptors == 0:
         return
@@ -380,18 +359,18 @@ def check_nm_oscillation_gating(
             continue
 
         # ACh: should suppress delta in cortex
-        if ("acetylcholine" in mn or "ach" in mn) and matches_any(rn, CORTICAL_TAGS):
-            if mean_c > 0.35:
+        if matches_any(mn, ACH_NM_TAGS) and matches_any(rn, CORTICAL_TAGS):
+            if mean_c > config.nm_ach_delta_gate:
                 delta_frac = band_power_map.get("delta", float("nan"))
-                if not np.isnan(delta_frac) and delta_frac > 0.40:
+                if not np.isnan(delta_frac) and delta_frac > config.nm_ach_delta_fraction:
                     issues.append(HealthIssue(
                         severity="warning",
                         category=HealthCategory.NEUROMODULATORS,
                         region=rn,
                         message=(
                             f"ACh high but delta not suppressed: {rn}/{mod_name}  "
-                            f"mean_ACh={mean_c:.3f} (> 0.35)  "
-                            f"delta_frac={delta_frac:.2f} (> 0.40)  "
+                            f"mean_ACh={mean_c:.3f} (> {config.nm_ach_delta_gate})  "
+                            f"delta_frac={delta_frac:.2f} (> {config.nm_ach_delta_fraction})  "
                             f"\u2014 elevated ACh (nucleus basalis \u2192 cortex) should "
                             f"reduce delta power and engage theta/gamma; "
                             f"check NB\u2192cortex ACh pathway (Metherate et al. 1992)"
@@ -399,20 +378,20 @@ def check_nm_oscillation_gating(
                     ))
 
         # DA: should promote beta in striatum / PFC
-        if "dopamine" in mn and (
+        if matches_any(mn, DOPAMINE_NM_TAGS) and (
             matches_any(rn, STRIATAL_TAGS) or matches_any(rn, PREFRONTAL_TAGS)
         ):
-            if mean_c > 0.30:
+            if mean_c > config.nm_da_beta_gate:
                 beta_frac = band_power_map.get("beta", float("nan"))
-                if not np.isnan(beta_frac) and beta_frac < 0.10:
+                if not np.isnan(beta_frac) and beta_frac < config.nm_da_beta_fraction:
                     issues.append(HealthIssue(
                         severity="warning",
                         category=HealthCategory.NEUROMODULATORS,
                         region=rn,
                         message=(
                             f"DA elevated but beta absent: {rn}/{mod_name}  "
-                            f"mean_DA={mean_c:.3f} (> 0.30)  "
-                            f"beta_frac={beta_frac:.2f} (< 0.10)  "
+                            f"mean_DA={mean_c:.3f} (> {config.nm_da_beta_gate})  "
+                            f"beta_frac={beta_frac:.2f} (< {config.nm_da_beta_fraction})  "
                             f"\u2014 DA should promote beta synchrony in striatum/PFC "
                             f"via D1/D2 activation in the cortico-striato-thalamic loop; "
                             f"check DA\u2192D1/D2 receptor connectivity "
@@ -421,11 +400,7 @@ def check_nm_oscillation_gating(
                     ))
 
 
-def check_d1_d2_da_balance(
-    rec: RecorderSnapshot,
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-) -> None:
+def check_d1_d2_da_balance(ctx: HealthCheckContext) -> None:
     """Check that striatal D1/D2 MSN activity balance reflects DA concentration.
 
     Dopamine modulates the two striatal output pathways in opposing directions:
@@ -435,9 +410,9 @@ def check_d1_d2_da_balance(
 
     When DA is chronically depleted (hypo-DA) the expected result is D2-MSN
     over-activity relative to D1-MSNs — the core circuit pathology of
-    Parkinson's disease (Frank 2005; Gerfen & Surmeier 2011).  When DA is
-    in the high-burst range (hyper-DA), D1-MSN over-dominance predicts
-    excessively biased reward-driven action selection.
+    Parkinson's disease.  When DA is in the high-burst range (hyper-DA),
+    D1-MSN over-dominance predicts excessively biased reward-driven action
+    selection.
 
     Two complementary checks are performed per striatal region that contains
     both D1 and D2 MSN populations **and** at least one DA receptor instance:
@@ -449,10 +424,9 @@ def check_d1_d2_da_balance(
 
     Requires ≥ 10 NM samples for a reliable DA mean estimate.  Skips any
     region where either D1 or D2 mean FR is below 0.5 Hz (insufficient data).
-
-    References: Frank 2005 *Psychol Rev*; Gerfen & Surmeier 2011 *Annu Rev
-    Neurosci*.
     """
+    rec, pop_stats, issues = ctx.rec, ctx.pop_stats, ctx.issues
+    config = ctx.thresholds.neuromodulators
     n_nm_steps = rec._gain_sample_step
     if n_nm_steps < 10 or rec._n_nm_receptors == 0:
         return
@@ -464,21 +438,9 @@ def check_d1_d2_da_balance(
             continue
 
         # Collect D1 and D2 mean FRs for this region.
-        region_pops = [rec._pop_keys[i][1] for i in rec._region_pop_indices.get(rn, [])]
-        d1_fr_vals = [
-            pop_stats[(rn, pn)].mean_fr_hz
-            for pn in region_pops
-            if "d1" in pn.lower()
-            and (rn, pn) in pop_stats
-            and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
-        ]
-        d2_fr_vals = [
-            pop_stats[(rn, pn)].mean_fr_hz
-            for pn in region_pops
-            if "d2" in pn.lower()
-            and (rn, pn) in pop_stats
-            and not np.isnan(pop_stats[(rn, pn)].mean_fr_hz)
-        ]
+        d1_fr_vals, d2_fr_vals = find_d1_d2_fr(
+            rec._pop_keys, rec._region_pop_indices.get(rn, []), pop_stats, rn,
+        )
         if not d1_fr_vals or not d2_fr_vals:
             continue
 
@@ -492,7 +454,7 @@ def check_d1_d2_da_balance(
         for nm_idx, (r, mod_name) in enumerate(rec._nm_receptor_keys):
             if r != rn:
                 continue
-            if "dopamine" not in mod_name.lower():
+            if not matches_any(mod_name, DOPAMINE_NM_TAGS):
                 continue
             vals = rec._nm_concentration_history[:n_nm_steps, nm_idx]
             valid = vals[~np.isnan(vals)]
@@ -506,7 +468,7 @@ def check_d1_d2_da_balance(
         # Hypo-DA: D2-MSN dominance (Parkinson-like)
         if mean_da < da_lo and d1_fr > 0.5:
             ratio = d2_fr / d1_fr
-            if ratio > 2.0:
+            if ratio > config.nm_d2_d1_dominance_ratio:
                 issues.append(HealthIssue(
                     severity="warning",
                     category=HealthCategory.NEUROMODULATORS,
@@ -514,16 +476,16 @@ def check_d1_d2_da_balance(
                     message=(
                         f"Hypodopaminergic D2-MSN dominance: {rn}  "
                         f"mean_DA={mean_da:.4f} (< {da_lo:.3f} tonic threshold)  "
-                        f"D2_FR/D1_FR={ratio:.2f} (> 2.0)  "
+                        f"D2_FR/D1_FR={ratio:.2f} (> {config.nm_d2_d1_dominance_ratio})  "
                         f"\u2014 D2-MSN over-activity in low-DA state; indirect pathway "
                         f"may be overactive (Parkinson-like; Frank 2005)"
                     ),
                 ))
 
         # Hyper-DA: D1-MSN dominance
-        if mean_da > 0.60 and d2_fr > 0.5:
+        if mean_da > config.nm_hyper_da and d2_fr > 0.5:
             ratio = d1_fr / d2_fr
-            if ratio > 3.0:
+            if ratio > config.nm_hyper_da_d1_d2_ratio:
                 issues.append(HealthIssue(
                     severity="warning",
                     category=HealthCategory.NEUROMODULATORS,
@@ -536,3 +498,132 @@ def check_d1_d2_da_balance(
                         f"check reward-learning dynamics (Frank 2005)"
                     ),
                 ))
+
+
+def check_nm_serotonin_da_antagonism(ctx: HealthCheckContext) -> None:
+    """Check for serotonin–dopamine antagonism in striatum.
+
+    Serotonin (5-HT) opposes dopamine signalling: 5-HT2C receptors on VTA DA
+    neurons are inhibitory, and 5-HT applied to striatum attenuates DA-driven
+    D1/D2 differential responses.  When both 5-HT and DA are simultaneously
+    elevated in a striatal region, the expected D1 > D2 firing-rate differential
+    should still be present — if it is absent, 5-HT may be cancelling the DA
+    effect.
+
+    Fires when: mean 5-HT > 0.20 AND mean DA > 0.50 in the same striatal
+    region, but D1_FR ≤ D2_FR (the DA-driven differential is absent).
+    """
+    rec, pop_stats, issues = ctx.rec, ctx.pop_stats, ctx.issues
+    config = ctx.thresholds.neuromodulators
+    n_nm_steps = rec._gain_sample_step
+    if n_nm_steps < 10 or rec._n_nm_receptors == 0:
+        return
+
+    for rn in rec._region_keys:
+        if not matches_any(rn, STRIATAL_TAGS):
+            continue
+
+        # Collect mean 5-HT and DA concentrations for this region.
+        serotonin_means: List[float] = []
+        da_means: List[float] = []
+        for nm_idx, (r, mod_name) in enumerate(rec._nm_receptor_keys):
+            if r != rn:
+                continue
+            vals = rec._nm_concentration_history[:n_nm_steps, nm_idx]
+            valid = vals[~np.isnan(vals)]
+            if len(valid) < 10:
+                continue
+            mn = mod_name.lower()
+            if matches_any(mn, SEROTONIN_NM_TAGS):
+                serotonin_means.append(float(np.mean(valid)))
+            elif matches_any(mn, DOPAMINE_NM_TAGS):
+                da_means.append(float(np.mean(valid)))
+
+        if not serotonin_means or not da_means:
+            continue
+        mean_5ht = float(np.mean(serotonin_means))
+        mean_da = float(np.mean(da_means))
+        if mean_5ht <= config.nm_serotonin_gate or mean_da <= config.nm_serotonin_da_gate:
+            continue
+
+        # Collect D1 and D2 mean FRs.
+        d1_fr_vals, d2_fr_vals = find_d1_d2_fr(
+            rec._pop_keys, rec._region_pop_indices.get(rn, []), pop_stats, rn,
+        )
+        if not d1_fr_vals or not d2_fr_vals:
+            continue
+        d1_fr = float(np.mean(d1_fr_vals))
+        d2_fr = float(np.mean(d2_fr_vals))
+        if d1_fr < 0.5 and d2_fr < 0.5:
+            continue
+
+        if d1_fr <= d2_fr:
+            issues.append(HealthIssue(
+                severity="warning",
+                category=HealthCategory.NEUROMODULATORS,
+                region=rn,
+                message=(
+                    f"5-HT/DA antagonism: {rn}  "
+                    f"mean_5HT={mean_5ht:.3f} (> 0.20)  "
+                    f"mean_DA={mean_da:.3f} (> 0.50)  "
+                    f"D1_FR={d1_fr:.1f} Hz  D2_FR={d2_fr:.1f} Hz  "
+                    f"\u2014 with both NMs elevated, DA should still produce "
+                    f"D1 > D2 differential; 5-HT may be antagonising DA effect "
+                    f"(Cragg & Greenfield 1997; Daw et al. 2002)"
+                ),
+            ))
+
+
+def check_nm_ach_gamma_enhancement(ctx: HealthCheckContext) -> None:
+    """Check that elevated ACh produces expected cortical gamma enhancement.
+
+    Acetylcholine from nucleus basalis projections to cortex promotes gamma-band
+    (30–100 Hz) oscillations via muscarinic activation of fast-spiking
+    interneurons.  When ACh is elevated but cortical gamma power remains low,
+    the cholinergic pathway may be disconnected or the interneuron network
+    dysfunctional.
+
+    Fires when: mean ACh > 0.40 in a cortical region AND gamma band fraction
+    < 0.05 (i.e. essentially absent).
+    """
+    rec, oscillations, issues = ctx.rec, ctx.oscillations, ctx.issues
+    config = ctx.thresholds.neuromodulators
+    n_nm_steps = rec._gain_sample_step
+    if n_nm_steps < 10 or rec._n_nm_receptors == 0:
+        return
+
+    for nm_idx, (rn, mod_name) in enumerate(rec._nm_receptor_keys):
+        if not matches_any(mod_name, ACH_NM_TAGS):
+            continue
+        if not matches_any(rn, CORTICAL_TAGS):
+            continue
+
+        vals = rec._nm_concentration_history[:n_nm_steps, nm_idx]
+        valid = vals[~np.isnan(vals)]
+        if len(valid) < 10:
+            continue
+        mean_ach = float(np.mean(valid))
+        if mean_ach <= config.nm_ach_gamma_gate:
+            continue
+
+        band_power_map = oscillations.region_band_power.get(rn, {})
+        if not band_power_map:
+            continue
+        gamma_frac = band_power_map.get("gamma", float("nan"))
+        if np.isnan(gamma_frac):
+            continue
+        if gamma_frac < config.nm_ach_gamma_fraction:
+            issues.append(HealthIssue(
+                severity="warning",
+                category=HealthCategory.NEUROMODULATORS,
+                region=rn,
+                message=(
+                    f"ACh elevated but gamma absent: {rn}/{mod_name}  "
+                    f"mean_ACh={mean_ach:.3f} (> 0.40)  "
+                    f"gamma_frac={gamma_frac:.3f} (< 0.05)  "
+                    f"\u2014 cholinergic activation should enhance cortical gamma "
+                    f"via muscarinic fast-spiking interneuron drive; "
+                    f"check NB\u2192cortex ACh pathway and FS interneuron connectivity "
+                    f"(Metherate et al. 1992; Buzsáki & Wang 2012)"
+                ),
+            ))

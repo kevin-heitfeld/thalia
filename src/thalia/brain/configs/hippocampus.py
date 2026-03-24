@@ -5,25 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict
 
+from thalia.brain.gap_junctions import GapJunctionConfig
 from thalia.brain.regions.population_names import EntorhinalCortexPopulation, HippocampusPopulation
 
-from .neural_region import NeuralRegionConfig
+from .neural_region import (
+    HomeostaticGainConfig,
+    HomeostaticThresholdConfig,
+    NeuralPopulationConfig,
+    NeuralRegionConfig,
+)
 
 
 @dataclass
-class EntorhinalCortexPopulationConfig:
-    tau_mem_ms: float
-    v_threshold: float
-    adapt_increment: float
-    adapt_tau_ms: float
+class EntorhinalCortexPopulationConfig(NeuralPopulationConfig):
     tonic_drive: float
 
 
 @dataclass
-class HippocampalPopulationConfig:
-    v_threshold: float
-    adapt_increment: float
-    tau_adapt: float
+class HippocampalPopulationConfig(NeuralPopulationConfig):
     total_inhib_fraction: float
     v_threshold_olm: float
     v_threshold_bistratified: float
@@ -67,30 +66,42 @@ class EntorhinalCortexConfig(NeuralRegionConfig):
             EntorhinalCortexPopulation.EC_II: EntorhinalCortexPopulationConfig(
                 tau_mem_ms=20.0,
                 v_threshold=1.1,
+                v_reset=-0.08,
                 adapt_increment=0.15,
-                adapt_tau_ms=100.0,
-                tonic_drive=0.005,
+                tau_adapt_ms=100.0,
+                tonic_drive=0.005, # History: 0.005→45 Hz gamma; 0.002→2.81 Hz; 0.0025→3.5 Hz;
+                                   # 0.0035→still sub-target. Raised back to 0.005: DG PV overexcitation
+                                   # was the real bottleneck (fixed via halved E→I w_max), so EC_II
+                                   # can now safely drive at theta (5-8 Hz) without downstream blowup.
+                noise_std=0.08,
             ),
             EntorhinalCortexPopulation.EC_III: EntorhinalCortexPopulationConfig(
                 tau_mem_ms=25.0,
                 v_threshold=1.2,
+                v_reset=-0.08,
                 adapt_increment=0.20,
-                adapt_tau_ms=80.0,
-                tonic_drive=0.005,
+                tau_adapt_ms=80.0,
+                tonic_drive=0.004,  # Raised 0.003→0.004: EC_III drives CA1 directly (temporoammonic path);
+                                    # at 0.003 it fired ~3 Hz (target 3-15 Hz). 0.004 targets 5-10 Hz.
+                noise_std=0.08,
             ),
             EntorhinalCortexPopulation.EC_V: EntorhinalCortexPopulationConfig(
                 tau_mem_ms=30.0,
                 v_threshold=1.15,
+                v_reset=-0.08,
                 adapt_increment=0.18,
-                adapt_tau_ms=150.0,
-                tonic_drive=0.01,
+                tau_adapt_ms=150.0,
+                tonic_drive=0.004,  # Reduced 0.010→0.004: EC_V is a back-projection relay, should not drive autonomously at gamma.
+                noise_std=0.08,
             ),
             EntorhinalCortexPopulation.EC_INHIBITORY: EntorhinalCortexPopulationConfig(
                 tau_mem_ms=8.0,
                 v_threshold=0.90,
+                v_reset=0.0,
                 adapt_increment=0.52,
-                adapt_tau_ms=30.0,
+                tau_adapt_ms=30.0,
                 tonic_drive=0.0,  # Inhibitory neurons are driven entirely by network input, no tonic drive
+                noise_std=0.08,
             ),
         }
     )
@@ -141,9 +152,11 @@ class HippocampusConfig(NeuralRegionConfig):
 
     # CA1 interneurons (~10-15% of CA1 population) have dense gap junction
     # networks that synchronize inhibition during theta-gamma nested oscillations.
-    gap_junction_strength: float = 0.01  # Coupling strength (biological: 0.05-0.2)
-    gap_junction_threshold: float = 0.25  # Neighborhood connectivity threshold
-    gap_junction_max_neighbors: int = 8  # Max neighbors per interneuron (biological: 4-12)
+    gap_junctions: GapJunctionConfig = field(default_factory=lambda: GapJunctionConfig(
+        coupling_strength=0.01,  # Coupling strength (biological: 0.05-0.2)
+        connectivity_threshold=0.25,  # Neighborhood connectivity threshold
+        max_neighbors=8,  # Max neighbors per interneuron (biological: 4-12)
+    ))
 
     # =========================================================================
     # HETEROSYNAPTIC PLASTICITY
@@ -155,13 +168,23 @@ class HippocampusConfig(NeuralRegionConfig):
     # =========================================================================
     # HOMEOSTATIC INTRINSIC PLASTICITY
     # =========================================================================
-    gain_learning_rate: float = 0.0001
-    gain_tau_ms: float = 1500.0  # 1.5s averaging window (slower than cortex)
+    homeostatic_gain: HomeostaticGainConfig = field(default_factory=lambda: HomeostaticGainConfig(
+        lr_per_ms=0.001,  # 10× increase: was 0.0001 (g_L_scale barely moved 0.1% in 5000 steps)
+        tau_ms=1500.0,  # 1.5s averaging window (slower than cortex)
+    ))
 
     # Adaptive threshold plasticity (complementary to gain adaptation)
-    threshold_learning_rate: float = 0.02  # Moderate threshold adaptation
-    threshold_min: float = 0.05  # Lower floor to allow more aggressive adaptation for under-firing
-    threshold_max: float = 3.0
+    homeostatic_threshold: HomeostaticThresholdConfig = field(default_factory=lambda: HomeostaticThresholdConfig(
+        lr_per_ms=0.001,  # Reduced 0.02→0.001: effective tau must be ≥ 1000 ms (biological minimum for homeostasis)
+        threshold_min=0.05,  # Lower floor to allow more aggressive adaptation for under-firing
+        threshold_max=3.0,
+    ))
+    homeostatic_target_rates: dict[str, float] = field(default_factory=lambda: {
+        HippocampusPopulation.DG: 0.001,
+        HippocampusPopulation.CA3: 0.002,
+        HippocampusPopulation.CA2: 0.003,
+        HippocampusPopulation.CA1: 0.003,
+    })
 
     # =========================================================================
     # LEARNING RATES
@@ -191,6 +214,14 @@ class HippocampusConfig(NeuralRegionConfig):
     a_minus: float = 0.01
 
     # =========================================================================
+    # INHIBITORY STDP (Vogels et al. 2011)
+    # =========================================================================
+    # Symmetric learning rule for I→E synapses (PV→Pyr, OLM→Pyr).
+    istdp_learning_rate: float = 0.001
+    istdp_alpha: float = 0.12  # Target-rate offset
+    istdp_tau_ms: float = 20.0  # Trace time constant
+
+    # =========================================================================
     # TEMPORAL DYNAMICS & DELAYS
     # =========================================================================
     # Biological signal propagation times within hippocampal circuit:
@@ -206,6 +237,7 @@ class HippocampusConfig(NeuralRegionConfig):
     ca3_to_ca3_delay_ms: float = 10.0  # CA3→CA3 recurrent delay (CRITICAL for preventing synchronization)
     ca3_to_ca2_delay_ms: float = 2.0   # CA3→CA2 axonal delay
     ca2_to_ca1_delay_ms: float = 2.0   # CA2→CA1 axonal delay
+    ca2_to_ca3_delay_ms: float = 2.0   # CA2→CA3 back-projection delay (modulatory)
     ca3_to_ca1_delay_ms: float = 3.0   # CA3→CA1 axonal delay (Schaffer collaterals)
 
     # =========================================================================
@@ -252,36 +284,48 @@ class HippocampusConfig(NeuralRegionConfig):
     population_overrides: Dict[HippocampusPopulation, HippocampalPopulationConfig] = field(
         default_factory=lambda: {
             HippocampusPopulation.DG: HippocampalPopulationConfig(
+                tau_mem_ms=20.0,
                 v_threshold=1.8,
-                adapt_increment=0.50,  # Raised 0.30→0.50: at 0.6 Hz, g_adapt_ss=0.036 (0.72× g_L); need stronger burst termination for sparse coding
-                tau_adapt=120.0,
+                v_reset=-0.10,
+                adapt_increment=0.50,
+                tau_adapt_ms=120.0,
+                noise_std=0.04,
                 total_inhib_fraction=0.20,
                 v_threshold_olm=1.00,
-                v_threshold_bistratified=1.50,  # Raised 1.00→1.50: DG bistrat SFA=20.0 (>3.0) + ρ=0.92 runaway — raise threshold to reduce firing and adaptation load
+                v_threshold_bistratified=1.50,
             ),
             HippocampusPopulation.CA3: HippocampalPopulationConfig(
-                v_threshold=0.74,           # Lowered 0.77→0.74: CA3 at 0.95 Hz (target 1-5), need more threshold reduction
-                adapt_increment=0.35,       # Raised 0.15→0.35: at 1.3 Hz, g_adapt_ss=0.046 (0.91× g_L); CA3 SFA=0.82 needs stronger adaptation for burst termination
-                tau_adapt=100.0,            # Raised 50→100: slower decay spreads adaptation evenly, prevents dump-and-rebound cycling
+                tau_mem_ms=20.0,
+                v_threshold=0.74,
+                v_reset=-0.12,
+                adapt_increment=0.35,
+                tau_adapt_ms=100.0,
+                noise_std=0.12,
                 total_inhib_fraction=0.30,
-                v_threshold_olm=0.01,       # Lowered 0.02→0.01: CA3 OLM at 4.79 Hz (target ≥5)
-                v_threshold_bistratified=0.12,  # Keep: CA3 bistrat fixed at 6.58 Hz
+                v_threshold_olm=0.06,           # Raised 0.01→0.06: CA3 now fires at 1.63 Hz (was 0.12 Hz); ultra-low threshold caused all OLM cells to co-activate synchronously
+                v_threshold_bistratified=0.15,  # Raised 0.04→0.15: epileptiform bursting (6%) — threshold range [0.03,0.05] too narrow, all neurons fire together; 0.15 spreads thresholds to [0.11, 0.20]
             ),
             HippocampusPopulation.CA2: HippocampalPopulationConfig(
+                tau_mem_ms=20.0,
                 v_threshold=0.60,
-                adapt_increment=0.20,  # Raised 0.05→0.20: at 3.0 Hz, g_adapt_ss=0.060 (1.2× g_L); CA2 social memory cells need moderate adaptation
-                tau_adapt=100.0,
+                v_reset=-0.10,
+                adapt_increment=0.20,
+                tau_adapt_ms=100.0,
+                noise_std=0.08,
                 total_inhib_fraction=0.15,
                 v_threshold_olm=0.35,
                 v_threshold_bistratified=0.30,
             ),
             HippocampusPopulation.CA1: HippocampalPopulationConfig(
+                tau_mem_ms=20.0,
                 v_threshold=0.30,
-                adapt_increment=0.35,  # Raised 0.20→0.35: at 2.4 Hz, g_adapt_ss=0.067 (1.3× g_L); CA1 SFA=0.92 needs stronger adaptation
-                tau_adapt=80.0,
+                v_reset=-0.12,
+                adapt_increment=0.35,
+                tau_adapt_ms=80.0,
+                noise_std=0.08,
                 total_inhib_fraction=0.30,
-                v_threshold_olm=0.12,           # Lowered 0.15→0.12: CA1 OLM at 4.99 Hz (target ≥5)
-                v_threshold_bistratified=0.25,  # Keep: CA1 bistrat fixed at 6.07 Hz
+                v_threshold_olm=0.08,           # Raised 0.05→0.08: with increased CA1 firing (2.06 Hz), OLM cells were over-driven
+                v_threshold_bistratified=0.20,  # Raised 0.12→0.20: epileptiform bursting (7.3%) — threshold too low for current CA1 activity level; wider spread reduces synchrony
             ),
         }
     )
@@ -309,51 +353,23 @@ class MedialSeptumConfig(NeuralRegionConfig):
     # replaces the sinusoidal drive.  The theta rhythm (4-10 Hz) emerges from
     # the interaction of three slow ionic currents plus reciprocal connectivity.
 
-    i_nap_conductance: float = 0.012
-    """Tonic I_NaP (persistent Na⁺) drive conductance for ACh neurons.
-
-    Provides the sub-threshold depolarising bias that initiates each ACh burst.
-    Must be below the ACh threshold (~1.3) but sufficient to reach threshold
-    when combined with recurrent excitation.  Modulated by NE (+40%) and ACh
-    self-modulation (+30%) from neuromodulator broadcast.
-    """
+    i_nap_conductance: float = 0.010
+    """Tonic I_NaP (persistent Na⁰) drive conductance for ACh neurons."""
 
     i_h_conductance: float = 0.006
-    """Peak I_h (HCN) rebound conductance for GABA neurons.
-
-    Opens during GABA quiescence (time constant ~150ms) to provide a slow
-    depolarising ramp that, combined with ACh→GABA excitation, triggers the
-    GABA burst at the theta trough (≈180° offset from ACh burst).
-    """
+    """Peak I_h (HCN) rebound conductance for GABA neurons."""
 
     i_ahp_tau_ms: float = 100.0
-    """Time constant of the I_AHP (slow K⁺) current (ms).
+    """Time constant of the I_AHP (slow K⁺) current (ms)."""
 
-    AHP decays exponentially between bursts.  With 8 Hz theta (125ms period)
-    and this 100ms tau, roughly 71% of AHP dissipates between bursts, allowing
-    the next cycle to fire.  Shortening to ~50ms gives faster theta; lengthening
-    or increasing the increment gives slower / more adaptation.
-    """
-
-    i_ahp_increment: float = 0.008
-    """Increment added to I_AHP conductance on each spike.
-
-    Each spike adds this value to the per-neuron AHP conductance (g_inh channel).
-    With tau_ahp=100ms, 2-3 ACh spikes accumulate ≈0.016-0.024 g_inh — enough
-    to terminate the burst when combined with the GABA feedback inhibition.
-    """
+    i_ahp_increment: float = 0.015
+    """Increment added to I_AHP conductance on each spike."""
 
     # =========================================================================
     # CHOLINERGIC NEURON PROPERTIES
     # =========================================================================
     ach_tau_mem: float = 35.0
-    """ACh neuron membrane time constant (ms). Moderate for responsive bursting.
-
-    REDUCED to 35ms for faster integration during short (10ms) burst windows:
-    - Quick enough to respond within burst window
-    - Still slower than typical neurons (20ms) for pacemaker-like behavior
-    - Matches burst window duration for clean firing
-    """
+    """ACh neuron membrane time constant (ms). Moderate for responsive bursting."""
 
     ach_threshold: float = 1.3
     """ACh neuron threshold (slightly elevated to require stronger drive)."""
@@ -362,17 +378,7 @@ class MedialSeptumConfig(NeuralRegionConfig):
     """ACh neuron reset potential after spike."""
 
     ach_adaptation_tau: float = 80.0
-    """ACh adaptation time constant (ms).
-
-    Critical: Must balance two requirements:
-    1. Persist through 25ms burst duration to accumulate and terminate firing
-    2. Decay during 100ms inter-burst interval to allow next burst
-
-    With tau=80ms:
-    - During burst (25ms): ~27% decay → adaptation accumulates strongly
-    - Between bursts (100ms): ~71% decay → mostly resets for next burst
-    - Ensures burst self-terminates after 2-4 spikes
-    """
+    """ACh adaptation time constant (ms)."""
 
     ach_adaptation_increment: float = 0.40
     """ACh adaptation increment per spike."""
@@ -383,7 +389,7 @@ class MedialSeptumConfig(NeuralRegionConfig):
     gaba_tau_mem: float = 30.0
     """GABA neuron membrane time constant (ms). Moderate for responsive theta bursting."""
 
-    gaba_threshold: float = 1.2
+    gaba_threshold: float = 0.85  # Lowered 1.2→1.0→0.85: MS:GABA at 4.38 Hz (target 5-15 Hz) after first reduction; further lowering needed
     """GABA neuron threshold."""
 
     gaba_reset: float = 0.0
@@ -427,14 +433,14 @@ class SubiculumConfig(NeuralRegionConfig):
     """
 
     v_threshold: float = 1.1
-    """Firing threshold (normalised).  Same as EC_II — subiculum is a relay
-    and should be easily driven by strong CA1 input.
+    """Firing threshold (normalised).  Reverted 1.5→1.1: v_threshold=1.5
+    killed PV firing (8.19→1.97 Hz) more than principal, worsening E/I to 52.2.
     """
 
     adapt_increment: float = 0.20
     """Spike-frequency adaptation increment (I_KCA)."""
 
-    tau_adapt: float = 150.0
+    tau_adapt_ms: float = 150.0
     """Adaptation decay time constant (ms).
 
     Long time constant to sustain the regular-spiking mode across a
@@ -446,12 +452,4 @@ class SubiculumConfig(NeuralRegionConfig):
 
     Keeps cells slightly depolarised below threshold; subiculum is tonically
     active during awake exploration at ~5-10 Hz.
-    """
-
-    lateral_inhibition_ratio: float = 0.70
-    """Implicit lateral inhibition: fraction of excitatory drive fed back as GABA_A.
-
-    Approximates PV basket-cell feedback (within ~1 ms at dt=1ms) to prevent
-    runaway synchronous bursting across the entire population.  Biological
-    range: 0.5–0.8 for hippocampal output structures.
     """

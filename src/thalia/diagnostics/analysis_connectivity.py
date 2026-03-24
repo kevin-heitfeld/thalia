@@ -6,7 +6,8 @@ from typing import List
 
 import numpy as np
 
-from .diagnostics_types import ConnectivityStats, RecorderSnapshot
+from .diagnostics_metrics import ConnectivityStats
+from .diagnostics_snapshot import RecorderSnapshot
 
 
 def compute_connectivity_stats(rec: RecorderSnapshot, T: int) -> ConnectivityStats:
@@ -29,6 +30,7 @@ def compute_connectivity_stats(rec: RecorderSnapshot, T: int) -> ConnectivitySta
         # Also scan the anti-causal (negative-lag) window to detect reversed connections.
         measured_delay_ms = np.nan
         anticausal_peak_ms = np.nan
+        transmission_jitter_ms = np.nan
         if is_functional:
             tgt_key = (synapse_id.target_region, synapse_id.target_population)
             tgt_idx = rec._pop_index.get(tgt_key)
@@ -50,6 +52,17 @@ def compute_connectivity_stats(rec: RecorderSnapshot, T: int) -> ConnectivitySta
                         peak_idx = int(np.argmax(causal_seg))
                         measured_delay_ms = float(peak_idx) * rec.dt_ms
                         causal_max = float(causal_seg[peak_idx])
+
+                        # Transmission jitter: std of the cross-correlation
+                        # peak region, measuring temporal precision.
+                        if causal_max > 0:
+                            lags_ms = np.arange(len(causal_seg), dtype=np.float64) * rec.dt_ms
+                            weights = np.maximum(causal_seg, 0.0)
+                            w_sum = weights.sum()
+                            if w_sum > 0:
+                                w_mean = float(np.dot(lags_ms, weights) / w_sum)
+                                w_var = float(np.dot((lags_ms - w_mean) ** 2, weights) / w_sum)
+                                transmission_jitter_ms = float(np.sqrt(w_var))
                     else:
                         causal_max = 0.0
 
@@ -80,6 +93,7 @@ def compute_connectivity_stats(rec: RecorderSnapshot, T: int) -> ConnectivitySta
                 measured_delay_ms=measured_delay_ms,
                 expected_delay_ms=expected_delay_ms,
                 anticausal_peak_ms=anticausal_peak_ms,
+                transmission_jitter_ms=float(transmission_jitter_ms),
             )
         )
 

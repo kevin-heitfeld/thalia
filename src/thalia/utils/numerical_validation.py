@@ -21,7 +21,7 @@ def set_numerical_validation(enabled: bool) -> None:
     Args:
         enabled: True to enable validation, False to disable
     """
-    global _enable_numerical_validation  # noqa: PLW0603
+    global _enable_numerical_validation
     _enable_numerical_validation = enabled
 
 

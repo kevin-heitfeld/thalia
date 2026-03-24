@@ -40,9 +40,6 @@ class ConductanceScaledSpec:
     target_E_E: float = 3.0
     """Excitatory reversal potential of postsynaptic neuron (default 3.0)."""
 
-    target_E_L: float = 0.0
-    """Leak reversal potential of postsynaptic neuron (default 0.0)."""
-
     target_tau_E_ms: float = 5.0
     """AMPA synaptic time-constant of postsynaptic neuron in ms (default 5.0)."""
 
@@ -104,6 +101,51 @@ class ConductanceScaledSpec:
     Defaults to 1.0 (no STP correction).
     """
 
+    inhibitory_load: float = 0.0
+    """Ratio of expected total steady-state inhibitory conductance to ``g_L``.
+
+    The basic formula ignores inhibitory conductance, computing excitatory
+    weights as if leak is the only opposing force.  In reality, local
+    interneurons (PV, SST, VIP) provide substantial shunting inhibition that
+    lowers the effective V_inf.  This parameter corrects the formula:
+
+    .. math::
+        g_I^{expected} = \\text{inhibitory\\_load} \\times g_L
+
+    The corrected total excitatory conductance becomes:
+
+    .. math::
+        g_E^{total} = \\frac{g_L \\cdot V_\\infty + g_I (V_\\infty - E_I)}{E_E - V_\\infty}
+
+    Since :math:`V_\\infty > 0 > E_I`, the inhibitory term is always positive,
+    increasing the required excitation.  Without this correction, populations
+    with strong interneuron feedback are systematically underdriven.
+
+    **Typical values** (ratio of total steady-state GABA_A conductance to g_L):
+
+    +----------------------------+-------------------+
+    | Circuit                    | inhibitory_load   |
+    +============================+===================+
+    | Weak feedback (e.g. DG)    | 0.1 – 0.2        |
+    +----------------------------+-------------------+
+    | Moderate (cortical L2/3)   | 0.2 – 0.4        |
+    +----------------------------+-------------------+
+    | Strong PV drive (L4 PYR)   | 0.3 – 0.5        |
+    +----------------------------+-------------------+
+    | Heavy inhibition (CA1)     | 0.4 – 0.7        |
+    +----------------------------+-------------------+
+
+    Defaults to 0.0 (original formula, no inhibitory correction).
+    """
+
+    E_I: float = -0.5
+    """Inhibitory reversal potential (normalised units, GABA_A).
+
+    Used only when ``inhibitory_load > 0`` to compute the additional excitatory
+    conductance needed to overcome inhibition.  Default -0.5 matches the
+    standard ``ConductanceLIFConfig.E_I`` across all regions.
+    """
+
     # Sentinel so equality checks and repr work cleanly; no user-facing meaning.
     _tag: str = field(default="conductance_scaled", init=False, repr=False, compare=False)
 
@@ -149,7 +191,7 @@ class WeightInitializer:
         mask = torch.rand(n_output, n_input, device=device, requires_grad=False) < connectivity
         weights = torch.randn(n_output, n_input, device=device, requires_grad=False)
         weights = weights * std + mean
-        weights = weights * mask.float() * GlobalConfig.SYNAPTIC_WEIGHT_SCALE
+        weights = weights * mask.float()
         return weights.abs()  # Ensure positive conductances
 
     @staticmethod
@@ -184,7 +226,7 @@ class WeightInitializer:
         mask = torch.rand(n_output, n_input, device=device, requires_grad=False) < connectivity
         weights = torch.rand(n_output, n_input, device=device, requires_grad=False)
         weights = weights * weight_scale
-        weights = weights * mask.float() * GlobalConfig.SYNAPTIC_WEIGHT_SCALE
+        weights = weights * mask.float()
         return weights.abs()  # Ensure positive conductances
 
     @staticmethod
@@ -222,7 +264,7 @@ class WeightInitializer:
         mask = torch.rand(n_output, n_input, device=device, requires_grad=False) < connectivity
         weights = torch.rand(n_output, n_input, device=device, requires_grad=False)
         weights = weights * (w_max - w_min) + w_min
-        weights = weights * mask.float() * GlobalConfig.SYNAPTIC_WEIGHT_SCALE
+        weights = weights * mask.float()
         return weights.abs()  # Ensure positive conductances
 
     @staticmethod
@@ -269,6 +311,13 @@ class WeightInitializer:
             device=device,
         )
         weights.fill_diagonal_(0.0)  # Eliminate autapses (biologically absent)
+
+        # Safety net: guarantee at least one off-diagonal connection for small populations.
+        if weights.sum() == 0.0 and n_input >= 2:
+            i = torch.randint(n_input, (1,)).item()
+            j = (i + 1 + torch.randint(n_input - 1, (1,)).item()) % n_input
+            weights[i, j] = abs(mean)
+
         return weights
 
     @staticmethod
@@ -312,6 +361,13 @@ class WeightInitializer:
             device=device,
         )
         weights.fill_diagonal_(0.0)  # Eliminate autapses (biologically absent)
+
+        # Safety net: guarantee at least one off-diagonal connection for small populations.
+        if weights.sum() == 0.0 and n_input >= 2:
+            i = torch.randint(n_input, (1,)).item()
+            j = (i + 1 + torch.randint(n_input - 1, (1,)).item()) % n_input
+            weights[i, j] = weight_scale * 0.5
+
         return weights
 
     @staticmethod
@@ -358,6 +414,15 @@ class WeightInitializer:
             device=device,
         )
         weights.fill_diagonal_(0.0)  # Eliminate autapses (biologically absent)
+
+        # Safety net: for small populations, stochastic sparsity can produce
+        # all-zero off-diagonal weights.  Guarantee at least one connection
+        # so the synapse is never born dead.
+        if weights.sum() == 0.0 and n_input >= 2:
+            i = torch.randint(n_input, (1,)).item()
+            j = (i + 1 + torch.randint(n_input - 1, (1,)).item()) % n_input
+            weights[i, j] = (w_min + w_max) / 2.0
+
         return weights
 
     @staticmethod
@@ -368,11 +433,12 @@ class WeightInitializer:
         source_rate_hz: float,
         target_g_L: float,
         target_E_E: float = 3.0,
-        target_E_L: float = 0.0,
         target_tau_E_ms: float = 5.0,
         target_v_inf: float = 1.05,
         fraction_of_drive: float = 1.0,
         stp_utilization_factor: float = 1.0,
+        inhibitory_load: float = 0.0,
+        E_I: float = -0.5,
         device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ) -> torch.Tensor:
         """Sparse random weights calibrated so the source drives the target to a desired V_inf.
@@ -384,20 +450,26 @@ class WeightInitializer:
 
         **Physics:**
 
-        For a conductance-based LIF at rest (V = V_inf, ignoring inhibition and noise):
+        For a conductance-based LIF at steady state (E_L = 0), with both excitatory
+        and inhibitory input:
 
         .. math::
-            V_{\\infty} = \\frac{g_{AMPA} \\cdot E_E + g_L \\cdot E_L}{g_L + g_{AMPA}}
+            V_{\\infty} = \\frac{g_E \\cdot E_E + g_I \\cdot E_I}{g_L + g_E + g_I}
 
-        Solving for the required steady-state AMPA conductance from *all* sources:
+        Solving for the required steady-state excitatory (AMPA) conductance:
 
         .. math::
-            g_{ss}^{total} = g_L \\cdot \\frac{V_{\\infty} - E_L}{E_E - V_{\\infty}}
+            g_E^{total} = \\frac{g_L \\cdot V_{\\infty} + g_I (V_{\\infty} - E_I)}{E_E - V_{\\infty}}
+
+        where :math:`g_I = \\text{inhibitory\\_load} \\times g_L` represents the expected
+        steady-state inhibitory conductance from local interneurons (PV, SST, etc.).
+        When ``inhibitory_load = 0``, this reduces to the original formula
+        :math:`g_E = g_L \\cdot V_{\\infty} / (E_E - V_{\\infty})`.
 
         This source is responsible for ``fraction_of_drive`` of that total:
 
         .. math::
-            g_{ss}^{this} = g_{ss}^{total} \\times fraction\\_of\\_drive
+            g_{ss}^{this} = g_E^{total} \\times fraction\\_of\\_drive
 
         The steady-state conductance produced by one synapse is
         ``weight × rate_per_ms × tau_E_ms`` (geometric series of decaying AMPA pulses
@@ -409,7 +481,8 @@ class WeightInitializer:
         Weights are drawn from U[0, 2 × w_mean] so that E[w] = w_mean.
 
         **Usage example** — thalamus (400 neurons, 32 Hz) driving L4 pyramidals (800
-        neurons, g_L=0.05, tau_E=5 ms), thalamus providing 60% of L4's total drive:
+        neurons, g_L=0.05, tau_E=5 ms), thalamus providing 60% of L4's total drive,
+        with moderate PV/SST inhibitory feedback (inhibitory_load=0.3):
 
         .. code-block:: python
 
@@ -418,8 +491,8 @@ class WeightInitializer:
                 source_rate_hz=32.0,
                 target_g_L=0.05, target_tau_E_ms=5.0,
                 target_v_inf=1.05, fraction_of_drive=0.6,
+                inhibitory_load=0.3,
             )
-            # → weight_mean ≈ 0.00065
 
         Args:
             n_input: Number of presynaptic neurons.
@@ -427,9 +500,10 @@ class WeightInitializer:
             connectivity: Connection probability (0–1).
             source_rate_hz: Expected mean firing rate of the source population (Hz).
             target_g_L: Leak conductance of the target neuron (``g_L`` field of
-                ``ConductanceLIFConfig``).
+                ``ConductanceLIFConfig``).  For apical compartment targets in
+                TwoCompartmentLIF, use ``g_L_d + g_c`` to account for the coupling
+                conductance that also drains the dendritic compartment.
             target_E_E: Excitatory reversal potential of target neuron (default 3.0).
-            target_E_L: Leak reversal potential of target neuron (default 0.0).
             target_tau_E_ms: AMPA time constant of target neuron in ms (default 5.0).
             target_v_inf: Desired steady-state membrane potential (default 1.05, just
                 above threshold=1.0 for reliable but not maximal firing).
@@ -442,6 +516,10 @@ class WeightInitializer:
                 nominal weight after STP at the source's baseline firing rate.
                 Defaults to 1.0 (no STP).  See :attr:`ConductanceScaledSpec.stp_utilization_factor`
                 for a table of common preset values.
+            inhibitory_load: Ratio of expected total steady-state inhibitory conductance
+                to g_L.  Defaults to 0.0 (no inhibitory correction).
+                See :attr:`ConductanceScaledSpec.inhibitory_load` for typical values.
+            E_I: Inhibitory reversal potential (default -0.5).
             device: Tensor device.
 
         Returns:
@@ -460,13 +538,19 @@ class WeightInitializer:
             )
         if source_rate_hz <= 0.0:
             raise ValueError("source_rate_hz must be positive.")
-        if not (0.0 < fraction_of_drive <= 1.0):
-            raise ValueError(f"fraction_of_drive={fraction_of_drive!r} must be in (0, 1].")
+        if fraction_of_drive <= 0.0:
+            raise ValueError(f"fraction_of_drive={fraction_of_drive!r} must be positive.")
         if not (0.0 < stp_utilization_factor <= 1.0):
             raise ValueError(f"stp_utilization_factor={stp_utilization_factor!r} must be in (0, 1].")
+        if inhibitory_load < 0.0:
+            raise ValueError(f"inhibitory_load={inhibitory_load!r} must be non-negative.")
 
-        # Required steady-state g_AMPA across all sources combined
-        g_ss_total = target_g_L * (target_v_inf - target_E_L) / (target_E_E - target_v_inf)
+        # Required steady-state g_E across all sources combined  [E_L = 0]
+        # Full equation: V_inf = (g_E·E_E + g_I·E_I) / (g_L + g_E + g_I)
+        # Solving for g_E: g_E = (g_L·V_inf + g_I·(V_inf - E_I)) / (E_E - V_inf)
+        # where g_I = inhibitory_load × g_L
+        g_I = inhibitory_load * target_g_L
+        g_ss_total = (target_g_L * target_v_inf + g_I * (target_v_inf - E_I)) / (target_E_E - target_v_inf)
 
         # Fraction this source is responsible for
         g_ss_this = g_ss_total * fraction_of_drive
@@ -486,5 +570,5 @@ class WeightInitializer:
         mask = torch.rand(n_output, n_input, device=device, requires_grad=False) < connectivity
         weights = torch.rand(n_output, n_input, device=device, requires_grad=False)
         weights = weights * (2.0 * weight_mean)
-        weights = weights * mask.float() * GlobalConfig.SYNAPTIC_WEIGHT_SCALE
+        weights = weights * mask.float()
         return weights.abs()  # Ensure positive conductances

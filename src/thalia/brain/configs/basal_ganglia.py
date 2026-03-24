@@ -2,10 +2,51 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict
 
-from .neural_region import NeuralRegionConfig
+from thalia.brain.gap_junctions import GapJunctionConfig
+from thalia.brain.regions.population_names import StriatumPopulation, VTAPopulation
+from thalia.brain.synapses import NMReceptorType
+from thalia.typing import NeuromodulatorChannel, PopulationPolarity
 
+from .neural_region import (
+    HomeostaticGainConfig,
+    HomeostaticThresholdConfig,
+    NMReceptorConfig,
+    NeuralPopulationConfig,
+    NeuralRegionConfig,
+)
+
+
+# ---------------------------------------------------------------------------
+# Per-population config for BG output nuclei
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BGPopulationConfig(NeuralPopulationConfig):
+    """Per-population biophysical parameters for a BG output nucleus.
+
+    Extends :class:`NeuralPopulationConfig` with BG-specific fields for
+    baseline drive scaling, NMDA routing, and Dale's law polarity.
+    Replaces the former ``SubpopulationSpec`` frozen dataclass: all base
+    biophysical parameters (tau_mem_ms, v_threshold, etc.) are now explicit
+    per-population rather than shared at the region config level.
+    """
+
+    polarity: PopulationPolarity = PopulationPolarity.INHIBITORY
+    """Dale's law polarity for this population."""
+
+    baseline_multiplier: float = 1.0
+    """Fraction of ``config.baseline_drive`` used for this population's tonic drive."""
+
+    nmda_ratio: float = 0.05
+    """Fraction of excitatory conductance routed to NMDA receptors."""
+
+
+# ---------------------------------------------------------------------------
+# Configurations
+# ---------------------------------------------------------------------------
 
 @dataclass
 class TonicPacemakerConfig(NeuralRegionConfig):
@@ -46,6 +87,20 @@ class TonicPacemakerConfig(NeuralRegionConfig):
 
 
 @dataclass
+class BGOutputConfig(TonicPacemakerConfig):
+    """Configuration for basal ganglia output nuclei (GPe, GPi, SNr).
+
+    Extends :class:`TonicPacemakerConfig` with a dict of
+    :class:`BGPopulationConfig` entries defining each population's biophysical
+    parameters.  One registered class (``BasalGangliaOutputNucleus``) is
+    instantiated three times with different configs — no per-nucleus subclass needed.
+    """
+
+    population_overrides: Dict[str, BGPopulationConfig] = field(default_factory=lambda: {})
+    """Dict mapping population name → per-population biophysical config."""
+
+
+@dataclass
 class StriatumConfig(NeuralRegionConfig):
     """Configuration specific to striatal regions.
 
@@ -70,8 +125,10 @@ class StriatumConfig(NeuralRegionConfig):
     # For striatum: Maintain COMBINED D1+D2 rate, not independent rates
     # Biology: D1 and D2 naturally balance via competition and FSI inhibition
     # BIOLOGY: Homeostatic plasticity operates on minutes-to-hours timescale
-    gain_learning_rate: float = 0.0004
-    gain_tau_ms: float = 30000.0  # (should be hours, but 30s for testing)
+    homeostatic_gain: HomeostaticGainConfig = field(default_factory=lambda: HomeostaticGainConfig(
+        lr_per_ms=0.0004,
+        tau_ms=30000.0,  # (should be hours, but 30s for testing)
+    ))
 
     # =========================================================================
     # LEARNING RATES
@@ -81,9 +138,27 @@ class StriatumConfig(NeuralRegionConfig):
     # =========================================================================
     # ADAPTVE THRESHOLD PLASTICITY (for MSN neurons)
     # =========================================================================
-    threshold_learning_rate: float = 0.02  # Moderate threshold adaptation
-    threshold_min: float = 0.05  # Lower floor to allow more aggressive adaptation for under-firing
-    threshold_max: float = 1.5  # Allow some increase above default
+    homeostatic_threshold: HomeostaticThresholdConfig = field(default_factory=lambda: HomeostaticThresholdConfig(
+        lr_per_ms=0.001,  # Reduced 0.02→0.001: effective tau must be ≥ 1000 ms (biological minimum for homeostasis)
+        threshold_min=0.05,  # Lower floor to allow more aggressive adaptation for under-firing
+        threshold_max=1.5,  # Allow some increase above default
+    ))
+    homeostatic_target_rates: dict[str, float] = field(default_factory=lambda: {
+        StriatumPopulation.D1: 0.002,
+        StriatumPopulation.D2: 0.002,
+    })
+
+    neuromodulator_receptors: list[NMReceptorConfig] = field(default_factory=lambda: [
+        NMReceptorConfig(NMReceptorType.DA_D1, NeuromodulatorChannel.DA_MESOLIMBIC, "_da_mesolimbic_d1", (StriatumPopulation.D1,)),
+        NMReceptorConfig(NMReceptorType.DA_D2, NeuromodulatorChannel.DA_MESOLIMBIC, "_da_mesolimbic_d2", (StriatumPopulation.D2,)),
+        NMReceptorConfig(NMReceptorType.DA_D1, NeuromodulatorChannel.DA_NIGROSTRIATAL, "_da_nigrostriatal_d1", (StriatumPopulation.D1,)),
+        NMReceptorConfig(NMReceptorType.DA_D2, NeuromodulatorChannel.DA_NIGROSTRIATAL, "_da_nigrostriatal_d2", (StriatumPopulation.D2,)),
+        NMReceptorConfig(NMReceptorType.NE_ALPHA1, NeuromodulatorChannel.NE, "_ne_concentration_d1", (StriatumPopulation.D1,)),
+        NMReceptorConfig(NMReceptorType.NE_ALPHA1, NeuromodulatorChannel.NE, "_ne_concentration_d2", (StriatumPopulation.D2,)),
+        NMReceptorConfig(NMReceptorType.SHT_2A, NeuromodulatorChannel.SHT, "_sht_concentration_d1", (StriatumPopulation.D1,)),
+        NMReceptorConfig(NMReceptorType.ACH_MUSCARINIC_M1, NeuromodulatorChannel.ACH, "_nb_ach_concentration_d1", (StriatumPopulation.D1,)),
+        NMReceptorConfig(NMReceptorType.ACH_MUSCARINIC_M1, NeuromodulatorChannel.ACH, "_nb_ach_concentration_d2", (StriatumPopulation.D2,)),
+    ])
 
     # =========================================================================
     # ELIGIBILITY TRACES: MULTISCALE
@@ -117,9 +192,11 @@ class StriatumConfig(NeuralRegionConfig):
     # Fix: strength=0.005 × neighbors=4 → g_gap_total=0.02 << g_L=0.10 ✓
     # Biology: striatal FSI gap junctions have g_gap ≈ 0.3 nS, at g_L ≈ 10–15 nS
     # → g_gap/g_L ≈ 0.02-0.03. Our unitless ratio matches this.
-    gap_junction_strength: float = 0.005  # Reduced 0.15→0.005: g_gap_total=1.5 shunted FSI to V_inf≈0.13 (threshold=1.0)
-    gap_junction_threshold: float = 0.25  # Neighborhood inference threshold
-    gap_junction_max_neighbors: int = 4   # Reduced 10→4: g_gap_total=0.15×10=1.5 >> g_L=0.10; now 0.005×4=0.02 << g_L
+    gap_junctions: GapJunctionConfig = field(default_factory=lambda: GapJunctionConfig(
+        coupling_strength=0.005,  # Reduced 0.15→0.005: g_gap_total=1.5 shunted FSI to V_inf≈0.13 (threshold=1.0)
+        connectivity_threshold=0.25,  # Neighborhood inference threshold
+        max_neighbors=4,   # Reduced 10→4: g_gap_total=0.15×10=1.5 >> g_L=0.10; now 0.005×4=0.02 << g_L
+    ))
 
     # =========================================================================
     # NEUROMODULATION: TONIC DOPAMINE
@@ -129,34 +206,21 @@ class StriatumConfig(NeuralRegionConfig):
     max_tonic_dopamine: float = 0.5
 
     # =========================================================================
-    # TEMPORAL DYNAMICS & DELAYS
-    # =========================================================================
-    # Biological timing for opponent pathways creates temporal competition:
-    # - D1 "Go" pathway: Striatum → GPi/SNr → Thalamus (~15-20ms total)
-    #   Direct inhibition of GPi/SNr → disinhibits thalamus → facilitates action
-    # - D2 "No-Go" pathway: Striatum → GPe → STN → GPi/SNr (~23-28ms total)
-    #   Indirect route via GPe and STN → inhibits thalamus → suppresses action
-    # - Key insight: D1 pathway is ~8ms FASTER than D2 pathway
-    #   Creates temporal competition window where D1 "vote" arrives first,
-    #   D2 "veto" arrives later. Explains action selection timing and impulsivity.
-    d1_to_output_delay_ms: float = 15.0  # D1 direct pathway delay
-    d2_to_output_delay_ms: float = 25.0  # D2 indirect pathway delay (slower!)
-
-    # =========================================================================
     # TAN (TONICALLY ACTIVE NEURONS) PAUSE DYNAMICS
     # =========================================================================
     # Biology: TANs pause for ~300 ms on coincident cortical + thalamic bursts.
     # The pause is mediated by mAChR autoreceptors (M2/M4) and triggers the
     # corticostriatal plasticity window.
-    tan_baseline_drive:  float = 0.003  # Tonic excitatory conductance for TAN intrinsic pacemaking.
+    tan_baseline_drive:  float = 0.005  # Swept via auto_calibrate: v_threshold=1.70 + baseline=0.005
+                                        # gives 7.4 Hz in isolated region test (score=0.011).
     tan_pause_threshold: float = 0.050  # Mean g_ampa per TAN neuron that signals a burst
     tan_pause_strength:  float = 0.200  # Inhibitory g_gaba_a injected per TAN during pause
     # D2 autoreceptor-mediated pause: phasic DA burst activates D2Rs on TANs, coupling to
     # GIRK channels (slow K⁺ outward current). Approximated as a GABA_B-like conductance
     # proportional to the excess DA level above tan_da2_threshold.
     # References: Straub et al. 2014 (Nat Neurosci); Aosaki et al. 1994 (Science).
-    tan_da2_threshold:      float = 0.30   # DA concentration above which D2Rs suppress TAN firing
-    tan_da2_pause_strength: float = 0.15   # GABA_B-equivalent conductance per unit excess DA
+    tan_da2_threshold:      float = 0.30  # DA concentration above which D2Rs suppress TAN firing
+    tan_da2_pause_strength: float = 0.15  # GABA_B-equivalent conductance per unit excess DA
 
     # =========================================================================
     # FSI (FAST-SPIKING INTERNEURONS) PARAMETERS
@@ -171,6 +235,45 @@ class StriatumConfig(NeuralRegionConfig):
 
     fsi_baseline_drive: float = 0.003
     """Tonic excitatory conductance seed for FSI (PV+ fast-spiking interneurons)."""
+
+
+@dataclass
+class GPeConfig(BGOutputConfig):
+    """Configuration for globus pallidus externa.
+
+    Extends :class:`BGOutputConfig` with electrical gap junction parameters for the
+    PROTOTYPIC population.  PROTOTYPIC neurons are coupled via Cx36 connexin gap
+    junctions (Connelly et al. 2010, J Neurosci) that promote synchrony within the
+    GPe-STN oscillatory loop.  ARKYPALLIDAL neurons do not show the same coupling
+    and use the standard :class:`BGOutputConfig` path.
+
+    Gap junction parameters
+    -----------------------
+    The coupling current at each timestep is:
+
+        I_gap[i] = Σ_j  g_ij · (V_j[t-1] - V_i[t-1])
+
+    implemented as a matrix multiply minus the weighted self-term, then scaled by
+    ``gap_junction_scale`` before being added to g_exc.
+    """
+
+    # Biology: GPe Cx36 coupling is weaker than cortical PV interneurons; normalised
+    # g_gap / g_L ≈ 0.02–0.04 matches published estimates (Connelly et al. 2010).
+    # At g_L = 0.10, coupling_strength = 0.004 gives g_gap / g_L = 0.04.
+    gap_junctions: GapJunctionConfig = field(default_factory=lambda: GapJunctionConfig(
+        coupling_strength=0.004,
+    ))
+    """Gap junction config for PROTOTYPIC neurons."""
+
+    gap_junction_connectivity: float = 0.40
+    """Fraction of PROTOTYPIC neuron pairs connected by gap junctions."""
+
+    gap_junction_scale: float = 0.30
+    """Multiplicative scale applied to the gap junction current before adding to g_exc.
+
+    Keeps coupling sub-threshold at rest; coupling is strongest during synchronised
+    bursting when neighbouring neurons depolarise together.
+    """
 
 
 @dataclass
@@ -195,14 +298,22 @@ class DopaminePacemakerConfig(NeuralRegionConfig):
     tau_ref: float = 3.0
     """DA neuron refractory period in ms."""
 
-    noise_std: float = 0.002
+    # Reverted 0.036→0.025: higher noise caused 100% epileptiform in full brain
+    # (synchronous threshold crossings). Using sparse recurrent GABA instead to
+    # break pacemaker synchrony (proven pattern from VTA mesocortical fix).
+    noise_std: float = 0.025
     """DA neuron membrane voltage noise standard deviation."""
 
-    adapt_increment: float = 0.013
+    # Raised 0.013→0.06→0.10: at tonic 5 Hz, g_adapt_ss = 0.10×5×0.20 = 0.10 (1.25× g_L);
+    # at 10 Hz, g_adapt_ss = 0.10×10×0.20 = 0.20 (2.5× g_L).  Previous 0.06 left SNc
+    # 80% epileptiform — I_h rebound still overcame adaptation at moderate rates.
+    adapt_increment: float = 0.10
     """Spike-triggered adaptation conductance increment (slow AHP)."""
 
-    tau_adapt: float = 300.0
-    """Adaptation conductance time constant in ms (~300ms for DA pacemakers)."""
+    # Reduced 300→200: faster adaptation response prevents I_h rebound from
+    # re-exciting DA neurons before adaptation engages.
+    tau_adapt_ms: float = 200.0
+    """Adaptation conductance time constant in ms."""
 
     baseline_drive: float = 0.0
     """Per-step AMPA conductance added to DA neurons each timestep for tonic pacemaking."""
@@ -268,10 +379,20 @@ class VTAConfig(DopaminePacemakerConfig):
     #   2. Faster spike-frequency adaptation (broader dynamic range)
     #   3. Respond more to stress/aversive stimuli, less to reward per se
     # -------------------------------------------------------------------------
-    noise_std: float = 0.015
+    noise_std: float = 0.025
     """DA neuron membrane noise standard deviation."""
 
-    mesocortical_adapt_increment: float = 0.018
+    mesocortical_noise_std: float = 0.07
+    """Mesocortical DA neuron noise (2.8× base).  Without D2 autoreceptors,
+    high membrane noise is essential to desynchronise; combined with increased
+    v_threshold CV (0.35) and adapt_increment (0.18) in the region."""
+
+    # Raised 0.018→0.08→0.18: mesocortical neurons LACK D2 autoreceptors (Lammel
+    # et al. 2008), so adaptation is their primary negative-feedback mechanism.
+    # At 0.08 the population was still 100% epileptiform — adaptation+noise alone
+    # couldn't break phase-lock.  At 0.18, g_adapt_ss at 7 Hz = 0.18×7×0.20 = 0.252
+    # (3.15× g_L), strong enough to desynchronise ISIs without D2 feedback.
+    mesocortical_adapt_increment: float = 0.18
     """Adaptation increment for mesocortical DA neurons."""
 
     # -------------------------------------------------------------------------
@@ -309,3 +430,7 @@ class VTAConfig(DopaminePacemakerConfig):
     this setting.  This makes the ramp emerge from corticostriatal learning rather
     than being a fixed-rate timer (Howe et al. 2013; Hamid et al. 2016).
     """
+
+    neuromodulator_receptors: list[NMReceptorConfig] = field(default_factory=lambda: [
+        NMReceptorConfig(NMReceptorType.SHT_1A, NeuromodulatorChannel.SHT, "_sht_concentration", (VTAPopulation.DA_MESOLIMBIC,), amplitude_scale=1.33),
+    ])

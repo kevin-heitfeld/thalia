@@ -41,30 +41,19 @@ Biological Background:
 - CeM models the output medial nucleus, gated by CeL
 - Both are primarily GABAergic (inhibitory to downstream targets)
 - CeL → CeM creates ON/OFF dynamics (disinhibition when CeL is suppressed)
-
-References:
------------
-- Ciocchi et al. (2010) Encoding of conditioned fear in central amygdala inhibitory
-  circuits. Nature.
-- Haubensak et al. (2010) Genetic dissection of an amygdala microcircuit that gates
-  conditioned fear. Nature.
-- LeDoux (2000) Emotion circuits in the brain. Annu Rev Neurosci.
 """
 
 from __future__ import annotations
 
-from typing import ClassVar, List, Union
+from typing import ClassVar, List, Optional, Union
 
 import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import CentralAmygdalaConfig
 from thalia.brain.neurons import (
-    ConductanceLIFConfig,
-    heterogeneous_adapt_increment,
-    heterogeneous_g_L,
-    heterogeneous_tau_mem,
-    heterogeneous_v_threshold,
+    ConductanceLIF,
+    build_conductance_lif_config,
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import (
@@ -75,12 +64,10 @@ from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
     NeuromodulatorInput,
-    PopulationPolarity,
     PopulationSizes,
     ReceptorType,
     RegionName,
     RegionOutput,
-    SynapseId,
     SynapticInput,
 )
 
@@ -109,7 +96,10 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
     """
 
     # NE from LC modulates CeM arousal output gain (alpha-1 adrenoceptors on CeM neurons).
-    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [NeuromodulatorChannel.NE]
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [
+        NeuromodulatorChannel.NE,
+        NeuromodulatorChannel.SHT,
+    ]
 
     # =========================================================================
     # INITIALIZATION
@@ -129,55 +119,36 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         self.lateral_size = population_sizes[CeAPopulation.LATERAL]
         self.medial_size = population_sizes[CeAPopulation.MEDIAL]
 
+        lateral_cfg = config.population_overrides[CeAPopulation.LATERAL]
+        medial_cfg = config.population_overrides[CeAPopulation.MEDIAL]
+
         # =====================================================================
         # NEURON POPULATIONS
         # =====================================================================
 
         # CeL neurons (lateral CeA): integrative, GABAergic
         # Moderate activity; receives BLA principal input directly
+        self.lateral_neurons: ConductanceLIF
         self.lateral_neurons = self._create_and_register_neuron_population(
             population_name=CeAPopulation.LATERAL,
             n_neurons=self.lateral_size,
-            polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.lateral_size, self.device),
-                v_threshold=heterogeneous_v_threshold(config.v_threshold, self.lateral_size, self.device),
-                v_reset=0.0,
-                tau_ref=self.config.tau_ref,
-                g_L=heterogeneous_g_L(0.06, self.lateral_size, self.device),
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=6.0,
-                tau_I=12.0,
-                adapt_increment=heterogeneous_adapt_increment(0.15, self.lateral_size, self.device),
-                tau_adapt=120.0,
-                E_adapt=-0.5,
-                noise_std=0.08,
+            polarity=lateral_cfg.polarity,
+            config=build_conductance_lif_config(
+                lateral_cfg, self.lateral_size, device,
+                tau_ref=self.config.tau_ref, g_L=0.06, tau_E=6.0, tau_I=12.0,
             ),
         )
 
         # CeM neurons (medial CeA): output, projects to LC and LHb
         # More excitable than CeL; gated by CeL inhibition
+        self.medial_neurons: ConductanceLIF
         self.medial_neurons = self._create_and_register_neuron_population(
             population_name=CeAPopulation.MEDIAL,
             n_neurons=self.medial_size,
-            polarity=PopulationPolarity.INHIBITORY,
-            config=ConductanceLIFConfig(
-                tau_mem_ms=heterogeneous_tau_mem(config.tau_mem_ms, self.medial_size, self.device),
-                v_threshold=heterogeneous_v_threshold(config.v_threshold * 0.9, self.medial_size, self.device),  # Slightly easier to activate
-                v_reset=0.0,
-                tau_ref=self.config.tau_ref,
-                g_L=heterogeneous_g_L(0.05, self.medial_size, self.device),
-                E_L=0.0,
-                E_E=3.0,
-                E_I=-0.5,
-                tau_E=6.0,
-                tau_I=12.0,
-                adapt_increment=heterogeneous_adapt_increment(0.12, self.medial_size, self.device),
-                tau_adapt=150.0,
-                E_adapt=-0.5,
-                noise_std=0.08,
+            polarity=medial_cfg.polarity,
+            config=build_conductance_lif_config(
+                medial_cfg, self.medial_size, device,
+                tau_ref=self.config.tau_ref, tau_E=6.0, tau_I=12.0,
             ),
         )
 
@@ -189,7 +160,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         # When CeL is suppressed (by extinction or CS absence), CeM is disinhibited
         # When CeL is active (during CS), it partially gates CeM output
         # Net effect: ON cells (PKCδ-) release CeM, OFF cells (PKCδ+) suppress it
-        self._add_internal_connection(
+        self._cel_cem_synapse = self._add_internal_connection(
             source_population=CeAPopulation.LATERAL,
             target_population=CeAPopulation.MEDIAL,
             weights=WeightInitializer.sparse_random(
@@ -204,7 +175,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         )
 
         # CeL self-inhibition (lateral mutual inhibition: ON/OFF dynamics)
-        self._add_internal_connection(
+        self._cel_cel_synapse = self._add_internal_connection(
             source_population=CeAPopulation.LATERAL,
             target_population=CeAPopulation.LATERAL,
             weights=WeightInitializer.sparse_random(
@@ -218,15 +189,38 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
         )
 
-        # Baseline drives
-        self.baseline_drive_lateral = torch.full(
-            (self.lateral_size,), config.baseline_drive_lateral, device=device
-        )
-        self.baseline_drive_medial = torch.full(
-            (self.medial_size,), config.baseline_drive_medial, device=device
+        # CeM self-inhibition (local lateral inhibition regulates fear output)
+        # Biology: CeM GABAergic neurons have local inhibitory connections
+        # that prevent runaway synchronous firing when CeL disinhibits CeM.
+        # Creates sparse competitive output: only the most strongly driven
+        # CeM neurons fire, proportional to threat level.
+        # Refs: Cassell et al. 1999; Ciocchi et al. 2010.
+        self._cem_cem_synapse = self._add_internal_connection(
+            source_population=CeAPopulation.MEDIAL,
+            target_population=CeAPopulation.MEDIAL,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.medial_size,
+                n_output=self.medial_size,
+                connectivity=0.25,
+                weight_scale=0.002,
+                device=device,
+            ),
+            receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
         )
 
-        self._lateral_spikes_prev = None
+        # Baseline drives
+        self.baseline_drive_lateral = torch.full(
+            (self.lateral_size,), lateral_cfg.baseline_drive, device=device
+        )
+        self.baseline_drive_medial = torch.full(
+            (self.medial_size,), medial_cfg.baseline_drive, device=device
+        )
+
+        # =====================================================================
+        # SEROTONIN RECEPTOR (DRN → CeA, 5-HT1A inhibitory on CeM)
+        # 5-HT1A (Gi → GIRK) on CeM: suppresses fear output
+        self._init_receptors_from_config(device)
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -235,13 +229,12 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Compute CeA activity for one timestep.
-
-        Args:
-            synaptic_inputs: BLA principal and other inputs
-            neuromodulator_inputs: NE from LC (arousal modulation)
-        """
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
+        """Compute CeA activity for one timestep."""
         # =====================================================================
         # NE MODULATION (LC → CeA arousal state)
         # =====================================================================
@@ -253,6 +246,14 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             ne_boost = ne_rate * 0.3  # Mild NE-driven excitability increase
 
         # =====================================================================
+        # 5-HT MODULATION (DRN → CeA anxiolysis)
+        # =====================================================================
+        # 5-HT1A on CeM: high serotonin suppresses fear output (-30% at max)
+        self._update_receptors(neuromodulator_inputs)
+        sht_level = self._sht_concentration.mean().item()
+        sht_cem_suppression = max(0.0, 1.0 - 0.3 * sht_level)
+
+        # =====================================================================
         # CeL NEURONS (lateral CeA)
         # =====================================================================
         dendrite_lateral = self._integrate_synaptic_inputs_at_dendrites(
@@ -262,19 +263,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         )
 
         # CeL self-inhibition (previous step)
-        cel_cel_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=CeAPopulation.LATERAL,
-            target_region=self.region_name,
-            target_population=CeAPopulation.LATERAL,
-            receptor_type=ReceptorType.GABA_A,
-        )
-        int_cel_inh = self._integrate_synaptic_inputs_at_dendrites(
-            {cel_cel_synapse: self._lateral_spikes_prev}
-            if self._lateral_spikes_prev is not None
-            else {},
-            n_neurons=self.lateral_size,
-        )
+        int_cel_inh = self._integrate_single_synaptic_input(self._cel_cel_synapse, self._prev_spikes(CeAPopulation.LATERAL))
 
         g_exc_lat = self.baseline_drive_lateral.clone() + dendrite_lateral.g_ampa + ne_boost
         g_inh_lat = dendrite_lateral.g_gaba_a + int_cel_inh.g_gaba_a
@@ -298,20 +287,14 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         )
 
         # CeL → CeM inhibition (lateral CeA gates medial output)
-        cel_cem_synapse = SynapseId(
-            source_region=self.region_name,
-            source_population=CeAPopulation.LATERAL,
-            target_region=self.region_name,
-            target_population=CeAPopulation.MEDIAL,
-            receptor_type=ReceptorType.GABA_A,
-        )
-        int_cel_cem = self._integrate_synaptic_inputs_at_dendrites(
-            {cel_cem_synapse: lateral_spikes},   # Current-step CeL spikes gate CeM
-            n_neurons=self.medial_size,
-        )
+        int_cel_cem = self._integrate_single_synaptic_input(self._cel_cem_synapse, lateral_spikes)
+
+        # CeM → CeM self-inhibition (previous step: local lateral inhibition)
+        int_cem_inh = self._integrate_single_synaptic_input(self._cem_cem_synapse, self._prev_spikes(CeAPopulation.MEDIAL))
 
         g_exc_med = self.baseline_drive_medial.clone() + dendrite_medial.g_ampa + ne_boost
-        g_inh_med = dendrite_medial.g_gaba_a + int_cel_cem.g_gaba_a
+        g_exc_med = g_exc_med * sht_cem_suppression  # 5-HT1A anxiolytic suppression
+        g_inh_med = dendrite_medial.g_gaba_a + int_cel_cem.g_gaba_a + int_cem_inh.g_gaba_a
 
         g_ampa_med, g_nmda_med = split_excitatory_conductance(g_exc_med, nmda_ratio=0.20)
 
@@ -321,9 +304,6 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             g_gaba_a_input=ConductanceTensor(g_inh_med),
             g_gaba_b_input=None,
         )
-
-        # Cache for next timestep
-        self._lateral_spikes_prev = lateral_spikes
 
         region_outputs: RegionOutput = {
             CeAPopulation.LATERAL: lateral_spikes,

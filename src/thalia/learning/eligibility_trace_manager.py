@@ -180,14 +180,10 @@ class EligibilityTraceManager(nn.Module):
         if abs(self._decay_plus - expected_plus) > 1e-7:
             self.update_temporal_parameters(dt_ms)
 
-        # Convert to float if needed
-        input_float  = input_spikes.float()  if input_spikes.dtype  == torch.bool else input_spikes
-        output_float = output_spikes.float() if output_spikes.dtype == torch.bool else output_spikes
-
         # LTP pre-trace: decays with tau_plus
         # LTD post-trace: decays with tau_minus
-        self.input_trace  = self.input_trace  * self._decay_plus  + input_float
-        self.output_trace = self.output_trace * self._decay_minus + output_float
+        self.input_trace  = self.input_trace  * self._decay_plus  + input_spikes
+        self.output_trace = self.output_trace * self._decay_minus + output_spikes
 
     def compute_ltp_ltd_separate(
         self,
@@ -222,24 +218,53 @@ class EligibilityTraceManager(nn.Module):
 
         # OPTIMIZATION: Check for any spikes before computing outer products
         # Avoid unnecessary computation when no spikes occur
-        has_output_spikes = output_spikes.any() if output_spikes.dtype == torch.bool else output_spikes.sum() > 0
-        has_input_spikes = input_spikes.any() if input_spikes.dtype == torch.bool else input_spikes.sum() > 0
+        has_output_spikes = output_spikes.any()
+        has_input_spikes = input_spikes.any()
 
         # LTP: post spike when pre trace is high → post fires AFTER pre
         # If post fires now and pre_trace is high, pre fired recently → strengthen
         if has_output_spikes:
-            # OPTIMIZATION: Fuse float conversion with outer product
-            output_float = output_spikes.float() if output_spikes.dtype == torch.bool else output_spikes
-            ltp = torch.outer(output_float, self.input_trace) * config.a_plus
+            ltp = torch.outer(output_spikes, self.input_trace) * config.a_plus
         else:
             ltp = 0
 
         # LTD: pre spike when post trace is high → pre fires AFTER post
         # If pre fires now and post_trace is high, post fired recently → weaken
         if has_input_spikes:
-            # OPTIMIZATION: Fuse float conversion with outer product
-            input_float = input_spikes.float() if input_spikes.dtype == torch.bool else input_spikes
-            ltd = torch.outer(self.output_trace, input_float) * config.a_minus
+            ltd = torch.outer(self.output_trace, input_spikes) * config.a_minus
+        else:
+            ltd = 0
+
+        return ltp, ltd
+
+    def compute_ltp_ltd_separate_sparse(
+        self,
+        input_spikes: torch.Tensor,
+        output_spikes: torch.Tensor,
+        row_indices: torch.Tensor,
+        col_indices: torch.Tensor,
+    ) -> Tuple[torch.Tensor | int, torch.Tensor | int]:
+        """Sparse version of :meth:`compute_ltp_ltd_separate`.
+
+        Returns ``[nnz]`` tensors instead of ``[n_output, n_input]`` by
+        indexing into per-neuron traces with the COO indices.
+
+        Args:
+            input_spikes: Current input spikes ``[n_input]``.
+            output_spikes: Current output spikes ``[n_output]``.
+            row_indices: Post-synaptic indices ``[nnz]`` (0..n_output-1).
+            col_indices: Pre-synaptic indices ``[nnz]`` (0..n_input-1).
+
+        Returns:
+            (ltp, ltd): Each ``[nnz]`` or ``0`` when no spikes.
+        """
+        if output_spikes.any():
+            ltp = output_spikes[row_indices] * self.input_trace[col_indices] * self.config.a_plus
+        else:
+            ltp = 0
+
+        if input_spikes.any():
+            ltd = self.output_trace[row_indices] * input_spikes[col_indices] * self.config.a_minus
         else:
             ltd = 0
 

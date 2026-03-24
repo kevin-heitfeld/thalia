@@ -119,7 +119,7 @@ torch::Tensor philox_gaussian_cpp(const torch::Tensor& counters) {
         for (int64_t i = begin; i < end; ++i) {
             float u1 = philox_to_uniform(in_ptr[i]);
             float u2 = philox_to_uniform(in_ptr[i] + 1);
-            // Box-Muller: N(0,1) = sqrt(-2 ln u1) * cos(2π u2)
+            // Box-Muller transform to get Gaussian(0,1) from uniform(0,1)
             out_ptr[i] = std::sqrtf(-2.0f * std::logf(u1)) * std::cosf(TWO_PI * u2);
         }
     });
@@ -128,6 +128,8 @@ torch::Tensor philox_gaussian_cpp(const torch::Tensor& counters) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("philox_uniform_cpp",  &philox_uniform_cpp,  "Philox 2x32-10 uniform  (0,1) — CPU, parallelised");
-    m.def("philox_gaussian_cpp", &philox_gaussian_cpp, "Philox 2x32-10 Gaussian (0,1) via Box-Muller — CPU, parallelised");
+    m.def("philox_uniform_cpp",  &philox_uniform_cpp,  "Philox 2x32-10 uniform  (0,1) — CPU, parallelised",
+          py::call_guard<py::gil_scoped_release>());
+    m.def("philox_gaussian_cpp", &philox_gaussian_cpp, "Philox 2x32-10 Gaussian (0,1) via Box-Muller — CPU, parallelised",
+          py::call_guard<py::gil_scoped_release>());
 }

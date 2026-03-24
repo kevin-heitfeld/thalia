@@ -40,7 +40,8 @@ from .analysis import analyze
 from .diagnostics_recorder import DiagnosticsRecorder
 
 if TYPE_CHECKING:
-    from .diagnostics_types import DiagnosticsConfig, DiagnosticsReport
+    from .diagnostics_config import DiagnosticsConfig
+    from .diagnostics_report import DiagnosticsReport
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -163,6 +164,7 @@ class RegionTestRunner:
         self.config: NeuralRegionConfig = config
         self.dt_ms: float = dt_ms
         self._poisson_inputs: List[PoissonInputSpec] = []
+        self._region_overrides: List[Any] = []  # Callable[[NeuralRegion], None]
 
     # ------------------------------------------------------------------ #
     # Factory                                                              #
@@ -270,6 +272,101 @@ class RegionTestRunner:
         ))
         return self
 
+    def add_preset_inputs(
+        self,
+        preset_name: str = "default",
+        brain_config: Optional[BrainConfig] = None,
+        rate_overrides: Optional[Dict[str, float]] = None,
+    ) -> "RegionTestRunner":
+        """Auto-populate Poisson inputs from the preset's inter-region connections.
+
+        Inspects the preset builder's connection specs and external input specs
+        to find all afferents targeting this region, then registers each one
+        as a Poisson input using the same weight/STP/connectivity parameters.
+
+        For inter-region connections, the source population's firing rate is
+        taken from the ``ConductanceScaledSpec.source_rate_hz`` when available,
+        otherwise looked up in *rate_overrides* by ``"region:population"`` key,
+        falling back to a default of 5 Hz.
+
+        Returns:
+            Self, for method chaining.
+        """
+        builder = BrainBuilder.preset_builder(preset_name, brain_config)
+        overrides = rate_overrides or {}
+
+        def _resolve_rate(region: str, pop: str, ws: Any) -> float:
+            if isinstance(ws, ConductanceScaledSpec):
+                return ws.source_rate_hz
+            key = f"{region}:{pop}"
+            return overrides.get(key, 5.0)
+
+        # Inter-region connections targeting this region
+        for cs in builder._connection_specs:
+            sid = cs.synapse_id
+            if sid.target_region != self.region_name:
+                continue
+
+            # Determine source population size and firing rate
+            src_region = sid.source_region
+            src_pop = sid.source_population
+            if src_region in builder._region_specs:
+                src_sizes = builder._region_specs[src_region].population_sizes
+                n_src = src_sizes.get(src_pop, 100)
+            else:
+                n_src = 100
+
+            rate_hz = _resolve_rate(src_region, src_pop, cs.weight_scale)
+
+            self.add_poisson_input(
+                target_population=sid.target_population,
+                rate_hz=rate_hz,
+                n_input=n_src,
+                connectivity=cs.connectivity,
+                weight_scale=cs.weight_scale,
+                receptor_type=sid.receptor_type,
+                source_label=f"{src_region}:{src_pop}",
+                stp_config=cs.stp_config,
+            )
+
+        # External input sources targeting this region
+        for es in builder._external_input_specs:
+            sid = es.synapse_id
+            if sid.target_region != self.region_name:
+                continue
+
+            rate_hz = _resolve_rate(sid.source_region, sid.source_population, es.weight_scale)
+
+            self.add_poisson_input(
+                target_population=sid.target_population,
+                rate_hz=rate_hz,
+                n_input=es.n_input,
+                connectivity=es.connectivity,
+                weight_scale=es.weight_scale,
+                receptor_type=sid.receptor_type,
+                source_label=f"{sid.source_region}:{sid.source_population}",
+                stp_config=es.stp_config,
+            )
+
+        return self
+
+    def add_region_override(self, callback: Any) -> "RegionTestRunner":
+        """Register a callback invoked after region creation but before simulation.
+
+        The callback receives the instantiated :class:`NeuralRegion` and may
+        modify neuron buffers (e.g. ``v_threshold``, ``noise_std``) or other
+        region state.  Use this for parameters that are hardcoded in the region
+        constructor rather than read from config.
+
+        Args:
+            callback: ``Callable[[NeuralRegion], None]``.
+
+        Returns:
+            Self, for method chaining.
+        """
+        self._region_overrides.append(callback)
+        return self
+
     # ------------------------------------------------------------------ #
     # Run                                                                  #
     # ------------------------------------------------------------------ #
@@ -309,6 +406,10 @@ class RegionTestRunner:
             device=device,
         )
 
+        # Apply post-creation overrides (e.g. neuron buffer modifications)
+        for override_fn in self._region_overrides:
+            override_fn(region)
+
         # ── 2. Register Poisson inputs ───────────────────────────────────────
         for inp in self._poisson_inputs:
             corrected_ws = apply_stp_correction(inp.weight_scale, inp.stp_config)
@@ -327,9 +428,10 @@ class RegionTestRunner:
                 if stp is not None:
                     stp.initialize_to_steady_state(corrected_ws.source_rate_hz)
 
-        # Some regions need post-connection finalisation (e.g. gap junctions).
-        if hasattr(region, "finalize_initialization"):
-            region.finalize_initialization()
+        # Initialize temporal decay/recovery factors for neurons and STP modules.
+        # Without this, STP decay factors remain at their dummy 0.0 initial values,
+        # causing STP.forward() to zero out u and x on every call.
+        region.update_temporal_parameters(self.dt_ms)
 
         # ── 3. Optionally attach a DiagnosticsRecorder ───────────────────────
         recorder = None
@@ -343,11 +445,12 @@ class RegionTestRunner:
             # Build a minimal Brain-compatible wrapper so DiagnosticsRecorder
             # can inspect region/population structure without a full Brain.
             class _FakeBrain:
-                def __init__(self, region_name: str, region_obj: Any) -> None:
+                def __init__(self, region_name: str, region_obj: Any, dt_ms: float) -> None:
+                    self.dt_ms = dt_ms
                     self.regions: Dict[str, Any] = {region_name: region_obj}
                     self.axonal_tracts: Dict[Any, Any] = {}
 
-            fake_brain = _FakeBrain(self.region_name, region)
+            fake_brain = _FakeBrain(self.region_name, region, self.dt_ms)
             recorder = DiagnosticsRecorder(fake_brain, diag_cfg)
 
         # ── 4. Simulate ──────────────────────────────────────────────────────

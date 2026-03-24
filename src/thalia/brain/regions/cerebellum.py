@@ -24,16 +24,18 @@ from thalia.brain.neurons import (
     heterogeneous_v_threshold,
     heterogeneous_adapt_increment,
     heterogeneous_g_L,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_noise_std,
+    heterogeneous_tau_adapt,
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import (
-    NMReceptorType,
-    make_neuromodulator_receptor,
     STPConfig,
     WeightInitializer,
 )
 from thalia.typing import (
     ConductanceTensor,
+    GapJunctionReversal,
     NeuromodulatorChannel,
     NeuromodulatorInput,
     PopulationPolarity,
@@ -73,12 +75,15 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
       sharpening error-driven motor adaptation (Bhatt et al. 2007).
     - **ACh** (muscarinic M2 on Golgi): Suppresses Golgi→granule GABA-A,
       temporarily increasing granule sparsity ceiling during attention.
+    - **5-HT** (5-HT2A on Purkinje): Enhances Purkinje simple spike
+      excitability via Gq/PKC (Strahlendorf et al. 1984).
     """
 
     neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [
         NeuromodulatorChannel.NE,
         NeuromodulatorChannel.DA_NIGROSTRIATAL,
         NeuromodulatorChannel.ACH,
+        NeuromodulatorChannel.SHT,
     ]
 
     # =========================================================================
@@ -100,6 +105,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # EXTRACT LAYER SIZES
         # =====================================================================
         self.dcn_size = population_sizes[CerebellumPopulation.DCN]
+        self.dcn_gaba_size = population_sizes[CerebellumPopulation.DCN_GABA]
         self.granule_size = population_sizes[CerebellumPopulation.GRANULE]
         self.purkinje_size = population_sizes[CerebellumPopulation.PURKINJE]
         self.basket_size = population_sizes[CerebellumPopulation.BASKET]
@@ -127,14 +133,25 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=self.granule_size,
             polarity=PopulationPolarity.EXCITATORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(0.85, self.granule_size, device),
-                v_reset=0.0,
                 tau_mem_ms=heterogeneous_tau_mem(5.0, self.granule_size, device),
+                v_reset=0.0,
+                v_threshold=heterogeneous_v_threshold(0.85, self.granule_size, device),
+                tau_ref=5.0,
+                g_L=heterogeneous_g_L(0.05, self.granule_size, device),
+                E_E=3.0,
+                E_I=-0.5,
                 tau_E=2.5,
                 tau_I=6.0,
-                g_L=heterogeneous_g_L(0.05, self.granule_size, device),
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.granule_size, device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(100.0, self.granule_size, device),
                 adapt_increment=heterogeneous_adapt_increment(0.15, self.granule_size, device),
-                tau_adapt=100.0,
+                E_adapt=-0.5,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.10, self.granule_size, device),
             ),
         )
 
@@ -147,12 +164,22 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=golgi_size,
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(0.9, golgi_size, device),
-                v_reset=0.0,
                 tau_mem_ms=heterogeneous_tau_mem(10.0, golgi_size, device),
+                v_reset=0.0,
+                v_threshold=heterogeneous_v_threshold(0.9, golgi_size, device),
+                tau_ref=5.0,
+                g_L=heterogeneous_g_L(0.05, golgi_size, device),
+                E_E=3.0,
+                E_I=-0.5,
                 tau_E=3.0,
                 tau_I=10.0,
-                g_L=heterogeneous_g_L(0.05, golgi_size, device),
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, golgi_size, device),
+                noise_tau_ms=3.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, golgi_size, device, cv=0.20),
             ),
         )
 
@@ -181,12 +208,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             ),
             requires_grad=False,
         )
-
-        # Causal delay: hold previous-timestep Golgi spikes to avoid circular dep.
-        # Biology: Golgi axons have short myelinated segments (~0.5–1 ms latency);
-        # a 1-step delay is the minimum causal representation.
-        self._prev_golgi_spikes: torch.Tensor
-        self.register_buffer("_prev_golgi_spikes", torch.zeros(golgi_size, dtype=torch.bool, device=device))
+        self.golgi_size = golgi_size
 
         # =====================================================================
         # Molecular Layer Interneurons: Basket + Stellate cells
@@ -201,17 +223,23 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=self.basket_size,
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(0.65, self.basket_size, device, cv=0.06),
+                tau_mem_ms=heterogeneous_tau_mem(8.0, self.basket_size, device, cv=0.10),
                 v_reset=0.0,
-                E_L=0.0,
+                v_threshold=heterogeneous_v_threshold(0.65, self.basket_size, device, cv=0.06),
+                tau_ref=1.5,
+                g_L=heterogeneous_g_L(0.08, self.basket_size, device, cv=0.08),
                 E_E=3.0,
                 E_I=-0.5,
-                g_L=heterogeneous_g_L(0.08, self.basket_size, device, cv=0.08),
-                tau_mem_ms=heterogeneous_tau_mem(8.0, self.basket_size, device, cv=0.10),
                 tau_E=2.0,
                 tau_I=6.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.basket_size, device, cv=0.15),
+                noise_tau_ms=3.0,
                 adapt_increment=0.0,
-                tau_ref=1.5,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.basket_size, device, cv=0.20),
             ),
         )
 
@@ -223,17 +251,23 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=self.stellate_size,
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(0.70, self.stellate_size, device),
+                tau_mem_ms=heterogeneous_tau_mem(10.0, self.stellate_size, device),
                 v_reset=0.0,
-                E_L=0.0,
+                v_threshold=heterogeneous_v_threshold(0.70, self.stellate_size, device),
+                tau_ref=1.5,
+                g_L=heterogeneous_g_L(0.08, self.stellate_size, device, cv=0.08),
                 E_E=3.0,
                 E_I=-0.5,
-                g_L=heterogeneous_g_L(0.08, self.stellate_size, device, cv=0.08),
-                tau_mem_ms=heterogeneous_tau_mem(10.0, self.stellate_size, device),
                 tau_E=2.5,
                 tau_I=7.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.stellate_size, device, cv=0.15),
+                noise_tau_ms=3.0,
                 adapt_increment=0.0,
-                tau_ref=1.5,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.stellate_size, device, cv=0.20),
             ),
         )
 
@@ -323,12 +357,6 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             requires_grad=False,
         )
 
-        # Causal delay buffers: previous-timestep spikes → applied next step
-        self._prev_basket_spikes: torch.Tensor
-        self._prev_stellate_spikes: torch.Tensor
-        self.register_buffer("_prev_basket_spikes", torch.zeros(self.basket_size, dtype=torch.bool, device=device))
-        self.register_buffer("_prev_stellate_spikes", torch.zeros(self.stellate_size, dtype=torch.bool, device=device))
-
         # =====================================================================
         # Purkinje cells
         # =====================================================================
@@ -354,20 +382,27 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(20.0, self.purkinje_size, device),
+                v_reset=0.0,
+                v_threshold=heterogeneous_v_threshold(0.9, self.purkinje_size, device),
+                tau_ref=2.0,
+                g_L=heterogeneous_g_L(0.10, self.purkinje_size, device),
+                E_E=3.0,
+                E_I=-0.5,
                 tau_E=2.0,
                 tau_I=10.0,
                 tau_nmda=50.0,
-                # v_threshold reduced from 1.3 → 0.9: previous value was above
-                # threshold_max=1.0 of the homeostatic system, so homeostasis could
-                # never lower it far enough.  0.9 allows the adaptive threshold to
-                # settle in [0.1, 1.0] and reach 40–100 Hz with the pacemaker drive.
-                v_threshold=heterogeneous_v_threshold(0.9, self.purkinje_size, device),
-                v_reset=0.0,
-                E_L=0.0,
-                tau_ref=2.0,
-                g_L=heterogeneous_g_L(0.10, self.purkinje_size, device),
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.02, self.purkinje_size, device),  # Reduced 0.08→0.02:
+                # Purkinje cells are intrinsic pacemakers with CV<0.25 (Häusser & Clark 1997).
+                # At 0.08 noise with mean pacemaker_g=0.065, noise disrupts metronomic ISI
+                # regularity → CV=0.62. Reducing to 0.02 (2.2% of v_threshold) preserves
+                # biologically realistic pacemaker CV while still allowing synaptic modulation.
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(30.0, self.purkinje_size, device),
                 adapt_increment=heterogeneous_adapt_increment(0.10, self.purkinje_size, device),
-                tau_adapt=30.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.purkinje_size, device, cv=0.30),
             ),
         )
 
@@ -388,8 +423,17 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # with cell-to-cell variability in channel density and kinetics.  A shared
         # scalar pacemaker forces all cells to fire synchronously (ρ→0.84).  Per-cell
         # draws with std≈14% of mean naturally decorrelate tonic firing phases.
+        # Pacemaker conductance: at 65 Hz target with adapt_increment=0.10, tau_adapt=30ms,
+        # the steady-state adaptation current is ~0.195, raising effective threshold to ~1.095.
+        # V_inf = g_pace * E_E / (g_L + g_pace) must be just above 1.095:
+        #   g_pace=0.065 → V_inf = 0.195/0.165 = 1.18 (above 1.095, ~65 Hz)
+        # Higher std (CV≈30%) decorrelates pacemaker phases (ρ < 0.3, Häusser & Clark 1997).
         self.pacemaker_g: torch.Tensor
-        self.register_buffer("pacemaker_g", torch.empty(self.purkinje_size, device=device).normal_(mean=0.060, std=0.014).clamp_(0.025, 0.095))
+        self.register_buffer("pacemaker_g", torch.empty(self.purkinje_size, device=device).normal_(mean=0.055, std=0.006).clamp_(0.035, 0.080))
+        # Reduced std 0.018→0.006 (CV 32%→11%): with 32% CV, cells had wildly different
+        # intrinsic drives → homeostasis couldn't converge all to 65 Hz target (drift=44.6%).
+        # 11% CV preserves biological cell-to-cell variability while allowing convergence.
+        # Tightened clamp 0.020-0.10 → 0.035-0.080: prevents extreme outliers.
 
         # Complex spike tracking [purkinje_size]
         self.last_complex_spike_time: torch.Tensor
@@ -415,7 +459,12 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.15, tau_d=60.0, tau_f=400.0),
+            # Fixed STP direction: was facilitating (U=0.15, tau_d=60, tau_f=400) — biologically wrong.
+            # Purkinje→DCN is a DEPRESSING synapse (Telgkamp & Raman 2002; Pedroarena & Bhatt 2003).
+            # Round 1: U=0.30, tau_d=200 caused chronic depletion (x·u=0.046) at Purkinje ~90 Hz.
+            # Round 2: U=0.12, tau_d=80 → x_ss=1/(1+0.12*0.09*80)=0.54, x·u=0.064 — depressing
+            # but stays above the 0.05 functional threshold at 90 Hz tonic firing.
+            stp_config=STPConfig(U=0.12, tau_d=80.0, tau_f=20.0),
         )
 
         # Mossy fiber → DCN (excitatory collaterals)
@@ -442,29 +491,84 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=self.dcn_size,
             polarity=PopulationPolarity.EXCITATORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(1.0, self.dcn_size, device),
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.dcn_size, device),
                 v_reset=0.0,
-                E_L=0.0,
+                v_threshold=heterogeneous_v_threshold(1.0, self.dcn_size, device),
+                tau_ref=12.0,
+                g_L=heterogeneous_g_L(0.10, self.dcn_size, device, cv=0.08),
                 E_E=3.0,
                 E_I=-0.5,
-                g_L=heterogeneous_g_L(0.10, self.dcn_size, device, cv=0.08),
-                tau_mem_ms=heterogeneous_tau_mem(20.0, self.dcn_size, device),
                 tau_E=4.0,
                 tau_I=10.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.dcn_size, device),
+                noise_tau_ms=3.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.dcn_size, device, cv=0.25),
+            ),
+        )
+
+        # DCN GABAergic subpopulation (nucleo-olivary inhibitory projection)
+        # Biology: A distinct ~30% subpopulation of DCN neurons are GABAergic
+        # and project exclusively to the inferior olive, providing the negative
+        # feedback that suppresses error signals once learning converges
+        # (De Zeeuw & Berrebi 1995; Fredette & Bhagwandien 1992).
+        # Same inputs as glutamatergic DCN (Purkinje inhibition + mossy collaterals).
+        self._add_internal_connection(
+            source_population=CerebellumPopulation.PURKINJE,
+            target_population=CerebellumPopulation.DCN_GABA,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.purkinje_size,
+                n_output=self.dcn_gaba_size,
+                connectivity=0.2,
+                weight_scale=0.002,
+                device=device,
+            ),
+            receptor_type=ReceptorType.GABA_A,
+            stp_config=STPConfig(U=0.12, tau_d=80.0, tau_f=20.0),
+        )
+        self._add_internal_connection(
+            source_population=CerebellumPopulation.MOSSY,
+            target_population=CerebellumPopulation.DCN_GABA,
+            weights=WeightInitializer.sparse_random(
+                n_input=self.n_mossy,
+                n_output=self.dcn_gaba_size,
+                connectivity=0.1,
+                weight_scale=0.003,
+                device=device,
+            ),
+            receptor_type=ReceptorType.AMPA,
+            stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=200.0),
+        )
+        self.dcn_gaba_neurons: ConductanceLIF
+        self.dcn_gaba_neurons = self._create_and_register_neuron_population(
+            population_name=CerebellumPopulation.DCN_GABA,
+            n_neurons=self.dcn_gaba_size,
+            polarity=PopulationPolarity.INHIBITORY,
+            config=ConductanceLIFConfig(
+                tau_mem_ms=heterogeneous_tau_mem(20.0, self.dcn_gaba_size, device),
+                v_reset=0.0,
+                v_threshold=heterogeneous_v_threshold(1.0, self.dcn_gaba_size, device),
                 tau_ref=12.0,
+                g_L=heterogeneous_g_L(0.10, self.dcn_gaba_size, device, cv=0.08),
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=4.0,
+                tau_I=10.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.dcn_gaba_size, device),
+                noise_tau_ms=3.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.dcn_gaba_size, device, cv=0.25),
             ),
         )
 
         # IO membrane potential for gap junction coupling
         self._io_membrane: Optional[torch.Tensor] = None
-
-        # =====================================================================
-        # HOMEOSTATIC INTRINSIC PLASTICITY (Adaptive Gain)
-        # =====================================================================
-        self._register_homeostasis(CerebellumPopulation.PURKINJE, self.purkinje_size, target_firing_rate=0.045, device=device)
-
-        self.gain: torch.Tensor
-        self.register_buffer("gain", torch.ones(self.purkinje_size, device=device))
 
         # =====================================================================
         # INFERIOR OLIVE NEURONS (Error Signal Generation)
@@ -478,18 +582,23 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             n_neurons=self.purkinje_size,
             polarity=PopulationPolarity.EXCITATORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(0.8, self.purkinje_size, device, cv=0.12, clamp_fraction=0.25),
+                tau_mem_ms=heterogeneous_tau_mem(18.0, self.purkinje_size, device, cv=0.20),
                 v_reset=0.0,
-                E_L=0.0,
+                v_threshold=heterogeneous_v_threshold(0.8, self.purkinje_size, device, cv=0.12, clamp_fraction=0.25),
+                tau_ref=4.0,
+                g_L=heterogeneous_g_L(0.05, self.purkinje_size, device),
                 E_E=3.0,
                 E_I=-0.5,
-                g_L=heterogeneous_g_L(0.05, self.purkinje_size, device),
-                tau_mem_ms=heterogeneous_tau_mem(18.0, self.purkinje_size, device, cv=0.20),
                 tau_E=5.0,
                 tau_I=10.0,
-                tau_ref=4.0,
-                adapt_increment=heterogeneous_adapt_increment(0.40, self.purkinje_size, device),
-                tau_adapt=100.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.purkinje_size, device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(150.0, self.purkinje_size, device),
+                adapt_increment=heterogeneous_adapt_increment(0.55, self.purkinje_size, device),
                 enable_t_channels=True,
                 g_T=0.08,
                 E_Ca=4.0,
@@ -502,6 +611,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 V_half_h=-0.3,
                 k_h=0.10,
                 tau_h_ms=100.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.purkinje_size, device, cv=0.25),
             ),
         )
 
@@ -518,9 +628,9 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # - Synchronization time: <1ms
 
         gap_junctions_config = GapJunctionConfig(
-            coupling_strength=config.gap_junction_strength,
-            connectivity_threshold=config.gap_junction_threshold,
-            max_neighbors=config.gap_junction_max_neighbors,
+            coupling_strength=config.gap_junctions.coupling_strength,
+            connectivity_threshold=config.gap_junctions.connectivity_threshold,
+            max_neighbors=config.gap_junctions.max_neighbors,
             interneuron_only=False,  # IO neurons are projection neurons, not interneurons
         )
 
@@ -538,45 +648,10 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # DCN tonic pacemaker baseline (approximates intrinsic I_NaP and I_h currents).
         # Purkinje inhibition sculpts this tonic drive; see CerebellumConfig.dcn_baseline_drive.
         self._dcn_baseline = torch.full((self.dcn_size,), config.dcn_baseline_drive, device=device)
+        self._dcn_gaba_baseline = torch.full((self.dcn_gaba_size,), config.dcn_baseline_drive, device=device)
 
-        # =====================================================================
-        # NOREPINEPHRINE RECEPTOR (β-adrenergic on Purkinje cells)
-        # =====================================================================
-        # NE from LC → increased cAMP → PKA activation → enhanced Purkinje
-        # intrinsic excitability and potentiated LTP window.
-        # β-adrenergic (Gs → cAMP → PKA): τ_rise=80 ms, τ_decay=1000 ms.
-        self.ne_receptor = make_neuromodulator_receptor(
-            NMReceptorType.NE_BETA, n_receptors=self.purkinje_size, dt_ms=self.dt_ms, device=device,
-            amplitude_scale=1.5,  # Strong β-adrenergic sensitivity on Purkinje
-        )
-        self._ne_concentration: torch.Tensor
-        self.register_buffer("_ne_concentration", torch.zeros(self.purkinje_size, device=device))
-
-        # =====================================================================
-        # DOPAMINE RECEPTOR (D1 on granule cells — via SNc projection)
-        # =====================================================================
-        # DA from SNc enhances cerebellar LTD (parallel fiber → Purkinje weight
-        # depression) via PKA/DARPP-32 cascade on granule somata.
-        # D1 (Gs → cAMP → PKA): τ_rise=500 ms, τ_decay=8000 ms.
-        self.da_receptor = make_neuromodulator_receptor(
-            NMReceptorType.DA_D1, n_receptors=self.granule_size, dt_ms=self.dt_ms, device=device,
-            amplitude_scale=2.5,  # Preserve legacy effective amplitude
-        )
-        self._da_concentration: torch.Tensor
-        self.register_buffer("_da_concentration", torch.zeros(self.granule_size, device=device))
-
-        # =====================================================================
-        # ACETYLCHOLINE RECEPTOR (muscarinic M2 on Golgi cells)
-        # =====================================================================
-        # ACh from NB → M2 autoreceptors on Golgi somata → suppresses Golgi
-        # GABA-A output → disinhibits granule cells during attentional states.
-        # Muscarinic M2 (Gi → GIRK): τ_rise=50 ms, τ_decay=600 ms.
-        self.ach_receptor = make_neuromodulator_receptor(
-            NMReceptorType.ACH_MUSCARINIC_M2, n_receptors=1, dt_ms=self.dt_ms, device=device,
-            amplitude_scale=2.0,  # Scalar receptor; strong per-cell effect
-        )
-        self._ach_concentration: torch.Tensor
-        self.register_buffer("_ach_concentration", torch.zeros(1, device=device))
+        # NE β on Purkinje, DA D1 on granule, ACh M2 on Golgi (scalar), 5-HT2A on Purkinje
+        self._init_receptors_from_config(device)
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -585,7 +660,11 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Process input through cerebellar circuit.
 
         Neuromodulator effects applied each step:
@@ -601,14 +680,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # =====================================================================
         # NEUROMODULATOR RECEPTOR UPDATES
         # =====================================================================
-        ne_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.NE)
-        self._ne_concentration = self.ne_receptor.update(ne_spikes)
-
-        da_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.DA_NIGROSTRIATAL)
-        self._da_concentration = self.da_receptor.update(da_spikes)
-
-        ach_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.ACH)
-        self._ach_concentration = self.ach_receptor.update(ach_spikes)
+        self._update_receptors(neuromodulator_inputs)
 
         # Derive scalar modulation factors from mean concentrations
         # NE: per-Purkinje gain ∈ [1.0, 1.5] — β-adrenergic excitability boost
@@ -617,6 +689,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         da_ltd_boost = 1.0 + float(self._da_concentration.mean().item()) * 2.0
         # ACh: Golgi inhibition scale ∈ [0.5, 1.0] — M2 suppresses Golgi GABA-A
         golgi_inhibition_scale = max(0.5, 1.0 - float(self._ach_concentration.item()) * 0.5)
+        # 5-HT: per-Purkinje excitability gain ∈ [1.0, 1.3] — 5-HT2A/PKC
+        sht_purkinje_gain = 1.0 + self._sht_concentration * 0.3  # [purkinje_size]
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
@@ -632,11 +706,20 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         ).g_ampa
 
         # =====================================================================
+        # EXTRACT PREVIOUS-STEP SPIKES (all intra-region connections use prev step)
+        # =====================================================================
+        prev_golgi = self._prev_spikes(CerebellumPopulation.GOLGI)
+        prev_granule = self._prev_spikes(CerebellumPopulation.GRANULE)
+        prev_basket = self._prev_spikes(CerebellumPopulation.BASKET)
+        prev_stellate = self._prev_spikes(CerebellumPopulation.STELLATE)
+        prev_purkinje = self._prev_spikes(CerebellumPopulation.PURKINJE)
+
+        # =====================================================================
         # GRANULE–GOLGI MICROCIRCUIT
         # =====================================================================
         # Golgi → Granule GABA-A inhibition (causal: previous timestep)
         #    golgi_inhibition_scale < 1.0 → ACh muscarinic suppression of Golgi output
-        golgi_inh = golgi_inhibition_scale * torch.mv(self.golgi_granule_weights, self._prev_golgi_spikes.float())
+        golgi_inh = golgi_inhibition_scale * torch.mv(self.golgi_granule_weights, prev_golgi)
 
         # Granule cell spiking
         granule_g_ampa, granule_g_nmda = split_excitatory_conductance(mossy_fiber_conductances, nmda_ratio=0.3)
@@ -648,8 +731,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         )
         granule_spikes_float = granule_spikes.float()  # [granule_size]
 
-        # Granule → Golgi feedforward excitation (same timestep, Golgi fires later)
-        golgi_exc = torch.mv(self.granule_golgi_weights, granule_spikes_float)
+        # Granule → Golgi feedforward excitation (prev-step granule spikes)
+        golgi_exc = torch.mv(self.granule_golgi_weights, prev_granule)
         golgi_g_ampa, golgi_g_nmda = split_excitatory_conductance(golgi_exc, nmda_ratio=0.0)
         golgi_spikes, _ = self.golgi_neurons.forward(
             g_ampa_input=ConductanceTensor(golgi_g_ampa),
@@ -658,10 +741,10 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             g_gaba_b_input=None,
         )
 
-        # Mossy fiber collaterals → DCN: downsample granule activity
+        # Mossy fiber collaterals → DCN: downsample prev-step granule activity
         # to the n_mossy count used by the internal Purkinje→DCN weight matrix.
         step = max(1, self.granule_size // self.n_mossy)
-        mossy_spikes = granule_spikes[::step][:self.n_mossy]  # [n_mossy]
+        mossy_spikes = prev_granule[::step][:self.n_mossy]  # [n_mossy]
 
         # =====================================================================
         # INFERIOR OLIVE → CLIMBING FIBERS (Error Signal)
@@ -672,12 +755,6 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Apply gap junction coupling to IO neurons
         g_gap_io, E_gap_io = self.gap_junctions_io.forward(self.io_neurons.V_soma)
 
-        # Define additional conductances hook for IO neurons
-        def io_get_additional_conductances():
-            return [(g_gap_io, E_gap_io)]
-
-        self.io_neurons._get_additional_conductances = io_get_additional_conductances
-
         io_external = self._integrate_synaptic_inputs_at_dendrites(
             synaptic_inputs,
             n_neurons=self.purkinje_size,
@@ -687,8 +764,10 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         climbing_fiber_spikes, _ = self.io_neurons.forward(
             g_ampa_input=ConductanceTensor(io_external.g_ampa),
             g_nmda_input=None,
-            g_gaba_a_input=None,
+            g_gaba_a_input=ConductanceTensor(io_external.g_gaba_a),
             g_gaba_b_input=None,
+            g_gap_input=ConductanceTensor(g_gap_io),
+            E_gap_reversal=GapJunctionReversal(E_gap_io),
         )
 
         # =====================================================================
@@ -699,13 +778,13 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # This lateral inhibition is the primary desynchronisation mechanism.
 
         # Inhibitory conductances to Purkinje from PREVIOUS timestep (causal)
-        g_basket_inh = torch.mv(self.basket_purkinje_weights, self._prev_basket_spikes.float())
-        g_stellate_inh = torch.mv(self.stellate_purkinje_weights, self._prev_stellate_spikes.float())
+        g_basket_inh = torch.mv(self.basket_purkinje_weights, prev_basket)
+        g_stellate_inh = torch.mv(self.stellate_purkinje_weights, prev_stellate)
 
-        # Current-step basket excitation from parallel fibers + BC→BC lateral inhibition
-        basket_exc = torch.mv(self.granule_basket_weights, granule_spikes_float)
+        # Current-step basket excitation from prev parallel fibers + BC→BC lateral inhibition
+        basket_exc = torch.mv(self.granule_basket_weights, prev_granule)
         basket_g_ampa, _ = split_excitatory_conductance(basket_exc, nmda_ratio=0.0)
-        g_bc_self_inh = torch.mv(self.basket_basket_weights, self._prev_basket_spikes.float())
+        g_bc_self_inh = torch.mv(self.basket_basket_weights, prev_basket)
         basket_spikes, _ = self.basket_neurons.forward(
             g_ampa_input=ConductanceTensor(basket_g_ampa),
             g_nmda_input=None,
@@ -713,10 +792,10 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             g_gaba_b_input=None,
         )
 
-        # Current-step stellate excitation from parallel fibers + SC→SC lateral inhibition
-        stellate_exc = torch.mv(self.granule_stellate_weights, granule_spikes_float)
+        # Current-step stellate excitation from prev parallel fibers + SC→SC lateral inhibition
+        stellate_exc = torch.mv(self.granule_stellate_weights, prev_granule)
         stellate_g_ampa, _ = split_excitatory_conductance(stellate_exc, nmda_ratio=0.0)
-        g_sc_self_inh = torch.mv(self.stellate_stellate_weights, self._prev_stellate_spikes.float())
+        g_sc_self_inh = torch.mv(self.stellate_stellate_weights, prev_stellate)
         stellate_spikes, _ = self.stellate_neurons.forward(
             g_ampa_input=ConductanceTensor(stellate_g_ampa),
             g_nmda_input=None,
@@ -733,8 +812,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Climbing fiber spikes from IO neurons trigger complex spikes.
         # MLI inhibition (basket+stellate) is applied at the Purkinje soma.
 
-        # Dendritic integration
-        dendrite_input = torch.mv(self.purkinje_synaptic_weights, granule_spikes.float())
+        # Dendritic integration (prev-step parallel fiber input)
+        dendrite_input = torch.mv(self.purkinje_synaptic_weights, prev_granule)
         dendrite_noise = torch.randn_like(self.dendrite_voltage).mul_(0.00001)
         dendrite_input_distributed = dendrite_input.unsqueeze(1).expand(-1, config.purkinje_n_dendrites) / config.purkinje_n_dendrites + dendrite_noise
         self.dendrite_voltage.mul_(self.voltage_decay).add_(dendrite_input_distributed)
@@ -766,6 +845,8 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Purkinje pacemaker drive (~47 Hz tonic via resurgent Na⁺ / P/Q-Ca²⁺).
         # Per-cell pacemaker: breaks the shared-drive synchrony
         soma_conductance = soma_conductance + self.pacemaker_g
+        # 5-HT2A modulation: enhanced Purkinje excitability via Gq/PKC
+        soma_conductance = soma_conductance * sht_purkinje_gain
         soma_g_ampa, soma_g_nmda = split_excitatory_conductance(soma_conductance, nmda_ratio=0.0)
         purkinje_simple_spikes, _ = self.soma_neurons.forward(
             g_ampa_input=ConductanceTensor(soma_g_ampa),
@@ -789,7 +870,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 target_population=CerebellumPopulation.DCN,
                 receptor_type=ReceptorType.GABA_A,
             ),
-            purkinje_simple_spikes,
+            prev_purkinje,
         ).g_gaba_a
 
         dcn_total_excitation = self._integrate_single_synaptic_input(
@@ -800,7 +881,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
                 target_population=CerebellumPopulation.DCN,
                 receptor_type=ReceptorType.AMPA,
             ),
-            mossy_spikes,
+            mossy_spikes,  # already prev-step (derived from prev_granule)
         ).g_ampa
 
         # DCN spiking: Excitation (mossy + tonic baseline) vs Inhibition (Purkinje)
@@ -813,6 +894,40 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             g_ampa_input=ConductanceTensor(dcn_total_g_ampa),
             g_nmda_input=ConductanceTensor(dcn_total_g_nmda),
             g_gaba_a_input=ConductanceTensor(purkinje_conductance),
+            g_gaba_b_input=None,
+        )
+
+        # --- DCN GABAergic subpopulation (nucleo-olivary projection) ---
+        # Same inputs as glutamatergic DCN: Purkinje inhibition + mossy excitation + tonic baseline
+        dcn_gaba_purkinje_g = self._integrate_single_synaptic_input(
+            SynapseId(
+                source_region=self.region_name,
+                source_population=CerebellumPopulation.PURKINJE,
+                target_region=self.region_name,
+                target_population=CerebellumPopulation.DCN_GABA,
+                receptor_type=ReceptorType.GABA_A,
+            ),
+            prev_purkinje,
+        ).g_gaba_a
+
+        dcn_gaba_mossy_g = self._integrate_single_synaptic_input(
+            SynapseId(
+                source_region=self.region_name,
+                source_population=CerebellumPopulation.MOSSY,
+                target_region=self.region_name,
+                target_population=CerebellumPopulation.DCN_GABA,
+                receptor_type=ReceptorType.AMPA,
+            ),
+            mossy_spikes,
+        ).g_ampa
+
+        dcn_gaba_excitation = dcn_gaba_mossy_g + self._dcn_gaba_baseline
+        dcn_gaba_g_ampa, dcn_gaba_g_nmda = split_excitatory_conductance(dcn_gaba_excitation, nmda_ratio=0.3)
+
+        dcn_gaba_spikes, _ = self.dcn_gaba_neurons.forward(
+            g_ampa_input=ConductanceTensor(dcn_gaba_g_ampa),
+            g_nmda_input=ConductanceTensor(dcn_gaba_g_nmda),
+            g_gaba_a_input=ConductanceTensor(dcn_gaba_purkinje_g),
             g_gaba_b_input=None,
         )
 
@@ -841,14 +956,15 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
 
             self.purkinje_synaptic_weights.data = clamp_weights(
                 weights=self.purkinje_synaptic_weights.data + mai_delta,
-                w_min=config.w_min,
-                w_max=config.w_max,
+                w_min=config.synaptic_scaling.w_min,
+                w_max=config.synaptic_scaling.w_max,
                 inplace=False,
             )
 
         region_outputs: RegionOutput = {
             CerebellumPopulation.BASKET: basket_spikes,
             CerebellumPopulation.DCN: dcn_spikes,
+            CerebellumPopulation.DCN_GABA: dcn_gaba_spikes,
             CerebellumPopulation.GRANULE: granule_spikes,
             CerebellumPopulation.GOLGI: golgi_spikes,
             CerebellumPopulation.INFERIOR_OLIVE: climbing_fiber_spikes,
@@ -856,9 +972,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             CerebellumPopulation.STELLATE: stellate_spikes,
         }
 
-        self._prev_golgi_spikes = golgi_spikes
-        self._prev_basket_spikes = basket_spikes
-        self._prev_stellate_spikes = stellate_spikes
+        self._apply_all_population_homeostasis(region_outputs)
 
         return region_outputs
 

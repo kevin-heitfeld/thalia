@@ -2,34 +2,23 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Tuple
-
 import numpy as np
 
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    HomeostaticStats,
-    PopulationStats,
-)
-
-if TYPE_CHECKING:
-    from .diagnostics_types import RecorderSnapshot
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
 
 
-def check_homeostasis(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-    pop_stats: Dict[Tuple[str, str], PopulationStats] | None = None,
-) -> None:
+def check_homeostasis(ctx: HealthCheckContext) -> None:
     """Check homeostatic gain collapse/convergence and STP efficacy convergence."""
+    rec, issues, pop_stats = ctx.rec, ctx.issues, ctx.pop_stats
+    config = ctx.thresholds.homeostasis
     n_steps = rec._gain_sample_step
 
     # Check homeostatic gain collapse
     for idx, (rn, pn) in enumerate(rec._pop_keys):
         if n_steps > 0:
             final_gain = rec._g_L_scale_history[n_steps - 1, idx]
-            if not np.isnan(final_gain) and final_gain < rec.config.thresholds.gain_collapse_threshold:
+            if not np.isnan(final_gain) and final_gain < rec.config.thresholds.homeostasis.gain_collapse_threshold:
                 issues.append(HealthIssue(severity="critical", category=HealthCategory.HOMEOSTASIS,
                     population=f"{rn}:{pn}", region=rn,
                     message=f"GAIN COLLAPSED: {rn}:{pn} g_L_scale = {final_gain:.3f}"))
@@ -49,7 +38,7 @@ def check_homeostasis(
             if abs(first_mean) < 1e-6:
                 continue
             drift_pct = abs(last_mean - first_mean) / abs(first_mean) * 100.0
-            if drift_pct > rec.config.thresholds.gain_drift_pct:
+            if drift_pct > rec.config.thresholds.homeostasis.gain_drift_pct:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.HOMEOSTASIS,
                     population=f"{rn}:{pn}", region=rn,
                     message=f"Gain not converged: {rn}:{pn}  "
@@ -78,7 +67,7 @@ def check_homeostasis(
             slope = float(np.polyfit(x, y, 1)[0])
             # implied total change over the half-window as % of mean
             implied_pct = abs(slope) * (len(x) - 1) / abs(mean_gain) * 100.0
-            if implied_pct > rec.config.thresholds.gain_slope_pct:
+            if implied_pct > rec.config.thresholds.homeostasis.gain_slope_pct:
                 direction = "rising" if slope > 0 else "falling"
                 issues.append(HealthIssue(
                     severity="warning",
@@ -115,7 +104,7 @@ def check_homeostasis(
             slope = float(np.polyfit(x, y, 1)[0])
             implied_pct = abs(slope) * (len(x) - 1) / abs(mean_gain) * 100.0
             # Only proceed when gain has converged (slope implies <5% drift)
-            if implied_pct > rec.config.thresholds.gain_slope_pct:
+            if implied_pct > rec.config.thresholds.homeostasis.gain_slope_pct:
                 continue  # still adapting — FR mismatch may resolve
 
             # Fetch the registered target rate from the snapshot metadata
@@ -129,7 +118,7 @@ def check_homeostasis(
             mean_fr = ps.mean_fr_hz
             # Warn when mean FR deviates from target by more than ±50 %
             ratio = mean_fr / target_hz if target_hz > 0.0 else float("nan")
-            if ratio > 2.0:
+            if ratio > config.fr_target_ratio_high:
                 issues.append(HealthIssue(
                     severity="warning",
                     category=HealthCategory.HOMEOSTASIS,
@@ -142,7 +131,7 @@ def check_homeostasis(
                         f"above biological target; check target_firing_rate or input drive"
                     ),
                 ))
-            elif ratio < 0.5:
+            elif ratio < config.fr_target_ratio_low:
                 issues.append(HealthIssue(
                     severity="warning",
                     category=HealthCategory.HOMEOSTASIS,
@@ -169,7 +158,7 @@ def check_homeostasis(
             if abs(first_stp) < 1e-6:
                 continue
             drift_stp = abs(last_stp - first_stp) / abs(first_stp) * 100.0
-            if drift_stp > rec.config.thresholds.stp_drift_pct:
+            if drift_stp > rec.config.thresholds.homeostasis.stp_drift_pct:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.HOMEOSTASIS, region=rn,
                     message=f"STP not converged: {rn} [{syn_id}]  "
                             f"x\u00b7u drift={drift_stp:.1f}%  "
@@ -177,10 +166,7 @@ def check_homeostasis(
                             f"— firing-rate metrics may reflect a transient; increase --timesteps"))
 
 
-def check_stp_directionality(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_stp_directionality(ctx: HealthCheckContext) -> None:
     """Check that STP x·u direction under drive matches the expected biology.
 
     Classifies each STP synapse as facilitating or depressing based on its
@@ -203,9 +189,9 @@ def check_stp_directionality(
 
     Requires ≥ 20 gain-sample steps and at least some drive (quiescent runs
     will show x·u ≈ U regardless and produce no false alarms).
-
-    References: Markram et al. 1998; Zucker & Regehr 2002 *Annu Rev Physiol*.
     """
+    rec, issues = ctx.rec, ctx.issues
+    config = ctx.thresholds.homeostasis
     n_steps = rec._gain_sample_step
     if n_steps < 20:
         return
@@ -215,8 +201,8 @@ def check_stp_directionality(
     for stp_idx, (rn, syn_id) in enumerate(rec._stp_keys):
         U_val, tau_d, tau_f = rec._stp_configs[stp_idx]
 
-        is_facilitating = tau_f >= 0.5 * tau_d and U_val <= 0.25
-        is_depressing   = tau_d >= 2.0 * tau_f  and U_val >= 0.35
+        is_facilitating = tau_f >= config.stp_facilitating_tau_ratio * tau_d and U_val <= config.stp_facilitating_u_max
+        is_depressing   = tau_d >= config.stp_depressing_tau_ratio * tau_f  and U_val >= config.stp_depressing_u_min
         if not is_facilitating and not is_depressing:
             continue  # Mixed / pseudolinear — no single expected direction
 
@@ -254,11 +240,7 @@ def check_stp_directionality(
             ))
 
 
-def check_stp_final_state(
-    rec: RecorderSnapshot,
-    homeostasis: HomeostaticStats,
-    issues: List[HealthIssue],
-) -> None:
+def check_stp_final_state(ctx: HealthCheckContext) -> None:
     """Check final absolute STP state for chronic depletion and facilitation ceiling.
 
     Inspects the end-of-run x·u efficacy and mean_u values from
@@ -277,6 +259,8 @@ def check_stp_final_state(
       activity, losing the dynamic-gain modulation intended by the STP model
       (Tsodyks & Markram 1997 *PNAS*).
     """
+    rec, homeostasis, issues = ctx.rec, ctx.homeostasis, ctx.issues
+    config = ctx.thresholds.homeostasis
     syn_to_region = {str(syn_id): rn for rn, syn_id in rec._stp_keys}
 
     for syn_key, state in homeostasis.stp_final_state.items():
@@ -284,7 +268,7 @@ def check_stp_final_state(
         efficacy = state.get("efficacy", float("nan"))
         mean_u   = state.get("mean_u",   float("nan"))
 
-        if not np.isnan(efficacy) and efficacy < 0.05:
+        if not np.isnan(efficacy) and efficacy < config.stp_depletion:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.HOMEOSTASIS,
@@ -293,19 +277,19 @@ def check_stp_final_state(
                     f"STP chronically depleted: [{syn_key}]  "
                     f"x\u00b7u={efficacy:.3f} < 0.05  "
                     f"\u2014 synapse is effectively silent; baseline drive may be "
-                    f"saturating the release machinery (Markram et al. 1998)"
+                    f"saturating the release machinery"
                 ),
             ))
 
-        if not np.isnan(mean_u) and mean_u > 0.95:
+        if not np.isnan(mean_u) and mean_u > config.stp_ceiling:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.HOMEOSTASIS,
                 region=rn,
                 message=(
                     f"STP facilitation variable at ceiling: [{syn_key}]  "
-                    f"mean_u={mean_u:.3f} > 0.95  "
+                    f"mean_u={mean_u:.3f} > {config.stp_ceiling}  "
                     f"\u2014 u is saturated; facilitation gain is exhausted; "
-                    f"check U parameter or calcium dynamics (Tsodyks & Markram 1997)"
+                    f"check U parameter or calcium dynamics"
                 ),
             ))

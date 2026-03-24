@@ -11,9 +11,9 @@ module rather than defining them inline.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import ClassVar, Dict, NewType, Protocol
+from typing import ClassVar, Dict, NewType, Protocol, Tuple
 
 import torch
 
@@ -67,6 +67,10 @@ RegionName = str
 
 PopulationName = str
 """Name of a population within a region."""
+
+
+PopulationKey = Tuple[RegionName, PopulationName]
+"""Tuple of (region_name, population_name) uniquely identifying a population."""
 
 
 PopulationSizes = Dict[PopulationName, int]
@@ -221,6 +225,8 @@ class SynapseId:
     target_population: PopulationName
     receptor_type: ReceptorType
 
+    _cached_key: str = field(init=False, repr=False, compare=False)
+
     _EXTERNAL_REGION_NAME: ClassVar[RegionName] = "external"
 
     _SEP: ClassVar[str] = "|"
@@ -273,10 +279,10 @@ class SynapseId:
             Stable pipe-delimited string, e.g.
             ``"thalamus|relay|cortex|l4_pyr|ampa"``
         """
-        return self._cached_key  # type: ignore[attr-defined]
+        return self._cached_key
 
     @classmethod
-    def from_key(cls, key: str) -> "SynapseId":
+    def from_key(cls, key: str) -> SynapseId:
         """Decode a pipe-delimited key back to a :class:`SynapseId`.
 
         Results are cached at the class level so repeated iteration over the
@@ -340,7 +346,7 @@ class SynapseId:
         )
 
     @classmethod
-    def external_novelty_to_vta_da(cls, vta_region: RegionName) -> "SynapseId":
+    def external_novelty_to_vta_da(cls, vta_region: RegionName) -> SynapseId:
         """Factory: CA1 mismatch signal → VTA DA mesolimbic novelty burst.
 
         Hippocampal-VTA loop (Lisman & Grace 2005): CA1 prediction error
@@ -360,7 +366,7 @@ class SynapseId:
         )
 
     @classmethod
-    def external_reward_to_vta_da(cls, vta_region: RegionName) -> "SynapseId":
+    def external_reward_to_vta_da(cls, vta_region: RegionName) -> SynapseId:
         """Factory: external reward input → VTA DA mesolimbic population.
 
         Reward signals target the mesolimbic sub-population (primary RPE pathway).
@@ -376,7 +382,7 @@ class SynapseId:
         )
 
     @classmethod
-    def external_sensory_to_thalamus_relay(cls, thalamus_region: RegionName) -> "SynapseId":
+    def external_sensory_to_thalamus_relay(cls, thalamus_region: RegionName) -> SynapseId:
         """Factory: external sensory input → thalamus relay population."""
         from thalia.brain.regions.population_names import ExternalPopulation, ThalamusPopulation  # Avoid circular import
         return SynapseId(

@@ -2,26 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
-
 import numpy as np
 
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    OscillatoryStats,
-)
-from .region_tags import THALAMIC_TAGS, matches_any
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
+from .region_tags import RELAY_TAGS, THALAMIC_TAGS, TRN_TAGS, matches_any
 from .sensory_patterns import WAKING_PATTERNS
 
-if TYPE_CHECKING:
-    from .diagnostics_types import RecorderSnapshot
 
-
-def check_trn_relay_gating(
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_trn_relay_gating(ctx: HealthCheckContext) -> None:
     """Check TRN–relay inverse firing-rate relationship in thalamic regions.
 
     A healthy thalamus under moderate drive shows TRN and relay firing in
@@ -32,9 +21,9 @@ def check_trn_relay_gating(
     overwhelmed.
 
     Binning: 50 ms windows, requiring ≥ 10 bins (≥ 500 ms of recording).
-
-    References: Jones 2007 "The Thalamus"; Pinault & Deschênes 1992.
     """
+    rec, issues = ctx.rec, ctx.issues
+    config = ctx.thresholds.regional
     T = rec._n_recorded or rec.config.n_timesteps
     bin_steps = max(1, int(50.0 / rec.dt_ms))  # 50 ms per bin
     n_bins = T // bin_steps
@@ -47,12 +36,12 @@ def check_trn_relay_gating(
         trn_indices = [
             rec._pop_index[(rn, pn)]
             for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
-            if "trn" in pn.lower() and (rn, pn) in rec._pop_index
+            if matches_any(pn, TRN_TAGS) and (rn, pn) in rec._pop_index
         ]
         relay_indices = [
             rec._pop_index[(rn, pn)]
             for _, pn in (rec._pop_keys[i] for i in rec._region_pop_indices[rn])
-            if "relay" in pn.lower() and (rn, pn) in rec._pop_index
+            if matches_any(pn, RELAY_TAGS) and (rn, pn) in rec._pop_index
         ]
         if not trn_indices or not relay_indices:
             continue
@@ -75,14 +64,14 @@ def check_trn_relay_gating(
         trn_total_neurons = sum(int(rec._pop_sizes[i]) for i in trn_indices)
         bin_duration_s = bin_steps * rec.dt_ms / 1000.0
         trn_mean_hz = float(trn_rate.mean()) / max(1, trn_total_neurons) / bin_duration_s
-        if trn_mean_hz < 30.0:
+        if trn_mean_hz < config.trn_min_fr_hz:
             continue  # TRN not sufficiently active to exert gating
 
         if trn_rate.std() < 1e-6 or relay_rate.std() < 1e-6:
             continue  # degenerate constant signal — correlation undefined
 
         corr = float(np.corrcoef(trn_rate, relay_rate)[0, 1])
-        if corr > 0.2:
+        if corr > config.trn_relay_corr_max:
             issues.append(HealthIssue(
                 severity="warning",
                 category=HealthCategory.THALAMUS,
@@ -98,11 +87,7 @@ def check_trn_relay_gating(
             ))
 
 
-def check_relay_burst_mode(
-    oscillations: OscillatoryStats,
-    issues: List[HealthIssue],
-    sensory_pattern: str = "",
-) -> None:
+def check_relay_burst_mode(ctx: HealthCheckContext) -> None:
     """Check whether thalamic relay cells show LTS burst mode.
 
     Uses the short-ISI fraction (ISI < 15 ms) stored in
@@ -122,13 +107,21 @@ def check_relay_burst_mode(
     one relay region was found.  It emits an ``info``-level note for tonic
     regions so the diagnostic report always shows the value.
     """
+    oscillations, issues = ctx.oscillations, ctx.issues
+    config = ctx.thresholds.regional
+    sensory_pattern = ctx.sensory_pattern
     if not oscillations.relay_burst_mode:
         return
 
-    is_waking = sensory_pattern in WAKING_PATTERNS
+    # Determine waking context: prefer explicit sensory-pattern annotation,
+    # fall back to the inferred brain state when no pattern is set.
+    if sensory_pattern:
+        is_waking = sensory_pattern in WAKING_PATTERNS
+    else:
+        is_waking = ctx.inferred_brain_state == "wake"
 
     for rn, frac in sorted(oscillations.relay_burst_mode.items()):
-        if frac >= 0.05:
+        if frac >= config.relay_burst_isi_fraction:
             if is_waking:
                 issues.append(HealthIssue(
                     severity="warning",

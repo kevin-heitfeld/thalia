@@ -2,26 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 
-from .diagnostics_types import (
-    ConnectivityStats,
-    HealthCategory,
-    HealthIssue,
-)
-
-if TYPE_CHECKING:
-    from .diagnostics_types import RecorderSnapshot
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
 
 
-def check_connectivity(
-    connectivity: ConnectivityStats,
-    rec: RecorderSnapshot,
-    issues: List[HealthIssue],
-) -> None:
+def check_connectivity(ctx: HealthCheckContext) -> None:
     """Check broken tracts, axonal delay accuracy, and reversed connectivity."""
+    connectivity, rec, issues = ctx.connectivity, ctx.rec, ctx.issues
+    config = ctx.thresholds.connectivity
     # Check broken (non-functional) axonal tracts.
     for ts in connectivity.n_broken:
         issues.append(HealthIssue(severity="critical", category=HealthCategory.CONNECTIVITY,
@@ -37,8 +29,7 @@ def check_connectivity(
                 # Anti-causal cross-correlation peaks are expected in recurrent
                 # feedback loops (cortex→LC→cortex, EC→HPC→EC, corticothalamic)
                 # where the downstream region fires in anticipation of the next
-                # upstream cycle.  These are not genuine wiring bugs; downgrade
-                # to INFO so they do not penalise the stability score.
+                # upstream cycle.  These are not genuine wiring bugs.
                 issues.append(HealthIssue(severity="info", category=HealthCategory.CONNECTIVITY,
                     region=ts.synapse_id.source_region,
                     message=f"Possible reversed connectivity: {ts.synapse_id}  "
@@ -50,7 +41,7 @@ def check_connectivity(
                 # estimation has ~10–15 ms noise for sparse spike trains
                 # (< 5 Hz, < 20 spikes in a 3-second run); a sub-15 ms mismatch
                 # is indistinguishable from measurement noise at these rates.
-                tolerance = max(15.0, ts.expected_delay_ms * 0.50)
+                tolerance = max(config.delay_noise_floor_ms, ts.expected_delay_ms * config.delay_tolerance_fraction)
                 if diff > tolerance:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.CONNECTIVITY,
                         region=ts.synapse_id.source_region,
@@ -58,6 +49,14 @@ def check_connectivity(
                                 f"measured={ts.measured_delay_ms:.0f} ms  "
                                 f"expected={ts.expected_delay_ms:.0f} ms  "
                                 f"(\u0394{ts.measured_delay_ms - ts.expected_delay_ms:+.0f} ms)"))
+
+            # Jitter check — high jitter indicates unreliable temporal precision.
+            if not np.isnan(ts.transmission_jitter_ms) and ts.transmission_jitter_ms > config.jitter_high_ms:
+                issues.append(HealthIssue(severity="warning", category=HealthCategory.CONNECTIVITY,
+                    region=ts.synapse_id.source_region,
+                    message=f"High transmission jitter: {ts.synapse_id}  "
+                            f"jitter={ts.transmission_jitter_ms:.1f} ms  "
+                            f"(threshold={config.jitter_high_ms:.0f} ms)"))
 
     # Multi-hop latency check.
     # Build a region-level directed graph from functional tracts that have a valid
@@ -89,8 +88,8 @@ def check_connectivity(
     # hop).  35 ms floor (≈ 3 × single-hop noise) suppresses artifact chains
     # while still catching grossly mis-wired multi-hop paths (which would
     # deviate by > 50 ms from their expected cumulative latency).
-    _multihop_tolerance_frac = 0.90
-    _multihop_min_tolerance_ms = 35.0
+    _multihop_tolerance_frac = config.multihop_tolerance_fraction
+    _multihop_min_tolerance_ms = config.multihop_min_tolerance_ms
     for src_r, src_edges in _region_edges.items():
         for mid_r, (meas_ab, exp_ab) in src_edges.items():
             if mid_r not in _region_edges:

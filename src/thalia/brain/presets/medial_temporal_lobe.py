@@ -4,21 +4,32 @@ Wires the trisynaptic hippocampal loop together with its septal theta pacemaker
 and entorhinal gateway in a single call:
 
     - **Medial Septum (MS)**: Cholinergic + GABAergic theta pacemaker.
-    - **Entorhinal Cortex (EC)**: Grid/time-cell input gateway (EC_II → DG/CA3,
+    - **Entorhinal Cortex (EC)**: Grid/time-cell input gateway (EC_II → DG/CA3/CA2,
       EC_III → CA1) and memory-index output (EC_V ← CA1).
-    - **Hippocampus (HPC)**: Full trisynaptic circuit (DG → CA3 → CA2 → CA1).
+    - **Hippocampus (HPC)**: Full trisynaptic circuit (DG → CA3 ↔ CA2 → CA1).
     - **Subiculum (Sub)** *(optional)*: Hippocampal output relay (CA1 → Sub → EC_V).
 
 Internal connections
 --------------------
-MS ↔ HPC (septal theta loop):
-  * MS GABA → HPC CA3 (phase-locking GABAergic; Freund & Antal 1988)
-  * HPC CA1 → MS GABA (feedback inhibition; septo-hippocampal loop closure)
+MS → HPC (septal theta drive):
+  * MS GABA → HPC CA3        (phase-locking GABAergic; Freund & Antal 1988)
+  * MS GABA → HPC DG/CA3/CA1 OLM  (septal theta → OLM rebound; encoding/retrieval)
+  * MS ACH  → HPC CA1        (encoding-phase excitation; theta-peak AMPA drive)
+  * MS ACH  → HPC DG         (theta-phase activation of granule cells)
+  * HPC CA1 → MS GABA        (feedback inhibition; septo-hippocampal loop closure)
+
+MS → EC (septal theta entrainment):
+  * MS ACH  → EC_II      (theta entrainment of entorhinal stellate cells)
 
 EC → HPC (afferent input):
-  * EC_II → HPC DG  (perforant path, outer molecular layer; depressing STP)
-  * EC_II → HPC CA3 (direct EC→CA3; stratum lacunosum-moleculare)
-  * EC_III → HPC CA1 (temporoammonic direct path; depressing STP)
+  * EC_II  → HPC DG   (perforant path, outer molecular layer; depressing STP)
+  * EC_II  → HPC CA3  (direct EC→CA3; stratum lacunosum-moleculare)
+  * EC_III → HPC CA1  (temporoammonic direct path; depressing STP)
+
+EC → HPC (feedforward inhibition):
+  * EC_II  → HPC DG PV   (perforant path → DG basket cells)
+  * EC_II  → HPC CA3 PV  (perforant path → CA3 basket cells)
+  * EC_III → HPC CA1 PV  (temporoammonic → CA1 basket cells)
 
 HPC → EC (back-projection):
   * HPC CA1 → EC_V  (or Sub PRINCIPAL → EC_V when subiculum is included)
@@ -64,6 +75,7 @@ DEFAULT_MEDIAL_TEMPORAL_LOBE_SIZES: RegionSizes = {
         EntorhinalCortexPopulation.EC_II: 400,   # Stellate cells: grid/place → DG, CA3
         EntorhinalCortexPopulation.EC_III: 300,  # Pyramidal time cells → CA1
         EntorhinalCortexPopulation.EC_V: 200,    # Output back-projection ← CA1 → neocortex
+        EntorhinalCortexPopulation.EC_INHIBITORY: 250,  # PV basket cells (local E/I balance)
     },
     "hippocampus": {
         HippocampusPopulation.DG: 500,   # Dentate gyrus (pattern separation)
@@ -73,6 +85,7 @@ DEFAULT_MEDIAL_TEMPORAL_LOBE_SIZES: RegionSizes = {
     },
     "subiculum": {
         SubiculumPopulation.PRINCIPAL: 400,  # Pyramidal relay (burst→regular)
+        SubiculumPopulation.PV: 60,          # PV basket-cell interneurons (~15%)
     },
 }
 
@@ -150,13 +163,23 @@ def _connect_septal_theta_loop(
 ) -> None:
     """Wire the septo-hippocampal theta pacemaker loop.
 
-    MS GABAergic neurons fire at theta-rhythm (~8 Hz), phase-locking
-    hippocampal OLM interneurons and producing the 8 Hz LFP theta oscillation.
-    CA1 feedback closes the loop and prevents runaway septal drive.
+    MS ACH neurons fire at the encoding phase of each theta cycle, providing
+    rhythmic excitation to CA1 and DG.  MS GABA neurons phase-lock CA3 via
+    periodic inhibitory bursts.  CA1 pyramidal feedback closes the loop and
+    prevents runaway septal drive.
+
+    encoding_mod in Hippocampus._extract_circuit_inputs detects the MS ACH→CA1
+    AMPA synapse and uses it as the primary theta-phase gating signal when
+    connected.
     """
-    # MS GABA → HPC CA3: septal theta drive
-    # GABAergic pacemaker phase-locks hippocampal OLM interneurons.
-    # Well-myelinated; distance ~1-2 cm → 2 ms delay.
+    # MS GABA → HPC CA3: septal theta drive via rhythmic inhibition
+    # GABAergic pacemaker phase-locks hippocampal CA3 via periodic inhibitory bursts.
+    # Weight raised 0.0009→0.015 (~17×): diagnostics showed μ=0.00007 actual weight giving
+    # negligible CA3 inhibition (theta-gamma PAC MI=0.028 vs target >0.1). The septal theta
+    # pacemaker requires periodic bursts strong enough to transiently silence CA3 (one theta
+    # cycle reset), then release for the gamma burst. A single synchronized MS spike at 0.015
+    # weight × 30 synapses × STP=0.55 → g_I≈0.25 per CA3 neuron (5× g_L), which is sufficient
+    # for theta phase-locking. STP tau_d reduced 500→300ms for faster recovery between cycles.
     builder.connect(
         synapse_id=SynapseId(
             source_region=ms_name,
@@ -166,10 +189,60 @@ def _connect_septal_theta_loop(
             receptor_type=ReceptorType.GABA_A,
         ),
         axonal_delay_ms=2.0,
-        axonal_delay_std_ms=0.6,
         connectivity=0.15,
-        weight_scale=0.0009,
-        stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
+        weight_scale=0.015,
+        stp_config=STPConfig(U=0.55, tau_d=300.0, tau_f=15.0),
+    )
+
+    # MS ACH → HPC CA1: encoding-phase excitation of CA1 pyramidal cells
+    # ACH neurons fire at the encoding phase of theta, directly depolarising CA1
+    # pyramidal cells via stratum oriens projections.  This synapse is detected by
+    # Hippocampus._extract_circuit_inputs to derive encoding_mod from the MS theta
+    # rhythm rather than OLM interneuron activity.
+    # Facilitating STP (U=0.2, tau_f=800ms) builds drive across the burst window.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ms_name,
+            source_population=MedialSeptumPopulation.ACH,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.CA1,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=2.0,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=8.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.05,
+            fraction_of_drive=0.15,
+        ),
+        stp_config=STPConfig(U=0.2, tau_d=200.0, tau_f=800.0),
+    )
+
+    # MS ACH → HPC DG: theta-phase activation of dentate granule cells
+    # Cholinergic input to DG outer molecular layer gates granule cell excitability,
+    # promoting sparse encoding during the theta-peak encoding window.
+    # Modest drive (fraction_of_drive=0.10): DG is already in fluctuation-driven regime
+    # from EC perforant path; MS ACH shifts the timing within each theta cycle.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ms_name,
+            source_population=MedialSeptumPopulation.ACH,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.DG,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=2.0,
+        connectivity=0.20,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=8.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=0.90,
+            fraction_of_drive=0.10,
+        ),
+        stp_config=STPConfig(U=0.2, tau_d=200.0, tau_f=800.0),
     )
 
     # HPC CA1 → MS GABA: hippocampal feedback closure
@@ -184,7 +257,6 @@ def _connect_septal_theta_loop(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.0,
-        axonal_delay_std_ms=0.6,
         connectivity=0.20,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -196,6 +268,73 @@ def _connect_septal_theta_loop(
         stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
     )
 
+    # =========================================================================
+    # Septal GABA → hippocampal OLM interneurons (theta phase-locking)
+    # =========================================================================
+    # Biology: MS GABAergic neurons preferentially innervate hippocampal
+    # interneurons, especially OLM (SST+) cells in stratum oriens.  Rhythmic
+    # inhibition at theta peaks causes OLM to rebound-burst at theta troughs,
+    # creating emergent encoding/retrieval separation:
+    #   Theta peak  → MS GABA fires → OLM silenced → EC→CA1 apical open (retrieval)
+    #   Theta trough → MS GABA silent → OLM rebounds → EC→CA1 apical blocked (encoding)
+    # Refs: Freund & Antal 1988; Hangya et al. 2009; Borhegyi et al. 2004.
+    #
+    # Moderate weight: OLM cells have high input resistance (tau_mem=25ms) so
+    # modest inhibition is sufficient for reliable silencing.  Depressing STP
+    # (U=0.5) matches the phasic bursting pattern of MS GABA cells.
+    for olm_pop in [
+        HippocampusPopulation.DG_INHIBITORY_OLM,
+        HippocampusPopulation.CA3_INHIBITORY_OLM,
+        HippocampusPopulation.CA1_INHIBITORY_OLM,
+    ]:
+        builder.connect(
+            synapse_id=SynapseId(
+                source_region=ms_name,
+                source_population=MedialSeptumPopulation.GABA,
+                target_region=hpc_name,
+                target_population=olm_pop,
+                receptor_type=ReceptorType.GABA_A,
+            ),
+            axonal_delay_ms=2.0,
+            connectivity=0.30,
+            weight_scale=0.012,
+            stp_config=STPConfig(U=0.50, tau_d=300.0, tau_f=15.0),
+        )
+
+
+def _connect_septal_ec_theta(
+    builder: BrainBuilder,
+    ms_name: str,
+    ec_name: str,
+) -> None:
+    """Wire MS ACH theta entrainment of entorhinal cortex layer II.
+
+    Septal cholinergic axons project to EC II stellate cells via the fornix,
+    entraining them to the hippocampal theta rhythm (~8 Hz).  This ensures that
+    perforant-path input to DG and CA3 arrives preferentially at the encoding
+    phase, co-ordinated with the MS theta pacemaker.
+    Delay 3 ms: fornix pathway (MS → EC, ~1–2 cm; longer than MS → HPC).
+    """
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ms_name,
+            source_population=MedialSeptumPopulation.ACH,
+            target_region=ec_name,
+            target_population=EntorhinalCortexPopulation.EC_II,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.0,
+        connectivity=0.15,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=8.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.02,
+            fraction_of_drive=0.12,
+        ),
+        stp_config=STPConfig(U=0.25, tau_d=300.0, tau_f=600.0),
+    )
+
 
 def _connect_ec_to_hpc(
     builder: BrainBuilder,
@@ -205,7 +344,7 @@ def _connect_ec_to_hpc(
     """Wire the entorhinal–hippocampal afferent input pathways.
 
     Three parallel routes carry information into the hippocampal formation:
-    1. Perforant path (EC_II → DG, EC_II → CA3): sparse encoding input.
+    1. Perforant path (EC_II → DG, EC_II → CA3, EC_II → CA2): sparse encoding input.
     2. Temporoammonic path (EC_III → CA1): direct novelty/mismatch input.
     """
     # EC_II → HPC DG: perforant path — outer molecular layer
@@ -219,19 +358,24 @@ def _connect_ec_to_hpc(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=0.9,
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
             target_g_L=0.05,
             target_tau_E_ms=5.0,
-            target_v_inf=0.90,
-            fraction_of_drive=0.75,
+            target_v_inf=1.60,  # Raised 0.90→1.60: DG granule v_threshold=1.80; at v_inf=0.90
+            # the conductance was only 31% of what's needed to reach threshold.
+            # v_inf=1.60 (89% of threshold) puts DG in fluctuation-driven sparse coding.
+            fraction_of_drive=0.55,  # 1.10→0.55: in full brain DG fired 2.5 Hz (target 1 Hz)
+            # driving DG PV into 119 Hz runaway (STP depletion vicious cycle).
+            # EC alone at 110% of drive was too strong; halved to share budget with thalamus.
         ),
         stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
     )
 
     # EC_II → HPC CA3: direct perforant path (stratum lacunosum-moleculare)
+    # Biologically targets distal apical dendrites of CA3 pyramidal cells; routed to
+    # the apical compartment of TwoCompartmentLIF inside _step_ca3 (same pattern as CA1).
     builder.connect(
         synapse_id=SynapseId(
             source_region=ec_name,
@@ -241,14 +385,39 @@ def _connect_ec_to_hpc(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.5,
-        axonal_delay_std_ms=1.05,
         connectivity=0.20,
         weight_scale=ConductanceScaledSpec(
-            source_rate_hz=5.0,
+            source_rate_hz=3.0,  # Was 5.0; actual EC_II fires ~2.8 Hz → weights were 40% too weak
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=1.15,
-            fraction_of_drive=0.30,
+            fraction_of_drive=0.35,
+            inhibitory_load=0.30,  # CA3 PV + interneuron feedback.
+        ),
+        stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
+    )
+
+    # EC_II → HPC CA2: direct perforant path (stratum lacunosum-moleculare)
+    # Biology: CA2 receives strong direct EC_II input for social/temporal context.
+    # Unlike CA3→CA2 (where RGS14 blocks LTP), EC→CA2 plasticity is intact
+    # (Zhao et al. 2007).  CA2 uses ConductanceLIF (single compartment).
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ec_name,
+            source_population=EntorhinalCortexPopulation.EC_II,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.CA2,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.5,
+        connectivity=0.20,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=3.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=1.10,   # CA2 v_threshold=0.60; moderate drive
+            fraction_of_drive=0.40,
+            inhibitory_load=0.25,  # CA2 PV + interneuron feedback
         ),
         stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
     )
@@ -264,14 +433,111 @@ def _connect_ec_to_hpc(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=4.0,
-        axonal_delay_std_ms=1.2,
         connectivity=0.25,
         weight_scale=ConductanceScaledSpec(
-            source_rate_hz=5.0,
+            source_rate_hz=3.0,  # Was 5.0; actual EC_III fires ~2.5 Hz → weights were 50% too weak
             target_g_L=0.05,
             target_tau_E_ms=5.0,
             target_v_inf=1.15,
             fraction_of_drive=0.55,
+            inhibitory_load=0.40,  # Strong CA1 PV basket + OLM interneuron feedback.
+        ),
+        stp_config=STPConfig(U=0.45, tau_d=650.0, tau_f=40.0),
+    )
+
+    # =========================================================================
+    # Feedforward inhibition: EC → hippocampal PV interneurons
+    # =========================================================================
+    # Biology: Perforant path axons from EC bifurcate onto both principal cells
+    # and local PV basket cells.  PV cells have shorter tau_mem (~7 ms) and fire
+    # faster, creating a narrow excitability window for the principal cells
+    # (feedforward inhibition).  This sharpens pattern separation in DG and
+    # prevents runaway excitation in CA3/CA1.
+    # Refs: Buzsáki 1984; Freund & Buzsáki 1996; Sambandan et al. 2010.
+
+    # EC_II → DG PV: feedforward inhibition in dentate gyrus
+    # PV fires ~1-2 ms before granule cells can respond, enforcing sparse coding.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ec_name,
+            source_population=EntorhinalCortexPopulation.EC_II,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.DG_INHIBITORY_PV,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.0,
+        connectivity=0.30,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=5.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=0.95,
+            fraction_of_drive=0.30,  # PV also receives local Pyr→PV drive
+        ),
+        stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
+    )
+
+    # EC_II → CA3 PV: feedforward inhibition in CA3
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ec_name,
+            source_population=EntorhinalCortexPopulation.EC_II,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.CA3_INHIBITORY_PV,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.5,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=3.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=0.95,
+            fraction_of_drive=0.25,
+        ),
+        stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
+    )
+
+    # EC_II → CA2 PV: feedforward inhibition in CA2
+    # Perforant path recruits CA2 PV basket cells for temporal precision.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ec_name,
+            source_population=EntorhinalCortexPopulation.EC_II,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.CA2_INHIBITORY_PV,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=3.5,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=3.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=0.95,
+            fraction_of_drive=0.25,
+        ),
+        stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=50.0),
+    )
+
+    # EC_III → CA1 PV: feedforward inhibition in CA1
+    # Temporoammonic fibres recruit CA1 PV basket cells directly.
+    builder.connect(
+        synapse_id=SynapseId(
+            source_region=ec_name,
+            source_population=EntorhinalCortexPopulation.EC_III,
+            target_region=hpc_name,
+            target_population=HippocampusPopulation.CA1_INHIBITORY_PV,
+            receptor_type=ReceptorType.AMPA,
+        ),
+        axonal_delay_ms=4.0,
+        connectivity=0.25,
+        weight_scale=ConductanceScaledSpec(
+            source_rate_hz=3.0,
+            target_g_L=0.05,
+            target_tau_E_ms=5.0,
+            target_v_inf=0.95,
+            fraction_of_drive=0.30,
         ),
         stp_config=STPConfig(U=0.45, tau_d=650.0, tau_f=40.0),
     )
@@ -292,7 +558,6 @@ def _connect_hpc_to_ec_direct(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=3.0,
-        axonal_delay_std_ms=0.9,
         connectivity=0.30,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -329,7 +594,6 @@ def _connect_hpc_via_subiculum(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=1.5,
-        axonal_delay_std_ms=0.45,
         connectivity=0.40,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=3.0,
@@ -352,7 +616,6 @@ def _connect_hpc_via_subiculum(
             receptor_type=ReceptorType.AMPA,
         ),
         axonal_delay_ms=2.5,
-        axonal_delay_std_ms=0.75,
         connectivity=0.35,
         weight_scale=ConductanceScaledSpec(
             source_rate_hz=5.0,
@@ -415,6 +678,7 @@ def add_medial_temporal_lobe_circuit(
         add_medial_temporal_lobe_regions(builder, sizes, ms_name, ec_name, hpc_name, sub_name if include_subiculum else None)
 
     _connect_septal_theta_loop(builder, ms_name, hpc_name)
+    _connect_septal_ec_theta(builder, ms_name, ec_name)
     _connect_ec_to_hpc(builder, ec_name, hpc_name)
 
     if include_subiculum:

@@ -31,8 +31,7 @@ from typing import Optional, Union
 
 import torch
 
-from thalia import GlobalConfig
-from thalia.typing import ConductanceTensor, VoltageTensor
+from thalia.typing import ConductanceTensor, PopulationName, RegionName, VoltageTensor
 
 from .conductance_lif_neuron import ConductanceLIF, ConductanceLIFConfig
 
@@ -45,33 +44,48 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     - Moderate I_h pacemaking (2-5 Hz baseline)
     - Fast SK adaptation (brief bursts)
     - Prediction error-driven bursts
-
-    Biological parameters based on:
-    - Hangya et al. (2015): BF cholinergic neuron properties
-    - Sarter & Parikh (2005): Cholinergic neuron electrophysiology
-    - Hasselmo & McGaughy (2004): ACh dynamics
     """
     # =========================================================================
     # Membrane properties
     # =========================================================================
     tau_mem_ms: Union[float, torch.Tensor] = 12.0  # Fast membrane (faster than DA/NE)
-    v_reset: float = -0.08  # Shallow reset (allows rapid bursting)
-    v_threshold: Union[float, torch.Tensor] = 0.90  # Raised 0.85→0.90: NB:ach 18.4 Hz+100% epileptiform after heterogeneity CV; reduce excitability
+    v_reset: Union[float, torch.Tensor] = -0.08  # Shallow reset (allows rapid bursting)
+    v_threshold: Union[float, torch.Tensor] = 0.90
     tau_ref: float = 1.5  # Very short refractory (enables fast bursts)
+    g_L: Union[float, torch.Tensor] = 0.083  # tau_m = C_m/g_L = 12ms
 
-    # Leak conductance
-    g_L: float = 0.083  # tau_m = C_m/g_L = 12ms
+    # =========================================================================
+    # Reversal potentials (normalized units, E_L = 0 by convention)
+    # =========================================================================
+    E_E: float = 3.0   # Excitatory (≈ 0mV, well above threshold)
+    E_I: float = -0.5  # Inhibitory (≈ -70mV, below rest)
 
     # =========================================================================
     # Synaptic time constants
     # =========================================================================
-    tau_E: float = 4.0  # Fast excitation
+    tau_E: float = 4.0         # Fast excitation
     tau_I: float = 8.0
+
+    # NMDA conductance (slow excitation for temporal integration)
+    tau_nmda: float = 100.0    # NMDA decay time constant (80-150ms biologically)
+    E_nmda: float = 3.0        # NMDA reversal potential (same as AMPA)
+
+    # GABA_B slow inhibitory channel (metabotropic K⁺)
+    # Biology: tau_decay ~250-800 ms, deeper hyperpolarisation (E_GABA_B ~ -90 mV)
+    tau_GABA_B: float = 400.0  # GABA_B conductance decay (ms); 250-800 ms biologically
+    E_GABA_B: float = -0.8     # GABA_B reversal (normalised; more negative than E_I = -0.5)
 
     # =========================================================================
     # Noise
     # =========================================================================
-    noise_std: float = 0.07
+    noise_std: Union[float, torch.Tensor] = 0.07
+    noise_tau_ms: float = 3.0
+
+    # =========================================================================
+    # Adaptation
+    # =========================================================================
+    # Disable adaptation from base class (we use SK instead)
+    adapt_increment: Union[float, torch.Tensor] = 0.0
 
     # =========================================================================
     # I_h (HCN) pacemaker current parameters
@@ -79,7 +93,7 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     # I_h pacemaking current (HCN channels) - MODERATE
     # Between NE and DA for 2-5 Hz baseline
     # Must dominate g_L for pacemaking
-    i_h_conductance: float = 0.22  # Reduced 0.25→0.22: NB:ach 18.4 Hz+100% epileptiform after heterogeneity; lower pacemaker drive
+    i_h_conductance: float = 0.22
     i_h_reversal: float = 0.77
 
     # =========================================================================
@@ -97,9 +111,6 @@ class AcetylcholineNeuronConfig(ConductanceLIFConfig):
     # Low PE → baseline
     prediction_error_to_current_gain: float = 25.0  # Strong response to PE
 
-    # Disable adaptation from base class (we use SK instead)
-    adapt_increment: float = 0.0
-
 
 class AcetylcholineNeuron(ConductanceLIF):
     """Acetylcholine neuron with fast, brief bursts.
@@ -111,14 +122,16 @@ class AcetylcholineNeuron(ConductanceLIF):
     4. Rapid return to baseline after burst
     """
 
-    def __init__(self, n_neurons: int, config: AcetylcholineNeuronConfig, device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE):
-        """Initialize acetylcholine neuron population.
-
-        Args:
-            n_neurons: Number of ACh neurons (~3,000-5,000 in human NB)
-            config: Configuration with pacemaking and fast burst parameters
-        """
-        super().__init__(n_neurons, config, device)
+    def __init__(
+        self,
+        n_neurons: int,
+        config: AcetylcholineNeuronConfig,
+        region_name: RegionName,
+        population_name: PopulationName,
+        device: Union[str, torch.device],
+    ):
+        """Initialize acetylcholine neuron population."""
+        super().__init__(n_neurons, config, region_name, population_name, device)
 
         # SK channel state (calcium-activated K+ for fast adaptation)
         self.ca_concentration = torch.zeros(n_neurons, device=device)
@@ -174,9 +187,6 @@ class AcetylcholineNeuron(ConductanceLIF):
         # SK activation (sigmoidal function of calcium)
         # High calcium → high SK → hyperpolarization → terminates burst
         self.sk_activation = self.ca_concentration / (self.ca_concentration + 0.3)
-
-        # Store spikes for diagnostic access
-        self.spikes = spikes
 
         return spikes, self.V_soma
 

@@ -47,7 +47,7 @@ These are essential for learning to avoid bad outcomes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 
@@ -55,6 +55,8 @@ from thalia import GlobalConfig
 from thalia.brain.configs import TonicPacemakerConfig
 from thalia.brain.neurons import (
     ConductanceLIFConfig,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_noise_std,
     heterogeneous_tau_mem,
     heterogeneous_v_threshold,
     heterogeneous_g_L,
@@ -119,16 +121,21 @@ class RostromedialTegmentum(NeuralRegion[TonicPacemakerConfig]):
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.gaba_size, device),
-                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.gaba_size, device),
                 v_reset=0.0,
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.gaba_size, device),
                 tau_ref=self.config.tau_ref,
                 g_L=heterogeneous_g_L(0.10, self.gaba_size, device, cv=0.08),
-                E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=4.0,
                 tau_I=10.0,
-                noise_std=0.090,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.09, self.gaba_size, device),
+                noise_tau_ms=3.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.gaba_size, device, cv=0.20),
             ),
         )
 
@@ -138,7 +145,11 @@ class RostromedialTegmentum(NeuralRegion[TonicPacemakerConfig]):
         # Ensure all tensors are on the correct device
         self.to(device)
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Update RMTg from LHb excitation; output inhibits VTA DA neurons."""
         # =====================================================================
         # Integrate synaptic inputs at dendrites (all sources → GABA population)

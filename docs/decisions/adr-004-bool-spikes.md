@@ -1,7 +1,7 @@
-# ADR-004: Use Bool Tensors for Spike Representation
+# ADR-004: Binary Spike Representation
 
-**Status**: ✅ COMPLETE
-**Date**: December 8, 2025 (Completed)
+**Status**: ✅ COMPLETE (relaxed March 2026)
+**Date**: December 8, 2025 (Completed); March 23, 2026 (Relaxed)
 **Decision Makers**: Thalia Team
 
 ## Context
@@ -13,27 +13,27 @@ Spikes in biological neural networks are discrete, all-or-nothing events. Curren
 
 ## Decision
 
-**We will use `torch.bool` tensors for spike representation wherever possible.**
+**Spikes must be binary (0/1) but may use either `torch.bool` or `torch.float32` dtype.**
 
 ### Principles
 
-1. **Store spikes as bool internally** - All spike tensors use `dtype=torch.bool`
-2. **Convert to float only when needed** - For arithmetic operations (matmul, learning rules)
-3. **Return bool from forward()** - All neuron models and regions output bool spikes
-4. **Document conversion points** - Make `.float()` calls explicit and commented
+1. **Spikes are binary** — all spike tensors contain only 0s and 1s (validated by `validate_spike_tensor`)
+2. **Neuron models produce bool spikes** — `ConductanceLIF.forward()`, etc. return `torch.bool`
+3. **Brain.forward() converts to float once** — after all neurons fire, `brain_output` is converted to float in-place, eliminating redundant per-consumer `.float()` calls
+4. **Axonal delay buffers store bool** — for 8× memory savings on spike history
+5. **Downstream code receives float** — `region_inputs`, `brain_output`, `_last_brain_output`, and learning rule inputs are all float
 
 ### Benefits
 
-✅ **Memory efficiency**: 8× less memory for spike trains
-✅ **Biological accuracy**: Spikes are binary events (fire or don't fire)
-✅ **Type safety**: `bool` dtype prevents accidental analog values
-✅ **Code clarity**: `bool` signals discrete events vs continuous signals
+✅ **Memory efficiency**: Delay buffers (which dominate spike memory) remain bool
+✅ **Biological accuracy**: Spikes are still binary events — only the dtype varies
+✅ **Performance**: Eliminates ~100k redundant `.float()` calls per 100-step run
+✅ **Simplicity**: Hot-path code no longer needs `is_floating_point()` guards
 
 ### Trade-offs
 
-❌ **Requires conversions**: Must call `.float()` before matmul, torch.sum, etc.
-❌ **Migration effort**: Must update ~100+ locations in codebase
-❌ **Slight overhead**: bool→float conversion cost (negligible vs memory savings)
+❌ **Slight memory increase**: `brain_output` dict holds float tensors (one step only)
+❌ **Mixed dtype**: bool in storage, float in computation (clear boundary at Brain.forward)
 
 ## Implementation Status: ✅ COMPLETE
 

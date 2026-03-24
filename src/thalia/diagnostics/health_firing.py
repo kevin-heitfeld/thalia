@@ -6,20 +6,20 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from .bio_ranges import adaptation_expected_for, skip_burst_check_for, skip_sync_check_for
-from .diagnostics_types import (
-    HealthCategory,
-    HealthIssue,
-    HealthThresholds,
-    PopulationStats,
-)
-from .region_tags import DA_SOURCE_TAGS, UPDOWN_STATE_TAGS, matches_any
+from .bio_ranges import adaptation_expected_for, is_pacemaker_population, skip_burst_check_for, skip_sync_check_for
+from .diagnostics_config import FiringThresholds
+from .diagnostics_metrics import PopulationStats
+from .diagnostics_report import HealthCategory, HealthIssue
+from .health_context import HealthCheckContext
+from .region_tags import PURKINJE_TAGS, UPDOWN_STATE_TAGS, matches_any
+from ._helpers import is_da_burst_mode
 
 
 def _check_fr_ranges(
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
     population_status: Dict[str, str],
+    config: FiringThresholds = FiringThresholds(),
 ) -> None:
     """Silent / low / high firing-rate range checks."""
     for (rn, pn), ps in pop_stats.items():
@@ -29,18 +29,7 @@ def _check_fr_ranges(
 
         # DA burst-mode detection — compute before the bio-plausibility checks so
         # burst-fired DA neurons are not false-alarmed as "High FR".
-        _is_da = (
-            matches_any(rn, DA_SOURCE_TAGS)
-            and "da" in pn.lower()
-        )
-        _da_burst_mode = (
-            _is_da
-            and not np.isnan(ps.isi_cv)
-            and ps.isi_cv > 1.0
-            and not np.isnan(ps.fraction_isi_lt_80ms)
-            and ps.fraction_isi_lt_80ms > 0.20
-            and (np.isnan(ps.da_burst_events_per_s) or ps.da_burst_events_per_s > 0.0)
-        )
+        _da_burst_mode = is_da_burst_mode(rn, pn, ps, config)
 
         # Critical: completely silent (no spikes at all)
         # Only flag as critical if the population is *expected* to fire (bio_range_hz[0] > 0).
@@ -57,7 +46,7 @@ def _check_fr_ranges(
         # Critical: far outside biological range
         if status == "low" and ps.bio_range_hz is not None:
             lo, _ = ps.bio_range_hz
-            if ps.mean_fr_hz < lo * 0.2:
+            if ps.mean_fr_hz < lo * config.fr_severely_low_multiplier:
                 issues.append(HealthIssue(severity="critical", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"SEVERELY LOW: {rn}:{pn} = {ps.mean_fr_hz:.1f} Hz "
@@ -86,7 +75,7 @@ def _check_fr_ranges(
                         f"ISI<80ms={ps.fraction_isi_lt_80ms * 100:.0f}%"
                         + burst_rate_str
                     )))
-            elif ps.mean_fr_hz > hi * 5.0:
+            elif ps.mean_fr_hz > hi * config.fr_hyperactive_multiplier:
                 issues.append(HealthIssue(severity="critical", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"HYPERACTIVE: {rn}:{pn} = {ps.mean_fr_hz:.0f} Hz "
@@ -103,7 +92,7 @@ def _check_fr_ranges(
 def _check_isi_and_fano(
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
-    config: HealthThresholds,
+    config: FiringThresholds,
 ) -> None:
     """ISI CV, CV₂, Fano factor, and refractory-violation checks."""
     for (rn, pn), ps in pop_stats.items():
@@ -117,41 +106,42 @@ def _check_isi_and_fano(
                         f"Regular firing (CV={ps.isi_cv:.2f}): {rn}:{pn} "
                         f"— may indicate synchrony or adaptation saturation"
                     )))
-            if ps.isi_cv > 2.5:
+            if ps.isi_cv > config.isi_cv_burst:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=f"Burst-dominated irregularity (CV={ps.isi_cv:.2f}): {rn}:{pn}"))
 
             # Purkinje cell pacemaker regularity check.
-            # Healthy simple-spike output has CV ≈ 0.08–0.25 (Häusser & Clark 1997).
+            # Healthy simple-spike output has CV ≈ 0.08–0.25.
             # A Purkinje cell with CV > 0.5 has lost its intrinsic pacemaker drive —
             # the cerebellar circuit is misfiring (e.g. missing climbing-fibre input
             # reset, excess inhibition from Golgi cells, or synaptic runaway).
-            if "purkinje" in pn.lower():
-                if ps.isi_cv > 0.5:
+            if matches_any(pn, PURKINJE_TAGS):
+                if ps.isi_cv > config.purkinje_cv_high:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Purkinje pacemaker regularity lost: {rn}:{pn}  "
-                            f"CV={ps.isi_cv:.2f}  (expected < 0.25, Häusser & Clark 1997) "
+                            f"CV={ps.isi_cv:.2f}  (expected < {config.purkinje_cv_warn}) "
                             f"— intrinsic pacemaker drive may be absent or disrupted"
                         )))
-                elif ps.isi_cv > 0.25:
+                elif ps.isi_cv > config.purkinje_cv_warn:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Purkinje regularity degraded: {rn}:{pn}  "
-                            f"CV={ps.isi_cv:.2f}  (expected < 0.25) "
+                            f"CV={ps.isi_cv:.2f}  (expected < {config.purkinje_cv_warn}) "
                             f"— mild irregularity; check climbing-fibre ratio"
                         )))
 
-        # CV₂ local irregularity check
+        # CV₂ local irregularity check — skip for known autonomous pacemakers
+        # where low CV₂ is biologically expected (regular tonic firing).
         if not np.isnan(ps.isi_cv2) and ps.total_spikes >= 6:
-            if ps.isi_cv2 < config.isi_cv2_low_threshold:
+            if ps.isi_cv2 < config.isi_cv2_low_threshold and not is_pacemaker_population(rn, pn):
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Low CV₂ (local regularity): {rn}:{pn}  CV₂={ps.isi_cv2:.2f} "
                         f"— pacemaker-like inter-spike intervals; possible AHP saturation "
                         f"or oscillation lock-in"
                     )))
-            elif ps.isi_cv2 > 1.8:
+            elif ps.isi_cv2 > config.isi_cv2_high:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"High CV₂ (local burst irregularity): {rn}:{pn}  "
@@ -162,14 +152,14 @@ def _check_isi_and_fano(
         # per_neuron_ff: independent of between-neuron synchrony; Poisson ≈ 1.
         _ff_per = ps.per_neuron_ff
         if not np.isnan(_ff_per) and ps.total_spikes >= 10:
-            if _ff_per > 3.0:
+            if _ff_per > config.fano_factor_high:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"High Fano Factor: {rn}:{pn}  per-neuron FF={_ff_per:.2f} "
                         f"(Poisson≈1.0) — spike-count variance exceeds epileptiform threshold; "
                         f"check for synchronous population bursting"
                     )))
-            elif _ff_per < 0.3:
+            elif _ff_per < config.fano_factor_low:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Low Fano Factor: {rn}:{pn}  per-neuron FF={_ff_per:.2f} "
@@ -190,6 +180,7 @@ def _check_isi_and_fano(
 def _check_adaptation(
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
+    config: FiringThresholds = FiringThresholds(),
     skip_sfa_check: bool = False,
 ) -> None:
     """Spike-frequency adaptation index and τ plausibility checks."""
@@ -200,32 +191,32 @@ def _check_adaptation(
 
         # SFA index check.
         # Require ≥ 30 spikes AND mean_fr_hz ≥ 5 Hz.  At low firing rates the
-        # ISI exceeds tau_adapt, so adaptation decays between spikes and SFA ≈ 1
+        # ISI exceeds tau_adapt_ms, so adaptation decays between spikes and SFA ≈ 1
         # regardless of adapt_increment — the measurement is unreliable below
         # 5 Hz in a 3-second simulation (< 15 spikes per neuron = only 2-3 ISI
         # pairs to compare, too noisy).
         if not np.isnan(ps.sfa_index) and ps.total_spikes >= 30 and ps.mean_fr_hz >= 5.0:
             _adaptation_exp = adaptation_expected_for(rn, pn)
-            if _adaptation_exp is True and ps.sfa_index < 1.30:
+            if _adaptation_exp is True and ps.sfa_index < config.sfa_absent:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"No adaptation: {rn}:{pn}  SFA={ps.sfa_index:.2f} "
                         f"(expected >1.3 for adapting cell type — missing AHP?)"
                     )))
-            if _adaptation_exp is True and ps.sfa_index > 3.0:
+            if _adaptation_exp is True and ps.sfa_index > config.sfa_runaway:
                 issues.append(HealthIssue(severity="critical", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"RUNAWAY ADAPTATION: {rn}:{pn}  SFA={ps.sfa_index:.2f} "
-                        f"(>3.0) — neuron will self-silence within the first 25% of any "
+                        f"(>{config.sfa_runaway}) — neuron will self-silence within the first 25% of any "
                         f"sustained trial; check AHP conductance magnitude or Ca²⁺ channel gain"
                     )))
-            if _adaptation_exp is False and ps.sfa_index > 2.0:
+            if _adaptation_exp is False and ps.sfa_index > config.sfa_unexpected:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Unexpected adaptation: {rn}:{pn}  SFA={ps.sfa_index:.2f} "
                         f"(PV/FSI/TAN should be non-adapting)"
                     )))
-            if _adaptation_exp is False and ps.sfa_index < 0.8:
+            if _adaptation_exp is False and ps.sfa_index < config.sfa_subphysiological:
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Sub-physiological SFA in non-adapting cell: {rn}:{pn}  SFA={ps.sfa_index:.2f} "
@@ -236,13 +227,13 @@ def _check_adaptation(
         if not np.isnan(ps.sfa_tau_ms) and ps.total_spikes >= 30 and ps.mean_fr_hz >= 5.0:
             _adaptation_exp = adaptation_expected_for(rn, pn)
             if _adaptation_exp is True:
-                if ps.sfa_tau_ms < 20.0:
+                if ps.sfa_tau_ms < config.sfa_tau_fast_ms:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Suspiciously fast adaptation τ: {rn}:{pn}  τ={ps.sfa_tau_ms:.0f} ms "
                             f"(< 20 ms — possible AMPA over-activation or missing AHP)"
                         )))
-                elif ps.sfa_tau_ms > 1000.0:
+                elif ps.sfa_tau_ms > config.sfa_tau_slow_ms:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Very slow adaptation τ: {rn}:{pn}  τ={ps.sfa_tau_ms:.0f} ms "
@@ -259,7 +250,7 @@ def _check_adaptation(
 def _check_synchrony_and_state(
     pop_stats: Dict[Tuple[str, str], PopulationStats],
     issues: List[HealthIssue],
-    config: HealthThresholds,
+    config: FiringThresholds,
     sensory_pattern: str = "",
 ) -> None:
     """Epileptiform burst detection, pairwise correlation, network-state classifier,
@@ -363,67 +354,52 @@ def _check_synchrony_and_state(
             # computational artefacts (oscillation-driven voltage fluctuations
             # misclassified as state transitions) and are suppressed entirely.
             if _updown_region and not np.isnan(ud) and ud > 20.0:
-                if ud > 700.0:
+                if ud > config.up_state_max_ms:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Prolonged up state: {rn}:{pn}  up_dur={ud:.0f} ms "
-                            f"(> 700 ms) \u2014 may indicate insufficient after-hyperpolarisation "
-                            f"or K\u207a channel blockade; healthy NREM up states: 300\u2013500 ms "
+                            f"(> {config.up_state_max_ms:.0f} ms) \u2014 may indicate insufficient after-hyperpolarisation "
+                            f"or K\u207a channel blockade; healthy NREM up states: {config.up_state_min_ms:.0f}\u2013{config.up_state_max_ms:.0f} ms "
                             f"(Steriade et al. 2001)"
                         )))
-                elif ud < 200.0:
+                elif ud < config.up_state_min_ms:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Up/Down timing: {rn}:{pn}  up_dur={ud:.0f} ms "
-                            f"(expected 200\u2013700 ms, Steriade et al. 2001)"
+                            f"(expected {config.up_state_min_ms:.0f}\u2013{config.up_state_max_ms:.0f} ms)"
                         )))
-            if _updown_region and not np.isnan(dd) and dd > 20.0 and not (200.0 <= dd <= 700.0):
+            if _updown_region and not np.isnan(dd) and dd > 20.0 and not (config.up_state_min_ms <= dd <= config.up_state_max_ms):
                 issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                     message=(
                         f"Up/Down timing: {rn}:{pn}  down_dur={dd:.0f} ms "
-                        f"(expected 200\u2013700 ms, Steriade et al. 2001)"
+                        f"(expected {config.up_state_min_ms:.0f}–{config.up_state_max_ms:.0f} ms)"
                     )))
             if _updown_region and not np.isnan(ud) and not np.isnan(dd) and dd > 20.0 and ud > 20.0:
                 ud_ratio = ud / dd
-                if ud_ratio > 4.0:
+                if ud_ratio > config.up_down_ratio_max:
                     issues.append(HealthIssue(severity="warning", category=HealthCategory.FIRING, population=pop_key, region=rn,
                         message=(
                             f"Pathological up/down ratio: {rn}:{pn}  "
                             f"up/down={ud_ratio:.1f} (up={ud:.0f} ms  down={dd:.0f} ms)  "
-                            f"(> 4.0) \u2014 expected \u2264 2.0 for healthy NREM slow oscillations; "
+                        f"(> {config.up_down_ratio_max:.1f}) — expected ≤ 2.0 for healthy NREM slow oscillations; "
                             f"insufficient hyperpolarising K\u207a conductance predicts epileptiform transition "
                             f"(Steriade et al. 2001)"
                         )))
 
 
-def check_population_firing(
-    pop_stats: Dict[Tuple[str, str], PopulationStats],
-    issues: List[HealthIssue],
-    population_status: Dict[str, str],
-    config: HealthThresholds,
-    skip_sfa_check: bool = False,
-    sensory_pattern: str = "",
-) -> None:
+def check_population_firing(ctx: HealthCheckContext) -> None:
     """Per-population biological plausibility checks.
 
     Appends :class:`HealthIssue` objects (category ``"firing"``) to *issues*
     and populates *population_status* (``pop_key → bio_plausibility``) in-place.
-
-    Parameters
-    ----------
-    config:
-        Diagnostics configuration carrying the health-check thresholds.
-    skip_sfa_check:
-        When ``True`` the SFA index health warnings are suppressed.  Set this
-        when a ramping input pattern is in use, since a monotonically increasing
-        stimulus causes all populations to appear adapted regardless of cellular
-        spike-frequency adaptation properties.
-    sensory_pattern:
-        Active sensory pattern name (e.g. ``"slow_wave"``).  When set to
-        ``"slow_wave"``, burst co-activation CRITICALs are downgraded to info
-        messages because high co-activation is a normal feature of NREM up-states.
     """
-    _check_fr_ranges(pop_stats, issues, population_status)
+    pop_stats = ctx.pop_stats
+    issues = ctx.issues
+    population_status = ctx.population_status
+    config = ctx.thresholds.firing
+    skip_sfa_check = ctx.skip_sfa_check
+    sensory_pattern = ctx.sensory_pattern
+    _check_fr_ranges(pop_stats, issues, population_status, config)
     _check_isi_and_fano(pop_stats, issues, config)
-    _check_adaptation(pop_stats, issues, skip_sfa_check)
+    _check_adaptation(pop_stats, issues, config, skip_sfa_check)
     _check_synchrony_and_state(pop_stats, issues, config, sensory_pattern=sensory_pattern)

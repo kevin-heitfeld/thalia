@@ -42,9 +42,11 @@ from thalia.brain.neurons import (
 )
 from thalia.brain.synapses import (
     ConductanceScaledSpec,
+    NMReceptorType,
     STPConfig,
     ShortTermPlasticity,
     WeightInitializer,
+    make_neuromodulator_receptor,
 )
 from thalia.learning import LearningStrategy
 from thalia.typing import (
@@ -70,6 +72,23 @@ from thalia.utils import (
 ConfigT = TypeVar('ConfigT', bound=NeuralRegionConfig)
 
 
+@dataclass(frozen=True)
+class InternalConnectionSpec:
+    """Parameters for a sparse-random internal connection (E→I or I→E).
+
+    Bundles the connectivity, weight scale, receptor type, and STP config
+    for one directional connection within a region.  Used by
+    :meth:`NeuralRegion._add_feedforward_inhibition` to reduce boilerplate
+    when wiring standard E→I→E circuits.
+    """
+
+    connectivity: float
+    weight_scale: float
+    receptor_type: ReceptorType
+    stp_config: Optional[STPConfig]
+    learning_strategy: Optional[LearningStrategy] = None
+
+
 @dataclass
 class PopulationHomeostasisState:
     """Homeostatic tracking state for a single neuron population.
@@ -82,13 +101,36 @@ class PopulationHomeostasisState:
         population_name: Key in ``neuron_populations`` for neuron lookup.
         firing_rate_attr: Attribute name of the registered firing-rate EMA buffer.
         target_firing_rate: Per-population homeostatic target rate (spikes/ms).
-        weight_scale_attr: Attribute name of the synaptic weight-scale buffer.
     """
 
     population_name: PopulationName
     firing_rate_attr: str
     target_firing_rate: float
-    weight_scale_attr: str
+
+
+@dataclass(frozen=True)
+class ReceptorSpec:
+    """Declarative specification for a neuromodulator receptor.
+
+    Used with :meth:`NeuralRegion._init_receptors` to create receptors and
+    concentration buffers in a single call, and with
+    :meth:`NeuralRegion._update_receptors` to batch-update all of them.
+
+    Attributes:
+        receptor_type: Canonical receptor subtype (determines kinetics).
+        channel: Neuromodulatory broadcast channel to read spikes from.
+        n_receptors: Number of postsynaptic receptors (typically population size).
+        buffer_name: Attribute name for the registered concentration buffer.
+        amplitude_scale: Multiplicative scale on canonical spike_amplitude.
+        initial_value: Initial concentration value (default 0).
+    """
+
+    receptor_type: NMReceptorType
+    channel: NeuromodulatorChannel
+    n_receptors: int
+    buffer_name: str
+    amplitude_scale: float = 1.0
+    initial_value: float = 0.0
 
 
 class DendriteOutput(NamedTuple):
@@ -110,6 +152,12 @@ class DendriteOutput(NamedTuple):
     g_gaba_b: torch.Tensor  # [n_neurons], non-negative
 
 
+# Scalar zero shared across unused DendriteOutput slots in the fast path.
+# Callers of _integrate_single_synaptic_input always access only the one
+# field matching the receptor type; the other three are never read.
+_DENDRITE_ZERO = torch.tensor(0.0)
+
+
 @dataclass(frozen=True)
 class SynapseShape(NamedTuple):
     """Convenience struct for synapse shape metadata.
@@ -123,20 +171,60 @@ class SynapseShape(NamedTuple):
     n_input: int
 
 
-class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
-    """Base class for brain regions with biologically accurate synaptic inputs.
+class ConcatWeightBlock:
+    """Precomputed concatenated weight matrix for one receptor type in a target population.
 
-    Regions:
-    1. Own their synaptic weights (one weight matrix per input source)
-    2. Define learning rules (per-source plasticity)
-    3. Integrate multi-source inputs naturally
-
-    Subclassing:
-        Regions with internal structure should:
-        1. Call super().__init__() to get synaptic_weights dict
-        2. Define internal neurons/weights for within-region processing
-        3. Override forward() to apply synaptic weights then internal processing
+    Replaces N small matmuls with 1 larger one by horizontally stacking weight
+    matrices from all sources of the same receptor type.
+    Individual synaptic_weights entries become views into W_concat, so learning
+    rule updates propagate automatically.
     """
+
+    W_concat: torch.Tensor
+    synapse_ids: tuple[SynapseId, ...]
+    column_slices: tuple[slice, ...]
+    total_sources: int
+    spike_buffer: torch.Tensor
+
+    __slots__ = ('W_concat', 'synapse_ids', 'column_slices', 'total_sources', 'spike_buffer')
+
+    def __init__(
+        self,
+        W_concat: torch.Tensor,
+        synapse_ids: tuple[SynapseId, ...],
+        column_slices: tuple[slice, ...],
+        total_sources: int,
+        device: torch.device,
+    ):
+        self.W_concat = W_concat
+        self.synapse_ids = synapse_ids
+        self.column_slices = column_slices
+        self.total_sources = total_sources
+        self.spike_buffer = torch.zeros(total_sources, device=device)
+
+
+class BatchedDendriteWeights:
+    """Precomputed batched weights for all receptor types targeting one population.
+
+    Used by the batched integration path in _integrate_synaptic_inputs_at_dendrites
+    to replace per-source Python loops with one matmul per active receptor type.
+    """
+
+    n_target: int
+    _blocks: Dict[ReceptorType, ConcatWeightBlock]
+
+    __slots__ = ('n_target', '_blocks')
+
+    def __init__(self, n_target: int, blocks: Dict[ReceptorType, ConcatWeightBlock]):
+        self.n_target = n_target
+        self._blocks = blocks
+
+    def get_block(self, receptor_type: ReceptorType) -> Optional[ConcatWeightBlock]:
+        return self._blocks.get(receptor_type)
+
+
+class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
+    """Base class for neural regions."""
 
     # Declared by subclasses that source neuromodulator volume-transmission signals.
     # Inherited from NeuromodulatorSource protocol check.
@@ -187,7 +275,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self.device = torch.device(device)
 
         # EMA alpha for firing rate tracking
-        self._firing_rate_alpha: float = self.dt_ms / self.config.gain_tau_ms
+        self._firing_rate_alpha: float = self.dt_ms / self.config.homeostatic_gain.tau_ms
 
         # Neuron populations within this region.
         # PopulationName is str so nn.ModuleDict works directly; subclasses keep
@@ -195,11 +283,10 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         self.neuron_populations: nn.ModuleDict = nn.ModuleDict()  # Dict[PopulationName, ConductanceLIF | TwoCompartmentLIF]
 
         # Per-population polarity (EXCITATORY / INHIBITORY / ANY).
-        # Populated by _register_neuron_population(); used for Dale's Law enforcement.
+        # Populated by _create_and_register_neuron_population(); used for Dale's Law enforcement.
         self._population_polarities: Dict[PopulationName, PopulationPolarity] = {}
 
         # Per-population homeostatic state registry.
-        # Populated by _register_homeostasis(); consumed by _update_homeostasis().
         self._homeostasis: Dict[PopulationName, PopulationHomeostasisState] = {}
 
         # Synaptic weights: one weight matrix per input source.
@@ -211,13 +298,50 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # Optional per-source STP modules for short-term plasticity (facilitation/depression)
         self.stp_modules: SynapseIdModuleDict = SynapseIdModuleDict()  # Dict[SynapseId, ShortTermPlasticity]
 
+        # STP connections that the region steps manually (e.g. with multi-step
+        # delayed spikes).  These are excluded from the global STPBatch to avoid
+        # double-updating shared u/x state.
+        self._manually_stepped_stp: set[SynapseId] = set()
+
+        # Precomputed STP efficacy set by Brain.forward() before each region step.
+        # When set, _integrate_synaptic_inputs_at_dendrites uses it instead of
+        # calling individual STP.forward() — the batched kernel already ran.
+        self._precomputed_stp_efficacy: Optional[Dict[SynapseId, torch.Tensor]] = None
+
+        # Precomputed sparse conductances set by Brain.forward() for subclass
+        # neuron populations (SerotoninNeuron, NorepinephrineNeuron, etc.)
+        # whose inputs are handled by the global sparse matrix.
+        # Maps pop_name → (g_ampa, g_nmda, g_gaba_a, g_gaba_b).
+        self._precomputed_sparse_conductances: Optional[Dict[PopulationName, tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]] = None
+
+        # Reference to the global sparse synaptic matrix (set by Brain.__init__
+        # after construction).  Used by _apply_learning to dispatch sparse
+        # weight updates for inter-region connections.
+        self._sparse_matrix: Optional[Any] = None  # GlobalSparseMatrix, typed as Any to avoid circular import
+
+        # Reverse index: target_population → list of SynapseIds targeting it.
+        # Built incrementally by add_synapse(); used by _apply_synaptic_scaling
+        # to avoid scanning all synaptic_weights entries every call.
+        self._synapses_by_target_pop: Dict[PopulationName, List[SynapseId]] = {}
+
+        # Step counter for synaptic scaling interval gating.
+        self._synaptic_scaling_step: int = 0
+
         # Per-synapse learning strategies: registered as nn.Module so .to(device)
         # and state_dict() work automatically.
         self._learning_strategies: SynapseIdModuleDict = SynapseIdModuleDict()  # Dict[SynapseId, LearningStrategy]
 
+        # Precomputed batched weight matrices for batched synaptic integration.
+        # Built by build_batched_dendrite_weights() after all connections are added.
+        # Maps target_population → BatchedDendriteWeights.
+        self._batched_dendrite_weights: Optional[Dict[PopulationName, BatchedDendriteWeights]] = None
+
         # NOTE: Pre-allocated buffer caching by n_neurons was removed — it caused aliasing
         # when two populations share the same size (e.g., D1 and D2 both at 200 neurons).
         # The second call would clear the first call's result before it was consumed.
+
+        # Previous region output for delayed spike access in the next step.  Updated at the end of forward().
+        self._prev_region_output: Optional[RegionOutput] = None
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -226,28 +350,6 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     # NEURON POPULATION MANAGEMENT
     # =========================================================================
 
-    def _register_neuron_population(
-        self,
-        population_name: PopulationName,
-        population: Union[ConductanceLIF, TwoCompartmentLIF],
-        polarity: PopulationPolarity,
-    ) -> None:
-        """Register a neuron population within this region.
-
-        Args:
-            population_name: Unique name for the population within this region.
-            population: The neuron group — either a :class:`ConductanceLIF` (single
-                compartment) or a :class:`TwoCompartmentLIF` (soma + apical dendrite).
-            polarity: Biological polarity of this population per Dale's Law.
-                ``EXCITATORY`` populations may only form excitatory synapses;
-                ``INHIBITORY`` populations may only form inhibitory synapses;
-                ``ANY`` disables the polarity check (use for external inputs).
-        """
-        if population_name in self.neuron_populations:
-            raise ValueError(f"Population '{population_name}' already registered in {self.__class__.__name__}")
-        self.neuron_populations[population_name] = population
-        self._population_polarities[population_name] = polarity
-
     def _create_and_register_neuron_population(
         self,
         population_name: PopulationName,
@@ -255,26 +357,39 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         polarity: PopulationPolarity,
         config: ConductanceLIFConfig,
     ) -> Union[ConductanceLIF, TwoCompartmentLIF]:
-        """Convenience method to create and register a ConductanceLIF population."""
-        # Pass region and population name to config
-        config.region_name = self.region_name
-        config.population_name = population_name
+        """Convenience method to create a neuron population from config and register it."""
+        if population_name in self.neuron_populations:
+            raise ValueError(f"Population '{population_name}' already registered in {self.__class__.__name__}")
 
-        # Create neuron population based on config type
+        # Infer neuron class from config type (ConductanceLIFConfig → ConductanceLIF, etc.)
         if isinstance(config, AcetylcholineNeuronConfig):
-            population = AcetylcholineNeuron(n_neurons=n_neurons, config=config, device=self.device)
+            neuron_cls = AcetylcholineNeuron
         elif isinstance(config, NorepinephrineNeuronConfig):
-            population = NorepinephrineNeuron(n_neurons=n_neurons, config=config, device=self.device)
+            neuron_cls = NorepinephrineNeuron
         elif isinstance(config, SerotoninNeuronConfig):
-            population = SerotoninNeuron(n_neurons=n_neurons, config=config, device=self.device)
+            neuron_cls = SerotoninNeuron
         elif isinstance(config, TwoCompartmentLIFConfig):
-            population = TwoCompartmentLIF(n_neurons=n_neurons, config=config, device=self.device)
+            neuron_cls = TwoCompartmentLIF
         else:
             assert isinstance(config, ConductanceLIFConfig)
-            population = ConductanceLIF(n_neurons=n_neurons, config=config, device=self.device)
+            neuron_cls = ConductanceLIF
+
+        # Create the neuron population
+        population = neuron_cls(
+            n_neurons=n_neurons,
+            config=config,
+            region_name=self.region_name,
+            population_name=population_name,
+            device=self.device,
+        )
 
         # Register the population and its polarity for Dale's Law enforcement
-        self._register_neuron_population(population_name, population, polarity)
+        self.neuron_populations[population_name] = population
+        self._population_polarities[population_name] = polarity
+
+        # Auto-register homeostasis if a target rate is defined in config
+        if population_name in self.config.homeostatic_target_rates:
+            self._register_homeostasis(population_name)
 
         return population
 
@@ -313,35 +428,23 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
     def _register_homeostasis(
         self,
         population_name: PopulationName,
-        n_neurons: int,
-        *,
-        target_firing_rate: float,
-        device: Union[str, torch.device] = GlobalConfig.DEFAULT_DEVICE,
     ) -> None:
         """Register homeostatic state tracking for a neuron population.
 
-        Creates a firing-rate EMA buffer and, optionally, a synaptic weight-scale
-        buffer for the given population.  May be called before
-        ``_register_neuron_population()``; population neurons are looked up
-        lazily at forward time inside ``_update_homeostasis()``.
+        Looks up the target firing rate from ``self.config.homeostatic_target_rates``
+        and derives population size from the already-registered neuron population.
+
+        Must be called **after** ``_create_and_register_neuron_population()`` for
+        this population.
 
         Buffer naming convention (using ``population_name`` directly)::
 
             {population_name}_firing_rate   # e.g. "dg_firing_rate"
-            {population_name}_weight_scale  # e.g. "l23_pyr_weight_scale" (optional)
-
-        Args:
-            population_name: Key that identifies this population.
-            n_neurons: Number of neurons in the population (needed to allocate the
-                firing-rate tensor before the population itself is registered).
-            target_firing_rate: Homeostatic target (spikes/ms) for this population.
-                Populations within the same region may have biologically distinct
-                activity levels (e.g. L23 vs L5 pyramidals, or DG vs CA1).
         """
         if population_name not in self.neuron_populations:
             raise ValueError(
                 f"Population '{population_name}' not registered in {self.__class__.__name__}. "
-                f"Call _register_neuron_population() before registering homeostasis."
+                f"Call _create_and_register_neuron_population() before registering homeostasis."
             )
 
         if population_name in self._homeostasis:
@@ -350,42 +453,57 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 f"in {self.__class__.__name__}."
             )
 
-        fr_attr = f"{population_name}_firing_rate"
-        self.register_buffer(fr_attr, torch.zeros(n_neurons, device=device))
+        target_rates = self.config.homeostatic_target_rates
+        if population_name not in target_rates:
+            raise ValueError(
+                f"No homeostatic target rate for population '{population_name}' in "
+                f"{self.config.__class__.__name__}.homeostatic_target_rates. "
+                f"Available: {list(target_rates.keys())}"
+            )
 
-        ws_attr = f"{population_name}_weight_scale"
-        self.register_buffer(ws_attr, torch.ones(1, device=device))
+        n_neurons = self.get_population_size(population_name)
+        fr_attr = f"{population_name}_firing_rate"
+        self.register_buffer(fr_attr, torch.zeros(n_neurons, device=self.device))
 
         self._homeostasis[population_name] = PopulationHomeostasisState(
             population_name=population_name,
             firing_rate_attr=fr_attr,
-            target_firing_rate=target_firing_rate,
-            weight_scale_attr=ws_attr,
+            target_firing_rate=target_rates[population_name],
         )
 
     def _get_target_firing_rate(self, population_name: PopulationName) -> float:
-        """Return the homeostatic target firing rate for a population.
-
-        Returns the target registered via :meth:`_register_homeostasis`.
-
-        Args:
-            population_name: The population key (same value used in
-                :meth:`_register_homeostasis`).
-        """
+        """Return the homeostatic target firing rate for a population."""
         return self._homeostasis[population_name].target_firing_rate
 
     def _apply_synaptic_scaling(self, population_name: PopulationName) -> None:
-        """Apply multiplicative synaptic scaling if a population is chronically underactive.
+        """Apply bidirectional per-neuron multiplicative synaptic scaling (Turrigiano 2008).
 
-        Scales up ALL input synaptic weights targeting ``population_name`` when the
-        population's time-averaged firing rate falls below
-        ``config.synaptic_scaling_min_activity``.  This is a slow, global homeostatic
-        mechanism distinct from per-neuron gain/threshold adaptation.
+        Each neuron independently scales ALL its incoming synaptic weights based on
+        the deviation of its firing rate from target:
+
+        - Underactive neurons (rate < target) → scale up incoming weights
+        - Overactive neurons (rate > target)  → scale down incoming weights
+
+        The scaling is multiplicative, preserving relative weight differences across
+        synapses while stabilizing total drive.  This provides a second homeostatic
+        axis complementary to intrinsic excitability (g_L) and threshold adaptation.
+
+        Both dense (intra-region) and sparse (inter-region) weights are scaled.
+
+        Reference: Turrigiano, G. G. (2008). The self-tuning neuron: synaptic scaling
+        of excitatory synapses. *Cell*, 135(3), 422-435.
 
         Args:
-            population_name: Key identifying the target population (same value used
-                in ``_register_homeostasis()``).
+            population_name: Key identifying the target population.
         """
+        if GlobalConfig.HOMEOSTASIS_DISABLED:
+            return
+
+        scaling_cfg = self.config.synaptic_scaling
+        lr = scaling_cfg.lr_per_ms
+        if lr == 0.0:
+            return
+
         if population_name not in self._homeostasis:
             raise KeyError(
                 f"No homeostasis registered for '{population_name}'. "
@@ -394,26 +512,37 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
 
         state = self._homeostasis[population_name]
         firing_rate: torch.Tensor = getattr(self, state.firing_rate_attr)
-        weight_scale: torch.Tensor = getattr(self, state.weight_scale_attr)
 
-        # Compute layer-wide average activity (not per-neuron)
-        layer_avg_rate = firing_rate.mean()
+        # Compensate learning rate for the interval: applying every N steps
+        # with N× the rate is equivalent to applying every step.
+        effective_lr = lr * scaling_cfg.interval_steps
 
-        # Scale up weights when chronically below threshold
-        if layer_avg_rate < self.config.synaptic_scaling_min_activity:
-            # Compute scaling update (slow, multiplicative)
-            rate_deficit = self.config.synaptic_scaling_min_activity - layer_avg_rate
-            scale_update = self.config.synaptic_scaling_lr * rate_deficit
+        # Per-neuron scale factors: >1 when underactive, <1 when overactive
+        scale_factors = 1.0 + effective_lr * (state.target_firing_rate - firing_rate)  # [n_neurons]
 
-            # Apply multiplicative scaling (1.0 → 1.001 → 1.002, etc.)
-            weight_scale.data.mul_(1.0 + scale_update).clamp_(
-                min=1.0, max=self.config.synaptic_scaling_max_factor
-            )
+        w_min = scaling_cfg.w_min
+        w_max = scaling_cfg.w_max
 
-            # Scale ALL input weights to this layer
-            for synapse_id, weights in self.synaptic_weights.items():
-                if synapse_id.target_population == population_name:
-                    weights.data.mul_(1.0 + scale_update)
+        # Scale dense weights using reverse index (only matching synapses)
+        _weights_dict = self.synaptic_weights  # cache nn.ParameterDict lookup
+        scale_unsqueezed = scale_factors.unsqueeze(1)
+        for synapse_id in self._synapses_by_target_pop.get(population_name, ()):
+            weights = _weights_dict[synapse_id]
+            # weights.data is [n_post, n_pre]; scale each row by its neuron's factor
+            weights.data.mul_(scale_unsqueezed)
+            weights.data.clamp_(w_min, w_max)
+
+        # Scale sparse weights (inter-region via GlobalSparseMatrix)
+        sparse = self._sparse_matrix
+        if sparse is not None:
+            for synapse_id in sparse.get_synapse_ids_for_target(self.region_name, population_name):
+                meta = sparse.connections[synapse_id]
+                if meta.nnz > 0:
+                    values = sparse.get_weight_values(synapse_id)
+                    row_scales = scale_factors[meta.local_row_indices]
+                    values.mul_(row_scales)
+                    values.clamp_(w_min, w_max)
+                    sparse.set_weight_values(synapse_id, values)
 
     def _update_homeostasis(self, population_name: PopulationName, spikes: torch.Tensor) -> None:
         """Update homeostatic intrinsic excitability and threshold adaptation.
@@ -426,12 +555,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         2. **Threshold adaptation** — lower spike threshold when underactive;
            complementary to intrinsic excitability with a faster time constant.
 
-        ``_register_homeostasis(population_name)`` must have been called during
-        ``__init__`` before invoking this method.
-
         Args:
-            population_name: Key identifying the population — must match the value
-                passed to ``_register_homeostasis()``.
+            population_name: Key identifying the population.
             spikes: Boolean or float spike tensor for the current timestep
                 ``[n_neurons]``.
         """
@@ -464,12 +589,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         # INTRINSIC EXCITABILITY: Modulate leak conductance
         # Underactive (rate_error > 0) → lower g_L_scale → lower leak → more excitable
         # Overactive  (rate_error < 0) → raise  g_L_scale → higher leak → less excitable
-        g_L_update = -self.config.gain_learning_rate * rate_error
+        g_L_update = -self.config.homeostatic_gain.lr_per_ms * rate_error
         neurons.g_L_scale.data.add_(g_L_update).clamp_(min=0.1, max=2.0)  # Biological range
 
         # THRESHOLD ADAPTATION: Lower threshold when underactive (faster than g_L)
-        threshold_update = -self.config.threshold_learning_rate * rate_error
-        neurons.adjust_thresholds(threshold_update, self.config.threshold_min, self.config.threshold_max)
+        threshold_update = -self.config.homeostatic_threshold.lr_per_ms * rate_error
+        neurons.adjust_thresholds(threshold_update, self.config.homeostatic_threshold.threshold_min, self.config.homeostatic_threshold.threshold_max)
 
     def _apply_all_population_homeostasis(self, region_outputs: RegionOutput) -> None:
         """Call homeostasis and synaptic scaling for every registered population.
@@ -482,11 +607,18 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             region_outputs: Mapping from ``PopulationName`` to spike tensor produced
                 in the current timestep.
         """
+        # Firing-rate EMA and intrinsic excitability update every step
         for pop_name, _state in self._homeostasis.items():
             spikes = region_outputs.get(pop_name)
             if spikes is not None:
                 self._update_homeostasis(pop_name, spikes)
-            self._apply_synaptic_scaling(pop_name)
+
+        # Synaptic scaling runs every interval_steps (default 10)
+        self._synaptic_scaling_step += 1
+        if self._synaptic_scaling_step >= self.config.synaptic_scaling.interval_steps:
+            self._synaptic_scaling_step = 0
+            for pop_name in self._homeostasis:
+                self._apply_synaptic_scaling(pop_name)
 
     # =========================================================================
     # SYNAPTIC INPUT MANAGEMENT
@@ -561,6 +693,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             raise ValueError(f"Synaptic weights for '{synapse_id}' already exist in region '{self.region_name}'.")
         self.synaptic_weights[synapse_id] = nn.Parameter(weights, requires_grad=False)
 
+        # Update reverse index: target_population → [synapse_ids]
+        target_pop = synapse_id.target_population
+        if target_pop not in self._synapses_by_target_pop:
+            self._synapses_by_target_pop[target_pop] = []
+        self._synapses_by_target_pop[target_pop].append(synapse_id)
+
         # Add STP module
         if stp_config is not None:
             if synapse_id in self.stp_modules:
@@ -605,11 +743,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 source_rate_hz=spec.source_rate_hz,
                 target_g_L=spec.target_g_L,
                 target_E_E=spec.target_E_E,
-                target_E_L=spec.target_E_L,
                 target_tau_E_ms=spec.target_tau_E_ms,
                 target_v_inf=spec.target_v_inf,
                 fraction_of_drive=spec.fraction_of_drive,
                 stp_utilization_factor=spec.stp_utilization_factor,
+                inhibitory_load=spec.inhibitory_load,
+                E_I=spec.E_I,
                 device=device,
             )
         else:
@@ -663,6 +802,152 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         )
 
         return synapse_id
+
+    def _add_feedforward_inhibition(
+        self,
+        exc_pop: PopulationName,
+        inh_pop: PopulationName,
+        e_to_i: InternalConnectionSpec,
+        i_to_e: InternalConnectionSpec,
+        device: Union[str, torch.device],
+    ) -> tuple[SynapseId, SynapseId]:
+        """Add a paired E→I + I→E feedforward inhibition circuit.
+
+        Initializes both connections with sparse random weights using the
+        population sizes already registered on this region.  Returns the
+        SynapseId pair for later reference (e.g. diagnostics or learning).
+
+        This helper covers the common case where both legs use
+        :func:`WeightInitializer.sparse_random`.  Connections that need
+        gaussian or uniform initialisation should call
+        :meth:`_add_internal_connection` directly.
+        """
+        n_exc = self.get_population_size(exc_pop)
+        n_inh = self.get_population_size(inh_pop)
+
+        ei_syn = self._add_internal_connection(
+            source_population=exc_pop,
+            target_population=inh_pop,
+            weights=WeightInitializer.sparse_random(
+                n_input=n_exc,
+                n_output=n_inh,
+                connectivity=e_to_i.connectivity,
+                weight_scale=e_to_i.weight_scale,
+                device=device,
+            ),
+            receptor_type=e_to_i.receptor_type,
+            stp_config=e_to_i.stp_config,
+            learning_strategy=e_to_i.learning_strategy,
+        )
+
+        ie_syn = self._add_internal_connection(
+            source_population=inh_pop,
+            target_population=exc_pop,
+            weights=WeightInitializer.sparse_random(
+                n_input=n_inh,
+                n_output=n_exc,
+                connectivity=i_to_e.connectivity,
+                weight_scale=i_to_e.weight_scale,
+                device=device,
+            ),
+            receptor_type=i_to_e.receptor_type,
+            stp_config=i_to_e.stp_config,
+            learning_strategy=i_to_e.learning_strategy,
+        )
+
+        return ei_syn, ie_syn
+
+    # =========================================================================
+    # BATCHED DENDRITE WEIGHT PRECOMPUTATION
+    # =========================================================================
+
+    def build_batched_dendrite_weights(
+        self,
+        exclude_synapse_ids: frozenset[SynapseId] = frozenset(),
+    ) -> None:
+        """Precompute concatenated weight matrices for batched synaptic integration.
+
+        For each target population, groups all registered synaptic weights by
+        receptor type and horizontally concatenates them into one weight matrix.
+        Individual synaptic_weights entries are then replaced with views into
+        the concatenated matrix so that learning rule updates propagate
+        automatically (shared storage).
+
+        This enables ``_integrate_synaptic_inputs_at_dendrites`` to replace N
+        small matmuls with 1 larger matmul per receptor type when filtering by
+        target population.
+
+        Connections in *exclude_synapse_ids* (typically those handled by the
+        global sparse matrix) are skipped.
+
+        Must be called after all ``add_input_source()`` / ``add_synapse()``
+        calls are complete (typically in ``Brain.__init__``).
+        """
+        device = self.device
+
+        # Group all synapse_ids by target_population
+        pop_synapses: Dict[PopulationName, list[SynapseId]] = {}
+        for synapse_id in self.synaptic_weights:
+            if synapse_id in exclude_synapse_ids:
+                continue
+            pop_synapses.setdefault(synapse_id.target_population, []).append(synapse_id)
+
+        batched: Dict[PopulationName, BatchedDendriteWeights] = {}
+
+        for target_pop, synapse_ids in pop_synapses.items():
+            if len(synapse_ids) < 2:
+                continue  # Single synapse — no batching benefit
+
+            n_target = self.synaptic_weights[synapse_ids[0]].shape[0]
+
+            # Group by receptor type
+            receptor_groups: Dict[ReceptorType, list[SynapseId]] = {}
+            for sid in synapse_ids:
+                receptor_groups.setdefault(sid.receptor_type, []).append(sid)
+
+            blocks: Dict[ReceptorType, ConcatWeightBlock] = {}
+
+            for receptor_type, sids in receptor_groups.items():
+                # Sort for deterministic column ordering
+                sids.sort(key=lambda s: s.to_key())
+
+                # Collect weight data and compute column slices
+                weight_list: list[torch.Tensor] = []
+                column_slices: list[slice] = []
+                offset = 0
+                for sid in sids:
+                    w = self.synaptic_weights[sid]
+                    n_cols = w.shape[1]
+                    weight_list.append(w.data)
+                    column_slices.append(slice(offset, offset + n_cols))
+                    offset += n_cols
+
+                total_sources = offset
+
+                # Concatenate weight matrices horizontally: [n_target, total_sources]
+                W_concat = torch.cat(weight_list, dim=1)
+
+                # Replace individual parameters with views into W_concat
+                # so learning rule updates modify W_concat in-place.
+                for sid, col_slice in zip(sids, column_slices):
+                    self.synaptic_weights[sid] = nn.Parameter(
+                        W_concat[:, col_slice], requires_grad=False
+                    )
+
+                blocks[receptor_type] = ConcatWeightBlock(
+                    W_concat=W_concat,
+                    synapse_ids=tuple(sids),
+                    column_slices=tuple(column_slices),
+                    total_sources=total_sources,
+                    device=device,
+                )
+
+            batched[target_pop] = BatchedDendriteWeights(
+                n_target=n_target,
+                blocks=blocks,
+            )
+
+        self._batched_dendrite_weights = batched if batched else None
 
     # =========================================================================
     # LEARNING STRATEGY MANAGEMENT
@@ -719,43 +1004,83 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         - global learning is disabled (:data:`GlobalConfig.LEARNING_DISABLED`)
         - no strategy is registered for *synapse_id*
 
-        Weight clamping uses ``self.config.w_min`` / ``self.config.w_max``.
+        Weight clamping uses ``self.config.synaptic_scaling.w_min`` / ``self.config.synaptic_scaling.w_max``.
         """
         if GlobalConfig.LEARNING_DISABLED:
             return
 
-        strategy = self.get_learning_strategy(synapse_id)
-        if strategy is not None:
-            weights = self.get_synaptic_weights(synapse_id)
-            # Capture connectivity mask BEFORE the update so that only
-            # pre-existing synapses (weight > 0 at initialisation or after LTP)
-            # can be modified.  Hebbian/STDP outer-products produce dense
-            # [n_post × n_pre] matrices; without this mask they would create
-            # de-novo connections at anatomically absent entries, violating
-            # the sparse connectivity layout set at build time and causing the
-            # same runaway potentiation seen in hippocampus (Fix 2, 2025-07).
-            syn_mask = weights.data > 0.0
-            updated: torch.Tensor = strategy.compute_update(
-                weights=weights.data,
+        # Cache nn.Module submodule dicts once — avoids __getattr__ per access
+        _learning_strategies = self._learning_strategies
+        strategy = _learning_strategies[synapse_id] if synapse_id in _learning_strategies else None
+        if strategy is None:
+            return
+
+        # ── Sparse path: connection managed by global sparse matrix ──
+        sparse = self._sparse_matrix
+        if sparse is not None and sparse.has_connection(synapse_id):
+            meta = sparse.get_connection_meta(synapse_id)
+            if meta.nnz == 0:
+                return
+            values = sparse.get_weight_values(synapse_id)
+            updated = strategy.compute_update_sparse(
+                values=values,
+                row_indices=meta.local_row_indices,
+                col_indices=meta.local_col_indices,
+                n_post=meta.n_post,
+                n_pre=meta.n_pre,
                 pre_spikes=pre_spikes,
                 post_spikes=post_spikes,
                 **kwargs,
             )
-            clamp_weights(updated, self.config.w_min, self.config.w_max)
-            # Zero any newly-created entries; anatomically absent synapses stay absent.
-            updated.mul_(syn_mask.float())
-            weights.data = updated
+            clamp_weights(updated, self.config.synaptic_scaling.w_min, self.config.synaptic_scaling.w_max)
+            # No connectivity mask needed — sparse entries ARE valid connections.
+            sparse.set_weight_values(synapse_id, updated)
+            return
+
+        # ── Dense path: original per-connection weight matrix ──
+        weights = self.synaptic_weights[synapse_id]
+        # Capture connectivity mask BEFORE the update so that only
+        # pre-existing synapses (weight > 0 at initialisation or after LTP)
+        # can be modified.  Hebbian/STDP outer-products produce dense
+        # [n_post × n_pre] matrices; without this mask they would create
+        # de-novo connections at anatomically absent entries, violating
+        # the sparse connectivity layout set at build time and causing the
+        # same runaway potentiation seen in hippocampus (Fix 2, 2025-07).
+        syn_mask = weights.data > 0.0
+        updated = strategy.compute_update(
+            weights=weights.data,
+            pre_spikes=pre_spikes,
+            post_spikes=post_spikes,
+            **kwargs,
+        )
+        clamp_weights(updated, self.config.synaptic_scaling.w_min, self.config.synaptic_scaling.w_max)
+        # Zero any newly-created entries; anatomically absent synapses stay absent.
+        updated.mul_(syn_mask.float())
+        weights.data = updated
 
     # =========================================================================
     # FORWARD PASS
     # =========================================================================
 
     @abstractmethod
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Perform a single simulation step for the region."""
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
+        """Perform a single simulation step for the region.
+
+        Args:
+            synaptic_inputs: Point-to-point synaptic connections from axonal tracts.
+            neuromodulator_inputs: Broadcast neuromodulatory signals.
+        """
 
     @torch.no_grad()
-    def forward(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def forward(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Process synaptic and neuromodulatory inputs through the region and produce outputs.
 
         Args:
@@ -786,6 +1111,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 validate_spike_tensor(spikes, tensor_name=f"neuromodulator_{neuromod_type}")
 
         region_outputs: RegionOutput = self._step(synaptic_inputs, neuromodulator_inputs)
+        self._prev_region_output = region_outputs
 
         if GlobalConfig.DEBUG:
             for population_name in self.neuron_populations.keys():
@@ -797,14 +1123,40 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 output_spikes = region_outputs[population_name]
                 validate_spike_tensor(output_spikes, tensor_name=f"output_{population_name}")
 
-        if not GlobalConfig.LEARNING_DISABLED:
-            for synapse_id, pre_spikes in synaptic_inputs.items():
-                post_spikes = region_outputs.get(synapse_id.target_population)
-                if post_spikes is not None:
-                    learning_kwargs = self._get_learning_kwargs(synapse_id)
-                    self._apply_learning(synapse_id, pre_spikes, post_spikes, **learning_kwargs)
-
         return region_outputs
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Apply inter-region plasticity rules.
+
+        Called by :meth:`forward` after ``_step()`` (and, in batched mode, after
+        ``ConductanceLIFBatch.step()`` so that spike tensors are up-to-date).
+        """
+        if GlobalConfig.LEARNING_DISABLED:
+            return
+
+        for synapse_id, pre_spikes in synaptic_inputs.items():
+            post_spikes = region_outputs.get(synapse_id.target_population)
+            if post_spikes is not None:
+                learning_kwargs = self._get_learning_kwargs(synapse_id)
+                self._apply_learning(synapse_id, pre_spikes, post_spikes, **learning_kwargs)
+
+    def _prev_spikes(
+        self,
+        population: PopulationName,
+    ) -> torch.Tensor:
+        """Extract previous-step spikes for a population from _prev_region_output.
+
+        Returns a zero tensor (all-silent) when no previous output is available
+        (first timestep).
+        """
+        if self._prev_region_output is not None and population in self._prev_region_output:
+            return self._prev_region_output[population].float()
+        size = self.get_population_size(population)
+        return torch.zeros(size, dtype=torch.float32, device=self.device)
 
     def _extract_neuromodulator(
         self,
@@ -841,13 +1193,84 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 return neuromodulator_inputs[key]
         return None
 
+    def _init_receptors(
+        self,
+        specs: list[ReceptorSpec],
+        device: Union[str, torch.device],
+    ) -> None:
+        """Create neuromodulator receptors and register concentration buffers.
+
+        Call once in ``__init__`` to replace per-receptor boilerplate
+        (``make_neuromodulator_receptor`` + ``register_buffer``).
+        Use :meth:`_update_receptors` in ``_step`` to batch-update.
+        """
+        receptors = []
+        for spec in specs:
+            receptor = make_neuromodulator_receptor(
+                spec.receptor_type,
+                n_receptors=spec.n_receptors,
+                dt_ms=self.dt_ms,
+                device=device,
+                amplitude_scale=spec.amplitude_scale,
+            )
+            receptors.append(receptor)
+            if spec.initial_value != 0.0:
+                buf = torch.full((spec.n_receptors,), spec.initial_value, device=torch.device(device))
+            else:
+                buf = torch.zeros(spec.n_receptors, device=torch.device(device))
+            self.register_buffer(spec.buffer_name, buf)
+        self._nm_receptor_modules = nn.ModuleList(receptors)
+        self._nm_receptor_specs: list[ReceptorSpec] = specs
+
+    def _init_receptors_from_config(self, device: Union[str, torch.device]) -> None:
+        """Create neuromodulator receptors from ``self.config.neuromodulator_receptors``.
+
+        Resolves *n_receptors* for each :class:`NMReceptorConfig` by summing the
+        neuron counts of the listed populations (empty tuple → ``n_receptors=1``).
+        Delegates to :meth:`_init_receptors` after building the runtime specs.
+        """
+        if not self.config.neuromodulator_receptors:
+            return
+        specs: list[ReceptorSpec] = []
+        for rc in self.config.neuromodulator_receptors:
+            n: int
+            if rc.populations:
+                n = sum(self.neuron_populations[pop].n_neurons for pop in rc.populations)
+            else:
+                n = 1
+            specs.append(ReceptorSpec(
+                receptor_type=rc.receptor_type,
+                channel=rc.channel,
+                n_receptors=n,
+                buffer_name=rc.buffer_name,
+                amplitude_scale=rc.amplitude_scale,
+                initial_value=rc.initial_value,
+            ))
+        self._init_receptors(specs, device)
+
+    def _update_receptors(self, nm_inputs: NeuromodulatorInput) -> None:
+        """Extract spikes and update all declaratively registered receptors.
+
+        Each unique channel is extracted once; the resulting concentration
+        tensor is written to the corresponding registered buffer.
+        """
+        if GlobalConfig.NEUROMODULATION_DISABLED:
+            return
+
+        spike_cache: Dict[NeuromodulatorChannel, Optional[torch.Tensor]] = {}
+        for receptor, spec in zip(self._nm_receptor_modules, self._nm_receptor_specs):
+            if spec.channel not in spike_cache:
+                spike_cache[spec.channel] = self._extract_neuromodulator(
+                    nm_inputs, spec.channel
+                )
+            setattr(self, spec.buffer_name, receptor.update(spike_cache[spec.channel]))
+
     def _integrate_synaptic_inputs_at_dendrites(
         self,
         synaptic_inputs: SynapticInput,
         n_neurons: int,
         *,
         filter_by_source_region: Optional[RegionName] = None,
-        filter_by_source_population: Optional[PopulationName] = None,
         filter_by_target_population: Optional[PopulationName] = None,
     ) -> DendriteOutput:
         """Integrate synaptic inputs at dendrites (multi-source summation).
@@ -861,11 +1284,14 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         Excitatory and inhibitory conductances are accumulated separately so
         callers can pass them to the correct neuron channels (AMPA/NMDA vs GABA_A).
 
+        When precomputed batched weights exist for the requested target population
+        (built by ``build_batched_dendrite_weights``), a fast path replaces the
+        per-source Python loop with one matmul per active receptor type.
+
         Args:
             synaptic_inputs: Dict mapping synapse IDs to spike tensors [n_source]
             n_neurons: Number of post-synaptic neurons (target population size)
             filter_by_source_region: If provided, only integrate inputs from this source region (e.g., "thalamus")
-            filter_by_source_population: If provided, only integrate inputs from this source population (e.g., "l4")
             filter_by_target_population: If provided, only integrate inputs targeting this population (e.g., "l4")
 
         Returns:
@@ -879,6 +1305,33 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             Routing keys are used directly as synaptic weight keys.
             Region subclasses should initialize synaptic_weights with routing keys.
         """
+        # ---- Sparse matrix bypass (Step 5) ----
+        # When the global sparse matrix already computed conductances for this
+        # target population (subclass neurons like SerotoninNeuron, NE, ACh),
+        # return them directly — skip all per-source integration.
+        if (
+            filter_by_target_population is not None
+            and self._precomputed_sparse_conductances is not None
+            and filter_by_target_population in self._precomputed_sparse_conductances
+        ):
+            g_ampa, g_nmda, g_gaba_a, g_gaba_b = self._precomputed_sparse_conductances[filter_by_target_population]
+            return DendriteOutput(g_ampa=g_ampa, g_nmda=g_nmda, g_gaba_a=g_gaba_a, g_gaba_b=g_gaba_b)
+
+        # ---- Batched fast path ----
+        # When filtering by target population with no other filters, and batched
+        # weights have been precomputed, replace per-source loop with one matmul
+        # per receptor type.
+        if (
+            filter_by_target_population is not None
+            and filter_by_source_region is None
+            and self._batched_dendrite_weights is not None
+            and filter_by_target_population in self._batched_dendrite_weights
+        ):
+            return self._integrate_dendrites_batched(
+                synaptic_inputs, filter_by_target_population, n_neurons
+            )
+
+        # ---- Original per-source loop path ----
         device = self.device
 
         # Cache module dicts once — avoids nn.Module.__getattr__ on every loop iteration
@@ -894,12 +1347,8 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         g_gaba_b = torch.zeros(n_neurons, device=device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
-            validate_spike_tensor(source_spikes, tensor_name=synapse_id)
-
             # Apply filters to select which inputs to integrate
             if filter_by_source_region and synapse_id.source_region != filter_by_source_region:
-                continue
-            if filter_by_source_population and synapse_id.source_population != filter_by_source_population:
                 continue
             if filter_by_target_population and synapse_id.target_population != filter_by_target_population:
                 continue
@@ -912,21 +1361,24 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
                 )
 
             weights = _weights_dict[synapse_id]
-            source_spikes_float = source_spikes.float()
+            source_spikes_f = source_spikes.float()
 
             # OPTIONAL PER-SOURCE STP (SHORT-TERM PLASTICITY)
             # Models synaptic facilitation/depression (millisecond timescale)
             # Different sources can have different STP dynamics
             if synapse_id in _stp_dict:
-                # STP returns [n_pre] pre-spike efficacy u*x.
-                # Apply element-wise to spikes before matmul: W @ (efficacy * spikes)
-                # This avoids creating a [n_post, n_pre] intermediate weight matrix.
-                stp_efficacy = _stp_dict[synapse_id].forward(source_spikes_float)
-                source_conductance = weights @ (stp_efficacy * source_spikes_float)
+                # Use precomputed efficacy from batched STP kernel if available;
+                # otherwise fall back to per-module forward() call.
+                _pre_eff = self._precomputed_stp_efficacy
+                if _pre_eff is not None and synapse_id in _pre_eff:
+                    stp_efficacy = _pre_eff[synapse_id]
+                else:
+                    stp_efficacy = _stp_dict[synapse_id].forward(source_spikes_f)
+                source_conductance = weights @ (stp_efficacy * source_spikes_f)
             else:
                 # SYNAPTIC CONDUCTANCE CALCULATION
                 # Convert incoming spikes to conductance: g = W @ s
-                source_conductance = weights @ source_spikes_float
+                source_conductance = weights @ source_spikes_f
 
             # Route by receptor type — four separate channels
             match synapse_id.receptor_type:
@@ -951,11 +1403,126 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         synapse_id: SynapseId,
         source_spikes: torch.Tensor,
     ) -> DendriteOutput:
-        """Integrate a single synaptic input source at the dendrites."""
-        weights = self.get_synaptic_weights(synapse_id)
-        return self._integrate_synaptic_inputs_at_dendrites(
-            synaptic_inputs={synapse_id: source_spikes},
-            n_neurons=weights.shape[0],
+        """Integrate a single synaptic input source at the dendrites.
+
+        Fast path that avoids the overhead of the general multi-source method:
+        - Only allocates/clamps the one conductor matching the receptor type
+        - Skips validation (done in forward() when DEBUG=True)
+        - Accepts pre-converted float spikes to avoid redundant .float() calls
+        """
+        # Cache module dicts once — avoids nn.Module.__getattr__ per access
+        _weights_dict = self.synaptic_weights
+        _stp_dict     = self.stp_modules
+        weights = _weights_dict[synapse_id]
+        source_spikes_f = source_spikes.float()
+
+        # Optional STP (short-term plasticity)
+        stp = _stp_dict.get(synapse_id)
+        if stp is not None:
+            _pre_eff = self._precomputed_stp_efficacy
+            if _pre_eff is not None and synapse_id in _pre_eff:
+                efficacy = _pre_eff[synapse_id]
+            else:
+                efficacy = stp.forward(source_spikes_f)
+            g = weights @ (efficacy * source_spikes_f)
+        else:
+            g = weights @ source_spikes_f
+
+        g.clamp_(min=0.0)
+
+        # Build DendriteOutput with only the active channel populated;
+        # unused slots share a module-level scalar zero (callers never read them).
+        _z = _DENDRITE_ZERO
+        match synapse_id.receptor_type:
+            case ReceptorType.AMPA:
+                return DendriteOutput(g_ampa=g, g_nmda=_z, g_gaba_a=_z, g_gaba_b=_z)
+            case ReceptorType.NMDA:
+                return DendriteOutput(g_ampa=_z, g_nmda=g, g_gaba_a=_z, g_gaba_b=_z)
+            case ReceptorType.GABA_A:
+                return DendriteOutput(g_ampa=_z, g_nmda=_z, g_gaba_a=g, g_gaba_b=_z)
+            case ReceptorType.GABA_B:
+                return DendriteOutput(g_ampa=_z, g_nmda=_z, g_gaba_a=_z, g_gaba_b=g)
+
+    def _integrate_dendrites_batched(
+        self,
+        synaptic_inputs: SynapticInput,
+        target_pop: PopulationName,
+        n_neurons: int,
+    ) -> DendriteOutput:
+        """Batched synaptic integration for one target population.
+
+        Uses precomputed concatenated weight matrices (from
+        ``build_batched_dendrite_weights``) to replace per-source matmuls with
+        one matmul per active receptor type.  Spike gathering is still a Python
+        loop but operates only on the sources that contribute to this population,
+        not the entire synaptic_inputs dict.
+
+        Args:
+            synaptic_inputs: Dict mapping synapse IDs to spike tensors.
+            target_pop: Target population name (must be in _batched_dendrite_weights).
+            n_neurons: Expected target population size (for zero-fill).
+        """
+        assert self._batched_dendrite_weights is not None  # guaranteed by caller
+        batch: BatchedDendriteWeights = self._batched_dendrite_weights[target_pop]
+        device = self.device
+        _pre_eff = self._precomputed_stp_efficacy
+        _stp_dict = self.stp_modules
+
+        g_ampa: Optional[torch.Tensor] = None
+        g_nmda: Optional[torch.Tensor] = None
+        g_gaba_a: Optional[torch.Tensor] = None
+        g_gaba_b: Optional[torch.Tensor] = None
+
+        for receptor_type in (ReceptorType.AMPA, ReceptorType.NMDA,
+                              ReceptorType.GABA_A, ReceptorType.GABA_B):
+            block = batch.get_block(receptor_type)
+            if block is None:
+                continue
+
+            # Re-use pre-allocated spike buffer (zeroed each call)
+            buf = block.spike_buffer
+            buf.zero_()
+            any_spikes = False
+
+            for i, sid in enumerate(block.synapse_ids):
+                if sid not in synaptic_inputs:
+                    continue
+
+                spikes = synaptic_inputs[sid]
+                spikes_f = spikes.float()
+
+                # Apply STP efficacy (precomputed by batched kernel or fallback)
+                if sid in _stp_dict:
+                    if _pre_eff is not None and sid in _pre_eff:
+                        spikes_f = _pre_eff[sid] * spikes_f
+                    else:
+                        spikes_f = _stp_dict[sid].forward(spikes_f) * spikes_f
+
+                buf[block.column_slices[i]] = spikes_f
+                any_spikes = True
+
+            if any_spikes:
+                g = block.W_concat @ buf
+                g.clamp_(min=0.0)
+            else:
+                g = torch.zeros(n_neurons, device=device)
+
+            match receptor_type:
+                case ReceptorType.AMPA:
+                    g_ampa = g
+                case ReceptorType.NMDA:
+                    g_nmda = g
+                case ReceptorType.GABA_A:
+                    g_gaba_a = g
+                case ReceptorType.GABA_B:
+                    g_gaba_b = g
+
+        z = torch.zeros(n_neurons, device=device)
+        return DendriteOutput(
+            g_ampa=g_ampa if g_ampa is not None else z,
+            g_nmda=g_nmda if g_nmda is not None else z,
+            g_gaba_a=g_gaba_a if g_gaba_a is not None else z,
+            g_gaba_b=g_gaba_b if g_gaba_b is not None else z,
         )
 
     # =========================================================================
@@ -970,7 +1537,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         """
         self.config.dt_ms = dt_ms
 
-        self._firing_rate_alpha = dt_ms / self.config.gain_tau_ms
+        self._firing_rate_alpha = dt_ms / self.config.homeostatic_gain.tau_ms
 
         for neurons in self.neuron_populations.values():
             neurons.update_temporal_parameters(dt_ms)

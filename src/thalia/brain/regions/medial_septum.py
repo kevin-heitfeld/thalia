@@ -47,7 +47,7 @@ Result: **Theta rhythm emerges from circuit dynamics, not hardcoded sinusoid**
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Union
+from typing import ClassVar, Dict, Optional, Union
 
 import torch
 import numpy as np
@@ -57,10 +57,13 @@ from thalia.brain.configs import MedialSeptumConfig
 from thalia.brain.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
+    heterogeneous_adapt_increment,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_g_L,
+    heterogeneous_noise_std,
+    heterogeneous_tau_adapt,
     heterogeneous_tau_mem,
     heterogeneous_v_threshold,
-    heterogeneous_adapt_increment,
-    heterogeneous_g_L,
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import STPConfig, WeightInitializer
@@ -79,7 +82,7 @@ from thalia.typing import (
 )
 from thalia.utils import decay_tensor
 
-from .neural_region import NeuralRegion
+from .neural_region import InternalConnectionSpec, NeuralRegion
 from .population_names import HippocampusPopulation, MedialSeptumPopulation
 from .region_registry import register_region
 
@@ -138,12 +141,23 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             polarity=PopulationPolarity.ANY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(config.ach_tau_mem, self.ach_size, device, cv=0.20),
-                v_threshold=heterogeneous_v_threshold(config.ach_threshold, self.ach_size, device, cv=0.12, clamp_fraction=0.25),
                 v_reset=config.ach_reset,
-                tau_adapt=config.ach_adaptation_tau,
-                adapt_increment=heterogeneous_adapt_increment(config.ach_adaptation_increment, self.ach_size, device),
+                v_threshold=heterogeneous_v_threshold(config.ach_threshold, self.ach_size, device, cv=0.12, clamp_fraction=0.25),
                 tau_ref=5.0,  # SHORT refractory (5ms) allows multiple spikes per burst
                 g_L=heterogeneous_g_L(0.05, self.ach_size, device),
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.ach_size, self.device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(config.ach_adaptation_tau, self.ach_size, device),
+                adapt_increment=heterogeneous_adapt_increment(config.ach_adaptation_increment, self.ach_size, device),
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.ach_size, device, cv=0.25),
             ),
         )
 
@@ -159,12 +173,22 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(config.gaba_tau_mem, self.gaba_size, device, cv=0.10),
-                v_threshold=heterogeneous_v_threshold(config.gaba_threshold, self.gaba_size, device, cv=0.06),
                 v_reset=config.gaba_reset,
-                tau_adapt=config.gaba_adaptation_tau,
-                adapt_increment=heterogeneous_adapt_increment(config.gaba_adaptation_increment, self.gaba_size, device),
+                v_threshold=heterogeneous_v_threshold(config.gaba_threshold, self.gaba_size, device, cv=0.06),
                 tau_ref=5.0,  # SHORT refractory (5ms) allows multiple spikes per burst
                 g_L=heterogeneous_g_L(0.05, self.gaba_size, device),
+                E_E=3.0,
+                E_I=-0.5,
+                tau_E=3.0,
+                tau_I=3.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.gaba_size, self.device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(config.gaba_adaptation_tau, self.gaba_size, device),
+                adapt_increment=heterogeneous_adapt_increment(config.gaba_adaptation_increment, self.gaba_size, device),
                 # Intrinsic HCN (I_h) current — replaces manual _g_ih_gaba workaround
                 enable_ih=True,
                 g_h_max=config.i_h_conductance,  # max HCN conductance from config
@@ -172,6 +196,7 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
                 V_half_h=-0.35,     # activates when hyperpolarised
                 k_h=0.08,           # smooth activation curve
                 tau_h_ms=250.0,     # slower than thalamic (100ms) for theta-range timing
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.gaba_size, device, cv=0.20),
             ),
         )
 
@@ -250,41 +275,26 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         # INTER-POPULATION CONNECTIONS (oscillatory circuit)
         # =====================================================================
 
-        # ACh → GABA (excitatory): ACh bursts drive GABA neurons
-        # Each ACh spike provides brief excitatory drive to GABA population
-        self._ach_gaba_syn = self._add_internal_connection(
-            source_population=MedialSeptumPopulation.ACH,
-            target_population=MedialSeptumPopulation.GABA,
-            weights=WeightInitializer.sparse_random(
-                n_input=self.ach_size,
-                n_output=self.gaba_size,
+        # ACH ↔ GABA (oscillatory feedforward inhibition circuit)
+        # ACh bursts drive GABA neurons (AMPA); GABA feedback suppresses ACh (GABA_A).
+        # This is the KEY feedback loop that creates the theta oscillation.
+        self._ach_gaba_syn, self._gaba_ach_syn = self._add_feedforward_inhibition(
+            exc_pop=MedialSeptumPopulation.ACH,
+            inh_pop=MedialSeptumPopulation.GABA,
+            e_to_i=InternalConnectionSpec(
                 connectivity=0.8,
                 weight_scale=0.04 / np.sqrt(self.ach_size),
-                device=device,
+                receptor_type=ReceptorType.AMPA,
+                stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
             ),
-            receptor_type=ReceptorType.AMPA,
-            stp_config=STPConfig(U=0.30, tau_d=400.0, tau_f=20.0),
-        )
-
-        # GABA → ACh (inhibitory): GABA feedback suppresses ACh burst
-        # This is the KEY feedback loop that creates the oscillation
-        self._gaba_ach_syn = self._add_internal_connection(
-            source_population=MedialSeptumPopulation.GABA,
-            target_population=MedialSeptumPopulation.ACH,
-            weights=WeightInitializer.sparse_random(
-                n_input=self.gaba_size,
-                n_output=self.ach_size,
+            i_to_e=InternalConnectionSpec(
                 connectivity=0.8,
                 weight_scale=0.06 / np.sqrt(self.gaba_size),
-                device=device,
+                receptor_type=ReceptorType.GABA_A,
+                stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
             ),
-            receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
+            device=device,
         )
-
-        # Initialize state variables for spikes (for recurrent connections)
-        self._last_ach_spikes: torch.Tensor = torch.zeros(self.ach_size, dtype=torch.bool, device=device)
-        self._last_gaba_spikes: torch.Tensor = torch.zeros(self.gaba_size, dtype=torch.bool, device=device)
 
         # Ensure all tensors are on the correct device
         self.to(device)
@@ -293,7 +303,11 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Generate theta rhythm through intrinsic ionic currents and reciprocal connectivity.
 
         Biological oscillatory mechanism:
@@ -340,22 +354,31 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
         alpha_nap = config.dt_ms / 500.0
         self._i_nap_ach.add_(alpha_nap * (i_nap_target - self._i_nap_ach))
 
+        # Previous-step spikes
+        prev_ach_spikes = self._prev_spikes(MedialSeptumPopulation.ACH)
+        prev_gaba_spikes = self._prev_spikes(MedialSeptumPopulation.GABA)
+
         # I_AHP: exponential decay + spike-driven accumulation (per-neuron, g_inh)
         decay_ahp = decay_tensor(config.dt_ms, config.i_ahp_tau_ms, device=self._i_ahp_ach.device)
-        self._i_ahp_ach.mul_(decay_ahp).add_(self._last_ach_spikes.float()  * config.i_ahp_increment)
-        self._i_ahp_gaba.mul_(decay_ahp).add_(self._last_gaba_spikes.float() * config.i_ahp_increment)
+        self._i_ahp_ach.mul_(decay_ahp).add_(prev_ach_spikes  * config.i_ahp_increment)
+        self._i_ahp_gaba.mul_(decay_ahp).add_(prev_gaba_spikes * config.i_ahp_increment)
 
         # I_h (HCN): handled intrinsically by ConductanceLIF (enable_ih=True in gaba_neurons.config).
         # The neuron model tracks the HCN activation gate h internally, so no external
         # conductance injection is needed here.
 
         # =====================================================================
-        # INTER-POPULATION CONDUCTANCES
+        # INTER-POPULATION CONDUCTANCES (with STP)
         # =====================================================================
-        ach_to_ach_exc  = self.get_synaptic_weights(self._ach_ach_syn)  @ self._last_ach_spikes.float()
-        gaba_to_ach_inh = self.get_synaptic_weights(self._gaba_ach_syn) @ self._last_gaba_spikes.float()
-        ach_to_gaba_exc = self.get_synaptic_weights(self._ach_gaba_syn) @ self._last_ach_spikes.float()
-        gaba_to_gaba_inh = self.get_synaptic_weights(self._gaba_gaba_syn) @ self._last_gaba_spikes.float()
+        ach_ach_stp   = self.stp_modules[self._ach_ach_syn].forward(prev_ach_spikes)
+        gaba_ach_stp  = self.stp_modules[self._gaba_ach_syn].forward(prev_gaba_spikes)
+        ach_gaba_stp  = self.stp_modules[self._ach_gaba_syn].forward(prev_ach_spikes)
+        gaba_gaba_stp = self.stp_modules[self._gaba_gaba_syn].forward(prev_gaba_spikes)
+
+        ach_to_ach_exc   = self.get_synaptic_weights(self._ach_ach_syn)   @ (ach_ach_stp * prev_ach_spikes)
+        gaba_to_ach_inh  = self.get_synaptic_weights(self._gaba_ach_syn)  @ (gaba_ach_stp * prev_gaba_spikes)
+        ach_to_gaba_exc  = self.get_synaptic_weights(self._ach_gaba_syn)  @ (ach_gaba_stp * prev_ach_spikes)
+        gaba_to_gaba_inh = self.get_synaptic_weights(self._gaba_gaba_syn) @ (gaba_gaba_stp * prev_gaba_spikes)
 
         # =====================================================================
         # HIPPOCAMPAL FEEDBACK EXCITATION (CA1 → Septum GABA)
@@ -376,9 +399,10 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             receptor_type=ReceptorType.AMPA,
         )
         ca1_feedback = synaptic_inputs.get(ca1_gaba_syn, None)
-        hippocampal_exc = torch.zeros(self.gaba_size, device=device)
         if ca1_feedback is not None:
-            hippocampal_exc = self.get_synaptic_weights(ca1_gaba_syn) @ ca1_feedback.float()
+            hippocampal_exc = self.get_synaptic_weights(ca1_gaba_syn) @ ca1_feedback
+        else:
+            hippocampal_exc = torch.zeros(self.gaba_size, device=device)
 
         # =====================================================================
         # TOTAL CONDUCTANCES PER POPULATION
@@ -412,12 +436,6 @@ class MedialSeptum(NeuralRegion[MedialSeptumConfig]):
             g_gaba_a_input=ConductanceTensor(g_inh_gaba),
             g_gaba_b_input=None,
         )
-
-        # =====================================================================
-        # UPDATE STATE
-        # =====================================================================
-        self._last_ach_spikes  = ach_spikes
-        self._last_gaba_spikes = gaba_spikes
 
         region_outputs: RegionOutput = {
             MedialSeptumPopulation.ACH:  ach_spikes,

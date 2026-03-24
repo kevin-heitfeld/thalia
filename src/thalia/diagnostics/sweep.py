@@ -5,17 +5,16 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import TYPE_CHECKING, Callable, Dict, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, Sequence, Tuple
 
 import numpy as np
 
 from .analysis import analyze
-from .analysis_tuning import compute_tuning, print_tuning_report
-from .calibration_advisor import compute_calibration_advice, print_calibration_advice
-from .diagnostics_io import print_report, save_report, save_snapshot
-from .diagnostics_plots import plot, plot_sweep_comparison
-from .diagnostics_types import DiagnosticsReport
-from .sensory_patterns import make_sensory_input
+from .diagnostics_snapshot_io import save_report, save_snapshot
+from .diagnostics_text_report import print_report
+from .plots import plot, plot_sweep_comparison
+from .diagnostics_report import DiagnosticsReport
+from .simulation_loop import simulate
 
 if TYPE_CHECKING:
     from thalia.brain import Brain
@@ -23,91 +22,6 @@ if TYPE_CHECKING:
 
 
 DEFAULT_SWEEP_PATTERNS: Tuple[str, ...] = ("random", "rhythmic", "burst", "slow_wave", "none")
-
-
-# =============================================================================
-# SIMULATION LOOP
-# =============================================================================
-
-
-def _simulate(
-    brain: Brain,
-    recorder: DiagnosticsRecorder,
-    n_steps: int,
-    pattern: str,
-    *,
-    report_interval: int,
-    label: str,
-    spike_accumulator: Optional[Dict[str, int]] = None,
-) -> float:
-    """Run the core simulation loop for *n_steps* timesteps.
-
-    Parameters
-    ----------
-    brain:
-        The live ``Brain`` instance.
-    recorder:
-        ``DiagnosticsRecorder`` to record into.
-    n_steps:
-        Number of simulation steps to run.
-    pattern:
-        Sensory input pattern key (forwarded to :func:`~.sensory_patterns.make_sensory_input`).
-    report_interval:
-        Print a progress line every *report_interval* steps.
-    label:
-        Prefix used in the progress line (e.g. ``"step"`` or ``"warmup"``).
-    spike_accumulator:
-        Optional dict to accumulate total spike counts per region across the
-        run.  If provided, ``spike_accumulator[region_name]`` is incremented by
-        the number of spikes (across all populations in that region) each step.
-        Useful for post-warmup activity status reporting.
-
-    Returns
-    -------
-    float
-        Elapsed wall-clock seconds for the loop.
-    """
-    t_start = time.perf_counter()
-
-    t_forward_total = 0.0
-    t_record_total = 0.0
-    for t in range(n_steps):
-        synaptic_inputs = make_sensory_input(brain, t, pattern, n_timesteps=n_steps)
-
-        _tf0 = time.perf_counter()
-        outputs = brain.forward(synaptic_inputs)
-        _tf1 = time.perf_counter()
-        t_forward_total += _tf1 - _tf0
-
-        _tr0 = time.perf_counter()
-        recorder.record(t, synaptic_inputs, outputs)
-        t_record_total += time.perf_counter() - _tr0
-
-        if spike_accumulator is not None:
-            for rn, region_output in outputs.items():
-                count = sum(int(spikes.sum().item()) for spikes in region_output.values())
-                spike_accumulator[rn] = spike_accumulator.get(rn, 0) + count
-
-        if (t + 1) % report_interval == 0:
-            elapsed = time.perf_counter() - t_start
-            steps_done = t + 1
-            us_per_step = elapsed / steps_done * 1e6
-            eta = (n_steps - steps_done) / steps_done * elapsed
-            fwd_pct = t_forward_total / elapsed * 100.0
-            rec_pct = t_record_total / elapsed * 100.0
-            print(
-                f"  {label} {steps_done:>6d}/{n_steps}"
-                f"  {us_per_step:7.1f} µs/step"
-                f"  fwd {fwd_pct:4.1f}%  rec {rec_pct:4.1f}%"
-                f"  ETA {eta:6.2f} s"
-            )
-
-    return time.perf_counter() - t_start
-
-
-# =============================================================================
-# PUBLIC FUNCTIONS
-# =============================================================================
 
 
 def run_single(
@@ -127,13 +41,13 @@ def run_single(
     (``recorder.reset()``).
     """
     recorder.config.sensory_pattern = pattern
-    elapsed_sim = _simulate(
+    perf = simulate(
         brain, recorder, timesteps, pattern,
         report_interval=report_interval, label="step",
     )
     print(
-        f"\n  \u2713 Simulation complete: {elapsed_sim:.2f} s"
-        f"  ({timesteps / elapsed_sim:.1f} steps/s)"
+        f"\n  \u2713 Simulation complete: {perf.wall_clock_s:.2f} s"
+        f"  ({timesteps / perf.wall_clock_s:.1f} steps/s)"
     )
 
     recorder_snapshot = recorder.to_snapshot()
@@ -144,17 +58,11 @@ def run_single(
     print(f"{'\u2550'*80}\n")
     t_analyse = time.perf_counter()
     report = analyze(recorder_snapshot)
-    print(f"  \u2713 Analysis complete in {time.perf_counter() - t_analyse:.3f} s")
+    perf.analysis_s = time.perf_counter() - t_analyse
+    report.performance = perf
+    print(f"  \u2713 Analysis complete in {perf.analysis_s:.3f} s")
 
     print_report(report, detailed=detailed)
-
-    # Tuning guidance for out-of-range populations
-    tuning = compute_tuning(recorder_snapshot, report)
-    print_tuning_report(tuning)
-
-    # Calibration advisor: actionable parameter recommendations
-    advice = compute_calibration_advice(recorder_snapshot, report, tuning)
-    print_calibration_advice(advice)
 
     print(f"\n{'\u2550'*80}")
     print(f"SAVING  \u2192  {output_dir}")
@@ -166,7 +74,7 @@ def run_single(
         print(f"\n{'\u2550'*80}")
         print("GENERATING PLOTS")
         print(f"{'\u2550'*80}\n")
-        plot(recorder_snapshot, report, output_dir)
+        plot(recorder_snapshot, report, os.path.join(output_dir, "plots"))
 
     return report
 
@@ -270,7 +178,6 @@ def run_sweep(
                     "status":       ps.bio_plausibility,
                 }
         summary[pat] = {
-            "stability_score": round(rep.health.stability_score, 4),
             "n_critical":      len(rep.health.critical_issues),
             "n_warnings":      len(rep.health.warnings),
             "populations":     pop_stats_out,
@@ -283,6 +190,6 @@ def run_sweep(
 
     # Comparison figure.
     if not no_plots:
-        plot_sweep_comparison(sweep_reports, output_dir)
+        plot_sweep_comparison(sweep_reports, os.path.join(output_dir, "plots"))
 
     return sweep_reports

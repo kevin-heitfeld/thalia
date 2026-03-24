@@ -76,18 +76,19 @@ from thalia.brain.gap_junctions import (
 )
 from thalia.brain.neurons import (
     ConductanceLIFConfig,
+    heterogeneous_adapt_increment,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_g_L,
+    heterogeneous_noise_std,
+    heterogeneous_tau_adapt,
     heterogeneous_tau_mem,
     heterogeneous_v_threshold,
-    heterogeneous_adapt_increment,
-    heterogeneous_g_L,
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import (
     ConductanceScaledSpec,
-    NMReceptorType,
     STPConfig,
     WeightInitializer,
-    make_neuromodulator_receptor,
 )
 from thalia.learning import (
     LearningStrategy,
@@ -138,7 +139,11 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
 
     # ACh from nucleus basalis gates thalamic relay gain (nicotinic receptors on relay neurons).
     # Modulates burst vs. tonic mode threshold and alpha oscillation depth.
-    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [NeuromodulatorChannel.ACH]
+    neuromodulator_subscriptions: ClassVar[List[NeuromodulatorChannel]] = [
+        NeuromodulatorChannel.ACH,
+        NeuromodulatorChannel.DA_MESOCORTICAL,
+        NeuromodulatorChannel.NE,
+    ]
 
     # =========================================================================
     # INITIALIZATION
@@ -171,30 +176,44 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             n_neurons=self.relay_size,
             polarity=PopulationPolarity.EXCITATORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(0.8, self.relay_size, device),
+                tau_mem_ms=heterogeneous_tau_mem(18.0, self.relay_size, device),
                 v_reset=0.0,
-                E_L=0.0,
+                v_threshold=heterogeneous_v_threshold(0.8, self.relay_size, device),
+                tau_ref=4.0,
+                g_L=heterogeneous_g_L(0.08, self.relay_size, device),
                 E_E=3.0,
                 E_I=-0.5,
-                g_L=heterogeneous_g_L(0.05, self.relay_size, device),
-                tau_mem_ms=heterogeneous_tau_mem(18.0, self.relay_size, device),
                 tau_E=5.0,
                 tau_I=10.0,
-                tau_ref=4.0,
-                adapt_increment=heterogeneous_adapt_increment(0.18, self.relay_size, device),
-                tau_adapt=100.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                g_nmda_max=0.5,  # Thalamocortical burst mode risks NMDA accumulation
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.relay_size, device=self.device),
+                noise_tau_ms=3.0,
+                # Adaptation calibrated for tonic awake mode (10-30 Hz target):
+                # Raised 0.08→0.15: at 25 Hz, g_adapt_ss = 0.15×25×0.10 = 0.375
+                # (4.7× g_L=0.08) — strong negative feedback to self-limit relay firing.
+                # Previous 0.08 was insufficient against excitatory drive saturation.
+                tau_adapt_ms=heterogeneous_tau_adapt(100.0, self.relay_size, device),
+                adapt_increment=heterogeneous_adapt_increment(0.15, self.relay_size, device),
                 enable_t_channels=True,
-                g_T=0.08,
+                g_T=0.001,  # Reduced 0.008→0.003→0.001: 0.003 still caused 36% short-ISI bursting;
+                            # at 0.001 the T-channel LTS is too weak to generate burst doublets in awake tonic mode.
+                            # T-channels are primarily relevant during sleep/drowsy states (low ACh).
                 E_Ca=4.0,
                 tau_h_T_ms=50.0,
-                V_half_h_T=-0.3,
-                k_h_T=0.15,
+                V_half_h_T=-0.75,  # Shifted -0.65→-0.75: T-channel deinactivation requires deeper hyperpolarization,
+                                    # preventing burst mode during normal tonic firing (V ~ -0.2 to 0.0).
+                k_h_T=0.12,
                 enable_ih=True,
-                g_h_max=0.04,
+                g_h_max=0.02,
                 E_h=-0.3,
                 V_half_h=-0.3,
                 k_h=0.10,
                 tau_h_ms=100.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.relay_size, device, cv=0.25),
             ),
         )
 
@@ -205,39 +224,49 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             n_neurons=self.trn_size,
             polarity=PopulationPolarity.INHIBITORY,
             config=ConductanceLIFConfig(
-                v_threshold=heterogeneous_v_threshold(1.6, self.trn_size, device, cv=0.06),
+                tau_mem_ms=heterogeneous_tau_mem(12.0, self.trn_size, device, cv=0.10),
                 v_reset=0.0,
-                E_L=0.0,
+                v_threshold=heterogeneous_v_threshold(1.35, self.trn_size, device, cv=0.06),
+                tau_ref=5.0,
+                g_L=heterogeneous_g_L(0.10, self.trn_size, device, cv=0.08),
                 E_E=3.0,
                 E_I=-0.5,
-                g_L=heterogeneous_g_L(0.10, self.trn_size, device, cv=0.08),
-                tau_mem_ms=heterogeneous_tau_mem(12.0, self.trn_size, device, cv=0.10),  # Faster membrane for attentional gating
                 tau_E=4.0,
                 tau_I=6.0,
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.08, self.trn_size, device=self.device),
+                noise_tau_ms=3.0,
+                tau_adapt_ms=heterogeneous_tau_adapt(80.0, self.trn_size, device),
                 adapt_increment=heterogeneous_adapt_increment(0.25, self.trn_size, device),
-                tau_adapt=80.0,
                 enable_t_channels=True,
                 g_T=0.08,
                 E_Ca=4.0,
                 tau_h_T_ms=50.0,
                 V_half_h_T=-0.3,
                 k_h_T=0.15,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.trn_size, device, cv=0.20),
             ),
         )
 
         # =====================================================================
         # INITIALIZE STATE VARIABLES
         # =====================================================================
-        # Mode state (0=burst, 1=tonic)
-        # Initialize to tonic
-        self.current_mode: torch.Tensor
-        self.register_buffer("current_mode", torch.ones(self.relay_size, device=device))
+        # Brainstem ascending arousal: tonic per-step AMPA conductance for relay neurons.
+        # Represents LC-NE, PPN-ACh, and raphe-5HT excitatory drive to thalamus during wakefulness.
+        self._relay_baseline = torch.full(
+            (self.relay_size,), config.relay_baseline_drive, device=device
+        )
 
-        # Homeostatic plasticity: track firing rates for gain adaptation + synaptic scaling.
-        # Target 40 Hz (0.04): thalamic relay cells fire 20–60 Hz during awake state.
-        # Previous target 80 Hz caused homeostasis to over-drive relay (38 Hz observed
-        # → homeostasis keeps trying to increase gain, destabilising the circuit).
-        self._register_homeostasis(ThalamusPopulation.RELAY, self.relay_size, target_firing_rate=0.04, device=device)
+        # Brainstem ascending arousal: tonic per-step AMPA conductance for TRN neurons.
+        # Biology: TRN receives direct cholinergic (PPN) and noradrenergic (LC) excitation
+        # independent of relay collaterals.  Without this, TRN is purely relay-driven and
+        # fires too slowly to provide adequate inhibition for physiological E/I ratios.
+        self._trn_baseline = torch.full(
+            (self.trn_size,), config.trn_baseline_drive, device=device
+        )
 
         # =====================================================================
         # SYNAPTIC WEIGHTS
@@ -250,7 +279,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 n_input=self.relay_size,
                 n_output=self.trn_size,
                 connectivity=0.2,
-                weight_scale=0.005,
+                weight_scale=0.012,
                 device=device,
             ),
             receptor_type=ReceptorType.AMPA,
@@ -265,14 +294,14 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # TRN → TRN (lateral inhibition — the "searchlight spotlight" mechanism)
         #
-        # Biology (Pinault & Deschênes 1998; Crabtree et al. 1998):
+        # Biology:
         # Each TRN sector receives from one thalamic nucleus and projects lateral
         # GABA_A inhibition onto TRN neurons representing *other* nuclei (and also
         # locally). When one sensory stream (e.g. visual) strongly drives relay
         # neurons → those relay collaterals excite the visual TRN sector → that
         # TRN sector laterally inhibits the auditory TRN sector → auditory relay
         # is disinhibited proportionally less → winner-take-all across modalities.
-        self._trn_trn_synapse = self._add_internal_connection(
+        self._trn_trn_gaba_a_synapse = self._add_internal_connection(
             source_population=ThalamusPopulation.TRN,
             target_population=ThalamusPopulation.TRN,
             weights=WeightInitializer.sparse_gaussian_no_autapses(
@@ -287,6 +316,27 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             stp_config=STPConfig(U=0.25, tau_d=300.0, tau_f=50.0),
         )
 
+        # TRN → TRN: slow GABA_B component
+        # TRN→TRN lateral inhibition has a prominent GABA_B component (τ~150-300ms)
+        # that shapes spindle refractory period and inter-spindle interval.
+        # GABA_B-mediated slow hyperpolarization de-inactivates T-type Ca²⁺ channels
+        # in TRN neurons, enabling rebound bursts that sustain spindle oscillations.
+        # Weight ~25% of GABA_A (slower kinetics → smaller instantaneous conductance).
+        self._trn_trn_gaba_b_synapse = self._add_internal_connection(
+            source_population=ThalamusPopulation.TRN,
+            target_population=ThalamusPopulation.TRN,
+            weights=WeightInitializer.sparse_gaussian_no_autapses(
+                n_input=self.trn_size,
+                n_output=self.trn_size,
+                connectivity=0.12,
+                mean=0.003,
+                std=0.001,
+                device=device,
+            ),
+            receptor_type=ReceptorType.GABA_B,
+            stp_config=STPConfig(U=0.20, tau_d=400.0, tau_f=40.0),
+        )
+
         # TRN recurrent delay buffer (prevents instant feedback oscillations)
         trn_recurrent_delay_steps = int(config.trn_recurrent_delay_ms / config.dt_ms)
         self._trn_recurrent_buffer = CircularDelayBuffer(
@@ -296,31 +346,13 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             dtype=torch.bool,
         )
 
-        # Relay→TRN delay buffer (1-step; relay axon collaterals reach TRN with ~1ms delay)
-        # Biology: relay→TRN is a collateral of the thalamocortical axon, not zero-latency
-        self._relay_spike_buffer = CircularDelayBuffer(
-            max_delay=1,
-            size=self.relay_size,
-            device=device,
-            dtype=torch.bool,
-        )
-
         # =====================================================================
         # ACETYLCHOLINE RECEPTOR (NB projection for sleep/wake modulation)
         # =====================================================================
         # Thalamus receives ACh from nucleus basalis (cortical arousal)
         # and brainstem cholinergic nuclei (ascending arousal system)
-        # ACh controls thalamic oscillations and sensory gating:
-        # - High ACh (wakefulness): Suppress TRN oscillations → tonic mode (relay)
-        # - Low ACh (sleep): Enable TRN spindles → burst mode (disconnection)
-        # ACh acts on TRN via muscarinic M1/M3 (Gq → PLC cascade).
-        # τ_rise=100 ms, τ_decay=1500 ms — slow kinetics sustain the
-        # wake/sleep state across many theta cycles.
-        self.ach_receptor = make_neuromodulator_receptor(
-            NMReceptorType.ACH_MUSCARINIC_M1, n_receptors=self.trn_size, dt_ms=self.dt_ms, device=device
-        )
-        # ACh concentration state (updated each timestep from NB/brainstem spikes)
-        self._ach_concentration_trn = torch.zeros(self.trn_size, device=device)
+        # ACh M1 on TRN (sleep/wake mode), DA D1 on relay (reward gain), NE α₁ on relay (arousal gain)
+        self._init_receptors_from_config(device)
 
         # =====================================================================
         # STDP LEARNING STRATEGY
@@ -334,8 +366,8 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             a_minus=0.001,  # Weak LTD (5:1 LTP:LTD ratio)
             tau_plus=20.0,  # Standard STDP window
             tau_minus=20.0,
-            w_min=config.w_min,
-            w_max=config.w_max,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
         ))
 
         # =====================================================================
@@ -343,56 +375,37 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # TRN neurons are densely coupled via gap junctions
         # This enables ultra-fast synchronization for coherent inhibitory volleys
-        # Gap junctions will be created in finalize_initialization() after all input
-        # sources have been added
         #
         # Physics: I_gap = g × (E_neighbor_avg - V), where E_neighbor_avg is
         # the weighted average of neighbor voltages (dynamic reversal potential).
-        self.gap_junctions: Optional[GapJunctionCoupling] = None
-
-        # Ensure all tensors are on the correct device
-        self.to(device)
-
-    def finalize_initialization(self) -> None:
-        """Finalize initialization after all input sources have been added.
-
-        This method should be called by brain builder after all connections
-        have been established. It builds gap junctions and internal recurrent
-        connections.
-
-        Must be called after all add_input_source() calls complete.
-        """
-        trn_trn_weights = self.get_synaptic_weights(self._trn_trn_synapse)
-        device = trn_trn_weights.device
-
+        #
         # Create gap junctions using TRN→TRN lateral inhibition weights as proximity proxy.
         # TRN neurons that share lateral inhibitory connectivity are the same anatomical
         # neighbors that are coupled by gap junctions — so the lateral weight matrix is
         # the correct adjacency structure for electrical coupling (stronger lateral GABA_A
         # connectivity → higher probability of gap junction coupling).
-        if self.gap_junctions is None:
-            self.gap_junctions = GapJunctionCoupling(
-                n_neurons=self.trn_size,
-                afferent_weights=trn_trn_weights,
-                config=GapJunctionConfig(
-                    coupling_strength=0.1,
-                    connectivity_threshold=0.3,
-                    max_neighbors=6,
-                    interneuron_only=True,  # All TRN neurons are inhibitory
-                ),
-                interneuron_mask=None,  # All TRN neurons are interneurons
-                device=device,
-            )
+        trn_trn_weights = self.get_synaptic_weights(self._trn_trn_gaba_a_synapse)
+        self.gap_junctions = GapJunctionCoupling(
+            n_neurons=self.trn_size,
+            afferent_weights=trn_trn_weights,
+            config=GapJunctionConfig(
+                coupling_strength=config.gap_junctions.coupling_strength,
+                connectivity_threshold=config.gap_junctions.connectivity_threshold,
+                max_neighbors=config.gap_junctions.max_neighbors,
+                interneuron_only=True,  # All TRN neurons are inhibitory
+            ),
+            interneuron_mask=None,  # All TRN neurons are interneurons
+            device=device,
+        )
 
-        # Create internal TRN→relay synaptic weights (local recurrent connection)
+        # =====================================================================
+        # TRN→RELAY INHIBITION (internal recurrent connection)
+        # =====================================================================
         # Biology: TRN provides feedforward and lateral inhibition to relay neurons
         # Distance: ~50-200μm (local), unmyelinated → 1ms delay (handled in forward pass)
         # Implements searchlight attention mechanism
         # Goal: Hyperpolarize relay below V_half_h_T (-0.3) → h_T de-inactivates → rebound burst on release
         # Need balance: enough inhibition for hyperpolarization, not so much it clamps neurons.
-        # mean=0.005 (reduced from 0.008): cortical L6b→relay STP now depletes at ~20%
-        # efficiency, reducing net relay depolarization and increasing burst mode;
-        # lowering TRN→relay weight compensates to keep hyperpolarisation depth biological.
         self._trn_relay_synapse = self._add_internal_connection(
             source_population=ThalamusPopulation.TRN,
             target_population=ThalamusPopulation.RELAY,
@@ -400,13 +413,38 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                 n_input=self.trn_size,
                 n_output=self.relay_size,
                 connectivity=0.6,
-                mean=0.005,
-                std=0.002,
+                mean=config.trn_relay_gaba_a_mean,
+                std=config.trn_relay_gaba_a_mean / 3.0,  # Moderate variability in inhibitory strength across TRN→relay synapses
                 device=device,
             ),
             receptor_type=ReceptorType.GABA_A,
-            stp_config=STPConfig(U=0.25, tau_d=350.0, tau_f=30.0),
+            stp_config=STPConfig(U=0.20, tau_d=250.0, tau_f=30.0),  # U 0.25→0.20: less depletion at TRN ~6 Hz
         )
+
+        # TRN → Relay: slow GABA_B component
+        # GABA_B-mediated slow IPSPs (~100-300ms) at TRN→relay synapses are critical
+        # for burst mode: the slow hyperpolarization (E_GABA_B = -0.8) pushes relay
+        # membrane below V_half_h_T, de-inactivating T-type Ca²⁺ channels. On GABA_B
+        # decay, the resulting rebound burst generates high-frequency spike bursts
+        # (2-7 spikes at 200-400 Hz) that serve as "wake-up" signals.
+        # Weight ~25% of GABA_A (slower kinetics = smaller peak g needed).
+        self._trn_relay_gaba_b_synapse = self._add_internal_connection(
+            source_population=ThalamusPopulation.TRN,
+            target_population=ThalamusPopulation.RELAY,
+            weights=WeightInitializer.sparse_gaussian(
+                n_input=self.trn_size,
+                n_output=self.relay_size,
+                connectivity=0.5,
+                mean=0.0003,  # Was 0.0008: GABA_B slow IPSPs are primary burst trigger;
+                std=0.0001,   # reduce to limit T-channel deinactivation in waking state
+                device=device,
+            ),
+            receptor_type=ReceptorType.GABA_B,
+            stp_config=STPConfig(U=0.20, tau_d=400.0, tau_f=40.0),
+        )
+
+        # Ensure all tensors are on the correct device
+        self.to(device)
 
     # =========================================================================
     # SYNAPTIC INPUT MANAGEMENT
@@ -483,25 +521,18 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
     # FORWARD PASS
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
-        """Process sensory input through thalamic relay.
-
-        Args:
-            synaptic_inputs: Point-to-point synaptic connections from sensory inputs and cortex
-            neuromodulator_inputs: Broadcast neuromodulatory signals (DA, NE, ACh)
-        """
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
+        """Process sensory input through thalamic relay."""
         device = self.device
-        config = self.config
 
         # =====================================================================
-        # ACETYLCHOLINE RECEPTOR PROCESSING (from NB)
+        # NEUROMODULATOR RECEPTOR UPDATES
         # =====================================================================
-        # Process NB acetylcholine spikes → sleep/wake mode control
-        # High ACh → suppress TRN oscillations (wakefulness, sensory relay)
-        # Low ACh → enable TRN spindles (sleep, sensory disconnection)
-        self._ach_concentration_trn = self.ach_receptor.update(
-            self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.ACH)
-        )
+        self._update_receptors(neuromodulator_inputs)
 
         # =====================================================================
         # MULTI-SOURCE SYNAPTIC INTEGRATION
@@ -514,21 +545,19 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         trn_conductance = torch.zeros(self.trn_size, device=device)
 
         for synapse_id, source_spikes in synaptic_inputs.items():
-            # Convert to float for matrix multiplication
-            source_spikes_float = source_spikes.float()
-
+            source_spikes = source_spikes.float()
             # Route to appropriate target neurons
             if synapse_id.target_population == ThalamusPopulation.TRN:
-                trn_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes_float
+                trn_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes
             elif synapse_id.target_population == ThalamusPopulation.RELAY:
                 # IMPORTANT: route by receptor type — GABA_A/B from GPi/SNr must go to
                 # the inhibitory accumulator, not excitatory (bug fix: previously all
                 # external relay inputs were incorrectly lumped into relay_conductance
                 # which was then passed as AMPA excitation, causing GPi to excite relay).
                 if synapse_id.receptor_type in (ReceptorType.GABA_A, ReceptorType.GABA_B):
-                    relay_inhibition_external += self.get_synaptic_weights(synapse_id) @ source_spikes_float
+                    relay_inhibition_external += self.get_synaptic_weights(synapse_id) @ source_spikes
                 else:
-                    relay_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes_float
+                    relay_conductance += self.get_synaptic_weights(synapse_id) @ source_spikes
 
             # Sensory inputs also project to TRN for feedforward inhibition (gating mechanism)
             if synapse_id.is_external_sensory_input():
@@ -545,18 +574,21 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                     target_population=ThalamusPopulation.TRN,
                     receptor_type=ReceptorType.AMPA,
                 )
-                trn_conductance += self.get_synaptic_weights(sensory_trn_synapse) @ source_spikes_float
+                trn_conductance += self.get_synaptic_weights(sensory_trn_synapse) @ source_spikes
 
         # =====================================================================
-        # INTERNAL TRN→RELAY INHIBITION (1-step delayed, via _trn_recurrent_buffer)
+        # INTERNAL TRN→RELAY INHIBITION
         # =====================================================================
-        # TRN spikes from the PREVIOUS timestep inhibit relay neurons.
-        # _trn_recurrent_buffer already holds TRN spikes; reading at lag=1 reuses
-        # it for both TRN→relay and TRN→TRN recurrent paths without a separate tensor.
-        relay_inhibition = self._integrate_synaptic_inputs_at_dendrites(
-            {self._trn_relay_synapse: self._trn_recurrent_buffer.read(1)},
+        prev_trn_spikes = self._prev_spikes(ThalamusPopulation.TRN)
+        trn_relay_dendrite = self._integrate_synaptic_inputs_at_dendrites(
+            {
+                self._trn_relay_synapse: prev_trn_spikes,
+                self._trn_relay_gaba_b_synapse: prev_trn_spikes,
+            },
             n_neurons=self.relay_size,
-        ).g_gaba_a + relay_inhibition_external
+        )
+        relay_inhibition = trn_relay_dendrite.g_gaba_a + relay_inhibition_external
+        relay_inhibition_gaba_b = trn_relay_dendrite.g_gaba_b
 
         # =====================================================================
         # RELAY NEURONS: Conductances → Relay
@@ -566,10 +598,21 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # =====================================================================
         # HOMEOSTATIC INTRINSIC PLASTICITY: Add Minimal Noise
         # =====================================================================
-        # Add tiny baseline noise to overcome silent network problem
-        # Reduced from 0.01 to 0.001 for conductance-based model
-        noise = torch.randn(self.relay_size, device=device) * 0.001
-        relay_excitation = relay_excitation + noise
+        # Add baseline noise + brainstem tonic drive.
+        # noise: zero-mean stochastic fluctuation representing unmodelled inputs.
+        # _relay_baseline: deterministic ascending arousal drive (LC/PPN/raphe).
+        # With g_L=0.08, E/I is already high (12.7); reduce noise to lower E/I
+        # while maintaining stochastic depolarization above V_half_h_T (-0.65).
+        noise = torch.randn(self.relay_size, device=device) * 0.013  # 0.015→0.008→0.013: 0.008 removed
+        # desynchronizing noise, contributing to relay ρ=0.77 and burst mode 56%. 0.013 is a compromise.
+        relay_excitation = relay_excitation + noise + self._relay_baseline
+
+        # DA D1 + NE α₁ gain modulation on relay neurons
+        # DA: reward-relevant stimuli get enhanced relay (+15% at max DA)
+        # NE: arousal sharpens sensory throughput (+20% at max NE)
+        da_relay_gain = 1.0 + 0.15 * self._da_concentration_relay.mean().item()
+        ne_relay_gain = 1.0 + 0.2 * self._ne_concentration_relay.mean().item()
+        relay_excitation = relay_excitation * da_relay_gain * ne_relay_gain
 
         # =====================================================================
         # UPDATE RELAY NEURONS
@@ -579,11 +622,11 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Split excitatory conductance into AMPA (fast) and NMDA (slow)
         relay_g_ampa, relay_g_nmda = split_excitatory_conductance(relay_excitation, nmda_ratio=0.2)
 
-        relay_spikes, relay_membrane = self.relay_neurons.forward(
+        relay_spikes, _relay_membrane = self.relay_neurons.forward(
             g_ampa_input=ConductanceTensor(relay_g_ampa),  # [relay_size]
             g_nmda_input=ConductanceTensor(relay_g_nmda),  # [relay_size]
             g_gaba_a_input=ConductanceTensor(relay_inhibition),  # [relay_size]
-            g_gaba_b_input=None,
+            g_gaba_b_input=ConductanceTensor(relay_inhibition_gaba_b),  # [relay_size] TRN→relay slow IPSP
         )
 
         # =====================================================================
@@ -592,35 +635,17 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         self._apply_all_population_homeostasis({ThalamusPopulation.RELAY: relay_spikes})
 
         # =====================================================================
-        # MODE SWITCHING: Burst vs Tonic
-        # =====================================================================
-        current_mode = self._determine_mode(relay_membrane)  # [relay_size]
-
-        # In burst mode, amplify spikes (convert bool to float temporarily)
-        burst_mask = current_mode < config.mode_threshold  # Burst mode, [relay_size]
-        burst_amplified = relay_spikes.float()  # [relay_size]
-
-        if burst_mask.any():
-            # Amplify burst spikes
-            burst_amplified = torch.where(burst_mask, burst_amplified * config.burst_gain, burst_amplified)
-
-        # Binarize and convert to bool (ADR-004)
-        relay_output = burst_amplified > config.mode_threshold  # [relay_size], bool
-
-        # =====================================================================
         # TRN NEURONS: Synaptic conductances → TRN
         # =====================================================================
         # TRN excitation was already accumulated from synaptic_inputs above:
         # - Sensory collateral (via separate sensory→TRN SynapseId registered in add_input_source)
         # - L6a feedback (via cortex:l6a→thalamus:trn routing)
 
-        # Now add relay collateral excitation (1-step delayed via _relay_spike_buffer)
+        # Now add relay collateral excitation
         # Biology: relay→TRN is a collateral of the thalamocortical axon; ~1ms synaptic delay.
         # Using the previous step's relay output preserves causality within the timestep.
-        trn_excitation = trn_conductance + self._integrate_synaptic_inputs_at_dendrites(
-            {self._relay_trn_synapse: self._relay_spike_buffer.read(1)},
-            n_neurons=self.trn_size,
-        ).g_ampa
+        prev_relay = self._prev_spikes(ThalamusPopulation.RELAY)
+        trn_excitation = trn_conductance + self._integrate_single_synaptic_input(self._relay_trn_synapse, prev_relay).g_ampa + self._trn_baseline
 
         # TRN lateral inhibition (winner-take-all across sensory streams)
         # ACh suppresses TRN lateral inhibition (McCormick & Prince 1986):
@@ -634,23 +659,24 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # Read delayed TRN spikes (1-step causally delayed via _trn_recurrent_buffer).
         # Each TRN neuron's spikes at t-delay inhibit its lateral peers at t,
         # implementing competition across sensory sectors.
-        trn_inhibition = self._integrate_synaptic_inputs_at_dendrites(
-            {self._trn_trn_synapse: self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)},
+        trn_recurrent_spikes = self._trn_recurrent_buffer.read(self._trn_recurrent_buffer.max_delay)
+        trn_recurrent_dendrite = self._integrate_synaptic_inputs_at_dendrites(
+            {
+                self._trn_trn_gaba_a_synapse: trn_recurrent_spikes,
+                self._trn_trn_gaba_b_synapse: trn_recurrent_spikes,
+            },
             n_neurons=self.trn_size,
-        ).g_gaba_a * ach_recurrent_modulation
+        )
+        trn_inhibition_gaba_a = trn_recurrent_dendrite.g_gaba_a * ach_recurrent_modulation
+        trn_inhibition_gaba_b = trn_recurrent_dendrite.g_gaba_b * ach_recurrent_modulation
 
         # Gap junction coupling (TRN synchronization)
         # Ultra-fast electrical coupling (<0.1ms) for coherent inhibitory volleys
-        # FIXED: Gap junctions now return (conductance, dynamic_reversal) instead of current
-        # This correctly models I_gap = g × (E_neighbor_avg - V) in conductance-based framework
-        trn_gap_conductance = torch.zeros(self.trn_size, device=device)
-        trn_gap_reversal = torch.zeros(self.trn_size, device=device)
-        if self.gap_junctions is not None:
-            # Gap junctions return (g_total, E_effective) where:
-            # - g_total: Sum of gap junction conductances for each neuron
-            # - E_effective: Weighted average of neighbor voltages (dynamic reversal)
-            # Physics: I_gap = g × (E_eff - V), where E_eff = weighted_avg(neighbor_voltages)
-            trn_gap_conductance, trn_gap_reversal = self.gap_junctions.forward(self.trn_neurons.V_soma)
+        # Gap junctions return (g_total, E_effective) where:
+        # - g_total: Sum of gap junction conductances for each neuron
+        # - E_effective: Weighted average of neighbor voltages (dynamic reversal)
+        # Physics: I_gap = g × (E_eff - V), where E_eff = weighted_avg(neighbor_voltages)
+        trn_gap_conductance, trn_gap_reversal = self.gap_junctions.forward(self.trn_neurons.V_soma)
 
         # Split excitatory conductance into AMPA (fast) and NMDA (slow)
         trn_g_ampa, trn_g_nmda = split_excitatory_conductance(trn_excitation, nmda_ratio=0.2)
@@ -661,8 +687,8 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         trn_spikes, _trn_membrane = self.trn_neurons.forward(
             g_ampa_input=ConductanceTensor(trn_g_ampa),  # [trn_size]
             g_nmda_input=ConductanceTensor(trn_g_nmda),  # [trn_size]
-            g_gaba_a_input=ConductanceTensor(trn_inhibition),  # [trn_size]
-            g_gaba_b_input=None,
+            g_gaba_a_input=ConductanceTensor(trn_inhibition_gaba_a),  # [trn_size]
+            g_gaba_b_input=ConductanceTensor(trn_inhibition_gaba_b),  # [trn_size] TRN→TRN slow IPSP
             g_gap_input=ConductanceTensor(trn_gap_conductance) if apply_gap else None,
             E_gap_reversal=GapJunctionReversal(trn_gap_reversal) if apply_gap else None,
         )
@@ -680,7 +706,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # pathways show robust STDP that shapes sensory representations
 
         region_outputs: RegionOutput = {
-            ThalamusPopulation.RELAY: relay_output,
+            ThalamusPopulation.RELAY: relay_spikes,
             ThalamusPopulation.TRN: trn_spikes,
         }
 
@@ -689,8 +715,7 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             if self.get_learning_strategy(synapse_id) is None:
                 self._add_learning_strategy(synapse_id, self._stdp_strategy, device=device)
 
-        # Write current outputs to delay buffers for next timestep (causality)
-        self._relay_spike_buffer.write_and_advance(relay_output)
+        # Write TRN spikes to delay buffer for next timestep (multi-step recurrent delay)
         self._trn_recurrent_buffer.write_and_advance(trn_spikes)
 
         return region_outputs
@@ -700,32 +725,3 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         if synapse_id.target_population == ThalamusPopulation.TRN:
             return {"learning_rate": self.config.learning_rate * 0.3}
         return {"learning_rate": self.config.learning_rate * 0.5}
-
-    def _determine_mode(self, membrane: torch.Tensor) -> torch.Tensor:
-        """Determine burst vs tonic mode based on membrane potential.
-
-        Args:
-            membrane: Current membrane potential [relay_size] (1D, ADR-005)
-
-        Returns:
-            Mode indicator [relay_size]: 0=burst, 1=tonic (1D, ADR-005)
-        """
-        # Burst mode: Hyperpolarized (membrane < burst_threshold)
-        # Tonic mode: Depolarized (membrane > tonic_threshold)
-        # Between: Maintain previous mode
-
-        # Update mode based on thresholds
-        burst_mask = membrane < self.config.burst_threshold
-        tonic_mask = membrane > self.config.tonic_threshold
-
-        self.current_mode = torch.where(
-            burst_mask,
-            torch.zeros_like(membrane),  # Burst mode
-            torch.where(
-                tonic_mask,
-                torch.ones_like(membrane),  # Tonic mode
-                self.current_mode,  # Maintain
-            ),
-        )
-
-        return self.current_mode

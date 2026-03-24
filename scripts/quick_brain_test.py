@@ -50,27 +50,27 @@ if __name__ == "__main__":
     print("=== Brain Regions ===")
     for region_name, region in brain.regions.items():
         print(f"  - {region_name} ({region.__class__.__name__})")
-        print("    - Synaptic weights:")
-        for synapse_id, weights in region.synaptic_weights.items():
-            mean_weight = weights.mean()
-            min_weight = weights.min()
-            max_weight = weights.max()
-            stp: Optional[ShortTermPlasticity] = region.get_stp_module(synapse_id)
-            if stp is not None:
-                stp_info = f"(STP: U={stp.config.U}, tau_d={stp.config.tau_d}ms, tau_f={stp.config.tau_f}ms)"
-            else:
-                stp_info = "(No STP)"
-            print(
-                f"  {synapse_id} - "
-                f"Mean: {mean_weight:.4f}, Min: {min_weight:.4f}, Max: {max_weight:.4f}"
-                f" {stp_info}"
-            )
+        # print("    - Synaptic weights:")
+        # for synapse_id, weights in region.synaptic_weights.items():
+        #     mean_weight = weights.mean()
+        #     min_weight = weights.min()
+        #     max_weight = weights.max()
+        #     stp: Optional[ShortTermPlasticity] = region.get_stp_module(synapse_id)
+        #     if stp is not None:
+        #         stp_info = f"(STP: U={stp.config.U}, tau_d={stp.config.tau_d}ms, tau_f={stp.config.tau_f}ms)"
+        #     else:
+        #         stp_info = "(No STP)"
+        #     print(
+        #         f"  {synapse_id} - "
+        #         f"Mean: {mean_weight:.4f}, Min: {min_weight:.4f}, Max: {max_weight:.4f}"
+        #         f" {stp_info}"
+        #     )
 
     # Perform a forward pass through the brain
     print("\n=== Forward Pass ===")
     print("Preparing input...")
     sensory_input = torch.randn(external_sensory_size) < 0.5  # Random binary spikes for testing
-    brain_input: SynapticInput = {SynapseId.external_sensory_to_thalamus_relay("thalamus"): sensory_input}
+    brain_input: SynapticInput = {SynapseId.external_sensory_to_thalamus_relay("thalamus_sensory"): sensory_input}
     print("Running forward pass...")
     start_time = time.time()
     brain_output: BrainOutput = brain.forward(brain_input)

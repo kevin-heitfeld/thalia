@@ -15,13 +15,13 @@ in the L2/3 recurrent circuit — the same mechanism as biological PFC.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Dict, List, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import torch
 
 from thalia import GlobalConfig
 from thalia.brain.configs import CorticalColumnConfig
-from thalia.brain.synapses import NMReceptorType, make_neuromodulator_receptor
+from thalia.brain.synapses import NMReceptorType
 from thalia.typing import (
     NeuromodulatorChannel,
     NeuromodulatorInput,
@@ -33,6 +33,7 @@ from thalia.typing import (
 )
 
 from .cortical_column import CorticalColumn
+from .neural_region import ReceptorSpec
 from .population_names import CortexPopulation
 from .region_registry import register_region
 
@@ -122,12 +123,10 @@ class PrefrontalCortex(CorticalColumn):
         # Implementation: 5-HT modulates learning rate via the patience gate,
         # attenuating DA-driven goal consolidation under high serotonin.
         # Kinetics: tau_rise ~10 ms, tau_decay ~200 ms (SERT reuptake).
-        # 5-HT1A (Gi → GIRK): patience / temporal discounting gate.
-        self.sht_receptor = make_neuromodulator_receptor(
-            NMReceptorType.SHT_1A, n_receptors=self.l23_pyr_size, dt_ms=self.config.dt_ms, device=device
-        )
-        self._sht_concentration_l23: torch.Tensor
-        self.register_buffer("_sht_concentration_l23", torch.zeros(self.l23_pyr_size, device=device))
+        # 5-HT1A (Gi → GIRK): patience / temporal discounting gate on L2/3
+        self._init_receptors([
+            ReceptorSpec(NMReceptorType.SHT_1A, NeuromodulatorChannel.SHT, self.l23_pyr_size, "_sht_concentration_l23"),
+        ], device)
 
     # =========================================================================
     # EMERGENT GOAL SYSTEM
@@ -211,7 +210,11 @@ class PrefrontalCortex(CorticalColumn):
     # FORWARD PASS
     # =========================================================================
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Full laminar cortical pass then emergent goal learning on L2/3 spikes.
 
         Args:
@@ -223,9 +226,7 @@ class PrefrontalCortex(CorticalColumn):
             five pyramidal layers and their inhibitory sub-populations.
         """
         # 5-HT receptor update
-        if not GlobalConfig.NEUROMODULATION_DISABLED:
-            sht_spikes = self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.SHT)
-            self._sht_concentration_l23 = self.sht_receptor.update(sht_spikes)
+        self._update_receptors(neuromodulator_inputs)
 
         # Full layered cortical processing (layers, DA/NE/ACh, STDP, homeostasis).
         region_outputs = super()._step(synaptic_inputs, neuromodulator_inputs)
@@ -276,7 +277,11 @@ class PrefrontalCortex(CorticalColumn):
         """
         da_level = self._da_concentration_l23.mean().item()
         sht_level = self._sht_concentration_l23.mean().item()
-        # DA excites plasticity; 5-HT patience gate attenuates impulsive DA-driven updating.
-        # Range: LR × [0.6, 2.0] (high DA + low 5-HT → vigorous; high 5-HT → patient).
-        effective_lr = self.config.learning_rate * (1.0 + da_level) * (1.0 - 0.4 * sht_level)
-        return {"learning_rate": effective_lr, "neuromodulator": da_level}
+        # DA excites plasticity; 5-HT passed separately for asymmetric LTP/LTD gating.
+        effective_lr = self.config.learning_rate * (1.0 + da_level)
+        return {
+            "learning_rate": effective_lr,
+            "neuromodulator": da_level,
+            "dopamine": da_level,
+            "serotonin": sht_level,
+        }

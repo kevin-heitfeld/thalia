@@ -6,7 +6,8 @@ from typing import Dict
 
 import numpy as np
 
-from .diagnostics_types import HomeostaticStats, RecorderSnapshot
+from .diagnostics_metrics import HomeostaticStats
+from .diagnostics_snapshot import RecorderSnapshot
 
 
 def compute_homeostatic_stats(rec: RecorderSnapshot) -> HomeostaticStats:

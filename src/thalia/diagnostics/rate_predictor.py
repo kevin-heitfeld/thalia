@@ -6,7 +6,7 @@ and a list of synaptic input specifications — **no simulation needed**.
 The key formula derives from the ConductanceLIF steady state:
 
     g_total  = g_L + g_E + g_I + g_adapt
-    V_inf    = (g_L·E_L + g_E·E_E + g_I·E_I + g_adapt·E_adapt) / g_total
+    V_inf    = (g_E·E_E + g_I·E_I + g_adapt·E_adapt) / g_total   [E_L = 0]
     tau_eff  = 1 / g_total          [C_m normalised to 1; units: ms]
     T_spike  = tau_eff · ln((v_reset − V_inf) / (v_threshold − V_inf))
     rate_hz  = 1000 / (T_spike + tau_ref)
@@ -19,7 +19,7 @@ Each Poisson input contributes steady-state conductance:
 
 Adaptation is solved iteratively to self-consistency:
 
-    g_adapt = rate_eq · adapt_increment · tau_adapt / 1000
+    g_adapt = rate_eq · adapt_increment · tau_adapt_ms / 1000
 
 Usage::
 
@@ -39,7 +39,7 @@ Usage::
     result.print()
 
     # Point prediction without printing:
-    r = predict_rate(g_L=0.05, adapt_increment=0.10, tau_adapt=200.0,
+    r = predict_rate(g_L=0.05, adapt_increment=0.10, tau_adapt_ms=200.0,
                      inputs=[InputSpec(n=200, rate_hz=5.0, weight_mean=0.001)])
     print(r.rate_hz)   # → 7.4 Hz with adaptation
 """
@@ -149,7 +149,6 @@ class RatePrediction:
     g_L: float
     v_threshold: float
     v_reset: float
-    E_L: float
     E_E: float
     E_I: float
     E_adapt: float
@@ -218,7 +217,6 @@ def predict_rate(
     g_L: float = 0.05,
     v_threshold: float = 1.0,
     v_reset: float = 0.0,
-    E_L: float = 0.0,
     E_E: float = 3.0,
     E_I: float = -0.5,
     E_adapt: float = -0.5,
@@ -228,7 +226,7 @@ def predict_rate(
     tau_gaba_b: float = 400.0,
     tau_ref: float = 2.0,
     adapt_increment: float = 0.0,
-    tau_adapt: float = 100.0,
+    tau_adapt_ms: float = 100.0,
     dt_ms: float = 1.0,
     # Synaptic inputs
     inputs: Optional[List[InputSpec]] = None,
@@ -250,7 +248,7 @@ def predict_rate(
         Spike threshold (default 1.0 in normalised units).
     v_reset :
         Reset potential after spike emission (default 0.0).
-    E_L, E_E, E_I, E_adapt :
+    E_E, E_I, E_adapt :
         Reversal potentials for leak, excitation, inhibition, and adaptation.
     tau_E, tau_I, tau_nmda, tau_gaba_b :
         Synaptic decay time constants (ms) for AMPA, GABA_A, NMDA, and GABA_B.
@@ -258,7 +256,7 @@ def predict_rate(
         Absolute refractory period (ms).
     adapt_increment :
         Per-spike conductance increment for spike-frequency adaptation (SFA).
-    tau_adapt :
+    tau_adapt_ms :
         SFA time constant (ms).
     dt_ms :
         Simulation timestep (ms); required for the g_ss formula.
@@ -339,7 +337,7 @@ def predict_rate(
 
     # ── 2. V_inf without adaptation ─────────────────────────────────────────
     def _v_inf(g_adapt: float) -> float:
-        num = g_L * E_L + g_E_total * E_E + g_I_total * E_I + g_adapt * E_adapt
+        num = g_E_total * E_E + g_I_total * E_I + g_adapt * E_adapt
         den = g_L + g_E_total + g_I_total + g_adapt
         return num / den if den > 0 else 0.0
 
@@ -365,8 +363,8 @@ def predict_rate(
     tau_eff_ms = 1.0 / g_total_no_adapt if g_total_no_adapt > 0 else float("inf")
 
     # ── 3. Solve adaptation self-consistently ───────────────────────────────
-    # At equilibrium: g_adapt = rate_eq * adapt_increment * tau_adapt / 1000
-    # Let alpha = adapt_increment * tau_adapt / 1000.
+    # At equilibrium: g_adapt = rate_eq * adapt_increment * tau_adapt_ms / 1000
+    # Let alpha = adapt_increment * tau_adapt_ms / 1000.
     # When the neuron is strongly driven and V_inf >> threshold, the fixed point
     # sits almost exactly at the threshold-crossing adaptation level g_crit:
     #   g_crit = g_total_no_adapt * (V_inf - threshold) / (threshold - E_adapt)
@@ -380,7 +378,7 @@ def predict_rate(
     rate_adapt_override: Optional[float] = None   # set when using analytical formula
 
     if adapt_increment > 0.0:
-        alpha = adapt_increment * tau_adapt / 1000.0
+        alpha = adapt_increment * tau_adapt_ms / 1000.0
         rate_no_adapt = _rate_from_v_inf(v_inf_no_adapt, 0.0)
 
         if rate_no_adapt == 0.0:
@@ -469,7 +467,6 @@ def predict_rate(
         g_L=g_L,
         v_threshold=v_threshold,
         v_reset=v_reset,
-        E_L=E_L,
         E_E=E_E,
         E_I=E_I,
         E_adapt=E_adapt,

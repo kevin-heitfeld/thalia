@@ -1,12 +1,23 @@
 """Configuration classes for brain regions and overall brain architecture."""
 
-from .neural_region import NeuralRegionConfig
+from .neural_region import (
+    HomeostaticGainConfig,
+    HomeostaticThresholdConfig,
+    NMReceptorConfig,
+    NeuralRegionConfig,
+    SynapticScalingConfig,
+)
 from .amygdala import (
     AmygdalaNucleusConfig,
     BasolateralAmygdalaConfig,
+    BLAPopulationConfig,
+    CeAPopulationConfig,
     CentralAmygdalaConfig,
 )
 from .basal_ganglia import (
+    BGOutputConfig,
+    BGPopulationConfig,
+    GPeConfig,
     TonicPacemakerConfig,
     DopaminePacemakerConfig,
     StriatumConfig,
@@ -20,6 +31,7 @@ from .brainstem import (
 from .cortical_column import (
     CorticalColumnConfig,
     CorticalPopulationConfig,
+    LayerFractions,
 )
 from .hippocampus import (
     EntorhinalCortexConfig,
@@ -34,13 +46,22 @@ from .brain import BrainConfig
 
 
 __all__ = [
-    # General region config
+    # General region config + sub-configs
+    "NMReceptorConfig",
     "NeuralRegionConfig",
+    "HomeostaticGainConfig",
+    "HomeostaticThresholdConfig",
+    "SynapticScalingConfig",
     # Amygdala configs
     "AmygdalaNucleusConfig",
     "BasolateralAmygdalaConfig",
+    "BLAPopulationConfig",
+    "CeAPopulationConfig",
     "CentralAmygdalaConfig",
     # Basal ganglia configs
+    "BGOutputConfig",
+    "BGPopulationConfig",
+    "GPeConfig",
     "TonicPacemakerConfig",
     "DopaminePacemakerConfig",
     "StriatumConfig",
@@ -52,6 +73,7 @@ __all__ = [
     # Cortical column configs
     "CorticalColumnConfig",
     "CorticalPopulationConfig",
+    "LayerFractions",
     # Hippocampus configs
     "EntorhinalCortexConfig",
     "EntorhinalCortexPopulationConfig",

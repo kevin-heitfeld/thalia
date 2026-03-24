@@ -8,7 +8,7 @@ to the output nuclei (SNr and GPi).
 
 from __future__ import annotations
 
-from typing import Union
+from typing import Optional, Union
 
 import torch
 
@@ -17,6 +17,8 @@ from thalia.brain.configs import TonicPacemakerConfig
 from thalia.brain.neurons import (
     ConductanceLIF,
     ConductanceLIFConfig,
+    heterogeneous_dendrite_coupling,
+    heterogeneous_noise_std,
     heterogeneous_tau_mem,
     heterogeneous_v_threshold,
     heterogeneous_g_L,
@@ -63,7 +65,6 @@ class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
         # STN glutamatergic neurons with I_h pacemaking via HCN channels
         # enable_ih=True: voltage-dependent HCN current activates on hyperpolarisation,
         # providing the depolarising sag and rebound burst that drives ~20 Hz pacemaking.
-        # This replaces the old constant i_h_drive scalar offset.
         self.stn_neurons: ConductanceLIF
         self.stn_neurons = self._create_and_register_neuron_population(
             population_name=STNPopulation.STN,
@@ -71,27 +72,31 @@ class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
             polarity=PopulationPolarity.ANY,
             config=ConductanceLIFConfig(
                 tau_mem_ms=heterogeneous_tau_mem(self.config.tau_mem_ms, self.stn_size, device, cv=0.20),
-                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.stn_size, device, cv=0.12, clamp_fraction=0.25),
                 v_reset=0.0,
+                v_threshold=heterogeneous_v_threshold(self.config.v_threshold, self.stn_size, device, cv=0.12, clamp_fraction=0.25),
                 tau_ref=self.config.tau_ref,
                 g_L=heterogeneous_g_L(0.08, self.stn_size, device),
-                E_L=0.0,
                 E_E=3.0,
                 E_I=-0.5,
                 tau_E=5.0,
                 tau_I=10.0,
-                noise_std=0.006,
-                enable_ih=True,  # I_h (HCN) pacemaker — voltage-dependent, activates during hyperpolarisation
-                g_h_max=self.config.i_h_conductance * 10.0,  # Scale from old constant to max-conductance
-                E_h=-0.3,        # Depolarising (between E_L=0 and E_I=-0.5)
-                V_half_h=-0.3,   # Halfway between rest and inhibitory reversal
-                k_h=0.10,        # Steep voltage-dependence
-                tau_h_ms=80.0,   # Slightly faster than default for ~20 Hz pacemaking
+                tau_nmda=100.0,
+                E_nmda=3.0,
+                tau_GABA_B=400.0,
+                E_GABA_B=-0.8,
+                noise_std=heterogeneous_noise_std(0.10, self.stn_size, device),
+                noise_tau_ms=3.0,
+                enable_ih=True,
+                g_h_max=self.config.i_h_conductance * 10.0,
+                E_h=-0.3,
+                V_half_h=-0.3,
+                k_h=0.10,
+                tau_h_ms=80.0,
+                dendrite_coupling_scale=heterogeneous_dendrite_coupling(0.2, self.stn_size, device, cv=0.25),
             ),
         )
 
-        # Baseline drive for autonomous pacemaking (tonic excitatory conductance)
-        # I_h is now handled by enable_ih in the neuron config (voltage-dependent).
+        # Baseline drive for autonomous pacemaking (tonic excitatory conductance).
         # This scalar baseline provides the sustained low-level depolarisation needed
         # to keep STN neurons near threshold between I_h-driven rebounds.
         self.baseline_drive: torch.Tensor
@@ -100,7 +105,11 @@ class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
         # Ensure all tensors are on the correct device
         self.to(device)
 
-    def _step(self, synaptic_inputs: SynapticInput, neuromodulator_inputs: NeuromodulatorInput) -> RegionOutput:
+    def _step(
+        self,
+        synaptic_inputs: SynapticInput,
+        neuromodulator_inputs: NeuromodulatorInput,
+    ) -> RegionOutput:
         """Update STN neurons based on hyperdirect cortical and GPe inputs."""
         # =====================================================================
         # Compute conductances
