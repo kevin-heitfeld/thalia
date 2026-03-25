@@ -162,6 +162,10 @@ class NeuralRegionConfig:
 
     learning_rate: float = 0.001  # Base learning rate for plasticity.
 
+    learning_disabled: bool = False  # Set to True to disable all synaptic plasticity for this region.
+    homeostasis_disabled: bool = False  # Set to True to disable homeostatic plasticity for this region.
+    neuromodulation_disabled: bool = False  # Set to True to disable neuromodulator effects for this region.
+
     # =========================================================================
     # INHIBITORY STDP (Vogels et al. 2011)
     # =========================================================================

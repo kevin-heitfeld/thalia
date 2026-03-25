@@ -26,6 +26,10 @@ from thalia.learning import (
     MetaplasticityStrategy,
     STDPConfig,
     STDPStrategy,
+    TagAndCaptureConfig,
+    TagAndCaptureStrategy,
+    ThreeFactorConfig,
+    ThreeFactorStrategy,
 )
 from thalia.typing import (
     ConductanceTensor,
@@ -147,6 +151,23 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         self.istdp_pv:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
         self.istdp_som: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
 
+        # Hebbian E→I STDP for Principal→PV and Principal→SOM.
+        # PV/SOM interneurons must track evolving principal cell assemblies
+        # so they are recruited to gate the correct fear engrams (Wolff et al.
+        # 2014; Krabbe et al. 2019).  Conservative rate (15% of E→E) to avoid
+        # destabilising the inhibitory feedback loop.
+        ei_stdp_cfg = STDPConfig(
+            learning_rate=config.learning_rate * 0.15,
+            a_plus=0.005,
+            a_minus=0.003,
+            tau_plus=20.0,
+            tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        )
+        self.ei_stdp_pv:  STDPStrategy = STDPStrategy(ei_stdp_cfg)
+        self.ei_stdp_som: STDPStrategy = STDPStrategy(ei_stdp_cfg)
+
         # Principal ↔ PV (feedforward excitation + fast feedback inhibition)
         # Biology: Principal axon collaterals excite local PV interneurons;
         # PV cells hyperpolarise principal soma, sharpening temporal tuning.
@@ -160,6 +181,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 connectivity=0.4, weight_scale=0.0005,
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.5, tau_d=800.0, tau_f=20.0),
+                learning_strategy=self.ei_stdp_pv,
             ),
             i_to_e=InternalConnectionSpec(
                 connectivity=0.5,
@@ -181,6 +203,7 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
                 connectivity=0.3, weight_scale=0.0015,
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.1, tau_d=300.0, tau_f=300.0),
+                learning_strategy=self.ei_stdp_som,
             ),
             i_to_e=InternalConnectionSpec(
                 connectivity=0.4, weight_scale=0.002,
@@ -192,21 +215,36 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         )
 
         # =====================================================================
-        # STDP LEARNING STRATEGY (CS–US association at principal neurons)
+        # THREE-FACTOR LEARNING (CS–US association at principal neurons)
         # =====================================================================
-        # Standard STDP for fear conditioning: Hebbian + anti-Hebbian window
-        # Additional modulation by DA (three-factor rule) handled implicitly:
-        # DA from VTA increases baseline excitability → more co-activation
-        # (Full three-factor STDP would require eligibility trace — future work)
-        self._stdp_strategy = STDPStrategy(STDPConfig(
+        # Fear conditioning requires temporal credit assignment: CS precedes US
+        # by hundreds of milliseconds.  A simple two-factor STDP window (±25 ms)
+        # cannot bridge this gap.  Three-factor learning solves this:
+        #   Factor 1: Pre-post spike coincidence → eligibility trace
+        #   Factor 2: Neuromodulator (NE β-adrenergic, DA D1) → gate
+        #   Factor 3: Weight update = eligibility × modulator
+        # The eligibility trace (tau ~500 ms) persists until the US-driven NE/DA
+        # burst arrives, enabling CS–US association across realistic delays.
+        # Refs: Izhikevich 2007; Frémaux & Gerstner 2016; Johansen et al. 2014.
+        self._three_factor_strategy = ThreeFactorStrategy(ThreeFactorConfig(
             learning_rate=config.learning_rate,
-            a_plus=0.012,   # LTP (fear acquisition is fast)
-            a_minus=0.006,  # LTD (slower forgetting)
-            tau_plus=25.0,  # ±25ms window (BLA temporal resolution)
-            tau_minus=25.0,
+            eligibility_tau=500.0,  # Eligibility trace persists ~500 ms
+            modulator_tau=50.0,     # Modulator (NE/DA) integration window
             w_min=config.synaptic_scaling.w_min,
             w_max=config.synaptic_scaling.w_max,
         ))
+
+        # Synaptic tagging and capture: short-lived tags created by initial
+        # plasticity are consolidated into long-term changes only when a
+        # neuromodulator signal (NE/DA) confirms behavioural significance.
+        # This implements the Frey–Morris (1997) synaptic tagging hypothesis
+        # for emotional memory persistence (Moncada & Bhagya 2007).
+        self._tag_and_capture_config = TagAndCaptureConfig(
+            tag_decay=0.999,                # ~1000-step tag lifetime (slow decay for fear)
+            tag_threshold=0.0,              # Any activity can set a tag
+            consolidation_lr_scale=0.5,     # 50% of base LR during capture
+            consolidation_da_threshold=0.1, # Moderate DA needed for consolidation
+        )
 
         # Metaplasticity config for principal-neuron synapses.
         # Emotional memories are persistent (McGaugh 2004); consolidated fear
@@ -218,6 +256,26 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
             consolidation_sensitivity=0.1,
             rate_min=0.1,
         )
+
+        # =====================================================================
+        # SOM AFFERENT PLASTICITY (extinction learning)
+        # =====================================================================
+        # PFC→BLA:SOM plasticity is critical for fear extinction.  During
+        # extinction, infralimbic PFC strengthens projections to BLA SOM
+        # interneurons, increasing dendritic inhibition of principal cells
+        # and suppressing conditioned fear responses.
+        # Refs: Likhtik et al. 2005; Cho et al. 2013; Duvarci & Bhagya 2014.
+        # Conservative learning rate (20% of principal) — SOM recruitment
+        # should shift gradually across extinction trials.
+        self._som_afferent_stdp = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.20,
+            a_plus=0.005,
+            a_minus=0.003,
+            tau_plus=20.0,
+            tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
 
         # Baseline drive tensor (tonic low-level activity)
         self.baseline_drive = torch.full((self.principal_size,), config.baseline_drive, device=device)
@@ -356,19 +414,37 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         # =====================================================================
         # STDP LEARNING (CS–US association at principal neurons)
         # =====================================================================
-        if not GlobalConfig.LEARNING_DISABLED:
-            # Register STDP strategy for any external synapse targeting PRINCIPAL
-            # (SOM/PV targets are interneurons; their weights are fixed by design)
+        if not self.config.learning_disabled:
+            # Register three-factor learning for any external synapse targeting PRINCIPAL.
             # Each synapse gets its own MetaplasticityStrategy wrapper so that
             # per-synapse consolidation/rate buffers are correctly shaped.
+            # Stack: ThreeFactor → TagAndCapture → Metaplasticity
+            #
+            # External excitatory→SOM synapses get STDP for extinction learning:
+            # PFC projections to BLA SOM interneurons strengthen during extinction,
+            # increasing dendritic inhibition of principal cells (Likhtik et al. 2005).
+            # PV afferents remain fixed — PV handles fast feedforward gating, not
+            # slow extinction-related plasticity.
             for synapse_id in synaptic_inputs:
+                if self.get_learning_strategy(synapse_id) is not None:
+                    continue
                 if synapse_id.target_population == BLAPopulation.PRINCIPAL:
-                    if self.get_learning_strategy(synapse_id) is None:
-                        strategy = MetaplasticityStrategy(
-                            base_strategy=self._stdp_strategy,
-                            config=self._meta_config,
-                        )
-                        self._add_learning_strategy(synapse_id, strategy, device=device)
+                    tagged = TagAndCaptureStrategy(
+                        base_strategy=self._three_factor_strategy,
+                        config=self._tag_and_capture_config,
+                    )
+                    strategy = MetaplasticityStrategy(
+                        base_strategy=tagged,
+                        config=self._meta_config,
+                    )
+                    self._add_learning_strategy(synapse_id, strategy, device=device)
+                elif (
+                    synapse_id.target_population == BLAPopulation.SOM
+                    and synapse_id.receptor_type.is_excitatory
+                ):
+                    self._add_learning_strategy(
+                        synapse_id, self._som_afferent_stdp, device=device,
+                    )
 
         # =====================================================================
         # HOMEOSTASIS: Rate tracking + synaptic scaling for principal cells
@@ -378,18 +454,25 @@ class BasolateralAmygdala(NeuralRegion[BasolateralAmygdalaConfig]):
         return region_outputs
 
     def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        da_level = self._da_concentration.mean().item()
         ne_level = self._ne_concentration.mean().item()
         sht_level = self._sht_concentration.mean().item()
         ach_level = self._ach_concentration.mean().item()
-        # NE β-adrenergic: enhances STDP magnitude during emotional arousal
+        # NE β-adrenergic: enhances learning magnitude during emotional arousal
         # Range: LR × [1.0, 2.5] (high NE during shock strongly boosts fear learning)
         # Ref: McGaugh 2004; Roozendaal et al. 2009
         # ACh M1: enhances LTP during attentional encoding (+40% at max ACh)
         effective_lr = self.config.learning_rate * (1.0 + 1.5 * ne_level) * (1.0 + 0.4 * ach_level)
-        # 5-HT passed separately for asymmetric LTP/LTD modulation in STDP:
+        # Three-factor modulator: combined NE + DA signal gates eligibility → weight.
+        # NE is the primary US signal in fear conditioning (Johansen et al. 2014);
+        # DA provides additional salience gating via D1 receptors (Bissière et al. 2003).
+        modulator = ne_level + 0.5 * da_level
+        # 5-HT passed separately for asymmetric LTP/LTD modulation:
         # suppresses LTP (anti-impulsive gating) and enhances LTD (extinction).
         return {
             "learning_rate": max(effective_lr, 0.0),
+            "modulator": modulator,
+            "dopamine": da_level,
             "serotonin": sht_level,
             "norepinephrine": ne_level,
             "acetylcholine": ach_level,

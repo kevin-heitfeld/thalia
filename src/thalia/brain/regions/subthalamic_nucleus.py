@@ -8,7 +8,7 @@ to the output nuclei (SNr and GPi).
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 
 import torch
 
@@ -22,6 +22,12 @@ from thalia.brain.neurons import (
     heterogeneous_tau_mem,
     heterogeneous_v_threshold,
     heterogeneous_g_L,
+)
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    STDPConfig,
+    STDPStrategy,
 )
 from thalia.typing import (
     ConductanceTensor,
@@ -102,8 +108,53 @@ class SubthalamicNucleus(NeuralRegion[TonicPacemakerConfig]):
         self.baseline_drive: torch.Tensor
         self.register_buffer("baseline_drive", torch.full((self.stn_size,), self.config.baseline_drive, device=device))
 
+        # ── External input STDP: cortex→STN hyperdirect pathway shows
+        # DA-modulated STDP (Chu et al. 2015; Gradinaru et al. 2009). ─────────
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.3,
+            a_plus=0.005, a_minus=0.002,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=0.0, w_max=5.0,
+        ))
+
+        # ── Inhibitory STDP for GPe→STN GABAergic afferents ──────────────
+        # GPe tonically inhibits STN; homeostatic iSTDP (Vogels et al. 2011)
+        # keeps E/I balance stable as cortical hyperdirect drive changes.
+        self._external_istdp_strategy = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate * 0.3,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=0.0, w_max=5.0,
+        ))
+
         # Ensure all tensors are on the correct device
         self.to(device)
+
+    # =========================================================================
+    # LEARNING
+    # =========================================================================
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register external input learning, then dispatch base-class learning.
+
+        Excitatory afferents (cortical hyperdirect) get Hebbian STDP;
+        inhibitory afferents (GPe GABA_A/GABA_B) get homeostatic iSTDP.
+        """
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_inhibitory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_istdp_strategy, device=self.device,
+                    )
+                else:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)
 
     def _step(
         self,

@@ -47,7 +47,7 @@ The LHb→RMTg→VTA disynaptic pathway provides:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 import torch
 
@@ -65,6 +65,7 @@ from thalia.brain.neurons import (
     heterogeneous_g_L,
     split_excitatory_conductance,
 )
+from thalia.learning import STDPConfig, STDPStrategy
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorInput,
@@ -147,6 +148,9 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
         # Low baseline drive (LHb is mostly quiet except during aversive events)
         self.baseline_drive = torch.full((self.principal_size,), config.baseline_drive, device=device)
 
+        # Afferent STDP — created lazily in apply_learning()
+        self._external_stdp_strategy: STDPStrategy | None = None
+
         # Ensure all tensors are on the correct device
         self.to(device)
 
@@ -186,3 +190,35 @@ class LateralHabenula(NeuralRegion[TonicPacemakerConfig]):
         self._apply_all_population_homeostasis(region_outputs)
 
         return region_outputs
+
+    # ── Afferent plasticity ──────────────────────────────────────────────
+    # LHb receives aversive information from SNr, CeA, and PFC.  These
+    # afferents show robust LTP/LTD modulated by serotonin and dopamine
+    # (Li et al. 2011; Bhatt et al. 2023), enabling adaptive aversive RPE.
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register afferent STDP, then dispatch base-class learning.
+
+        Only excitatory (AMPA/NMDA) afferents get Hebbian STDP; inhibitory
+        inputs are skipped (excitatory STDP is inappropriate for GABA synapses).
+        """
+        if self._external_stdp_strategy is None:
+            cfg = self.config
+            self._external_stdp_strategy = STDPStrategy(STDPConfig(
+                learning_rate=cfg.learning_rate * 0.3,
+                a_plus=0.005, a_minus=0.0025,
+                tau_plus=25.0, tau_minus=25.0,
+                w_min=cfg.synaptic_scaling.w_min,
+                w_max=cfg.synaptic_scaling.w_max,
+            ))
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_excitatory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)

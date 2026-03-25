@@ -40,6 +40,12 @@ import torch
 from thalia import GlobalConfig
 from thalia.brain.configs.basal_ganglia import GPeConfig
 from thalia.brain.gap_junctions import GapJunctionCoupling
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    STDPConfig,
+    STDPStrategy,
+)
 from thalia.brain.neurons import (
     ConductanceLIF,
     split_excitatory_conductance,
@@ -102,6 +108,58 @@ class GlobusPollidusExterna(BasalGangliaOutputNucleus):
         self.prototypic_gap_junctions = GapJunctionCoupling.from_coupling_matrix(gap_w)
 
         self._gap_junction_scale: float = config.gap_junction_scale
+
+        # ── External input STDP: STN→GPe and Striatum→GPe afferents ──────
+        # GPe receives structured excitatory (STN) and inhibitory (D2-MSN)
+        # input; Hebbian plasticity adjusts how these inputs are weighted,
+        # tuning the balance of the indirect-pathway relay.  Conservative
+        # rate: GPe is high-frequency (~40-70 Hz), learning must not
+        # destabilise the GPe-STN loop.
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.3,
+            a_plus=0.005, a_minus=0.0025,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
+        # ── Inhibitory STDP for D2-MSN→GPe GABAergic afferents ──────────
+        # Striatal D2 MSNs inhibit GPe via GABA_A; homeostatic iSTDP
+        # (Vogels et al. 2011) keeps GPe tonic firing stable as
+        # corticostriatal weights evolve.
+        self._external_istdp_strategy = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate * 0.3,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
+    # ------------------------------------------------------------------
+    # Learning
+    # ------------------------------------------------------------------
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register external input learning, then dispatch base-class learning.
+
+        Excitatory afferents (STN→GPe) get Hebbian STDP; inhibitory
+        afferents (D2-MSN GABA_A) get homeostatic iSTDP.
+        """
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_inhibitory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_istdp_strategy, device=self.device,
+                    )
+                else:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)
 
     # ------------------------------------------------------------------
     # Step

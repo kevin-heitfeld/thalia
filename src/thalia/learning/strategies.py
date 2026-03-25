@@ -1533,6 +1533,13 @@ class MaIStrategy(LearningStrategy):
                 climbing_fiber_spikes (torch.Tensor): IO climbing fiber spikes
                     [n_purkinje].  **Required** — returns weights unchanged if
                     not provided.
+                da_ltd_boost (float): Dopamine boost to LTD rate (D1/PKA cascade).
+                    Default 1.0 (no modulation). Biology: DA enhances climbing-fiber
+                    driven depression (Bhatt et al. 2007).
+                ne_gain (torch.Tensor | float): Per-Purkinje norepinephrine gain
+                    [n_purkinje] or scalar.  Default 1.0.  Biology: β-adrenergic
+                    signaling enhances both LTP and LTD amplitude (Woodward et al.
+                    1991).
 
         Returns:
             Updated weight matrix [n_purkinje, n_granule].
@@ -1545,15 +1552,29 @@ class MaIStrategy(LearningStrategy):
             # No error signal delivered this timestep — skip learning
             return weights
 
+        da_ltd_boost: float = kwargs.get("da_ltd_boost", 1.0)
+        ne_gain = kwargs.get("ne_gain", 1.0)
+
         cf_f = climbing_fiber_spikes.float()  # [n_purkinje]
+
+        # Apply neuromodulator scaling:
+        #   - DA boosts LTD (D1/PKA cascade enhances climbing-fiber driven depression)
+        #   - NE boosts both LTP and LTD (β-adrenergic per-Purkinje gain)
+        effective_ltd_rate = config.ltd_rate * da_ltd_boost
+
+        # ne_gain may be per-Purkinje [n_purkinje] or scalar
+        if isinstance(ne_gain, torch.Tensor):
+            ne_col = ne_gain.unsqueeze(1)  # [n_purkinje, 1] for broadcast
+        else:
+            ne_col = ne_gain
 
         # LTD: conjunctive PF + CF activation → depress synapse
         # outer(cf, pre): [n_purkinje, n_granule]
-        ltd_dw = config.ltd_rate * torch.outer(cf_f, pre_spikes)
+        ltd_dw = effective_ltd_rate * ne_col * torch.outer(cf_f, pre_spikes)
 
         # LTP: PF active, CF silent → slow normalizing potentiation
         no_cf = cf_f.neg_().add_(1.0).clamp_(min=0.0)   # [n_purkinje]; cf_f free to mutate after ltd_dw
-        ltp_dw = config.ltp_rate * torch.outer(no_cf, pre_spikes)
+        ltp_dw = config.ltp_rate * ne_col * torch.outer(no_cf, pre_spikes)
 
         return weights + (ltp_dw - ltd_dw)
 
@@ -1576,14 +1597,25 @@ class MaIStrategy(LearningStrategy):
         if climbing_fiber_spikes is None:
             return values
 
+        da_ltd_boost: float = kwargs.get("da_ltd_boost", 1.0)
+        ne_gain = kwargs.get("ne_gain", 1.0)
+
         cf_f = climbing_fiber_spikes.float()  # [n_purkinje]
 
+        effective_ltd_rate = config.ltd_rate * da_ltd_boost
+
+        # Resolve per-neuron NE gain at sparse entries
+        if isinstance(ne_gain, torch.Tensor):
+            ne_at_entries = ne_gain[row_indices]  # [nnz]
+        else:
+            ne_at_entries = ne_gain
+
         # Sparse LTD: cf[row] * pre[col]
-        ltd_dw = config.ltd_rate * cf_f[row_indices] * pre_spikes[col_indices]
+        ltd_dw = effective_ltd_rate * ne_at_entries * cf_f[row_indices] * pre_spikes[col_indices]
 
         # Sparse LTP: (1-cf)[row] * pre[col]
         no_cf = (1.0 - cf_f).clamp_(min=0.0)
-        ltp_dw = config.ltp_rate * no_cf[row_indices] * pre_spikes[col_indices]
+        ltp_dw = config.ltp_rate * ne_at_entries * no_cf[row_indices] * pre_spikes[col_indices]
 
         return values + (ltp_dw - ltd_dw)
 

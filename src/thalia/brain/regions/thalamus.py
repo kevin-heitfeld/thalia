@@ -91,6 +91,8 @@ from thalia.brain.synapses import (
     WeightInitializer,
 )
 from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
     LearningStrategy,
     STDPStrategy,
     STDPConfig,
@@ -269,6 +271,34 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         )
 
         # =====================================================================
+        # LEARNING STRATEGIES
+        # =====================================================================
+        # Thalamocortical synapses show robust STDP
+        # Critical for sensory learning, attention, and routing
+        # Both ascending (sensory→relay) and descending (L6→relay) pathways learn
+        self._stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate,
+            a_plus=0.005,  # Moderate LTP (thalamic synapses are conservative)
+            a_minus=0.001,  # Weak LTD (5:1 LTP:LTD ratio)
+            tau_plus=20.0,  # Standard STDP window
+            tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
+        # Inhibitory STDP (Vogels et al. 2011) for TRN inhibitory synapses.
+        # TRN→TRN lateral inhibition and TRN→relay feedforward gating need
+        # homeostatic plasticity to maintain stable E/I balance as excitatory
+        # thalamocortical weights change via STDP.
+        self._istdp_strategy = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.learning_rate * 0.3,  # Conservative: thalamic inhibition is stability-critical
+            tau_istdp=20.0,
+            alpha=0.12,  # Target ~12% post-synaptic firing rate
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
+        # =====================================================================
         # SYNAPTIC WEIGHTS
         # =====================================================================
         # Relay → TRN (collateral activation)
@@ -287,6 +317,9 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             # U=0.05: low initial release probability → builds up during sustained
             # relay firing.  tau_f=300ms > tau_d=150ms ensures net facilitation.
             stp_config=STPConfig(U=0.05, tau_d=150.0, tau_f=300.0),
+            # STDP: relay collateral plasticity shapes which relay neurons
+            # recruit TRN — attention routing via selective excitation.
+            learning_strategy=self._stdp_strategy,
         )
 
         # =====================================================================
@@ -314,6 +347,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.25, tau_d=300.0, tau_f=50.0),
+            # iSTDP: homeostatic tuning of lateral inhibition strength.
+            # As excitatory drive changes, TRN lateral inhibition adapts
+            # to maintain competitive dynamics across sensory streams.
+            learning_strategy=self._istdp_strategy,
         )
 
         # TRN → TRN: slow GABA_B component
@@ -353,22 +390,6 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
         # and brainstem cholinergic nuclei (ascending arousal system)
         # ACh M1 on TRN (sleep/wake mode), DA D1 on relay (reward gain), NE α₁ on relay (arousal gain)
         self._init_receptors_from_config(device)
-
-        # =====================================================================
-        # STDP LEARNING STRATEGY
-        # =====================================================================
-        # Thalamocortical synapses show robust STDP
-        # Critical for sensory learning, attention, and routing
-        # Both ascending (sensory→relay) and descending (L6→relay) pathways learn
-        self._stdp_strategy = STDPStrategy(STDPConfig(
-            learning_rate=config.learning_rate,
-            a_plus=0.005,  # Moderate LTP (thalamic synapses are conservative)
-            a_minus=0.001,  # Weak LTD (5:1 LTP:LTD ratio)
-            tau_plus=20.0,  # Standard STDP window
-            tau_minus=20.0,
-            w_min=config.synaptic_scaling.w_min,
-            w_max=config.synaptic_scaling.w_max,
-        ))
 
         # =====================================================================
         # GAP JUNCTIONS (TRN interneuron synchronization)
@@ -419,6 +440,9 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.20, tau_d=250.0, tau_f=30.0),  # U 0.25→0.20: less depletion at TRN ~6 Hz
+            # iSTDP: homeostatic feedforward gating balance — as relay excitatory
+            # weights change via STDP, inhibition adjusts to maintain E/I ratio.
+            learning_strategy=self._istdp_strategy,
         )
 
         # TRN → Relay: slow GABA_B component
@@ -441,6 +465,10 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             ),
             receptor_type=ReceptorType.GABA_B,
             stp_config=STPConfig(U=0.20, tau_d=400.0, tau_f=40.0),
+            # iSTDP: slow GABA_B inhibition homeostatically tunes burst
+            # mode threshold — as excitatory drive changes, GABA_B strength
+            # adapts to maintain appropriate T-channel de-inactivation depth.
+            learning_strategy=self._istdp_strategy,
         )
 
         # Ensure all tensors are on the correct device
@@ -514,7 +542,9 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
                     synapse_id=sensory_trn_synapse,
                     weights=trn_weights,
                     stp_config=STPConfig(U=0.25, tau_d=350.0, tau_f=30.0),
-                    learning_strategy=None,
+                    # STDP: sensory→TRN drives attentional gating; plasticity
+                    # shapes which stimuli recruit TRN for surround suppression.
+                    learning_strategy=self._stdp_strategy,
                 )
 
     # =========================================================================
@@ -710,10 +740,28 @@ class Thalamus(NeuralRegion[ThalamusConfig]):
             ThalamusPopulation.TRN: trn_spikes,
         }
 
-        # Ensure strategies are registered before dispatch
+        # Ensure strategies are registered before dispatch.
+        # Excitatory afferents (AMPA/NMDA) get Hebbian STDP; inhibitory
+        # afferents (GABA_A/GABA_B from GPi, SNr, etc.) get homeostatic
+        # iSTDP (Vogels et al. 2011) — excitatory STDP is biologically
+        # inappropriate for GABAergic synapses.
         for synapse_id in list(synaptic_inputs.keys()):
             if self.get_learning_strategy(synapse_id) is None:
-                self._add_learning_strategy(synapse_id, self._stdp_strategy, device=device)
+                if synapse_id.receptor_type.is_inhibitory:
+                    self._add_learning_strategy(synapse_id, self._istdp_strategy, device=device)
+                else:
+                    self._add_learning_strategy(synapse_id, self._stdp_strategy, device=device)
+
+        # =====================================================================
+        # INTERNAL SYNAPTIC PLASTICITY
+        # =====================================================================
+        # Relay→TRN: STDP shapes which relay neurons recruit TRN (attention routing)
+        self._apply_learning(self._relay_trn_synapse, prev_relay, trn_spikes,
+                             learning_rate=self.config.learning_rate * 0.3)
+        # TRN→TRN GABA_A: iSTDP homeostatically tunes lateral inhibition
+        self._apply_learning(self._trn_trn_gaba_a_synapse, trn_recurrent_spikes, trn_spikes)
+        # TRN→RELAY GABA_A: iSTDP homeostatically tunes feedforward gating
+        self._apply_learning(self._trn_relay_synapse, prev_trn_spikes, relay_spikes)
 
         # Write TRN spikes to delay buffer for next timestep (multi-step recurrent delay)
         self._trn_recurrent_buffer.write_and_advance(trn_spikes)

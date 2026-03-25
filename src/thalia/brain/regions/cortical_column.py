@@ -261,6 +261,56 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         self.istdp_sst_l6a: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
         self.istdp_sst_l6b: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
 
+        # iSTDP for NGC→Pyr and cross-layer SST→Pyr connections.
+        # These I→E pathways need homeostatic plasticity so inhibition tracks
+        # changing excitatory drive.
+        self.istdp_ngc_l23:    InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_ngc_l5:     InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_l4sst_l23:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_l5sst_l23:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+
+        # iSTDP for VIP→SST and VIP→PV disinhibitory connections.
+        # VIP interneurons are the primary disinhibitory motif in cortex
+        # (Pi et al. 2013; Lee et al. 2013).  VIP→SST gate strength is
+        # ACh-modulated and must adapt to match evolving SST/PV inhibition
+        # levels.  Homeostatic iSTDP keeps VIP disinhibition calibrated.
+        self.istdp_vip_sst: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_vip_pv:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+
+        # Hebbian STDP for E→I connections (Pyr→PV, Pyr→SST).
+        # PV cells must track local pyramidal assemblies: when excitatory
+        # representations change, E→PV weights should co-adapt so PV cells
+        # are recruited by the new assembly (Kullmann & Lamsa 2007; Lu et al. 2007).
+        # Conservative rate: E→I plasticity is slower than E→E to avoid
+        # destabilising the inhibitory feedback loop.
+        ei_stdp_cfg = STDPConfig(
+            learning_rate=config.learning_rate * 0.15,  # 15% of E→E rate
+            a_plus=config.a_plus * 0.5,
+            a_minus=config.a_minus * 0.5,
+            tau_plus=config.tau_plus_ms,
+            tau_minus=config.tau_minus_ms,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        )
+        self.ei_stdp_pv:  STDPStrategy = STDPStrategy(ei_stdp_cfg)
+        self.ei_stdp_sst: STDPStrategy = STDPStrategy(ei_stdp_cfg)
+        self.ei_stdp_ngc: STDPStrategy = STDPStrategy(ei_stdp_cfg)
+
+        # Shared STDP strategy for external (inter-region) E→E inputs.
+        # Thalamocortical (thal→L4) and corticocortical (ctx→L2/3, L5) inputs
+        # undergo plasticity that shapes sensory representations and inter-area
+        # routes.  Registered lazily per-synapse in apply_learning() via the
+        # base-class dispatch + _get_learning_kwargs() hook.
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.5,  # Conservative for afferent pathways
+            a_plus=config.a_plus,
+            a_minus=config.a_minus,
+            tau_plus=config.tau_plus_ms,
+            tau_minus=config.tau_minus_ms,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
         # Initialize layers and synaptic weights.
         # composite_* are now available for inline strategy registration.
         self._init_layers(device)
@@ -845,6 +895,8 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
 
             # == E → I ========================================================
             # Pyr → PV (mildly depressing: Angulo et al 1999, Xiang et al 2002, Pyr→FS)
+            # Hebbian STDP ensures PV cells track evolving pyramidal assemblies
+            # (Kullmann & Lamsa 2007; Lu et al. 2007).
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=pv_pop,
@@ -858,11 +910,13 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.25, tau_d=150.0, tau_f=20.0),
+                learning_strategy=self.ei_stdp_pv,
             )
             # Pyr → SST (moderately facilitating — Markram 1998 EPSP-F, Reyes et al. 1998)
             # U raised 0.1→0.25: at Pyr=5 Hz, u_eff_initial=0.1 meant SST received only 10%
             # of nominal weight → chronic under-drive → SST at 1.88 Hz (target 5-25 Hz).
             # U=0.25 gives 25% initial efficacy while preserving facilitation at higher rates.
+            # Hebbian STDP ensures SST cells learn to follow pyramidal populations.
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=sst_pop,
@@ -876,8 +930,11 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.25, tau_d=200.0, tau_f=150.0),
+                learning_strategy=self.ei_stdp_sst,
             )
             # Pyr → VIP (depressing)
+            # Hebbian STDP (E→I): VIP cells must learn which pyramidal
+            # assemblies gate their disinhibitory output (Lee et al. 2013).
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=vip_pop,
@@ -891,8 +948,11 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
+                learning_strategy=self.ei_stdp_pv,  # Shared E→I STDP (same conservative rate)
             )
             # Pyr → NGC (facilitating — NGC integrate over long windows like SST)
+            # Hebbian STDP (E→I): NGC must track pyramidal assemblies to
+            # provide appropriate apical-tuft inhibition (like Pyr→PV/SST).
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=ngc_pop,
@@ -906,6 +966,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.10, tau_d=300.0, tau_f=300.0),
+                learning_strategy=self.ei_stdp_ngc,
             )
 
             # == I → E ========================================================
@@ -1026,6 +1087,8 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 stp_config=STPConfig(U=0.12, tau_d=150.0, tau_f=600.0),
             )
             # VIP → PV (disinhibitory: VIP silence PV → releases pyramidal from peri-somatic inh)
+            # iSTDP tunes VIP→PV strength to maintain target PV firing rate;
+            # this gate adapts as PV drive changes during learning.
             self._add_internal_connection(
                 source_population=vip_pop,
                 target_population=pv_pop,
@@ -1039,6 +1102,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 ),
                 receptor_type=ReceptorType.GABA_A,
                 stp_config=STPConfig(U=0.35, tau_d=400.0, tau_f=25.0),
+                learning_strategy=self.istdp_vip_pv,
             )
             # VIP → SST GABA_A (disinhibition: VIP→SST fires → SST silenced → apical disinhibition)
             # Trade-off: stronger VIP→SST reduces VIP-SST correlation but also suppresses SST.
@@ -1059,6 +1123,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
                 ),
                 receptor_type=ReceptorType.GABA_A,
                 stp_config=STPConfig(U=0.45, tau_d=200.0, tau_f=25.0),
+                learning_strategy=self.istdp_vip_sst,
             )
             # VIP → SST GABA_B (slow sustained inhibition for disinhibitory motif)
             # GABA_B tau ~150-300ms provides tonic suppression beyond fast GABA_A.
@@ -1139,6 +1204,8 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         #   Wester & McBain 2014 – L1 NGC→L2/3 apical inhibition
 
         # (a) L2/3 → L1 NGC: apical collateral (depressing; strong bursts recruit NGC)
+        # Hebbian STDP (E→I): L1 NGC must track L2/3 assembly changes so that
+        # top-down gating inhibition co-adapts with local representations.
         self._add_internal_connection(
             source_population=CortexPopulation.L23_PYR,
             target_population=CortexPopulation.L1_NGC,
@@ -1152,6 +1219,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.50, tau_d=600.0, tau_f=25.0),
+            learning_strategy=self.ei_stdp_ngc,
         )
 
         # (b) L1 NGC → L2/3 apical tuft (GABA_A; wide, diffuse coverage)
@@ -1168,6 +1236,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=None,  # Volume transmission; no vesicular STP
+            learning_strategy=self.istdp_ngc_l23,
         )
 
         # (c) L1 NGC → L5 apical tuft (GABA_A; L5 tufts reach L1)
@@ -1184,6 +1253,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=None,  # Volume transmission; no vesicular STP
+            learning_strategy=self.istdp_ngc_l5,
         )
 
         # =====================================================================
@@ -1227,6 +1297,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.25, tau_d=400.0, tau_f=20.0),  # Matches within-layer SST→Pyr
+            learning_strategy=self.istdp_l4sst_l23,
         )
 
         # (e) L5 SST → L2/3 Pyr apical: predictive error gating
@@ -1243,6 +1314,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.25, tau_d=400.0, tau_f=20.0),
+            learning_strategy=self.istdp_l5sst_l23,
         )
 
         # (f) L2/3 PV → L5 PV: descending gamma synchronization
@@ -1781,7 +1853,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             VIP nicotinic / NGC muscarinic receptors in each layer's inhibitory network.
         """
         nb_ach_spikes: Optional[torch.Tensor] = None
-        if not GlobalConfig.NEUROMODULATION_DISABLED:
+        if not self.config.neuromodulation_disabled:
             self._process_neuromodulator(
                 self.da_receptor,
                 self._extract_neuromodulator(neuromodulator_inputs, NeuromodulatorChannel.DA_MESOCORTICAL),
@@ -2291,10 +2363,23 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
         *how much* weight change occurs from spike-timing events; they do not
         trigger learning by themselves.
         """
-        if GlobalConfig.LEARNING_DISABLED:
+        config = self.config
+
+        if config.learning_disabled:
             return
 
-        config = self.config
+        # Lazy-register external (inter-region) E→E input learning.
+        # The base class apply_learning() dispatches these after _step()
+        # completes; we just need to ensure a strategy is registered.
+        # Only excitatory (AMPA/NMDA) afferents get Hebbian STDP; inhibitory
+        # inputs are skipped (excitatory STDP is inappropriate for GABA synapses).
+        device = self.device
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_excitatory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=device,
+                    )
 
         l23_spikes         = region_outputs[CortexPopulation.L23_PYR]
         l4_spikes          = region_outputs[CortexPopulation.L4_PYR]
@@ -2305,7 +2390,7 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
 
         # Per-layer neuromodulator scalars (one dict per layer)
         nm_l23 = self._neuromod_scalars('l23')
-        #nm_l4  = self._neuromod_scalars('l4')
+        # nm_l4  = self._neuromod_scalars('l4')
         nm_l5  = self._neuromod_scalars('l5')
         nm_l6a = self._neuromod_scalars('l6a')
         nm_l6b = self._neuromod_scalars('l6b')
@@ -2338,6 +2423,17 @@ class CorticalColumn(NeuralRegion[CorticalColumnConfig]):
             post_spikes=l4_spikes,
             learning_rate_override=pred_lr,
         )
+
+        # NGC → Pyr: iSTDP homeostatically tunes apical tuft inhibition
+        l1_ngc_spikes = region_outputs[CortexPopulation.L1_NGC]
+        self._apply_learning(self._sid_ngc_l23, l1_ngc_spikes, l23_spikes)
+        self._apply_learning(self._sid_ngc_l5,  l1_ngc_spikes, l5_spikes)
+
+        # Cross-layer SST → L2/3 Pyr: iSTDP tunes surround suppression and error gating
+        l4_sst_spikes = region_outputs[CortexPopulation.L4_INHIBITORY_SST]
+        l5_sst_spikes = region_outputs[CortexPopulation.L5_INHIBITORY_SST]
+        self._apply_learning(self._sid_l4sst_l23, l4_sst_spikes, l23_spikes)
+        self._apply_learning(self._sid_l5sst_l23, l5_sst_spikes, l23_spikes)
 
     def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
         """Map external synapse target population to layer-specific neuromodulator kwargs."""

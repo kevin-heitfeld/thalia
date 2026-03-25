@@ -48,7 +48,12 @@ from thalia.brain.neurons import (
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import STPConfig, WeightInitializer
-from thalia.learning import InhibitorySTDPConfig, InhibitorySTDPStrategy
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    STDPConfig,
+    STDPStrategy,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
@@ -169,6 +174,22 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
         )
 
         # ── Internal connectivity: E→I and I→E ────────────────────────────
+        # Hebbian STDP for E→I connections (Pyr→INH).
+        # Interneurons must track principal cell assemblies: when EC_II/III
+        # representations change, E→INH weights co-adapt so inhibitory cells
+        # are recruited by the active assembly (same principle as cortical
+        # Pyr→PV/SST plasticity — Kullmann & Lamsa 2007).
+        ei_stdp_cfg = STDPConfig(
+            learning_rate=config.learning_rate * 0.15,
+            a_plus=0.005 * 0.5,
+            a_minus=0.002 * 0.5,
+            tau_plus=20.0,
+            tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        )
+        self.ei_stdp: STDPStrategy = STDPStrategy(ei_stdp_cfg)
+
         # EC_II → EC_INHIBITORY (feedforward excitation: AMPA, mild depression).
         self._add_internal_connection(
             source_population=EntorhinalCortexPopulation.EC_II,
@@ -183,6 +204,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.25, tau_d=150.0, tau_f=20.0),
+            learning_strategy=self.ei_stdp,
         )
         # EC_III → EC_INHIBITORY (feedforward excitation).
         self._add_internal_connection(
@@ -198,6 +220,7 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.25, tau_d=150.0, tau_f=20.0),
+            learning_strategy=self.ei_stdp,
         )
 
         # Inhibitory STDP for EC_INHIBITORY→EC_II/III/V (Vogels et al. 2011)
@@ -258,7 +281,39 @@ class EntorhinalCortex(NeuralRegion[EntorhinalCortexConfig]):
             learning_strategy=self.istdp_ec_v,
         )
 
+        # ── External input STDP: cortical→EC connections show LTP/LTD
+        # (Bhatt et al. 2009; Canto et al. 2012). ────────────────────────────
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.3,
+            a_plus=0.005, a_minus=0.002,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
         self.to(device)
+
+    # =========================================================================
+    # LEARNING
+    # =========================================================================
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register external input STDP, then dispatch base-class learning.
+
+        Only excitatory (AMPA/NMDA) afferents get Hebbian STDP; inhibitory
+        inputs are skipped (excitatory STDP is inappropriate for GABA synapses).
+        """
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_excitatory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)
 
     # =========================================================================
     # FORWARD

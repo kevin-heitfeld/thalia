@@ -496,7 +496,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         Args:
             population_name: Key identifying the target population.
         """
-        if GlobalConfig.HOMEOSTASIS_DISABLED:
+        if self.config.homeostasis_disabled:
             return
 
         scaling_cfg = self.config.synaptic_scaling
@@ -560,7 +560,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
             spikes: Boolean or float spike tensor for the current timestep
                 ``[n_neurons]``.
         """
-        if GlobalConfig.HOMEOSTASIS_DISABLED:
+        if self.config.homeostasis_disabled:
             return
 
         if population_name not in self._homeostasis:
@@ -1001,12 +1001,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         """Look up the strategy for *synapse_id* and apply it, clamping weights in-place.
 
         No-ops when:
-        - global learning is disabled (:data:`GlobalConfig.LEARNING_DISABLED`)
+        - learning is disabled on this region's config
         - no strategy is registered for *synapse_id*
 
         Weight clamping uses ``self.config.synaptic_scaling.w_min`` / ``self.config.synaptic_scaling.w_max``.
         """
-        if GlobalConfig.LEARNING_DISABLED:
+        if self.config.learning_disabled:
             return
 
         # Cache nn.Module submodule dicts once — avoids __getattr__ per access
@@ -1014,6 +1014,12 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         strategy = _learning_strategies[synapse_id] if synapse_id in _learning_strategies else None
         if strategy is None:
             return
+
+        # Spike tensors arrive as bool from neuron models but learning rules
+        # perform arithmetic (mean, outer product, subtraction).  Convert once
+        # here instead of in every strategy.
+        pre_spikes = pre_spikes.float()
+        post_spikes = post_spikes.float()
 
         # ── Sparse path: connection managed by global sparse matrix ──
         sparse = self._sparse_matrix
@@ -1135,7 +1141,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         Called by :meth:`forward` after ``_step()`` (and, in batched mode, after
         ``ConductanceLIFBatch.step()`` so that spike tensors are up-to-date).
         """
-        if GlobalConfig.LEARNING_DISABLED:
+        if self.config.learning_disabled:
             return
 
         for synapse_id, pre_spikes in synaptic_inputs.items():
@@ -1254,7 +1260,7 @@ class NeuralRegion(nn.Module, ABC, Generic[ConfigT]):
         Each unique channel is extracted once; the resulting concentration
         tensor is written to the corresponding registered buffer.
         """
-        if GlobalConfig.NEUROMODULATION_DISABLED:
+        if self.config.neuromodulation_disabled:
             return
 
         spike_cache: Dict[NeuromodulatorChannel, Optional[torch.Tensor]] = {}

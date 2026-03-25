@@ -493,9 +493,8 @@ class Brain(nn.Module):
                     _region_out[_pop_name] = _t.float()
 
         # Phase 3: Apply inter-region learning (post-step spikes are now valid).
-        if not GlobalConfig.LEARNING_DISABLED:
-            for region_name, region in _regions.items():
-                region.apply_learning(region_synaptic_cache[region_name], brain_output[region_name])
+        for region_name, region in _regions.items():
+            region.apply_learning(region_synaptic_cache[region_name], brain_output[region_name])
 
         # Update pending novelty level from hippocampus CA1 mismatch (injected next step)
         _hippocampus = self.get_region_by_name("hippocampus")
@@ -639,6 +638,25 @@ class Brain(nn.Module):
         # NOT routed through forward() because it must run exactly once per
         # trial, whereas forward() can run many times per trial.
         striatum.update_performance(external_reward)
+
+    # =========================================================================
+    # PER-REGION CONFIG BULK SETTERS
+    # =========================================================================
+
+    def set_learning_disabled(self, disabled: bool) -> None:
+        """Set ``learning_disabled`` on every region's config."""
+        for region in self.regions.values():
+            region.config.learning_disabled = disabled
+
+    def set_homeostasis_disabled(self, disabled: bool) -> None:
+        """Set ``homeostasis_disabled`` on every region's config."""
+        for region in self.regions.values():
+            region.config.homeostasis_disabled = disabled
+
+    def set_neuromodulation_disabled(self, disabled: bool) -> None:
+        """Set ``neuromodulation_disabled`` on every region's config."""
+        for region in self.regions.values():
+            region.config.neuromodulation_disabled = disabled
 
     # =========================================================================
     # ADAPTIVE TIMESTEP AND OSCILLATOR COORDINATION

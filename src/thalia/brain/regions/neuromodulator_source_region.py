@@ -12,6 +12,7 @@ This base class centralizes:
 - One-step causal GABA feedback to projection neurons
 - GABA interneuron update driven by projection neuron activity
 - ``_prev_gaba_spikes`` buffer management
+- Afferent synaptic plasticity (lazy STDP registration for all inputs)
 
 Subclasses create their projection neurons in ``__init__()`` and implement
 the full ``_step()`` method, calling GABA helpers for the shared portion.
@@ -32,10 +33,18 @@ from thalia.brain.neurons import (
     heterogeneous_v_threshold,
     split_excitatory_conductance,
 )
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    STDPConfig,
+    STDPStrategy,
+)
 from thalia.typing import (
     ConductanceTensor,
     PopulationName,
     PopulationPolarity,
+    RegionOutput,
+    SynapticInput,
 )
 
 from .neural_region import NeuralRegion, ConfigT
@@ -51,6 +60,68 @@ class NeuromodulatorSourceRegion(NeuralRegion[ConfigT]):
     neuromodulator source regions.  Subclasses create projection neurons
     and implement ``_step()`` using the helpers below.
     """
+
+    _external_stdp_strategy: STDPStrategy | None = None
+    _external_istdp_strategy: InhibitorySTDPStrategy | None = None
+
+    # ── Afferent plasticity ──────────────────────────────────────────────
+
+    def _init_afferent_stdp(self) -> None:
+        """Create shared STDP and iSTDP strategies for afferent synapses.
+
+        Biology: Inputs to neuromodulator nuclei are plastic.  PFC→VTA
+        plasticity is essential for learning which cortical signals predict
+        reward (Lüscher & Malenka 2011).  Similarly, cortical→LC (Aston-Jones
+        & Cohen 2005) and BLA→NB (Bhatt et al.) synapses adapt to gate
+        neuromodulator release based on shifting behavioural relevance.
+
+        Excitatory afferents get Hebbian STDP; inhibitory afferents (e.g.
+        SNr/RMTg GABA→VTA) get homeostatic iSTDP (Vogels et al. 2011).
+
+        Conservative rate (30% of base) prevents runaway excitation to small
+        nuclei while still allowing slow adaptation.
+        """
+        cfg = self.config
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=cfg.learning_rate * 0.3,
+            a_plus=0.005,
+            a_minus=0.0025,
+            tau_plus=25.0,
+            tau_minus=25.0,
+            w_min=cfg.synaptic_scaling.w_min,
+            w_max=cfg.synaptic_scaling.w_max,
+        ))
+        self._external_istdp_strategy = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=cfg.istdp_learning_rate * 0.3,
+            tau_istdp=cfg.istdp_tau_ms,
+            alpha=cfg.istdp_alpha,
+            w_min=cfg.synaptic_scaling.w_min,
+            w_max=cfg.synaptic_scaling.w_max,
+        ))
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register afferent learning, then dispatch base-class learning.
+
+        Excitatory afferents get Hebbian STDP; inhibitory afferents
+        (e.g. SNr/RMTg GABA→VTA) get homeostatic iSTDP.
+        """
+        if self._external_stdp_strategy is None:
+            self._init_afferent_stdp()
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_inhibitory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_istdp_strategy, device=self.device,
+                    )
+                else:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)
 
     # ── GABA interneuron helpers ─────────────────────────────────────────
 

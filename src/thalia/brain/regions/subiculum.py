@@ -58,7 +58,12 @@ from thalia.brain.neurons import (
     split_excitatory_conductance,
 )
 from thalia.brain.synapses import STPConfig
-from thalia.learning import InhibitorySTDPConfig, InhibitorySTDPStrategy
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    STDPConfig,
+    STDPStrategy,
+)
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
@@ -224,7 +229,39 @@ class Subiculum(NeuralRegion[SubiculumConfig]):
             device=device,
         )
 
+        # ── External input STDP: CA1→subiculum is a major memory-consolidation
+        # pathway with well-documented STDP (Bhatt et al. 2009). ──────────────
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.5,
+            a_plus=0.005, a_minus=0.0025,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
         self.to(device)
+
+    # =========================================================================
+    # LEARNING
+    # =========================================================================
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register external input STDP, then dispatch base-class learning.
+
+        Only excitatory (AMPA/NMDA) afferents get Hebbian STDP; inhibitory
+        inputs are skipped (excitatory STDP is inappropriate for GABA synapses).
+        """
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_excitatory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)
 
     # =========================================================================
     # FORWARD

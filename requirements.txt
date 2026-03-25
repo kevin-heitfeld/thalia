@@ -29,7 +29,7 @@ scipy==1.17.0
 setuptools==80.10.2
 six==1.17.0
 sympy==1.14.0
--e git+https://github.com/kevin-heitfeld/thalia@4cb9c7185874b6dec9f3c176d3d1b4bb9db1f96a#egg=thalia
+-e git+https://github.com/kevin-heitfeld/thalia@b7d7b2d069da7c03bc52cc502fef44b280276e85#egg=thalia
 torch==2.10.0
 torchvision==0.25.0
 tqdm==4.67.3

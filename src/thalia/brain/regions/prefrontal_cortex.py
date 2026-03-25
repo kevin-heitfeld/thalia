@@ -231,7 +231,7 @@ class PrefrontalCortex(CorticalColumn):
         # Full layered cortical processing (layers, DA/NE/ACh, STDP, homeostasis).
         region_outputs = super()._step(synaptic_inputs, neuromodulator_inputs)
 
-        if not GlobalConfig.LEARNING_DISABLED:
+        if not self.config.learning_disabled:
             # After super()._step(), _da_concentration_l23 holds the current-step
             # DA level for L2/3.  Use it to drive goal consolidation.
             l23_spikes: torch.Tensor = region_outputs[CortexPopulation.L23_PYR]

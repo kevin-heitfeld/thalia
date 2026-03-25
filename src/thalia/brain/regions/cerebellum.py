@@ -46,7 +46,15 @@ from thalia.typing import (
     SynapseId,
     SynapticInput,
 )
-from thalia.utils import clamp_weights, decay_tensor
+from thalia.learning import (
+    InhibitorySTDPConfig,
+    InhibitorySTDPStrategy,
+    MaIConfig,
+    MaIStrategy,
+    STDPConfig,
+    STDPStrategy,
+)
+from thalia.utils import decay_tensor
 
 from .neural_region import NeuralRegion
 from .population_names import CerebellumPopulation
@@ -364,16 +372,33 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # Biology: Each Purkinje cell receives ~200k of ~50B granule cells (<1%).
         # 12% connectivity reduces shared-input overlap (was 20% → 4% pairwise
         # overlap; now 12% → 1.4%) to decorrelate Purkinje firing.
-        self.purkinje_synaptic_weights = nn.Parameter(
-            WeightInitializer.sparse_random(
+        #
+        # Marr-Albus-Ito learning rule (Ito 1989): Climbing fiber error signals
+        # drive LTD at co-active parallel fiber synapses; PF-only activity drives
+        # slow normalizing LTP.  Neuromodulation: DA boosts LTD (Bhatt 2007),
+        # NE enhances both LTP & LTD amplitude (Woodward 1991).
+        self._mai_strategy = MaIStrategy(MaIConfig(
+            ltd_rate=config.mai_ltd_rate,
+            ltp_rate=config.mai_ltp_rate,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+        self._sid_granule_purkinje = self._add_internal_connection(
+            source_population=CerebellumPopulation.GRANULE,
+            target_population=CerebellumPopulation.PURKINJE,
+            weights=WeightInitializer.sparse_random(
                 n_input=self.granule_size,
                 n_output=self.purkinje_size,
                 connectivity=0.12,
                 weight_scale=0.000013,
                 device=device,
             ),
-            requires_grad=False,
+            receptor_type=ReceptorType.AMPA,
+            stp_config=None,  # STP NOT applied here — Purkinje dendrite integration is manual
+            learning_strategy=self._mai_strategy,
         )
+        # Alias for backward compatibility (gap junction init, forward pass mv)
+        self.purkinje_synaptic_weights = self.get_synaptic_weights(self._sid_granule_purkinje)
 
         self.soma_neurons: ConductanceLIF
         self.soma_neurons = self._create_and_register_neuron_population(
@@ -446,6 +471,20 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
         # =====================================================================
         # Receives both Purkinje inhibition and mossy fiber collaterals
 
+        # Inhibitory STDP for Purkinje→DCN: rebound-dependent plasticity.
+        # DCN neurons exhibit post-inhibitory rebound spiking; Purkinje→DCN
+        # synapses undergo LTP when Purkinje pauses coincide with DCN rebound
+        # bursts, and LTD during tonic Purkinje firing (Aizenman et al. 1998;
+        # Pugh & Bhatt 2006; Medina & Mauk 1999).  This slow DCN consolidation
+        # complements fast PF→Purkinje MaI learning.
+        self._purkinje_dcn_istdp = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.learning_rate * 0.1,  # Slow: DCN consolidates over many trials
+            tau_istdp=20.0,
+            alpha=0.12,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
         # Purkinje → DCN (inhibitory, convergent)
         # Many Purkinje cells converge onto each DCN neuron
         self._add_internal_connection(
@@ -465,10 +504,19 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             # Round 2: U=0.12, tau_d=80 → x_ss=1/(1+0.12*0.09*80)=0.54, x·u=0.064 — depressing
             # but stays above the 0.05 functional threshold at 90 Hz tonic firing.
             stp_config=STPConfig(U=0.12, tau_d=80.0, tau_f=20.0),
+            learning_strategy=self._purkinje_dcn_istdp,
         )
 
         # Mossy fiber → DCN (excitatory collaterals)
         # Mossy fibers send collaterals to DCN before reaching granule cells
+        # Plasticity: STDP at mossy→DCN synapses (Pugh & Raman 2006)
+        self._mossy_dcn_stdp = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.2,
+            a_plus=0.003, a_minus=0.0015,
+            tau_plus=15.0, tau_minus=15.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
         self._add_internal_connection(
             source_population=CerebellumPopulation.MOSSY,
             target_population=CerebellumPopulation.DCN,
@@ -481,6 +529,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=200.0),
+            learning_strategy=self._mossy_dcn_stdp,
         )
 
         # DCN neurons (tonic firing, modulated by inhibition)
@@ -528,6 +577,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.12, tau_d=80.0, tau_f=20.0),
+            learning_strategy=self._purkinje_dcn_istdp,
         )
         self._add_internal_connection(
             source_population=CerebellumPopulation.MOSSY,
@@ -541,6 +591,7 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             ),
             receptor_type=ReceptorType.AMPA,
             stp_config=STPConfig(U=0.15, tau_d=200.0, tau_f=200.0),
+            learning_strategy=self._mossy_dcn_stdp,
         )
         self.dcn_gaba_neurons: ConductanceLIF
         self.dcn_gaba_neurons = self._create_and_register_neuron_population(
@@ -729,7 +780,6 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             g_gaba_a_input=ConductanceTensor(golgi_inh),
             g_gaba_b_input=None,
         )
-        granule_spikes_float = granule_spikes.float()  # [granule_size]
 
         # Granule → Golgi feedforward excitation (prev-step granule spikes)
         golgi_exc = torch.mv(self.granule_golgi_weights, prev_granule)
@@ -931,35 +981,22 @@ class Cerebellum(NeuralRegion[CerebellumConfig]):
             g_gaba_b_input=None,
         )
 
-        if not GlobalConfig.LEARNING_DISABLED:
-            # ======================================================================
-            # APPLY CEREBELLAR LEARNING: Marr-Albus-Ito Rule
-            # ======================================================================
-            # Biology (Ito 1989):
-            #   - Climbing fiber (CF) fires → LTD at co-active parallel fiber (PF) synapses
-            #   - PF active, CF silent  → slow normalizing LTP
-            #
-            # Computation:
-            #   dw = ltp_rate × outer(1−cf, pf) − ltd_rate × outer(cf, pf)
-            # Shapes: weights [purkinje_size, granule_size]
-            climbing_fiber_spikes_float = climbing_fiber_spikes.float()  # [purkinje_size]
-
-            # Apply neuromodulator scaling to MAI learning rates:
-            #   - DA boosts LTD (D1/PKA cascade enhances climbing-fiber driven depression)
-            #   - NE boosts both LTP and LTD (β-adrenergic: ne_purkinje_gain per-Purkinje)
-            effective_ltd_rate = config.mai_ltd_rate * da_ltd_boost
-            # ne_purkinje_gain is [purkinje_size]; broadcast with granule_spikes [granule_size]
-            ne_gain_col = ne_purkinje_gain.unsqueeze(1)  # [purkinje_size, 1]
-            ltd_dw = effective_ltd_rate * ne_gain_col * torch.outer(climbing_fiber_spikes_float, granule_spikes_float)
-            ltp_dw = config.mai_ltp_rate * ne_gain_col * torch.outer((1.0 - climbing_fiber_spikes_float).clamp(min=0.0), granule_spikes_float)
-            mai_delta = ltp_dw - ltd_dw  # [purkinje_size, granule_size]
-
-            self.purkinje_synaptic_weights.data = clamp_weights(
-                weights=self.purkinje_synaptic_weights.data + mai_delta,
-                w_min=config.synaptic_scaling.w_min,
-                w_max=config.synaptic_scaling.w_max,
-                inplace=False,
-            )
+        # ======================================================================
+        # APPLY CEREBELLAR LEARNING: Marr-Albus-Ito Rule
+        # ======================================================================
+        # Biology (Ito 1989):
+        #   - Climbing fiber (CF) fires → LTD at co-active parallel fiber (PF) synapses
+        #   - PF active, CF silent  → slow normalizing LTP
+        # Dispatched through the LearningStrategy framework; neuromodulator
+        # kwargs are handled by MaIStrategy.compute_update().
+        self._apply_learning(
+            self._sid_granule_purkinje,
+            granule_spikes,
+            purkinje_simple_spikes,
+            climbing_fiber_spikes=climbing_fiber_spikes,
+            da_ltd_boost=da_ltd_boost,
+            ne_gain=ne_purkinje_gain,
+        )
 
         region_outputs: RegionOutput = {
             CerebellumPopulation.BASKET: basket_spikes,

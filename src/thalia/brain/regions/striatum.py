@@ -346,6 +346,33 @@ class Striatum(NeuralRegion[StriatumConfig]):
         self.istdp_fsi_d1: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
         self.istdp_fsi_d2: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
 
+        # iSTDP for MSN→MSN lateral inhibition (Taverna et al. 2008).
+        # Winner-take-all dynamics are structurally set by connectivity;
+        # homeostatic iSTDP prevents lateral inhibition from growing
+        # unbounded or decaying during learning-driven rate changes.
+        lateral_istdp_cfg = InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate * 0.5,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        )
+        self.istdp_lateral_d1: InhibitorySTDPStrategy = InhibitorySTDPStrategy(lateral_istdp_cfg)
+        self.istdp_lateral_d2: InhibitorySTDPStrategy = InhibitorySTDPStrategy(lateral_istdp_cfg)
+        self.istdp_cross_d1d2: InhibitorySTDPStrategy = InhibitorySTDPStrategy(lateral_istdp_cfg)
+        self.istdp_cross_d2d1: InhibitorySTDPStrategy = InhibitorySTDPStrategy(lateral_istdp_cfg)
+
+        # Shared iSTDP for external inhibitory afferents (e.g. GPe Arky→D1/D2).
+        # D1/D2-specific three-factor STDP is biologically inappropriate for
+        # GABAergic inputs; homeostatic iSTDP maintains E/I balance.
+        self._external_istdp_strategy = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate * 0.3,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
         # FSI → D1 connections
         # Raised connectivity 0.15→0.30: each MSN should receive from more FSIs
         # to provide stronger decorrelation. At 15% with N_FSI=6-10, many MSNs
@@ -398,6 +425,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # MSN→MSN GABAergic collaterals create winner-take-all dynamics
         # Distance: ~100-300μm (local), unmyelinated → 1-2ms delay
         # Enables action-specific competition.
+        # iSTDP homeostatically tunes lateral inhibition strength.
         self._add_internal_connection(
             source_population=StriatumPopulation.D1,
             target_population=StriatumPopulation.D1,
@@ -410,6 +438,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
+            learning_strategy=self.istdp_lateral_d1,
         )
 
         # D2 → D2: Lateral inhibition for NoGo pathway
@@ -426,6 +455,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.35, tau_d=600.0, tau_f=20.0),
+            learning_strategy=self.istdp_lateral_d2,
         )
 
         # =====================================================================
@@ -456,6 +486,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.25, tau_d=300.0, tau_f=20.0),
+            learning_strategy=self.istdp_cross_d1d2,
         )
 
         # D2 (NoGo) → D1 (Go): when NoGo pathway is activated it suppresses Go
@@ -471,6 +502,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.25, tau_d=300.0, tau_f=20.0),
+            learning_strategy=self.istdp_cross_d2d1,
         )
 
         # =====================================================================
@@ -898,7 +930,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
         # This creates the coincidence gate: DA burst + TAN pause occur simultaneously,
         # opening the plasticity window for corticostriatal LTP.
         tan_g_gaba_b: Optional[torch.Tensor] = None
-        if not GlobalConfig.NEUROMODULATION_DISABLED:
+        if not self.config.neuromodulation_disabled:
             da_mean = (self._da_mesolimbic_d2 + self._da_nigrostriatal_d2).mean().item()
             excess_da = max(0.0, da_mean - config.tan_da2_threshold)
             if excess_da > 0.0:
@@ -999,7 +1031,7 @@ class Striatum(NeuralRegion[StriatumConfig]):
             g_gaba_b_input=None,
         )
 
-        if not GlobalConfig.HOMEOSTASIS_DISABLED:
+        if not self.config.homeostasis_disabled:
             # =====================================================================
             # HOMEOSTATIC GAIN UPDATE (After Spiking)
             # =====================================================================
@@ -1053,12 +1085,21 @@ class Striatum(NeuralRegion[StriatumConfig]):
             StriatumPopulation.FSI: fsi_spikes,  # Include FSI spikes for diagnostics and downstream tracts.
         }
 
-        if not GlobalConfig.LEARNING_DISABLED:
+        if not self.config.learning_disabled:
             # Lazily register strategies for D1/D2 targets before dispatching.
             # Each synapse gets its own MetaplasticityStrategy so that per-synapse
             # consolidation/rate buffers match the connection shape.
+            # Inhibitory afferents (e.g. GPe Arky GABA→D1/D2) get homeostatic
+            # iSTDP instead — D1/D2-specific three-factor STDP is biologically
+            # inappropriate for GABAergic synapses.
             for synapse_id in synaptic_inputs:
                 if self.get_learning_strategy(synapse_id) is None:
+                    # GABAergic inputs → homeostatic iSTDP
+                    if synapse_id.receptor_type.is_inhibitory:
+                        if synapse_id.target_population in (StriatumPopulation.D1, StriatumPopulation.D2):
+                            self._add_learning_strategy(synapse_id, self._external_istdp_strategy, device=device)
+                        continue
+
                     strategy_class = None
                     if synapse_id.target_population == StriatumPopulation.D1:
                         strategy_class = D1STDPStrategy

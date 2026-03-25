@@ -11,11 +11,11 @@ import torch
 from thalia import GlobalConfig
 from thalia.brain import BrainBuilder
 from thalia.brain.regions.population_names import ExternalPopulation
+from thalia.learning.strategies import LearningStrategy
 from thalia.typing import SynapseId
 
 if TYPE_CHECKING:
     from thalia.brain import Brain
-    from thalia.brain.synapses import ShortTermPlasticity
     from thalia.typing import BrainOutput, RegionSizes, SynapticInput
 
 
@@ -76,10 +76,18 @@ if __name__ == "__main__":
     brain_output: BrainOutput = brain.forward(brain_input)
     print(f"Forward pass completed in {time.time() - start_time:.2f}s")
 
+    # Print learning strategies after forward pass to verify lazy registration of external input learning strategies
+    print("\n=== Learning strategies ===")
+    for region_name, region in brain.regions.items():
+        print(f"  - {region_name} ({region.__class__.__name__})")
+        for synapse_id in region.synaptic_weights.keys():
+            strategy: Optional[LearningStrategy] = region.get_learning_strategy(synapse_id)
+            print(f"      {synapse_id}: {strategy.__class__.__name__ if strategy is not None else 'None'}")
+
     # Print output shapes and number of active spikes for each output port
-    print("\n=== Output ===")
-    for region_name, region_output in brain_output.items():
-        print(f"{region_name}:")
-        for population_name, spikes in region_output.items():
-            n_active = spikes.sum().item()
-            print(f"  {population_name}: {spikes.shape} ({n_active} active spikes)")
+    # print("\n=== Output ===")
+    # for region_name, region_output in brain_output.items():
+    #     print(f"{region_name}:")
+    #     for population_name, spikes in region_output.items():
+    #         n_active = spikes.sum().item()
+    #         print(f"  {population_name}: {spikes.shape} ({n_active} active spikes)")

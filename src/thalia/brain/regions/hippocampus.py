@@ -28,7 +28,7 @@ This implements the classic hippocampal trisynaptic circuit for episodic memory:
 from __future__ import annotations
 
 import math
-from typing import ClassVar, Dict, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import torch
 import torch.nn.functional as F
@@ -54,6 +54,8 @@ from thalia.learning import (
     InhibitorySTDPStrategy,
     MetaplasticityConfig,
     MetaplasticityStrategy,
+    STDPConfig,
+    STDPStrategy,
     TagAndCaptureConfig,
     TagAndCaptureStrategy,
     ThreeFactorConfig,
@@ -311,6 +313,26 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         self.istdp_olm_ca3: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
         self.istdp_olm_ca2: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
         self.istdp_olm_ca1: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_bist_dg:  InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_bist_ca3: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_bist_ca2: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+        self.istdp_bist_ca1: InhibitorySTDPStrategy = InhibitorySTDPStrategy(istdp_cfg)
+
+        # Hebbian STDP for E→I connections (Pyr→PV, Pyr→OLM, Pyr→Bistratified).
+        # PV interneurons must track local pyramidal assemblies; as new place
+        # fields form, E→PV weights co-adapt so PV provides matched inhibition
+        # (Kullmann & Lamsa 2007; Lu et al. 2007).  Conservative rate to avoid
+        # destabilising the inhibitory loop.
+        ei_stdp_cfg = STDPConfig(
+            learning_rate=config.learning_rate * 0.05,  # 5% of E→E rate (hippocampal E→E is fast)
+            a_plus=0.005,
+            a_minus=0.0025,
+            tau_plus=20.0,
+            tau_minus=20.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        )
+        self.ei_stdp: STDPStrategy = STDPStrategy(ei_stdp_cfg)
 
         # =====================================================================
         # GAP JUNCTIONS (Electrical Synapses) - Config Setup
@@ -539,15 +561,93 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             device=torch.device(device),
         )
 
-        # Mark inter-layer STP connections that are stepped manually with
-        # multi-step delayed spikes.  STPBatch must NOT include these —
-        # it can only access 1-step delayed spikes from last_brain_output.
+        # =====================================================================
+        # PATHWAY STDP STRATEGIES (replace inline Hebbian outer-product rules)
+        # =====================================================================
+        # Trace-based STDP gives timing-dependent LTP/LTD rather than
+        # instantaneous co-firing, which is more biologically accurate
+        # (Bi & Poo 1998) while preserving the DA-gated, encoding-mod-gated
+        # learning dynamics of the original inline rules.
+
+        _w_min = config.synaptic_scaling.w_min
+        _w_max = config.synaptic_scaling.w_max
+
+        # DG→CA3 mossy fiber: "detonator synapses" with rapid, powerful LTP.
+        # 3× base learning rate for one-shot pattern indexing.
+        self._dg_ca3_stdp = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 3.0,
+            a_plus=0.01, a_minus=0.003,
+            tau_plus=10.0, tau_minus=10.0,  # Short timing window (mossy synapses)
+            w_min=_w_min, w_max=_w_max,
+        ))
+
+        # CA3→CA2: RGS14-suppressed plasticity (10× lower than CA3→CA3).
+        self._ca3_ca2_stdp = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.1,
+            a_plus=0.005, a_minus=0.002,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=_w_min, w_max=_w_max,
+        ))
+
+        # CA2→CA1: Standard Hebbian for temporal / social context binding.
+        self._ca2_ca1_stdp = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate,
+            a_plus=0.005, a_minus=0.002,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=_w_min, w_max=_w_max,
+        ))
+
+        # CA2→CA3: Modulatory back-projection (0.5× base rate).
+        self._ca2_ca3_stdp = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.5,
+            a_plus=0.005, a_minus=0.002,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=_w_min, w_max=_w_max,
+        ))
+
+        # Shared STDP for external EC→HPC inputs (all subfields).
+        # Lazily registered per-synapse in _apply_plasticity().
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.3,
+            a_plus=0.005, a_minus=0.002,
+            tau_plus=20.0, tau_minus=20.0,
+            w_min=_w_min, w_max=_w_max,
+        ))
+
+        # Homeostatic iSTDP for external inhibitory inputs (e.g. MS GABA→CA3,
+        # MS GABA→OLM).  Excitatory STDP is biologically inappropriate for
+        # GABAergic synapses; iSTDP (Vogels et al. 2011) maintains E/I balance.
+        self._external_istdp_strategy = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.istdp_learning_rate * 0.3,
+            tau_istdp=config.istdp_tau_ms,
+            alpha=config.istdp_alpha,
+            w_min=_w_min, w_max=_w_max,
+        ))
+
+        # Encoding modifier cached for _get_learning_kwargs (updated each step)
+        self._current_encoding_mod: float = 0.0
+
+        # Register pathway STDP strategies for existing internal connections.
+        # Connections were already created by _init_circuit_weights() above;
+        # _add_learning_strategy() links a strategy to an existing synapse_id.
         rn = self.region_name
+        _dev = torch.device(device)
+
+        self._sid_dg_ca3  = SynapseId(rn, HippocampusPopulation.DG,  rn, HippocampusPopulation.CA3, ReceptorType.AMPA)
+        self._sid_ca3_ca2 = SynapseId(rn, HippocampusPopulation.CA3, rn, HippocampusPopulation.CA2, ReceptorType.AMPA)
+        self._sid_ca3_ca1 = SynapseId(rn, HippocampusPopulation.CA3, rn, HippocampusPopulation.CA1, ReceptorType.AMPA)
+        self._sid_ca2_ca1 = SynapseId(rn, HippocampusPopulation.CA2, rn, HippocampusPopulation.CA1, ReceptorType.AMPA)
+        self._sid_ca2_ca3 = SynapseId(rn, HippocampusPopulation.CA2, rn, HippocampusPopulation.CA3, ReceptorType.AMPA)
+
+        self._add_learning_strategy(self._sid_dg_ca3,  self._dg_ca3_stdp,  self.dg_size,  self.ca3_size, device=_dev)
+        self._add_learning_strategy(self._sid_ca3_ca2, self._ca3_ca2_stdp, self.ca3_size, self.ca2_size, device=_dev)
+        self._add_learning_strategy(self._sid_ca2_ca1, self._ca2_ca1_stdp, self.ca2_size, self.ca1_size, device=_dev)
+        self._add_learning_strategy(self._sid_ca2_ca3, self._ca2_ca3_stdp, self.ca2_size, self.ca3_size, device=_dev)
         self._manually_stepped_stp = {
-            SynapseId(rn, HippocampusPopulation.DG,  rn, HippocampusPopulation.CA3, ReceptorType.AMPA),
-            SynapseId(rn, HippocampusPopulation.CA3, rn, HippocampusPopulation.CA2, ReceptorType.AMPA),
-            SynapseId(rn, HippocampusPopulation.CA3, rn, HippocampusPopulation.CA1, ReceptorType.AMPA),
-            SynapseId(rn, HippocampusPopulation.CA2, rn, HippocampusPopulation.CA1, ReceptorType.AMPA),
+            self._sid_dg_ca3,
+            self._sid_ca3_ca2,
+            self._sid_ca3_ca1,
+            self._sid_ca2_ca1,
         }
 
         # Ensure all tensors are on the correct device
@@ -704,7 +804,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         _pv_w_max_ca2 = 2.0 * 0.02317 / (0.004 * 5.0 * self.ca2_size * 0.5)
         _pv_w_max_ca1 = 2.0 * 0.02317 / (0.002 * 5.0 * self.ca1_size * 0.5)
 
-        for subregion, pyr_pop, pv_pop, olm_pop, bist_pop, pyr_size, pv_w_max_ei, pv_ie, pv_ie_wmax, pv_pv_wmax, pv_stp_tau_d, istdp_pv, istdp_olm in [
+        for subregion, pyr_pop, pv_pop, olm_pop, bist_pop, pyr_size, pv_w_max_ei, pv_ie, pv_ie_wmax, pv_pv_wmax, pv_stp_tau_d, istdp_pv, istdp_olm, istdp_bist in [
             (
                 "DG",
                 HippocampusPopulation.DG,
@@ -726,6 +826,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                        # 2000); 100ms keeps eff>0.10 up to ~40 Hz.
                 self.istdp_pv_dg,
                 self.istdp_olm_dg,
+                self.istdp_bist_dg,
             ),
             (
                 "CA3",
@@ -741,6 +842,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 250.0, # PV→ STP τd (standard)
                 self.istdp_pv_ca3,
                 self.istdp_olm_ca3,
+                self.istdp_bist_ca3,
             ),
             (
                 "CA2",
@@ -758,6 +860,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 250.0, # PV→ STP τd (standard)
                 self.istdp_pv_ca2,
                 self.istdp_olm_ca2,
+                self.istdp_bist_ca2,
             ),
             (
                 "CA1",
@@ -773,6 +876,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 250.0, # PV→ STP τd (standard)
                 self.istdp_pv_ca1,
                 self.istdp_olm_ca1,
+                self.istdp_bist_ca1,
             ),
         ]:
             # Retrieve interneuron sizes from the corresponding inhibitory network
@@ -784,6 +888,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             # ------------------------------------------------------------------
             # E → I  (Pyramidal → Interneurons)
             # ------------------------------------------------------------------
+            # Pyr→PV: Hebbian STDP so PV tracks evolving place cell assemblies.
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=pv_pop,
@@ -797,7 +902,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
+                learning_strategy=self.ei_stdp,
             )
+            # Pyr→OLM: Hebbian STDP so OLM cells learn dendritic gating.
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=olm_pop,
@@ -811,7 +918,9 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.5, tau_d=700.0, tau_f=400.0),
+                learning_strategy=self.ei_stdp,
             )
+            # Pyr→Bistratified: Hebbian STDP for feedforward inhibition matching.
             self._add_internal_connection(
                 source_population=pyr_pop,
                 target_population=bist_pop,
@@ -825,6 +934,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 ),
                 receptor_type=ReceptorType.AMPA,
                 stp_config=STPConfig(U=0.55, tau_d=500.0, tau_f=15.0),
+                learning_strategy=self.ei_stdp,
             )
 
             # ------------------------------------------------------------------
@@ -889,6 +999,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
                 ),
                 receptor_type=ReceptorType.GABA_A,
                 stp_config=STPConfig(U=0.25, tau_d=250.0, tau_f=15.0),
+                learning_strategy=istdp_bist,
             )
 
             # ------------------------------------------------------------------
@@ -1117,7 +1228,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
         self._update_match_mismatch(ca1_basal_g_exc, ca1_apical_g_exc, retrieval_mod)
 
-        if not GlobalConfig.LEARNING_DISABLED:
+        if not self.config.learning_disabled:
             self._apply_plasticity(
                 synaptic_inputs, dg_spikes, ca3_spikes, ca2_spikes, ca1_spikes, encoding_mod
             )
@@ -1152,7 +1263,7 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
 
     def _process_neuromodulators(self, neuromodulator_inputs: NeuromodulatorInput) -> None:
         """Update all neuromodulator concentration buffers from incoming spikes."""
-        if GlobalConfig.NEUROMODULATION_DISABLED:
+        if self.config.neuromodulation_disabled:
             return
 
         # DOPAMINE (from VTA mesolimbic pathway)
@@ -1685,38 +1796,29 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
         """
         config = self.config
 
-        dg_spikes_float  = dg_spikes.float()
         ca3_spikes_float = ca3_spikes.float()
-        ca2_spikes_float = ca2_spikes.float()
-        ca1_spikes_float = ca1_spikes.float()
 
-        # Synaptic handles (cheap dataclass construction)
-        dg_ca3_synapse  = SynapseId(self.region_name, HippocampusPopulation.DG,  self.region_name, HippocampusPopulation.CA3, receptor_type=ReceptorType.AMPA)
+        # Cache encoding_mod for _get_learning_kwargs (used by apply_learning)
+        self._current_encoding_mod = encoding_mod
+
+        # Synaptic handles
         ca3_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3, self.region_name, HippocampusPopulation.CA3, receptor_type=ReceptorType.AMPA)
-        ca3_ca2_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3, self.region_name, HippocampusPopulation.CA2, receptor_type=ReceptorType.AMPA)
-        ca2_ca1_synapse = SynapseId(self.region_name, HippocampusPopulation.CA2, self.region_name, HippocampusPopulation.CA1, receptor_type=ReceptorType.AMPA)
-        ca2_ca3_synapse = SynapseId(self.region_name, HippocampusPopulation.CA2, self.region_name, HippocampusPopulation.CA3, receptor_type=ReceptorType.AMPA)
-
-        dg_ca3_weights  = self.get_synaptic_weights(dg_ca3_synapse)
         ca3_ca3_weights = self.get_synaptic_weights(ca3_ca3_synapse)
-        ca3_ca2_weights = self.get_synaptic_weights(ca3_ca2_synapse)
-        ca2_ca1_weights = self.get_synaptic_weights(ca2_ca1_synapse)
-        ca2_ca3_weights = self.get_synaptic_weights(ca2_ca3_synapse)
 
         # Re-read delay buffers (not yet advanced for this timestep)
-        dg_spikes_delayed  = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps).float()
-        ca3_spikes_for_ca2 = self._ca3_ca2_buffer.read(self._ca3_ca2_delay_steps).float()
-        ca2_spikes_delayed = self._ca2_ca1_buffer.read(self._ca2_ca1_delay_steps).float()
-        ca2_spikes_for_ca3 = self._ca2_ca3_buffer.read(self._ca2_ca3_delay_steps).float()
+        dg_spikes_delayed  = self._dg_ca3_buffer.read(self._dg_ca3_delay_steps)
+        ca3_spikes_for_ca2 = self._ca3_ca2_buffer.read(self._ca3_ca2_delay_steps)
+        ca2_spikes_delayed = self._ca2_ca1_buffer.read(self._ca2_ca1_delay_steps)
+        ca2_spikes_for_ca3 = self._ca2_ca3_buffer.read(self._ca2_ca3_delay_steps)
 
         # Per-subregion DA levels
-        dg_da_level  = self._da_concentration_dg.mean().item()
         ca3_da_level = self._da_concentration_ca3.mean().item()
-        ca2_da_level = self._da_concentration_ca2.mean().item()
         ca1_da_level = self._da_concentration_ca1.mean().item()
 
         # -----------------------------------------------------------------------
         # CA3→CA3 Hebbian (instantaneous delta + heterosynaptic LTD)
+        # Kept inline: heterosynaptic LTD + diagonal zeroing are too specialized
+        # for the generic STDPStrategy framework.
         # -----------------------------------------------------------------------
         if ca3_spikes.any():
             ca3_da_gain  = 0.2 + 1.8 * ca3_da_level  # Range: [0.2, 2.0]
@@ -1734,127 +1836,89 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             clamp_weights(ca3_ca3_weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
 
         # -----------------------------------------------------------------------
-        # DG→CA3 Mossy fiber (one-shot binding)
-        # "Detonator synapses" – rapid, powerful LTP for pattern indexing.
+        # DG→CA3 Mossy fiber (one-shot binding via trace-based STDP)
+        # "Detonator synapses" – 3× learning rate baked into strategy config.
+        # DA modulation passed via dopamine kwarg to STDPStrategy.
         # -----------------------------------------------------------------------
-        if dg_spikes_delayed.any() and ca3_spikes.any():
-            ca3_da_gain        = 0.2 + 1.8 * ca3_da_level
-            mossy_effective_lr = config.learning_rate * 3.0 * encoding_mod * ca3_da_gain
-            dW_mossy       = torch.outer(ca3_spikes_float, dg_spikes_delayed)
-            dg_ca3_syn_mask = (dg_ca3_weights.data > 0).float()
-            dg_ca3_weights.data += dW_mossy * mossy_effective_lr * dg_ca3_syn_mask
-            clamp_weights(dg_ca3_weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
+        self._apply_learning(
+            self._sid_dg_ca3, dg_spikes_delayed, ca3_spikes,
+            dopamine=ca3_da_level * encoding_mod,
+        )
 
         # -----------------------------------------------------------------------
-        # CA3→CA2 suppressed Hebbian (RGS14-mediated CaMKII block)
-        # Biology: CA2 principal neurons express RGS14, a G-protein signalling
-        # suppressor that blocks CaMKII activation specifically at CA3→CA2
-        # Schaffer-like synapses (Zhao et al. 2007; Lee et al. 2010).  This
-        # prevents CA3 pattern-completion attractors from overwriting the stable
-        # social/temporal context held in CA2.
-        # Rate is 10× lower than CA3→CA3 recurrent plasticity.
-        # NOTE: RGS14 does NOT suppress EC→CA2 plasticity – perforant path LTP is intact.
+        # CA3→CA2 suppressed STDP (RGS14-mediated CaMKII block)
+        # 0.1× learning rate baked into strategy config.
         # -----------------------------------------------------------------------
-        if ca3_spikes_for_ca2.any() and ca2_spikes.any():
-            # 0.1× scale: RGS14 suppresses ~90% of normal LTP at this synapse.
-            # Reduced DA sensitivity (range [0.5, 1.0] vs [0.2, 2.0] for CA3→CA3):
-            # dopamine can modestly relieve RGS14 block but cannot fully overcome it.
-            ca2_da_gain  = 0.5 + 0.5 * ca2_da_level  # [0.5, 1.0]
-            effective_lr = config.learning_rate * encoding_mod * 0.1 * ca2_da_gain
-            dW = torch.outer(ca2_spikes_float, ca3_spikes_for_ca2)
-            ca3_ca2_syn_mask = (ca3_ca2_weights.data > 0).float()
-            ca3_ca2_weights.data += dW * effective_lr * ca3_ca2_syn_mask
-            clamp_weights(ca3_ca2_weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
+        ca2_da_level = self._da_concentration_ca2.mean().item()
+        self._apply_learning(
+            self._sid_ca3_ca2, ca3_spikes_for_ca2, ca2_spikes,
+            dopamine=ca2_da_level * encoding_mod,
+        )
 
         # -----------------------------------------------------------------------
-        # CA2→CA1 Hebbian (temporal / social context binding)
+        # CA2→CA1 STDP (temporal / social context binding)
         # -----------------------------------------------------------------------
-        if ca2_spikes_delayed.any() and ca1_spikes.any():
-            effective_lr = config.learning_rate * encoding_mod
-            dW = torch.outer(ca1_spikes_float, ca2_spikes_delayed)
-            ca2_ca1_syn_mask = (ca2_ca1_weights.data > 0).float()
-            ca2_ca1_weights.data += dW * effective_lr * ca2_ca1_syn_mask
-            clamp_weights(ca2_ca1_weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
+        self._apply_learning(
+            self._sid_ca2_ca1, ca2_spikes_delayed, ca1_spikes,
+            dopamine=encoding_mod,  # Encoding-gated only (no DA scaling per original)
+        )
 
         # -----------------------------------------------------------------------
-        # CA2→CA3 modulatory Hebbian (temporal context stabilization)
-        # Biology: CA2 back-projections to CA3 are weak and modulatory.
-        # Plasticity here allows CA2's temporal/social context to gradually
-        # shape which CA3 attractors are primed for retrieval.
-        # Normal LTP (no RGS14 block — that's specific to CA3→CA2 direction).
+        # CA2→CA3 modulatory STDP (temporal context stabilization)
         # -----------------------------------------------------------------------
-        if ca2_spikes_for_ca3.any() and ca3_spikes.any():
-            ca3_da_gain  = 0.2 + 1.8 * ca3_da_level
-            effective_lr = config.learning_rate * encoding_mod * 0.5 * ca3_da_gain
-            dW = torch.outer(ca3_spikes_float, ca2_spikes_for_ca3)
-            ca2_ca3_syn_mask = (ca2_ca3_weights.data > 0).float()
-            ca2_ca3_weights.data += dW * effective_lr * ca2_ca3_syn_mask
-            clamp_weights(ca2_ca3_weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
+        self._apply_learning(
+            self._sid_ca2_ca3, ca2_spikes_for_ca3, ca3_spikes,
+            dopamine=ca3_da_level * encoding_mod,
+        )
 
-        if encoding_mod > 0.5:
-            # -----------------------------------------------------------------------
-            # External input plasticity (per-source three-factor Hebbian)
-            # EC→hippocampus synapses; only during encoding mode (theta trough).
-            # -----------------------------------------------------------------------
-            da_modulation = (dg_da_level + ca3_da_level + ca2_da_level + ca1_da_level) / 4.0
-            effective_lr  = config.learning_rate * 0.3 * (1.0 + da_modulation)
+        # -----------------------------------------------------------------------
+        # External EC→HPC input learning (via framework dispatch)
+        # Strategies are lazily registered here; base-class apply_learning()
+        # dispatches them after _step() completes.
+        # -----------------------------------------------------------------------
+        if not self.config.learning_disabled:
+            device = self.device
 
-            for synapse_id, source_input in synaptic_inputs.items():
-                weights     = self.get_synaptic_weights(synapse_id)
-                ext_syn_mask = (weights.data > 0).float()
+            for synapse_id in list(synaptic_inputs.keys()):
+                if self.get_learning_strategy(synapse_id) is None:
+                    if synapse_id.receptor_type.is_inhibitory:
+                        self._add_learning_strategy(
+                            synapse_id, self._external_istdp_strategy, device=device,
+                        )
+                    else:
+                        self._add_learning_strategy(
+                            synapse_id, self._external_stdp_strategy, device=device,
+                        )
 
-                if synapse_id.target_population == HippocampusPopulation.DG:
-                    dW_dg = effective_lr * torch.outer(dg_spikes_float, source_input)
-                    weights.data += dW_dg * ext_syn_mask
+            if encoding_mod > 0.5:
+                # CA3 recurrent three-factor learning (tag-and-capture)
+                # dW = eligibility_trace * dopamine * learning_rate
+                ca3_delayed_for_3f = self._ca3_ca3_buffer.read(self._ca3_ca3_delay_steps)
+                da_ca3_deviation   = ca3_da_level - 0.5  # Deviation from tonic baseline
 
-                elif synapse_id.target_population == HippocampusPopulation.CA3:
-                    dW_ca3 = effective_lr * torch.outer(ca3_spikes_float, source_input)
-                    weights.data += dW_ca3 * ext_syn_mask
+                if self.get_learning_strategy(ca3_ca3_synapse) is None:
+                    self._add_learning_strategy(ca3_ca3_synapse, self._tag_and_capture_strategy, device=device)
+                self._apply_learning(
+                    ca3_ca3_synapse, ca3_delayed_for_3f, ca3_spikes,
+                    modulator=da_ca3_deviation,
+                )
+                self.get_synaptic_weights(ca3_ca3_synapse).data.fill_diagonal_(0.0)
 
-                elif synapse_id.target_population == HippocampusPopulation.CA2:
-                    # EC→CA2: normal LTP – perforant path is NOT blocked by RGS14.
-                    # Zhao et al. 2007: the LTP resistance is synapse-specific to
-                    # CA3-derived Schaffer-like inputs.  EC direct input encodes
-                    # social/temporal context and must retain full plasticity.
-                    dW_ca2 = effective_lr * torch.outer(ca2_spikes_float, source_input)
-                    weights.data += dW_ca2 * ext_syn_mask
+                # -----------------------------------------------------------------------
+                # CA3→CA1 Schaffer collateral three-factor learning (tag-and-capture)
+                # Classic NMDA-dependent LTP site; DA modulation from CA1 D1/D5
+                # receptors gates late-LTP (Frey & Morris 1997).
+                # -----------------------------------------------------------------------
+                ca3_ca1_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3, self.region_name, HippocampusPopulation.CA1, receptor_type=ReceptorType.AMPA)
+                ca3_delayed_for_ca1 = self._ca3_ca1_buffer.read(self._ca3_ca1_delay_steps)
+                da_ca1_deviation    = ca1_da_level - 0.5  # CA1-local DA deviation
 
-                elif synapse_id.target_population == HippocampusPopulation.CA1:
-                    dW_ca1 = effective_lr * torch.outer(ca1_spikes_float, source_input)
-                    weights.data += dW_ca1 * ext_syn_mask
-
-                clamp_weights(weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
-
-            # -----------------------------------------------------------------------
-            # CA3 recurrent three-factor learning (tag-and-capture)
-            # Î” W = eligibility_trace Ã— dopamine Ã— learning_rate
-            # -----------------------------------------------------------------------
-            ca3_delayed_for_3f = self._ca3_ca3_buffer.read(self._ca3_ca3_delay_steps)
-            da_ca3_deviation   = ca3_da_level - 0.5  # Deviation from tonic baseline
-
-            if self.get_learning_strategy(ca3_ca3_synapse) is None:
-                self._add_learning_strategy(ca3_ca3_synapse, self._tag_and_capture_strategy, device=self.device)
-            self._apply_learning(
-                ca3_ca3_synapse, ca3_delayed_for_3f, ca3_spikes,
-                modulator=da_ca3_deviation,
-            )
-            self.get_synaptic_weights(ca3_ca3_synapse).data.fill_diagonal_(0.0)
-
-            # -----------------------------------------------------------------------
-            # CA3→CA1 Schaffer collateral three-factor learning (tag-and-capture)
-            # Classic NMDA-dependent LTP site; DA modulation from CA1 D1/D5
-            # receptors gates late-LTP (Frey & Morris 1997).
-            # -----------------------------------------------------------------------
-            ca3_ca1_synapse = SynapseId(self.region_name, HippocampusPopulation.CA3, self.region_name, HippocampusPopulation.CA1, receptor_type=ReceptorType.AMPA)
-            ca3_delayed_for_ca1 = self._ca3_ca1_buffer.read(self._ca3_ca1_delay_steps)
-            da_ca1_deviation    = ca1_da_level - 0.5  # CA1-local DA deviation
-
-            if self.get_learning_strategy(ca3_ca1_synapse) is None:
-                self._add_learning_strategy(ca3_ca1_synapse, self._ca3_ca1_strategy, device=self.device)
-            self._apply_learning(
-                ca3_ca1_synapse, ca3_delayed_for_ca1, ca1_spikes,
-                modulator=da_ca1_deviation,
-            )
+                if self.get_learning_strategy(ca3_ca1_synapse) is None:
+                    self._add_learning_strategy(ca3_ca1_synapse, self._ca3_ca1_strategy, device=device)
+                self._apply_learning(
+                    ca3_ca1_synapse, ca3_delayed_for_ca1, ca1_spikes,
+                    modulator=da_ca1_deviation,
+                )
 
         # -----------------------------------------------------------------------
         # DA-gated consolidation (tag-and-capture) for CA3→CA3 and CA3→CA1
@@ -1872,6 +1936,24 @@ class Hippocampus(NeuralRegion[HippocampusConfig]):
             assert isinstance(tac_ca1, TagAndCaptureStrategy)
             ca3_ca1_weights.data = tac_ca1.consolidate(ca1_da_level, ca3_ca1_weights)
             clamp_weights(ca3_ca1_weights.data, config.synaptic_scaling.w_min, config.synaptic_scaling.w_max)
+
+    def _get_learning_kwargs(self, synapse_id: SynapseId) -> Dict[str, Any]:
+        """Supply encoding-gated DA modulation for external EC→HPC synapses.
+
+        Called by the base class :meth:`apply_learning` after ``_step()``
+        completes.  encoding_mod is cached each step so that EC→HPC
+        learning is theta-gated (active during encoding, suppressed during
+        retrieval).
+        """
+        # Average DA across subfields for external inputs
+        da_mean = (
+            self._da_concentration_dg.mean().item()
+            + self._da_concentration_ca3.mean().item()
+            + self._da_concentration_ca2.mean().item()
+            + self._da_concentration_ca1.mean().item()
+        ) / 4.0
+        # Encoding gate: encode → full DA; retrieve → zero DA → near-zero LTP
+        return {"dopamine": da_mean * self._current_encoding_mod}
 
     def _update_spike_buffers(
         self,

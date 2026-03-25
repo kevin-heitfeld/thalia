@@ -45,7 +45,7 @@ Biological Background:
 
 from __future__ import annotations
 
-from typing import ClassVar, List, Optional, Union
+from typing import ClassVar, List, Union
 
 import torch
 
@@ -60,6 +60,7 @@ from thalia.brain.synapses import (
     STPConfig,
     WeightInitializer,
 )
+from thalia.learning import InhibitorySTDPConfig, InhibitorySTDPStrategy, STDPConfig, STDPStrategy
 from thalia.typing import (
     ConductanceTensor,
     NeuromodulatorChannel,
@@ -160,6 +161,16 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         # When CeL is suppressed (by extinction or CS absence), CeM is disinhibited
         # When CeL is active (during CS), it partially gates CeM output
         # Net effect: ON cells (PKCδ-) release CeM, OFF cells (PKCδ+) suppress it
+        # iSTDP (Vogels et al. 2011) tunes the set-point of this gate:
+        # adjusts inhibitory strength to maintain a target CeM firing rate,
+        # implementing the learned fear/safety balance (Ciocchi et al. 2010).
+        self._cel_cem_istdp = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.learning_rate * 0.2,
+            tau_istdp=20.0,
+            alpha=0.12,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
         self._cel_cem_synapse = self._add_internal_connection(
             source_population=CeAPopulation.LATERAL,
             target_population=CeAPopulation.MEDIAL,
@@ -172,9 +183,20 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
+            learning_strategy=self._cel_cem_istdp,
         )
 
         # CeL self-inhibition (lateral mutual inhibition: ON/OFF dynamics)
+        # iSTDP shapes the competition between ON (PKCδ-) and OFF (PKCδ+)
+        # cells: fear conditioning strengthens inhibition from ON→OFF cells,
+        # enabling the fear/safety switch (Ciocchi et al. 2010; Haubensak et al. 2010).
+        self._cel_cel_istdp = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.learning_rate * 0.15,
+            tau_istdp=20.0,
+            alpha=0.10,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
         self._cel_cel_synapse = self._add_internal_connection(
             source_population=CeAPopulation.LATERAL,
             target_population=CeAPopulation.LATERAL,
@@ -187,6 +209,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
+            learning_strategy=self._cel_cel_istdp,
         )
 
         # CeM self-inhibition (local lateral inhibition regulates fear output)
@@ -195,6 +218,15 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         # Creates sparse competitive output: only the most strongly driven
         # CeM neurons fire, proportional to threat level.
         # Refs: Cassell et al. 1999; Ciocchi et al. 2010.
+        # iSTDP homeostatically tunes lateral inhibition to maintain a
+        # stable CeM output set-point (matching CeL→CeM and CeL→CeL).
+        self._cem_cem_istdp = InhibitorySTDPStrategy(InhibitorySTDPConfig(
+            learning_rate=config.learning_rate * 0.15,
+            tau_istdp=20.0,
+            alpha=0.10,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
         self._cem_cem_synapse = self._add_internal_connection(
             source_population=CeAPopulation.MEDIAL,
             target_population=CeAPopulation.MEDIAL,
@@ -207,6 +239,7 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
             ),
             receptor_type=ReceptorType.GABA_A,
             stp_config=STPConfig(U=0.30, tau_d=350.0, tau_f=20.0),
+            learning_strategy=self._cem_cem_istdp,
         )
 
         # Baseline drives
@@ -222,8 +255,40 @@ class CentralAmygdala(NeuralRegion[CentralAmygdalaConfig]):
         # 5-HT1A (Gi → GIRK) on CeM: suppresses fear output
         self._init_receptors_from_config(device)
 
+        # ── External input STDP: BLA→CeL is the key fear-conditioning
+        # pathway with DA-modulated plasticity (Ciocchi et al. 2010). ─────────
+        self._external_stdp_strategy = STDPStrategy(STDPConfig(
+            learning_rate=config.learning_rate * 0.5,
+            a_plus=0.005, a_minus=0.0025,
+            tau_plus=25.0, tau_minus=25.0,
+            w_min=config.synaptic_scaling.w_min,
+            w_max=config.synaptic_scaling.w_max,
+        ))
+
         # Ensure all tensors are on the correct device
         self.to(device)
+
+    # =========================================================================
+    # LEARNING
+    # =========================================================================
+
+    def apply_learning(
+        self,
+        synaptic_inputs: SynapticInput,
+        region_outputs: RegionOutput,
+    ) -> None:
+        """Lazy-register external input STDP, then dispatch base-class learning.
+
+        Only excitatory (AMPA/NMDA) afferents get Hebbian STDP; inhibitory
+        inputs are skipped (excitatory STDP is inappropriate for GABA synapses).
+        """
+        for synapse_id in list(synaptic_inputs.keys()):
+            if self.get_learning_strategy(synapse_id) is None:
+                if synapse_id.receptor_type.is_excitatory:
+                    self._add_learning_strategy(
+                        synapse_id, self._external_stdp_strategy, device=self.device,
+                    )
+        super().apply_learning(synaptic_inputs, region_outputs)
 
     # =========================================================================
     # FORWARD PASS
